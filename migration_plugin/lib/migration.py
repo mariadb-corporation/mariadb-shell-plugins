@@ -23,8 +23,6 @@
 
 import json
 import os
-import pathlib
-import random
 import mysqlsh
 from typing import Optional
 import migration_plugin.lib as lib
@@ -45,16 +43,16 @@ class ProjectContext:
             self.project.close()
 
     def data(self) -> model.ProjectData:
-        project_data = model.ProjectData()
         if not self.project:
-            return project_data
-        project_data.id = self.project.id
-        project_data.name = self.project.name
-        project_data.path = str(self.project.path)
-        project_data.source = f"{self.project.source_connection_options['host']}:{self.project.source_connection_options['port']}"
-        project_data.modifyTime = self.project.modifyTime
-        project_data.dataMigrationDidFinish = self.project._data_migration_did_finish
-        return project_data
+            return model.ProjectData()
+
+        return model.ProjectData(
+            id=self.project.id,
+            name=self.project.name,
+            path=str(self.project.path),
+            source=f"{self.project.source_connection_options['host']}:{self.project.source_connection_options['port']}",
+            modifyTime=self.project.modifyTime,
+            dataMigrationDidFinish=self.project._data_migration_did_finish)
 
 
 g_open_projects: dict[str, ProjectContext] = {}
@@ -187,11 +185,11 @@ def list_projects() -> list[model.ProjectData]:
                 try:
                     with open(path) as f:
                         data = json.load(f)
-                    p = model.ProjectData()
-                    p.id = data["id"]
-                    p.name = data["name"]
-                    p.path = os.path.join(proj_dir, proj)
-                    p.modifyTime = data["modifyTime"]
+                    p = model.ProjectData(
+                        id=data["id"],
+                        name=data["name"],
+                        path=os.path.join(proj_dir, proj),
+                        modifyTime=data["modifyTime"])
                     projects.append(p)
                 except Exception as e:
                     logging.warning(

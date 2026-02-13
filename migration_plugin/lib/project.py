@@ -148,31 +148,32 @@ class Project:
             self._options.targetMySQLOptions.adminPasswordConfirm = ""
 
     def summary_info(self) -> model.MigrationSummaryInfo:
-        info = model.MigrationSummaryInfo()
+        info = model.MigrationSummaryInfo(
+            migrationType=self._options.migrationType,
+            cloudConnectivity=self._options.cloudConnectivity,
 
-        info.migrationType = self._options.migrationType
-        info.cloudConnectivity = self._options.cloudConnectivity
+            region=self._options.region,
+            dbSystemId=self._resources.dbSystemId,
+            dbSystemIP=self._resources.dbSystemIP,
+            dbSystemVersion=self._resources.dbSystemVersion,
+            channelId=self._resources.channelId,
+            bucketNamespace=self._resources.bucketNamespace,
+            bucketName=self._resources.bucketName,
+            createdBucket=self._resources.bucketCreated,
 
-        info.region = self._options.region
+            compartmentName=self._resources.compartmentName,
+            jumpHostName=self._resources.computeName,
+            jumpHostId=self._resources.computeId,
+            jumpHostPrivateIP=self._resources.computePrivateIP,
+            jumpHostPublicIP=self._resources.computePublicIP,
+            createdJumpHost=self._resources.computeCreated)
+
         if self._options.targetMySQLOptions:
             info.adminUser = self._options.targetMySQLOptions.adminUsername
             info.dbSystemName = self._options.targetMySQLOptions.name
-        info.dbSystemId = self._resources.dbSystemId
-        info.dbSystemIP = self._resources.dbSystemIP
-        info.dbSystemVersion = self._resources.dbSystemVersion
-        info.channelId = self._resources.channelId
-        info.bucketNamespace = self._resources.bucketNamespace
-        info.bucketName = self._resources.bucketName
-        info.createdBucket = self._resources.bucketCreated
 
-        info.compartmentName = self._resources.compartmentName
-        info.jumpHostName = self._resources.computeName
-        info.jumpHostId = self._resources.computeId
-        info.jumpHostPrivateIP = self._resources.computePrivateIP
-        info.jumpHostPublicIP = self._resources.computePublicIP
         if self._resources.computeId:
             info.jumpHostKeyPath = self.ssh_key_private
-        info.createdJumpHost = self._resources.computeCreated
 
         if self._options.sourceConnectionOptions:
             info.sourceHost = self._options.sourceConnectionOptions.get(

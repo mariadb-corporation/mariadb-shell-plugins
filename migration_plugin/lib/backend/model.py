@@ -540,10 +540,10 @@ class ValidationResults(MigrationMessage):
     issues: list[ValidationIssue] = field(default_factory=list)
 
     def _add(self, level: MessageLevel, option: str, message: str):
-        issue = ValidationIssue()
-        issue.level = level
-        issue.option = option
-        issue.message = message
+        issue = ValidationIssue(
+            level=level,
+            option=option,
+            message=message)
         self.issues.append(issue)
 
 
@@ -740,10 +740,10 @@ class WorkStatusInfo(MigrationMessage):
         self.stages = []
         for ws in SubStepId:
             if ws >= 2000:
-                info = WorkStageInfo()
-                info.stage = ws
-                info.caption = ws.name
-                info.errors = []
+                info = WorkStageInfo(
+                    stage=ws,
+                    caption=ws.name,
+                    errors=[])
                 self.stages.append(info)
 
     def _stage(self, stage: SubStepId) -> WorkStageInfo:

@@ -27,9 +27,9 @@ from .. import logging
 from . import submysqlsh
 from . import replication
 from . import model, model_utils
-from .model import CompatibilityFlags, CheckStatus, ServerType
+from .model import ServerType
 
-from typing import Optional, Tuple
+from typing import Optional
 import sys
 import socket
 import subprocess
@@ -107,8 +107,8 @@ def validate_source(
     session: MigrationSession, options: model.MigrationOptions
 ) -> tuple[list[model.MigrationError], model.SourceCheckResult]:
 
-    result = model.SourceCheckResult()
-    result.serverInfo = collect_server_info(session)
+    result = model.SourceCheckResult(
+        serverInfo=collect_server_info(session))
 
     errors = check_version_compatibility(session, options)
     errors.extend(check_ssl(session, result.serverInfo))
@@ -123,9 +123,8 @@ def validate_source(
 
 
 def validate_target(session: MigrationSession) -> tuple[list[model.MigrationError], model.TargetCheckResult]:
-    result = model.TargetCheckResult()
-
-    result.targetInfo = collect_server_info(session)
+    result = model.TargetCheckResult(
+        targetInfo=collect_server_info(session))
 
     errors = check_ssl(session, result.targetInfo)
 
@@ -149,24 +148,24 @@ def check_version_compatibility(session: MigrationSession, options: model.Migrat
     errors: list[model.MigrationError] = []
 
     if session.nversion < 50600:
-        err = model.MigrationError()
-        err.level = model.MessageLevel.WARNING
-        err.title = "Unsupported MySQL Server Version"
-        err.message = f"Source instance has MySQL version {session.version} which is currently not supported by this tool. You may proceed anyway, but results may vary."
+        err = model.MigrationError(
+            model.MessageLevel.WARNING,
+            title="Unsupported MySQL Server Version",
+            message=f"Source instance has MySQL version {session.version} which is currently not supported by this tool. You may proceed anyway, but results may vary.")
         errors.append(err)
 
     if session.nversion / 100 > mysqlsh_nversion() / 100:  # ignore patch level
-        err = model.MigrationError()
-        err.level = model.MessageLevel.WARNING
-        err.title = "Unsupported MySQL Server Version"
-        err.message = f"Source instance has MySQL version {session.version} which is currently not supported by this tool. Please upgrade this Migration Assistant to the latest version. You may proceed anyway, but results may vary."
+        err = model.MigrationError(
+            model.MessageLevel.WARNING,
+            title="Unsupported MySQL Server Version",
+            message=f"Source instance has MySQL version {session.version} which is currently not supported by this tool. Please upgrade this Migration Assistant to the latest version. You may proceed anyway, but results may vary.")
         errors.append(err)
 
     if model.ServerType.MariaDB == session.server_type:
-        err = model.MigrationError()
-        err.level = model.MessageLevel.WARNING
-        err.title = "Unsupported MySQL Server"
-        err.message = f"Source instance is a MariaDB server, migration of user accounts from MariaDB is currently not supported by this tool. Migration of user accounts has been disabled."
+        err = model.MigrationError(
+            model.MessageLevel.WARNING,
+            title="Unsupported MySQL Server",
+            message=f"Source instance is a MariaDB server, migration of user accounts from MariaDB is currently not supported by this tool. Migration of user accounts has been disabled.")
         errors.append(err)
 
         options.schemaSelection.migrateUsers = False
@@ -187,10 +186,9 @@ def check_inbound_replication_requirements(
     # from newer ones will not work
 
     if not format:
-        error = model.MigrationError()
-        error.level = model.MessageLevel.ERROR
-        error.title = "Hot Migration not possible because Binary logging (<code>log_bin</code>) is disabled"
-        error.message = """Binary logging must be enabled in order to setup
+        return model.MigrationError(model.MessageLevel.ERROR,
+                                    title="Hot Migration not possible because Binary logging (<code>log_bin</code>) is disabled",
+                                    message="""Binary logging must be enabled in order to setup
 inbound replication between your source MySQL instance and the new HeatWave
 instance.
 <br/>
@@ -199,14 +197,12 @@ You may:
 <li> enable Row Based Replication at the source MySQL instance and restart the Migration Assistant
 <li> switch to a Cold Migration, which will require some downtime when switching applications to the new MySQL server
 </ul>
-"""
-        return error
+""")
 
     if format != "ROW":
-        error = model.MigrationError()
-        error.level = model.MessageLevel.ERROR
-        error.title = f"Hot Migration not possible configured binary log format (<code>binlog_format</code>) is set to {format}"
-        error.message = f"""The <code>binlog_format</code> is currently set to {format},
+        return model.MigrationError(model.MessageLevel.ERROR,
+                                    title=f"Hot Migration not possible configured binary log format (<code>binlog_format</code>) is set to {format}",
+                                    message=f"""The <code>binlog_format</code> is currently set to {format},
 but the HeatWave service requires it to be `ROW`.
 <br/>
 You may:
@@ -214,14 +210,12 @@ You may:
 <li> change <code>binlog_format</code> at the source MySQL instance to <code>ROW</code> format and restart the Migration Assistant
 <li> switch to a Cold Migration, which will require some downtime when switching applications to the new MySQL server
 </ul>
-"""
-        return error
+""")
 
     if not server_info.sslSupported:
-        error = model.MigrationError()
-        error.level = model.MessageLevel.ERROR
-        error.title = f"Source MySQL server does not support SSL connections"
-        error.message = f"""The source MySQL server does not support SSL connections, which are
+        return model.MigrationError(model.MessageLevel.ERROR,
+                                    title=f"Source MySQL server does not support SSL connections",
+                                    message=f"""The source MySQL server does not support SSL connections, which are
 required by the MySQL HeatWave Service to create secure, encrypted replication channels. A Hot Migration will not be
 possible unless SSL is enabled at the source MySQL server.
 <br/>
@@ -230,17 +224,15 @@ You may:
 <li> enable SSL connections at the source MySQL server and restart the Migration Assistant
 <li> switch to a Cold Migration, which will require some downtime when switching applications to the new MySQL server
 </ul>
-"""
-        return error
+""")
 
     if expiration is not None and expiration < kMinBinlogExpirationHours * 3600:
         if expiration // 60 < 30:
-            error = model.MigrationError()
-            error.level = model.MessageLevel.ERROR
-            error.title = f"Binary log expiration period is too short"
-            error.message = f"""The source MySQL binary log is configured to automatically
-expire and purge in less than 30 minutes."""
-            return error
+            return model.MigrationError(
+                model.MessageLevel.ERROR,
+                title="Binary log expiration period is too short",
+                message=f"""The source MySQL binary log is configured to automatically
+expire and purge in less than 30 minutes.""")
 
         hours = expiration//3600
         if hours < 1:
@@ -249,14 +241,13 @@ expire and purge in less than 30 minutes."""
             expire = "one hour"
         else:
             expire = f"{hours} hours"
-        error = model.MigrationError()
-        error.level = model.MessageLevel.WARNING
-        error.title = f"Binary log expiration period is short"
-        error.message = f"""The source MySQL binary log is configured to automatically
+        return model.MigrationError(
+            model.MessageLevel.WARNING,
+            title="Binary log expiration period is short",
+            message=f"""The source MySQL binary log is configured to automatically
 expire and purge in {expire}.
 If the migration process takes longer than that, the target instance may be
-unable to catch up to the source before transactions are purged from the binary log."""
-        return error
+unable to catch up to the source before transactions are purged from the binary log.""")
 
     return None
 
@@ -267,10 +258,10 @@ def check_ssl(session: MigrationSession, info: model.ServerInfo) -> list[model.M
     # BUG#38879030 - fail early if source instance does not support SSL connections
     # TODO: allow migration if connection is secure (BUG#38891672)
     if not info.sslSupported:
-        err = model.MigrationError()
-        err.level = model.MessageLevel.ERROR
-        err.title = "Source does not support SSL"
-        err.message = f"The MySQL instance does not support SSL connections."
+        err = model.MigrationError(
+            model.MessageLevel.ERROR,
+            title="Source does not support SSL",
+            message=f"The MySQL instance does not support SSL connections.")
         errors.append(err)
 
     ssl_cipher = ""
@@ -279,10 +270,10 @@ def check_ssl(session: MigrationSession, info: model.ServerInfo) -> list[model.M
         ssl_cipher = row[1]
 
     if not ssl_cipher and info.sslSupported:
-        err = model.MigrationError()
-        err.level = model.MessageLevel.ERROR
-        err.title = "Session is not using SSL"
-        err.message = f"The MySQL instance supports SSL connections, however current session is not encrypted."
+        err = model.MigrationError(
+            model.MessageLevel.ERROR,
+            title="Session is not using SSL",
+            message=f"The MySQL instance supports SSL connections, however current session is not encrypted.")
         errors.append(err)
 
     return errors
@@ -305,13 +296,13 @@ def check_rds(session: MigrationSession) -> list[model.MigrationError]:
     errors: list[model.MigrationError] = []
 
     if not check_binlog(session):
-        err = model.MigrationError()
-        err.level = model.MessageLevel.ERROR
-        err.title = "Binary logging is disabled in the RDS instance"
-        err.message = """Migration from an RDS instance requires binary logging to be enabled.
+        err = model.MigrationError(
+            model.MessageLevel.ERROR,
+            title="Binary logging is disabled in the RDS instance",
+            message="""Migration from an RDS instance requires binary logging to be enabled.
 
 To enable binary logging, automated backups must be turned on. For more
-information, please consult the AWS documentation."""
+information, please consult the AWS documentation.""")
         errors.append(err)
 
     return errors
@@ -326,25 +317,25 @@ def check_aurora(session: MigrationSession) -> list[model.MigrationError]:
     read_only = check_innodb_read_only(session)
 
     if read_only:
-        err = model.MigrationError()
-        err.level = model.MessageLevel.ERROR
-        err.title = "Connected to the reader endpoint of an Aurora cluster"
-        err.message = """Migration from an Aurora cluster requires access to the binary logs.
+        err = model.MigrationError(
+            model.MessageLevel.ERROR,
+            title="Connected to the reader endpoint of an Aurora cluster",
+            message="""Migration from an Aurora cluster requires access to the binary logs.
 
 When binary logging is enabled in an Aurora cluster, only the writer endpoint or
-the writer instance provides access to the binary logs."""
+the writer instance provides access to the binary logs.""")
         errors.append(err)
 
     # reader endpoints/instances always have the binlog disabled
     if not read_only and not check_binlog(session):
-        err = model.MigrationError()
-        err.level = model.MessageLevel.ERROR
-        err.title = "Binary logging is disabled in the Aurora cluster"
-        err.message = """Migration from an Aurora cluster requires binary logging to be enabled.
+        err = model.MigrationError(
+            model.MessageLevel.ERROR,
+            title="Binary logging is disabled in the Aurora cluster",
+            message="""Migration from an Aurora cluster requires binary logging to be enabled.
 
 To enable binary logging, edit the DB cluster parameter group and set
 'binlog_format' parameter to 'ROW'. For more information, please consult the AWS
-documentation."""
+documentation.""")
         errors.append(err)
 
     return errors
@@ -450,49 +441,56 @@ def estimate_database_size(session: MigrationSession) -> tuple[int, int]:
 
 
 def collect_server_info(session: MigrationSession) -> model.ServerInfo:
-    info = model.ServerInfo()
     data_size, index_size = estimate_database_size(session)
-    info.schemaCount = session.run_sql(
-        "select count(*) from information_schema.schemata").fetch_one()[0]
-    info.dataSize = data_size + index_size
-    info.version = session.version
-    info.versionComment = session.version_comment
-    info.license = session.license
-    (info.hostname, info.serverUuid) = session.run_sql(
-        "select @@hostname, @@server_uuid").fetch_one()
-    info.serverType = session.server_type
 
-    info.hasMRS = session.run_sql(
+    (hostname, serverUuid) = session.run_sql(
+        "select @@hostname, @@server_uuid").fetch_one()
+
+    hasMRS = session.run_sql(
         "select count(*) from information_schema.schemata where schema_name='mysql_rest_service_metadata'").fetch_one()[0]
 
     num_native, num_old = session.run_sql(
         "select cast(sum(if(plugin = 'mysql_native_password', 1, 0)) as signed), cast(sum(if(plugin = 'mysql_old_password', 1, 0)) as signed) from mysql.user"
     ).fetch_one()
-    info.numAccountsOnMysqlNativePassword = num_native
-    info.numAccountsOnOldPassword = num_old
 
+    # assume ssl is not supported
+    sslSupported = False
     if session.nversion >= 80400:
-        info.sslSupported = True
+        sslSupported = True
     else:
         row = session.run_sql("show variables like 'have_ssl'").fetch_one()
         if row:
-            info.sslSupported = (row[1] != "DISABLED")
+            sslSupported = (row[1] != "DISABLED")
         else:
             logging.error(
                 f"have_ssl unexpectedly doesn't exist (version={session.nversion})")
-            # assume ssl is not supported
-            info.sslSupported = False
 
-    info.gtidMode = ""
-    if info.serverType != model.ServerType.MariaDB:
+    gtidMode = ""
+    if session.server_type != model.ServerType.MariaDB:
         if session.nversion >= 50605:
             try:
-                info.gtidMode = session.run_sql(
+                gtidMode = session.run_sql(
                     "select @@gtid_mode").fetch_one()[0]
             except Exception as e:
                 logging.info(f"select @@gtid_mode: {e}")
 
-    return info
+    schemaCount = session.run_sql(
+        "select count(*) from information_schema.schemata").fetch_one()[0]
+
+    return model.ServerInfo(
+        hostname=hostname,
+        serverUuid=serverUuid,
+        schemaCount=schemaCount,
+        dataSize=data_size + index_size,
+        hasMRS=hasMRS,
+        numAccountsOnMysqlNativePassword=num_native,
+        numAccountsOnOldPassword=num_old,
+        sslSupported=sslSupported,
+        version=session.version,
+        versionComment=session.version_comment,
+        license=session.license,
+        serverType=session.server_type,
+        gtidMode=gtidMode)
 
 
 def address_resolvable(connect_info: dict):

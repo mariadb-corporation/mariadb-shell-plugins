@@ -76,9 +76,9 @@ class MySQLSourceCheck:
         except mysqlsh.DBError as e:
             logging.error(f"source_check: connection check: {e}")
 
-            result = model.ConnectionCheckResult()
-            result.connectError = e.msg
-            result.connectErrno = e.code
+            result = model.ConnectionCheckResult(
+                connectError=e.msg,
+                connectErrno=e.code)
             if e.code and (e.code < 2000 or e.code >= 3000):
                 result.reachable = True
             else:
@@ -89,12 +89,10 @@ class MySQLSourceCheck:
             return result, None
         except Exception as e:
             logging.exception(f"source_check: connection check")
-            result = model.ConnectionCheckResult()
-            result.connectError = str(e)
-            return result, None
+            return model.ConnectionCheckResult(
+                connectError=str(e)), None
 
-        result = model.ConnectionCheckResult()
-        return result, session
+        return model.ConnectionCheckResult(), session
 
     def check_connection(self) -> model.ConnectionCheckResult:
         assert self.options.sourceConnectionOptions

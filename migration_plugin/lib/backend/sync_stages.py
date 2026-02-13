@@ -395,16 +395,13 @@ class MonitorChannel(ThreadedStage):
         else:
             progress = None
 
-        status = ChannelStatus()
-
-        status.status = model.ReplicationStatus.ACTIVE
+        status = ChannelStatus(status=model.ReplicationStatus.ACTIVE)
 
         if channel_status and source_status:
             status.gtidBacklog = gtid_subtract(
                 source_status["gtid_executed"], channel_status["gtid_executed"])
             status.gtidBacklogSize = gtid_count(status.gtidBacklog)
 
-        status.details = ""
         if channel_status:
             applier_status = channel_status["applier_errors"]
             if applier_status:

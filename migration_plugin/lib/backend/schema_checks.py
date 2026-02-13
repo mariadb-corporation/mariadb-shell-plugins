@@ -21,7 +21,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from typing import Tuple, List
+from typing import Tuple
 from enum import StrEnum
 
 from . import checks, filtering_utils, model, string_utils
@@ -541,14 +541,14 @@ class CompatibilityIssue:
 
 
 def compatibility_issue_to_check_result(issue: CompatibilityIssue) -> model.CheckResult:
-    result = model.CheckResult()
-    result.checkId = issue.check_id
-    result.level = compatibility_issue_to_message_level(issue.status)
-    result.title = issue.check_id
-    result.result = ""
-    result.description = issue.description.strip()
-    result.objects = []
-    result.choices = issue.compatibility_options
+    result = model.CheckResult(
+        checkId=issue.check_id,
+        level=compatibility_issue_to_message_level(issue.status),
+        title=issue.check_id,
+        result="",
+        description=issue.description.strip(),
+        objects=[],
+        choices=issue.compatibility_options)
 
     status = model.CheckStatus.CONFIRMATION_REQUIRED
 
@@ -691,11 +691,11 @@ def upgrade_issue_to_check_result(check: UpgradeCheck) -> model.CheckResult:
     # sort issues by object name
     check.issues = sorted(check.issues, key=lambda issue: issue.object_name)
 
-    result = model.CheckResult()
-    result.checkId = check.check_id
-    result.level = upgrade_issue_to_message_level(check.issues[0].level)
-    result.title = check.title
-    result.result = ""
+    result = model.CheckResult(
+        checkId=check.check_id,
+        level=upgrade_issue_to_message_level(check.issues[0].level),
+        title=check.title,
+        result="")
 
     for issue in check.issues:
         if result.result:

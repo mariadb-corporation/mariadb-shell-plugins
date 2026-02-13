@@ -216,11 +216,11 @@ class DumpStage(stage.ThreadedStage):
         if "progress" in data:
             progress = data["progress"]
 
-            status = model.DumpStatus()
-            status.stageCurrent = progress["current"]
-            status.stageTotal = progress["total"]
-            status.stageEta = progress["eta"]
-            status.stage = self._status.name
+            status = model.DumpStatus(
+                stageCurrent=progress["current"],
+                stageTotal=progress["total"],
+                stageEta=progress["eta"],
+                stage=self._status.name)
 
             self.push_progress(data=status)
             return
@@ -498,7 +498,8 @@ class DumpStage(stage.ThreadedStage):
             "target_version": self._owner.target_version,
             "threads": threads,
         }
-        self.push_output(" ".join(util.sanitize_par_uri_in_list(self._process.argv)))
+        self.push_output(
+            " ".join(util.sanitize_par_uri_in_list(self._process.argv)))
 
     def start(self, parents):
         if self._is_started:
@@ -612,12 +613,12 @@ class RemoteLoadStage(stage.ThreadedStage):
             if current_progress > self._current_progress:
                 self._current_progress = current_progress
 
-            status = model.LoadStatus()
-            status.stage = progress["stage"]
-            status.stageCurrent = self._current_progress
-            status.stageTotal = self._total_progress
-            # status.stageTotalExact = progress["totalKnown"]
-            status.stageEta = progress["eta"]
+            status = model.LoadStatus(
+                stage=progress["stage"],
+                stageCurrent=self._current_progress,
+                stageTotal=self._total_progress,
+                # status.stageTotalExact = progress["totalKnown"]
+                stageEta=progress["eta"])
 
             self.push_progress(message=status.stage, data=status)
             return

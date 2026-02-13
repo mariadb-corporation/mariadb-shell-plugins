@@ -321,12 +321,11 @@ class OCIProfileSubStep(PlanSubStep):
     # Must come before OCISetupSubStep
     id = SubStepId.OCI_PROFILE
     caption = "Target Selection"
-    _config_exists = False
 
     def __init__(self, owner: "MigrationPlanStep"):
         super().__init__(owner)
         self._start_mutex = threading.Lock()
-
+        self._config_exists = False
         self._compartments = []
 
     def refresh_oci_config(self):
@@ -412,10 +411,9 @@ class OCIProfileSubStep(PlanSubStep):
         return self.info()
 
     def info_values(self) -> OCIProfileOptions:
-        options = OCIProfileOptions()
-        options.configFile = self._project.oci_config_file
-        options.profile = self._project.oci_profile
-        return options
+        return OCIProfileOptions(
+            configFile=self._project.oci_config_file,
+            profile=self._project.oci_profile)
 
 
 class SourceSelectionSubStep(PlanSubStep):
@@ -539,16 +537,13 @@ class SourceSelectionSubStep(PlanSubStep):
         return self.info()
 
     def info_values(self) -> SourceSelectionOptions:
-        options = SourceSelectionOptions()
         if self._owner.options.sourceConnectionOptions:
-            options.sourceUri = format_uri(
-                self._owner.options.sourceConnectionOptions)
-        return options
+            return SourceSelectionOptions(sourceUri=format_uri(
+                self._owner.options.sourceConnectionOptions))
+        return SourceSelectionOptions()
 
     def info_data(self) -> Optional[SourceSelectionData]:
-        data = SourceSelectionData()
-        data.serverInfo = self._server_info
-        return data
+        return SourceSelectionData(serverInfo=self._server_info)
 
 
 class MigrationTypeSubStep(PlanSubStep):
@@ -710,13 +705,11 @@ Please change the password for that account or start over using an account with 
         return self.info()
 
     def info_values(self) -> MigrationTypeOptions:
-        options = MigrationTypeOptions()
-        options.type = self._owner.options.migrationType
-        options.connectivity = self._owner.options.cloudConnectivity
-        return options
+        return MigrationTypeOptions(
+            type=self._owner.options.migrationType,
+            connectivity=self._owner.options.cloudConnectivity)
 
     def info_data(self) -> Optional[MigrationTypeData]:
-        data = MigrationTypeData()
         allowed_connectivity = []
         if self.has_replication:
             allowed_types = []
@@ -728,9 +721,9 @@ Please change the password for that account or start over using an account with 
         else:
             allowed_types = [model.MigrationType.COLD.value]
 
-        data.allowedTypes = allowed_types
-        data.allowedConnectivity = allowed_connectivity
-        return data
+        return MigrationTypeData(
+            allowedTypes=allowed_types,
+            allowedConnectivity=allowed_connectivity)
 
 
 class SchemaSelectionSubStep(PlanSubStep):
@@ -819,8 +812,10 @@ class SchemaSelectionSubStep(PlanSubStep):
 
             # flatten schema and table lists into exclude only
             if self._owner.options.schemaSelection.filter:
-                flatten_schemas(self._owner.options.schemaSelection.filter.schemas)
-                flatten_tables(self._owner.options.schemaSelection.filter.tables)
+                flatten_schemas(
+                    self._owner.options.schemaSelection.filter.schemas)
+                flatten_tables(
+                    self._owner.options.schemaSelection.filter.tables)
 
             self._options.filter = self._owner.options.schemaSelection.filter
 
@@ -1189,9 +1184,8 @@ class MigrationChecksSubStep(PlanSubStep):
         return self.info()
 
     def info_values(self) -> MigrationChecksOptions:
-        options = MigrationChecksOptions()
-        options.issueResolution = self._issue_resolution
-        return options
+        return MigrationChecksOptions(
+            issueResolution=self._issue_resolution)
 
     def info_data(self) -> Optional[MigrationChecksData]:
         issues: list[model.CheckResult] = \
@@ -1202,13 +1196,10 @@ class MigrationChecksSubStep(PlanSubStep):
         # TODO put errors that have no solution other than EXCLUDE first
 
         # TODO - put an extra warning/confirmation for auto-excluding objects (in the preview step)
-        data = MigrationChecksData()
-
         order = [l.value for l in MessageLevel]
         issues.sort(key=lambda i: order.index(i.level))
 
-        data.issues = issues
-        return data
+        return MigrationChecksData(issues=issues)
 
 
 def sanitize_bucket_name(name: str) -> str:
@@ -1502,13 +1493,13 @@ class TargetOptionsSubStep(PlanSubStep):
         return self.info()
 
     def info_data(self) -> Optional[TargetOptionsData]:
-        data = TargetOptionsData()
         if self._owner.options.targetHostingOptions and self._target_check:
-            data.compartmentPath = self._target_check.get_full_compartment_path()
-            data.networkCompartmentPath = self._target_check.get_full_network_compartment_path()
-            data.allowCreateNewVcn = not self._target_check.default_vcn_exists
+            return TargetOptionsData(
+                compartmentPath=self._target_check.get_full_compartment_path(),
+                networkCompartmentPath=self._target_check.get_full_network_compartment_path(),
+                allowCreateNewVcn=not self._target_check.default_vcn_exists)
 
-        return data
+        return TargetOptionsData()
 
     def info_values(self) -> TargetOptionsOptions:
         options = TargetOptionsOptions()
@@ -1530,17 +1521,18 @@ class TargetOptionsSubStep(PlanSubStep):
 class PreviewPlanSubStep(PlanSubStep):
     id = SubStepId.PREVIEW_PLAN
     caption = "Preview Migration Plan"
-    _done = True
 
     def info_data(self) -> Optional[PreviewPlanData]:
-        data = PreviewPlanData()
-        options = asdict(self._owner.options)
-        del options["targetMySQLOptions"]["adminPassword"]
-        del options["targetMySQLOptions"]["adminPasswordConfirm"]
-        data.options = model.parse(options, [MigrationOptions])
         target = cast(TargetOptionsSubStep,
                       self._owner.get_step(SubStepId.TARGET_OPTIONS))
-        data.computeResolutionNotice = target.compute_resolution_notice
+
+        data = PreviewPlanData(
+            options=copy.deepcopy(self._owner.options),
+            computeResolutionNotice=target.compute_resolution_notice)
+
+        if data.options.targetMySQLOptions:
+            data.options.targetMySQLOptions.adminPassword = ""
+            data.options.targetMySQLOptions.adminPasswordConfirm = ""
 
         if self._owner.options.migrationType == MigrationType.HOT:
             assert self._owner.options and self._owner.options.sourceConnectionOptions
