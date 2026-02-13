@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -71,7 +71,7 @@ class MySQLTargetReadiness(ThreadedStage):
                         # TODO if connect failed on mysql error, then report the mysql error.., add more detail
                         if not self._last_check_result.connectError:
                             break
-                        self.push_message(self._last_check_result._json())
+                        self.push_message(self._last_check_result)
                         logging.info(
                             f"{self._name} is not ready: {self._last_check_result}"
                         )

@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,13 +25,14 @@ import mysqlsh
 from threading import Thread
 import time
 from queue import Queue
-from typing import List, Callable, Protocol, Optional
+from typing import List, Callable, Protocol, Optional, Any, TypeGuard
 
 from ..oci_utils import Compartment
 from . import model
 from .model import WorkStatusEvent, SubStepId
 from .. import project, logging, dbsession, errors
 from .remote_helper import RemoteHelperClient
+from dataclasses import is_dataclass, asdict
 
 
 class OrchestratorInterface(Protocol):
@@ -89,16 +90,52 @@ class OrchestratorInterface(Protocol):
     def project(self) -> project.Project:
         raise NotImplementedError()
 
-    def push_progress(self, source: model.SubStepId, message: str, data: dict = {}):
+    def _is_dataclass_instance(self, obj: Any) -> TypeGuard[Any]:
+        return is_dataclass(obj)
+
+    def _resolve_data(self, context: str, data: Any):
+        if isinstance(data, dict):
+            return data
+        elif self._is_dataclass_instance(data):
+            return asdict(data)
+        else:
+            raise Exception(
+                f"{context} data requires either a dictionary or a @dataclass instance")
+
+    def push_progress(self, source: model.SubStepId, message: str, data: Optional[Any] = None):
+        if data is None:
+            self.on_push_progress(source, message)
+        else:
+            self.on_push_progress(
+                source, message, self._resolve_data('push_progress', data))
+
+    def on_push_progress(self, source: model.SubStepId, message: str, data: dict = {}):
         raise NotImplementedError()
 
-    def push_status(self, source: model.SubStepId, status: WorkStatusEvent, data: dict = {}, message: str = ""):
+    def push_status(self, source: model.SubStepId, status: WorkStatusEvent, data: Optional[Any] = None, message: str = ""):
+        if data is None:
+            self.on_push_status(source, status, {}, message)
+        else:
+            self.on_push_status(
+                source, status, self._resolve_data('push_status', data), message)
+
+    def on_push_status(self, source: model.SubStepId, status: WorkStatusEvent, data: dict = {}, message: str = ""):
         raise NotImplementedError()
 
-    def push_message(self, source: model.SubStepId, data: dict):
+    def push_message(self, source: model.SubStepId, data: Optional[Any] = None):
+        if data is None:
+            self.on_push_message(source, {})
+        else:
+            self.on_push_message(
+                source, self._resolve_data('push_message', data))
+
+    def on_push_message(self, source: model.SubStepId, data: dict):
         raise NotImplementedError()
 
     def push_output(self, source: model.SubStepId, message: str):
+        self.on_push_output(source, message)
+
+    def on_push_output(self, source: model.SubStepId, message: str):
         raise NotImplementedError()
 
     def connect_remote_helper(self, wait_ready: bool = False) -> RemoteHelperClient:
@@ -166,20 +203,20 @@ class Stage:
             dep._dump(indent + 1, seen)
         seen.add(self)
 
-    def push_progress(self, message: str = "", data: dict = {}):
+    def push_progress(self, message: str = "", data: Optional[Any] = None):
         if message:
             logging.info(f"{self._name}: {message}")
 
         if message or data:
             self._owner.push_progress(self._id, message, data)
 
-    def push_status(self, event: WorkStatusEvent, data: dict = {}, message=""):
+    def push_status(self, event: WorkStatusEvent, data: Optional[Any] = None, message=""):
         if message:
             logging.info(f"{self._name}: {message}")
 
         self._owner.push_status(self._id, event, data, message)
 
-    def push_message(self, data: dict):
+    def push_message(self, data: Optional[Any] = None):
         self._owner.push_message(self._id, data)
 
     def push_output(self, message: str = ""):
@@ -371,7 +408,7 @@ class ThreadedStage(Stage):
                 logging.exception(
                     f"{self._name} threw an exception in thread")
                 self.push_status(WorkStatusEvent.ERROR,
-                                 {"error": model.MigrationError._from_exception(e)._json(noclass=False)})
+                                 model.MigrationError._from_exception(e))
                 self._fatal_error = e
             finally:
                 mysqlsh.thread_end()

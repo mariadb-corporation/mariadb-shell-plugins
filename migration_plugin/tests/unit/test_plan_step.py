@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,8 @@ from migration_plugin.lib.backend import model
 from migration_plugin.lib.project import Project
 from migration_plugin.lib import migration, logging, errors, oci_utils
 import mysqlsh  # type: ignore
+from dataclasses import is_dataclass, asdict
+from typing import Any, TypeGuard
 
 
 def check_runnable():
@@ -76,13 +78,18 @@ def normeq(a, e):
     return True
 
 
+def is_dataclass_instance(obj: Any) -> TypeGuard[Any]:
+    return is_dataclass(obj)
+
+
 def j(any):
     if isinstance(any, list):
         return [j(i) for i in any]
     elif isinstance(any, dict):
         return any
-    else:
-        return any._json(noclass=True)
+    elif is_dataclass_instance(any):
+        return asdict(any)
+    raise Exception("Unsupported data received")
 
 
 def fix_uri(session, user) -> str:

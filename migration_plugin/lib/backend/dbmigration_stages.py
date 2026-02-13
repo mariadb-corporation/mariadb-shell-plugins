@@ -222,7 +222,7 @@ class DumpStage(stage.ThreadedStage):
             status.stageEta = progress["eta"]
             status.stage = self._status.name
 
-            self.push_progress(data=status._json())
+            self.push_progress(data=status)
             return
 
         for t in ["status", "info", "note", "warning", "error"]:
@@ -619,7 +619,7 @@ class RemoteLoadStage(stage.ThreadedStage):
             # status.stageTotalExact = progress["totalKnown"]
             status.stageEta = progress["eta"]
 
-            self.push_progress(message=status.stage, data=status._json())
+            self.push_progress(message=status.stage, data=status)
             return
 
         for t in ["status", "info", "note", "warning", "error"]:

@@ -26,7 +26,7 @@ import enum
 from typing import Optional, Any
 import json
 import inspect
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from copy import deepcopy
 
 from ..util import sanitize_dict_any_pass
@@ -84,6 +84,7 @@ def _get_field_type(obj, field: str) -> tuple[type | None, list[type]]:
     return _get_annotations(obj.__class__, field)
 
 
+@dataclass
 class MigrationMessage(object):
     def _parse(self, j: dict):
         for k, v in j.items():
@@ -200,7 +201,7 @@ class MigrationMessage(object):
         return j
 
     def __str__(self) -> str:
-        return json.dumps(sanitize_dict_any_pass(self._json()))
+        return json.dumps(sanitize_dict_any_pass(asdict(self)))
 
 
 class MigrationType(StrEnum):

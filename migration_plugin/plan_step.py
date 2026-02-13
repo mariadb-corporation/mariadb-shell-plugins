@@ -55,7 +55,7 @@ from .lib.backend.model import (
     parse,
 )
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 k_oci_signup_url = "https://signup.cloud.oracle.com"
 
@@ -1534,7 +1534,7 @@ class PreviewPlanSubStep(PlanSubStep):
 
     def info_data(self) -> Optional[PreviewPlanData]:
         data = PreviewPlanData()
-        options = self._owner.options._json()
+        options = asdict(self._owner.options)
         del options["targetMySQLOptions"]["adminPassword"]
         del options["targetMySQLOptions"]["adminPasswordConfirm"]
         data.options = model.parse(options, [MigrationOptions])

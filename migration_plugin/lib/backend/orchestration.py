@@ -298,16 +298,16 @@ class Orchestrator(OrchestratorInterface):
                                         ocid_or_compartment=self.cloud_resources.compartmentId)
         return self._compartment
 
-    def push_progress(self, source: SubStepId, message: str, data: dict = {}):
+    def on_push_progress(self, source: SubStepId, message: str, data: dict = {}):
         self._frontend.on_progress(source, message, data)
 
-    def push_status(self, source: SubStepId, status: WorkStatusEvent, data: dict = {}, message=""):
+    def on_push_status(self, source: SubStepId, status: WorkStatusEvent, data: dict = {}, message=""):
         self._frontend.on_status(source, status, data, message)
 
-    def push_message(self, source: SubStepId, data: dict):
+    def on_push_message(self, source: SubStepId, data: dict):
         self._frontend.on_message(source, data)
 
-    def push_output(self, source: SubStepId, message: str):
+    def on_push_output(self, source: SubStepId, message: str):
         self._frontend.on_output(source, message)
 
     def _mark_enabled_stages(self):
@@ -372,7 +372,7 @@ class Orchestrator(OrchestratorInterface):
             except Exception as e:
                 logging.exception("orchestrator run")
                 self.push_status(SubStepId.ORCHESTRATION, WorkStatusEvent.ERROR,
-                                 {"error": model.MigrationError._from_exception(e)._json(noclass=False)})
+                                 model.MigrationError._from_exception(e))
 
         self._thread = Thread(target=do_work)
         self._thread.start()

@@ -22,7 +22,6 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 
-import os
 import queue
 import threading
 import time
@@ -95,7 +94,7 @@ class CreateSSHTunnel(Stage):
             except Exception as e:
                 logging.exception("tunnel start error")
                 self.push_status(WorkStatusEvent.ERROR, message="Could not start built-in SSH tunnel",
-                                 data={"error": MigrationError._from_exception(e)._json(noclass=False)})
+                                 data=MigrationError._from_exception(e))
                 raise
         else:
             source_host = self._owner.project.source_connection_options["host"]
@@ -183,7 +182,7 @@ class CreateChannel(ThreadedStage):
         except Exception as e:
             logging.exception("create channel")
             self.push_status(WorkStatusEvent.ERROR,
-                             {"error": MigrationError._from_exception(e)._json(noclass=False)})
+                             MigrationError._from_exception(e))
             raise
 
         # try:
@@ -192,7 +191,7 @@ class CreateChannel(ThreadedStage):
         #     # helper.ensure_running()
         # except Exception as e:
         #     self.push_status(WorkStatusEvent.ERROR,
-        #                      {"error": MigrationError._from_exception(e)._json(noclass=False)})
+        #                      {"error": repr(MigrationError._from_exception(e))})
         #     raise
 
         self.push_status(WorkStatusEvent.END)
@@ -425,7 +424,7 @@ class MonitorChannel(ThreadedStage):
                     f"{receiver_status['error']} (error={receiver_status['errno']})")
                 status.errors = errs
 
-        self.push_progress(status.details, status._json())
+        self.push_progress(status.details, status)
 
     def _do_work(self):
         self.push_status(WorkStatusEvent.BEGIN)
@@ -440,7 +439,7 @@ class MonitorChannel(ThreadedStage):
         except Exception as e:
             self._failed = True
             self.push_status(WorkStatusEvent.ERROR,
-                             {"error": model.MigrationError._from_exception(e)._json(noclass=False)})
+                             model.MigrationError._from_exception(e))
             raise
 
     def _do_skip_gtids(self, helper):
