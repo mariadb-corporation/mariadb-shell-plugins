@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,8 @@ import { ValueDialogBase } from "../../../components/Dialogs/ValueDialogBase.js"
 import {
     ValueEditDialog, IDialogValues, IDialogSection, CommonDialogValueOption, IDialogValidations,
 } from "../../../components/Dialogs/ValueEditDialog.js";
-import { appParameters } from "../../../supplement/AppParameters.js";
+import { isStandalone } from "../../../utilities/helpers.js";
+
 
 export class MdsEndpointDialog extends ValueDialogBase {
     private dialogRef = createRef<ValueEditDialog>();
@@ -179,7 +180,7 @@ export class MdsEndpointDialog extends ValueDialogBase {
                 },
                 createDbConnection: {
                     type: "boolean",
-                    caption: appParameters.embedded ? "MySQL Shell GUI" : "MySQL Shell Workbench",
+                    caption: isStandalone() ? "MySQL Shell Workbench" : "MySQL Shell GUI",
                     label: "Create DB Connection",
                     description: "Create a DB Connection using this endpoint.",
                     value: true,

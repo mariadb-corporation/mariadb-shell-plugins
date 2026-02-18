@@ -913,7 +913,7 @@ export class CodeEditor extends ComponentBase<ICodeEditorProperties> {
             },
         }));
 
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             this.disposables.push(editor.addAction({
                 id: "executeOnHost",
                 label: "Execute on all visible DB Notebooks",
@@ -992,8 +992,7 @@ export class CodeEditor extends ComponentBase<ICodeEditorProperties> {
                     run: this.switchCurrentLanguage.bind(this, "javascript", false),
                 }));
             }
-
-            if (appParameters.embedded) {
+            if (appParameters.inExtension) {
                 this.disposables.push(editor.addAction({
                     id: "sendBlockUpdates",
                     label: "Update SQL in Original Source File",

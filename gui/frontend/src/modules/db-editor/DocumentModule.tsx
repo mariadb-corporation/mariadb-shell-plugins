@@ -281,8 +281,8 @@ export class DocumentModule extends Component<{}, IDocumentModuleState> {
             schemaDiagramTabs: [],
             shellSessionTabs: [],
             sidebarState: new Map<string, IDocumentSideBarSectionState>(),
-            showSidebar: !appParameters.embedded,
-            showTabs: !appParameters.embedded,
+            showSidebar: !appParameters.inExtension,
+            showTabs: !appParameters.inExtension,
             loading: true,
             progressMessage: "",
             overviewId: this.documentDataModel.overview.id,
@@ -296,7 +296,7 @@ export class DocumentModule extends Component<{}, IDocumentModuleState> {
 
         let newSelection = selectedPage;
         if (!newSelection) {
-            if (!loading && !appParameters.embedded) {
+            if (!loading && !appParameters.inExtension) {
                 newSelection = state.overviewId;
             }
         }
@@ -342,7 +342,7 @@ export class DocumentModule extends Component<{}, IDocumentModuleState> {
 
         requisitions.register("showJdvObjectDialog", this.showJdvObjectDialog);
 
-        if (this.containerRef.current && !appParameters.embedded) {
+        if (this.containerRef.current && !appParameters.inExtension) {
             this.containerRef.current.addEventListener("keydown", this.handleKeyPress);
         }
 
@@ -365,7 +365,7 @@ export class DocumentModule extends Component<{}, IDocumentModuleState> {
             });
         }
 
-        if (this.containerRef.current && !appParameters.embedded) {
+        if (this.containerRef.current && !appParameters.inExtension) {
             this.containerRef.current.removeEventListener("keydown", this.handleKeyPress);
         }
 
@@ -810,8 +810,8 @@ export class DocumentModule extends Component<{}, IDocumentModuleState> {
         });
 
         const splitterPanes: ISplitterPane[] = [];
-        if (!appParameters.embedded) {
-            // Don't render the sidebar when embedded.
+        if (!appParameters.inExtension) {
+            // Don't render the sidebar when in the extension.
             splitterPanes.push({
                 content: <DocumentSideBar
                     selectedOpenDocument={selectedDocument}

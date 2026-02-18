@@ -991,7 +991,7 @@ Execute \\help or \\? for help;`;
 
         if (details === undefined) {
             // Ask the user to select a file.
-            if (appParameters.embedded) {
+            if (appParameters.inExtension) {
                 return requisitions.executeRemote("editorLoadNotebook", undefined);
             }
 

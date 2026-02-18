@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,13 +28,12 @@ import "./LoginPage.css";
 import { ComponentChild } from "preact";
 
 import { MessageType } from "../../app-logic/general-types.js";
-import { appParameters } from "../../supplement/AppParameters.js";
 import { Assets } from "../../supplement/Assets.js";
 import { requisitions } from "../../supplement/Requisitions.js";
 import { ShellInterface } from "../../supplement/ShellInterface/ShellInterface.js";
 import { webSession } from "../../supplement/WebSession.js";
 import { helpUrlMap } from "../../supplement/index.js";
-import { convertErrorToString } from "../../utilities/helpers.js";
+import { convertErrorToString, isStandalone } from "../../utilities/helpers.js";
 import { Button } from "../ui/Button/Button.js";
 import { ComponentBase, IComponentState } from "../ui/Component/ComponentBase.js";
 import { Container, ContentAlignment, ContentWrap, Orientation } from "../ui/Container/Container.js";
@@ -67,7 +66,7 @@ export class LoginPage extends ComponentBase<{}, ILoginPageState> {
     public render(): ComponentChild {
         const { userName, password, errorMessage } = this.state;
 
-        const title = appParameters.embedded ? "MySQL Shell GUI" : "MySQL Shell Workbench";
+        const title = isStandalone() ? "MySQL Shell Workbench" : "MySQL Shell GUI";
 
         return (
             <Container id="loginDialog" orientation={Orientation.TopDown}>

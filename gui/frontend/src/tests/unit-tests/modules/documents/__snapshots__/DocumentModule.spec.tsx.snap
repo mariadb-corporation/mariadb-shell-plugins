@@ -36,7 +36,7 @@ exports[`Document module tests > Test DocumentModule instantiation 1`] = `
               class="msg label title"
               data-tooltip="expand"
             >
-              MYSQL SHELL WORKBENCH
+              MYSQL SHELL GUI
             </label>
             <div
               class="msg container menuItem submenu"

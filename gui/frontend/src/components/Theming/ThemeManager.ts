@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -167,13 +167,13 @@ export class ThemeManager {
         this.themeStyleElement.id = "theme-colors";
         document.head.prepend(this.themeStyleElement);
 
-        if (!appParameters.embedded) {
+        if (!appParameters.inExtension) {
             this.updating = true;
             this.switchTheme("Auto");
             this.updating = false;
         }
 
-        if (!appParameters.embedded) {
+        if (!appParameters.inExtension) {
             window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", this.handleOSThemeChange);
         }
 

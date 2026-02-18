@@ -266,7 +266,7 @@ export class App extends Component<{}, IAppState> {
     public showInformationMessage = <T extends string>(message: string, options: MessageOptions | undefined,
         ...items: T[]): Thenable<string | undefined> => {
         // Forward info messages to the hosting application.
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             const result = requisitions.executeRemote("showInfo", message);
             if (result) {
                 return Promise.resolve(undefined);
@@ -305,7 +305,7 @@ export class App extends Component<{}, IAppState> {
 
     public showWarningMessage = <T extends string>(message: string, _options: MessageOptions,
         ..._items: T[]): Thenable<string | undefined> => {
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             const result = requisitions.executeRemote("showWarning", message);
             if (result) {
                 return Promise.resolve(undefined);
@@ -324,7 +324,7 @@ export class App extends Component<{}, IAppState> {
 
     public showErrorMessage = <T extends string>(message: string, _options: MessageOptions,
         ..._items: T[]): Thenable<string | undefined> => {
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             const result = requisitions.executeRemote("showError", message);
             if (result) {
                 return Promise.resolve(undefined);
@@ -433,7 +433,7 @@ export class App extends Component<{}, IAppState> {
     };
 
     private dialogResponse = (response: IDialogResponse): Promise<boolean> => {
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             // Forward all dialog responses.
             const result = requisitions.executeRemote("dialogResponse", response);
 

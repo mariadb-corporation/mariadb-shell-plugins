@@ -40,7 +40,7 @@ exports[`Application host tests > Rendering About 1`] = `
                 class="msg label title"
                 data-tooltip="expand"
               >
-                MYSQL SHELL WORKBENCH
+                MYSQL SHELL GUI
               </label>
               <div
                 class="msg container menuItem submenu"
@@ -452,7 +452,7 @@ exports[`Application host tests > Rendering Debugger Maximized 1`] = `
                 class="msg label title"
                 data-tooltip="expand"
               >
-                MYSQL SHELL WORKBENCH
+                MYSQL SHELL GUI
               </label>
               <div
                 class="msg container menuItem submenu"
@@ -864,7 +864,7 @@ exports[`Application host tests > Rendering Debugger Normal 1`] = `
                 class="msg label title"
                 data-tooltip="expand"
               >
-                MYSQL SHELL WORKBENCH
+                MYSQL SHELL GUI
               </label>
               <div
                 class="msg container menuItem submenu"
@@ -1276,7 +1276,7 @@ exports[`Application host tests > Rendering Preferences 1`] = `
                 class="msg label title"
                 data-tooltip="expand"
               >
-                MYSQL SHELL WORKBENCH
+                MYSQL SHELL GUI
               </label>
               <div
                 class="msg container menuItem submenu"
@@ -1766,7 +1766,7 @@ exports[`Application host tests > Standard Rendering 1`] = `
                 class="msg label title"
                 data-tooltip="expand"
               >
-                MYSQL SHELL WORKBENCH
+                MYSQL SHELL GUI
               </label>
               <div
                 class="msg container menuItem submenu"

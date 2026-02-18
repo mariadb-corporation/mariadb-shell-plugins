@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -119,7 +119,7 @@ export class RequisitionHub {
                     }
                 });
 
-                if (appParameters.embedded) {
+                if (appParameters.inExtension) {
                     // If we are running embedded in VS Code, we have to forward keyboard events, to allow VS Code
                     // to handle these, if needed.
                     // See extension code (WebviewProvider.ts) how these messages are treated.
@@ -391,7 +391,7 @@ export class RequisitionHub {
      * @param text The text to write to the clipboard.
      */
     public writeToClipboard(text: string): void {
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             const message = {
                 source: this.source,
                 command: "writeClipboard",

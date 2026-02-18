@@ -57,14 +57,13 @@ import {
     systemSchemas, type AdminPageType, type Command, type IDataModelEntryState, type ISubscriberActionType,
 } from "../../../data-models/data-model-types.js";
 import { BastionLifecycleState } from "../../../oci-typings/oci-bastion/lib/model/bastion-lifecycle-state.js";
-import { appParameters } from "../../../supplement/AppParameters.js";
 import { Assets } from "../../../supplement/Assets.js";
 import { requisitions } from "../../../supplement/Requisitions.js";
 import { Settings } from "../../../supplement/Settings/Settings.js";
 import { DBType, IFolderPath } from "../../../supplement/ShellInterface/index.js";
 import { RunMode, webSession } from "../../../supplement/WebSession.js";
 import { EditorLanguage } from "../../../supplement/index.js";
-import { convertErrorToString, uuid } from "../../../utilities/helpers.js";
+import { convertErrorToString, uuid, isStandalone } from "../../../utilities/helpers.js";
 import { EnabledState } from "../../mrs/mrs-helpers.js";
 import { MrsDbObjectType } from "../../mrs/types.js";
 import {
@@ -425,7 +424,7 @@ export class DocumentSideBar extends ComponentBase<IDocumentSideBarProperties, I
         const connectionSectionState = savedSectionState?.get("connectionSection") ?? {};
         const ociSectionState = savedSectionState?.get("ociSection") ?? {};
 
-        const title = appParameters.embedded ? "MYSQL SHELL GUI" : "MYSQL SHELL WORKBENCH";
+        const title = isStandalone() ? "MYSQL SHELL WORKBENCH" : "MYSQL SHELL GUI";
 
         const accordionSections: IAccordionSection[] = [{
             id: "documentSection",

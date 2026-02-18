@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -82,7 +82,7 @@ export default class ApplicationHost extends ComponentBase<IApplicationHostPrope
         requisitions.register("showPreferences", this.showPreferences);
         requisitions.register("statusBarButtonClick", this.statusBarButtonClick);
 
-        if (!appParameters.embedded) {
+        if (!appParameters.inExtension && !appParameters.hideStatusBar) {
             this.optionsStatusItem = ui.createStatusBarItem(StatusBarAlignment.Right, 9);
             this.optionsStatusItem.text = "$(gear)";
             this.optionsStatusItem.tooltip = "Toggle Preferences";
@@ -93,7 +93,8 @@ export default class ApplicationHost extends ComponentBase<IApplicationHostPrope
             this.aboutStatusItem.tooltip = "Show About";
             this.aboutStatusItem.command = "application:toggleAbout";
 
-            if (webSession.runMode === RunMode.LocalUser) {
+            // We don't want the protocol debugger when embedded
+            if (webSession.runMode === RunMode.LocalUser && !appParameters.embedded) {
                 this.debuggerStatusItem = ui.createStatusBarItem(StatusBarAlignment.Right, 8);
                 this.debuggerStatusItem.text = "$(debug)";
                 this.debuggerStatusItem.tooltip = "Toggle Communication Debugger";

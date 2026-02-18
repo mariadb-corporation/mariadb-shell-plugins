@@ -501,7 +501,7 @@ export class ScriptEditor extends ComponentBase<IScriptEditorProperties, IScript
                 language: editorState.model.getLanguageId() as EditorLanguage,
                 content: "",
             };
-            if (appParameters.embedded) {
+            if (appParameters.inExtension) {
                 requisitions.executeRemote("editorLoadScript", details);
                 return;
             }

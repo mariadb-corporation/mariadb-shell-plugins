@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -147,20 +147,22 @@ export class NotificationCenter extends ComponentBase<INotificationCenterProps, 
 
     public override componentDidMount(): void {
         document.addEventListener("keydown", this.handleKeyDown);
-        requisitions.register("statusBarButtonClick", this.statusBarButtonClick);
         requisitions.register("showInfo", this.showInfo);
         requisitions.register("showWarning", this.showWarning);
         requisitions.register("showError", this.showError);
 
-        if (!appParameters.embedded) {
-            this.#statusBarItem = StatusBar.createStatusBarItem({
-                id: "showNotificationHistory",
-                command: "notifications:showHistory",
-                tooltip: "Show Notifications",
-                text: "$(bell)",
-                alignment: StatusBarAlignment.Right,
-            });
-            this.updateStatusBarItem();
+        if (!appParameters.hideStatusBar) {
+            requisitions.register("statusBarButtonClick", this.statusBarButtonClick);
+            if (!appParameters.inExtension) {
+                this.#statusBarItem = StatusBar.createStatusBarItem({
+                    id: "showNotificationHistory",
+                    command: "notifications:showHistory",
+                    tooltip: "Show Notifications",
+                    text: "$(bell)",
+                    alignment: StatusBarAlignment.Right,
+                });
+                this.updateStatusBarItem();
+            }
         }
     }
 
@@ -168,7 +170,9 @@ export class NotificationCenter extends ComponentBase<INotificationCenterProps, 
         this.#statusBarItem?.dispose();
 
         document.removeEventListener("keydown", this.handleKeyDown);
-        requisitions.unregister("statusBarButtonClick", this.statusBarButtonClick);
+        if (!appParameters.hideStatusBar) {
+            requisitions.unregister("statusBarButtonClick", this.statusBarButtonClick);
+        }
         requisitions.unregister("showInfo", this.showInfo);
         requisitions.unregister("showWarning", this.showWarning);
         requisitions.unregister("showError", this.showError);
@@ -650,7 +654,7 @@ export class NotificationCenter extends ComponentBase<INotificationCenterProps, 
 
     private showInfo = async (caption: string): Promise<boolean> => {
         // Forward info messages to the hosting application.
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             const result = requisitions.executeRemote("showInfo", caption);
             if (result) {
                 return true;
@@ -667,7 +671,7 @@ export class NotificationCenter extends ComponentBase<INotificationCenterProps, 
 
     private showWarning = async (message: string): Promise<boolean> => {
         // Forward info messages to the hosting application.
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             const result = requisitions.executeRemote("showWarning", message);
             if (result) {
                 return true;
@@ -684,7 +688,7 @@ export class NotificationCenter extends ComponentBase<INotificationCenterProps, 
 
     private showError = async (message: string): Promise<boolean> => {
         // Forward info messages to the hosting application.
-        if (appParameters.embedded) {
+        if (appParameters.inExtension) {
             const result = requisitions.executeRemote("showError", message);
             if (result) {
                 return true;

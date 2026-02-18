@@ -28,6 +28,7 @@ import { IConnectionInfo } from "../supplement/RequisitionTypes.js";
 import { IConnectionDetails } from "../supplement/ShellInterface/index.js";
 import { convertHexToBase64 } from "./string-helpers.js";
 import { IShellFeedbackRequest } from "../communication/ProtocolGui.js";
+import { appParameters } from "../supplement/AppParameters.js";
 
 /**
  * Checks if the given version is at least the expected version.
@@ -933,3 +934,7 @@ export const isShellPromptResult = (response?: unknown): response is IShellFeedb
 
     return "prompt" in candidate;
 };
+
+export const isStandalone = (): boolean => {
+    return (appParameters?.embedded || false) && (appParameters?.inExtension || false);
+}

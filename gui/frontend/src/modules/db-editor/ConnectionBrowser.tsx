@@ -57,7 +57,7 @@ import { Settings } from "../../supplement/Settings/Settings.js";
 import {
     DBType, IConnectionDetails, IFolderPath, type IShellSessionDetails,
 } from "../../supplement/ShellInterface/index.js";
-import { uuid } from "../../utilities/helpers.js";
+import { uuid, isStandalone } from "../../utilities/helpers.js";
 import { ConnectionEditor } from "./ConnectionEditor.js";
 import { DocumentContext, type DocumentContextType, type IToolbarItems } from "./index.js";
 import { appParameters } from "../../supplement/AppParameters.js";
@@ -254,6 +254,22 @@ export class ConnectionBrowser extends ComponentBase<IConnectionBrowserPropertie
         </Toolbar>;
 
         const contentTitle = "Database Connections";
+        let projectShortName = "MySQL Shell";
+        let projectName = "MySQL Shell for VS Code extension";
+        if (isStandalone()) {
+            projectShortName = "MySQL Workbench";
+            projectName = "MySQL Workbench";
+        }
+
+        const contentHeader = `${projectShortName} - Database Connections`;
+
+        const contentDescription = 
+        `Welcome to the ${projectName}.\n\n` +
+        "Click the [New Connection] tile to add a new database connection. Click a " +
+        "[Database Connection] tile to open a new DB Notebook.\n\n" +
+        "DB Notebooks are modern editors for working with databases. You can use them to " +
+        "create and manage databases schema objects, write SQL queries and scripts, and work with " +
+        "data.";
 
         return (
             <Container
@@ -295,15 +311,8 @@ export class ConnectionBrowser extends ComponentBase<IConnectionBrowserPropertie
                 <FrontPage
                     id="frontPageContent"
                     showGreeting={Settings.get("dbEditor.connectionBrowser.showGreeting", true)}
-                    caption="MySQL Shell - DB Connections"
-                    description={
-                        "Welcome to the MySQL Shell for VS Code extension.\n\n" +
-                        "Click the [New Connection] tile to add a new database connection. Click a " +
-                        "[Database Connection] tile to open a new DB Notebook.\n\n" +
-                        "DB Notebooks are modern editors for working with databases. You can use them to " +
-                        "create and manage databases schema objects, write SQL queries and scripts, and work with " +
-                        "data."
-                    }
+                    caption={contentHeader}
+                    description={contentDescription}
                     onCloseGreeting={this.handleCloseGreeting}
                 >
                     <Container
@@ -655,7 +664,8 @@ export class ConnectionBrowser extends ComponentBase<IConnectionBrowserPropertie
             }
 
             case "msg.startMySQLCloudMigrationAssistant": {
-                if (appParameters.embedded) {
+                // TODO(rennox): Temporary, later should be updated to embedded
+                if (appParameters.inExtension) {
                     void requisitions.executeRemote("startMigrationAssistant", entry.details);
                 } else {
                     ui.showErrorMessage("Not implemented.", {});
