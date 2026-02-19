@@ -357,7 +357,7 @@ export class NotebookEditorProvider implements CustomTextEditorProvider {
      *
      * @returns A promise which resolves always.
      */
-    private triggerSave = async (details?: {fileName?:string, content?: string; }): Promise<boolean> => {
+    private triggerSave = async (details?: {fileName?:string, content?: string; saveAs?: boolean}): Promise<boolean> => {
         if (this.#document && details && details.content) {
             const edit = new WorkspaceEdit();
             edit.replace(this.#document.uri, new Range(0, 0, this.#document.lineCount, 0), details.content);

@@ -487,13 +487,7 @@ export class DBConnectionViewProvider extends WebviewProvider {
                             writeFile(path, content).then(() => {
                                 window.setStatusBarMessage(`DB Notebook saved to ${path}`, 5000);
 
-                            const result: IOpenFileDialogResult = {
-                                resourceId: "editorSaveNotebook",
-                                file: [{path, content: new TextEncoder().encode(details.content).buffer}],
-                            };
-
-                            void this.requisitions?.executeRemote("selectFile", result);
-
+                            void this.requisitions?.executeRemote("editorSaveNotebook", {fileName: path});
 
                                 resolve(true);
                             }).catch(() => {

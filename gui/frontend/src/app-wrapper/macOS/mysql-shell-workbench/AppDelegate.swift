@@ -26,6 +26,7 @@
 import Cocoa;
 import Foundation;
 @preconcurrency import WebKit;
+import UniformTypeIdentifiers;
 
 @main
 class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate,
@@ -73,25 +74,36 @@ class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDel
 
   //--------------------------------------------------------------------------------------------------------------------
 
-  public func sendAppMessage(command: String, data: [Any]) -> Void {
-    browser.evaluateJavaScript("onNativeMessage({ command: '\(command)', data: \(data) })", completionHandler: {
-      (result, error) in
+  public func sendAppMessage(command: String, data: Any = NSNull()) -> Void {
+    let envelope: [String: Any] = ["command": command, "data": data]
+
+    guard let jsonData = try? JSONSerialization.data(withJSONObject: envelope,
+                                                      options: []),
+          var jsonString = String(data: jsonData, encoding: .utf8) else {
+        Logger.write(LogEvent.error,
+                      "Failed to JSON‑encode app message: command=\(command)")
+        return
+    }
+
+    let script = "onNativeMessage(\(jsonString));"
+
+    browser.evaluateJavaScript(script) { result, error in
       if error != nil {
         Logger.write(LogEvent.error, String(error!.localizedDescription));
       }
-    })
+    }
   }
 
   //--------------------------------------------------------------------------------------------------------------------
 
   @IBAction func showAboutBox(sender: Any) -> Void {
-    self.sendAppMessage(command: "showAbout", data: []);
+    self.sendAppMessage(command: "showAbout");
   }
 
   //--------------------------------------------------------------------------------------------------------------------
 
   @IBAction func showPreferences(sender: Any) -> Void {
-    self.sendAppMessage(command: "showPreferences", data: []);
+    self.sendAppMessage(command: "showPreferences");
   }
   
   //--------------------------------------------------------------------------------------------------------------------
@@ -252,6 +264,7 @@ class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDel
             switch result {
             case .success(let port):
                 var components = URLComponents(string: "https://localhost:\(port)/?token=\(uuid)")!
+                components.queryItems?.append(URLQueryItem(name: "app", value: "workbench"))
                 if self.isMigrationAssistant {
                     components.queryItems?.append(URLQueryItem(name: "subApp", value: "migration"))
                 }
@@ -401,6 +414,9 @@ class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDel
     progressIndicator.stopAnimation(self);
     progressIndicator.isHidden = true;
     webView.isHidden = false;
+    #if DEBUG
+    webView.isInspectable = true;
+    #endif
 
     // Restore the browser magnification if not already set
     if browser.magnification == 1.0 {
@@ -678,9 +694,9 @@ class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDel
       } else if (dict["command"] as? String == "getCommandLineArguments") {
         let jsonData = try? JSONSerialization.data(withJSONObject: commandLineArguments, options: [])
         if let jsonString = String(data: jsonData!, encoding: .utf8) {
-          sendAppMessage(command: "setCommandLineArguments", data: [jsonString])
+          sendAppMessage(command: "setCommandLineArguments", data: jsonString)
         } else {
-          sendAppMessage(command: "setCommandLineArguments", data: [""])
+          sendAppMessage(command: "setCommandLineArguments")
         }
       } else if (dict["command"] as? String == "getApplicationData") {
           let logPath = Common.getUserConfigPath("mysqlsh.log").path
@@ -690,24 +706,93 @@ class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDel
           do {
               let jsonData = try JSONSerialization.data(withJSONObject: data, options: [])
               if let jsonString = String(data: jsonData, encoding: .utf8) {
-                  sendAppMessage(command: "setApplicationData", data: [jsonString])
+                  sendAppMessage(command: "setApplicationData", data: jsonString)
               } else {
-                  sendAppMessage(command: "setApplicationData", data: [""])
+                  sendAppMessage(command: "setApplicationData")
               }
           } catch {
               Logger.write(LogEvent.error, "Error serializing data: \(error.localizedDescription)")
-              sendAppMessage(command: "setApplicationPaths", data: [""])
+              sendAppMessage(command: "setApplicationPaths")
           }
       } else if (dict["command"] as? String == "closeInstance") {
         window.close();
+      } else if (dict["command"] as? String == "editorSaveNotebook") {
+        // “data” → { content: "...", … }
+        guard let payload = dict["data"] as? [String: Any] else {
+            Logger.write(LogEvent.error,
+                         "editorSaveNotebook called without a valid string 'content'")
+            return
+          }
+
+          self.editorSaveNotebook(data: payload)
+        }
+      } else {
+        Logger.write(LogEvent.debug, "Cannot handle message from webapp");
       }
-    } else {
-      Logger.write(LogEvent.debug, "Cannot handle message from webapp");
-    }
   }
 
   //--------------------------------------------------------------------------------------------------------------------
 
+  func editorSaveNotebook(data: [String: Any]) {
+      guard let content = data["content"] as? String else {
+          Logger.write(LogEvent.error, "editorSaveNotebook called without a valid string 'content'")
+          return
+      }
+
+      if let filePath = data["fileName"] as? String, !filePath.isEmpty {
+          let url = URL(fileURLWithPath: filePath)
+          saveNotebookContent(content, to: url)
+      } else {
+          promptUserForFileLocation { [weak self] url in
+              if let url = url {
+                  self?.saveNotebookContent(content, to: url)
+              }
+          }
+      }
+  }
+
+  //--------------------------------------------------------------------------------------------------------------------
+
+  func promptUserForFileLocation(completion: @escaping (URL?) -> Void) {
+      let savePanel = NSSavePanel()
+      savePanel.title = "Save MySQL Notebook"
+      savePanel.canCreateDirectories = true
+      savePanel.nameFieldStringValue = "Untitled"
+
+      var notebookUTI = UTType(filenameExtension: "mysql-notebook")
+
+      // Fallback: create a private UTType on‑the‑fly (macOS 12+)
+      if notebookUTI == nil, #available(macOS 12.0, *) {
+          notebookUTI = UTType(tag: "mysql-notebook", tagClass: .filenameExtension, conformingTo: .data)
+      }
+
+      // If we still have nothing, accept any file type – this prevents a crash.
+      if let uti = notebookUTI {
+          savePanel.allowedContentTypes = [uti]
+      }
+
+      savePanel.begin { result in
+          if result == .OK, let url = savePanel.url {
+              completion(url)
+          } else {
+              completion(nil)
+          }
+      }
+  }
+
+  //--------------------------------------------------------------------------------------------------------------------
+
+  func saveNotebookContent(_ content: String, to url: URL) {
+      do {
+          try content.write(to: url, atomically: true, encoding: .utf8)
+          sendAppMessage(command: "editorSaveNotebook", data: ["fileName": url.path])
+          #if DEBUG
+          Logger.write(LogEvent.debug, "Notebook saved to \(url.path)")
+          #endif
+      } catch {
+          showErrorAndExit(message: "Failed to save notebook to \"\(url.path)\":\n\(error.localizedDescription)")
+      }
+  }  
 }
 
 // A responder instance to be used as the last responder to swallow any unhanded keystrokes.

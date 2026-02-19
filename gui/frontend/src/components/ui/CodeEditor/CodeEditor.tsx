@@ -1066,7 +1066,7 @@ export class CodeEditor extends ComponentBase<ICodeEditorProperties> {
             contextMenuGroupId: "10_save",
             keybindings: [KeyMod.Shift | KeyMod.CtrlCmd | KeyCode.KeyS],
             run: () => {
-                void requisitions.execute("editorSaveNotebook", {fileName: "viaSaveAs"});
+                void requisitions.execute("editorSaveNotebook", {saveAs: true});
             },
             precondition,
         }));

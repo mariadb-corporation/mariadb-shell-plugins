@@ -508,7 +508,7 @@ export interface IRequestTypeMap {
      * notebook, which will be saved to a file, using a file picker provided by host (usually the native OS file
      * selector). If `content` is empty, nothing happens.
      */
-    "editorSaveNotebook": (details ?: {fileName?: string, content?: string; }) => Promise<boolean>;
+    "editorSaveNotebook": (details ?: {fileName?: string, content?: string; saveAs?: boolean}) => Promise<boolean>;
 
     /**
      * Triggers loading a notebook from a file. The actual behavior depends on the context and the given `details`

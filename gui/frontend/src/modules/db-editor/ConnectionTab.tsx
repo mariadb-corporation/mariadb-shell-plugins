@@ -1075,11 +1075,22 @@ Execute \\help or \\? for help;`;
      * The final fileName will be sent back through the selectFile requisition, which will store the fileName on the
      * state of the active editor.
      */
-    private editorSaveNotebook = async (details?: {fileName?: string; content?: string}): Promise<boolean> => {
+    private editorSaveNotebook = async (details?: {fileName?: string; content?: string, saveAs?: boolean}): Promise<boolean> => {
         const openState = this.findActiveEditor();
 
         if (openState) {
             const persistentState: IEditorPersistentState | undefined = openState.state;
+            // The case where the file has been sucessfully saved
+            if (details?.fileName && !details?.content) {
+                let openState = this.findActiveEditor();
+                openState!.fileName = details?.fileName;
+                if (appParameters.embedded && !appParameters.inExtension) {
+                    ui.setStatusBarMessage(`DB Notebook saved to ${details?.fileName}`);
+                }
+
+                return Promise.resolve(true);
+            }
+            
             if (persistentState?.model.executionContexts) {
                 const content: INotebookFileFormat = {
                     type: "MySQLNotebook",
@@ -1101,11 +1112,12 @@ Execute \\help or \\? for help;`;
 
                 if (appParameters.embedded) {
                     let targetFileName = undefined;
-                    if (details?.fileName !== "viaSaveAs") {
+                    let targetSaveAs = details?.saveAs ?? false;
+                    if (!targetSaveAs) {
                         targetFileName = openState.fileName;
                     }
 
-                    requisitions.executeRemote("editorSaveNotebook", {fileName: targetFileName, content: text});
+                    requisitions.executeRemote("editorSaveNotebook", {fileName: targetFileName, content: text, saveAs: targetSaveAs});
                 } else {
                     // TODO: make the file name configurable.
                     const { caption } = this.props;
@@ -2567,13 +2579,6 @@ Execute \\help or \\? for help;`;
                     }
                 }
                 break;
-            }
-
-            case "editorSaveNotebook": {
-                if (fileResult.file.length === 1) {
-                    let openState = this.findActiveEditor();
-                    openState!.fileName = fileResult.file[0].path;
-                }
             }
 
             default:

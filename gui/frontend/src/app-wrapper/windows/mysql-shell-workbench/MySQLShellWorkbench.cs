@@ -1,5 +1,5 @@
 ﻿/*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,7 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -255,7 +256,7 @@ namespace MySQLShellWorkbench {
         // NOTE: The / before the query part is used because that's how the RequestUri 
         // is reported by the webview events, so we can validate the target URI is the
         // same as the URI for the migration assistant and enable self signed certs
-        Url = string.Format("https://localhost:{0}/?token={1}", port, Token);
+        Url = string.Format("https://localhost:{0}/?app=workbench&token={1}", port, Token);
         if (this.isMigrationAssistant) {
           Url += "&subApp=migration";
         }
@@ -365,7 +366,16 @@ namespace MySQLShellWorkbench {
                 var jsonPaths = JsonSerializer.Serialize(paths, new JsonSerializerOptions { WriteIndented = false });
                 sendAppMessage("setApplicationData", jsonPaths);
                 break;
-
+              case "editorSaveNotebook":
+                if (root.TryGetProperty("data", out var dataProperty))
+                {
+                  EditorSaveNotebook(dataProperty);
+                }
+                else
+                {
+                  Logger.Write(LogEvent.Error, "editorSaveNotebook called without a valid 'data' property");
+                }
+                break;
               case "closeInstance":
                 Application.Exit();
                 break;
@@ -382,6 +392,79 @@ namespace MySQLShellWorkbench {
         Console.WriteLine($"Error parsing JSON: {ex.Message}");
       }
     }
+
+    private void EditorSaveNotebook(JsonElement data)
+    {
+      try
+      {
+        if (data.TryGetProperty("content", out var contentProperty))
+        {
+          var content = contentProperty.GetString();
+          var fileName = "";
+          if (data.TryGetProperty("fileName", out var fileNameProperty)) {
+            fileName = fileNameProperty.GetString();
+          }
+
+          if (!string.IsNullOrEmpty(fileName))
+          {
+            SaveNotebookContent(content, fileName);
+          }
+          else
+          {
+            PromptUserForFileLocation((url) =>
+            {
+              if (url != null)
+              {
+                SaveNotebookContent(content, url);
+              }
+            });
+          }
+        }
+        else
+        {
+          Logger.Write(LogEvent.Error, "editorSaveNotebook called without a valid 'content' property");
+        }
+      }
+      catch (JsonException ex)
+      {
+        Logger.Write(LogEvent.Error, $"Error parsing JSON: {ex.Message}");
+      }
+    }
+
+    private void PromptUserForFileLocation(Action<string> completion)
+    {
+      using (var saveFileDialog = new SaveFileDialog())
+      {
+        saveFileDialog.Title = "Save MySQL Notebook";
+        saveFileDialog.Filter = "MySQL Notebook (*.mysql-notebook)|*.mysql-notebook|All Files (*.*)|*.*";
+        saveFileDialog.FileName = "Untitled";
+
+        if (saveFileDialog.ShowDialog() == DialogResult.OK)
+        {
+          completion(saveFileDialog.FileName);
+        }
+        else
+        {
+          completion(null);
+        }
+      }
+    }
+
+    private void SaveNotebookContent(string content, string filePath)
+    {
+      try
+      {
+        File.WriteAllText(filePath, content, Encoding.UTF8);
+        sendAppMessage("editorSaveNotebook", new { fileName = filePath });
+        Logger.Write(LogEvent.Info, $"Notebook saved to {filePath}");
+      }
+      catch (Exception ex)
+      {
+        Logger.Write(LogEvent.Error, $"Failed to save notebook to {filePath}: {ex.Message}");
+        MessageBox.Show($"Failed to save notebook to {filePath}: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      }
+    }
+
 
     //--------------------------------------------------------------------------------------------------------------------
 
