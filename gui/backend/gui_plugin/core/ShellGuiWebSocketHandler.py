@@ -32,6 +32,7 @@ import threading
 import uuid
 from contextlib import contextmanager
 from queue import Empty, Queue
+import typing
 
 import mysqlsh
 
@@ -50,6 +51,7 @@ from gui_plugin.sql_editor.SqlEditorModuleSession import SqlEditorModuleSession
 from gui_plugin.users import backend as user_handler
 from gui_plugin.users.backend import get_id_personal_user_group
 from gui_plugin.core.Filtering import LogFilter, FilterExpire
+from gui_plugin.core.lib.DataClassUtils import convert_value, is_dataclass_convertible
 
 from mysqlsh.plugin_manager import registrar
 
@@ -622,9 +624,25 @@ class ShellGuiWebSocketHandler(HTTPWebSocketsHandler):
                 raise Exception(f'This user does not have the necessary '
                                 f'privileges to execute the command {cmd}.')
 
+            # Argument need to be passed in a dict using the argument names as
+            # the keys
+            args = json_msg.get('args', {})
+            kwargs = json_msg.get('kwargs', {})
+            kwargs = {**args, **kwargs}
+
             request_filters: list[LogFilter] = []
             if cmd in self._web_functions:
                 definition = self._web_functions[cmd]
+                hints = typing.get_type_hints(definition.function)
+
+                for param_name, expected_type in hints.items():
+                    if param_name not in kwargs:
+                        continue      # optional / defaulted – leave untouched
+
+                    if is_dataclass_convertible(expected_type):
+                        kwargs[param_name] = convert_value(
+                            expected_type, kwargs[param_name])
+
                 if isinstance(definition.web, dict) and 'logfilters' in definition.web:
                     for filter in definition.web['logfilters']:
                         request_filters.append(logger.add_filter(filter))
@@ -635,13 +653,6 @@ class ShellGuiWebSocketHandler(HTTPWebSocketsHandler):
 
             logger.debug2(message=json.dumps(json_msg),
                           sensitive=True, prefix="<- ")
-
-            # Argument need to be passed in a dict using the argument names as
-            # the keys
-            args = json_msg.get('args', {})
-            kwargs = json_msg.get('kwargs', {})
-
-            kwargs = {**args, **kwargs}
 
             # Inspect the function arguments and check if there are arguments
             # named user_id, profile_id, web_session, request_id,
