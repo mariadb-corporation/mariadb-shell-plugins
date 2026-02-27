@@ -23,12 +23,14 @@
 
 import dataclasses
 import re
-from typing import Any, get_origin, get_args, get_type_hints, Mapping, Sequence, List
+from typing import Any, get_origin, get_args, get_type_hints, Mapping, Union
 
 
 _camel_pat = re.compile(r'(?<!^)(?=[A-Z])')          # “myField” → “my_Field”
 # “my_field” → “myField” (internal use)
 _snake_pat = re.compile(r'_[a-z]')
+
+NoneType = type(None)
 
 
 def snake_to_camel(name: str) -> str:
@@ -40,6 +42,16 @@ def snake_to_camel(name: str) -> str:
 def camel_to_snake(name: str) -> str:
     """myField → my_field"""
     return _camel_pat.sub('_', name).lower()
+
+
+def unwrap_optional(tp):
+    origin = get_origin(tp)
+    # Optional[T] is syntactic sugar for Union[T, None]
+    if origin is Union:
+        args = tuple(a for a in get_args(tp) if a is not NoneType)
+        if len(args) == 1:
+            return args[0]          # Optional[T] -> T
+    return tp                       # not an Optional
 
 
 def _field_lookup(cls: type) -> Mapping[str, str]:
@@ -107,26 +119,32 @@ def convert_value(expected_type: Any, value: Any) -> Any:
         • Mapping[str, Dataclass] (rare, but works)
         • primitives – returned unchanged
     """
-    origin = get_origin(expected_type)
+    if value is None:
+        return value # no need to waste cycles, return early
+
+    unwrapped_type = unwrap_optional(expected_type)
+    origin = get_origin(unwrapped_type)
 
     # Support for list[DataClass], List[DataClass]
     if origin is list:
-        inner_type = get_args(expected_type)[0]
-        if dataclasses.is_dataclass(inner_type):
-            return [_instantiate_dataclass(inner_type, item) for item in value]
+        inner_type = get_args(unwrapped_type)[0]
+        unwrapped_inner_type = unwrap_optional(inner_type)
+        if dataclasses.is_dataclass(unwrapped_inner_type):
+            return [_instantiate_dataclass(unwrapped_inner_type, item) for item in value]
         # not a dataclass → just return the list (maybe primitives)
         return list(value)
 
     # Support for dict[<type>, DataClass]
     if origin is dict:
-        _k_type, _v_type = get_args(expected_type)
-        if dataclasses.is_dataclass(_v_type):
-            return {_k: _instantiate_dataclass(_v_type, _v) for _k, _v in value.items()}
+        _, _v_type = get_args(unwrapped_type)
+        unwrapped__v_type = unwrap_optional(_v_type)
+        if dataclasses.is_dataclass(unwrapped__v_type):
+            return {_k: _instantiate_dataclass(unwrapped__v_type, _v) for _k, _v in value.items()}
         return dict(value)
 
     # Plain dataclass
-    if dataclasses.is_dataclass(expected_type):
-        return _instantiate_dataclass(expected_type, value)
+    if dataclasses.is_dataclass(unwrapped_type):
+        return _instantiate_dataclass(unwrapped_type, value)
 
     # primitive – forward as‑is
     return value

@@ -23,7 +23,7 @@
 
 from gui_plugin.core.lib.DataClassUtils import is_dataclass_convertible, convert_value
 from dataclasses import dataclass
-from typing import List, Sequence, Mapping
+from typing import List, Sequence, Mapping, Optional
 
 
 @dataclass
@@ -38,6 +38,10 @@ class Sample:
     list_param: list[int]
     camelCaseListParam: list[int]
     nestedListParam: list[Nested]
+
+@dataclass
+class OptSample:
+    optionalParam: Optional[Nested]
 
 
 def test_is_dataclass_convertible():
@@ -107,3 +111,14 @@ def test_convert_complex_value():
     assert len(result.nestedListParam) == 1
     assert isinstance(result.nestedListParam[0], Nested)
     assert result.nestedListParam[0].intId == 8
+
+
+def test_convert_optional_dataclass_value():
+    result = convert_value(OptSample, {"optional_param": {"int_id":42}})
+    assert isinstance(result, OptSample)
+    assert isinstance(result.optionalParam, Nested)
+    assert result.optionalParam.intId == 42
+
+    result = convert_value(OptSample, {"optional_param": None})
+    assert isinstance(result, OptSample)
+    assert result.optionalParam is None

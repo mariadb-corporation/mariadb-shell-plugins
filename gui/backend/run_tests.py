@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -261,7 +261,7 @@ with pushd(paths.source.backend):
     if args.debug is not None:
         env['ATTACH_DEBUGGER'] = args.debug
 
-    command = f"{paths.shell} --pym pytest --color={COLOR} --cov={paths.source.code} --cov-append -vvv -c {paths.source.pytest_config} {LOGS} {paths.source.backend} {PATTERN}"
+    command = f"{paths.shell} --disable-builtin-plugins --pym pytest --color={COLOR} --cov={paths.source.code} --cov-append -vvv -c {paths.source.pytest_config} {LOGS} {paths.source.backend} {PATTERN}"
     print(command)
     shell = subprocess.run(command, shell=True, env=env)
 
