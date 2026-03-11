@@ -356,7 +356,8 @@ export interface IPreviewPlanData {
 
 export interface IOCIProfileOptions {
     configFile: string,
-    profile: string
+    profile: string,
+    availableProfiles: string[]
 }
 
 export interface ISourceSelectionOptions {

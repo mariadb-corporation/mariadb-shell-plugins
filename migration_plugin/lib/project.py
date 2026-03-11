@@ -23,6 +23,7 @@
 
 import json
 import os
+import os.path
 import pathlib
 import threading
 from typing import Optional, cast
@@ -106,9 +107,9 @@ class Project:
         self._shared_ssh_key_directory = core.default_shared_ssh_key_directory(
             create=True)
 
-        self._oci_config_file = os.path.expanduser(
-            core.default_oci_config_file())
-        self._oci_profile = core.default_oci_profile()
+        self._available_oci_profiles: list[str] = []
+        self.oci_config_file = core.default_oci_config_file()
+        self._oci_profile = self._select_oci_profile()
         self._oci_config_owned = False
         self._data_migration_did_finish = False
 
@@ -118,6 +119,36 @@ class Project:
         self._last_modify_time = ""
 
         self._plan_step_data = {}
+
+    def _refresh_available_oci_profiles(self) -> None:
+        self._available_oci_profiles = []
+
+        if not os.path.exists(self._oci_config_file):
+            return
+
+        import configparser
+
+        try:
+            config = configparser.ConfigParser()
+            config.read(self._oci_config_file)
+
+            # DEFAULT section is not available in config.sections(), but it can always be accessed
+            if "tenancy" in config["DEFAULT"]:
+                self._available_oci_profiles.append("DEFAULT")
+
+            self._available_oci_profiles.extend(config.sections())
+        except Exception as e:
+            logging.info(
+                f"Failed to open OCI config file '{self._oci_config_file}': {e}"
+            )
+
+    def _select_oci_profile(self) -> str:
+        default_profile = core.default_oci_profile()
+
+        if not self.available_oci_profiles or default_profile in self.available_oci_profiles:
+            return default_profile
+
+        return self.available_oci_profiles[0]
 
     def set_source(self, source: dict):
         self._options.sourceConnectionOptions = source
@@ -253,7 +284,7 @@ class Project:
 
         self._name = state["name"]
         self._options = model.parse(state["options"])
-        self._oci_config_file = state["ociConfigFile"]
+        self.oci_config_file = state["ociConfigFile"]
         self._oci_profile = state["ociProfile"]
         self._oci_config_owned = state["ociConfigOwned"]
         self._ssh_private_key_path_shared = state["sshSharedKeyFile"]
@@ -299,7 +330,8 @@ class Project:
 
     @oci_config_file.setter
     def oci_config_file(self, value: str):
-        self._oci_config_file = os.path.expanduser(value)
+        self._oci_config_file = os.path.abspath(os.path.expanduser(value))
+        self._refresh_available_oci_profiles()
 
     @property
     def oci_profile(self) -> str:
@@ -308,6 +340,10 @@ class Project:
     @oci_profile.setter
     def oci_profile(self, value: str):
         self._oci_profile = value
+
+    @property
+    def available_oci_profiles(self) -> list[str]:
+        return self._available_oci_profiles
 
     @property
     def oci_config(self) -> dict:
@@ -526,20 +562,6 @@ class Project:
         except Exception as e:
             logging.warning(f"get_user did not work: {e}")
 
-    @classmethod
-    def oci_config_exists(cls) -> bool:
-        if not os.path.exists(os.path.expanduser(core.default_oci_config_file())):
-            return False
-        try:
-            oci_utils.get_config(
-                path=os.path.expanduser(core.default_oci_config_file()),
-                profile=core.default_oci_profile())
-            return True
-        except:
-            logging.info(
-                f"OCI profile {core.default_oci_profile()} not found at {core.default_oci_config_file()}")
-            return False
-
     def open_oci_profile(self) -> bool:
         logging.debug(
             f"Trying to open OCI profile '{self._oci_profile}' from '{self._oci_config_file}'"
@@ -562,6 +584,10 @@ class Project:
             return False
 
         self.region = self.oci_config["region"]
+
+        if not self.available_oci_profiles:
+            self._refresh_available_oci_profiles()
+
         return True
 
     def create_ssh_key_pair(self):

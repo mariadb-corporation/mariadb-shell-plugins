@@ -30,7 +30,6 @@ import "./MigrationSubApp.css";
 import { Component, createRef, FunctionalComponent, RefObject, VNode } from "preact";
 import { CSSProperties } from "preact/compat";
 
-import { IMdsProfileData } from "../../communication/ProtocolMds.js";
 import {
     CloudConnectivity,
     ICheckResult,
@@ -212,8 +211,7 @@ export interface IMigrationAppState {
     migrationStatus: WorkStatus; // migration part done but replication might be on
 
     ociLoginInProgress: boolean;
-    hasOciAccess: boolean;
-    configProfiles: IMdsProfileData[];
+    hasOciConfig: boolean;
 
     ociSignInInfo?: ISignInInfo;
 
@@ -293,24 +291,30 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
     private get watchers(): Watcher[] {
         return [
             {
+                field: "availableProfiles",
+                shouldTrigger: (_value) => {
+                    return true;
+                },
+                getUpdatedState: this.watchAvailableProfiles,
+            },
+            {
                 field: "profile",
-                shouldTrigger: (value) => {
-                    // return configProfiles.length !== 0;
+                shouldTrigger: (_value) => {
                     return true;
                 },
                 getUpdatedState: this.watchProfile,
             },
             {
                 field: "hosting.parentCompartmentId",
-                shouldTrigger: (value) => {
+                shouldTrigger: (_value) => {
                     return true;
                 },
-                getUpdatedState: this.addCreateNewMysqlCompartment,
+                getUpdatedState: this.watchParentCompartmentId,
             },
             {
                 field: "hosting.networkCompartmentId",
                 shouldTrigger: (value) => {
-                    return !!this.profile && !!value && value !== "";
+                    return this.hasOciAccess && !!value;
                 },
                 getUpdatedState: this.watchNetworkCompartment,
             },
@@ -324,21 +328,21 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             {
                 field: "hosting.vcnId",
                 shouldTrigger: (value) => {
-                    return value === "";
+                    return !value;
                 },
-                getUpdatedState: this.updateSubnets,
+                getUpdatedState: this.resetSubnets,
             },
             {
                 field: "hosting.vcnId",
                 shouldTrigger: (value) => {
-                    return !!value && value !== "";
+                    return this.hasOciAccess && !!value;
                 },
                 getUpdatedState: this.watchVcn,
             },
             {
                 field: "hosting.compartmentId",
                 shouldTrigger: (_value) => {
-                    return true;
+                    return this.hasOciAccess;
                 },
                 getUpdatedState: this.updateShapes,
             },
@@ -443,12 +447,24 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         return `${this.state.databaseSource.user}@${this.state.databaseSource.host}:${this.state.databaseSource.port}`;
     }
 
+    private get hasOciConfig(): boolean {
+        return this.state.hasOciConfig;
+    }
+
+    private get hasOciAccess(): boolean {
+        return this.hasOciConfig && !!this.profile;
+    }
+
     private get profile(): string | undefined {
         return this.state.formGroupValues.profile;
     }
 
     private get configFile(): string | undefined {
         return this.state.formGroupValues.configFile;
+    }
+
+    private get configProfiles(): string[] {
+        return this.toStringArray(this.state.formGroupValues.availableProfiles);
     }
 
     private get vcns() {
@@ -548,8 +564,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             migrationStatus: WorkStatus.NOT_STARTED,
 
             ociLoginInProgress: false,
-            hasOciAccess: false,
-            configProfiles: [],
+            hasOciConfig: false,
 
             isFetchingCompartments: false,
             isFetchingVcns: false,
@@ -793,7 +808,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
                             disabled={migrationInProgress ||
                                 migrationStatus === WorkStatus.FINISHED ||
                                 migrationStatus === WorkStatus.READY ||
-                                !this.profile}
+                                !this.hasOciAccess}
                             className="start-migration"
                         />
                     </Container>
@@ -803,17 +818,8 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
     }
 
     private async onLoad() {
-        try {
-            const tiles = await this.fetchTiles();
-            await this.updateState({ tiles, ociLoginInProgress: true });
-            await this.ensureOciAccess();
-        } catch (e) {
-            console.error(e);
-            const message = convertErrorToString(e);
-            ui.showErrorMessage(message, {});
-        } finally {
-            this.setState({ ociLoginInProgress: false });
-        }
+        const tiles = await this.fetchTiles();
+        await this.updateState({ tiles });
     }
 
     private passwordNeeded = (stepsState?: IMigrationPlanState[]) => {
@@ -1596,12 +1602,13 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
     }
 
     private renderFormControls(stepId: number, subStepId: SubStepId | number) {
-        const { hasOciAccess, currentStep, currentSubStepId, backendState, filterInfo } = this.state;
         const { stepIndex, subStepIndex } = this.findStepIndexes(stepId, subStepId);
 
         if (stepIndex === -1 || subStepIndex === -1) {
             return null;
         }
+
+        const { currentStep, currentSubStepId, backendState, filterInfo } = this.state;
 
         // don't render collapsed sections
         if (currentStep === 1 && subStepId !== currentSubStepId) {
@@ -1614,7 +1621,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             // case SubStepId.OCI_SETUP:
             //     return this.renderOciSetup();
             case SubStepId.OCI_PROFILE: {
-                return hasOciAccess ? this.renderOciProfiles() : this.renderOciSetup();
+                return this.hasOciConfig ? this.renderOciProfiles() : this.renderOciSetup();
             }
             // case SubStepId.SOURCE_SELECTION:
             //     return this.renderSourceSelection(subStepId, formGroups);
@@ -1660,9 +1667,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
     }
 
     private renderOciSetup() {
-        const { hasOciAccess } = this.state;
-
-        if (hasOciAccess) {
+        if (this.hasOciConfig) {
             return null;
         }
 
@@ -1739,22 +1744,18 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
     }
 
     private renderOciProfiles() {
-        const { hasOciAccess, configProfiles, migrationInProgress } = this.state;
-
-        if (!hasOciAccess) {
+        if (!this.hasOciConfig) {
             return null;
         }
 
-        const options = configProfiles.map((p) => {
-            return p.profile;
-        });
+        const { migrationInProgress } = this.state;
 
         return (
             <div>
                 <p className="comment">Specify the properties of the target MySQL instance.
                     Select a configuration template or specify each setting individually in the following sections.</p>
 
-                {this.renderFormGroupDropdown(this.stringToOptions(options),
+                {this.renderFormGroupDropdown(this.stringToOptions(this.configProfiles),
                     "profile", "OCI Configuration Profile",
                     undefined, migrationInProgress, true,
                     "Choose the OCI configuration profile to use.")}
@@ -1942,7 +1943,7 @@ Migration Assistant.`}
 
     private onConfigTemplateChange = (_accept: boolean, _selectedIds: Set<string>,
         payload: unknown): void => {
-        void this.watchConfigTemplate({ changedValues: {}, prevValues: {} }, payload as ConfigTemplate);
+        void this.updateConfigTemplate(payload as ConfigTemplate);
     };
 
     private onCompartmentChange = async (value: string | null) => {
@@ -1985,7 +1986,7 @@ Migration Assistant.`}
     };
 
     private renderTargetSelection() {
-        if (!this.profile) {
+        if (!this.hasOciAccess) {
             return null;
         }
 
@@ -2013,8 +2014,8 @@ Migration Assistant.`}
                             }}
                             selected={this.resolveCompartmentId()}
                             tooltip={"Choose the compartment within your tenancy where the DB System and other " +
-                            "resources required for the migration will be created. Select \"Create New\" " +
-                            "if you'd like a new Compartment named \"MySQL\" to be created for that purpose."}
+                                "resources required for the migration will be created. Select \"Create New\" " +
+                                "if you'd like a new Compartment named \"MySQL\" to be created for that purpose."}
                             placeholder=""
                         />
                         {this.renderBadUserInputErrorsFor("hosting.compartmentId")}
@@ -2397,14 +2398,19 @@ Migration Assistant.`}
     }
 
     private getExistingShapes() {
-        const { state, profile } = this;
-        const { shapes } = state;
-        const compartmentId = this.resolveCompartmentIdForShapes();
-        if (!profile || !compartmentId) {
+        if (!this.profile) {
             return undefined;
         }
 
-        return shapes[this.getShapesKey(profile, compartmentId)];
+        const compartmentId = this.resolveCompartmentIdForShapes();
+
+        if (!compartmentId) {
+            return undefined;
+        }
+
+        const { shapes } = this.state;
+
+        return shapes[this.getShapesKey(this.profile, compartmentId)];
     }
 
     private onHeatwaveShapeChange = (_accept: boolean, _selectedIds: Set<string>,
@@ -3122,11 +3128,7 @@ Migration Assistant.`}
                 return this.processSubStep(SubStepId.OCI_PROFILE);
             };
             await waitForPromise(promise, "commitOci", 60, 10000);
-            await this.ensureOciAccess();
             await this.openProfile(this.profile ?? "DEFAULT", this.configFile, 10);
-            // this sometimes takes long as OCI requests may still fail with 401 until
-            // profile is propagated to all OCI API servers
-            await this.refreshFromBackend();
         } catch (e) {
             console.error(e);
             const message = convertErrorToString(e);
@@ -3209,7 +3211,7 @@ Migration Assistant.`}
         }
     }
 
-    private watchConfigTemplate = async (_changes?: WatcherChanges, configTemplate?: string) => {
+    private updateConfigTemplate = async (configTemplate?: string) => {
         const updated: FormGroupValues = {};
         if (configTemplate !== this.configTemplate) {
             updated["hosting.configTemplate"] = configTemplate;
@@ -3308,31 +3310,12 @@ Migration Assistant.`}
         return subnets;
     }
 
-    private ensureOciAccess = async () => {
-        console.log("getMdsConfigProfiles");
-        const configProfiles = await this.mhs.getMdsConfigProfiles();
-        console.log("profiles", configProfiles);
-
-        const hasOciAccess = configProfiles.length !== 0;
-        const state: Partial<IMigrationAppState> = {
-            hasOciAccess,
-            configProfiles,
-        };
-
-        this.setState(state);
-    };
-
     private openProfile = async (profile: string, configFile: string | undefined, maxAttempts: number) => {
         if (!profile) {
             return;
         }
 
-        const { configProfiles } = this.state;
-        const selectedProfile = configProfiles.find((p) => {
-            return p.profile === profile;
-        });
-
-        if (!selectedProfile) {
+        if (!this.configProfiles.includes(profile)) {
             // this happens when a profile is selected, but config file is not present
             return;
         }
@@ -3345,6 +3328,18 @@ Migration Assistant.`}
         };
 
         await waitForPromise(promise, "openProfile", maxAttempts);
+
+        // propagate compartments
+        const compartments = await this.fetchCompartments(profile);
+        const state: Partial<IMigrationAppState> = {
+            compartments,
+        };
+        await this.updateState(state);
+
+        // refresh the backend state using the new profile
+        // this sometimes takes long as OCI requests may still fail with 401 until
+        // profile is propagated to all OCI API servers
+        await this.refreshFromBackend();
     };
 
     private renderUpdateSubStep(subStepId: SubStepId) {
@@ -3796,7 +3791,11 @@ Migration Assistant.`}
         const processNestedObject = (prefix: string, obj: IDictionary) => {
             for (const key in obj) {
                 const value = obj[key];
-                if (typeof value === "object") {
+                if (Array.isArray(value)) {
+                    updatedFormGroupValues[prefix + key] = value.map(v => {
+                        return String(v);
+                    }).join(",");
+                } else if (typeof value === "object") {
                     processNestedObject(prefix + key + ".", value as IDictionary);
                 } else if (typeof value === "string" || typeof value === "number" || typeof value === "bigint"
                     || typeof value == "boolean") {
@@ -4096,9 +4095,12 @@ Migration Assistant.`}
         });
     };
 
+    private watchAvailableProfiles = async (changes?: WatcherChanges, profiles?: string) => {
+        await this.updateState({ hasOciConfig: !!profiles });
+    };
+
     private watchProfile = async (changes?: WatcherChanges, profile?: string) => {
         if (!profile) {
-
             this.setState(({ formGroupValues }) => {
                 return {
                     compartments: [],
@@ -4120,69 +4122,33 @@ Migration Assistant.`}
             return;
         }
 
-        const prevProfile = changes?.prevValues.profile;
-
-        let state: Partial<IMigrationAppState> = {};
-        const isProfileChanged = prevProfile !== changes?.changedValues.profile;
-        if (isProfileChanged) {
-            // OCI profile changed, reset cached values
-            state = {
-                compartments: [],
-                vcns: [],
-                subnets: []
-            };
-
-            try {
-                await this.openProfile(profile, this.configFile, 1);
-            } catch (e) {
-                console.error(e);
-                const message = convertErrorToString(e);
-                ui.showErrorMessage(`Failed to open profile '${profile}': ${message}`, {});
-            }
-        }
-
+        // OCI profile changed, reset cached values
         await this.updateState({
             formGroupValues: {
                 profile,
                 "hosting.configTemplate": standardTemplateId,
             },
-            ...state,
+            compartments: [],
+            vcns: [],
+            subnets: [],
         });
-        let stepsState = await this.submitSubStep(SubStepId.OCI_PROFILE, true);
-        stepsState ??= await this.refreshFromBackend();
+
         // TODO - NEW
-        await this.watchConfigTemplate(changes, this.configTemplate);
+        await this.updateConfigTemplate(this.configTemplate);
 
-        const compartments = await this.fetchCompartments(profile);
-
-        state = {
-            compartments,
-        };
-
-        const targetOptions = stepsState.find((s) => {
-            return s.id === SubStepId.TARGET_OPTIONS;
-        });
-        const hosting = (targetOptions?.values as ITargetOptionsOptions | undefined)?.hosting;
-
-        const parentCompartmentId = hosting?.parentCompartmentId ?? this.parentCompartment;
-        const compartmentId = hosting?.compartmentId;
-        const compartmentName = hosting?.compartmentName;
-        const networkCompartmentId = hosting?.networkCompartmentId;
-
-        if (!prevProfile || isProfileChanged) {
-            await this.updateState(state);
-            await this.addCreateNewMysqlCompartment(changes, parentCompartmentId, compartmentId, compartmentName);
-
+        if (!this.hasOciConfig) {
             return;
         }
 
-        await this.updateState({
-            ...state,
-            formGroupValues: {
-                "hosting.parentCompartmentId": hosting?.parentCompartmentId,
-                "hosting.networkCompartmentId": networkCompartmentId,
-            }
-        });
+        await this.submitSubStep(SubStepId.OCI_PROFILE, true);
+
+        try {
+            await this.openProfile(profile, this.configFile, 1);
+        } catch (e) {
+            console.error(e);
+            const message = convertErrorToString(e);
+            ui.showErrorMessage(`Failed to open profile '${profile}': ${message}`, {});
+        }
     };
 
     private resolveCreateNewMysqlCompartment(actualCompartmentName: string, parentCompartmentId?: string): Compartment {
@@ -4199,8 +4165,12 @@ Migration Assistant.`}
         return { id: "create_new", name: `${actualCompartmentName} (create new)`, compartmentId };
     }
 
-    private addCreateNewMysqlCompartment = async (_changes?: WatcherChanges, parentCompartmentId?: string,
-        compartmentId?: string, compartmentName?: string) => {
+    private watchParentCompartmentId = async (_changes?: WatcherChanges, parentCompartmentId?: string) => {
+        await this.addCreateNewMysqlCompartment(parentCompartmentId, this.compartment, this.compartmentName);
+    };
+
+    private addCreateNewMysqlCompartment = async (parentCompartmentId?: string, compartmentId?: string,
+        compartmentName?: string) => {
         const { compartments } = this.state;
 
         const mysqlCompartment = this.findMySqlCompartment(compartmentId, parentCompartmentId);
@@ -4266,19 +4236,11 @@ Migration Assistant.`}
         return "MySQL";
     }
 
-    private watchCompartmentIdReset = async (changes?: WatcherChanges, compartmentId?: string) => {
-        if (compartmentId || !changes?.prevValues["hosting.compartmentId"]) {
-            return;
-        }
-
-        return this.addCreateNewMysqlCompartment(changes, this.parentCompartment);
-    };
-
     private watchNetworkCompartment = async (changes?: WatcherChanges,
         networkCompartmentId?: string) => {
         let vcns: OciResource[] = [];
-        if (this.profile && networkCompartmentId) {
-            vcns = await this.fetchVcns(this.profile, networkCompartmentId);
+        if (this.hasOciAccess && networkCompartmentId) {
+            vcns = await this.fetchVcns(this.profile!, networkCompartmentId);
         }
 
         const state: Partial<IMigrationAppState> = {
@@ -4308,11 +4270,11 @@ Migration Assistant.`}
 
     private watchVcn = async (_changes?: WatcherChanges,
         vcn?: string) => {
-        if (!this.profile || !vcn) {
+        if (!this.hasOciAccess || !vcn) {
             return;
         }
 
-        const subnets = await this.fetchSubnets(this.profile, vcn);
+        const subnets = await this.fetchSubnets(this.profile!, vcn);
 
         this.setState({ subnets: this.resourceToOptions(subnets) });
     };
@@ -4338,13 +4300,17 @@ Migration Assistant.`}
 
     private updateShapes = async (_changes?: WatcherChanges,
         compartmentId?: string) => {
-        const { profile } = this;
-
-        const compartmentOcid = this.resolveCompartmentIdForShapes(compartmentId);
-        if (!profile || !compartmentOcid) {
+        if (!this.hasOciAccess) {
             return;
         }
-        const existingShapes = await this.fetchShapes(profile, compartmentOcid);
+
+        const compartmentOcid = this.resolveCompartmentIdForShapes(compartmentId);
+
+        if (!compartmentOcid) {
+            return;
+        }
+
+        const existingShapes = await this.fetchShapes(this.profile!, compartmentOcid);
         console.log("shapes", existingShapes);
 
         if (this.configTemplate) {
@@ -4357,24 +4323,8 @@ Migration Assistant.`}
         }
     };
 
-    private updateSubnets = async (_changes?: WatcherChanges, _vcn?: string) => {
-        // const { backendState } = this.state;
-
-        this.setState(({ formGroupValues }) => {
-            return {
-                // compartments: this.withCreateNew(),
-                // vcns: this.withCreateNew(),
-                subnets: [],
-                formGroupValues: {
-                    ...formGroupValues,
-                    // "hosting.compartmentId": "",
-                    // "hosting.networkCompartmentId": "",
-                    // "hosting.vcnId": "",
-                    //    "hosting.privateSubnet.id": "",
-                    //    "hosting.publicSubnet.id": "",
-                }
-            };
-        });
+    private resetSubnets = async (_changes?: WatcherChanges, _vcn?: string) => {
+        this.setState({ subnets: [] });
 
         return Promise.resolve();
     };
@@ -4990,10 +4940,20 @@ Migration Assistant.`}
     }
 
     private shouldValidateShapes(): boolean {
-        return !!this.profile && this.state.compartments.length > 0 && !!this.resolveCompartmentIdForShapes();
+        return this.hasOciAccess && this.state.compartments.length > 0 && !!this.resolveCompartmentIdForShapes();
     }
 
     private log(...args: unknown[]): void {
         this.logger.logWithPasswordMask(...args);
+    }
+
+    private toStringArray(s?: string): string[] {
+        if (!s) {
+            return [];
+        } else {
+            return s.split(",").map(x => {
+                return x.trim();
+            });
+        }
     }
 }

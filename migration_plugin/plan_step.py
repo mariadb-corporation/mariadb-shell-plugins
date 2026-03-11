@@ -156,6 +156,7 @@ class TargetOptionsData(MigrationMessage):
 class OCIProfileOptions(MigrationMessage):
     configFile: str = ""
     profile: str = "DEFAULT"
+    availableProfiles: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -334,7 +335,7 @@ class OCIProfileSubStep(PlanSubStep):
                 self._config_exists = True
                 self._project.check_oci_config()
                 logging.info(
-                    f"OCI config profile {self._project.oci_profile} at {self._project._oci_config_file} works")
+                    f"OCI config profile {self._project.oci_profile} at {self._project.oci_config_file} works")
                 return True
             except Exception as e:
                 logging.exception(
@@ -413,7 +414,9 @@ class OCIProfileSubStep(PlanSubStep):
     def info_values(self) -> OCIProfileOptions:
         return OCIProfileOptions(
             configFile=self._project.oci_config_file,
-            profile=self._project.oci_profile)
+            profile=self._project.oci_profile,
+            availableProfiles=self._project.available_oci_profiles,
+        )
 
 
 class SourceSelectionSubStep(PlanSubStep):
@@ -1812,7 +1815,7 @@ class MigrationPlanStep:
             print(json.dumps({"message": message} | {"info": info}))
 
         if not force_bootstrap and os.path.exists(
-                self.project._oci_config_file):
+                self.project.oci_config_file):
             self.project.open_oci_profile()
             return
 
@@ -1822,12 +1825,12 @@ class MigrationPlanStep:
         # TODO support >1 profile
         # TODO see if its viable to use the session token before switching to api key
         logging.info(
-            f"Bootstrapping OCI profile {oci_utils.k_oci_profile_name} at {self.project._oci_config_file} for region={self.region}"
+            f"Bootstrapping OCI profile {oci_utils.k_oci_profile_name} at {self.project.oci_config_file} for region={self.region}"
         )
         try:
             profile_info = bootstrap_migration_profile(
                 profile_name=oci_utils.k_oci_profile_name,
-                config_location=str(self.project._oci_config_file),
+                config_location=str(self.project.oci_config_file),
                 region=self.region,
                 passphrase="",
                 report_cb=report_progress
@@ -1840,7 +1843,7 @@ class MigrationPlanStep:
             f"Authentication completed successfully and an OCI configuration file and profile was created. Please wait a few moments for your new OCI profile to be activated.")
         logging.info(f"Created OCI profile {profile_info}")
         assert profile_info["config_file"] == str(
-            self.project._oci_config_file)
+            self.project.oci_config_file)
 
         self.region = profile_info["home_region"]
 
