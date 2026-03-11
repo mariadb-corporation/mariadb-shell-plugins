@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -146,29 +146,24 @@ export class E2EDatabaseConnectionOverview {
      */
     public existsConnection = async (dbConnection: string): Promise<boolean> => {
         let found = false;
+        try {
+            const hosts = await driver.findElements(locator.dbConnectionOverview.dbConnection.tile);
+            for (const host of hosts) {
+                const hostCation = await host.findElement(locator.dbConnectionOverview.dbConnection.caption);
+                const textCaption = await hostCation.getText();
+                if (textCaption.match(new RegExp(dbConnection)) !== null) {
+                    found = true;
 
-        await driver.wait(async () => {
-            try {
-                const hosts = await driver.findElements(locator.dbConnectionOverview.dbConnection.tile);
-                for (const host of hosts) {
-                    const hostCation = await host.findElement(locator.dbConnectionOverview.dbConnection.caption);
-                    const textCaption = await hostCation.getText();
-                    if (textCaption.match(new RegExp(dbConnection)) !== null) {
-                        found = true;
-
-                        break;
-                    }
-                }
-
-                return true;
-            } catch (e) {
-                if (!(e instanceof error.StaleElementReferenceError)) {
-                    throw e;
+                    break;
                 }
             }
-        }, constants.wait5seconds, "The connections were always stale");
-
+        } catch (e) {
+            if (!(e instanceof error.StaleElementReferenceError)) {
+                throw e;
+            }
+        }
         return found;
+
     };
 
     /**
@@ -224,7 +219,19 @@ export class E2EDatabaseConnectionOverview {
      */
     public untilConnectionExists = (dbConnection: string): Condition<boolean> => {
         return new Condition(`for ${dbConnection} to exist`, async () => {
-            return this.existsConnection(dbConnection);
+            return await this.existsConnection(dbConnection);
+        });
+    };
+
+    /**
+     * Verifies if a Database connection exists on the DB Connection Overview
+     * 
+     * @param dbConnection The database connection caption
+     * @returns A condition resolving to true if the connection exists, false otherwise
+     */
+    public untilConnectionDoesNotExist = (dbConnection: string): Condition<boolean> => {
+        return new Condition(`for ${dbConnection} to exist`, async () => {
+            return !(await this.existsConnection(dbConnection));
         });
     };
 

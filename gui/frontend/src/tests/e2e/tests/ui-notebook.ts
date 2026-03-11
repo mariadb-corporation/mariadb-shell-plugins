@@ -27,7 +27,7 @@
 import * as fs from "fs/promises";
 import { basename } from "path";
 import { Condition, error, Key, until } from "selenium-webdriver";
-import { afterAll, afterEach, beforeAll, describe, expect, it, TestContext } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, TestContext, inject } from "vitest";
 import { E2ECommandResultData } from "../lib/CommandResults/E2ECommandResultData.js";
 import { E2ECommandResultGrid } from "../lib/CommandResults/E2ECommandResultGrid.js";
 import * as constants from "../lib/constants.js";
@@ -43,9 +43,6 @@ import { Misc } from "../lib/misc.js";
 import { E2EHeatWaveProfileEditor } from "../lib/MySQLAdministration/E2EHeatWaveProfileEditor.js";
 import { Os } from "../lib/os.js";
 import { E2EAccordionSection } from "../lib/SideBar/E2EAccordionSection.js";
-
-const filename = basename(__filename);
-const url = Misc.getUrl(basename(filename));
 
 describe("NOTEBOOKS", () => {
 
@@ -65,7 +62,11 @@ describe("NOTEBOOKS", () => {
     const dbTreeSection = new E2EAccordionSection(constants.dbTreeSection);
     let notebook: E2ENotebook;
 
+    const heatWaveEnvMissing = inject("heatWaveEnvMissing");
+
     beforeAll(async () => {
+        const url = Misc.getUrl();
+
         await loadDriver(true);
 
         try {
@@ -76,6 +77,7 @@ describe("NOTEBOOKS", () => {
             await settings.close();
 
             await dbTreeSection.focus();
+            await dbTreeSection.expand();
             await dbTreeSection.createDatabaseConnection(globalConn);
             await driver.wait(dbTreeSection.untilTreeItemExists(globalConn.caption!), constants.wait3seconds);
             const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
@@ -90,9 +92,15 @@ describe("NOTEBOOKS", () => {
     });
 
     afterAll(async () => {
-        await Os.writeFELogs(basename(__filename), driver.manage().logs());
-        await driver.close();
-        await driver.quit();
+        try {
+            await dbTreeSection.removeDatabaseConnection(globalConn.caption!);
+            await Os.writeFELogs(basename(__filename), driver.manage().logs());
+            await driver.close();
+            await driver.quit();
+        } catch (e) {
+            await Misc.storeScreenShot(undefined, "NOTEBOOKS");
+            throw e;
+        }
     });
 
     describe("Code Editor", () => {
@@ -119,7 +127,6 @@ describe("NOTEBOOKS", () => {
 
         afterAll(async () => {
             try {
-                await dbTreeSection.collapse();
                 await new E2ETabContainer().closeAllTabs();
             } catch (e) {
                 await Misc.storeScreenShot(undefined, "Code Editor");
@@ -624,7 +631,7 @@ describe("NOTEBOOKS", () => {
 
     });
 
-    describe("HeatWave Chat", () => {
+    describe.skipIf(heatWaveEnvMissing)("HeatWave Chat", () => {
 
         const heatWaveConn: interfaces.IDBConnection = {
             dbType: "MySQL",
@@ -639,7 +646,7 @@ describe("NOTEBOOKS", () => {
         };
 
         const newTask: interfaces.INewLoadingTask = {
-            name: "static_cookbook",
+            name: "heatwave_doc",
             description: "How do cook properly",
             targetDatabaseSchema: "e2e_tests",
             formats: "PDF (Portable Document Format Files)",
@@ -663,6 +670,10 @@ describe("NOTEBOOKS", () => {
                 throw e;
             }
 
+        });
+
+        afterAll(async () => {
+            await dbTreeSection.removeDatabaseConnection(heatWaveConn.caption!);
         });
 
         afterEach(async (context: TestContext) => {
@@ -697,7 +708,7 @@ describe("NOTEBOOKS", () => {
                     documentTitles.push(doc.title);
                 }
 
-                expect(documentTitles.join(" ")).toContain("cookbook");
+                expect(documentTitles.join(" ")).toContain("heatwave_doc.pdf");
             } catch (e) {
                 testFailed = true;
                 throw e;

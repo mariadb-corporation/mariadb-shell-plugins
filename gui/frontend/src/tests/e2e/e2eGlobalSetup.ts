@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2025, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,10 @@
 
 import * as path from "path";
 import { existsSync, rmSync, mkdirSync } from "fs";
+import { TestProject } from "vitest/dist/node.js";
+import "../loadTestConfiguration.js";
 
-export const setup = (): void => {
+export const setup = (project: TestProject): void => {
     const e2eFolder = path.resolve("src/tests/e2e");
     const screenshotDir = path.join(e2eFolder, "screenshots");
 
@@ -36,5 +38,18 @@ export const setup = (): void => {
     }
     mkdirSync(screenshotDir, { recursive: true });
 
+    const heatWaveEnvMissing = !globalThis.testConfig?.HWHOSTNAME || !globalThis.testConfig.HWUSERNAME;
+    const ociEnvMissing = !globalThis.testConfig?.MYSQLSH_OCI_CONFIG_FILE || !globalThis.testConfig.MYSQLSH_OCI_CONFIG_PROFILE;
+    
+    project.provide("heatWaveEnvMissing", heatWaveEnvMissing);
+    project.provide("ociEnvMissing", ociEnvMissing);
+            
     console.log("✅ Global setup: Cleaned screenshots folder");
 };
+
+declare module "vitest" {
+    export interface ProvidedContext {
+        heatWaveEnvMissing: boolean
+        ociEnvMissing: boolean
+    }
+}

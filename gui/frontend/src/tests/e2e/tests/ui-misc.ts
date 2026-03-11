@@ -47,12 +47,14 @@ import { Os } from "../lib/os.js";
 import { E2EAccordionSection } from "../lib/SideBar/E2EAccordionSection.js";
 import { E2EWorkbench } from "../lib/SideBar/E2EWorkbench.js";
 
-const filename = basename(__filename);
-const url = Misc.getUrl(basename(filename));
 
 describe("Token Verification", () => {
+    let url: string;
 
     let testFailed = false;
+    beforeAll(async () => {
+        url = Misc.getUrl();
+    });
 
     beforeEach(async () => {
 
@@ -141,7 +143,7 @@ describe("Login", () => {
         await loadDriver(true);
         try {
             await driver.wait(Misc
-                .untilHomePageIsLoaded(String(globalThis.testConfig!.SHELL_UI_MU_HOSTNAME)), constants.wait20seconds);
+                .untilHomePageIsLoaded(`http://localhost:${globalThis.testConfig!.SHELL_UI_MU_PORT}`), constants.wait20seconds);
         } catch (e) {
             await Misc.storeScreenShot(undefined, "Login");
             throw e;
@@ -190,6 +192,8 @@ describe("Login", () => {
 });
 
 describe("Notifications", () => {
+    let port: number;
+    let url: string;
 
     const localConn: interfaces.IDBConnection = {
         dbType: "MySQL",
@@ -208,6 +212,7 @@ describe("Notifications", () => {
     const dbTreeSection = new E2EAccordionSection(constants.dbTreeSection);
 
     beforeAll(async () => {
+        url = Misc.getUrl();
         await loadDriver(true);
 
         try {
@@ -235,9 +240,15 @@ describe("Notifications", () => {
     });
 
     afterAll(async () => {
-        await Os.writeFELogs(basename(__filename), driver.manage().logs());
-        await driver.close();
-        await driver.quit();
+        try {
+            await dbTreeSection.removeDatabaseConnection(localConn.caption!);
+            await Os.writeFELogs(basename(__filename), driver.manage().logs());
+            await driver.close();
+            await driver.quit();
+        } catch (e) {
+            await Misc.storeScreenShot(undefined, "Notifications");
+            throw e;
+        }
     });
 
     it("Verify Info notification", async () => {
@@ -415,10 +426,13 @@ describe("Notifications", () => {
 });
 
 describe("Communication Debugger", () => {
+    let port: number;
+    let url: string;
 
     let testFailed = false;
 
     beforeAll(async () => {
+        url = Misc.getUrl();
         await loadDriver(true);
 
         try {
@@ -461,31 +475,31 @@ describe("Communication Debugger", () => {
             // Close
             const tabContainer = new E2ETabContainer();
             await tabContainer.selectTabContextMenu(item1, constants.close);
-            expect(await tabContainer.tabExists(item1)).toBe(false);
+            await driver.wait(tabContainer.untilTabDoesNotExists(item1), constants.wait5seconds);
             expect(await tabContainer.tabExists(item2)).toBe(true);
             expect(await tabContainer.tabExists(item3)).toBe(true);
             await driver.actions().doubleClick(treeItem1).perform();
 
             // Close others
             await tabContainer.selectTabContextMenu(item1, constants.closeOthers);
+            await driver.wait(tabContainer.untilTabDoesNotExists(item2), constants.wait5seconds);
+            await driver.wait(tabContainer.untilTabDoesNotExists(item3), constants.wait5seconds);
             expect(await tabContainer.tabExists(item1)).toBe(true);
-            expect(await tabContainer.tabExists(item2)).toBe(false);
-            expect(await tabContainer.tabExists(item3)).toBe(false);
             await driver.actions().doubleClick(treeItem2).perform();
             await driver.actions().doubleClick(treeItem3).perform();
 
             // Close to the right
             await tabContainer.selectTabContextMenu(item2, constants.closeToTheRight);
+            await driver.wait(tabContainer.untilTabDoesNotExists(item3), constants.wait5seconds);
             expect(await tabContainer.tabExists(item1)).toBe(true);
             expect(await tabContainer.tabExists(item2)).toBe(true);
-            expect(await tabContainer.tabExists(item3)).toBe(false);
             await driver.actions().doubleClick(treeItem3).perform();
 
             // Close all
             await tabContainer.selectTabContextMenu(item3, constants.closeAll);
-            expect(await tabContainer.tabExists(item1)).toBe(false);
-            expect(await tabContainer.tabExists(item2)).toBe(false);
-            expect(await tabContainer.tabExists(item3)).toBe(false);
+            await driver.wait(tabContainer.untilTabDoesNotExists(item1), constants.wait5seconds);
+            await driver.wait(tabContainer.untilTabDoesNotExists(item2), constants.wait5seconds);
+            await driver.wait(tabContainer.untilTabDoesNotExists(item3), constants.wait5seconds);
         } catch (e) {
             testFailed = true;
             throw e;
@@ -502,7 +516,7 @@ describe("Single Server Mode", () => {
         await loadDriver(true);
         try {
             await driver.wait(
-                Misc.untilHomePageIsLoaded(String(globalThis.testConfig!.SHELL_UI_SS_HOSTNAME)),
+                Misc.untilHomePageIsLoaded(`http://localhost:${globalThis.testConfig!.SHELL_UI_SS_PORT}`),
                 constants.wait20seconds);
         } catch (e) {
             await Misc.storeScreenShot(undefined, "Single Server Mode");
@@ -576,7 +590,7 @@ describe("Single Server Mode", () => {
                 constants.copyToClipboard.exists,
                 constants.sendToSQLEditor.exists,
                 constants.addSchemaToRestService,
-                constants .dropSchema
+                constants.dropSchema
             ]);
 
             expect(await dbTreeSection.getDatabaseConnections()).toStrictEqual([{
@@ -612,7 +626,7 @@ describe("Single Server Mode", () => {
         try {
             await new E2EWorkbench().selectFromSubmenu("Log Out");
             await driver.wait(
-                Misc.untilHomePageIsLoaded(String(globalThis.testConfig!.SHELL_UI_SS_HOSTNAME)),
+                Misc.untilHomePageIsLoaded(`http://localhost:${globalThis.testConfig!.SHELL_UI_SS_PORT}`),
                 constants.wait5seconds);
         } catch (e) {
             testFailed = true;

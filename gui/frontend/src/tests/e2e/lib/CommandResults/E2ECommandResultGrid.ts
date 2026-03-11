@@ -613,7 +613,9 @@ export class E2ECommandResultGrid extends E2ECommandResult {
                         subMenu = await driver.wait(until.elementLocated(cellContextMenu.copyAllRowsSubMenu),
                             constants.wait5seconds, "Copy All Rows sub menu was not displayed");
                     }
-                    await (await getCellMenuItem(subMenu, subContextMenuItem)).click();
+                    const cellSubMenuItem =  await getCellMenuItem(subMenu, subContextMenuItem);
+                    await driver.actions().move({ origin: cellSubMenuItem }).perform();
+                    await cellSubMenuItem.click();
                 } else {
                     await cellMenuItem.click();
                 }
@@ -1685,14 +1687,6 @@ export class E2ECommandResultGrid extends E2ECommandResult {
      */
     private formatCellDate = (value: string, quoted: boolean): string => {
         const dateItems = value.split("/");
-        if (Os.isMacOs()) {
-            if (quoted) {
-                return `'${dateItems[2]}-${dateItems[1]}-${dateItems[0]}'`;
-            } else {
-                return `${dateItems[2]}-${dateItems[1]}-${dateItems[0]}`;
-            }
-        }
-
         if (quoted) {
             return `'${dateItems[2]}-${dateItems[0]}-${dateItems[1]}'`;
         } else {

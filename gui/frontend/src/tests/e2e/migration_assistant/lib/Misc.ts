@@ -64,11 +64,11 @@ export class Misc {
 
         if (testSuite === "Invalid config file") {
             // eslint-disable-next-line max-len
-            await page.goto(`http://localhost:8001/?token=1234test&subApp=migration&autoSendWebMessage=1&port=${mysqlServerPort}`,
+            await page.goto(`http://localhost:8001/?token=${globalThis.testConfig!.TOKEN}&subApp=migration&autoSendWebMessage=1&port=${mysqlServerPort}`,
                 { timeout: constants.wait1second * 60 });
         } else {
             // eslint-disable-next-line max-len
-            await page.goto(`http://localhost:8000/?token=1234&subApp=migration&autoSendWebMessage=1&port=${mysqlServerPort}`,
+            await page.goto(`http://localhost:8000/?token=${globalThis.testConfig!.TOKEN}&subApp=migration&autoSendWebMessage=1&port=${mysqlServerPort}`,
                 { timeout: constants.wait1second * 60 });
         }
 

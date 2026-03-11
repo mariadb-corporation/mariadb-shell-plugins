@@ -31,6 +31,8 @@ import { DatabaseConnectionDialog } from "../Dialogs/DatabaseConnectionDialog.js
 import { driver } from "../driver.js";
 import { E2ETreeItem } from "./E2ETreeItem.js";
 import { PasswordDialog } from "../Dialogs/PasswordDialog.js";
+import { E2EToastNotification } from "../../lib/E2EToastNotification.js";
+import { expect } from "vitest";
 
 /**
  * This class represents the Accordion section element and its related functions
@@ -648,43 +650,40 @@ export class E2EAccordionSection {
             rootItemLocator = locator.section.tree.element.openEditorTreeEntry;
         }
 
-        await driver.wait(async () => {
-            try {
-                const treeItems = await this.getVisibleTreeItems();
 
-                if (treeItems.length > 0) {
+        try {
+            const treeItems = await this.getVisibleTreeItems();
 
-                    for (const item of treeItems) {
-                        const webElement = await item.findElement(rootItemLocator);
+            if (treeItems.length > 0) {
 
-                        if (this.accordionSectionName === constants.dbTreeSection) {
+                for (const item of treeItems) {
+                    const webElement = await item.findElement(rootItemLocator);
 
-                            const refCaption = await (await webElement
-                                .findElement(locator.section.tree.element.mainCaption)).getText();
+                    if (this.accordionSectionName === constants.dbTreeSection) {
 
-                            if (refCaption === caption) {
-                                exists = true;
-                                break;
-                            }
-                        } else {
-                            const refCaption = await (await webElement
-                                .findElement(locator.section.tree.element.label)).getText();
+                        const refCaption = await (await webElement
+                            .findElement(locator.section.tree.element.mainCaption)).getText();
 
-                            if (refCaption === caption) {
-                                exists = true;
-                                break;
-                            }
+                        if (refCaption === caption) {
+                            exists = true;
+                            break;
+                        }
+                    } else {
+                        const refCaption = await (await webElement
+                            .findElement(locator.section.tree.element.label)).getText();
+
+                        if (refCaption === caption) {
+                            exists = true;
+                            break;
                         }
                     }
-
-                    return true;
-                }
-            } catch (e) {
-                if (!(e instanceof error.StaleElementReferenceError)) {
-                    throw e;
                 }
             }
-        }, constants.wait5seconds, `Could not verify if tree item '${caption}' exists`);
+        } catch (e) {
+            if (!(e instanceof error.StaleElementReferenceError)) {
+                throw e;
+            }
+        }
 
         return exists;
     };
@@ -697,7 +696,7 @@ export class E2EAccordionSection {
      */
     public untilTreeItemExists = (element: string): Condition<boolean> => {
         return new Condition(`for ${element} to exist on the tree`, async () => {
-            return this.existsTreeItem(element);
+            return await this.existsTreeItem(element);
         });
     };
 
@@ -972,8 +971,30 @@ export class E2EAccordionSection {
         const dialog = await driver.wait(until.elementLocated(
             locator.confirmDialog.exists), constants.wait15seconds, "confirm dialog was not found");
         await dialog.findElement(locator.confirmDialog.accept).click();
-        await driver.wait(this.untilTreeItemDoesNotExists(caption), constants.wait5seconds);
 
+        await driver.wait(this.untilTreeItemDoesNotExists(caption), constants.wait5seconds);
     };
 
+    /**
+     * Removes a DB Connection folder by right-clicking on its tree element and selection "Delete Folder"
+     * 
+     * @param caption The DB Folder caption
+     */
+    public removeConnectionFolder = async (caption: string, notification?: string): Promise<void> => {
+
+        await this.openContextMenuAndSelect(caption, constants.removeFolder);
+
+        const dialog = await driver.wait(until.elementLocated(
+            locator.confirmDialog.exists), constants.wait15seconds, "confirm dialog was not found");
+        await dialog.findElement(locator.confirmDialog.accept).click();
+
+        const notification_message = await new E2EToastNotification().create();
+        if (notification) {
+            expect(notification_message!.message)
+                .toBe(notification);
+        }
+        await notification_message!.close();
+
+        await driver.wait(this.untilTreeItemDoesNotExists(caption), constants.wait5seconds);
+    };    
 }

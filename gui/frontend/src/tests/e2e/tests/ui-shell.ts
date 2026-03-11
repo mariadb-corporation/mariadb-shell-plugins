@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,9 +40,6 @@ import { Os } from "../lib/os.js";
 import { E2EAccordionSection } from "../lib/SideBar/E2EAccordionSection.js";
 import * as locator from "./../lib/locators.js";
 
-const filename = basename(__filename);
-const url = Misc.getUrl(basename(filename));
-
 describe("MYSQL SHELL CONSOLES", () => {
 
     const globalConn: interfaces.IDBConnection = {
@@ -67,6 +64,7 @@ describe("MYSQL SHELL CONSOLES", () => {
     let shellConsole: E2EShellConsole;
 
     beforeAll(async () => {
+        const url = Misc.getUrl();
 
         await loadDriver(true);
 
@@ -402,7 +400,7 @@ describe("MYSQL SHELL CONSOLES", () => {
                 // Close
                 tabs = await tabContainer.getTabs();
                 await tabContainer.selectTabContextMenu(tabs[2], constants.close);
-                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[2]), constants.wait2seconds);
+                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[2]), constants.wait5seconds);
                 await openEditorsTreeSection.clickToolbarButton(constants.addConsole);
                 sessionNumber++;
                 await driver.wait(new E2ETabContainer().untilTabIsOpened(new RegExp(`Session ${sessionNumber}`)),
@@ -411,9 +409,9 @@ describe("MYSQL SHELL CONSOLES", () => {
                 // Close others
                 tabs = await tabContainer.getTabs();
                 await tabContainer.selectTabContextMenu(tabs[1], constants.closeOthers);
-                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[2]), constants.wait2seconds);
+                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[2]), constants.wait5seconds);
                 expect(await tabContainer.tabExists(tabs[1])).toBe(true);
-                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[3]), constants.wait2seconds);
+                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[3]), constants.wait5seconds);
                 await openEditorsTreeSection.clickToolbarButton(constants.addConsole);
                 sessionNumber++;
                 await driver.wait(new E2ETabContainer().untilTabIsOpened(new RegExp(`Session ${sessionNumber}`)),
@@ -427,8 +425,8 @@ describe("MYSQL SHELL CONSOLES", () => {
                 tabs = await tabContainer.getTabs();
                 await tabContainer.selectTabContextMenu(tabs[1], constants.closeToTheRight);
                 expect(await tabContainer.tabExists(tabs[1])).toBe(true);
-                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[2]), constants.wait2seconds);
-                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[3]), constants.wait2seconds);
+                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[2]), constants.wait5seconds);
+                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[3]), constants.wait5seconds);
                 await openEditorsTreeSection.clickToolbarButton(constants.addConsole);
                 sessionNumber++;
                 await driver.wait(new E2ETabContainer().untilTabIsOpened(new RegExp(`Session ${sessionNumber}`)),
@@ -437,9 +435,9 @@ describe("MYSQL SHELL CONSOLES", () => {
                 // Close all
                 tabs = await tabContainer.getTabs();
                 await tabContainer.selectTabContextMenu(tabs[1], constants.closeAll);
-                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[1]), constants.wait2seconds);
-                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[2]), constants.wait2seconds);
-                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[3]), constants.wait2seconds);
+                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[1]), constants.wait5seconds);
+                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[2]), constants.wait5seconds);
+                await driver.wait(tabContainer.untilTabDoesNotExists(tabs[3]), constants.wait5seconds);
 
             } catch (e) {
                 testFailed = true;

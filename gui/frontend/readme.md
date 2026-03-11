@@ -1,4 +1,4 @@
-<!-- Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+<!-- Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -96,17 +96,12 @@ The debugging setup uses the single user mode of the GUI plugin, where a predefi
 
 ## Testing
 
-There are 2 test setups for the frontend. One is for unit and integration testing and the other for UI testing. Both use Jest as testing framework and can be started by the NPM scripts `unit-tests` and `e2e-tests-run` (e2e stands for end-to-end). For each type of setup there's a Jest configuration file, named `unit-tests.jest.config.ts` and `e2e.jest.config.ts`.
+There are 2 test setups for the frontend. One is for unit and integration testing and the other for UI testing. Both use vitest as testing framework and can be started by the NPM scripts `unit-tests` and `e2e-tests-run` (e2e stands for end-to-end). For each type of setup there's a vitest configuration file, named `vitest.config.ts` and `e2e.vitest.config.ts`.
 
-End-to-end tests need a MySQL database with some data. The folder `src/tests/e2e/sql` contains scripts that fill in the required test data. The MySQL server must support SSL. Use the ssl certificates in `frontend/src/tests/e2e/ssl_certificates` for the setup. The connection details to be used for e2e testing must be provided using environment variables, to keep this info secure. Define the following variables in your environment:
 
-- DBHOSTNAME (e.g. localhost)
-- DBUSERNAME (e.g. root)
-- DBPASSWORD
-- DBPORT     (e.g. the default port 3306)
-- HEADLESS (optional) (1 - headless mode enabled / 0 - headless mode disabled)
+For additional details regarding the required E2E testing configuration check `src/tests/e2e/readme.md`.
 
-With that in place you can start the tests using:
+The test suites can be executed by running the following commands given the pre-requisites are met:
 
 ```bash
 $ npm run unit-tests
@@ -116,26 +111,6 @@ and
 
 ```bash
 $ npm run e2e-tests-run
-```
-
-The e2e tests run in headless mode by default and use multiple browser instances. If you want to see the browser opening and see the tests running just set the HEADLESS var to 0.
-
-It is possible to run the e2e Jest tests in watch mode to automatically re-run your tests whenever they change:
-
-```bash
-$ npm run e2e-test-run -- --watch
-```
-
-Another helpful flag is `--runInBand` to run tests sequentially, instead of in parallel:
-
-```bash
-$ npm run e2e-test-run -- --runInBand
-```
-
-Configuration values can be injected in the tests by specifying them as globals when running Jest:
-
-```bash
-$ npm run e2e-test-run --globals "{\"baseUrl\": \"https://example.com\"}
 ```
 
 Copyright &copy; 2020, 2024, Oracle and/or its affiliates.

@@ -220,7 +220,9 @@ CREATE VIEW `test_view` as select * from actor;
 
 -- Event 
 CREATE EVENT test_event
-    ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1 HOUR
+    ON SCHEDULE EVERY 1 DAY
+    STARTS CURRENT_TIMESTAMP
+    ON COMPLETION PRESERVE
     DO
       select 1;
 

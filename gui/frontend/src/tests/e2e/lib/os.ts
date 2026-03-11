@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-syntax */
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -155,15 +155,16 @@ export class Os {
     };
 
     /**
-     * Checks if the credential helper exists/has errors
+     * Checks if the credential helper is in place
      * 
      * @returns A promise revolved with the existence of the credentials helper
      */
     public static existsCredentialHelper = async (): Promise<boolean> => {
-        const mysqlSh = join(process.cwd(), "src", "tests", "e2e", "port_8000", "mysqlsh.log");
-        const fileContent = await readFile(mysqlSh);
+        const params = ["--py", "--", "shell", "list-credentials"];
+        const response = spawnSync("mysqlsh", params);
 
-        return fileContent.toString().match(/Error: Failed to initialize the default helper/) === null;
+        // If there were errors, it would imply there's no credential helper
+        return response.status === 0;
     };
 
     /**

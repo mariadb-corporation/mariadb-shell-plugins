@@ -1133,10 +1133,9 @@ export const recreateMrsData = async (): Promise<IRecreateMrsDataResult> => {
     });
 };
 
-export const createJdvData = async (backend: ShellInterfaceSqlEditor): Promise<Record<string, string[]>> => {
+export const createJdvData = async (backend: ShellInterfaceSqlEditor, schema:string = "jdv_test"): Promise<Record<string, string[]>> => {
     const schemasWithTables: Record<string, string[]> = {};
 
-    const schema = "jdv_test";
     schemasWithTables[schema] = ["customer", "order"];
 
     await backend.execute(`DROP DATABASE IF EXISTS ${schema}`);

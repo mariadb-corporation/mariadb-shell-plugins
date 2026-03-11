@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -52,14 +52,36 @@ export const shellServers = new Map([
 export class Misc {
 
     /**
-     * Waits until a page loads
-     *
-     * @param filename filename of the test suite
-     * @returns A promise resolving when the url is set
+     * Returns the port of the BE server to be used by this test
+     * 
+     * The port is defined by the WORKER_ID associated to the test
+     * It is expeted that the number of BE servers is equal to the number
+     * of test files + 1
+     * 
+     * @param customPortIndex to use a specific port from the available pool
+     * used for the redirection test where 2 ports are needed
+     * @returns The URL to the associated BE server
      */
-    public static getUrl = (filename: string): string => {
+    public static getPort = (customPortIndex?: number): number => {
+        if (customPortIndex !== undefined) {
+            return Number(globalThis.testConfig!.PORT_POOL[customPortIndex])
+        }
+
+        const workerId = Number(process.env.VITEST_POOL_ID) || 1;
+        return Number(globalThis.testConfig!.PORT_POOL[workerId])
+    };
+
+
+    /**
+     * Returns the URL of the BE server to be used by this test
+     * 
+     * The port is defined by the WORKER_ID associated to the test
+     *
+     * @returns The URL to the associated BE server
+     */
+    public static getUrl = (): string => {
+        const port = this.getPort();
         let url = globalThis.testConfig!.SHELL_UI_HOSTNAME;
-        const port = shellServers.get(filename);
         url += `:${String(port)}/?token=${String(globalThis.testConfig!.TOKEN)}`;
 
         return String(url);

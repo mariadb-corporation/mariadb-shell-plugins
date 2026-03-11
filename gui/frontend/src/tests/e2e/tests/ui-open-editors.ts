@@ -37,8 +37,7 @@ import { Misc } from "../lib/misc.js";
 import { Os } from "../lib/os.js";
 import { E2EAccordionSection } from "../lib/SideBar/E2EAccordionSection.js";
 
-const filename = basename(__filename);
-const url = Misc.getUrl(basename(filename));
+
 
 describe("OPEN EDITORS", () => {
 
@@ -61,6 +60,7 @@ describe("OPEN EDITORS", () => {
     let testFailed = false;
 
     beforeAll(async () => {
+        const url = Misc.getUrl();
 
         await loadDriver(true);
 
@@ -81,9 +81,16 @@ describe("OPEN EDITORS", () => {
     });
 
     afterAll(async () => {
-        await Os.writeFELogs(basename(__filename), driver.manage().logs());
-        await driver.close();
-        await driver.quit();
+        try {
+            await dbTreeSection.focus();
+            await dbTreeSection.removeDatabaseConnection(globalConn.caption!);
+            await Os.writeFELogs(basename(__filename), driver.manage().logs());
+            await driver.close();
+            await driver.quit();
+        } catch (e) {
+            await Misc.storeScreenShot(undefined, "OPEN EDITORS");
+            throw e;
+        }
     });
 
     afterEach(async (context: TestContext) => {

@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@ import subprocess
 import time
 import typing
 import json
+import signal
 
 VERBOSE = True
 THIS_FILE_PATH = pathlib.Path(os.path.realpath(__file__))
@@ -40,7 +41,6 @@ USERS_PATH = WORKING_DIR.joinpath("sql", "1_users.sql")
 PROCEDURES_PATH = WORKING_DIR.joinpath("sql", "4_procedures.sql")
 REPO_ROOT = THIS_FILE_PATH.parent.parent.parent.parent.parent.parent.absolute()
 
-TOKEN = "1234test"
 TEXT_ONLY_OUTPUT = True
 
 
@@ -74,6 +74,28 @@ class Checkable(typing.Protocol):
         """
 
         raise NotImplementedError()
+
+
+def get_configuration():
+    config_file = os.path.join(WORKING_DIR, "..", ".env.test.json")
+
+    # Create the configuration file if it does not exist
+    if not os.path.exists(config_file):
+        shutil.copy(config_file + ".in", config_file)
+
+    data = None
+    with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), "r") as file:
+        data = json.load(file)
+
+    return data
+
+
+def save_configuration(data):
+    with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), 'w') as file:
+        json.dump(data, file, indent=4)
+
+
+TOKEN = get_configuration()["TOKEN"]
 
 
 def get_executables(name: str) -> str:
@@ -474,20 +496,18 @@ class SetMySQLServerTask(ShellTask):
     def __init__(self, environment: typing.Dict[str, str], dir_name: str, port: str, set_ssl_root_folder: bool = False) -> None:
         super().__init__(environment)
         self.dir_name = dir_name
-        self.sandbox_deployed = False
+        self.sandbox_deployed = environment["EXECUTION_MODE"] == "teardown" and 'MYSQL_URI' not in self.environment
         self.set_ssl_root_folder = set_ssl_root_folder
         self.port = port
 
     def run(self) -> None:
         """Runs the task"""
 
-        with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), 'r') as file:
-            data = json.load(file)
+        data = get_configuration()
 
         if self.set_ssl_root_folder:
             data['SSL_ROOT_FOLDER'] = f"{self.dir_name}/{self.port}/sandboxdata"
-            with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), 'w') as file:
-                json.dump(data, file, indent=4)  
+
         existing_uri = ''
         if 'MYSQL_URI' in self.environment:
             existing_uri = self.environment['MYSQL_URI']
@@ -497,15 +517,17 @@ class SetMySQLServerTask(ShellTask):
                 raise RuntimeError(
                     f"Unable to find SSL certificates for {existing_uri} in {ssl_root_folder}")
             data['SSL_ROOT_FOLDER'] = ssl_root_folder
-            with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), 'w') as file:
-                json.dump(data, file, indent=4)  
 
+        save_configuration(data)
         conn_string = (
             f"{self.environment['DBUSERNAME']}:{self.environment['DBPASSWORD']}@localhost:{self.port}"
         )
 
         if existing_uri == conn_string:
             Logger.info("Using existing MySQL Server")
+        elif self.environment["EXECUTION_MODE"] in ["execute", "teardown"]:
+            # We don't want to deploy anything on the above modes
+            return
         else:
             Logger.info("Start deploying MySQL Server")
             self.deploy_mysql_instance()
@@ -592,6 +614,10 @@ class SetMySQLServerTask(ShellTask):
     def clean_up(self) -> None:
         """Clean up after task finish"""
 
+        if self.environment["EXECUTION_MODE"] in ["setup", "execute"]:
+            # We don't want to clean in the above scenarios
+            return
+
         if self.sandbox_deployed:
             self.shell_command_execute_cli(
                 ["--",
@@ -632,18 +658,27 @@ class ClearCredentials(ShellTask):
 class StartBeServersTask:
     """Runs two BE servers for e2e tests"""
 
-    def __init__(self, servers: typing.List) -> None:
+    def __init__(self, environment, servers: typing.List) -> None:
+        self.environment = environment
         self.mysqlsh_executable = get_executables("MySQL Shell")
-        self.servers = servers
+        self.servers: list[BEServer] = servers
 
     def run(self) -> None:
         """Runs the task"""
+
+        if self.environment["EXECUTION_MODE"] in ["teardown", "execute"]:
+            # The BE Servers are already running on these cases
+            return
 
         for server in self.servers:
             server.start()
 
     def clean_up(self) -> None:
         """Clean up after task finish"""
+
+        if self.environment["EXECUTION_MODE"] in ["setup", "execute"]:
+            # The BE Servers should stay running on these cases
+            return
 
         for server in self.servers:
             server.stop()
@@ -711,7 +746,7 @@ class TaskExecutor:
 
 
 class BEServer:
-    def __init__(self, environment: typing.Dict[str, str], port: int, multi_user=False, single_server=False) -> None:
+    def __init__(self, environment: typing.Dict[str, str], port: int, multi_user=False, single_server=False, start_process: bool = True) -> None:
         self.mysqlsh_executable = get_executables("MySQL Shell")
         self.port = port
         self.multi_user = multi_user
@@ -719,19 +754,42 @@ class BEServer:
         self.server = None
         self.be_log_path = "be.log"
         self.environment = environment
+        self.pid = None
+
+        if not start_process:
+            pid_file = self.get_pid_file()
+            if os.path.exists(pid_file):
+                with open(pid_file) as file:
+                    pid = file.read()
+                    self.pid = int(pid)
+            else:
+                raise RuntimeError(f"The PID file does not exist: {pid_file}")
 
     def search_str(self, file_path, word):
         with open(file_path, 'r', encoding="UTF-8") as file:
             content = file.read()
             return word in content
 
+    def get_mysqlsh_home(self):
+        mysqlsh_user_config_home = os.path.join(
+            WORKING_DIR, f'port_{self.port}')
+        os.makedirs(mysqlsh_user_config_home, exist_ok=True)
+
+        return mysqlsh_user_config_home
+
+    def get_pid_file(self) -> str:
+        return os.path.join(self.get_mysqlsh_home(), "be_pid")
+
     def start(self) -> None:
         is_timeout = False
+
+        preexec_fn = None
+        if self.environment["EXECUTION_MODE"] == "setup":
+            preexec_fn = os.setsid
+
         with open(self.be_log_path, 'a', encoding="UTF-8") as be_log:
             environment = self.environment.copy()
-            mysqlsh_user_config_home = os.path.join(
-                WORKING_DIR, f'port_{self.port}')
-            os.makedirs(mysqlsh_user_config_home, exist_ok=True)
+            mysqlsh_user_config_home = self.get_mysqlsh_home()
             environment["MYSQLSH_USER_CONFIG_HOME"] = mysqlsh_user_config_home
             environment["LOG_LEVEL"] = "DEBUG2"
             timeout = time.time() + 30   # 30 seconds from now
@@ -751,7 +809,12 @@ class BEServer:
                 shell_args,
                 stdout=be_log,
                 env=environment,
+                preexec_fn=preexec_fn
             )
+
+            # Save the PID file
+            with open(self.get_pid_file(), "w+") as file:
+                file.write(f"{self.server.pid}")
 
             if self.multi_user:
                 to_search = "Mode: Multi-user"
@@ -775,7 +838,17 @@ class BEServer:
                 f"Shell Server: {self.port} did not start after 30secs")
 
     def stop(self) -> None:
-        self.server.kill()
+        if self.server is not None:
+            self.server.kill()
+        elif self.pid is not None:
+            try:
+                os.kill(self.pid, signal.SIGTERM)
+            except ProcessLookupError as err:
+                Logger.warning(
+                    f"Failed to terminate BE Server with PID: {self.pid}: {err}")
+        pid_file = self.get_pid_file()
+        if os.path.exists(pid_file):
+            os.remove(pid_file)
         Logger.success(f"Shell Server: {self.port} has been stopped")
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,7 +54,9 @@ export class E2ENotebook {
      */
     public untilIsOpened = async (
         connection: interfaces.IDBConnection,
-        timeout = constants.wait10seconds): Promise<E2ENotebook> => {
+        timeout = constants.wait10seconds, caption?: string, handlePassword?: boolean): Promise<E2ENotebook> => {
+
+        const waitForPassword = handlePassword ?? true;
 
         await driver.wait(async () => {
             const confirmDialog = new ConfirmDialog();
@@ -84,23 +86,49 @@ export class E2ENotebook {
                     }
                 }
 
-                const tabContainer = new E2ETabContainer();
-                if (
-                    await tabContainer.tabExists(new RegExp(connection.caption!)) &&
-                    !(await tabContainer.tabExists(constants.openConnection))
-                ) {
-                    this.codeEditor = await this.codeEditor.build();
+                await PasswordDialog.untilExists(false);
 
-                    return true;
-                } else {
-                    return false;
-                }
+                const tabContainer = new E2ETabContainer();
+                await tabContainer.untilTabExists(new RegExp(caption ?? connection.caption!));
+                await tabContainer.untilTabDoesNotExists(constants.openConnection);
+
+                this.codeEditor = await this.codeEditor.build();
+
+                return true;
             };
 
-            if (await PasswordDialog.exists()) {
+            /* --------------------------------------------------------------
+             *  Wait for the password prompt *only* when the connection object
+             *  contains a password.  This replaces the old “handle‑if‑found”
+             *  behaviour with an explicit wait so the test does not race
+             *  against the dialog appearing.
+             * -------------------------------------------------------------- */
+            const mysqlBasic = connection.basic as interfaces.IConnBasicMySQL | undefined;
+
+            if (mysqlBasic?.password && waitForPassword) {
+                // The dialog is expected to pop‑up after the notebook frame is
+                // switched.  Using driver.wait makes the test block until the
+                // dialog is present (or the timeout expires), eliminating flaky
+                // “dialog not found” failures.
+                await driver.wait(
+                    async () => await PasswordDialog.exists(),
+                    constants.wait1second * 10,               // give the UI up to 10 s
+                    `Password dialog did not appear for connection ${connection.caption}  that has a password`
+                );
+
+                // At this point the dialog is guaranteed to exist – fill it.
                 await PasswordDialog.setCredentials(connection);
+            } else {
+                // No password supplied → just continue.  If a dialog *does*
+                // appear unexpectedly we will still clean it up later (the
+                // check below is safe because PasswordDialog.exists() returns
+                // false when the dialog is absent).
+                if (await PasswordDialog.exists()) {
+                    await PasswordDialog.setCredentials(connection);
+                }
             }
 
+            // Finally resolve the “opened” condition.
             return isOpened();
         }, timeout, `Could not open notebook for ${connection.caption}`);
 

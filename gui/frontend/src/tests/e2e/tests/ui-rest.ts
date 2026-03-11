@@ -46,8 +46,6 @@ import { Os } from "../lib/os.js";
 import { E2EAccordionSection } from "../lib/SideBar/E2EAccordionSection.js";
 import { E2ETreeItem } from "../lib/SideBar/E2ETreeItem.js";
 
-const filename = basename(__filename);
-const url = Misc.getUrl(basename(filename));
 
 const globalConn: interfaces.IDBConnection = {
     dbType: "MySQL",
@@ -68,8 +66,13 @@ let testFailed = false;
 const notebook = new E2ENotebook();
 
 describe("MYSQL REST SERVICE", () => {
+    let redirectionPort: number;
+    let url: string;
 
     beforeAll(async () => {
+
+        redirectionPort = Misc.getPort(0);
+        url = Misc.getUrl();
 
         await loadDriver(false);
 
@@ -81,7 +84,6 @@ describe("MYSQL REST SERVICE", () => {
             await (await new E2EDatabaseConnectionOverview().getConnection(globalConn.caption!)).click();
             await driver.wait(notebook.untilIsOpened(globalConn), constants.wait10seconds);
             Os.deleteShellCredentials();
-
             await dbTreeSection.expandTreeItem(globalConn);
             await dbTreeSection.openContextMenuAndSelect(globalConn.caption!, constants.showSystemSchemas);
         } catch (e) {
@@ -91,9 +93,20 @@ describe("MYSQL REST SERVICE", () => {
     });
 
     afterAll(async () => {
-        await Os.writeFELogs(basename(__filename), driver.manage().logs());
-        await driver.close();
-        await driver.quit();
+        try {
+            await dbTreeSection.expandTreeItem(globalConn);
+            await dbTreeSection.openContextMenuAndSelect(globalConn.caption!, constants.showSystemSchemas);
+            await driver.wait(dbTreeSection.untilTreeItemExists(constants.restServiceMetadataSchema), constants.wait3seconds);
+            await dbTreeSection.openContextMenuAndSelect(constants.restServiceMetadataSchema, constants.dropSchema);
+            await (await new ConfirmDialog().untilExists()).accept();
+            await dbTreeSection.removeDatabaseConnection(globalConn.caption!);
+            await Os.writeFELogs(basename(__filename), driver.manage().logs());
+            await driver.close();
+            await driver.quit();
+        } catch (e) {
+            await Misc.storeScreenShot(undefined, "MYSQL REST SERVICE");
+            throw e;
+        }
     });
 
     describe("Rest Service Configuration", () => {
@@ -169,8 +182,8 @@ describe("MYSQL REST SERVICE", () => {
                     constants.wait5seconds);
                 await dbTreeSection.expandTreeItem(constants.mysqlRestService);
                 await dbTreeSection.expandTreeItem(constants.restAuthenticationApps);
-                expect(await dbTreeSection.existsTreeItem("MRS")).toBe(false);
-                expect(await dbTreeSection.existsTreeItem("MySQL")).toBe(true);
+                await driver.wait(dbTreeSection.untilTreeItemDoesNotExists("MRS"), constants.wait5seconds);
+                await driver.wait(dbTreeSection.untilTreeItemExists("MySQL"), constants.wait5seconds);
             } catch (e) {
                 testFailed = true;
                 throw e;
@@ -427,19 +440,18 @@ describe("MYSQL REST SERVICE", () => {
 
                 await dbTreeSection.openContextMenuAndSelect(constants.mysqlRestService, constants.showPrivateItems);
                 await dbTreeSection.expandTreeItem(service.servicePath);
-                expect(await dbTreeSection.existsTreeItem(`${service.restSchemas![0].restSchemaPath} (${service
-                    .restSchemas![0].settings!.schemaName})`)).toBe(true);
-                await dbTreeSection.expandTreeItem(`${service.restSchemas![0].restSchemaPath} (${service
-                    .restSchemas![0].settings!.schemaName})`);
+                const schemaName = `${service.restSchemas![0].restSchemaPath} (${service.restSchemas![0].settings!.schemaName})`;
+                await driver.wait(dbTreeSection.untilTreeItemExists(schemaName), constants.wait5seconds);
+                await dbTreeSection.expandTreeItem(schemaName);
                 await driver.wait(dbTreeSection.untilTreeItemExists(service.restSchemas![0].restObjects![0]
-                    .restObjectPath!), constants.wait3seconds);
+                    .restObjectPath!), constants.wait5seconds);
 
                 await dbTreeSection.openContextMenu(constants.mysqlRestService);
                 await driver.actions().keyDown(Key.ALT).perform();
                 await dbTreeSection.selectFromContextMenu(constants.hidePrivateItems);
                 await driver.actions().keyUp(Key.ALT).perform();
 
-                expect(await dbTreeSection.existsTreeItem(service.servicePath)).toBe(true);
+                await driver.wait(dbTreeSection.untilTreeItemExists(service.servicePath), constants.wait5seconds);
                 await driver.wait(async () => {
                     try {
                         const children = await dbTreeSection.getTreeItemChildren(service.servicePath);
@@ -495,7 +507,7 @@ describe("MYSQL REST SERVICE", () => {
                 comments: "testing",
             },
             authentication: {
-                redirectionUrl: "localhost:8000",
+                redirectionUrl: `localhost:${redirectionPort}`,
                 redirectionUrlValid: "(.*)",
                 authCompletedChangeCont: "<html>",
             },
@@ -510,7 +522,7 @@ describe("MYSQL REST SERVICE", () => {
                 comments: "testing",
             },
             authentication: {
-                redirectionUrl: "localhost:8000",
+                redirectionUrl: `localhost:${redirectionPort}`,
                 redirectionUrlValid: "(.*)",
                 authCompletedChangeCont: "<html>",
             },
@@ -618,7 +630,8 @@ describe("MYSQL REST SERVICE", () => {
                     options: `{"test":"value"}`,
                     authentication: {
                         authenticationPath: "/authenticationPath",
-                        redirectionUrl: "localhost:8001",
+                        // NOTE: Here it was port 8001, why?
+                        redirectionUrl: `localhost:${redirectionPort}`,
                         redirectionUrlValid: "(.*)(.*)",
                         authCompletedChangeCont: "<body>",
                     },
@@ -1023,8 +1036,8 @@ describe("MYSQL REST SERVICE", () => {
                 await notification!.close();
                 const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
                 await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
-                expect(await dbTreeSection.existsTreeItem(`${service2.restSchemas![0]
-                    .restSchemaPath} (${service2.restSchemas![0].settings?.schemaName})`)).toBe(false);
+                const schemaName = `${service2.restSchemas![0].restSchemaPath} (${service2.restSchemas![0].settings?.schemaName})`;
+                await driver.wait(dbTreeSection.untilTreeItemDoesNotExists(schemaName), constants.wait5seconds);
             } catch (e) {
                 testFailed = true;
                 throw e;
@@ -1383,7 +1396,7 @@ describe("MYSQL REST SERVICE", () => {
                 comments: "testing",
             },
             authentication: {
-                redirectionUrl: "localhost:8000",
+                redirectionUrl: `localhost:${redirectionPort}`,
                 redirectionUrlValid: "(.*)",
                 authCompletedChangeCont: "<html>",
             },
@@ -1399,24 +1412,13 @@ describe("MYSQL REST SERVICE", () => {
                     },
                     oauth2settings: {
                         appId: "1234",
-                        appSecret: "1234test",
+                        appSecret: globalThis.testConfig!.TOKEN,
                         customURL: "http://localhost",
                         customURLforAccessToken: "http://localhost/1234",
                     },
                     options: `{ "name": "test options" }`,
                 },
             ],
-        };
-
-        const restUser = {
-            username: "gui",
-            authenticationApp: "new app",
-            email: "user@oracle.com",
-            assignedRoles: undefined,
-            userOptions: "",
-            permitLogin: true,
-            vendorUserId: "1234",
-            mappedUserId: "testing",
         };
 
         beforeAll(async () => {
@@ -1544,31 +1546,103 @@ describe("MYSQL REST SERVICE", () => {
                 await notification!.close();
                 await dbTreeSection.collapseTreeItem(constants.restAuthenticationApps);
                 await dbTreeSection.expandTreeItem(service4.servicePath);
-                expect(await dbTreeSection.existsTreeItem(service4.authenticationApps![0].name)).toBe(true);
+                await driver.wait(dbTreeSection.untilTreeItemExists(service4.authenticationApps![0].name),
+                    constants.wait5seconds);
             } catch (e) {
                 testFailed = true;
                 throw e;
             }
         });
 
-        it("Add Rest user", async () => {
-            try {
-                await dbTreeSection.collapseTreeItem(service4.servicePath);
-                await dbTreeSection.expandTreeItem(constants.restAuthenticationApps);
-                await dbTreeSection.openContextMenuAndSelect(service4.authenticationApps![0].name,
-                    constants.addRESTUser);
-                await RestUserDialog.set(restUser);
-                const notification = await new E2EToastNotification().create();
-                expect(notification!.message)
-                    .toBe(`The MRS User "${restUser.username}" has been added.`);
-                await notification!.close();
-                await dbTreeSection.expandTreeItem(service4.authenticationApps![0].name);
-                await driver.wait(dbTreeSection.untilTreeItemExists(restUser.username),
-                    constants.wait3seconds);
-            } catch (e) {
-                testFailed = true;
-                throw e;
-            }
+        describe("Rest Users", () => {
+
+            let restUser: interfaces.IRestUser = {
+                username: "gui",
+                authenticationApp: "another new app",
+                email: "user@oracle.com",
+                assignedRoles: undefined,
+                userOptions: "",
+                permitLogin: true,
+                vendorUserId: "1234",
+                mappedUserId: "testing",
+            };
+
+            let editedUser: interfaces.IRestUser = {
+                username: "testUser",
+                authenticationApp: "another new app",
+                email: "testuser@oracle.com",
+                assignedRoles: undefined,
+                userOptions: `{"test":"value"}`,
+                permitLogin: false,
+                vendorUserId: "123467",
+                mappedUserId: "stillTesting",
+            };
+
+            it("Add Rest user", async () => {
+                try {
+                    await dbTreeSection.collapseTreeItem(service4.servicePath);
+                    await dbTreeSection.expandTreeItem(constants.restAuthenticationApps);
+                    await dbTreeSection.openContextMenuAndSelect(service4.authenticationApps![0].name,
+                        constants.addRESTUser);
+                    await RestUserDialog.set(restUser);
+                    const notification = await new E2EToastNotification().create();
+                    expect(notification!.message)
+                        .toBe(`The MRS User "${restUser.username}" has been added.`);
+                    await notification!.close();
+                    await dbTreeSection.expandTreeItem(service4.authenticationApps![0].name);
+                    await driver.wait(dbTreeSection.untilTreeItemExists(restUser.username),
+                        constants.wait3seconds);
+                } catch (e) {
+                    testFailed = true;
+                    throw e;
+                }
+            });
+
+
+            it("Edit User", async () => {
+                try {
+                    await dbTreeSection.openContextMenuAndSelect(restUser.username, constants.editRESTUser);
+
+                    restUser = await RestUserDialog.set(editedUser);
+                    const notification = await new E2EToastNotification().create();
+                    expect(notification!.message).toBe(`The MRS User "${editedUser.username}" has been updated.`);
+                    await notification!.close();
+                    const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
+                    await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+
+                    await dbTreeSection.expandTreeItem(service4.authenticationApps![0].name);
+                    await dbTreeSection.openContextMenuAndSelect(editedUser.username, constants.editRESTUser);
+                    const user = await RestUserDialog.get();
+                    editedUser.assignedRoles = "Full Access";
+                    editedUser.password = "[Stored Password]";
+                    expect(editedUser).toStrictEqual(user);
+                    await driver.actions().keyDown(Key.ESCAPE).keyUp(Key.ESCAPE).perform();
+                } catch (e) {
+                    testFailed = true;
+                    throw e;
+                }
+            });
+
+            it("Delete User", async () => {
+                try {
+                    await dbTreeSection.expandTreeItem(service4.authenticationApps![0].name);
+                    await driver.wait(dbTreeSection.untilTreeItemExists(editedUser.username),
+                        constants.wait3seconds);
+                    await dbTreeSection.openContextMenuAndSelect(editedUser.username, constants.deleteRESTUser);
+                    await (await new ConfirmDialog().untilExists()).accept();
+
+                    const notification = await new E2EToastNotification().create();
+                    expect(notification!.message).toBe(`The MRS user ${editedUser.username} has been deleted successfully.`);
+                    await notification!.close();
+                    const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
+                    await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                    await driver.wait(dbTreeSection.untilTreeItemDoesNotExists(editedUser.username),
+                        constants.wait5seconds);
+                } catch (e) {
+                    testFailed = true;
+                    throw e;
+                }
+            });
         });
 
         it("Delete Authentication App", async () => {
@@ -1597,197 +1671,4 @@ describe("MYSQL REST SERVICE", () => {
         });
 
     });
-
-    describe("Rest Users", () => {
-
-        const service5: interfaces.IRestService = {
-            servicePath: `/service5`,
-            name: "service4",
-            enabled: true,
-            default: false,
-            settings: {
-                comments: "testing",
-            },
-            authentication: {
-                redirectionUrl: "localhost:8000",
-                redirectionUrlValid: "(.*)",
-                authCompletedChangeCont: "<html>",
-            },
-            authenticationApps: [
-                {
-                    vendor: constants.vendorOCIOAuth2,
-                    name: "new app",
-                    enabled: true,
-                    limitToRegisteredUsers: true,
-                    settings: {
-                        description: "this is an authentication app",
-                        defaultRole: "Full Access",
-                    },
-                    oauth2settings: {
-                        appId: "1234",
-                        appSecret: "1234test",
-                        customURL: "http://localhost",
-                        customURLforAccessToken: "http://localhost/1234",
-                    },
-                    options: `{ "name": "test options" }`,
-                    user: [{
-                        username: "gui",
-                        authenticationApp: "new app",
-                        email: "user@oracle.com",
-                        assignedRoles: undefined,
-                        userOptions: "",
-                        permitLogin: true,
-                        vendorUserId: "1234",
-                        mappedUserId: "testing",
-                    }],
-                },
-            ],
-        };
-
-        beforeAll(async () => {
-            try {
-                await dbTreeSection.openContextMenuAndSelect(constants.mysqlRestService, constants.addRESTService);
-                await RestServiceDialog.set(service5);
-                let notification = await new E2EToastNotification().create();
-                expect(notification!.message).toBe("The MRS service has been created.");
-                await notification!.close();
-                await driver.wait(dbTreeSection.untilTreeItemExists(service5.servicePath), constants.wait5seconds);
-
-                await dbTreeSection.openContextMenuAndSelect(constants.restAuthenticationApps,
-                    constants.addNewAuthenticationApp);
-                await AuthenticationAppDialog.set(service5.authenticationApps![0]);
-                notification = await new E2EToastNotification().create();
-                expect(notification!.message).toBe("The MRS Authentication App has been added.");
-                await notification!.close();
-                await dbTreeSection.expandTreeItem(constants.restAuthenticationApps);
-                await driver.wait(dbTreeSection.untilTreeItemExists(service5.authenticationApps![0].name),
-                    constants.wait3seconds);
-
-                await dbTreeSection.expandTreeItem(constants.restAuthenticationApps);
-                await dbTreeSection.openContextMenuAndSelect(service5.authenticationApps![0].name,
-                    constants.addRESTUser);
-                await RestUserDialog.set(service5.authenticationApps![0].user![0]);
-                notification = await new E2EToastNotification().create();
-                expect(notification!.message)
-                    .toBe(`The MRS User "${service5.authenticationApps![0].user![0].username}" has been added.`);
-                await notification!.close();
-                await dbTreeSection.expandTreeItem(service5.authenticationApps![0].name);
-                await driver.wait(dbTreeSection.untilTreeItemExists(service5.authenticationApps![0].user![0].username),
-                    constants.wait3seconds);
-            } catch (e) {
-                await Misc.storeScreenShot(undefined, "Rest Users");
-                throw e;
-            }
-        });
-
-        beforeEach(async (context: TestContext) => {
-            try {
-                await driver.wait(dbTreeSection.untilIsNotLoading(), constants.wait20seconds,
-                    `${constants.dbTreeSection} is still loading`);
-            } catch (e) {
-                await Misc.storeScreenShot(context);
-                throw e;
-            }
-        });
-
-        afterEach(async (context: TestContext) => {
-            if (testFailed) {
-                testFailed = false;
-                await Misc.storeScreenShot(context);
-            }
-
-            await Misc.dismissNotifications();
-        });
-
-        it("Edit User", async () => {
-            try {
-                await driver.wait(async () => {
-                    try {
-                        if (!(await dbTreeSection.existsTreeItem(service5.authenticationApps![0].user![0].username))) {
-                            await dbTreeSection.expandTree([service5.authenticationApps![0].name]);
-                        }
-                        await dbTreeSection.openContextMenuAndSelect(service5.authenticationApps![0].user![0].username,
-                            constants.editRESTUser);
-
-                        return true;
-                    } catch (e) {
-                        if (!String(e).includes("Could not find")) {
-                            throw e;
-                        } else {
-
-                            await driver.actions().keyDown(Key.ESCAPE).keyUp(Key.ESCAPE).perform();
-                        }
-                    }
-                }, constants.wait15seconds, "Could not perform the first Edit User");
-
-                const editedUser: interfaces.IRestUser = {
-                    username: "testUser",
-                    authenticationApp: service5.authenticationApps![0].name,
-                    email: "testuser@oracle.com",
-                    assignedRoles: undefined,
-                    userOptions: `{"test":"value"}`,
-                    permitLogin: false,
-                    vendorUserId: "123467",
-                    mappedUserId: "stillTesting",
-                };
-
-                service5.authenticationApps![0].user![0] = await RestUserDialog.set(editedUser);
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
-                const notification = await new E2EToastNotification().create();
-                expect(notification!.message).toBe(`The MRS User "${editedUser.username}" has been updated.`);
-                await notification!.close();
-
-                await driver.wait(async () => {
-                    try {
-                        if (!(await dbTreeSection.existsTreeItem(service5.authenticationApps![0].user![0].username))) {
-                            await dbTreeSection.expandTree([service5.authenticationApps![0].name]);
-                        }
-                        await dbTreeSection.openContextMenuAndSelect(service5.authenticationApps![0].user![0].username,
-                            constants.editRESTUser);
-
-                        return true;
-                    } catch (e) {
-                        if (!String(e).includes("Could not find")) {
-                            throw e;
-                        } else {
-
-                            await driver.actions().keyDown(Key.ESCAPE).keyUp(Key.ESCAPE).perform();
-                        }
-                    }
-                }, constants.wait15seconds, "Could not perform the second Edit User");
-
-                const user = await RestUserDialog.get();
-                editedUser.assignedRoles = "Full Access";
-                editedUser.password = "[Stored Password]";
-                expect(editedUser).toStrictEqual(user);
-            } catch (e) {
-                testFailed = true;
-                throw e;
-            }
-        });
-
-        it("Delete User", async () => {
-            try {
-                await dbTreeSection.expandTree([service5.authenticationApps![0].name]);
-                await dbTreeSection.openContextMenuAndSelect(service5.authenticationApps![0].user![0].username,
-                    constants.deleteRESTUser);
-                await (await new ConfirmDialog().untilExists()).accept();
-
-                const notification = await new E2EToastNotification().create();
-                expect(notification!.message).toBe(`The MRS user ${service5.authenticationApps![0].user![0]
-                    .username} has been deleted successfully.`);
-                await notification!.close();
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
-                expect(await dbTreeSection.existsTreeItem(service5.authenticationApps![0].user![0].username))
-                    .toBe(false);
-            } catch (e) {
-                testFailed = true;
-                throw e;
-            }
-        });
-
-    });
-
 });

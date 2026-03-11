@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -49,9 +49,9 @@ export class PasswordDialog {
      * 
      * @returns A condition resolving to the dialog if the dialog is displayed, undefined otherwise
      */
-    public static untilExists = (): Condition<PasswordDialog | undefined> => {
+    public static untilExists = (existence: boolean = true): Condition<PasswordDialog | undefined> => {
         return new Condition("for Password Dialog to be displayed", async () => {
-            if (await this.exists()) {
+            if (await this.exists() === existence) {
                 return this;
             }
         });

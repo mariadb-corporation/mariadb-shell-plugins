@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,11 +25,12 @@ import argparse
 import os
 import pathlib
 import subprocess
-import sys
 import tempfile
 import typing
-import json
 import task_utils
+import socket
+import shutil
+import sys
 
 arg_parser = argparse.ArgumentParser()
 
@@ -74,6 +75,14 @@ arg_parser.add_argument(
     help="Specify db root user password",
 )
 
+arg_parser.add_argument(
+    "--execution_mode",
+    required=False,
+    type=str,
+    default="full",
+    help="Specify the execution mode full, setup, execute, teardown",
+)
+
 try:
     argv = arg_parser.parse_args()
 except argparse.ArgumentError as e:
@@ -89,6 +98,7 @@ USERS_PATH = os.path.join(WORKING_DIR, "sql", "users.sql")
 PROCEDURES_PATH = os.path.join(WORKING_DIR, "sql", "procedures.sql")
 TESTS_TIMEOUT = 30*60
 
+
 class SetEnvironmentVariablesTask:
     """Task for setting environment variables"""
 
@@ -103,16 +113,19 @@ class SetEnvironmentVariablesTask:
         self.environment["DBUSERNAME"] = argv.db_root_user
         self.environment["DBPASSWORD"] = DB_ROOT_PASSWORD
 
-        with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), "r") as file:
-            data = json.load(file)
+        if self.environment['EXECUTION_MODE'] in ['teardown', 'execute']:
+            return
 
+        data = task_utils.get_configuration()
+
+        data['PORT_POOL'] = []
         for server in self.servers:
             if server.multi_user:
-                #self.environment["SHELL_UI_MU_HOSTNAME"] = f"http://localhost:{server.port}"
-                data['SHELL_UI_MU_HOSTNAME'] = f"http://localhost:{server.port}"
-            if server.single_server:
-                #self.environment["SHELL_UI_SS_HOSTNAME"] = f"http://localhost:{server.port}"
-                data['SHELL_UI_SS_HOSTNAME'] = f"http://localhost:{server.port}"
+                data['SHELL_UI_MU_PORT'] = server.port
+            elif server.single_server:
+                data['SHELL_UI_SS_PORT'] = server.port
+            else:
+                data['PORT_POOL'].append(server.port)
 
         data["SQLITE_PATH_FILE"] = os.path.join(
             self.dir_name,
@@ -122,8 +135,7 @@ class SetEnvironmentVariablesTask:
             "mysqlsh_gui_backend.sqlite3",
         )
 
-        with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), 'w') as file:
-            json.dump(data, file, indent=4) 
+        task_utils.save_configuration(data)
 
         task_utils.Logger.success("Environment variables have been set")
 
@@ -221,7 +233,7 @@ class SetFrontendTask:
             args = [task_utils.get_executables("npm"), "run", "build-win"]
         else:
             args = [task_utils.get_executables("npm"), "run", "build"]
-        
+
         npm_modules = subprocess.Popen(args=args, env=self.environment)
         npm_modules.communicate()
         npm_modules.wait()
@@ -230,11 +242,66 @@ class SetFrontendTask:
         """Clean up after task finish"""
 
 
+def is_port_in_use(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
+
+
+def get_be_servers(environment):
+    be_servers = []
+
+    if environment["EXECUTION_MODE"] in ["setup", "full"]:
+        server_port = 8000
+        while len(be_servers) < 13:
+            if not is_port_in_use(server_port):
+                if len(be_servers) < 11:
+                    be_servers.append(task_utils.BEServer(
+                        environment, server_port))
+                elif len(be_servers) < 12:
+                    be_servers.append(task_utils.BEServer(
+                        environment, server_port, True))
+                else:
+                    be_servers.append(task_utils.BEServer(
+                        environment, server_port, False, True))
+
+            server_port += 1
+    else:
+        ports = []
+
+        data = task_utils.get_configuration()
+        ports = data["PORT_POOL"]
+        ports.append(data["SHELL_UI_MU_PORT"])
+        ports.append(data["SHELL_UI_SS_PORT"])
+
+        # No checks are needed, as these are used only to kill the processes
+        for port in ports:
+            try:
+                be_servers.append(task_utils.BEServer(
+                    environment, port, start_process=False))
+            except RuntimeError as err:
+                task_utils.Logger.warning(str(err))
+
+    return be_servers
+
+
 def main() -> None:
     test_failed = False
-    with tempfile.TemporaryDirectory() as tmp_dirname:
+    dev_path = None
+    if argv.execution_mode != "full":
+        this_path = os.path.dirname(__file__)
+        dev_path = os.path.join(this_path, "execution")
+        if argv.execution_mode == "setup":
+            if os.path.exists(dev_path):
+                shutil.rmtree(dev_path)
+            os.mkdir(dev_path)
+
+    with tempfile.TemporaryDirectory() as random_path:
+        tmp_dirname = random_path if dev_path is None else dev_path
+
         executor = task_utils.TaskExecutor(tmp_dirname)
-        
+
+        executor.environment["EXECUTION_MODE"] = argv.execution_mode
+
         executor.add_prerequisite(task_utils.CheckVersionTask("MySQL Shell"))
         executor.add_prerequisite(task_utils.CheckVersionTask("MySQL Server"))
         executor.add_prerequisite(
@@ -242,43 +309,41 @@ def main() -> None:
         executor.add_prerequisite(task_utils.CheckVersionTask("npm"))
         executor.add_prerequisite(task_utils.CheckVersionTask("ChromeDriver"))
 
-        be_servers = [
-            task_utils.BEServer(executor.environment, 8000),
-            task_utils.BEServer(executor.environment, 8001),
-            task_utils.BEServer(executor.environment, 8002),
-            task_utils.BEServer(executor.environment, 8003),
-            task_utils.BEServer(executor.environment, 8004),
-            task_utils.BEServer(executor.environment, 8005),
-            task_utils.BEServer(executor.environment, 8006),
-            task_utils.BEServer(executor.environment, 8007),
-            task_utils.BEServer(executor.environment, 8008),
-            task_utils.BEServer(executor.environment, 8009),
-            task_utils.BEServer(executor.environment, 8010, True),
-            task_utils.BEServer(executor.environment, 8011, False, True),
-        ]
+        be_servers = get_be_servers(executor.environment)
 
         executor.add_task(SetEnvironmentVariablesTask(
             executor.environment, tmp_dirname, be_servers))
 
-        executor.add_task(SetFrontendTask(executor.environment))
-        executor.add_task(task_utils.SetPluginsTask(
-            pathlib.Path(tmp_dirname, "mysqlsh", "plugins"), be_servers))
-        executor.add_task(task_utils.AddUserToBE(executor.environment, tmp_dirname, be_servers))
-        executor.add_task(task_utils.StartBeServersTask(be_servers))
-        
-        executor.add_task(task_utils.SetMySQLServerTask(
-            executor.environment, tmp_dirname, argv.db_port, True))
-        executor.add_task(task_utils.SetMySQLServerTask(
-            executor.environment, tmp_dirname, "2207"))
+        if argv.execution_mode in ["setup", "full"]:
+            executor.add_task(SetFrontendTask(executor.environment))
 
-        executor.add_task(task_utils.ClearCredentials(executor.environment))
+            executor.add_task(task_utils.SetPluginsTask(
+                pathlib.Path(tmp_dirname, "mysqlsh", "plugins"), be_servers))
+
+            executor.add_task(task_utils.AddUserToBE(
+                executor.environment, tmp_dirname, be_servers))
+
+            executor.add_task(
+                task_utils.ClearCredentials(executor.environment))
+
+        if argv.execution_mode != "execute":
+            executor.add_task(task_utils.StartBeServersTask(
+                executor.environment, be_servers))
+
+            executor.add_task(task_utils.SetMySQLServerTask(
+                executor.environment, tmp_dirname, argv.db_port, True))
+
+            executor.add_task(task_utils.SetMySQLServerTask(
+                executor.environment, tmp_dirname, "2207"))
+
         executor.add_task(task_utils.DisableTests)
 
-        with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), "r") as file:
-            data = json.load(file)
+        data = task_utils.get_configuration()
 
-        executor.add_task(NPMScript(executor.environment, "e2e-tests-run", [f"--maxWorkers={data["MAX_WORKERS"]}"]))
-        
+        if argv.execution_mode in ["full", "execute"]:
+            executor.add_task(NPMScript(
+                executor.environment, "e2e-tests-run", [f"--maxWorkers={data["MAX_WORKERS"]}"]))
+
         if executor.check_prerequisites():
             try:
                 executor.run_tasks()
@@ -291,8 +356,12 @@ def main() -> None:
                 # reworked eventually.
             executor.clean_up()
 
+    if dev_path is not None and argv.execution_mode == "teardown":
+        shutil.rmtree(dev_path)
+
     if test_failed:
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -151,7 +151,7 @@ export class E2ETabContainer {
      */
     public untilTabExists = (name: string | RegExp): Condition<boolean> => {
         return new Condition(`for tab '${name}' to exist`, async () => {
-            return this.tabExists(name);
+            return await this.tabExists(name);
         });
     };
 
@@ -254,34 +254,29 @@ export class E2ETabContainer {
      */
     public tabExists = async (name: string | RegExp): Promise<boolean> => {
         let exists = false;
+        try {
+            const tabs = await driver.findElements(locator.tab.exists);
 
-        await driver.wait(async () => {
-            try {
-                const tabs = await driver.findElements(locator.tab.exists);
+            for (const tab of tabs) {
+                const label = await (await tab.findElement(locator.tab.label)).getText();
 
-                for (const tab of tabs) {
-                    const label = await (await tab.findElement(locator.tab.label)).getText();
-
-                    if (name instanceof RegExp) {
-                        if (label.match(name) !== null) {
-                            exists = true;
-                            break;
-                        }
-                    } else {
-                        if (label === name) {
-                            exists = true;
-                            break;
-                        }
+                if (name instanceof RegExp) {
+                    if (label.match(name) !== null) {
+                        exists = true;
+                        break;
+                    }
+                } else {
+                    if (label === name) {
+                        exists = true;
+                        break;
                     }
                 }
-
-                return true;
-            } catch (e) {
-                if (!(e instanceof error.StaleElementReferenceError)) {
-                    throw e;
-                }
             }
-        }, constants.wait5seconds, `Could not verify if tab '${name}' exists (StaleElementReferenceError)`);
+        } catch (e) {
+            if (!(e instanceof error.StaleElementReferenceError)) {
+                throw e;
+            }
+        }
 
         return exists;
     };

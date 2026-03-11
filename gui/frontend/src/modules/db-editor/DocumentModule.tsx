@@ -430,6 +430,12 @@ export class DocumentModule extends Component<{}, IDocumentModuleState> {
             const page = info.dataModelEntry;
             const connectionState = this.connectionPresentation.get(page)!;
 
+            // TODO(rennox): unexpected that the state is undefined,
+            // even so it happens, requires investigation
+            if (!connectionState) {
+                return;
+            }
+
             // Add one entry per connection.
             const iconName = page.details.dbType === DBType.MySQL
                 ? Assets.db.mysqlConnectionIcon
@@ -618,6 +624,13 @@ export class DocumentModule extends Component<{}, IDocumentModuleState> {
         connectionTabs.forEach((info: IConnectionTab) => {
             const page = info.dataModelEntry;
             const connectionState = this.connectionPresentation.get(page)!;
+
+            // TODO(rennox): unexpected that the state is undefined,
+            // even so it happens, requires investigation
+            if (!connectionState) {
+                return;
+            }
+
             const content = (<ConnectionTab
                 id={page.id}
                 ref={page.id === actualSelection ? this.currentTabRef : undefined}
@@ -1868,10 +1881,23 @@ export class DocumentModule extends Component<{}, IDocumentModuleState> {
      * @returns A promise resolving to true, when the tab removal is finished.
      */
     private removeConnectionTab = async (info: IConnectionTab): Promise<boolean> => {
-        const tabId = info.dataModelEntry.id;
+        const { connectionTabs } = this.state;
 
+        const tabId = info.dataModelEntry.id;
         const page = info.dataModelEntry;
         const connectionState = this.connectionPresentation.get(page);
+
+        // Render is based on the connectionTabs content, it is needed to delete the
+        // connection tab to avoid race conditions if the connectionPresentation is
+        // deleted first
+        const index = connectionTabs.findIndex((tab) => {
+            return tab === info;
+        });
+
+        if (index > -1) {
+            connectionTabs.splice(index, 1);
+        }
+
         if (connectionState) {
             this.notifyRemoteEditorClose(tabId);
 

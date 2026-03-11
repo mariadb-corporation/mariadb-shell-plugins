@@ -68,7 +68,7 @@ describe("Jdv Object dialog tests", () => {
     });
 
     // TODO: this currently test if the dialog opened with the correct fields
-    // but does not test if the filds where populated correctly with the object values
+    // but does not test if the fields where populated correctly with the object values
     it("Show Jdv Object Dialog (snapshot) and escape", async () => {
         const hostRef = createRef<JdvHub>();
         const { unmount } = render(
@@ -121,9 +121,9 @@ describe("Jdv Object dialog tests", () => {
         const jdvViewInfo: IJdvViewInfo = {
             id: "",
             name: "customer_jdv",
-            schema: "jdv_test",
+            schema: "jdv_test_dialog",
             rootTableName: "customer",
-            rootTableSchema: "jdv_test",
+            rootTableSchema: "jdv_test_dialog",
         };
         const dialogRequest: IJdvEditRequest = {
             jdvViewInfo,
@@ -158,7 +158,7 @@ describe("Jdv Object dialog tests", () => {
 
     it("Jdv Object Dialog error testing [jdv name]", async () => {
 
-        await createJdvData(backend);
+        await createJdvData(backend, "jdv_test_dialog");
 
         const hostRef = createRef<JdvHub>();
         const { unmount } = render(
@@ -171,9 +171,9 @@ describe("Jdv Object dialog tests", () => {
         const jdvViewInfo: IJdvViewInfo = {
             id: "",
             name: "customer_jdv",
-            schema: "jdv_test",
+            schema: "jdv_test_dialog",
             rootTableName: "customer",
-            rootTableSchema: "jdv_test",
+            rootTableSchema: "jdv_test_dialog",
         };
 
         const dialogRequest: IJdvEditRequest = {

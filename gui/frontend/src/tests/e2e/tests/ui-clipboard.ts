@@ -46,8 +46,6 @@ import * as locator from "../lib/locators.js";
 import { Misc } from "../lib/misc.js";
 import { Os } from "../lib/os.js";
 
-const filename = basename(__filename);
-const url = Misc.getUrl(basename(filename));
 const testView = `test_view`;
 const testEvent = "test_event";
 const testProcedure = "test_procedure";
@@ -55,7 +53,7 @@ const testFunction = "test_function";
 let testFailed = false;
 let ociConfig: interfaces.IOciProfileConfig | undefined;
 let ociTree: string[];
-let e2eProfile: string | undefined;
+let ociProfile: string | undefined;
 const ociTreeSection = new E2EAccordionSection(constants.ociTreeSection);
 const tabContainer = new E2ETabContainer();
 
@@ -77,6 +75,7 @@ const dbTreeSection = new E2EAccordionSection(constants.dbTreeSection);
 describe("CLIPBOARD", () => {
 
     beforeAll(async () => {
+        const url = Misc.getUrl();
         await loadDriver(false);
         try {
             await driver.wait(Misc.untilHomePageIsLoaded(url), constants.wait20seconds);
@@ -94,9 +93,16 @@ describe("CLIPBOARD", () => {
     });
 
     afterAll(async () => {
-        await Os.writeFELogs(basename(__filename), driver.manage().logs());
-        await driver.close();
-        await driver.quit();
+        try {
+            await dbTreeSection.focus();
+            await dbTreeSection.removeDatabaseConnection(globalConn.caption!);
+            await Os.writeFELogs(basename(__filename), driver.manage().logs());
+            await driver.close();
+            await driver.quit();
+        } catch (e) {
+            await Misc.storeScreenShot(undefined, "CLIPBOARD");
+            throw e;
+        }
     });
 
     describe("OCI CLIPBOARD", () => {
@@ -104,11 +110,11 @@ describe("CLIPBOARD", () => {
         beforeAll(async () => {
             const configs = await Misc.mapOciConfig();
             ociConfig = configs.find((item: interfaces.IOciProfileConfig) => {
-                return item.name === "E2ETESTS";
+                return item.name === globalThis.testConfig!.MYSQLSH_OCI_CONFIG_PROFILE;
             })!;
 
-            e2eProfile = `${ociConfig.name} (${ociConfig.region})`;
-            ociTree = [e2eProfile, "/ (Root Compartment)", "QA", "MySQLShellTesting"];
+            ociProfile = `${ociConfig.name} (${ociConfig.region})`;
+            ociTree = [ociProfile, "/ (Root Compartment)", "QA", "MySQLShellTesting"];
 
             try {
                 await ociTreeSection.focus();
@@ -142,7 +148,7 @@ describe("CLIPBOARD", () => {
 
         it("View Config Profile Information", async () => {
             try {
-                await ociTreeSection.openContextMenuAndSelect(e2eProfile!, constants.viewConfigProfileInformation);
+                await ociTreeSection.openContextMenuAndSelect(ociProfile!, constants.viewConfigProfileInformation);
                 expect(await tabContainer.getTab(`${ociConfig!.name} Info.json`)).toBeDefined();
             } catch (e) {
                 testFailed = true;
@@ -208,8 +214,7 @@ describe("CLIPBOARD", () => {
         });
 
         it("Close tabs using tab context menu", async () => {
-            const tabContainer = new E2ETabContainer();
-            await ociTreeSection.openContextMenuAndSelect(e2eProfile!, constants.viewConfigProfileInformation);
+            await ociTreeSection.openContextMenuAndSelect(ociProfile!, constants.viewConfigProfileInformation);
             await driver.wait(tabContainer.untilTabIsOpened(`${ociConfig!.name} Info.json`), constants.wait3seconds);
             const qaInfoJson = `${ociTree[2]} Info.json`;
             await ociTreeSection.openContextMenuAndSelect(ociTree[2], constants.viewCompartmentInformation);
@@ -221,16 +226,18 @@ describe("CLIPBOARD", () => {
 
             // Close
             await tabContainer.selectTabContextMenu(`${ociConfig!.name} Info.json`, constants.close);
-            expect(await tabContainer.tabExists(`${ociConfig!.name} Info.json`)).toBe(false);
 
-            await ociTreeSection.openContextMenuAndSelect(e2eProfile!, constants.viewConfigProfileInformation);
+            await driver.wait(tabContainer.untilTabDoesNotExists(`${ociConfig!.name} Info.json`), constants.wait5seconds);
+
+            await ociTreeSection.openContextMenuAndSelect(ociProfile!, constants.viewConfigProfileInformation);
             await driver.wait(tabContainer.untilTabIsOpened(`${ociConfig!.name} Info.json`), constants.wait3seconds);
 
             // Close Others
             await tabContainer.selectTabContextMenu(`${ociConfig!.name} Info.json`, constants.closeOthers);
+
+            await driver.wait(tabContainer.untilTabDoesNotExists(qaInfoJson), constants.wait5seconds);
+            await driver.wait(tabContainer.untilTabDoesNotExists(`${dbSystem} Info.json`), constants.wait5seconds);
             expect(await tabContainer.tabExists(`${ociConfig!.name} Info.json`)).toBe(true);
-            expect(await tabContainer.tabExists(qaInfoJson)).toBe(false);
-            expect(await tabContainer.tabExists(`${dbSystem} Info.json`)).toBe(false);
 
             await ociTreeSection.openContextMenuAndSelect(ociTree[2], constants.viewCompartmentInformation);
             await driver.wait(tabContainer.untilTabIsOpened(qaInfoJson), constants.wait5seconds);
@@ -239,17 +246,17 @@ describe("CLIPBOARD", () => {
 
             // Close to the right
             await tabContainer.selectTabContextMenu(qaInfoJson, constants.closeToTheRight);
+            await driver.wait(tabContainer.untilTabDoesNotExists(`${dbSystem} Info.json`), constants.wait5seconds);
             expect(await tabContainer.tabExists(`${ociConfig!.name} Info.json`)).toBe(true);
             expect(await tabContainer.tabExists(qaInfoJson)).toBe(true);
-            expect(await tabContainer.tabExists(`${dbSystem} Info.json`)).toBe(false);
             await ociTreeSection.openContextMenuAndSelect(dbSystem, constants.viewDBSystemInformation);
             await driver.wait(tabContainer.untilTabIsOpened(`${dbSystem} Info.json`), constants.wait5seconds);
 
             // Close all
             await tabContainer.selectTabContextMenu(qaInfoJson, constants.closeAll);
-            expect(await tabContainer.tabExists(`${ociConfig!.name} Info.json`)).toBe(false);
-            expect(await tabContainer.tabExists(qaInfoJson)).toBe(false);
-            expect(await tabContainer.tabExists(`${dbSystem} Info.json`)).toBe(false);
+            await driver.wait(tabContainer.untilTabDoesNotExists(`${ociConfig!.name} Info.json`), constants.wait5seconds);
+            await driver.wait(tabContainer.untilTabDoesNotExists(qaInfoJson), constants.wait5seconds);
+            await driver.wait(tabContainer.untilTabDoesNotExists(`${dbSystem} Info.json`), constants.wait5seconds);
         });
 
     });
@@ -468,7 +475,6 @@ describe("CLIPBOARD", () => {
                 const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
                 await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
                 notebook = await new E2ENotebook().untilIsOpened(globalConn);
-                await driver.wait(notebook.untilIsOpened(globalConn), constants.wait10seconds);
             } catch (e) {
                 await Misc.storeScreenShot(undefined, "RESULT GRIDS CLIPBOARD");
                 throw e;
@@ -749,7 +755,21 @@ describe("CLIPBOARD", () => {
 
         beforeAll(async () => {
             try {
-                await new E2ETabContainer().closeAllTabs();
+                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
+                await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+                notebook = await new E2ENotebook().untilIsOpened(globalConn);
+            } catch (e) {
+                await Misc.storeScreenShot(undefined, "NOTEBOOKS CLIPBOARD");
+                throw e;
+            }
+
+        });
+
+        afterAll(async () => {
+            try {
+                await tabContainer.closeTab(globalConn.caption!);
+                driver.wait(tabContainer.untilTabDoesNotExists(globalConn.caption!), constants.wait5seconds);
+
                 const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
                 await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
                 notebook = await new E2ENotebook().untilIsOpened(globalConn);

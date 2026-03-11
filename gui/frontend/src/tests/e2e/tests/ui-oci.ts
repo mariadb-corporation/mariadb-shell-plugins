@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
  */
 
 import { basename } from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it, TestContext } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, TestContext, inject } from "vitest";
 import { driver, loadDriver } from "../lib/driver.js";
 import { E2ECommandResultData } from "../lib/CommandResults/E2ECommandResultData.js";
 import * as constants from "../lib/constants.js";
@@ -37,26 +37,29 @@ import { Misc } from "../lib/misc.js";
 import { Os } from "../lib/os.js";
 import { E2EAccordionSection } from "../lib/SideBar/E2EAccordionSection.js";
 
-const filename = basename(__filename);
-const url = Misc.getUrl(basename(filename));
+
 let testFailed = false;
 let ociConfig: interfaces.IOciProfileConfig | undefined;
 let ociTree: string[];
-let e2eProfile: string | undefined;
+let ociProfile: string | undefined;
 const ociTreeSection = new E2EAccordionSection(constants.ociTreeSection);
 const tabContainer = new E2ETabContainer();
 
-describe("OCI", () => {
+const ociEnvMissing = inject("ociEnvMissing");
+
+describe.skipIf(ociEnvMissing)("OCI", () => {
 
     beforeAll(async () => {
+        const url = Misc.getUrl();
+
         await loadDriver(true);
         const configs = await Misc.mapOciConfig();
         ociConfig = configs.find((item: interfaces.IOciProfileConfig) => {
-            return item.name === "E2ETESTS";
+            return item.name === globalThis.testConfig!.MYSQLSH_OCI_CONFIG_PROFILE;
         })!;
 
-        e2eProfile = `${ociConfig.name} (${ociConfig.region})`;
-        ociTree = [e2eProfile, "/ (Root Compartment)", "QA", "MySQLShellTesting"];
+        ociProfile = `${ociConfig.name} (${ociConfig.region})`;
+        ociTree = [ociProfile, "/ (Root Compartment)", "QA", "MySQLShellTesting"];
 
         try {
             await driver.wait(Misc.untilHomePageIsLoaded(url), constants.wait20seconds);
