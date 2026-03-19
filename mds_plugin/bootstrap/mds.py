@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,11 @@
 
 import os
 import oci
+import time
 import uuid
 
 from mds_plugin.bootstrap import cli_util, cli_setup, cli_setup_bootstrap
+from oci.identity.models.api_key import ApiKey
 
 
 def get_default_oci_config_path():
@@ -133,11 +135,14 @@ def bootstrap_migration_profile(
 
     if report_cb:
         report_cb("Searching for home region...")
+
     if region:
+        home_region = region
         client = oci.identity.IdentityClient({"region": region}, signer=signer)
 
         # find home region and create new client targeting home region to use for subsequent identity requests
         result = client.list_region_subscriptions(tenancy_ocid)
+
         for r in result.data:
             if r.is_home_region:
                 home_region = r.region_name
@@ -147,7 +152,8 @@ def bootstrap_migration_profile(
         user_session.region = home_region
 
     if report_cb:
-        report_cb(f"Home region is {home_region}", {"region": home_region})
+        report_cb(f"Home region is {home_region}",
+                  {"region": home_region, "home_region": home_region})
 
     client = oci.identity.IdentityClient(
         {"region": home_region},
@@ -155,15 +161,42 @@ def bootstrap_migration_profile(
         timeout=(connection_timeout, read_timeout),
     )
 
+    api_keys: list[ApiKey] = client.list_api_keys(
+        user_ocid).data  # type: ignore
+    api_keys_length = len(api_keys)
+
+    if report_cb:
+        report_cb(f"User currently has {api_keys_length} API key{'' if 1 == api_keys_length else 's'}",
+                  {"fingerprints": [k.fingerprint for k in api_keys]})
+
     create_api_key_details = oci.identity.models.CreateApiKeyDetails()
     create_api_key_details.key = cli_util.serialize_key(
         public_key=public_key).decode("UTF-8")
 
     try:
-        result = client.upload_api_key(user_ocid, create_api_key_details)
+        api_key: ApiKey = client.upload_api_key(
+            user_ocid, create_api_key_details).data  # type: ignore
     except oci.exceptions.ServiceError as e:
-        raise RuntimeError(
-            f"Couldn't upload any more API keys. Delete some to make room for more ({e.code})")
+        if api_keys_length >= 3:  # this is the documented limit
+            raise RuntimeError(
+                f"You might have exceeded the number of API keys and have to delete one. {e}"
+            )
+        else:
+            raise
+
+    if report_cb:
+        report_cb(f"Waiting for the uploaded API key to become active",
+                  {"fingerprint": api_key.fingerprint})
+
+    while api_key.lifecycle_state != ApiKey.LIFECYCLE_STATE_ACTIVE:
+        time.sleep(1)
+
+        api_keys = client.list_api_keys(user_ocid).data  # type: ignore
+        k = next((k for k in api_keys if k.fingerprint ==
+                 api_key.fingerprint), None)
+
+        if k:
+            api_key = k
 
     profile_name, config_location = cli_setup_bootstrap.persist_user_session(
         user_session,
@@ -179,7 +212,7 @@ def bootstrap_migration_profile(
 
     return {
         "config_file": config_location,
-        "user_ocid": user_session.user_ocid,
+        "user_ocid": user_ocid,
         "token_expiration": user_session.token_expiration,
         "home_region": home_region
     }

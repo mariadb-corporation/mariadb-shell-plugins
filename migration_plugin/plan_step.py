@@ -1812,7 +1812,12 @@ class MigrationPlanStep:
         import oci.exceptions
 
         def report_progress(message: str, info: dict = {}):
-            print(json.dumps({"message": message} | {"info": info}))
+            if "home_region" in info:
+                self.region = info["home_region"]
+
+            msg = json.dumps({"message": message, "info": info})
+            logging.info(msg)
+            print(msg)
 
         if not force_bootstrap and os.path.exists(
                 self.project.oci_config_file):
@@ -1836,8 +1841,12 @@ class MigrationPlanStep:
                 report_cb=report_progress
             )
         except oci.exceptions.ServiceError as e:
+            logging.error(f"Could not bootstrap an OCI profile: {e}")
             raise errors.OCIRuntimeError(
-                f"Could not bootstrap an OCI find your tenancy in region {self.region}. Please ensure you have selected the correct tenancy and a region you are subscribed to.")
+                f"Could not bootstrap an OCI profile for region '{self.region}'. Please ensure you have selected the correct tenancy and a region you are subscribed to.")
+        except Exception as e:
+            raise errors.OCIRuntimeError(
+                f"Could not bootstrap an OCI profile for region '{self.region}'. {e}")
 
         report_progress(
             f"Authentication completed successfully and an OCI configuration file and profile was created. Please wait a few moments for your new OCI profile to be activated.")
