@@ -472,8 +472,7 @@ describe("CLIPBOARD", () => {
             try {
                 await dbTreeSection.focus();
                 await driver.wait(dbTreeSection.untilTreeItemExists(globalConn.caption!), constants.wait5seconds);
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
                 notebook = await new E2ENotebook().untilIsOpened(globalConn);
             } catch (e) {
                 await Misc.storeScreenShot(undefined, "RESULT GRIDS CLIPBOARD");
@@ -755,8 +754,7 @@ describe("CLIPBOARD", () => {
 
         beforeAll(async () => {
             try {
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
                 notebook = await new E2ENotebook().untilIsOpened(globalConn);
             } catch (e) {
                 await Misc.storeScreenShot(undefined, "NOTEBOOKS CLIPBOARD");
@@ -770,8 +768,7 @@ describe("CLIPBOARD", () => {
                 await tabContainer.closeTab(globalConn.caption!);
                 driver.wait(tabContainer.untilTabDoesNotExists(globalConn.caption!), constants.wait5seconds);
 
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
                 notebook = await new E2ENotebook().untilIsOpened(globalConn);
             } catch (e) {
                 await Misc.storeScreenShot(undefined, "NOTEBOOKS CLIPBOARD");

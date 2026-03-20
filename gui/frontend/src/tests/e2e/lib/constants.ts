@@ -164,8 +164,11 @@ export const startFileUpload = "Start File Upload";
 export const modelLlama2 = "Llama2";
 export const modelMistral = "Mistral";
 export const dbTreeSection = "DATABASE CONNECTIONS";
+export const dbTreeSectionType = "connectionTreeEntry";
 export const ociTreeSection = "ORACLE CLOUD INFRASTRUCTURE";
+export const ociTreeSectionType = "ociTreeEntry";
 export const openEditorsTreeSection = "OPEN EDITORS";
+export const openEditorsTreeSectionType = "documentTreeEntry";
 export const createNewDatabaseConnection = "Create New DB Connection";
 export const refreshConnectionList = "Refresh the connection list";
 export const collapseAll = "Collapse All";
@@ -262,7 +265,7 @@ export const openNewShellConsole = "Open New Shell Console";
 export const newMySQLScript = "New MySQL Script";
 export const newJS = "New JavaScript Script";
 export const newTS = "New TypeScript Script";
-export const closeEditor = "Close Editor";
+export const closeDocument = "Close Document";
 export const openConnection = "Open Connection";
 
 // SCRIPT TYPES
@@ -407,4 +410,3 @@ export const invalidXMLConnection = `
             <value type="string" key="schema"></value>
             <value type="string" key="serverVersion">9.1.0-commercial</value>
             <value type="string" key="sslCA"></value>`;
-

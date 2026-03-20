@@ -642,8 +642,7 @@ describe("MYSQL REST SERVICE", () => {
                 expect(notification!.message).toBe("The MRS service has been successfully updated.");
                 await notification!.close();
 
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.refreshConnection);
                 await driver.wait(dbTreeSection.untilTreeItemExists(service1.servicePath), constants.wait10seconds);
                 await dbTreeSection.openContextMenuAndSelect(service1.servicePath, constants.editRESTService);
                 expect(editedService).toStrictEqual(await RestServiceDialog.get());
@@ -1007,8 +1006,7 @@ describe("MYSQL REST SERVICE", () => {
                 expect(notification!.message).toBe("The MRS schema has been updated successfully.");
                 await notification!.close();
 
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.refreshConnection);
                 await dbTreeSection.openContextMenuAndSelect(`${service2.restSchemas![1]
                     .restSchemaPath} (${service2.restSchemas![1].settings?.schemaName})`, constants.editRESTSchema);
                 const thisSchema = await RestSchemaDialog.get();
@@ -1034,8 +1032,7 @@ describe("MYSQL REST SERVICE", () => {
                 const notification = await new E2EToastNotification().create();
                 expect(notification!.message).toBe("The MRS schema has been deleted successfully.");
                 await notification!.close();
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.refreshConnection);
                 const schemaName = `${service2.restSchemas![0].restSchemaPath} (${service2.restSchemas![0].settings?.schemaName})`;
                 await driver.wait(dbTreeSection.untilTreeItemDoesNotExists(schemaName), constants.wait5seconds);
             } catch (e) {
@@ -1519,8 +1516,7 @@ describe("MYSQL REST SERVICE", () => {
                 const notification = await new E2EToastNotification().create();
                 expect(notification!.message).toBe("The MRS Authentication App has been updated.");
                 await notification!.close();
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.refreshConnection);
 
                 await dbTreeSection.openContextMenuAndSelect(service4.authenticationApps![0].name,
                     constants.editAuthenticationApp);
@@ -1607,8 +1603,7 @@ describe("MYSQL REST SERVICE", () => {
                     const notification = await new E2EToastNotification().create();
                     expect(notification!.message).toBe(`The MRS User "${editedUser.username}" has been updated.`);
                     await notification!.close();
-                    const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                    await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                    await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.refreshConnection);
 
                     await dbTreeSection.expandTreeItem(service4.authenticationApps![0].name);
                     await dbTreeSection.openContextMenuAndSelect(editedUser.username, constants.editRESTUser);
@@ -1634,8 +1629,7 @@ describe("MYSQL REST SERVICE", () => {
                     const notification = await new E2EToastNotification().create();
                     expect(notification!.message).toBe(`The MRS user ${editedUser.username} has been deleted successfully.`);
                     await notification!.close();
-                    const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                    await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                    await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.refreshConnection);
                     await driver.wait(dbTreeSection.untilTreeItemDoesNotExists(editedUser.username),
                         constants.wait5seconds);
                 } catch (e) {
@@ -1660,8 +1654,7 @@ describe("MYSQL REST SERVICE", () => {
                 expect(notification!.message).toBe(ntf);
                 await notification!.close();
 
-                const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.refreshConnection);
                 await driver.wait(dbTreeSection.untilTreeItemDoesNotExists(service4.authenticationApps![0].name),
                     constants.wait3seconds);
             } catch (e) {

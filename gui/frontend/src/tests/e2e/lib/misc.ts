@@ -359,7 +359,7 @@ export class Misc {
             .execute("DROP SCHEMA IF EXISTS mysql_rest_service_metadata;") as E2ECommandResultData;
         expect(result.text).toMatch(/OK/);
 
-        const treeDBCaption = await new E2EAccordionSection(constants.dbTreeSection).getTreeItem(caption);
-        await (await treeDBCaption.getActionButton(constants.refreshConnection))!.click();
+        const dbTreeSection = await new E2EAccordionSection(constants.dbTreeSection);
+        await dbTreeSection.clickSideBarEntryButton(caption, constants.refreshConnection);
     };
 }

@@ -124,42 +124,6 @@ export class E2ETreeItem extends WebElement {
     };
 
     /**
-     * Gets an action button from a tree element
-     * 
-     * @param actionButton The action button d
-     * @returns A promise resolving with the button
-     */
-    public getActionButton = async (actionButton: string): Promise<WebElement | undefined> => {
-        let treeItemActionButton: WebElement | undefined;
-
-        await driver.actions().move({ origin: this }).perform();
-
-        if (actionButton === constants.openNewConnectionUsingNotebook) {
-            treeItemActionButton = await this
-                .findElement(locator.section.tree.element.actions.openNewConnectionUsingNotebook);
-        } else if (actionButton === constants.refreshConnection) {
-            treeItemActionButton = await this
-                .findElement(locator.section.tree.element.actions.refreshConnection);
-        } else if (actionButton === constants.newMySQLScript) {
-            treeItemActionButton = await this
-                .findElement(locator.section.tree.element.actions.newMySQLScript);
-        } else if (actionButton === constants.loadSQLScriptFromDisk) {
-            treeItemActionButton = await this
-                .findElement(locator.section.tree.element.actions.loadSQLScriptFromDisk);
-        } else if (actionButton === constants.closeEditor) {
-            treeItemActionButton = await this
-                .findElement(locator.section.tree.element.actions.closeEditor);
-        } else {
-            throw new Error(`Unknown action button ${actionButton}`);
-        }
-
-        await driver.wait(until.elementIsVisible(treeItemActionButton), constants.wait3seconds,
-            `${actionButton} action button was not visible`);
-
-        return treeItemActionButton;
-    };
-
-    /**
      * Verifies if the tree item is marked as default
      * 
      * @returns A promise resolving to true when the item is marked as default

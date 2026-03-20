@@ -1461,15 +1461,13 @@ describe("DATABASE CONNECTIONS", () => {
 
         it("Performance Dashboard - MLE Enabled", async () => {
             try {
-                let treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
                 let notebook = await new E2ENotebook().untilIsOpened(globalConn);
                 let result = await notebook.codeEditor
                     .execute(`INSTALL COMPONENT "file://component_mle";`) as E2ECommandResultData;
                 expect(result.text).toMatch(/OK/);
 
-                treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                await (await treeGlobalConn.getActionButton(constants.refreshConnection))!.click();
+                await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.refreshConnection);
                 await dbTreeSection.expandTreeItem(globalConn);
                 await dbTreeSection.expandTreeItem(constants.mysqlAdministrationTreeElement);
 
@@ -1966,8 +1964,7 @@ describe("DATABASE CONNECTIONS", () => {
                     await dbTreeSection.focus();
                     await dbTreeSection.expandTreeItem(globalConn);
 
-                    treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                    await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+                    await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
                     notebook = await new E2ENotebook().untilIsOpened(globalConn);
 
                 } catch (e) {
@@ -2023,8 +2020,7 @@ describe("DATABASE CONNECTIONS", () => {
                     expect(await treeSakila.isDefault()).toBe(false);
 
                     // Reopen the connection to let it on the original state
-                    treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-                    await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+                    await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
                     notebook = await new E2ENotebook().untilIsOpened(globalConn);
                 } catch (e) {
                     testFailed = true;

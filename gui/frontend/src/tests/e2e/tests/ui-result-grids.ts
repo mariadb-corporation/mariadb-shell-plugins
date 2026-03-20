@@ -93,8 +93,7 @@ describe("RESULT GRIDS", () => {
             await driver.wait(dbTreeSection.untilTreeItemExists(anotherConn.caption!), constants.wait5seconds);
 
             await dbTreeSection.expandTreeItem(globalConn);
-            const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-            await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+            await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
             notebook = await new E2ENotebook().untilIsOpened(globalConn);
         } catch (e) {
             await Misc.storeScreenShot(undefined, "RESULT GRIDS");
@@ -1484,8 +1483,7 @@ describe("RESULT GRIDS", () => {
                 const openEditorsSection = new E2EAccordionSection(constants.openEditorsTreeSection);
                 await openEditorsSection.expand();
 
-                const treeOpenEditorsGlobalConn = await openEditorsSection.getTreeItem(globalConn.caption!);
-                await (await treeOpenEditorsGlobalConn.getActionButton(constants.newMySQLScript))!.click();
+                await openEditorsSection.clickSideBarEntryButton(globalConn.caption!, constants.newMySQLScript);
                 await dbTreeSection.openContextMenuAndSelect(anotherConn.caption!, constants.openNewDatabaseConnection);
                 const anotherConnNotebook = await new E2ENotebook().untilIsOpened(anotherConn);
 

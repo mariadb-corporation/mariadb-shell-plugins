@@ -80,10 +80,7 @@ describe("NOTEBOOKS", () => {
             await dbTreeSection.expand();
             await dbTreeSection.createDatabaseConnection(globalConn);
             await driver.wait(dbTreeSection.untilTreeItemExists(globalConn.caption!), constants.wait3seconds);
-            const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-
-            await (await treeGlobalConn.getActionButton(
-                constants.openNewConnectionUsingNotebook))!.click();
+            await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
             notebook = await new E2ENotebook().untilIsOpened(globalConn);
         } catch (e) {
             await Misc.storeScreenShot(undefined, "NOTEBOOKS");

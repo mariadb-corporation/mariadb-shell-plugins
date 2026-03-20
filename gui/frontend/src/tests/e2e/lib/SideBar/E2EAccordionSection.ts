@@ -41,9 +41,20 @@ export class E2EAccordionSection {
 
     /** Accordion section name */
     public accordionSectionName: string;
+    public sectionType: string;
 
     public constructor(sectionName: string) {
         this.accordionSectionName = sectionName;
+
+        if (this.accordionSectionName === constants.dbTreeSection) {
+            this.sectionType = constants.dbTreeSectionType;
+        } else if (this.accordionSectionName === constants.openEditorsTreeSection) {
+            this.sectionType = constants.openEditorsTreeSectionType;
+        } else if (this.accordionSectionName === constants.ociTreeSection) {
+            this.sectionType = constants.ociTreeSectionType;
+        } else {
+            this.sectionType = "";
+        }
     }
 
     /**
@@ -154,6 +165,41 @@ export class E2EAccordionSection {
         }, constants.wait5seconds, `${button} on section '${this.accordionSectionName}' was not interactable`);
 
     };
+
+    public clickSideBarEntryButton = async (entryName: string, buttonName: string) => {
+        const rowXpath = `.//div[contains(@class, '${this.sectionType}')][.//label[text()='${entryName}']]`;
+        const btnXpath = `.//div[@data-tooltip='${buttonName}']`;
+
+        let counter = 0;
+        await driver.wait(async () => {
+            try {
+                const section = await this.get();
+                const row = await section!.findElement(By.xpath(rowXpath));
+                await driver.actions({ bridge: true }).move({ origin: row }).perform();
+
+                const btn = await row.findElement(By.xpath(btnXpath));
+
+                await driver.wait(until.elementIsVisible(btn), constants.wait2seconds);
+
+                await btn.click();
+
+                return true;
+            } catch (e) {
+                // Handle both Stale and Non-Interactable errors by retrying
+                const isRetryable = e instanceof Error &&
+                    (e.name === 'StaleElementReferenceError' || e.name === 'ElementNotInteractableError' || e.name === "NoSuchElementError");
+
+                if (isRetryable) {
+                    counter = counter + 1
+                    console.warn(`Attempt ${counter} failed (${e.name}). Retrying...`);
+                } else {
+                    throw e;
+                }
+            }
+
+            return false;
+        }, constants.wait3seconds);
+    }
 
     /**
      * Creates a database connection from the DATABASE CONNECTIONS section toolbar
@@ -996,5 +1042,5 @@ export class E2EAccordionSection {
         await notification_message!.close();
 
         await driver.wait(this.untilTreeItemDoesNotExists(caption), constants.wait5seconds);
-    };    
+    };
 }

@@ -114,20 +114,15 @@ describe("OPEN EDITORS", () => {
     it("Icon - New MySQL Script", async () => {
         try {
             await dbTreeSection.focus();
-            const treeGlobalConn = await dbTreeSection.getTreeItem(globalConn.caption!);
-            await (await treeGlobalConn.getActionButton(constants.openNewConnectionUsingNotebook))!.click();
+            await dbTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.openNewConnectionUsingNotebook);
             notebook = await new E2ENotebook().untilIsOpened(globalConn);
             await openEditorsTreeSection.focus();
-            const treeOpenEditorsGlobalConn = await openEditorsTreeSection.getTreeItem(globalConn.caption!);
-            const newMySQLScript = await treeOpenEditorsGlobalConn.getActionButton(constants.newMySQLScript);
-
-            await driver.executeScript("arguments[0].click()", newMySQLScript);
+            await openEditorsTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.newMySQLScript);
             const currentEditor = await new E2EScript().toolbar.editorSelector.getCurrentEditor();
             const scriptName = "Script 1";
             expect(currentEditor.label).toBe(scriptName);
             expect(currentEditor.icon).toContain(constants.mysqlScriptIcon);
-            const treeScript = await openEditorsTreeSection.getTreeItem(scriptName);
-            await (await treeScript.getActionButton(constants.closeEditor))!.click();
+            await openEditorsTreeSection.clickSideBarEntryButton(scriptName, constants.closeDocument);
         } catch (e) {
             testFailed = true;
             throw e;
@@ -137,10 +132,7 @@ describe("OPEN EDITORS", () => {
     it("Icon - Load SQL Script from Disk", async () => {
         try {
             const sqlScript = "1_users.sql";
-            const treeOpenEditorsGlobalConn = await openEditorsTreeSection.getTreeItem(globalConn.caption!);
-            const loadScriptFromDisk = await treeOpenEditorsGlobalConn.getActionButton(
-                constants.loadSQLScriptFromDisk);
-            await driver.executeScript("arguments[0].click()", loadScriptFromDisk);
+            await openEditorsTreeSection.clickSideBarEntryButton(globalConn.caption!, constants.loadSQLScriptFromDisk);
             // eslint-disable-next-line no-restricted-syntax
             await Misc.uploadFile(join(process.cwd(), "src", "tests", "e2e", "sql", sqlScript));
             const currentEditor = await new E2EScript().toolbar.editorSelector.getCurrentEditor();
@@ -148,8 +140,7 @@ describe("OPEN EDITORS", () => {
 
             await driver.wait(openEditorsTreeSection.untilTreeItemExists(sqlScript), constants.wait5seconds);
             expect((await new E2EScript().codeEditor.existsText("CREATE USER"))).toBe(true);
-            const treeSqlScript = await openEditorsTreeSection.getTreeItem(sqlScript);
-            await (await treeSqlScript.getActionButton(constants.closeEditor))!.click();
+            await openEditorsTreeSection.clickSideBarEntryButton(sqlScript, constants.closeDocument);
         } catch (e) {
             testFailed = true;
             throw e;
@@ -164,8 +155,7 @@ describe("OPEN EDITORS", () => {
             const scriptName = "Script 2";
             expect(currentEditor.label).toBe(scriptName);
             expect(currentEditor.icon).toContain(constants.mysqlScriptIcon);
-            const treeSqlScript = await openEditorsTreeSection.getTreeItem(scriptName);
-            await (await treeSqlScript.getActionButton(constants.closeEditor))!.click();
+            await openEditorsTreeSection.clickSideBarEntryButton(scriptName, constants.closeDocument);
         } catch (e) {
             testFailed = true;
             throw e;
@@ -179,8 +169,7 @@ describe("OPEN EDITORS", () => {
             const scriptName = "Script 3";
             expect(currentEditor.label).toBe(scriptName);
             expect(currentEditor.icon).toContain(constants.jsType);
-            const treeSqlScript = await openEditorsTreeSection.getTreeItem(scriptName);
-            await (await treeSqlScript.getActionButton(constants.closeEditor))!.click();
+            await openEditorsTreeSection.clickSideBarEntryButton(scriptName, constants.closeDocument);
         } catch (e) {
             testFailed = true;
             throw e;
@@ -194,8 +183,7 @@ describe("OPEN EDITORS", () => {
             const scriptName = "Script 4";
             expect(currentEditor.label).toBe(scriptName);
             expect(currentEditor.icon).toContain(constants.tsType);
-            const treeSqlScript = await openEditorsTreeSection.getTreeItem(scriptName);
-            await (await treeSqlScript.getActionButton(constants.closeEditor))!.click();
+            await openEditorsTreeSection.clickSideBarEntryButton(scriptName, constants.closeDocument);
         } catch (e) {
             testFailed = true;
             throw e;
