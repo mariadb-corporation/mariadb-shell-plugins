@@ -2,6 +2,10 @@
 {
     "folders": [
         {
+            "name": "Project Root",
+            "path": "."
+        },
+        {
             "name": "Shell GUI Frontend",
             "path": "gui/frontend"
         },
@@ -82,6 +86,15 @@
             "language": "TypeScript",
             "listeners": true,
             "visitors": false,
+        },
+        "files.exclude": {
+            "gui": true,
+            "mds_plugin": true,
+            "mrs_plugin": true,
+            "msm_plugin": true,
+            "migration_plugin": true,
+            "util_plugin": true,
+            "MySQLShellPluginDevelopment.code-workspace": true,
         }
     },
     "launch": {
@@ -135,7 +148,7 @@
                     "port": 5678,
                     "timeout": 2000
                 },
-            },            
+            },
         ]
     },
     "tasks": {
