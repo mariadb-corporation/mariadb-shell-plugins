@@ -175,6 +175,5 @@ multi-line message whose body is wrapped to 72 characters or less.
 - Prefer reading the changelog to derive the current and previous versions
   instead of using `README.md`, tags, or hardcoded constants as the source of
   truth.
-- `gui/tools/src/version_handler.py` shows the existing repository layout and is
-  a good reference for expected version-bearing file patterns, but still
-  discover files from repository patterns plus content matches before editing.
+- Discover version-bearing files from repository patterns plus content matches
+  before editing instead of relying on retired helper scripts.
