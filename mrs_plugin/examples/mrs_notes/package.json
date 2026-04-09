@@ -12,9 +12,6 @@
     "preinstall": "npx npm-force-resolutions",
     "eslint": "eslint ."
   },
-  "dependencies": {
-    "preact": "10.26.9"
-  },
   "devDependencies": {
     "@preact/preset-vite": "2.10.1",
     "@types/jsdom": "21.1.7",
@@ -29,9 +26,10 @@
     "eslint-plugin-promise": "7.2.1",
     "eslint-plugin-react": "7.37.5",
     "jsdom": "26.1.0",
+    "preact": "10.29.1",
     "typescript": "5.8.3",
     "typescript-eslint": "8.34.1",
-    "vite": "6.3.5"
+    "vite": "6.4.2"
   },
   "resolutions": {
     "@types/react": "17.0.44"

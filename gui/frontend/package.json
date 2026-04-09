@@ -36,15 +36,15 @@
         "monaco-editor": "0.52.2",
         "pixi-viewport": "6.0.3",
         "pixi.js": "8.13.2",
-        "preact": "10.26.9",
+        "preact": "10.29.1",
         "set-interval-async": "3.0.3",
         "tabulator-tables": "6.3.1",
         "ws": "8.18.3"
     },
     "devDependencies": {
-        "tsx": "4.19.4",
         "@esbuild-plugins/node-globals-polyfill": "0.2.3",
         "@esbuild-plugins/node-modules-polyfill": "0.2.2",
+        "@playwright/test": "1.56.1",
         "@preact/preset-vite": "2.10.1",
         "@stylistic/eslint-plugin": "5.0.0",
         "@testing-library/preact": "3.2.4",
@@ -84,17 +84,16 @@
         "postcss": "8.5.6",
         "postcss-nesting": "13.0.2",
         "rollup-plugin-polyfill-node": "0.13.0",
-        "run-my-sql-file": "1.0.0",
         "selenium-webdriver": "4.16.0",
         "terser": "5.43.1",
         "ts-node": "10.9.2",
+        "tsx": "4.19.4",
         "typescript": "5.8.3",
         "typescript-eslint": "8.34.1",
-        "vite": "6.3.5",
+        "vite": "6.4.2",
         "vite-plugin-monaco-editor": "1.1.0",
         "vitest": "3.2.4",
-        "vitest-canvas-mock": "0.3.3",
-        "@playwright/test": "1.56.1"
+        "vitest-canvas-mock": "0.3.3"
     },
     "browserslist": [
         ">0.2%",
