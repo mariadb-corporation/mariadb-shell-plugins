@@ -26,10 +26,6 @@
 import os
 from mysqlsh.plugin_manager import plugin_function
 from mds_plugin import core, configuration
-from mds_plugin.bootstrap import cli_setup_bootstrap, cli_util
-from mds_plugin.bootstrap import interactive
-import oci
-from oci import identity
 
 # Define plugin version
 VERSION = "2026.4.0"
@@ -80,6 +76,7 @@ def ls(compartment_path="", compartment_id=None, config=None):
     If compartment_path and the compartment_id are omitted, the current
     compartment's sub-compartments are listed.
     """
+    import oci.exceptions
 
     # Get the active config, compartment and instance
     try:
@@ -274,6 +271,11 @@ def oci_bootstrap(**kwargs):
     it's OCI account, if a non empty passphrase is provided, it will be
     associated to the private key.
     """
+    import oci
+    from oci import identity
+    from mds_plugin.bootstrap import cli_setup_bootstrap, cli_util
+    from mds_plugin.bootstrap import interactive
+
     # Ensures a valid region is used
     region = interactive.resolve_region(kwargs.get('region', None))
 

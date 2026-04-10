@@ -25,7 +25,7 @@
 
 # cSpell:ignore mysqlsh
 
-from mysqlsh.plugin_manager import plugin_function
+from mysqlsh.plugin_manager.registrar import plugin_function
 from .lib.logging import plugin_log
 from .lib.backend.model import ProjectData, MigrationSteps
 from .plan_step import MigrationPlanStep

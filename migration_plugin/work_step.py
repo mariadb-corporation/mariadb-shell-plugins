@@ -32,8 +32,6 @@ from .lib import logging
 from .lib.backend.model import SubStepId, WorkStatusInfo, WorkStatus, LogInfo, MigrationStep
 from .lib.backend.orchestration import Orchestrator
 from .lib.logging import plugin_log
-from mysqlsh.plugin_manager import plugin_function  # type: ignore
-
 k_stage_info = {
     SubStepId.PROVISION_COMPARTMENT: {
         "caption": "Compartment",
@@ -314,7 +312,6 @@ def get_step() -> MigrationWorkStep:
     return get_project().work_step
 
 
-@plugin_function("migration.workStart", shell=True, cli=False, web=True)
 @plugin_log
 def work_start() -> WorkStatusInfo:
     """
@@ -343,7 +340,6 @@ def work_start() -> WorkStatusInfo:
     return initial_status
 
 
-@plugin_function("migration.workAbort", shell=True, cli=False, web=True)
 @plugin_log
 def work_abort() -> None:
     """
@@ -354,7 +350,6 @@ def work_abort() -> None:
     work.abort()
 
 
-@plugin_function("migration.workClean", shell=True, cli=False, web=True)
 @plugin_log
 def work_cleanup(options: dict) -> None:
     """
@@ -369,7 +364,6 @@ def work_cleanup(options: dict) -> None:
                  delete_jump_host=options.get("delete_jump_host", False))
 
 
-@plugin_function("migration.workStatus", shell=True, cli=False, web=True)
 # Note: too spammy to log all calls @plugin_log
 # @plugin_log
 def work_status() -> WorkStatusInfo:
@@ -379,7 +373,6 @@ def work_status() -> WorkStatusInfo:
     return get_step().fetch_status()
 
 
-@plugin_function("migration.workRetry", shell=True, cli=False, web=True)
 @plugin_log
 def work_retry() -> None:
     """
@@ -388,7 +381,6 @@ def work_retry() -> None:
     work = get_step()
 
 
-@plugin_function("migration.skipTransactions", shell=True, cli=False, web=True)
 @plugin_log
 def skip_transactions(gtids: str) -> None:
     """
@@ -402,7 +394,6 @@ def skip_transactions(gtids: str) -> None:
     work.skip_gtids(gtids)
 
 
-@plugin_function("migration.fetchLogs", shell=True, cli=False, web=True)
 def fetch_logs(sub_step_id: Optional[SubStepId] = None, offset: int = 0) -> LogInfo:
     """
     Fetch logs for the given step or the log file.

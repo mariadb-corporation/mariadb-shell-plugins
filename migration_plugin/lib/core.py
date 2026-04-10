@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -29,15 +29,15 @@ import os
 import pathlib
 import threading
 import mysqlsh
-import mysqlsh.plugin_manager
-import mysqlsh.mysql
+import mysqlsh.mysql  # type: ignore[reportMissingModuleSource]
+import mysqlsh.plugin_manager.general as plugin_manager_general
 from mds_plugin import configuration as mds_configuration
 
 
 def get_plugin_data_path(create=True) -> str:
     # Get migration plugin data folder, create if it does not exist yet
     plugin_data_path = os.path.abspath(
-        mysqlsh.plugin_manager.general.get_shell_user_dir(
+        plugin_manager_general.get_shell_user_dir(
             "plugin_data", "migration_plugin"
         )
     )
@@ -50,7 +50,7 @@ def get_plugin_data_path(create=True) -> str:
 
 def get_mysqlsh_log_path() -> str:
     return os.path.abspath(
-        mysqlsh.plugin_manager.general.get_shell_user_dir(
+        plugin_manager_general.get_shell_user_dir(
             "mysqlsh.log"
         )
     )

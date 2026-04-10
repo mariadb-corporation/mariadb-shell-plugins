@@ -28,20 +28,6 @@ import { IShellDictionary } from "./Protocol.js";
 /* eslint-disable max-len */
 
 export enum ShellAPIMigration {
-    /** Returns basic information about this plugin. */
-    MigrationInfo = "migration.info",
-    /** Returns the version number of the plugin */
-    MigrationVersion = "migration.version",
-    /** Update migration plan sub-step with user input. */
-    MigrationPlanUpdate = "migration.plan_update",
-    /** Get additional data for frontend use. */
-    MigrationPlanGetDataItem = "migration.plan_get_data_item",
-    /** Fetch and/or update migration plan sub-step with user input. */
-    MigrationPlanUpdateSubStep = "migration.plan_update_sub_step",
-    /** Commit changes to the given sub-step and performs checks. Call before switching from a sub-step to the next one. */
-    MigrationPlanCommit = "migration.plan_commit",
-    /** Call to Sign In to OCI, create a session and bootstrap a OCI profile. If signing-in, region must have been already picked in the OCIProfile sub-step. */
-    MigrationOciSignIn = "migration.oci_sign_in",
     /** Starts the work step */
     MigrationWorkStart = "migration.work_start",
     /** Aborts the work step */
@@ -56,6 +42,20 @@ export enum ShellAPIMigration {
     MigrationSkipTransactions = "migration.skip_transactions",
     /** Fetch logs for the given step or the log file. */
     MigrationFetchLogs = "migration.fetch_logs",
+    /** Returns basic information about this plugin. */
+    MigrationInfo = "migration.info",
+    /** Returns the version number of the plugin */
+    MigrationVersion = "migration.version",
+    /** Update migration plan sub-step with user input. */
+    MigrationPlanUpdate = "migration.plan_update",
+    /** Get additional data for frontend use. */
+    MigrationPlanGetDataItem = "migration.plan_get_data_item",
+    /** Fetch and/or update migration plan sub-step with user input. */
+    MigrationPlanUpdateSubStep = "migration.plan_update_sub_step",
+    /** Commit changes to the given sub-step and performs checks. Call before switching from a sub-step to the next one. */
+    MigrationPlanCommit = "migration.plan_commit",
+    /** Call to Sign In to OCI, create a session and bootstrap a OCI profile. If signing-in, region must have been already picked in the OCIProfile sub-step. */
+    MigrationOciSignIn = "migration.oci_sign_in",
     /** Returns the list of migration steps */
     MigrationGetSteps = "migration.get_steps",
     /** Returns the migration plan status for a new migration project */
@@ -66,6 +66,15 @@ export enum ShellAPIMigration {
     MigrationCloseProject = "migration.close_project",
     /** Returns the existing migration projects */
     MigrationListProjects = "migration.list_projects"
+}
+
+export enum WorkStatus {
+    NOT_STARTED = 'not_started',
+    IN_PROGRESS = 'in_progress',
+    READY = 'ready',
+    FINISHED = 'finished',
+    ABORTED = 'aborted',
+    ERROR = 'error'
 }
 
 export enum SubStepId {
@@ -98,20 +107,20 @@ export enum SubStepId {
     FINAL_SUMMARY = 5100
 }
 
-export enum MigrationStepStatus {
-    NOT_STARTED = 'NOT_STARTED',
-    IN_PROGRESS = 'IN_PROGRESS',
-    READY_TO_COMMIT = 'READY_TO_COMMIT',
-    FINISHED = 'FINISHED',
-    ERROR = 'ERROR'
-}
-
 export enum MessageLevel {
     ERROR = 'ERROR',
     WARNING = 'WARNING',
     NOTICE = 'NOTICE',
     INFO = 'INFO',
     VERBOSE = 'VERBOSE'
+}
+
+export enum MigrationStepStatus {
+    NOT_STARTED = 'NOT_STARTED',
+    IN_PROGRESS = 'IN_PROGRESS',
+    READY_TO_COMMIT = 'READY_TO_COMMIT',
+    FINISHED = 'FINISHED',
+    ERROR = 'ERROR'
 }
 
 export enum ServerType {
@@ -170,21 +179,63 @@ export enum PlanDataItemType {
     SCHEMA_LIBRARIES = 'libraries'
 }
 
-export enum WorkStatus {
-    NOT_STARTED = 'not_started',
-    IN_PROGRESS = 'in_progress',
-    READY = 'ready',
-    FINISHED = 'finished',
-    ABORTED = 'aborted',
-    ERROR = 'error'
-}
-
 export interface IMigrationError {
     level: MessageLevel,
     type: string | null,
     message: string,
     title: string | null,
     info: IShellDictionary | null
+}
+
+export interface IWorkStageInfo {
+    stage: SubStepId,
+    caption: string,
+    enabled: boolean,
+    status: WorkStatus,
+    errors: IMigrationError[],
+    current: number | null,
+    total: number | null,
+    eta: number | null,
+    message: string,
+    info: IShellDictionary,
+    logItems: number
+}
+
+export interface IMigrationSummaryInfo {
+    adminUser: string,
+    migrationType: string,
+    cloudConnectivity: string,
+    compartmentName: string,
+    fullCompartmentName: string,
+    region: string,
+    dbSystemName: string,
+    dbSystemId: string,
+    dbSystemIP: string,
+    dbSystemVersion: string,
+    channelId: string,
+    jumpHostName: string,
+    jumpHostId: string,
+    jumpHostPrivateIP: string,
+    jumpHostPublicIP: string,
+    jumpHostKeyPath: string,
+    createdJumpHost: boolean,
+    sourceHost: string,
+    sourcePort: number,
+    sourceVersion: string,
+    bucketNamespace: string,
+    bucketName: string,
+    createdBucket: boolean
+}
+
+export interface IWorkStatusInfo {
+    status: WorkStatus,
+    stages: IWorkStageInfo[],
+    summary: IMigrationSummaryInfo
+}
+
+export interface ILogInfo {
+    data: string,
+    lastOffset: number
 }
 
 export interface IServerInfo {
@@ -398,57 +449,6 @@ export interface ISchemaTables {
     views: string[]
 }
 
-export interface IWorkStageInfo {
-    stage: SubStepId,
-    caption: string,
-    enabled: boolean,
-    status: WorkStatus,
-    errors: IMigrationError[],
-    current: number | null,
-    total: number | null,
-    eta: number | null,
-    message: string,
-    info: IShellDictionary,
-    logItems: number
-}
-
-export interface IMigrationSummaryInfo {
-    adminUser: string,
-    migrationType: string,
-    cloudConnectivity: string,
-    compartmentName: string,
-    fullCompartmentName: string,
-    region: string,
-    dbSystemName: string,
-    dbSystemId: string,
-    dbSystemIP: string,
-    dbSystemVersion: string,
-    channelId: string,
-    jumpHostName: string,
-    jumpHostId: string,
-    jumpHostPrivateIP: string,
-    jumpHostPublicIP: string,
-    jumpHostKeyPath: string,
-    createdJumpHost: boolean,
-    sourceHost: string,
-    sourcePort: number,
-    sourceVersion: string,
-    bucketNamespace: string,
-    bucketName: string,
-    createdBucket: boolean
-}
-
-export interface IWorkStatusInfo {
-    status: WorkStatus,
-    stages: IWorkStageInfo[],
-    summary: IMigrationSummaryInfo
-}
-
-export interface ILogInfo {
-    data: string,
-    lastOffset: number
-}
-
 export interface IMigrationStep {
     id: number,
     caption: string,
@@ -472,13 +472,6 @@ export interface IProjectData {
 }
 
 export interface IProtocolMigrationParameters {
-    [ShellAPIMigration.MigrationInfo]: {};
-    [ShellAPIMigration.MigrationVersion]: {};
-    [ShellAPIMigration.MigrationPlanUpdate]: { args: { configs: IShellDictionary[]; }; };
-    [ShellAPIMigration.MigrationPlanGetDataItem]: { args: { what: PlanDataItemType; detail: string; }; };
-    [ShellAPIMigration.MigrationPlanUpdateSubStep]: { args: { subStepId: number; configs: { }; }; };
-    [ShellAPIMigration.MigrationPlanCommit]: { args: { subStepId: SubStepId; }; };
-    [ShellAPIMigration.MigrationOciSignIn]: { args: { signUp?: boolean; }; };
     [ShellAPIMigration.MigrationWorkStart]: {};
     [ShellAPIMigration.MigrationWorkAbort]: {};
     [ShellAPIMigration.MigrationWorkClean]: { args: { options: { }; }; };
@@ -486,6 +479,13 @@ export interface IProtocolMigrationParameters {
     [ShellAPIMigration.MigrationWorkRetry]: {};
     [ShellAPIMigration.MigrationSkipTransactions]: { args: { gtids: string; }; };
     [ShellAPIMigration.MigrationFetchLogs]: { args: { subStepId?: SubStepId | null; offset?: number; }; };
+    [ShellAPIMigration.MigrationInfo]: {};
+    [ShellAPIMigration.MigrationVersion]: {};
+    [ShellAPIMigration.MigrationPlanUpdate]: { args: { configs: IShellDictionary[]; }; };
+    [ShellAPIMigration.MigrationPlanGetDataItem]: { args: { what: PlanDataItemType; detail: string; }; };
+    [ShellAPIMigration.MigrationPlanUpdateSubStep]: { args: { subStepId: number; configs: { }; }; };
+    [ShellAPIMigration.MigrationPlanCommit]: { args: { subStepId: SubStepId; }; };
+    [ShellAPIMigration.MigrationOciSignIn]: { args: { signUp?: boolean; }; };
     [ShellAPIMigration.MigrationGetSteps]: {};
     [ShellAPIMigration.MigrationNewProject]: { args: { name: string; sourceUrl?: string; }; };
     [ShellAPIMigration.MigrationOpenProject]: { args: { id: string; }; };
@@ -498,13 +498,6 @@ export interface IProtocolMigrationParameters {
 export type MigrationVersion = [number, number, number];
 
 export interface IProtocolMigrationResults {
-    [ShellAPIMigration.MigrationInfo]: { result: string; };
-    [ShellAPIMigration.MigrationVersion]: { result: string; };
-    [ShellAPIMigration.MigrationPlanUpdate]: { result: IMigrationPlanState[]; };
-    [ShellAPIMigration.MigrationPlanGetDataItem]: { result: ISchemaObjects | ISchemaTables; };
-    [ShellAPIMigration.MigrationPlanUpdateSubStep]: { result: IMigrationPlanState; };
-    [ShellAPIMigration.MigrationPlanCommit]: { result: IMigrationPlanState; };
-    [ShellAPIMigration.MigrationOciSignIn]: {};
     [ShellAPIMigration.MigrationWorkStart]: { result: IWorkStatusInfo; };
     [ShellAPIMigration.MigrationWorkAbort]: {};
     [ShellAPIMigration.MigrationWorkClean]: {};
@@ -512,6 +505,13 @@ export interface IProtocolMigrationResults {
     [ShellAPIMigration.MigrationWorkRetry]: {};
     [ShellAPIMigration.MigrationSkipTransactions]: {};
     [ShellAPIMigration.MigrationFetchLogs]: { result: ILogInfo; };
+    [ShellAPIMigration.MigrationInfo]: { result: string; };
+    [ShellAPIMigration.MigrationVersion]: { result: string; };
+    [ShellAPIMigration.MigrationPlanUpdate]: { result: IMigrationPlanState[]; };
+    [ShellAPIMigration.MigrationPlanGetDataItem]: { result: ISchemaObjects | ISchemaTables; };
+    [ShellAPIMigration.MigrationPlanUpdateSubStep]: { result: IMigrationPlanState; };
+    [ShellAPIMigration.MigrationPlanCommit]: { result: IMigrationPlanState; };
+    [ShellAPIMigration.MigrationOciSignIn]: {};
     [ShellAPIMigration.MigrationGetSteps]: { result: IMigrationSteps[]; };
     [ShellAPIMigration.MigrationNewProject]: { result: IProjectData; };
     [ShellAPIMigration.MigrationOpenProject]: { result: IProjectData; };

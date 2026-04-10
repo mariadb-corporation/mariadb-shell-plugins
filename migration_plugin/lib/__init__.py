@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,9 +21,17 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from . import general, core, migration
+import importlib
+from typing import TYPE_CHECKING
 
-import oci.retry
-from .oci_utils import MIGRATION_RETRY_STRATEGY
+if TYPE_CHECKING:
+    from . import core, general, migration
 
-oci.retry.GLOBAL_RETRY_STRATEGY = MIGRATION_RETRY_STRATEGY
+__all__ = ["core", "general", "migration"]
+
+
+def __getattr__(name):
+    if name in __all__:
+        return importlib.import_module(f"{__name__}.{name}")
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

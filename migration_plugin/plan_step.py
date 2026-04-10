@@ -29,13 +29,12 @@ import re
 import os
 import webbrowser
 import threading
-from typing import Optional, Type, TypeAlias, TypeVar, cast
+from typing import TYPE_CHECKING, Optional, Type, TypeAlias, TypeVar, cast
 
 from .lib.backend.mysql_utils import InstanceCache, InstanceContents, SchemaObjects, SchemaTables, fetch_instance_contents
-from .lib.project import Project
-from .lib import errors, logging, oci_utils
+from .lib import errors, logging
 from .lib.logging import plugin_log
-from .lib.backend import target_config, model
+from .lib.backend import model
 from .lib.dbsession import MigrationSession
 from .lib.backend.source_check import MySQLSourceCheck
 from .lib.backend.string_utils import unquote_db_object, quote_db_object
@@ -56,6 +55,22 @@ from .lib.backend.model import (
 )
 from copy import deepcopy
 from dataclasses import dataclass, field, asdict
+
+if TYPE_CHECKING:
+    from .lib.project import Project
+
+
+def _oci_utils():
+    from .lib import oci_utils
+
+    return oci_utils
+
+
+def _target_config():
+    from .lib.backend import target_config
+
+    return target_config
+
 
 k_oci_signup_url = "https://signup.cloud.oracle.com"
 
@@ -625,7 +640,7 @@ class MigrationTypeSubStep(PlanSubStep):
 
         # check that the source password complies with the
         # the channel API will refuse to create the channel with status 400
-        pwd_issues = target_config.validate_password(
+        pwd_issues = _target_config().validate_password(
             self._owner.project.source_password,
             username=self._owner.options.sourceConnectionOptions["user"])
         if self._owner.options.migrationType == model.MigrationType.HOT and pwd_issues:
@@ -1277,6 +1292,8 @@ class TargetOptionsSubStep(PlanSubStep):
         self._compute_resolution_notice = ""
 
     def set_defaults(self) -> bool:
+        target_config = _target_config()
+
         if not self._owner.oci_config_ready:
             logging.error(f"{self}.set_defaults: oci_config not yet ready")
             raise errors.BadRequest("OCI configuration not yet provided")
@@ -1585,7 +1602,7 @@ class MigrationPlanStep:
     def get_sub_steps(cls) -> list[model.MigrationStep]:
         return [model.MigrationStep(c.id, c.caption) for c in cls._frontend_classes]
 
-    def __init__(self, project: Project):
+    def __init__(self, project: "Project"):
         self._mutex = threading.Lock()
         self.project = project
 
@@ -1810,6 +1827,8 @@ class MigrationPlanStep:
     def oci_sign_in(self, force_bootstrap: bool):
         from mds_plugin.bootstrap.mds import bootstrap_migration_profile
         import oci.exceptions
+
+        oci_utils = _oci_utils()
 
         def report_progress(message: str, info: dict = {}):
             if "home_region" in info:

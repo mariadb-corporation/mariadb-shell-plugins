@@ -30,9 +30,8 @@ from typing import Optional, cast
 import datetime
 
 from .backend.string_utils import unquote_db_object
-import oci.exceptions
 
-from . import core, logging, oci_utils, errors, ssh_utils, util
+from . import core, logging, errors, ssh_utils, util
 from .backend import model
 from .backend.model import WorkStatusInfo, SubStepId, WorkStatus, WorkStatusEvent
 
@@ -68,6 +67,12 @@ class Project:
     _ssh_private_key_path_shared: str = ""
 
     user_email: str = ""
+
+    @staticmethod
+    def _oci_utils():
+        from . import oci_utils
+
+        return oci_utils
 
     @classmethod
     def create(cls, name: str) -> "Project":
@@ -536,6 +541,8 @@ class Project:
             return errors.OCIConfigError(f"{msg} (path={self._oci_config_file} profile={self._oci_config.get('profile')})")
 
     def check_oci_config(self, retry_strategy=None):
+        oci_utils = self._oci_utils()
+
         if not self._oci_config:
             raise self._make_oci_config_error(
                 "No valid OCI API configuration found")
@@ -563,6 +570,9 @@ class Project:
             logging.warning(f"get_user did not work: {e}")
 
     def open_oci_profile(self) -> bool:
+        import oci.exceptions
+        oci_utils = self._oci_utils()
+
         logging.debug(
             f"Trying to open OCI profile '{self._oci_profile}' from '{self._oci_config_file}'"
         )
