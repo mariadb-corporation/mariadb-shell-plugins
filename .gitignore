@@ -26,3 +26,7 @@ gui/frontend/src/tests/e2e/migration_assistant/blob-report/
 gui/frontend/src/tests/e2e/migration_assistant/playwright/.cache/
 gui/frontend/src/tests/e2e/migration_assistant/playwright/.auth/
 **/shell-migration*
+
+# Internal AI tooling
+AGENTS.md
+.agents/
