@@ -1665,7 +1665,7 @@ class Compartment:
         ocid_or_compartment: None | str | oci.identity.models.Compartment = None,
         client: None | oci.identity.IdentityClient = None,
         retry_strategy=None,
-        lazy_refresh: bool = False
+        name: None | str = None,
     ) -> None:
         self._config = configuration.get_current_config(config=config)
         self._client = client or core.get_oci_identity_client(
@@ -1679,6 +1679,7 @@ class Compartment:
             config=self._config)
 
         self._obj = None  # type: ignore
+        self._name = name
 
         # Note: get_compartment() doesn't always work on a tenancy_id (seems to depend on the tenancy)
         if ocid_or_compartment is None:
@@ -1691,11 +1692,15 @@ class Compartment:
 
         self._is_tenancy = self.id == self._config["tenancy"]
 
-        if not self._obj and (retry_strategy or not lazy_refresh):
+        if not self._obj and retry_strategy:
             self.refresh(retry_strategy)
 
     def __repr__(self) -> str:
-        return repr(oci.util.to_dict(self.obj))
+        if self._obj:
+            return repr(oci.util.to_dict(self._obj))
+        if self._name:
+            return f"Compartment(name={self._name!r}, id={self.id!r})"
+        return f"Compartment(id={self.id!r})"
 
     def refresh(self, retry_strategy=None):
         if self._is_tenancy:
@@ -1709,6 +1714,12 @@ class Compartment:
                 retry_strategy=retry_strategy
             ).data  # type: ignore
 
+    def validate_profile(self, retry_strategy=None):
+        self._client.get_tenancy(
+            self._config["tenancy"],
+            retry_strategy=retry_strategy
+        )
+
     @property
     def obj(self) -> oci.identity.models.Compartment:
         if not self._obj:
@@ -1717,11 +1728,17 @@ class Compartment:
 
     @property
     def name(self) -> str:
+        if self._name:
+            return self._name
         return cast(str, self.obj.name)
 
     @property
     def display_name(self) -> str:
-        return self.name
+        if self._name:
+            return self._name
+        if self._obj:
+            return cast(str, self._obj.name)
+        return self.id
 
     def freeform_tag(self, tag: str = k_my_id_tag_name):
         return freeform_tag(self.obj, tag)
@@ -1787,7 +1804,7 @@ class Compartment:
         # some time for the OCI to propagate the new compartment
         MIGRATION_RETRY_STRATEGY.retry_on_not_found_errors()
 
-        return Compartment(config, ocid_or_compartment=compartment, client=client)
+        return Compartment(config, ocid_or_compartment=compartment, client=client, name=name)
 
     def get_full_path(self) -> list[str]:
         names = []
@@ -1809,7 +1826,7 @@ class Compartment:
     def get_all_compartments(self) -> list["Compartment"]:
         return [
             Compartment(
-                config=self._config, ocid_or_compartment=i, client=self._client
+                config=self._config, ocid_or_compartment=i, client=self._client, name=i.name
             )
             for i in oci.pagination.list_call_get_all_results(
                 self._client.list_compartments, compartment_id=self.id

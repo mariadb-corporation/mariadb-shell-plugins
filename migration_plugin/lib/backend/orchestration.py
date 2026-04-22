@@ -295,7 +295,8 @@ class Orchestrator(OrchestratorInterface):
             return self._compartment
 
         self._compartment = Compartment(config=self.oci_config,
-                                        ocid_or_compartment=self.cloud_resources.compartmentId)
+                                        ocid_or_compartment=self.cloud_resources.compartmentId,
+                                        name=self.cloud_resources.compartmentName)
         return self._compartment
 
     def on_push_progress(self, source: SubStepId, message: str, data: dict = {}):

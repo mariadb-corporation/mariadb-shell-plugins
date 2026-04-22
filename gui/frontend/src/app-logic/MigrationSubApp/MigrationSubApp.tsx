@@ -45,7 +45,6 @@ import {
     ISchemaSelectionOptions,
     IServerInfo,
     ITargetOptionsData,
-    ITargetOptionsOptions,
     IWorkStageInfo,
     IWorkStatusInfo,
     MessageLevel,
@@ -171,12 +170,19 @@ const stepsColorMap: Record<number, string> = {
 };
 
 const minStep = 1;
+const compartmentShapesAccessErrorId = "compartmentShapesAccess";
+const rootCompartmentAccessErrorMessage = "Insufficient privileges on the root compartment.";
+const rootCompartmentShapesAccessErrorMessage =
+    "Insufficient privileges on the root compartment. Select compartment to create MySQL DB System in.";
+const selectedCompartmentAccessErrorMessage =
+    "Insufficient privileges on the selected compartment. Select a different compartment.";
 
 interface BadUserInput {
     level: MessageLevel;
     title: string;
     message: string;
     option: string;
+    syntheticId?: string;
 }
 
 type OciNetworking = "create_new" | "use_existing";
@@ -989,7 +995,11 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         this.displayErrors(remainingErrors);
 
         console.log(`${type} ERROR`, stepInfo);
-        throw new Error(message);
+        const error = new Error(message) as Error & { cause?: Error; };
+        error.cause = new Error(remainingErrors.map((item) => {
+            return this.getDisplayedMessage(item);
+        }).join("\n"));
+        throw error;
     }
 
     private displayErrors(errors: IMigrationError[], prefix?: string) {
@@ -1957,8 +1967,16 @@ Migration Assistant.`}
             });
 
             await this.submitSubStep(SubStepId.TARGET_OPTIONS);
+            this.clearCompartmentShapesAccessError();
         } catch (e) {
             console.error(e);
+
+            if (this.isAuthorizationError(e)) {
+                this.setCompartmentShapesAccessError();
+
+                return;
+            }
+
             const message = convertErrorToString(e);
             ui.showErrorMessage(message, {});
         }
@@ -3171,6 +3189,94 @@ Migration Assistant.`}
         });
     }
 
+    private clearTargetOptionError(option: string, message?: string) {
+        this.setState(({ targetOptionErrors }) => {
+            return {
+                targetOptionErrors: targetOptionErrors.filter((e) => {
+                    if (e.option !== option) {
+                        return true;
+                    }
+
+                    return message !== undefined && e.message !== message;
+                }),
+            };
+        });
+    }
+
+    private setTargetOptionError(error: BadUserInput) {
+        this.setState(({ targetOptionErrors }) => {
+            const nextErrors = targetOptionErrors.filter((item) => {
+                return !(
+                    item.option === error.option
+                    && item.message === error.message
+                    && item.title === error.title
+                    && item.level === error.level
+                    && item.syntheticId === error.syntheticId
+                );
+            });
+
+            return {
+                targetOptionErrors: [...nextErrors, error],
+            };
+        });
+    }
+
+    private clearCompartmentShapesAccessError() {
+        this.setState(({ targetOptionErrors }) => {
+            return {
+                targetOptionErrors: targetOptionErrors.filter((item) => {
+                    return !(item.option === "hosting.compartmentId"
+                        && item.syntheticId === compartmentShapesAccessErrorId);
+                }),
+            };
+        });
+    }
+
+    private setCompartmentShapesAccessError() {
+        const message = (!this.compartment || this.compartment === "create_new")
+            ? rootCompartmentShapesAccessErrorMessage
+            : selectedCompartmentAccessErrorMessage;
+
+        this.setState(({ targetOptionErrors }) => {
+            const nextErrors = targetOptionErrors.filter((item) => {
+                if (item.option !== "hosting.compartmentId") {
+                    return true;
+                }
+
+                if (item.syntheticId === compartmentShapesAccessErrorId) {
+                    return false;
+                }
+
+                if (message === rootCompartmentShapesAccessErrorMessage
+                    && item.message === rootCompartmentAccessErrorMessage) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            if (nextErrors.some((item) => {
+                return item.option === "hosting.compartmentId" && item.message === message;
+            })) {
+                return { targetOptionErrors: nextErrors };
+            }
+
+            return {
+                targetOptionErrors: [...nextErrors, {
+                    level: MessageLevel.ERROR,
+                    title: "",
+                    message,
+                    option: "hosting.compartmentId",
+                    syntheticId: compartmentShapesAccessErrorId,
+                }],
+            };
+        });
+    }
+
+    private isAuthorizationError(error: unknown): boolean {
+        return convertErrorToString(error).includes("NotAuthorizedOrNotFound");
+    }
+
     private displayNotFoundShapes(notFoundShapesFor?: NotFoundShapesFor[]) {
         if (notFoundShapesFor?.length) {
             console.log({ notFoundShapesFor });
@@ -4310,7 +4416,17 @@ Migration Assistant.`}
             return;
         }
 
-        const existingShapes = await this.fetchShapes(this.profile!, compartmentOcid);
+        let existingShapes: Shapes;
+        try {
+            existingShapes = await this.fetchShapes(this.profile!, compartmentOcid);
+        } catch (error) {
+            if (!(error instanceof SilentError)) {
+                console.error(error);
+            }
+
+            return;
+        }
+
         console.log("shapes", existingShapes);
 
         if (this.configTemplate) {
@@ -4652,10 +4768,13 @@ Migration Assistant.`}
         const existingShapes = shapes[this.getShapesKey(profile, compartmentOcid)];
 
         if (existingShapes?.computeShapes && existingShapes.dbSystemShapes) {
+            this.clearCompartmentShapesAccessError();
+
             return existingShapes;
         }
 
         const updatedShapes: Shapes = {};
+        let fetchSucceeded = false;
 
         this.setState({ isFetchingShapes: true });
 
@@ -4719,13 +4838,25 @@ Migration Assistant.`}
             if (computeShapes.length) {
                 updatedShapes.computeShapes = computeShapes;
             }
+
+            fetchSucceeded = true;
+            this.clearCompartmentShapesAccessError();
         } catch (e) {
             console.error(e);
+            if (this.isAuthorizationError(e)) {
+                this.setCompartmentShapesAccessError();
+
+                throw new SilentError("Insufficient privileges on selected compartment");
+            }
+
+            this.clearCompartmentShapesAccessError();
             const message = convertErrorToString(e);
             ui.showErrorMessage(`Failed to fetch shapes: ${message}`, {});
+
+            throw e;
         } finally {
             this.setState({ isFetchingShapes: false });
-            this.shapesFetched = true;
+            this.shapesFetched = fetchSucceeded;
         }
 
         await this.setShapes(updatedShapes, profile, compartmentOcid);

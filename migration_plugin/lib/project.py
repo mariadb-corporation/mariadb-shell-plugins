@@ -552,8 +552,9 @@ class Project:
 
         try:
             tenancy = oci_utils.Compartment(
-                self._oci_config, retry_strategy=retry_strategy
+                self._oci_config
             )
+            tenancy.validate_profile(retry_strategy=retry_strategy)
 
             logging.info(f"Tenancy for profile is {tenancy}")
         except Exception as e:

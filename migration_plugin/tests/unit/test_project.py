@@ -31,7 +31,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from migration_plugin import migration
 from migration_plugin.lib.project import Project
-from migration_plugin.lib import core
+from migration_plugin.lib import core, errors
 
 
 class TestProjectCreation:
@@ -233,6 +233,49 @@ class TestOCIConfiguration:
             assert False, "Expected exception to be raised"
         except Exception:
             pass
+
+    def test_check_oci_config_validates_profile(self, temp_dir):
+        project_path = pathlib.Path(temp_dir) / "test-project"
+        project_path.mkdir()
+        project = Project(id="test-project", path=project_path)
+        project.oci_config = {
+            "profile": "test-profile",
+            "tenancy": "ocid1.tenancy.oc1..test",
+        }
+
+        tenancy = MagicMock()
+        retry_strategy = MagicMock()
+        oci_utils = MagicMock()
+        oci_utils.Compartment.return_value = tenancy
+        oci_utils.OCIUser.side_effect = RuntimeError("user lookup not available")
+
+        with patch.object(project, "_oci_utils", return_value=oci_utils):
+            project.check_oci_config(retry_strategy=retry_strategy)
+
+        oci_utils.Compartment.assert_called_once_with(project.oci_config)
+        tenancy.validate_profile.assert_called_once_with(retry_strategy=retry_strategy)
+
+    def test_check_oci_config_wraps_profile_validation_error(self, temp_dir):
+        project_path = pathlib.Path(temp_dir) / "test-project"
+        project_path.mkdir()
+        project = Project(id="test-project", path=project_path)
+        project.oci_config = {
+            "profile": "test-profile",
+            "tenancy": "ocid1.tenancy.oc1..test",
+        }
+
+        tenancy = MagicMock()
+        tenancy.validate_profile.side_effect = RuntimeError("invalid key")
+        oci_utils = MagicMock()
+        oci_utils.Compartment.return_value = tenancy
+
+        with patch.object(project, "_oci_utils", return_value=oci_utils):
+            with pytest.raises(errors.OCIConfigError) as exc_info:
+                project.check_oci_config()
+
+        assert "OCI profile is not functional" in str(exc_info.value)
+        assert exc_info.value.__cause__ is tenancy.validate_profile.side_effect
+        oci_utils.OCIUser.assert_not_called()
 
     def test_open_oci_profile_file_not_exists(self, temp_dir):
         project_path = pathlib.Path(temp_dir) / "test-project"

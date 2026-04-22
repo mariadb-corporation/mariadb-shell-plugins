@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -474,17 +474,19 @@ def list_subnets(**kwargs):
         network_compartment = network.compartment_id
 
         # Get the compartment
-        compartment = compartment.get_compartment_by_id(
-            compartment_id=network_compartment, config=config)
-        if compartment is None:
-            return
+        if interactive:
+            compartment = compartment.get_compartment_by_id(
+                compartment_id=network_compartment, config=config)
+            if compartment is None:
+                return
+        else:
+            compartment = None
 
         # If no availability_domain was specified, use a random one
         # if availability_domain is None:
         #     availability_domain = compartment.get_availability_domain(
         #         compartment_id=compartment_id,
         #         availability_domain=availability_domain, config=config)
-
         subnets = virtual_network.list_subnets(
             compartment_id=network_compartment, vcn_id=network.id).data
 
@@ -506,9 +508,9 @@ def list_subnets(**kwargs):
                        if not subnet_is_public(subnet=s, config=config)]
         else:
             out = "All "
-
-        out += f"subnets of Network '{network_name}' in compartment " + \
-            f"'{compartment.name}':\n\n"
+        if compartment:
+            out += f"subnets of Network '{network_name}' in compartment " + \
+                f"'{compartment.name}':\n\n"
 
         if return_formatted:
             return out + format_subnet_listing(subnets)

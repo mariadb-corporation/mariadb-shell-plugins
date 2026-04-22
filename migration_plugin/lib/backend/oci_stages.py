@@ -181,9 +181,11 @@ class OCIProvisioner(stage.ThreadedStage):
     ) -> oci_utils.Compartment:
         if id:
             logging.info(f"Checking given existing compartment {id}...")
+            # Note: user may have privs to create stuff in a compartment but not to GET it
             return oci_utils.Compartment(
                 config=self._owner.oci_config,
                 ocid_or_compartment=id,
+                name=name,
             )
 
         comps = oci_utils.Compartment.find_by_name(
@@ -227,7 +229,7 @@ class ProvisionVCN(OCIProvisioner):
     def ensure_network(self, comp: oci_utils.Compartment) -> oci_utils.VCN:
         assert self.resources.networkCompartmentId
         assert self.options.createVcn
-        self.push_progress(f"Setting up VCN in compartment {comp.name}")
+        self.push_progress(f"Setting up VCN in compartment {comp.display_name}")
         vcn = self.ensure_vcn(comp)
 
         self.ensure_public_subnet(comp, vcn)
@@ -249,14 +251,14 @@ class ProvisionVCN(OCIProvisioner):
             vcn_list = comp.find_vcn_by_name(self.options.vcnName)
             if vcn_list:
                 logging.warning(
-                    f"VCN with name {self.options.vcnName} already exist in {comp.name}, reusing {vcn_list[0]}"
+                    f"VCN with name {self.options.vcnName} already exist in {comp.display_name}, reusing {vcn_list[0]}"
                 )
                 self.options.vcnId = vcn_list[0].id
                 self.resources.vcnId = vcn_list[0].id
                 return vcn_list[0]
             else:
                 logging.info(
-                    f"VCN with name {self.options.vcnName} not found in {comp.name}")
+                    f"VCN with name {self.options.vcnName} not found in {comp.display_name}")
 
         self.push_progress(f"Creating VCN {self.options.vcnName}")
         vcn = comp.create_vcn(
@@ -268,7 +270,7 @@ class ProvisionVCN(OCIProvisioner):
         self.resources.vcnId = vcn.id
         self.push_progress(f"VCN {self.options.vcnName} created")
         logging.info(
-            f"created vcn name={self.options.vcnName} id={self.options.vcnId} in compartment {comp.name}: {vcn}"
+            f"created vcn name={self.options.vcnName} id={self.options.vcnId} in compartment {comp.display_name}: {vcn}"
         )
         return vcn
 
@@ -289,7 +291,7 @@ class ProvisionVCN(OCIProvisioner):
                 return
             elif input_name:
                 logging.info(
-                    f"Subnet with name {self.options.publicSubnet.name} not found in {comp.name}"
+                    f"Subnet with name {self.options.publicSubnet.name} not found in {comp.display_name}"
                 )
 
         self.push_progress(f"Creating subnet {self.options.publicSubnet.name}")
@@ -321,7 +323,7 @@ class ProvisionVCN(OCIProvisioner):
                 return
             elif input_name:
                 logging.info(
-                    f"Subnet with name {self.options.privateSubnet.name} not found in {comp.name}"
+                    f"Subnet with name {self.options.privateSubnet.name} not found in {comp.display_name}"
                 )
 
         self.push_progress(
@@ -352,7 +354,7 @@ class ProvisionVCN(OCIProvisioner):
             return
         elif input_name:
             logging.info(
-                f"Internet gateway with name {self.options.internetGatewayName} not found in {comp.name}"
+                f"Internet gateway with name {self.options.internetGatewayName} not found in {comp.display_name}"
             )
 
         self.push_progress(
@@ -386,7 +388,7 @@ class ProvisionVCN(OCIProvisioner):
             return
         elif input_name:
             logging.info(
-                f"Service gateway with name {self.options.serviceGatewayName} not found in {comp.name}"
+                f"Service gateway with name {self.options.serviceGatewayName} not found in {comp.display_name}"
             )
 
         self.push_progress(
@@ -439,11 +441,11 @@ class ProvisionVCN(OCIProvisioner):
         self.push_progress(f"Security list updated for public subnet")
         if slid:
             logging.info(
-                f"Updated security lists for SSH access through public subnet name={security_list_name} id={slid} in compartment={comp.name}"
+                f"Updated security lists for SSH access through public subnet name={security_list_name} id={slid} in compartment={comp.display_name}"
             )
         else:
             logging.info(
-                f"Found security list for SSH access through public subnet in compartment={comp.name}"
+                f"Found security list for SSH access through public subnet in compartment={comp.display_name}"
             )
 
     def ensure_private_security_list(self, comp: oci_utils.Compartment, vcn: oci_utils.VCN):
@@ -473,11 +475,11 @@ class ProvisionVCN(OCIProvisioner):
         self.push_progress(f"Security list updated")
         if slid:
             logging.info(
-                f"Updated security lists for MySQL access through private subnet name={security_list_name} id={slid} in compartment={comp.name}"
+                f"Updated security lists for MySQL access through private subnet name={security_list_name} id={slid} in compartment={comp.display_name}"
             )
         else:
             logging.info(
-                f"Found security list for MySQL access through private subnet in compartment={comp.name}"
+                f"Found security list for MySQL access through private subnet in compartment={comp.display_name}"
             )
 
     def validate_vcn(self):
@@ -536,7 +538,11 @@ class ProvisionVCN(OCIProvisioner):
             else:
                 net_comp = self._owner.get_compartment()
             self.resources.networkCompartmentId = net_comp.id
-            self.resources.networkCompartmentName = net_comp.name
+            self.resources.networkCompartmentName = (
+                self.options.networkCompartmentName
+                or self.options.compartmentName
+                or net_comp.display_name
+            )
 
             self.ensure_network(net_comp)
         else:
@@ -572,10 +578,10 @@ class ProvisionCompartment(OCIProvisioner):
             description="Compartment for MySQL HeatWave"
         )
         self.resources.compartmentId = comp.id
-        self.resources.compartmentName = comp.name
+        self.resources.compartmentName = self.options.compartmentName or comp.display_name
 
         self.push_status(stage.WorkStatusEvent.END,
-                         message=f"Compartment {comp.name} {'verified' if check_only else 'provisioned'}")
+                         message=f"Compartment {self.resources.compartmentName} {'verified' if check_only else 'provisioned'}")
 
 
 class ProvisionBucket(OCIProvisioner):
@@ -633,7 +639,7 @@ class ProvisionBucket(OCIProvisioner):
                     raise
 
         logging.info(
-            f"Creating bucket {self.options.bucketName} in compartment={comp.name} namespace={comp.namespace}"
+            f"Creating bucket {self.options.bucketName} in compartment={comp.id}"
         )
         try:
             comp.create_bucket(
@@ -987,10 +993,7 @@ class LaunchDBSystem(DBSystemUpdateStage):
         return status_message
 
     def _do_work(self):
-        compartment = oci_utils.Compartment(
-            self._owner.oci_config,
-            ocid_or_compartment=self._owner.cloud_resources.compartmentId
-        )
+        compartment = self._owner.get_compartment()
 
         if self.resources.dbSystemId:
             self.push_status(stage.WorkStatusEvent.BEGIN,

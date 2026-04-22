@@ -46,6 +46,7 @@ from .model import (
 k_min_storage_size_gb = 50
 k_default_storage_size_multiplier = 2.0
 k_base_jump_host_name = "mysql-jump-host"
+k_oci_not_authorized_or_not_found = "NotAuthorizedOrNotFound"
 
 
 # ref https://docs.oracle.com/en-us/iaas/mysql-database/doc/db-system-storage.html
@@ -306,9 +307,6 @@ def adjust_mysql_configuration(configuration: list[dict]) -> tuple[list[dict], l
 
 class ConfigureTargetDBSystem:
     oci_config = {}
-    availability_domains = None
-    versions = None
-    shapes: dict[str, list[ShapeSummary]] = {}
     _default_vcn = None
     _default_private_subnet = None
     _default_public_subnet = None
@@ -328,9 +326,14 @@ class ConfigureTargetDBSystem:
         self._default_vcn_name = default_vcn_name or "MySQLVCN"
 
         logging.info(f"Retrieving tenancy information...")
-        self.compartment = None
-        self.select_compartment(oci_utils.Compartment(
-            self.oci_config, lazy_refresh=True))
+        self._root_compartment = oci_utils.Compartment(self.oci_config)
+        self.compartment = self._root_compartment
+        self.availability_domains: list[AvailabilityDomain] | None = None
+        self.versions: list[VersionSummary] | None = None
+        self.shapes: dict[str, list[ShapeSummary]] = {}
+        self._capabilities_compartment_id: str | None = None
+        self._capabilities_by_compartment: dict[str, tuple[list[AvailabilityDomain], list[VersionSummary], dict[str, list[ShapeSummary]]]] = {}
+        self._compartment_access_failed = False
         self.find_shared_ssh_key_cb = find_shared_ssh_key_cb
 
         self.network_compartment = None
@@ -343,7 +346,7 @@ class ConfigureTargetDBSystem:
             return True
         return False
 
-    def select_compartment(self, id: str | oci_utils.Compartment):
+    def _set_selected_compartment(self, id: str | oci_utils.Compartment):
         if self.compartment and self.compartment.id == (id if isinstance(id, str) else id.id):
             logging.debug(
                 f"target_config: Compartment already set to {self.compartment.id}"
@@ -353,23 +356,106 @@ class ConfigureTargetDBSystem:
         if not id:
             return
         self.compartment = oci_utils.Compartment(
-            self.oci_config, id, lazy_refresh=True) if isinstance(id, str) else id
+            self.oci_config, id) if isinstance(id, str) else id
 
-        # don't refetch things that are probably the same in all compartments
-        if not self.availability_domains:
-            self.availability_domains = self.compartment.list_availability_domains()
-            assert self.availability_domains
+    def _clear_compartment_capabilities(self):
+        self.availability_domains = None
+        self.versions = None
+        self.shapes = {}
+        self._capabilities_compartment_id = None
 
-        if not self.versions:
-            self.versions = self.compartment.list_db_versions()
-            assert self.versions
+    def _set_compartment_capabilities_from_cache(self):
+        if not self.compartment:
+            self._clear_compartment_capabilities()
+            return
 
-        if not self.shapes:
-            for ad in self.availability_domains:
-                self.shapes[cast(str, ad.name)] = self.compartment.list_db_shapes(
-                    availability_domain=ad.name
-                )
-            assert self.shapes
+        compartment_id = self.compartment.id
+        capabilities = self._capabilities_by_compartment.get(compartment_id)
+        if not capabilities:
+            self._clear_compartment_capabilities()
+            return
+
+        availability_domains, versions, shapes = capabilities
+        self.availability_domains = availability_domains
+        self.versions = versions
+        self.shapes = shapes
+        self._capabilities_compartment_id = compartment_id
+        self._compartment_access_failed = False
+
+    def _load_compartment_capabilities(self):
+        if not self.compartment:
+            self._clear_compartment_capabilities()
+            return
+
+        compartment_id = self.compartment.id
+        if compartment_id not in self._capabilities_by_compartment:
+            self._load_compartment_capabilities_into_cache()
+
+        self._set_compartment_capabilities_from_cache()
+
+    def _load_compartment_capabilities_into_cache(self):
+        assert self.compartment
+        compartment_id = self.compartment.id
+        availability_domains = self.compartment.list_availability_domains()
+        assert availability_domains
+
+        versions = self.compartment.list_db_versions()
+        assert versions
+
+        shapes: dict[str, list[ShapeSummary]] = {}
+        for ad in availability_domains:
+            shapes[cast(str, ad.name)] = self.compartment.list_db_shapes(
+                availability_domain=ad.name
+            )
+        assert shapes
+
+        self._capabilities_by_compartment[compartment_id] = (
+            availability_domains, versions, shapes)
+
+    def _uses_root_discovery_message(
+        self, discovery_compartment: str | oci_utils.Compartment
+    ) -> bool:
+        discovery_compartment_id = (
+            discovery_compartment
+            if isinstance(discovery_compartment, str)
+            else discovery_compartment.id
+        )
+        return discovery_compartment_id == self._root_compartment.id
+
+    def _resolve_discovery_compartment(self, options: OCIHostingOptions) -> str | oci_utils.Compartment:
+        if options.compartmentId:
+            return options.compartmentId
+        if options.parentCompartmentId:
+            return options.parentCompartmentId
+        return self._root_compartment
+
+    def _select_target_compartment_helper(self, id: str | oci_utils.Compartment):
+        try:
+            self._compartment_access_failed = False
+            self._set_selected_compartment(id)
+            self._load_compartment_capabilities()
+        except:
+            self._compartment_access_failed = True
+            self._clear_compartment_capabilities()
+            raise
+
+    def _select_target_compartment(self, options: OCIHostingOptions) -> list[model.MigrationError]:
+        discovery_compartment = self._resolve_discovery_compartment(options)
+        try:
+            self._select_target_compartment_helper(discovery_compartment)
+            return []
+        except ServiceError as e:
+            if getattr(e, "code", "") != k_oci_not_authorized_or_not_found:
+                raise
+
+            if self._uses_root_discovery_message(discovery_compartment):
+                msg = "Insufficient privileges on the root compartment."
+            else:
+                msg = "Insufficient privileges on the selected compartment. Select a different compartment."
+
+            logging.info(f"Unable to load target capabilities for compartment discovery: {e}")
+            return [model.MigrationError._from_exception(
+                BadUserInput(msg, "hosting.compartmentId"))]
 
     def select_network_compartment(self, id: str | oci_utils.Compartment):
         if self.network_compartment and self.network_compartment.id == (id if isinstance(id, str) else id.id):
@@ -381,27 +467,54 @@ class ConfigureTargetDBSystem:
         if not id:
             return
         self.network_compartment = oci_utils.Compartment(
-            self.oci_config, id, lazy_refresh=True) if isinstance(id, str) else id
+            self.oci_config, id) if isinstance(id, str) else id
         # TODO - check this
         # self._default_vcn = None
         # self._default_private_subnet = None
         # self._default_public_subnet = None
 
+    def _get_compartment_display_path(
+        self,
+        compartment: oci_utils.Compartment | None,
+        unauthorized_label: str,
+    ) -> str:
+        if not compartment:
+            return ""
+
+        try:
+            path = list(compartment.get_full_path())
+        except ServiceError as e:
+            if getattr(e, "code", "") != k_oci_not_authorized_or_not_found:
+                raise
+            logging.info(
+                f"Unable to resolve full compartment path for {compartment.id}: {e}"
+            )
+            return unauthorized_label
+
+        if path:
+            path[0] = path[0] + " (root)"
+
+        return "/".join(path)
+
     def get_full_compartment_path(self) -> str:
         if not self.compartment:
             return ""
-        path = self.compartment.get_full_path()
-        if path:
-            path[0] = path[0] + " (root)"
-        return "/".join(path)
+        return self._get_compartment_display_path(
+            self.compartment,
+            "Root compartment"
+            if self.compartment.id == self._root_compartment.id
+            else "Selected compartment",
+        )
 
     def get_full_network_compartment_path(self) -> str:
         if not self.network_compartment:
             return ""
-        path = self.network_compartment.get_full_path()
-        if path:
-            path[0] = path[0] + " (root)"
-        return "/".join(path)
+        return self._get_compartment_display_path(
+            self.network_compartment,
+            "Root compartment"
+            if self.network_compartment.id == self._root_compartment.id
+            else "Selected network compartment",
+        )
 
     def validate_target_options(
         self, options: model.TargetHostingOptions, changed_options: list[str] | None
@@ -492,8 +605,7 @@ class ConfigureTargetDBSystem:
 
         validate_resource_reuse("compartment")
 
-        if options.compartmentId:
-            self.select_compartment(options.compartmentId)
+        issues.extend(self._select_target_compartment(options))
 
         if options.networkCompartmentId:
             self.select_network_compartment(options.networkCompartmentId)
@@ -624,18 +736,22 @@ class ConfigureTargetDBSystem:
                 add_error(
                     f"Display Name for the database must have a value", "database.name")
             else:
-                if self.compartment and isinstance(self.compartment, oci_utils.Compartment):
-                    matches = self.compartment.find_db_system_by_name(
-                        options.name)
-                    full_path = ' / '.join(self.compartment.full_path)
-                    if len(matches) == 1:
-                        add_notice(
-                            f"A DB System named {options.name} already exists in compartment {full_path}. A new one will be created with the same name.",
-                            "database.name")
-                    elif len(matches) > 1:
-                        add_notice(
-                            f"{len(matches)} DB Systems named {options.name} already exist in compartment {full_path}. A new one will be created with the same name.",
-                            "database.name")
+                if self.compartment and isinstance(self.compartment, oci_utils.Compartment) and not self._compartment_access_failed:
+                    try:
+                        matches = self.compartment.find_db_system_by_name(
+                            options.name)
+                        full_path = self.get_full_compartment_path() or self.compartment.id
+                        if len(matches) == 1:
+                            add_notice(
+                                f"A DB System named {options.name} already exists in compartment {full_path}. A new one will be created with the same name.",
+                                "database.name")
+                        elif len(matches) > 1:
+                            add_notice(
+                                f"{len(matches)} DB Systems named {options.name} already exist in compartment {full_path}. A new one will be created with the same name.",
+                                "database.name")
+                    except ServiceError as e:
+                        logging.info(
+                            f"Unable to inspect existing DB Systems in compartment {self.compartment.id}: {e}")
 
             # TODO these checks should be put back once we move the OCI resource fetching from frontend to backend
         if False:
@@ -704,7 +820,7 @@ class ConfigureTargetDBSystem:
                 else:
                     options.mysqlVersion = self.recommend_version(
                         self._server_info, self.versions)
-        else:
+        elif not self._compartment_access_failed:
             if not options.mysqlVersion:
                 add_error("Target database version not selected",
                           "database.mysqlVersion")
@@ -804,7 +920,7 @@ class ConfigureTargetDBSystem:
                 f"Found compartment named {options.compartmentName}: {matches}")
 
             compartment = matches[0]
-            self.select_compartment(compartment)
+            self._select_target_compartment_helper(compartment)
 
             options.compartmentId = compartment.id
             options.compartmentName = ""
@@ -1009,8 +1125,7 @@ class ConfigureTargetDBSystem:
             logging.info(
                 f"Root compartment overridden to {self._override_root_compartment_id}")
         else:
-            tenancy = oci_utils.Compartment(
-                config=self.oci_config, lazy_refresh=True)
+            tenancy = oci_utils.Compartment(config=self.oci_config)
             options.parentCompartmentId = tenancy.id
             options.networkParentCompartmentId = tenancy.id
 
