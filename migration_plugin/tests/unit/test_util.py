@@ -21,6 +21,11 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+import queue
+import threading
+from unittest.mock import patch
+
+import migration_plugin.lib.util as util
 from migration_plugin.lib.util import (
     sanitize_par_uri, sanitize_dict, sanitize_connection_dict,
     sanitize_dict_any_pass, k_san_dict_par, k_san_dict_connection
@@ -345,6 +350,153 @@ class TestConstants:
 
         result = k_san_dict_connection["password"]("secret123")
         assert result == "****"
+
+
+class TestPublicIpLookup:
+
+    def teardown_method(self, method=None):
+        util.get_my_public_ip.cache_clear()
+
+    def test_extract_ip_from_cloudflare_trace_response(self):
+        result = util._extract_ip(
+            "https://cloudflare.com/cdn-cgi/trace",
+            "fl=29f43\nip=203.0.113.7\nts=1234567890"
+        )
+
+        assert result == "203.0.113.7"
+
+    def test_extract_ip_from_json_response(self):
+        result = util._extract_ip(
+            "https://ifconfig.co/json",
+            '{"ip":"198.51.100.12"}'
+        )
+
+        assert result == "198.51.100.12"
+
+    def test_get_my_public_ip_retries_until_a_valid_endpoint_succeeds(self):
+        util.get_my_public_ip.cache_clear()
+
+        class FakeResponse:
+            def __init__(self, body: str):
+                self._body = body
+
+            def read(self):
+                return self._body.encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_urlopen(url, context=None, timeout=None):
+            if url == "https://cloudflare.com/cdn-cgi/trace":
+                raise OSError("temporary failure")
+
+            if url == "https://ifconfig.co/json":
+                return FakeResponse('{"ip":"192.0.2.44"}')
+
+            raise AssertionError(f"Unexpected URL {url}")
+
+        with patch.object(
+            util,
+            "DEFAULT_PUBLIC_IP_URLS",
+            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json")
+        ), patch(
+            "migration_plugin.lib.util.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            assert util.get_my_public_ip() == "192.0.2.44"
+
+    def test_get_my_public_ip_ignores_non_ipv4_endpoint_results(self):
+        util.get_my_public_ip.cache_clear()
+
+        class FakeResponse:
+            def __init__(self, body: str):
+                self._body = body
+
+            def read(self):
+                return self._body.encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_urlopen(url, context=None, timeout=None):
+            if url == "https://cloudflare.com/cdn-cgi/trace":
+                return FakeResponse("ip=2001:db8::1")
+
+            if url == "https://ifconfig.co/json":
+                return FakeResponse('{"ip":"192.0.2.44"}')
+
+            raise AssertionError(f"Unexpected URL {url}")
+
+        with patch.object(
+            util,
+            "DEFAULT_PUBLIC_IP_URLS",
+            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json")
+        ), patch(
+            "migration_plugin.lib.util.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            assert util.get_my_public_ip() == "192.0.2.44"
+
+    def test_get_my_public_ip_queries_endpoints_in_parallel(self):
+        util.get_my_public_ip.cache_clear()
+
+        first_started = threading.Event()
+        first_release = threading.Event()
+        lookup_result = queue.Queue()
+
+        class FakeResponse:
+            def __init__(self, body: str):
+                self._body = body
+
+            def read(self):
+                return self._body.encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_urlopen(url, context=None, timeout=None):
+            if url == "https://cloudflare.com/cdn-cgi/trace":
+                first_started.set()
+                assert first_release.wait(1)
+                return FakeResponse("ip=198.51.100.10")
+
+            if url == "https://ifconfig.co/json":
+                return FakeResponse('{"ip":"192.0.2.44"}')
+
+            raise AssertionError(f"Unexpected URL {url}")
+
+        def run_lookup():
+            try:
+                lookup_result.put(util.get_my_public_ip())
+            except Exception as exc:
+                lookup_result.put(exc)
+
+        with patch.object(
+            util,
+            "DEFAULT_PUBLIC_IP_URLS",
+            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json")
+        ), patch(
+            "migration_plugin.lib.util.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            worker = threading.Thread(target=run_lookup, daemon=True)
+            worker.start()
+
+            try:
+                assert first_started.wait(1)
+                assert lookup_result.get(timeout=1) == "192.0.2.44"
+            finally:
+                first_release.set()
+                worker.join(timeout=1)
 
 
 class TestEdgeCases:

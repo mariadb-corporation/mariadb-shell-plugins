@@ -21,8 +21,11 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+import json
+import ipaddress
+import queue
 import re
-from typing import Optional
+import threading
 import subprocess
 import sys
 import os
@@ -33,10 +36,12 @@ import ssl
 import certifi
 import time
 from functools import cache
+from typing import Optional
 
 
 def sanitize_par_uri(par: str) -> str:
     return re.sub(r"(https://[^/]*)/p/([^/]*)/", r"\1/p/<redacted>/", par)
+
 
 def sanitize_par_uri_in_list(l: list[str]) -> list[str]:
     return [sanitize_par_uri(i) for i in l]
@@ -172,11 +177,88 @@ def apply_user_only_access_permissions(path):
 g_ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 
+DEFAULT_PUBLIC_IP_URLS = tuple(
+    url for url in (
+        os.getenv("PUBLIC_IP_URL"),
+        "https://cloudflare.com/cdn-cgi/trace",
+        "https://ifconfig.co/json",
+        "https://api64.ipify.org?format=json",
+    )
+    if url
+)
+
+
+def _validate_public_ipv4(ip: str) -> str:
+    ip = ip.strip()
+    try:
+        ipaddress.IPv4Address(ip)
+    except ValueError as exc:
+        raise ValueError("response did not contain a valid IPv4 address") from exc
+    return ip
+
+
+def _extract_ip(url: str, body: str) -> str:
+    if url.endswith("/cdn-cgi/trace"):
+        for line in body.splitlines():
+            if line.startswith("ip="):
+                return _validate_public_ipv4(line[3:])
+        raise ValueError("trace response did not contain ip=")
+
+    if body.startswith("{"):
+        data = json.loads(body)
+        ip = data.get("ip")
+        if isinstance(ip, str):
+            return _validate_public_ipv4(ip)
+        raise ValueError("JSON response did not contain an ip field")
+
+    return _validate_public_ipv4(body)
+
+
+def _read_public_ip(url: str) -> str:
+    with urllib.request.urlopen(url, context=g_ssl_context, timeout=5) as response:
+        body = response.read().decode("utf-8", "strict").strip()
+    return _extract_ip(url, body)
+
+
 @cache
 def get_my_public_ip() -> str:
-    url = "https://api.ipify.org"
-    with urllib.request.urlopen(url, context=g_ssl_context, timeout=5) as response:
-        return response.read().decode('utf-8')
+    urls = DEFAULT_PUBLIC_IP_URLS
+    if not urls:
+        raise RuntimeError("No public-IP endpoint configured")
+
+    result_queue = queue.Queue()
+    stop_event = threading.Event()
+
+    def lookup(index: int, url: str) -> None:
+        try:
+            ip = _read_public_ip(url)
+            if not stop_event.is_set():
+                result_queue.put((index, url, ip, None))
+        except Exception as exc:
+            if not stop_event.is_set():
+                result_queue.put((index, url, None, exc))
+
+    for index, url in enumerate(urls):
+        thread = threading.Thread(
+            target=lookup,
+            args=(index, url),
+            daemon=True,
+        )
+        thread.start()
+
+    errors = {}
+    for _ in urls:
+        index, url, ip, exc = result_queue.get()
+        if exc is None:
+            stop_event.set()
+            return ip
+
+        errors[index] = f"{url}: {exc}"
+
+    raise RuntimeError(
+        "No public-IP endpoint reachable: "
+        + "; ".join(errors[index] for index in range(len(urls)))
+    )
 
 
 def interruptible_sleep(duration, interrupt_callback=None, poll_interval=0.1):
