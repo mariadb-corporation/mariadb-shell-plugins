@@ -24,12 +24,14 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA"""
 
 import argparse
+import ast
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlparse
 
 
 VERSION_RE = re.compile(r"^\d{4}\.\d+\.\d+\+\d+\.\d+\.\d+$")
@@ -63,6 +65,9 @@ COMMON_FILENAMES = {
     "README.md",
 }
 MAX_COMMIT_LINE_LENGTH = 72
+REMOTE_HELPER_RELATIVE_PATH = Path(
+    "migration_plugin/lib/backend/remote_helper.py"
+)
 
 
 def repo_root() -> Path:
@@ -71,6 +76,10 @@ def repo_root() -> Path:
 
 def changelog_path() -> Path:
     return repo_root() / "gui" / "extension" / "CHANGELOG.md"
+
+
+def remote_helper_path() -> Path:
+    return repo_root() / REMOTE_HELPER_RELATIVE_PATH
 
 
 def parse_versions(path: Path) -> Tuple[str, str]:
@@ -166,6 +175,68 @@ def discover_files(target: str) -> List[Dict[str, str]]:
         )
 
     return matches
+
+
+def parse_remote_helper_urls(path: Path) -> Dict[str, str]:
+    module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+    for node in module.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "k_repo_mysqlsh_url":
+                urls = ast.literal_eval(node.value)
+                if not isinstance(urls, dict):
+                    raise ValueError(
+                        "Expected k_repo_mysqlsh_url to be a dict in "
+                        f"{path}"
+                    )
+                return {
+                    str(arch): str(url)
+                    for arch, url in urls.items()
+                }
+
+    raise ValueError(
+        "Could not find k_repo_mysqlsh_url in "
+        f"{path}"
+    )
+
+
+def summarized_version() -> str:
+    current, _ = parse_versions(changelog_path())
+    return current
+
+
+def validate_remote_helper_urls() -> Dict[str, object]:
+    summary_version = summarized_version()
+    expected_prefix = f"mysql-shell-{shell_version(summary_version)}-"
+    helper_path = remote_helper_path()
+    urls = parse_remote_helper_urls(helper_path)
+    entries = []  # type: List[Dict[str, object]]
+
+    for arch, url in sorted(urls.items()):
+        rpm_name = Path(urlparse(url).path).name
+        entries.append(
+            {
+                "arch": arch,
+                "url": url,
+                "rpm_name": rpm_name,
+                "matches_expected_prefix": rpm_name.startswith(
+                    expected_prefix
+                ),
+            }
+        )
+
+    return {
+        "summary_version": summary_version,
+        "expected_shell_prefix": expected_prefix,
+        "path": helper_path.relative_to(repo_root()).as_posix(),
+        "entries": entries,
+        "all_match": all(
+            entry["matches_expected_prefix"]
+            for entry in entries
+        ),
+    }
 
 
 def git(*args: str) -> str:
@@ -350,6 +421,12 @@ def cmd_commits(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check_remote_helper(_: argparse.Namespace) -> int:
+    result = validate_remote_helper_urls()
+    print(json.dumps(result, indent=2))
+    return 0 if result["all_match"] else 1
+
+
 def cmd_check_head_commit(_: argparse.Namespace) -> int:
     has_literal_newlines = head_commit_has_literal_newlines()
     overlong_lines = head_commit_overlong_lines()
@@ -389,6 +466,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Gather non-merge commits since the previous changelog version.",
     )
     commits.set_defaults(func=cmd_commits)
+
+    remote_helper = subparsers.add_parser(
+        "check-remote-helper",
+        help=(
+            "Check that k_repo_mysqlsh_url points at RPM filenames whose "
+            "prefix matches the MySQL Shell version being summarized."
+        ),
+    )
+    remote_helper.set_defaults(func=cmd_check_remote_helper)
 
     check = subparsers.add_parser(
         "check-head-commit",

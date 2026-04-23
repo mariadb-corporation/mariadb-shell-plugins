@@ -24,6 +24,7 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -43,7 +44,7 @@ def load_helper_module():
 
 
 class GatherCommitsTest(unittest.TestCase):
-    def test_gather_commits_uses_current_heading_as_range_start(self):
+    def test_gather_commits_uses_previous_heading_as_range_start(self):
         helper = load_helper_module()
 
         git_calls = []
@@ -62,8 +63,8 @@ class GatherCommitsTest(unittest.TestCase):
             helper,
             "find_changelog_heading_commit",
             side_effect=lambda version: (
-                "current-heading-commit"
-                if version == "2026.4.0+9.7.0"
+                "previous-heading-commit"
+                if version == "2026.2.0+9.6.1"
                 else self.fail(f"Unexpected version lookup: {version!r}")
             ),
         ), mock.patch.object(helper, "git", side_effect=fake_git):
@@ -76,7 +77,7 @@ class GatherCommitsTest(unittest.TestCase):
                     "log",
                     "--no-merges",
                     "--format=%H%x1f%s%x1f%b%x1e",
-                    "current-heading-commit..HEAD",
+                    "previous-heading-commit..HEAD",
                 )
             ],
         )
@@ -94,6 +95,82 @@ class DiscoverFilesTest(unittest.TestCase):
         candidates = list(helper.iter_candidate_files())
 
         self.assertNotIn(changelog, candidates)
+
+
+class RemoteHelperCheckTest(unittest.TestCase):
+    def test_validate_remote_helper_urls_matches_summarized_shell_prefix(self):
+        helper = load_helper_module()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remote_helper = (
+                root / "migration_plugin" / "lib" / "backend" / "remote_helper.py"
+            )
+            remote_helper.parent.mkdir(parents=True)
+            remote_helper.write_text(
+                """
+k_repo_mysqlsh_url = {
+    "aarch64": "https://cdn.mysql.com/Downloads/MySQL-Shell/mysql-shell-9.7.0-1.el8.aarch64.rpm",
+    "x86_64": "https://cdn.mysql.com/Downloads/MySQL-Shell/mysql-shell-9.7.0-1.el8.x86_64.rpm",
+}
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                helper, "repo_root", return_value=root
+            ), mock.patch.object(
+                helper,
+                "parse_versions",
+                return_value=("2026.4.0+9.7.0", "2026.2.0+9.6.1"),
+            ):
+                result = helper.validate_remote_helper_urls()
+
+        self.assertTrue(result["all_match"])
+        self.assertEqual(result["summary_version"], "2026.4.0+9.7.0")
+        self.assertEqual(result["expected_shell_prefix"], "mysql-shell-9.7.0-")
+        self.assertEqual(result["path"], remote_helper.relative_to(root).as_posix())
+        self.assertEqual(len(result["entries"]), 2)
+        self.assertTrue(
+            all(entry["matches_expected_prefix"] for entry in result["entries"])
+        )
+
+    def test_validate_remote_helper_urls_detects_mismatch_against_summarized_version(self):
+        helper = load_helper_module()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remote_helper = (
+                root / "migration_plugin" / "lib" / "backend" / "remote_helper.py"
+            )
+            remote_helper.parent.mkdir(parents=True)
+            remote_helper.write_text(
+                """
+k_repo_mysqlsh_url = {
+    "aarch64": "https://cdn.mysql.com/Downloads/MySQL-Shell/mysql-shell-9.6.1-1.el8.aarch64.rpm",
+}
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                helper, "repo_root", return_value=root
+            ), mock.patch.object(
+                helper,
+                "parse_versions",
+                return_value=("2026.4.0+9.7.0", "2026.2.0+9.6.1"),
+            ):
+                result = helper.validate_remote_helper_urls()
+
+        self.assertFalse(result["all_match"])
+        self.assertEqual(result["summary_version"], "2026.4.0+9.7.0")
+        self.assertEqual(
+            result["entries"][0]["rpm_name"],
+            "mysql-shell-9.6.1-1.el8.aarch64.rpm",
+        )
+        self.assertFalse(result["entries"][0]["matches_expected_prefix"])
 
 
 if __name__ == "__main__":

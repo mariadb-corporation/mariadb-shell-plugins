@@ -42,15 +42,21 @@ The previous version is the second `## Changes in ...` entry.
 ## Rules
 
 - Keep git commands sequential. Do not execute git commands in parallel.
-- Do not hardcode the exact files to update. Discover candidate files from the
-  repository layout and then filter to files that actually contain the current
-  version string or the current `YYYY.M.P` portion.
+- Do not hardcode the exact files to update for the discover-driven version
+  replacement steps. Discover candidate files from the repository layout and
+  then filter to files that actually contain the current version string or the
+  current `YYYY.M.P` portion.
 - Use these repository patterns when discovering candidate files:
   - `general.py`
   - `VERSION`
   - `package.json`
   - `README.md`
   - `.html` files under a `docs` directory
+- In upgrade mode, also inspect
+  `migration_plugin/lib/backend/remote_helper.py`. The RPM filenames in
+  `k_repo_mysqlsh_url` must begin with `mysql-shell-X.Y.Z-`, where `X.Y.Z` is
+  the shell-version suffix from the version being summarized, which is the
+  current top changelog version before the new stub is added.
 - Treat `gui/extension/CHANGELOG.md` as manual-only. Do not include it in
   `discover`; update it only in the dedicated changelog step for the workflow.
 - When updating versioned files, replace either:
@@ -69,6 +75,7 @@ Useful commands:
 python3 .agents/skills/shell-plugins-version-bump/scripts/version_bump_helper.py versions
 python3 .agents/skills/shell-plugins-version-bump/scripts/version_bump_helper.py discover --target 2026.4.0+9.7.0
 python3 .agents/skills/shell-plugins-version-bump/scripts/version_bump_helper.py commits
+python3 .agents/skills/shell-plugins-version-bump/scripts/version_bump_helper.py check-remote-helper
 python3 .agents/skills/shell-plugins-version-bump/scripts/version_bump_helper.py check-head-commit
 ```
 
@@ -83,6 +90,13 @@ excludes `gui/extension/CHANGELOG.md`.
 previous changelog entry to `HEAD`, because the current top entry is the
 upcoming release stub. It flags obvious maintenance commits and suggests
 whether each remaining commit belongs to `### Additions` or `### Fixes`.
+
+`check-remote-helper` validates
+`migration_plugin/lib/backend/remote_helper.py` against the version being
+summarized in upgrade mode. It reads the current top changelog version and
+checks that each `k_repo_mysqlsh_url` RPM filename begins with the expected
+`mysql-shell-X.Y.Z-` prefix derived from that version suffix. Update the URLs
+manually if the command reports a mismatch.
 
 `check-head-commit` reports whether the latest commit message contains literal
 `\n` sequences or lines longer than 72 characters so the commit can be amended
@@ -120,14 +134,20 @@ Run these steps in order:
    the current top entry is the unreleased stub.
 3. Update the top entry in `gui/extension/CHANGELOG.md` with summarized
    information for each relevant commit.
-4. Commit this changelog change.
-5. Check the resulting commit message for literal `\n` characters and overlong
+4. Ensure
+   `migration_plugin/lib/backend/remote_helper.py:k_repo_mysqlsh_url` is up to
+   date for the version being summarized. Update stale links, and ensure every
+   RPM filename begins with `mysql-shell-X.Y.Z-`, where `X.Y.Z` is the suffix
+   from the current top changelog version being finalized in this step.
+5. Commit the changelog change, including any needed `remote_helper.py`
+   update from the previous step.
+6. Check the resulting commit message for literal `\n` characters and overlong
    lines, and fix it if needed.
-6. Discover files to be modified.
-7. Update files to be modified.
-8. Add a stub entry with the new version to `gui/extension/CHANGELOG.md`.
-9. Commit the version bump.
-10. Check the resulting commit message for literal `\n` characters and
+7. Discover files to be modified.
+8. Update files to be modified.
+9. Add a stub entry with the new version to `gui/extension/CHANGELOG.md`.
+10. Commit the version bump.
+11. Check the resulting commit message for literal `\n` characters and
     overlong lines, and fix it if needed.
 
 Use commit subjects and bodies as source material, but rewrite them into a
