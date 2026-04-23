@@ -432,10 +432,16 @@ def estimate_database_size(session: MigrationSession) -> tuple[int, int]:
     data_size, index_size = session.run_sql(
         "select sum(data_length), sum(index_length) from information_schema.tables"
     ).fetch_one()
+
     if data_size is not None:
         data_size = int(data_size)
+    else:
+        data_size = 0
+
     if index_size is not None:
         index_size = int(index_size)
+    else:
+        index_size = 0
 
     return data_size, index_size
 

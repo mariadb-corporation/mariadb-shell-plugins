@@ -395,8 +395,8 @@ excluded or manually repaired.""",
         "table/missing_pk",
         MessageLevel.ERROR,
         "Table Missing Primary Key or Equivalent",
-        "<li>Table `compatibility_issues`.`missing_pk_manual_fix` does not have a Primary Key, which is required for High Availability in MySQL HeatWave Service\n"
-        "<li>Table `compatibility_issues`.`missing_pk` does not have a Primary Key, which is required for High Availability in MySQL HeatWave Service",
+        "<li>Table `compatibility_issues`.`missing_pk_manual_fix` does not have a Primary Key or a Primary Key Equivalent, which is required for High Availability in MySQL HeatWave Service\n"
+        "<li>Table `compatibility_issues`.`missing_pk` does not have a Primary Key or a Primary Key Equivalent, which is required for High Availability in MySQL HeatWave Service",
         """The tables below do not have PRIMARY KEYs and will have one added.
 
 In order to offer High Availability, the MySQL HeatWave Service requires all
@@ -714,7 +714,7 @@ def test_check_compatibility_fixed(sandbox_session):
         "table/missing_pk",
         MessageLevel.NOTICE,
         None,  # type: ignore
-        "<li>Table `compatibility_issues`.`missing_pk` does not have a Primary Key, this will be fixed when the dump is loaded",
+        "<li>Table `compatibility_issues`.`missing_pk` does not have a Primary Key or a Primary Key Equivalent, this will be fixed when the dump is loaded",
         None,  # type: ignore
         ["table:`compatibility_issues`.`missing_pk`"],
         [CompatibilityFlags.create_invisible_pks],
@@ -725,7 +725,7 @@ def test_check_compatibility_fixed(sandbox_session):
         "table/missing_pk_manual_fix",
         MessageLevel.ERROR,
         "Table not Eligible for Automatic Primary Key Creation",
-        "<li>Table `compatibility_issues`.`missing_pk_manual_fix` does not have a Primary Key, this cannot be fixed automatically because the table is partitioned",
+        "<li>Table `compatibility_issues`.`missing_pk_manual_fix` does not have a Primary Key or a Primary Key Equivalent, this cannot be fixed automatically because the table is partitioned",
         """The tables below do not have PRIMARY KEYs and cannot have one created automatically.
 
 In order to offer High Availability, the MySQL HeatWave Service requires all
