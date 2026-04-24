@@ -66,6 +66,8 @@ export const parseAppParameters = (): void => {
                 if (!isNaN(numericValue)) {
                     appParameters[queryParam] = numericValue;
                 }
+            } else if (queryParam === "inDevelopment") {
+                appParameters.inDevelopment = value !== "false";
             } else if (queryParam === "subApp") {
                 appParameters[queryParam] = value;
             }

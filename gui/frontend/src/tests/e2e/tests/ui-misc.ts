@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -110,8 +110,9 @@ describe("Token Verification", () => {
 
     it("Invalid token", async () => {
         try {
-            const invalidToken = `${String(url)}xpto`;
-            await driver.get(invalidToken);
+            const invalidToken = new URL(url);
+            invalidToken.searchParams.set("token", `${String(globalThis.testConfig!.TOKEN)}xpto`);
+            await driver.get(invalidToken.toString());
 
             expect(driver.wait(until.elementsLocated(locator.pageIsLoading), constants.wait5seconds,
                 "Blank page was not displayed")).toBeDefined();

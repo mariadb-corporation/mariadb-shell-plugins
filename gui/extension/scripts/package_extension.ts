@@ -70,6 +70,11 @@ const utilPluginPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins
 const migrationPluginPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "migration_plugin");
 const webRootPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "gui_plugin", "core", "webroot");
 
+// extra directories containing debug-only features that should not be part of the final package
+const debugOnlyFeatures = [
+    join(guiPluginPath, "debugger")
+];
+
 if (!process.env.SHELL_PLUGINS_DEPS) {
     throw new Error(`Please define the env var SHELL_PLUGINS_DEPS (Location folder of shell and router)`);
 }
@@ -162,6 +167,12 @@ Logger.info("Adding GUI plugin (FE)...");
 rmSync(webRootPath, { recursive: true, force: true });
 mkdirSync(webRootPath);
 cpSync(buildFolder, webRootPath, { recursive: true });
+Logger.done();
+
+Logger.info("Pruning debug-only features...");
+for (const feature of debugOnlyFeatures) {
+    rmSync(feature, { recursive: true, force: true });
+}
 Logger.done();
 
 process.chdir(extensionFolder);

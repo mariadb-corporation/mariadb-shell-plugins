@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -72,6 +72,7 @@ create_symlink(src_protocols_root, startup_dir, True)
 
 env = os.environ.copy()
 env['MYSQLSH_USER_CONFIG_HOME'] = dot_mysqlsh.name
+env['MYSQL_SHELL_GUI_DEBUG_MODE'] = '1'
 mysqlsh = shutil.which(
     'mysqlsh.exe') if os.name == 'nt' else shutil.which('mysqlsh')
 

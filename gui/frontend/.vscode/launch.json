@@ -14,7 +14,7 @@
             "enableCRAWorkaround": true,
             "firefoxArgs": [
                 //"-devtools",
-            ]
+            ],
         },
         {
             "type": "firefox",
@@ -32,7 +32,7 @@
             ],
             "firefoxArgs": [
                 //"-devtools",
-            ]
+            ],
         },
         {
             "type": "firefox",
@@ -50,8 +50,8 @@
             ],
             "firefoxArgs": [
                 //"-devtools",
-            ]
-        },        
+            ],
+        },
         {
             "type": "chrome",
             "request": "launch",
@@ -63,7 +63,7 @@
             "runtimeArgs": [
                 "--allow-insecure-localhost",
                 //"--app=data:,"
-            ]
+            ],
         },
         {
             "type": "chrome",
@@ -81,7 +81,7 @@
             "perScriptSourcemaps": "yes",
             "skipFiles": [
                 //"${workspaceFolder}/node_modules/**", doesn't make startup faster, but prevents debugging 3rd party code.
-            ]
+            ],
         },
         {
             "type": "node",

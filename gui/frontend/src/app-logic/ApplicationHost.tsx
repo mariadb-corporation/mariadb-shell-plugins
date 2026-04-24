@@ -93,8 +93,14 @@ export default class ApplicationHost extends ComponentBase<IApplicationHostPrope
             this.aboutStatusItem.tooltip = "Show About";
             this.aboutStatusItem.command = "application:toggleAbout";
 
-            // We don't want the protocol debugger when embedded
-            if (webSession.runMode === RunMode.LocalUser && !appParameters.embedded) {
+            // We don't want the protocol debugger when embedded or not in development mode.
+            // We always want it when running tests (particularly end-to-end).
+            // We are checking for falsy, not null or undefined.
+            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+            const debuggerIconVisible = appParameters.testsRunning || (webSession.runMode === RunMode.LocalUser
+                && !appParameters.embedded && appParameters.inDevelopment);
+
+            if (debuggerIconVisible) {
                 this.debuggerStatusItem = ui.createStatusBarItem(StatusBarAlignment.Right, 8);
                 this.debuggerStatusItem.text = "$(debug)";
                 this.debuggerStatusItem.tooltip = "Toggle Communication Debugger";

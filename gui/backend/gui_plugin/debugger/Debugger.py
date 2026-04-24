@@ -73,14 +73,18 @@ def get_scripts() -> list[str]:
 
 
 def read_script(path: str) -> str:
-    this_file = Path(__file__)
-    path_tokens = [this_file.parent, "scripts"] + path.split("/")
-    target_path = os.path.join(*path_tokens)
-    target = Path(target_path)
+    scripts_root = (Path(__file__).parent / "scripts").resolve()
+    target = (scripts_root / path).resolve()
+
+    try:
+        target.relative_to(scripts_root)
+    except ValueError as exc:
+        raise Exception(f"The requested story does not exist: {path}") from exc
+
     if target.is_file():
         return target.read_text(encoding="utf-8")
-    else:
-        raise Exception(f"The requested story does not exist: {path}")
+
+    raise Exception(f"The requested story does not exist: {path}")
 
 
 @plugin_function('gui.debugger.getScriptContent', shell=False, web=True)

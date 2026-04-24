@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -262,6 +262,9 @@ for d in packaging/mysql-shell/*; do
         cp -RL $SHELL_PLUGINS_LOCATION/msm_plugin shell/lib/mysqlsh/plugins/.
         cp -RL $SHELL_PLUGINS_LOCATION/util_plugin shell/lib/mysqlsh/plugins/.
         cp -RL $SHELL_PLUGINS_LOCATION/migration_plugin shell/lib/mysqlsh/plugins/.
+
+        echo "Prune debug-only features"
+        rm -Rf shell/lib/mysqlsh/plugins/gui_plugin/debugger
 
         # Clean *.py[co] files and __pycache__ directories
         find shell/lib/mysqlsh/plugins -type f -name '*.py[co]' -delete -o -type d -name __pycache__ -delete

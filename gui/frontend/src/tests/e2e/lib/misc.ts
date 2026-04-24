@@ -82,7 +82,7 @@ export class Misc {
     public static getUrl = (): string => {
         const port = this.getPort();
         let url = globalThis.testConfig!.SHELL_UI_HOSTNAME;
-        url += `:${String(port)}/?token=${String(globalThis.testConfig!.TOKEN)}`;
+        url += `:${String(port)}/?token=${String(globalThis.testConfig!.TOKEN)}&inDevelopment=true`;
 
         return String(url);
     };

@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,10 @@ register the plugin object member functions.
 """
 
 from mysqlsh.plugin_manager import plugin # pylint: disable=import-error
+from os import environ
+
+
+DEBUG_MODE = int(environ.get("MYSQL_SHELL_GUI_DEBUG_MODE", '0'))
 
 
 # Create a class representing the structure of the plugin and use the
@@ -49,8 +53,11 @@ class gui():
         """
         # Import all sub-modules to register the decorated functions there
         from gui_plugin import cluster, core, db_connections, mds, modeler
-        from gui_plugin import shell, sql_editor, users, debugger, start
+        from gui_plugin import shell, sql_editor, users, start
         from gui_plugin import modules, db, general
+
+        if DEBUG_MODE:
+            from gui_plugin import debugger
 
     class cluster():
         """The InnoDB Cluster MySQL Shell GUI backend module
@@ -115,12 +122,13 @@ class gui():
         Users MySQL Shell GUI module
         """
 
-    class debugger():
-        """The websocket debugger module
+    if DEBUG_MODE:
+        class debugger():
+            """The websocket debugger module
 
-        This extension object holds the backend implementation of the
-        Websocket debugger module
-        """
+            This extension object holds the backend implementation of the
+            Websocket debugger module
+            """
 
     class start():
         """Used to start the MySQL Shell GUI

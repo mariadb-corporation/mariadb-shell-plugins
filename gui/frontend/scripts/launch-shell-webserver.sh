@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -50,4 +50,4 @@ else
 fi
 
 # Set log level and execute the command
-LOG_LEVEL=DEBUG2 mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=8000,accept_remote_connections=True$OPTIONAL_PART)"
+MYSQL_SHELL_GUI_DEBUG_MODE=1 LOG_LEVEL=DEBUG2 mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=8000,accept_remote_connections=True$OPTIONAL_PART)"

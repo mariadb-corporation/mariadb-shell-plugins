@@ -9,7 +9,7 @@
         "run-win-shell:web-server": "call ./scripts/launch-shell-webserver.cmd",
         "run-vite:dev-server": "vite",
         "build": "bash ./scripts/production-build.sh",
-        "build-with-maps": "bash ./scripts/production-build.sh true",
+        "build-with-maps": "bash ./scripts/production-build.sh development true",
         "build-win": "pwsh scripts/production-build.ps1 && tsc -p tsconfig.json",
         "build-win-with-maps": "pwsh scripts/production-build.ps1 true && tsc -p tsconfig.json",
         "type-check": "tsc -p tsconfig.json",

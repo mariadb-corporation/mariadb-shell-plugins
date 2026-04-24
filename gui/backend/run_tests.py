@@ -257,6 +257,8 @@ with pushd(paths.source.backend):
     env['MYSQLSH_USER_CONFIG_HOME'] = paths.runtime.root.as_posix()
     env['MYSQLSH_TERM_COLOR_MODE'] = 'nocolor'
     env['COV_CORE_DATAFILE'] = '.coverage.eager'
+    # tests should run in debug mode to ensure all modules to be tested are loaded
+    env['MYSQL_SHELL_GUI_DEBUG_MODE'] = '1'
 
     if args.debug is not None:
         env['ATTACH_DEBUGGER'] = args.debug

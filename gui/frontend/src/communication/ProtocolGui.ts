@@ -269,6 +269,10 @@ export enum ShellAPIGui {
     GuiUsersUpdateUserGroup = "gui.users.update_user_group",
     /** Removes given user group. */
     GuiUsersRemoveUserGroup = "gui.users.remove_user_group",
+    /** Returns basic information about this plugin. */
+    GuiInfo = "gui.info",
+    /** Returns the version number of the plugin */
+    GuiVersion = "gui.version",
     /** Indicates whether this module is a GUI backend module */
     GuiDebuggerIsGuiModuleBackend = "gui.debugger.is_gui_module_backend",
     /** Returns display information about the module */
@@ -276,11 +280,7 @@ export enum ShellAPIGui {
     /** Returns the list of available scripts */
     GuiDebuggerGetScripts = "gui.debugger.get_scripts",
     /** Returns the content of the given script */
-    GuiDebuggerGetScriptContent = "gui.debugger.get_script_content",
-    /** Returns basic information about this plugin. */
-    GuiInfo = "gui.info",
-    /** Returns the version number of the plugin */
-    GuiVersion = "gui.version"
+    GuiDebuggerGetScriptContent = "gui.debugger.get_script_content"
 }
 
 export interface IShellGuiCoreIsShellWebCertificateInstalledKwargs {
@@ -429,12 +429,12 @@ export interface IProtocolGuiParameters {
     [ShellAPIGui.GuiUsersRemoveUserFromGroup]: { args: { memberId: number; groupId: number; }; };
     [ShellAPIGui.GuiUsersUpdateUserGroup]: { args: { groupId: number; name?: string; description?: string; }; };
     [ShellAPIGui.GuiUsersRemoveUserGroup]: { args: { groupId: number; }; };
+    [ShellAPIGui.GuiInfo]: {};
+    [ShellAPIGui.GuiVersion]: {};
     [ShellAPIGui.GuiDebuggerIsGuiModuleBackend]: {};
     [ShellAPIGui.GuiDebuggerGetGuiModuleDisplayInfo]: {};
     [ShellAPIGui.GuiDebuggerGetScripts]: {};
     [ShellAPIGui.GuiDebuggerGetScriptContent]: { args: { path: string; }; };
-    [ShellAPIGui.GuiInfo]: {};
-    [ShellAPIGui.GuiVersion]: {};
 
 }
 
