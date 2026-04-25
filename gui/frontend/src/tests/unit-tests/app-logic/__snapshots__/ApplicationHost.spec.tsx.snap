@@ -176,7 +176,7 @@ exports[`Application host tests > Rendering About 1`] = `
                           </div>
                         </div>
                         <div
-                          class="tabulator-tableholder"
+                          class="tabulator-tableholder fixedScrollbar"
                           style="min-height: falsepx; height: calc(100% - 0px); max-height: calc(100% - 0px);"
                           tabindex="0"
                         >
@@ -588,7 +588,7 @@ exports[`Application host tests > Rendering Debugger Maximized 1`] = `
                           </div>
                         </div>
                         <div
-                          class="tabulator-tableholder"
+                          class="tabulator-tableholder fixedScrollbar"
                           style="min-height: falsepx; height: calc(100% - 0px); max-height: calc(100% - 0px);"
                           tabindex="0"
                         >
@@ -1000,7 +1000,7 @@ exports[`Application host tests > Rendering Debugger Normal 1`] = `
                           </div>
                         </div>
                         <div
-                          class="tabulator-tableholder"
+                          class="tabulator-tableholder fixedScrollbar"
                           style="min-height: falsepx; height: calc(100% - 0px); max-height: calc(100% - 0px);"
                           tabindex="0"
                         >
@@ -1412,7 +1412,7 @@ exports[`Application host tests > Rendering Preferences 1`] = `
                           </div>
                         </div>
                         <div
-                          class="tabulator-tableholder"
+                          class="tabulator-tableholder fixedScrollbar"
                           style="min-height: falsepx; height: calc(100% - 0px); max-height: calc(100% - 0px);"
                           tabindex="0"
                         >
@@ -1902,7 +1902,7 @@ exports[`Application host tests > Standard Rendering 1`] = `
                           </div>
                         </div>
                         <div
-                          class="tabulator-tableholder"
+                          class="tabulator-tableholder fixedScrollbar"
                           style="min-height: falsepx; height: calc(100% - 0px); max-height: calc(100% - 0px);"
                           tabindex="0"
                         >

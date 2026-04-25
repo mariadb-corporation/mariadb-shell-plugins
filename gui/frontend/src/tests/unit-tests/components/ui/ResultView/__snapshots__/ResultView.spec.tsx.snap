@@ -33,7 +33,7 @@ exports[`Result View Tests > Render with Columns 1`] = `
         </div>
       </div>
       <div
-        class="tabulator-tableholder"
+        class="tabulator-tableholder fixedScrollbar"
         style="min-height: falsepx; height: calc(100% - 0px); max-height: calc(100% - 0px);"
         tabindex="0"
       >

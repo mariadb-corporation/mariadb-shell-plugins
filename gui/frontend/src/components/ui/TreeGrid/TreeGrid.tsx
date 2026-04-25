@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -236,6 +236,8 @@ export class TreeGrid extends ComponentBase<ITreeGridProperties> {
 
         // istanbul ignore else
         if (this.hostRef.current) {
+            this.hostRef.current.addEventListener("wheel", this.handleWheel, { passive: false });
+
             // The tabulator options can contain data, passed in as properties.
             this.timeoutId = null;
             this.tabulator = new Tabulator(this.hostRef.current, this.tabulatorOptions);
@@ -265,15 +267,15 @@ export class TreeGrid extends ComponentBase<ITreeGridProperties> {
                         }
                     }
 
-                    // Assign the table holder class our fixed scrollbar class too.
-                    const lastChild = this.hostRef.current?.lastChild as HTMLElement | null;
-                    lastChild?.classList.add("fixedScrollbar");
-
                     if (topRowIndex != null) {
                         const topRow = this.tabulator!.getRowFromPosition(topRowIndex);
                         void this.tabulator!.scrollToRow(topRow, "top", false);
                     }
                 }
+
+                // Assign the table holder class our fixed scrollbar class too.
+                const lastChild = this.hostRef.current?.lastChild as HTMLElement | null;
+                lastChild?.classList.add("fixedScrollbar");
 
                 this.tableReady = true;
             });
@@ -302,6 +304,8 @@ export class TreeGrid extends ComponentBase<ITreeGridProperties> {
             clearTimeout(this.timeoutId);
             this.timeoutId = null;
         }
+
+        this.hostRef.current?.removeEventListener("wheel", this.handleWheel);
     }
 
     public override componentDidUpdate(_prevProps: ITreeGridProperties): void {
@@ -835,4 +839,61 @@ export class TreeGrid extends ComponentBase<ITreeGridProperties> {
     private handleCellEditCancelled = () => {
         this.isEditing = false;
     };
+
+    private handleWheel = (event: WheelEvent): void => {
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+            return;
+        }
+
+        const target = event.target;
+        if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) {
+            return;
+        }
+
+        const tableHolder = (this.tabulator?.rowManager as IDictionary | undefined)?.element as HTMLElement | undefined;
+        if (!tableHolder || !(target instanceof Node) || !tableHolder.contains(target)) {
+            return;
+        }
+
+        let deltaX = this.normalizeWheelDelta(event.deltaX, event.deltaMode, tableHolder.clientWidth);
+        let deltaY = this.normalizeWheelDelta(event.deltaY, event.deltaMode, tableHolder.clientHeight);
+
+        if (event.shiftKey && deltaX === 0) {
+            deltaX = deltaY;
+            deltaY = 0;
+        }
+
+        const maxScrollLeft = tableHolder.scrollWidth - tableHolder.clientWidth;
+        const maxScrollTop = tableHolder.scrollHeight - tableHolder.clientHeight;
+        const scrollLeft = this.limitValue(tableHolder.scrollLeft + deltaX, 0, maxScrollLeft);
+        const scrollTop = this.limitValue(tableHolder.scrollTop + deltaY, 0, maxScrollTop);
+
+        if (scrollLeft !== tableHolder.scrollLeft || scrollTop !== tableHolder.scrollTop) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            tableHolder.scrollLeft = scrollLeft;
+            tableHolder.scrollTop = scrollTop;
+        }
+    };
+
+    private normalizeWheelDelta(delta: number, deltaMode: number, pageSize: number): number {
+        switch (deltaMode) {
+            case WheelEvent.DOM_DELTA_LINE: {
+                return delta * 16;
+            }
+
+            case WheelEvent.DOM_DELTA_PAGE: {
+                return delta * pageSize;
+            }
+
+            default: {
+                return delta;
+            }
+        }
+    }
+
+    private limitValue(value: number, min: number, max: number): number {
+        return Math.min(Math.max(value, min), Math.max(min, max));
+    }
 }

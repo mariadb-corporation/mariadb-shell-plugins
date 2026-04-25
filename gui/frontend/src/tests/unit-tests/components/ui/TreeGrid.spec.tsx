@@ -161,4 +161,46 @@ describe("TreeGrid tests", (): void => {
         unmount();
     });
 
+    it("keeps header wheel events delegated to Tabulator", async () => {
+        const gridRef = createRef<TreeGrid>();
+        const { container, unmount } = render(
+            <TreeGrid
+                ref={gridRef}
+                columns={[
+                    { title: "col1", field: "field1", width: 300 },
+                    { title: "col2", field: "field2", width: 300 },
+                ]}
+                tableData={[
+                    { id: "1", field1: "a", field2: "b" },
+                ]}
+            />,
+        );
+
+        await nextRunLoop();
+        await gridRef.current!.table;
+
+        const headerContents = container.querySelector<HTMLElement>(".tabulator-header-contents");
+        const tableHolder = container.querySelector<HTMLElement>(".tabulator-tableholder");
+        expect(headerContents).toBeDefined();
+        expect(tableHolder).toBeDefined();
+
+        Object.defineProperties(tableHolder!, {
+            clientWidth: { value: 100, configurable: true },
+            scrollWidth: { value: 1000, configurable: true },
+        });
+
+        const event = new WheelEvent("wheel", {
+            bubbles: true,
+            cancelable: true,
+            deltaX: 40,
+        });
+
+        headerContents!.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(tableHolder!.scrollLeft).toBe(40);
+
+        unmount();
+    });
+
 });
