@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,8 @@
 
 import json
 
+import mysqlsh  # pylint: disable=import-error
+
 from mysqlsh.plugin_manager import \
     plugin_function  # pylint: disable=import-error
 
@@ -36,6 +38,67 @@ from gui_plugin.modules.Modules import (add_data, delete_data,
 from gui_plugin.sql_editor.SqlEditorModuleSession import SqlEditorModuleSession
 
 from . import backend as sql_editor_backend
+
+
+def _match_history_glob(pattern, sql):
+    """Matches MySQL Shell history glob patterns.
+
+    MySQL Shell's history.sql.ignorePattern option is a colon-separated list
+    of case-insensitive glob patterns that support '*', '?', and backslash
+    escaping for '\\', '*', and '?'.
+    """
+    pattern = pattern.lower()
+    sql = sql.lower()
+    pattern_length = len(pattern)
+    sql_length = len(sql)
+    pattern_index = 0
+    sql_index = 0
+    previous_pattern_index = 0
+    previous_sql_index = 0
+
+    while pattern_index < pattern_length or sql_index < sql_length:
+        if pattern_index < pattern_length:
+            char = pattern[pattern_index]
+
+            if char == "?":
+                if sql_index < sql_length:
+                    pattern_index += 1
+                    sql_index += 1
+                    continue
+            elif char == "*":
+                previous_pattern_index = pattern_index
+                previous_sql_index = sql_index + 1
+                pattern_index += 1
+                continue
+            else:
+                if char == "\\" and pattern_index + 1 < pattern_length and pattern[pattern_index + 1] in "\\*?":
+                    pattern_index += 1
+                    char = pattern[pattern_index]
+
+                if sql_index < sql_length and sql[sql_index] == char:
+                    pattern_index += 1
+                    sql_index += 1
+                    continue
+
+        if 0 < previous_sql_index <= sql_length:
+            pattern_index = previous_pattern_index + 1
+            sql_index = previous_sql_index
+            previous_sql_index += 1
+            continue
+
+        return False
+
+    return True
+
+
+def _should_ignore_history_entry(code):
+    patterns = str(mysqlsh.globals.shell.options["history.sql.ignorePattern"] or "")
+
+    for pattern in patterns.split(":"):
+        if _match_history_glob(pattern, code):
+            return True
+
+    return False
 
 
 @plugin_function('gui.sqlEditor.isGuiModuleBackend', web=True)
@@ -264,14 +327,18 @@ def add_execution_history_entry(connection_id, code, language_id, profile_id=Non
     Args:
         connection_id (int): The id of the db_connection
         code (str): The code to be stored in the history
-        language_id (str): The language id of the code
+        language_id (str): The language id of the code. SQL-like entries honor
+            history.sql.ignorePattern.
         profile_id (int): The id of profile
         be_session (object):  A session to the GUI backend database
             where the operation will be performed.
 
     Returns:
-        int: the id of the new record.
+        int: the id of the new record, or 0 if the entry was ignored.
     """
+
+    if str(language_id).lower() in ("sql", "mysql") and _should_ignore_history_entry(code):
+        return 0
 
     max_entries = 50
     category_id = get_data_category_id("DB Notebook Code History")

@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,10 +26,12 @@ import time
 import uuid
 
 import pytest
+import mysqlsh
 
 import config
 import gui_plugin.core.Logger as logger
 from gui_plugin import db_connections, sql_editor
+import gui_plugin.sql_editor.SqlEditor as sql_editor_module
 from gui_plugin.core.Error import MSGException
 from tests.lib.MockWebSession import MockWebSession
 from tests.lib.utils import backend_callback, backend_callback_with_pending
@@ -101,6 +103,46 @@ def params():
 
 
 class Test_sql_editor:
+
+    def test_should_ignore_history_entry_honors_sql_ignore_pattern(self):
+        original_pattern = mysqlsh.globals.shell.options["history.sql.ignorePattern"]
+
+        try:
+            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = "*SECRET*:*PASSWORD*"
+
+            assert sql_editor_module._should_ignore_history_entry("select 'secret';")
+            assert sql_editor_module._should_ignore_history_entry("set password = 'secret';")
+
+            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = ""
+
+            assert not sql_editor_module._should_ignore_history_entry("select 'secret';")
+        finally:
+            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = original_pattern
+
+    def test_add_execution_history_entry_ignores_uppercase_sql_language_id(self):
+        original_pattern = mysqlsh.globals.shell.options["history.sql.ignorePattern"]
+
+        try:
+            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = "*SECRET*"
+
+            assert sql_editor.add_execution_history_entry(
+                1, "select 'secret';", "SQL") == 0
+        finally:
+            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = original_pattern
+
+    @pytest.mark.parametrize("pattern, code, matches", [
+        ("*ble*", "select 'aaBLEaa';", True),
+        ("*bla*", "select 'bgi';", False),
+        ("?", "a", True),
+        ("?", "aa", False),
+        ("?*", "aa", True),
+        ("a?b?c*", "axbxcdddeefg;", True),
+        ("a?b?c*", "abxc;", False),
+        (r"\*", "*", True),
+        (r"\?", "?", True),
+    ])
+    def test_history_ignore_glob_matches_shell_semantics(self, pattern, code, matches):
+        assert sql_editor_module._match_history_glob(pattern, code) == matches
 
     def test_service_connection(self, params):
         @backend_callback_with_pending()
