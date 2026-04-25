@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@ import { describe, expect, it } from "vitest";
 
 import { DBDataType } from "../../../../app-logic/general-types.js";
 import { QueryBuilder } from "../../../../components/ResultView/QueryBuilder.js";
+import { defaultCellValue } from "../../../../components/ResultView/ResultCellValue.js";
 
 describe("QueryBuilder", () => {
     const columns = [
@@ -67,6 +68,31 @@ describe("QueryBuilder", () => {
         const statement = builder.generateInsertStatement(values);
 
         expect(statement).toBe("insert into table1 (Column1, Column2, Column3) values (3.142, 'Value2', true)");
+    });
+
+    it("Insert Statement With Default Values", () => {
+        const builder = new QueryBuilder("table1", columns, false);
+        let statement = builder.generateInsertStatement([defaultCellValue, defaultCellValue, true]);
+
+        expect(statement).toBe("insert into table1 (Column1, Column2, Column3) values (default, default, true)");
+
+        const upperCaseBuilder = new QueryBuilder("table1", columns, true);
+        statement = upperCaseBuilder.generateInsertStatement([defaultCellValue, "Value2", defaultCellValue]);
+
+        expect(statement).toBe("INSERT INTO table1 (Column1, Column2, Column3) VALUES (DEFAULT, 'Value2', DEFAULT)");
+    });
+
+    it("Insert Statement With Auto Increment Default Value", () => {
+        const insertColumns = columns.map((column, index) => {
+            return {
+                ...column,
+                autoIncrement: index === 0,
+            };
+        });
+        const builder = new QueryBuilder("table1", insertColumns, false);
+        const statement = builder.generateInsertStatement([defaultCellValue, defaultCellValue, true]);
+
+        expect(statement).toBe("insert into table1 (Column1, Column2, Column3) values (default, default, true)");
     });
 
     it("Update Statement", () => {

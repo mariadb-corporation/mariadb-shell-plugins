@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -303,7 +303,7 @@
     align-self: center;
 }
 
-.msg.resultHost .resultStatus .toolbar .button {
+.msg.resultHost .resultStatus .toolbar > .button {
     padding: 0;
     margin: 0 4px;
 
@@ -316,7 +316,13 @@
     height: 20px;
 }
 
-.msg.resultHost .resultStatus .toolbar .button > .icon {
+.msg.resultHost .resultStatus .toolbar .viewSelector.segmentedButton {
+    align-items: center;
+
+    margin: 0 4px;
+}
+
+.msg.resultHost .resultStatus .toolbar > .button > .icon {
     width: 18px;
     height: 18px;
 
@@ -340,13 +346,6 @@
 
     margin: 0;
     background-color: var(--resultStatus-foreground);
-}
-
-.msg.resultHost .resultStatus .toolbar #viewStyleDropDown {
-    padding: 0;
-    margin: 0 9px 0 6px;
-
-    min-width: 40px;
 }
 
 .msg .renderTarget .yLabel {

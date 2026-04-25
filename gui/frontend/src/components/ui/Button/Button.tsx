@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,12 +28,12 @@ import "./Button.css";
 import { ComponentChild, createRef } from "preact";
 
 import {
-    ComponentBase, DragEventType, IComponentProperties, MouseEventCallback,
-    MouseEventType
+    ComponentBase, DragEventType, IComponentProperties, KeyboardEventType, MouseEventCallback, MouseEventType,
 } from "../Component/ComponentBase.js";
 import { Orientation } from "../Container/Container.js";
 import { requisitions } from "../../../supplement/Requisitions.js";
 import type { IRequestTypeMap } from "../../../supplement/RequisitionTypes.js";
+import { KeyboardKeys } from "../../../utilities/helpers.js";
 
 export interface IButtonProperties extends IComponentProperties {
     innerRef?: preact.RefObject<HTMLDivElement>;
@@ -71,7 +71,7 @@ export class Button extends ComponentBase<IButtonProperties> {
         if (props.requestType) {
             this.connectEvents("onClick");
         }
-        this.connectEvents("onMouseDown");
+        this.connectEvents("onKeyDown", "onMouseDown");
 
         if (props.draggable) {
             this.connectDragEvents();
@@ -143,6 +143,24 @@ export class Button extends ComponentBase<IButtonProperties> {
                 /* istanbul ignore next */
                 break;
             }
+        }
+
+        return true;
+    }
+
+    protected override handleKeyboardEvent(type: KeyboardEventType, e: KeyboardEvent): boolean {
+        if (type === KeyboardEventType.Down && (e.key === KeyboardKeys.Enter || e.key === KeyboardKeys.Space)) {
+            const { requestType } = this.props;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+
+            if (requestType) {
+                void requisitions.execute(requestType, undefined);
+            } else {
+                this.props.onClick?.(e, this.props);
+            }
+
+            return false;
         }
 
         return true;

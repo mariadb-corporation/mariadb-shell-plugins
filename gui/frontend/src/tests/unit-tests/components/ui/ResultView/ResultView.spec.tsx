@@ -25,12 +25,17 @@
 
 import { act, render } from "@testing-library/preact";
 import { createRef, type RefObject } from "preact";
+import type { CellComponent, EmptyCallback, ValueBooleanCallback, ValueVoidCallback } from "tabulator-tables";
 import { describe, expect, it, vi } from "vitest";
 
 import { DBDataType, IColumnInfo, MessageType } from "../../../../../app-logic/general-types.js";
 import { ResultView, getWideColumns, updateWideColumnsCache } from "../../../../../components/ResultView/ResultView.js";
+import { defaultCellValue } from "../../../../../components/ResultView/ResultCellValue.js";
+import { Assets } from "../../../../../supplement/Assets.js";
 import { requisitions } from "../../../../../supplement/Requisitions.js";
+import { KeyboardKeys } from "../../../../../utilities/helpers.js";
 import { CellComponentMock } from "../../../__mocks__/CellComponentMock.js";
+import { ColumnComponentMock } from "../../../__mocks__/ColumnComponentMock.js";
 import { createResultSet, nextProcessTick, nextRunLoop } from "../../../test-helpers.js";
 import type { Menu } from "../../../../../components/ui/Menu/Menu.js";
 
@@ -49,6 +54,72 @@ const createColumn = (title: string, field: string, inPK = false): IColumnInfo =
 class TestResultView extends ResultView {
     declare public cellContextMenuRef: RefObject<Menu>;
 }
+
+interface IResultViewInternals {
+    formatCell: (cell: CellComponent, unquoted?: boolean) => string;
+    handleCellContext: (event: Event, cell: CellComponent) => void;
+    handleCellClick: (event: Event, cell: CellComponent) => void;
+    handleCellMenuItemDisabled: (props: { command: { command: string; title: string; }; }) => boolean;
+    handleKeyDown: (event: KeyboardEvent) => void;
+    handleBlurEvent: (
+        cell: CellComponent,
+        success: ValueBooleanCallback,
+        cancel: ValueVoidCallback,
+        event: FocusEvent,
+    ) => void;
+    cellEditing: (cell: CellComponent) => void;
+    cellEditCancelled: () => void;
+    cancelCellEditor: (cancel: ValueVoidCallback) => void;
+    cancelCellEditingForDiscard: () => void;
+    finishCellEditingForCommit: () => Promise<void>;
+    editingCell?: CellComponent;
+    generateColumnDefinitions: (columns: IColumnInfo[], editable: boolean) => Array<{ editable?: () => boolean; }>;
+    handleConfirm: (cell: CellComponent) => void;
+    numberFormatter: (
+        cell: CellComponent,
+        formatterParams: { info: IColumnInfo; },
+        onRendered: EmptyCallback,
+    ) => string | HTMLElement;
+}
+
+const assignColumn = (cell: CellComponentMock, info: IColumnInfo): void => {
+    cell.getColumn = () => {
+        const column = new ColumnComponentMock();
+        column.fieldType = info.field;
+        column.getField = () => {
+            return info.field;
+        };
+        column.getDefinition = () => {
+            return {
+                title: info.title,
+                field: info.field,
+                formatterParams: (): { info: IColumnInfo; } => {
+                    return { info };
+                },
+            };
+        };
+
+        return column;
+    };
+};
+
+const assignColumnWithoutFormatterParams = (cell: CellComponentMock, info: IColumnInfo): void => {
+    cell.getColumn = () => {
+        const column = new ColumnComponentMock();
+        column.fieldType = info.field;
+        column.getField = () => {
+            return info.field;
+        };
+        column.getDefinition = () => {
+            return {
+                title: info.title,
+                field: info.field,
+            };
+        };
+
+        return column;
+    };
+};
 
 describe("Result View Tests", (): void => {
 
@@ -529,6 +600,1051 @@ describe("Result View Tests", (): void => {
         unmount();
     });
 
+    it("renders untouched new-row defaults as DEFAULT icons", () => {
+        const columns: IColumnInfo[] = [{
+            title: "id",
+            field: "id",
+            dataType: { type: DBDataType.Bigint },
+            inPK: true,
+            nullable: false,
+            autoIncrement: true,
+        }];
+        const cell = new CellComponentMock();
+        cell.fieldType = "id";
+        cell.value = 0;
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "default-cell",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ id: 0 }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                rowChanges={[{
+                    changes: [{ field: "id", value: defaultCellValue }],
+                    deleted: false,
+                    added: true,
+                    pkValues: [],
+                }]}
+            />,
+        );
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        const formatted = internals.numberFormatter(cell, { info: columns[0] }, vi.fn());
+
+        expect(formatted).toBeInstanceOf(HTMLElement);
+        expect((formatted as HTMLElement).querySelector(".icon")?.getAttribute("style"))
+            .toContain(Assets.data.defaultValueIcon);
+        expect(internals.formatCell(cell)).toBe("DEFAULT");
+
+        unmount();
+    });
+
+    it("renders edited new-row default cells as their edited value", () => {
+        const columns: IColumnInfo[] = [{
+            title: "id",
+            field: "id",
+            dataType: { type: DBDataType.Bigint },
+            inPK: true,
+            nullable: false,
+            autoIncrement: true,
+        }];
+        const cell = new CellComponentMock();
+        cell.fieldType = "id";
+        cell.value = 7;
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "edited-default-cell",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ id: 7 }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                rowChanges={[{
+                    changes: [{ field: "id", value: defaultCellValue }, { field: "id", value: 7 }],
+                    deleted: false,
+                    added: true,
+                    pkValues: [],
+                }]}
+            />,
+        );
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+
+        expect(internals.numberFormatter(cell, { info: columns[0] }, vi.fn())).toBe("7");
+        expect(internals.formatCell(cell)).toBe("7");
+
+        unmount();
+    });
+
+    it("removes stale changed cell styling after row changes are discarded", () => {
+        const columns: IColumnInfo[] = [{
+            title: "id",
+            field: "id",
+            dataType: { type: DBDataType.Bigint },
+            inPK: true,
+            nullable: false,
+            autoIncrement: false,
+        }];
+        const cell = new CellComponentMock();
+        const cellElement = document.createElement("div");
+        cellElement.classList.add("changed");
+        cell.getElement = vi.fn(() => {
+            return cellElement;
+        });
+        cell.fieldType = "id";
+        cell.value = 7;
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "discard-styling",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ id: 7 }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={false}
+                editable={true}
+            />,
+        );
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+
+        expect(internals.numberFormatter(cell, { info: columns[0] }, vi.fn())).toBe("7");
+        expect(cellElement.classList.contains("changed")).toBe(false);
+
+        unmount();
+    });
+
+    it("ignores changed cell styling when tabulator has released the cell element", () => {
+        const columns: IColumnInfo[] = [{
+            title: "id",
+            field: "id",
+            dataType: { type: DBDataType.Bigint },
+            inPK: true,
+            nullable: false,
+            autoIncrement: false,
+        }];
+        const cell = new CellComponentMock();
+        cell.getElement = vi.fn(() => {
+            return {} as HTMLElement;
+        });
+        cell.fieldType = "id";
+        cell.value = 7;
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "released-cell-element",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ id: 7 }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={false}
+                editable={true}
+            />,
+        );
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+
+        expect(() => {
+            internals.numberFormatter(cell, { info: columns[0] }, vi.fn());
+        }).not.toThrow();
+
+        unmount();
+    });
+
+    it("records blur edits over default-marked new-row cells", () => {
+        const columns: IColumnInfo[] = [createColumn("name", "name")];
+        const cell = new CellComponentMock();
+        cell.fieldType = "name";
+        cell.value = "";
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const onFieldEdited = vi.fn().mockResolvedValue(undefined);
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "blur-default-cell",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ name: "" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                rowChanges={[{
+                    changes: [{ field: "name", value: defaultCellValue }],
+                    deleted: false,
+                    added: true,
+                    pkValues: [],
+                }]}
+                onFieldEdited={onFieldEdited}
+            />,
+        );
+
+        const input = document.createElement("input");
+        input.value = "custom";
+        const success = vi.fn((value: unknown) => {
+            expect(onFieldEdited).toHaveBeenCalledWith(0, "name", "custom", "");
+            cell.value = value;
+        });
+        const cancel = vi.fn();
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.handleBlurEvent(cell, success, cancel, { target: input } as unknown as FocusEvent);
+
+        expect(success).toHaveBeenCalledWith("custom");
+        expect(cancel).not.toHaveBeenCalled();
+        expect(onFieldEdited).toHaveBeenCalledWith(0, "name", "custom", "");
+
+        unmount();
+    });
+
+    it("saves explicitly entered default-marked date cells on blur", () => {
+        const columns: IColumnInfo[] = [{
+            title: "created",
+            field: "created",
+            dataType: { type: DBDataType.DateTime },
+            inPK: false,
+            nullable: false,
+            autoIncrement: false,
+        }];
+        const cell = new CellComponentMock();
+        cell.fieldType = "created";
+        cell.value = new Date("2026-04-28T12:00:00");
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const onFieldEdited = vi.fn().mockResolvedValue(undefined);
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "blur-default-date-cell",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ created: cell.value }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                rowChanges={[{
+                    changes: [{ field: "created", value: defaultCellValue }],
+                    deleted: false,
+                    added: true,
+                    pkValues: [],
+                }]}
+                onFieldEdited={onFieldEdited}
+            />,
+        );
+
+        const input = document.createElement("input");
+        input.value = "2026-04-28T12:00";
+        const success = vi.fn((value: unknown) => {
+            expect(onFieldEdited).toHaveBeenCalledWith(0, "created", "2026-04-28 12:00", cell.value);
+            cell.value = value;
+        });
+        const cancel = vi.fn();
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.handleBlurEvent(cell, success, cancel, { target: input } as unknown as FocusEvent);
+
+        expect(success).toHaveBeenCalledWith("2026-04-28 12:00");
+        expect(cancel).not.toHaveBeenCalled();
+        expect(onFieldEdited).toHaveBeenCalledWith(0, "created", "2026-04-28 12:00",
+            new Date("2026-04-28T12:00:00"));
+
+        unmount();
+    });
+
+    it("keeps unchanged date/time cells untouched when the editor uses a T separator", () => {
+        const columns: IColumnInfo[] = [{
+            title: "created",
+            field: "created",
+            dataType: { type: DBDataType.DateTime },
+            inPK: false,
+            nullable: false,
+            autoIncrement: false,
+        }];
+        const cell = new CellComponentMock();
+        cell.fieldType = "created";
+        cell.value = "2006-02-15 04:34:33";
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 8;
+        };
+
+        const onFieldEdited = vi.fn().mockResolvedValue(undefined);
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "blur-normalized-date-cell",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ created: cell.value }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                onFieldEdited={onFieldEdited}
+            />,
+        );
+
+        const input = document.createElement("input");
+        input.value = "2006-02-15T04:34:33";
+        const success = vi.fn();
+        const cancel = vi.fn();
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.handleBlurEvent(cell, success, cancel, { target: input } as unknown as FocusEvent);
+
+        expect(success).not.toHaveBeenCalled();
+        expect(cancel).toHaveBeenCalledWith(undefined);
+        expect(onFieldEdited).not.toHaveBeenCalled();
+
+        unmount();
+    });
+
+    it("preserves T separators for date/time edits when the original value uses T", () => {
+        const columns: IColumnInfo[] = [{
+            title: "created",
+            field: "created",
+            dataType: { type: DBDataType.DateTime },
+            inPK: false,
+            nullable: false,
+            autoIncrement: false,
+        }];
+        const cell = new CellComponentMock();
+        cell.fieldType = "created";
+        cell.value = "2006-02-15T04:34:33";
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 8;
+        };
+
+        const onFieldEdited = vi.fn().mockResolvedValue(undefined);
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "blur-preserve-date-t",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ created: cell.value }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                onFieldEdited={onFieldEdited}
+            />,
+        );
+
+        const input = document.createElement("input");
+        input.value = "2006-02-15T05:34:33";
+        const success = vi.fn((value: unknown) => {
+            cell.value = value;
+        });
+        const cancel = vi.fn();
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.handleBlurEvent(cell, success, cancel, { target: input } as unknown as FocusEvent);
+
+        expect(success).toHaveBeenCalledWith("2006-02-15T05:34:33");
+        expect(cancel).not.toHaveBeenCalled();
+        expect(onFieldEdited).toHaveBeenCalledWith(7, "created", "2006-02-15T05:34:33",
+            "2006-02-15T04:34:33");
+
+        unmount();
+    });
+
+    it("keeps default-marked date cells untouched when blur leaves the editor empty", () => {
+        const columns: IColumnInfo[] = [{
+            title: "created",
+            field: "created",
+            dataType: { type: DBDataType.DateTime },
+            inPK: false,
+            nullable: false,
+            autoIncrement: false,
+        }];
+        const cell = new CellComponentMock();
+        cell.fieldType = "created";
+        cell.value = new Date("2026-04-28T12:00:00");
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const onFieldEdited = vi.fn().mockResolvedValue(undefined);
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "blur-empty-default-date-cell",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ created: cell.value }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                rowChanges={[{
+                    changes: [{ field: "created", value: defaultCellValue }],
+                    deleted: false,
+                    added: true,
+                    pkValues: [],
+                }]}
+                onFieldEdited={onFieldEdited}
+            />,
+        );
+
+        const input = document.createElement("input");
+        input.value = "";
+        const success = vi.fn();
+        const cancel = vi.fn();
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.handleBlurEvent(cell, success, cancel, { target: input } as unknown as FocusEvent);
+
+        expect(success).not.toHaveBeenCalled();
+        expect(cancel).toHaveBeenCalledWith(undefined);
+        expect(onFieldEdited).not.toHaveBeenCalled();
+
+        unmount();
+    });
+
+    it("does not save a blurred value after discard cancels the active editor", () => {
+        const columns: IColumnInfo[] = [createColumn("name", "name")];
+        const cell = new CellComponentMock();
+        cell.fieldType = "name";
+        cell.value = "old";
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const onFieldEdited = vi.fn().mockResolvedValue(undefined);
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "discard-active-editor",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ name: "old" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                onFieldEdited={onFieldEdited}
+            />,
+        );
+
+        const input = document.createElement("input");
+        input.value = "new";
+        const success = vi.fn();
+        const cancel = vi.fn();
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.cellEditing(cell);
+        internals.cancelCellEditingForDiscard();
+        internals.handleBlurEvent(cell, success, cancel, { target: input } as unknown as FocusEvent);
+
+        expect(cell.cancelEdit).toHaveBeenCalledOnce();
+        expect(success).not.toHaveBeenCalled();
+        expect(cancel).toHaveBeenCalledWith(undefined);
+        expect(onFieldEdited).not.toHaveBeenCalled();
+
+        unmount();
+    });
+
+    it("does not save a blurred value after a normal editor cancel", () => {
+        const columns: IColumnInfo[] = [createColumn("name", "name")];
+        const cell = new CellComponentMock();
+        cell.fieldType = "name";
+        cell.value = "old";
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const onFieldEdited = vi.fn().mockResolvedValue(undefined);
+        const onFieldEditCancel = vi.fn();
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "cancel-active-editor",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ name: "old" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                onFieldEdited={onFieldEdited}
+                onFieldEditCancel={onFieldEditCancel}
+            />,
+        );
+
+        const input = document.createElement("input");
+        input.value = "new";
+        const success = vi.fn();
+        const cancel = vi.fn();
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.cellEditing(cell);
+        internals.cancelCellEditor(cancel);
+        internals.cellEditCancelled();
+        internals.handleBlurEvent(cell, success, cancel, { target: input } as unknown as FocusEvent);
+
+        expect(success).not.toHaveBeenCalled();
+        expect(cancel).toHaveBeenCalledWith(undefined);
+        expect(onFieldEdited).not.toHaveBeenCalled();
+        expect(onFieldEditCancel).toHaveBeenCalledWith(0, "name", undefined, false);
+
+        unmount();
+    });
+
+    it("clears editing state when an unchanged editor value is confirmed", () => {
+        const columns: IColumnInfo[] = [createColumn("name", "name")];
+        const cell = new CellComponentMock();
+        cell.fieldType = "name";
+        cell.value = "old";
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "confirm-unchanged-editor",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ name: "old" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+            />,
+        );
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.cellEditing(cell);
+        const [definition] = internals.generateColumnDefinitions(columns, true);
+        expect(definition.editable?.()).toBe(false);
+
+        internals.handleConfirm(cell);
+
+        expect(internals.editingCell).toBeUndefined();
+        expect(definition.editable?.()).toBe(true);
+
+        unmount();
+    });
+
+    it("edits the selected cell when toolbar edit starts editing", () => {
+        const columns: IColumnInfo[] = [createColumn("name", "name")];
+        const cell = new CellComponentMock();
+        assignColumn(cell, columns[0]);
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "edit-selected-cell",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ name: "old" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={false}
+                editable={true}
+            />,
+        );
+
+        viewRef.current!.setFakeCell(cell);
+        viewRef.current!.editSelectedOrFirstCell();
+
+        expect(cell.edit).toHaveBeenCalledOnce();
+
+        unmount();
+    });
+
+    it("ignores stale manual focus when tabulator has released the selected cell element", () => {
+        const columns: IColumnInfo[] = [createColumn("name", "name")];
+        const staleCell = new CellComponentMock();
+        staleCell.getElement = vi.fn(() => {
+            return {} as HTMLElement;
+        });
+
+        const nextCell = new CellComponentMock();
+        const nextCellElement = document.createElement("div");
+        nextCell.getElement = vi.fn(() => {
+            return nextCellElement;
+        });
+        assignColumn(nextCell, columns[0]);
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "released-manual-focus-element",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ name: "old" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={false}
+                editable={true}
+            />,
+        );
+
+        viewRef.current!.setFakeCell(staleCell);
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+
+        expect(() => {
+            internals.handleCellClick(new MouseEvent("click"), nextCell);
+        }).not.toThrow();
+        expect(nextCellElement.classList.contains("manualFocus")).toBe(true);
+
+        unmount();
+    });
+
+    it("moves the selected cell with keyboard navigation", () => {
+        const columns: IColumnInfo[] = [createColumn("id", "id"), createColumn("name", "name")];
+        const cells = [new CellComponentMock(), new CellComponentMock(), new CellComponentMock(),
+            new CellComponentMock()];
+        const elements = cells.map(() => {
+            const element = document.createElement("div");
+            element.tabIndex = -1;
+
+            return element;
+        });
+
+        cells.forEach((cell, index) => {
+            cell.getElement = vi.fn(() => {
+                return elements[index];
+            });
+            assignColumn(cell, columns[index % 2]);
+        });
+
+        const firstRow = cells[0].row;
+        const secondRow = cells[2].row;
+        cells[1].row = firstRow;
+        cells[3].row = secondRow;
+        firstRow.getCells = vi.fn(() => {
+            return [cells[0], cells[1]];
+        });
+        secondRow.getCells = vi.fn(() => {
+            return [cells[2], cells[3]];
+        });
+        firstRow.nextRow = secondRow;
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "keyboard-cell-navigation",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ id: 1, name: "one" }, { id: 2, name: "two" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={false}
+                editable={true}
+            />,
+        );
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        internals.handleCellClick(new MouseEvent("click"), cells[0]);
+
+        expect(elements[0].classList.contains("manualFocus")).toBe(true);
+
+        internals.handleKeyDown(new KeyboardEvent("keydown", { key: KeyboardKeys.ArrowRight }));
+
+        expect(elements[0].classList.contains("manualFocus")).toBe(false);
+        expect(elements[1].classList.contains("manualFocus")).toBe(true);
+
+        internals.handleKeyDown(new KeyboardEvent("keydown", { key: KeyboardKeys.ArrowDown }));
+
+        expect(elements[1].classList.contains("manualFocus")).toBe(false);
+        expect(elements[3].classList.contains("manualFocus")).toBe(true);
+
+        internals.handleKeyDown(new KeyboardEvent("keydown", { key: KeyboardKeys.Tab }));
+
+        expect(elements[3].classList.contains("manualFocus")).toBe(true);
+
+        internals.handleKeyDown(new KeyboardEvent("keydown", { key: KeyboardKeys.Tab, shiftKey: true }));
+
+        expect(elements[3].classList.contains("manualFocus")).toBe(false);
+        expect(elements[2].classList.contains("manualFocus")).toBe(true);
+
+        unmount();
+    });
+
+    it("finishes a focused editor before commit continues", async () => {
+        const columns: IColumnInfo[] = [createColumn("name", "name")];
+        const cell = new CellComponentMock();
+        const cellElement = document.createElement("div");
+        const input = document.createElement("input");
+        cellElement.appendChild(input);
+        document.body.appendChild(cellElement);
+        cell.getElement = vi.fn(() => {
+            return cellElement;
+        });
+        cell.fieldType = "name";
+        cell.value = "old";
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        let resolveEdit: (() => void) | undefined;
+        const editPromise = new Promise<void>((resolve) => {
+            resolveEdit = resolve;
+        });
+        const onFieldEdited = vi.fn(() => {
+            return editPromise;
+        });
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "apply-active-editor",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ name: "old" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                onFieldEdited={onFieldEdited}
+            />,
+        );
+
+        const success = vi.fn((value: unknown) => {
+            cell.value = value;
+        });
+        const cancel = vi.fn();
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        input.addEventListener("blur", (event) => {
+            internals.handleBlurEvent(cell, success, cancel, event as FocusEvent);
+        });
+        input.value = "new";
+        input.focus();
+
+        internals.cellEditing(cell);
+        let finishReturned = false;
+        const finishPromise = internals.finishCellEditingForCommit().then(() => {
+            finishReturned = true;
+        });
+        await nextRunLoop();
+
+        expect(success).toHaveBeenCalledWith("new");
+        expect(cancel).not.toHaveBeenCalled();
+        expect(onFieldEdited).toHaveBeenCalledWith(0, "name", "new", "old");
+        expect(finishReturned).toBe(false);
+
+        expect(resolveEdit).toBeDefined();
+        resolveEdit!();
+        await finishPromise;
+        expect(finishReturned).toBe(true);
+
+        cellElement.remove();
+        unmount();
+    });
+
+    it("enables setting nullable cells to null when formatter metadata is missing", () => {
+        const columns: IColumnInfo[] = [{
+            ...createColumn("nullableColumn", "nullableColumn"),
+            nullable: true,
+        }];
+        const cell = new CellComponentMock();
+        assignColumnWithoutFormatterParams(cell, columns[0]);
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "nullable-context-menu",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ nullableColumn: "Animal" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+            />,
+        );
+
+        viewRef.current!.setFakeCell(cell);
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+
+        expect(internals.handleCellMenuItemDisabled({
+            command: { title: "Set Field to Null", command: "setNullMenuItem" },
+        })).toBe(false);
+
+        unmount();
+    });
+
+    it("disables null and default actions for deleted rows", () => {
+        const columns: IColumnInfo[] = [{
+            ...createColumn("nullableColumn", "nullableColumn"),
+            nullable: true,
+        }];
+        const cell = new CellComponentMock();
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "deleted-context-menu",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ nullableColumn: "Animal" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+                rowChanges={[{
+                    changes: [],
+                    deleted: true,
+                    added: false,
+                    pkValues: [1],
+                }]}
+            />,
+        );
+
+        viewRef.current!.setFakeCell(cell);
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+
+        expect(internals.handleCellMenuItemDisabled({
+            command: { title: "Set Field to Null", command: "setNullMenuItem" },
+        })).toBe(true);
+        expect(internals.handleCellMenuItemDisabled({
+            command: { title: "Set Field to Default", command: "setDefaultMenuItem" },
+        })).toBe(true);
+
+        unmount();
+    });
+
+    it("clears the context menu focus when the menu closes", async () => {
+        const columns: IColumnInfo[] = [createColumn("name", "name")];
+        const cell = new CellComponentMock();
+        const cellElement = document.createElement("div");
+        cell.getElement = vi.fn(() => {
+            return cellElement;
+        });
+        assignColumn(cell, columns[0]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
+
+        const viewRef = createRef<TestResultView>();
+        const { unmount } = render(
+            <TestResultView
+                ref={viewRef}
+                resultSet={{
+                    type: "resultSet",
+                    sql: "select 1",
+                    resultId: "context-menu-focus",
+                    columns,
+                    updatable: true,
+                    fullTableName: "test",
+                    data: {
+                        rows: [{ name: "Animal" }],
+                        currentPage: 0,
+                    },
+                }}
+                editModeActive={true}
+                editable={true}
+            />,
+        );
+
+        const internals = viewRef.current! as unknown as IResultViewInternals;
+        await act(() => {
+            internals.handleCellContext(new MouseEvent("contextmenu", { clientX: 5, clientY: 10 }), cell);
+        });
+
+        expect(cellElement.classList.contains("manualFocus")).toBe(true);
+
+        const nextCell = new CellComponentMock();
+        const nextCellElement = document.createElement("div");
+        nextCell.getElement = vi.fn(() => {
+            return nextCellElement;
+        });
+        assignColumn(nextCell, columns[0]);
+        nextCell.row.getPosition = () => {
+            return 1;
+        };
+
+        await act(() => {
+            internals.handleCellContext(new MouseEvent("contextmenu", { clientX: 7, clientY: 12 }), nextCell);
+        });
+
+        expect(cellElement.classList.contains("manualFocus")).toBe(false);
+        expect(nextCellElement.classList.contains("manualFocus")).toBe(true);
+
+        await act(() => {
+            viewRef.current!.cellContextMenuRef.current!.close();
+        });
+
+        expect(nextCellElement.classList.contains("manualFocus")).toBe(false);
+
+        unmount();
+    });
+
     it("Context Menu", async () => {
         const columns: IColumnInfo[] = [
             {
@@ -556,6 +1672,7 @@ describe("Result View Tests", (): void => {
         ];
 
         const viewRef = createRef<TestResultView>();
+        const onFieldEdited = vi.fn().mockResolvedValue(undefined);
         const { container, unmount } = render(
             <TestResultView
                 ref={viewRef}
@@ -573,6 +1690,7 @@ describe("Result View Tests", (): void => {
                 }}
                 editModeActive={true}
                 editable={true}
+                onFieldEdited={onFieldEdited}
             />,
         );
 
@@ -589,6 +1707,10 @@ describe("Result View Tests", (): void => {
         expect(menu).toBeDefined();
 
         const cell = new CellComponentMock();
+        assignColumn(cell, columns[1]);
+        cell.row.getPosition = () => {
+            return 1;
+        };
         await act(() => {
             viewRef.current!.setFakeCell(cell);
             menu!.open(rect, false);
@@ -599,7 +1721,7 @@ describe("Result View Tests", (): void => {
         expect(portals).toHaveLength(1);
 
         const elements = document.getElementsByClassName("menuItem");
-        expect(elements).toHaveLength(17);
+        expect(elements).toHaveLength(18);
 
         const clipboardSpy = vi.spyOn(requisitions, "writeToClipboard").mockImplementation(() => { /**/ });
 
@@ -608,7 +1730,7 @@ describe("Result View Tests", (): void => {
             const menuItems = menu!.itemRefs.map((item) => {
                 return item.current;
             });
-            expect(menuItems.length).toEqual(13); // There are four separator items without a ref.
+            expect(menuItems.length).toEqual(14); // There are four separator items without a ref.
 
             for (const item of menuItems) {
                 expect(item).toBeDefined();
@@ -639,6 +1761,16 @@ describe("Result View Tests", (): void => {
 
                         // Restore value.
                         cell.setValue("Animal");
+
+                        break;
+                    }
+
+                    case "setDefaultMenuItem": {
+                        expect(element.classList.contains("disabled")).toBe(false);
+
+                        element.click();
+                        await nextRunLoop();
+                        expect(onFieldEdited).toHaveBeenLastCalledWith(0, "1", defaultCellValue, "Animal");
 
                         break;
                     }

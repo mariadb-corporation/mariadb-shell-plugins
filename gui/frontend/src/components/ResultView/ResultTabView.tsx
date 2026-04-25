@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -38,8 +38,6 @@ import {
 } from "../ui/Component/ComponentBase.js";
 import { Container, Orientation } from "../ui/Container/Container.js";
 import { Divider } from "../ui/Divider/Divider.js";
-import { Dropdown } from "../ui/Dropdown/Dropdown.js";
-import { DropdownItem } from "../ui/Dropdown/DropdownItem.js";
 import { Icon } from "../ui/Icon/Icon.js";
 import { Label } from "../ui/Label/Label.js";
 import { Menu } from "../ui/Menu/Menu.js";
@@ -49,12 +47,13 @@ import { ITabPosition, ITabviewPage, TabPosition, Tabview } from "../ui/Tabview/
 import { Toolbar } from "../ui/Toolbar/Toolbar.js";
 import { ActionOutput } from "./ActionOutput.js";
 import { QueryBuilder } from "./QueryBuilder.js";
+import { defaultCellValue } from "./ResultCellValue.js";
 import { IStatusTextPosition, ResultStatus } from "./ResultStatus.js";
 import { IResultCellChange, ResultRowChanges, ResultView } from "./ResultView.js";
 
 /** All the current changes for a result set. */
 interface IEditingInfo {
-    /** Text that can be shown when asking the user for confirmation of commit or rollback of this set of changes. */
+    /** Text that can be shown when asking the user for confirmation of commit or discard of this set of changes. */
     description: string;
 
     statusInfo: IStatusInfo;
@@ -124,7 +123,7 @@ interface IResultTabViewProperties extends IComponentProperties {
 
     updateRowsForResultId?: (resultSet: IResultSet) => Promise<void>;
 
-    /** Called when the user wants to rollback all changes. */
+    /** Called when the user wants to discard all changes. */
     onRollbackChanges?: (resultSet: IResultSet) => void;
 
     onRemoveResult?: (resultId: string) => void;
@@ -333,6 +332,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
         const gotResponse = statusInfo && statusInfo.type === MessageType.Response;
 
         const editButtonTooltip = updatable ? (editModeActive ? "Editing" : "Start Editing") : "Data not editable";
+        const previewActive = currentEditingInfo?.previewActive === true;
 
         const resultStatus = statusInfo && (
             <ResultStatus statusInfo={statusInfo} statusTextPosition={statusTextPosition}>
@@ -340,25 +340,48 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
                     !gotError && !gotResponse && <Toolbar dropShadow={false} >
                         {connectionToggle ?? null}
                         <Label className="autoHide">View:</Label>
-                        <Dropdown
-                            id="viewStyleDropDown"
-                            selection={currentEditingInfo?.previewActive ? "preview" : "grid"}
-                            iconOnly={true}
-                            data-tooltip="Select a View Section for the Result Set"
-                            onSelect={this.selectViewStyle}
+                        <Container
+                            className="viewSelector segmentedButton"
+                            orientation={Orientation.LeftToRight}
+                            fixedScrollbars={false}
+                            role="radiogroup"
+                            aria-label="View"
                         >
-                            <DropdownItem
-                                id="grid"
-                                caption="Data Grid"
-                                picture={<Icon src={Assets.toolbar.gridIcon} data-tooltip="inherit" />}
-                            />
-                            <DropdownItem
-                                id="preview"
-                                caption="Preview Changes"
-                                picture={<Icon src={Assets.toolbar.previewIcon} data-tooltip="inherit" />}
+                            <Button
+                                id="viewGridButton"
+                                className={!previewActive ? "selected" : undefined}
+                                imageOnly={true}
+                                isDefault={!previewActive}
+                                focusOnClick={true}
+                                role="radio"
+                                aria-label="Data Grid"
+                                aria-checked={!previewActive}
+                                tabIndex={!previewActive ? 0 : -1}
+                                data-tooltip="Data Grid"
+                                onClick={this.handleViewSelectorClick}
+                                onKeyDown={this.handleViewSelectorKeyDown}
+                            >
+                                <Icon src={Assets.toolbar.gridIcon} data-tooltip="inherit" />
+                            </Button>
+                            <Button
+                                id="viewPreviewButton"
+                                className={previewActive ? "selected" : undefined}
+                                imageOnly={true}
+                                isDefault={previewActive}
+                                focusOnClick={true}
+                                role="radio"
+                                aria-label="Preview Changes as SQL"
+                                aria-checked={previewActive}
+                                tabIndex={previewActive ? 0 : -1}
                                 disabled={!currentEditingInfo}
-                            />
-                        </Dropdown>
+                                aria-disabled={!currentEditingInfo}
+                                data-tooltip="Preview Changes as SQL"
+                                onClick={this.handleViewSelectorClick}
+                                onKeyDown={this.handleViewSelectorKeyDown}
+                            >
+                                <Icon src={Assets.toolbar.sqlPreviewInactiveIcon} data-tooltip="inherit" />
+                            </Button>
+                        </Container>
                         <Divider vertical={true} />
                         <Label className="autoHide">Pages:</Label>
                         <Button
@@ -391,21 +414,12 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
                             <Icon src={Assets.toolbar.editIcon2} data-tooltip="inherit" />
                         </Button>
                         <Button
-                            id="previewButton"
-                            imageOnly={true}
-                            disabled={!currentEditingInfo}
-                            data-tooltip="Preview Changes"
-                            onClick={this.previewChanges}
-                        >
-                            <Icon src={Assets.toolbar.previewIcon} data-tooltip="inherit" />
-                        </Button>
-                        <Button
                             id="applyButton"
                             imageOnly={true}
                             disabled={!currentEditingInfo}
                             data-tooltip="Apply Changes"
                             onClick={() => {
-                                this.commitChanges();
+                                void this.commitChanges();
                             }}
                         >
                             <Icon src={Assets.toolbar.commitIcon} data-tooltip="inherit" />
@@ -414,8 +428,8 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
                             id="rollbackButton"
                             imageOnly={true}
                             disabled={!currentEditingInfo}
-                            data-tooltip="Rollback Changes"
-                            onClick={this.cancelEditingAndRollbackChanges}
+                            data-tooltip="Discard Changes"
+                            onClick={this.discardCurrentChanges}
                         >
                             <Icon src={Assets.toolbar.rollbackIcon} data-tooltip="inherit" />
                         </Button>
@@ -648,7 +662,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
         if (currentResultSet) {
             const info = this.editingInfo.get(currentResultSet.resultId);
             if (info) {
-                // The user is currently editing the result set, so we need to commit or rollback the changes first.
+                // The user is currently editing the result set, so we need to commit or discard the changes first.
                 void this.confirmCommitOrRollback(info, true).then((result) => {
                     if (result) {
                         switchPage();
@@ -677,7 +691,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
         if (currentResultSet) {
             const info = this.editingInfo.get(currentResultSet.resultId);
             if (info) {
-                // The user is currently editing the result set, so we need to commit or rollback the changes first.
+                // The user is currently editing the result set, so we need to commit or discard the changes first.
                 void this.confirmCommitOrRollback(info, true).then((result) => {
                     if (result) {
                         switchPage();
@@ -703,16 +717,16 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
             return true;
         }
 
-        // The user is currently editing the result set, so we need to commit or rollback the changes first.
+        // The user is currently editing the result set, so we need to commit or discard the changes first.
         const response = await DialogHost.showDialog({
             id: "commitOrCancelChanges",
             type: DialogType.Confirm,
             parameters: {
                 title: "Confirmation",
                 prompt: `The result set for ${info.description} is currently being edited, do you want to commit or ` +
-                    `rollback the changes before continuing?`,
+                    `discard the changes before continuing?`,
                 accept: "Commit",
-                refuse: "Rollback",
+                refuse: "Discard",
                 alternative: "Cancel",
                 default: "Cancel",
             },
@@ -720,16 +734,14 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
 
         switch (response.closure) {
             case DialogResponseClosure.Accept: {
-                this.commitChanges(info, refreshResults);
+                void this.commitChanges(info, refreshResults);
 
                 return true;
             }
 
             case DialogResponseClosure.Decline: {
-                const { onRollbackChanges } = this.props;
                 const { resultSet } = info;
-                this.editingInfo.delete(resultSet.resultId);
-                onRollbackChanges?.(resultSet);
+                this.discardChanges(resultSet);
 
                 return true;
             }
@@ -741,9 +753,9 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
     };
 
     /**
-     * Called when the user wants to roll back all changes.
+     * Called when the user wants to discard all changes.
      *
-     * @returns true if the the data can be rolled back, false otherwise.
+     * @returns true if the data can be discarded, false otherwise.
      */
     private confirmRollback = async (): Promise<boolean> => {
         const { currentResultSet } = this.state;
@@ -751,14 +763,14 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
         if (currentResultSet) {
             const info = this.editingInfo.get(currentResultSet.resultId);
             if (info && info.rowChanges.length > 0) {
-                // The user is currently editing the result set, so we need to commit or rollback the changes first.
+                // The user is currently editing the result set, so we need to commit or discard the changes first.
                 const response = await DialogHost.showDialog({
                     id: "cancelChanges",
                     type: DialogType.Confirm,
                     title: "Confirmation",
                     parameters: {
-                        prompt: `Do you really want to rollback all changes?`,
-                        accept: "Rollback",
+                        prompt: `Do you really want to discard all changes?`,
+                        accept: "Discard",
                         refuse: "Cancel",
                         default: "Cancel",
                     },
@@ -795,6 +807,25 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
         }
     };
 
+    private cellValuesEqual = (newValue: unknown, previousValue: unknown): boolean => {
+        if (Object.is(newValue, previousValue)) {
+            return true;
+        }
+
+        if (newValue == null || previousValue == null) {
+            return false;
+        }
+
+        const newValueType = typeof newValue;
+        const previousValueType = typeof previousValue;
+        const comparablePrimitiveTypes = ["boolean", "bigint", "number", "string"];
+        if (comparablePrimitiveTypes.includes(newValueType) && comparablePrimitiveTypes.includes(previousValueType)) {
+            return String(newValue) === String(previousValue);
+        }
+
+        return false;
+    };
+
     /**
      * Called when a field was edited.
      *
@@ -812,10 +843,34 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
             const { currentResultSet } = this.state;
 
             if (!currentResultSet) {
+                resolve();
+
                 return;
             }
 
             let info = this.editingInfo.get(currentResultSet.resultId);
+            let rowChanges = info?.rowChanges[row];
+            if (this.cellValuesEqual(newValue, previousValue)) {
+                if (!info) {
+                    resolve();
+
+                    return;
+                }
+
+                if (Object.keys(info.rowChanges).length === 0) {
+                    this.editingInfo.delete(currentResultSet.resultId);
+                    this.forceUpdate(() => {
+                        resolve();
+                    });
+
+                    return;
+                }
+
+                resolve();
+
+                return;
+            }
+
             if (!info) {
                 // Not yet editing, initialize the editing info.
                 info = this.prepareEditingInfo(currentResultSet);
@@ -824,7 +879,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
             }
 
             // Update the editing info.
-            let rowChanges = info.rowChanges[row];
+            rowChanges = info.rowChanges[row];
             // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
             if (!rowChanges) { // rowChanges is a sparse array.
                 // If this is the first change for a row collect the original PK values, which are needed for the
@@ -848,7 +903,19 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
                 info.rowChanges[row] = rowChanges;
             }
 
-            rowChanges.changes.push({ field, value: newValue });
+            let existingChangeIndex = -1;
+            for (let i = rowChanges.changes.length - 1; i >= 0; --i) {
+                if (rowChanges.changes[i].field === field) {
+                    existingChangeIndex = i;
+                    break;
+                }
+            }
+
+            if (existingChangeIndex > -1) {
+                rowChanges.changes[existingChangeIndex].value = newValue;
+            } else {
+                rowChanges.changes.push({ field, value: newValue });
+            }
 
             this.updateEditingStatus(info);
             info.selectedRowIndex = undefined;
@@ -862,7 +929,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
      * Called when the user cancels editing a field. If there are no more changes, editing is stopped.
      * Otherwise the changes are kept and editing continues.
      */
-    private onFieldEditCancel = (): void => {
+    private onFieldEditCancel = (row: number, field: string, restoredValue: unknown, restoreChange: boolean): void => {
         const { currentResultSet } = this.state;
 
         if (!currentResultSet) {
@@ -875,10 +942,35 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
         }
 
         const { rowChanges } = info;
-        if (rowChanges.length === 0) {
-            this.editingInfo.delete(currentResultSet.resultId);
+        const rowChange = rowChanges[row];
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (rowChange) { // rowChanges is a sparse array.
+            const changeIndex = rowChange.changes.findIndex((change) => {
+                return change.field === field;
+            });
+
+            if (restoreChange) {
+                if (changeIndex === -1) {
+                    rowChange.changes.push({ field, value: restoredValue });
+                } else {
+                    rowChange.changes[changeIndex].value = restoredValue;
+                }
+            } else if (changeIndex > -1) {
+                rowChange.changes.splice(changeIndex, 1);
+            }
+
+            if (!rowChange.added && !rowChange.deleted && rowChange.changes.length === 0) {
+                delete rowChanges[row];
+            }
         }
 
+        if (Object.keys(rowChanges).length === 0) {
+            this.editingInfo.delete(currentResultSet.resultId);
+        } else {
+            this.updateEditingStatus(info);
+        }
+
+        this.forceUpdate();
     };
 
     /**
@@ -940,6 +1032,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
 
             this.updateEditingStatus(info);
             info.selectedRowIndex = undefined;
+            this.forceUpdate();
         }
     };
 
@@ -963,7 +1056,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
 
         if (currentResultSet) {
             const viewRef = this.viewRefs.get(currentResultSet.resultId);
-            viewRef?.current?.editFirstCell();
+            viewRef?.current?.editSelectedOrFirstCell();
         }
     };
 
@@ -1029,7 +1122,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
                             }
                             row[column.field] = value;
 
-                            return { field: column.field, value };
+                            return { field: column.field, value: defaultCellValue };
                         });
 
                         // Add the row values at the end of the change list.
@@ -1049,43 +1142,45 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
                         this.forceUpdate(() => {
                             resolve();
                         });
+                    } else {
+                        resolve();
                     }
 
                     break;
                 }
 
                 case "commit": {
-                    this.commitChanges();
+                    void this.commitChanges();
+                    resolve();
 
                     break;
                 }
 
                 case "rollback": {
                     this.cancelEditingAndRollbackChanges();
+                    resolve();
 
                     break;
                 }
 
-                default:
+                default: {
+                    resolve();
+                    break;
+                }
             }
         });
     };
 
-    private previewChanges = (): void => {
-        const { currentResultSet } = this.state;
-
-        const info = this.editingInfo.get(currentResultSet?.resultId ?? "");
-        if (info) {
-            info.previewActive = !info.previewActive;
-            this.forceUpdate();
-        }
-    };
-
-    private commitChanges = (info?: IEditingInfo, refreshResults = true): void => {
+    private commitChanges = async (info?: IEditingInfo, refreshResults = true): Promise<void> => {
         const { onCommitChanges, onResultPageChange } = this.props;
         const { currentResultSet } = this.state;
 
-        info ??= this.editingInfo.get(currentResultSet?.resultId ?? "");
+        const resultId = info?.resultSet.resultId ?? currentResultSet?.resultId;
+        if (resultId) {
+            await this.viewRefs.get(resultId)?.current?.finishCellEditingForCommit();
+        }
+
+        info ??= this.editingInfo.get(resultId ?? "");
         if (info) {
             const statements = this.generateStatements(info).map((pair) => {
                 return pair[1];
@@ -1099,6 +1194,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
                     // Do not end editing, but show the error in the SQL preview pane.
                     info.errors = result.errors;
                     info.previewActive = true;
+                    this.forceUpdate();
                 } else {
                     this.editingInfo.delete(info.resultSet.resultId);
 
@@ -1107,6 +1203,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
                         onResultPageChange?.(info.resultSet.resultId, info.resultSet.data.currentPage,
                             info.resultSet.sql);
                     }
+                    this.forceUpdate();
                 }
             });
         }
@@ -1124,19 +1221,33 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
     };
 
     private cancelEditingAndRollbackChanges = (): void => {
-        const { onRollbackChanges } = this.props;
         const { currentResultSet } = this.state;
 
         if (currentResultSet) {
             void this.confirmRollback().then((result) => {
                 if (result) {
-                    onRollbackChanges?.(currentResultSet);
-
-                    this.editingInfo.delete(currentResultSet.resultId);
+                    this.discardChanges(currentResultSet);
                 }
             });
         }
     };
+
+    private discardCurrentChanges = (): void => {
+        const { currentResultSet } = this.state;
+
+        if (currentResultSet) {
+            this.discardChanges(currentResultSet);
+        }
+    };
+
+    private discardChanges(resultSet: IResultSet): void {
+        const { onRollbackChanges } = this.props;
+
+        this.viewRefs.get(resultSet.resultId)?.current?.cancelCellEditingForDiscard();
+        onRollbackChanges?.(resultSet);
+        this.editingInfo.delete(resultSet.resultId);
+        this.forceUpdate();
+    }
 
     /**
      * @param info The editing info for the result set.
@@ -1218,7 +1329,7 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
         return statements;
     };
 
-    private selectViewStyle = (accept: boolean, selection: Set<string>): void => {
+    private selectView = (previewActive: boolean, focusSelection = false): void => {
         const { currentResultSet } = this.state;
 
         if (!currentResultSet) {
@@ -1230,8 +1341,59 @@ export class ResultTabView extends ComponentBase<IResultTabViewProperties, IResu
             return;
         }
 
-        info.previewActive = selection.has("preview");
+        info.previewActive = previewActive;
         this.forceUpdate();
+
+        if (focusSelection) {
+            const buttonId = previewActive ? "viewPreviewButton" : "viewGridButton";
+            setTimeout(() => {
+                document.getElementById(buttonId)?.focus();
+            }, 0);
+        }
+    };
+
+    private handleViewSelectorClick = (e: MouseEvent | KeyboardEvent): void => {
+        this.selectView((e.currentTarget as HTMLElement).id === "viewPreviewButton");
+    };
+
+    private handleViewSelectorKeyDown = (e: KeyboardEvent): void => {
+        const { currentResultSet } = this.state;
+        const info = currentResultSet ? this.editingInfo.get(currentResultSet.resultId) : undefined;
+        let previewActive: boolean | undefined;
+
+        switch (e.key) {
+            case "ArrowLeft":
+            case "ArrowUp": {
+                previewActive = false;
+                break;
+            }
+
+            case "ArrowRight":
+            case "ArrowDown": {
+                previewActive = true;
+                break;
+            }
+
+            case " ":
+            case "Spacebar":
+            case "Enter": {
+                previewActive = (e.currentTarget as HTMLElement).id === "viewPreviewButton";
+                break;
+            }
+
+            default: {
+                return;
+            }
+        }
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        if (previewActive && !info) {
+            return;
+        }
+
+        this.selectView(previewActive, true);
     };
 
     private prepareEditingInfo = (resultSet: IResultSet): IEditingInfo => {

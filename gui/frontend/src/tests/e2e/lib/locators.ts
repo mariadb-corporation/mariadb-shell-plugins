@@ -550,16 +550,15 @@ export const notebook = {
                     applyButton: By.id("applyButton"),
                     rollbackButton: By.id("rollbackButton"),
                     refreshButton: By.id("refreshButton"),
-                    previewButton: By.id("previewButton"),
+                    previewButton: By.id("viewPreviewButton"),
                     editButton: By.id("editButton"),
                     addNewRowButton: By.id("addNewRow"),
                     maximize: By.id("toggleStateButton"),
                     normalize: By.id("normalizeResultStateButton"),
                     view: {
-                        exists: By.id("viewStyleDropDown"),
-                        isVisible: By.css("#viewStyleDropDownPopup .popup.visible"),
-                        grid: By.id("grid"),
-                        preview: By.id("preview"),
+                        exists: By.className("viewSelector"),
+                        grid: By.id("viewGridButton"),
+                        preview: By.id("viewPreviewButton"),
                     },
                 },
                 tabs: {
@@ -1354,4 +1353,3 @@ export const e2eDebugger = {
         treeItem: By.css("#scriptSection .tabulator-row"),
     },
 };
-

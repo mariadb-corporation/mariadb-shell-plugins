@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1931,7 +1931,7 @@ describe("NOTEBOOKS", () => {
                     , constants.wait1second * 5);
             expect(await (await dialog!.findElement(locator.confirmDialog.msg))
                 .getText())
-                .to.match(/is currently being edited, do you want to commit or rollback the changes before continuing/);
+                .to.match(/do you want to commit or discard the changes before continuing/);
             await dialog!.findElement(locator.confirmDialog.cancel).click();
             await driver.wait(until.stalenessOf(dialog!), constants.wait1second * 3, "The dialog was not closed");
             await driver.wait(Workbench.untilCurrentEditorIs(new RegExp(constants.openEditorsDBNotebook)),
@@ -1942,7 +1942,7 @@ describe("NOTEBOOKS", () => {
                 constants.wait1second * 5);
             expect(await (await dialog!.findElement(locator.confirmDialog.msg))
                 .getText())
-                .to.match(/is currently being edited, do you want to commit or rollback the changes before continuing/);
+                .to.match(/do you want to commit or discard the changes before continuing/);
             await dialog!.findElement(locator.confirmDialog.cancel).click();
             await driver.wait(until.stalenessOf(dialog!), constants.wait1second * 3, "The dialog was not closed");
             await driver.wait(Workbench.untilCurrentEditorIs(new RegExp(constants.openEditorsDBNotebook)),
@@ -1954,7 +1954,7 @@ describe("NOTEBOOKS", () => {
                 constants.wait1second * 5);
             expect(await (await dialog!.findElement(locator.confirmDialog.msg))
                 .getText())
-                .to.match(/is currently being edited, do you want to commit or rollback the changes before continuing/);
+                .to.match(/do you want to commit or discard the changes before continuing/);
             await dialog!.findElement(locator.confirmDialog.cancel).click();
             await driver.wait(until.stalenessOf(dialog!), constants.wait1second * 3, "The dialog was not closed");
             await driver.wait(Workbench.untilCurrentEditorIs(new RegExp(constants.openEditorsDBNotebook)),
@@ -1966,7 +1966,7 @@ describe("NOTEBOOKS", () => {
                 constants.wait1second * 5);
             expect(await (await dialog!.findElement(locator.confirmDialog.msg))
                 .getText())
-                .to.match(/is currently being edited, do you want to commit or rollback the changes before continuing/);
+                .to.match(/do you want to commit or discard the changes before continuing/);
             await dialog!.findElement(locator.confirmDialog.cancel).click();
             await driver.wait(until.stalenessOf(dialog!), constants.wait1second * 3, "The dialog was not closed");
 
@@ -1975,7 +1975,7 @@ describe("NOTEBOOKS", () => {
                 constants.wait1second * 5);
             expect(await (await dialog!.findElement(locator.confirmDialog.msg))
                 .getText())
-                .to.match(/is currently being edited, do you want to commit or rollback the changes before continuing/);
+                .to.match(/do you want to commit or discard the changes before continuing/);
             await dialog!.findElement(locator.confirmDialog.refuse).click();
             await driver.wait(until.stalenessOf(dialog!), constants.wait1second * 3, "The dialog was not closed");
 

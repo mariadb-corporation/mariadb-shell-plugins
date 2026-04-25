@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,7 @@
 
 import { DBDataType, IColumnInfo, defaultValues } from "../../app-logic/general-types.js";
 import { formatBase64ToHex } from "../../utilities/string-helpers.js";
+import { isDefaultCellValue } from "./ResultCellValue.js";
 
 /**
  * A class that manages the unique selector for a row in a data set.
@@ -127,21 +128,18 @@ export class QueryBuilder {
     }
 
     public generateInsertStatement(newValues: unknown[]): string {
-        // Collect only columns that are not auto-incrementing.
         const insertColumns: IColumnInfo[] = [];
         const insertValues: unknown[] = [];
 
         this.#columns.forEach((column, index) => {
-            if (!column.autoIncrement) {
-                insertColumns.push(column);
-                let value = newValues[index];
+            insertColumns.push(column);
+            let value = newValues[index];
 
-                // Ensure to escape control chars of string values
-                if (typeof value === "string") {
-                    value = QueryBuilder.escapeControlChars(value);
-                }
-                insertValues.push(value);
+            // Ensure to escape control chars of string values
+            if (typeof value === "string") {
+                value = QueryBuilder.escapeControlChars(value);
             }
+            insertValues.push(value);
         });
         const columnNames = insertColumns.map((column) => {
             return column.title; 
@@ -215,6 +213,10 @@ export class QueryBuilder {
             // if we run out of columns.
             const column = columns[index % columns.length];
             const dataType = column.dataType;
+
+            if (isDefaultCellValue(value)) {
+                return this.#upperCase ? "DEFAULT" : "default";
+            }
 
             if (value == null) { // null or undefined
                 if (column.default) {

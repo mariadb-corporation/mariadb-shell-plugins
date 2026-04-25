@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -293,6 +293,7 @@ import squiggleIcon from "../assets/images/squiggle.svg";
 import unnestIcon from "../assets/images/unnest.svg";
 
 import blobIcon from "../assets/images/data-icons/data-blob.svg";
+import defaultValueIcon from "../assets/images/data-icons/data-default.svg";
 import geometryIcon from "../assets/images/data-icons/data-geometry.svg";
 import nullIcon from "../assets/images/data-icons/data-null.svg";
 import vectorIcon from "../assets/images/data-icons/data-vector.svg";
@@ -579,6 +580,7 @@ export class Assets {
 
     public static data = {
         blobIcon,
+        defaultValueIcon,
         geometryIcon,
         nullIcon,
         vectorIcon,

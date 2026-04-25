@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,8 @@ import {
     EditorTab,
     BottomBarPanel,
     CustomTreeItem,
+    By,
+    ContextMenu,
 } from "vscode-extension-tester";
 import { keyboard, Key as nutKey } from "@nut-tree-fork/nut-js";
 import * as constants from "../constants";
@@ -730,7 +732,7 @@ export class E2EAccordionSection {
                                 ctxMenuItems = [ctxMenuItem];
                             }
 
-                            const menu = await treeItem.openContextMenu();
+                            const menu = await this.openTreeItemContextMenu(treeItem);
                             const menuItem = await menu.getItem(ctxMenuItems[0].trim());
 
                             const anotherMenu = await menuItem!.select();
@@ -932,6 +934,20 @@ export class E2EAccordionSection {
         await this.openContextMenuAndSelect(servicePath, constants.setAsCurrentREST);
         const ntf = "The MRS service has been set as the new default service.";
         await driver.wait(Workbench.untilNotificationExists(ntf), constants.wait1second * 10);
+    };
+
+    /**
+     * Waits for a tree context menu to become available.
+     *
+     * @param treeItem The tree item to open the context menu for
+     * @returns The opened context menu
+     */
+    private openTreeItemContextMenu = async (treeItem: TreeItem): Promise<ContextMenu> => {
+        const workbench = await driver.findElement(By.className("monaco-workbench"));
+        await driver.actions().contextClick(treeItem).perform();
+        await driver.wait(until.elementLocated(By.className("context-view")), constants.waitForWebElement);
+
+        return await new ContextMenu(workbench).wait(constants.waitForWebElement);
     };
 
 }

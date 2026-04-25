@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,6 +54,7 @@ import { IMenuItemProperties, MenuItem } from "../ui/Menu/MenuItem.js";
 import { ITreeGridOptions, SetDataAction, TreeGrid } from "../ui/TreeGrid/TreeGrid.js";
 import { UpDown } from "../ui/UpDown/UpDown.js";
 import { FieldEditor } from "./FieldEditor.js";
+import { defaultCellValue, isDefaultCellValue } from "./ResultCellValue.js";
 
 /** How we structure the formatter params used for the individual cell formatters. */
 interface IFormatterParams {
@@ -177,7 +178,7 @@ export interface IResultViewProperties extends IComponentProperties {
     onFieldEdited?: (row: number, field: string, value: unknown, previousValue: unknown) => Promise<void>;
 
     /** Triggered when the user cancelled editing a field. */
-    onFieldEditCancel?: (row: number, field: string) => void;
+    onFieldEditCancel?: (row: number, field: string, restoredValue: unknown, restoreChange: boolean) => void;
 
     /** Triggered when the user wants to mark rows for deletion (or remove such a mark). */
     onToggleRowDeletionMarks?: (rows: number[]) => void;
@@ -202,6 +203,14 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private cellContextMenuRef = createRef<Menu>();
     private selectedCell?: CellComponent;
     private editingCell?: CellComponent;
+    private cancellingCellEdit = false;
+    private pendingCellEdit?: Promise<void>;
+    private cancelledCellEdit?: {
+        row: number;
+        field: string;
+        restoredValue: unknown;
+        restoreChange: boolean;
+    };
 
     private columnDefinitions: ColumnDefinition[] = [];
     private lastInputType: LastInputType = "other";
@@ -316,10 +325,12 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                     ref={this.cellContextMenuRef}
                     placement={ComponentPlacement.BottomLeft}
                     onItemClick={this.handleCellContextMenuItemClick}
+                    onClose={this.clearSelectedCellManualFocus}
                     isItemDisabled={this.handleCellMenuItemDisabled}
                 >
                     <MenuItem command={{ title: "Open Value in Editor", command: "openValueMenuItem" }} />
                     <MenuItem command={{ title: "Set Field to Null", command: "setNullMenuItem" }} />
+                    <MenuItem command={{ title: "Set Field to Default", command: "setDefaultMenuItem" }} />
                     <MenuItem command={{ title: "-", command: "" }} disabled />
                     <MenuItem command={{ title: "Save Value to File...", command: "saveToFileMenuItem" }} />
                     <MenuItem command={{ title: "Load Value from File...", command: "loadFromFileMenuItem" }} />
@@ -413,9 +424,22 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         this.selectedCell = cell;
     }
 
-    public editFirstCell(): void {
+    public editSelectedOrFirstCell(): void {
+        if (this.selectedCell) {
+            this.selectedCell.edit();
+
+            return;
+        }
+
         // istanbul ignore next
         if (this.gridRef.current) {
+            const focusedCell = this.focusedGridCell();
+            if (focusedCell) {
+                focusedCell.edit();
+
+                return;
+            }
+
             const visibleRows = this.gridRef.current.getRows("visible");
             if (visibleRows.length > 0) {
                 const cells = visibleRows[0].getCells();
@@ -426,6 +450,34 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         }
     }
 
+    private focusedGridCell(): CellComponent | undefined {
+        if (!document.activeElement?.parentElement?.classList.contains("tabulator-row")) {
+            return undefined;
+        }
+
+        const activeRow = this.gridRef.current?.getRow(document.activeElement.parentElement);
+
+        return activeRow?.getCells().find((cell) => {
+            return cell.getElement() === document.activeElement;
+        });
+    }
+
+    private selectCell(cell: CellComponent, focus = true): void {
+        this.clearSelectedCellManualFocus();
+
+        const element = this.cellElement(cell);
+        if (!element) {
+            return;
+        }
+
+        element.classList.add("manualFocus");
+        this.selectedCell = cell;
+
+        if (focus) {
+            element.focus();
+        }
+    }
+
     /**
      * Triggered when the user cancelled editing a cell value.
      */
@@ -433,11 +485,44 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         const { onFieldEditCancel } = this.props;
 
         if (this.editingCell) {
-            onFieldEditCancel?.(this.editingCell.getRow().getPosition() as number - 1,
-                this.editingCell.getColumn().getField());
-            this.editingCell.getElement().focus();
+            const row = this.editingCell.getRow().getPosition() as number - 1;
+            const field = this.editingCell.getColumn().getField();
+            const cancelledEdit = this.cancelledCellEdit;
+
+            onFieldEditCancel?.(row, field, cancelledEdit?.restoredValue, cancelledEdit?.restoreChange ?? false);
+            this.editingCell.getElement()?.focus();
             this.editingCell = undefined;
+            this.pendingCellEdit = undefined;
+            this.cancelledCellEdit = undefined;
         }
+    };
+
+    public cancelCellEditingForDiscard = (): void => {
+        if (!this.editingCell) {
+            return;
+        }
+
+        const editingCell = this.editingCell;
+        this.cancellingCellEdit = true;
+        this.pendingCellEdit = undefined;
+        this.editingCell = undefined;
+        editingCell.cancelEdit();
+    };
+
+    public finishCellEditingForCommit = async (): Promise<void> => {
+        if (!this.editingCell) {
+            return;
+        }
+
+        const activeElement = document.activeElement as HTMLElement | null;
+        const cellElement = this.editingCell.getElement();
+        if (activeElement && cellElement.contains(activeElement)) {
+            activeElement.blur();
+        } else {
+            cellElement.querySelector<HTMLElement>("input, textarea")?.blur();
+        }
+
+        await this.pendingCellEdit;
     };
 
     private generateColumnDefinitions = (columns: IColumnInfo[], editable: boolean): ColumnDefinition[] => {
@@ -605,12 +690,17 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private cellEditing = (cell: CellComponent): void => {
         const { onFieldEditStart } = this.props;
 
-        if (this.selectedCell?.getElement()) {
-            this.selectedCell.getElement().classList.remove("manualFocus");
-            this.selectedCell = undefined;
-        }
+        this.clearSelectedCellManualFocus();
 
+        this.cancellingCellEdit = false;
         this.editingCell = cell;
+        const activeChange = this.activeCellChange(cell);
+        this.cancelledCellEdit = {
+            row: cell.getRow().getPosition() as number - 1,
+            field: cell.getColumn().getField(),
+            restoredValue: activeChange?.value,
+            restoreChange: activeChange !== undefined,
+        };
 
         onFieldEditStart?.(cell.getRow().getPosition() as number - 1, cell.getColumn().getField());
     };
@@ -623,6 +713,14 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private cellEdited = (cell: CellComponent): void => {
         const { onFieldEdited } = this.props;
 
+        if (this.cancellingCellEdit) {
+            this.editingCell = undefined;
+            this.pendingCellEdit = undefined;
+            this.cancelledCellEdit = undefined;
+
+            return;
+        }
+
         const rowIndex = cell.getRow().getPosition() as number;
         const field = cell.getColumn().getField();
 
@@ -632,6 +730,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         });
 
         this.editingCell = undefined;
+        this.cancelledCellEdit = undefined;
     };
 
     private handleColumnResized = (column: ColumnComponent): void => {
@@ -662,6 +761,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         //let needsValueEditor = false;
         let canLoadSave = false;
         const info = this.columnInfoFromCell(this.selectedCell);
+        const rowDeleted = this.isCellRowDeleted(this.selectedCell);
         if (info) {
             switch (info.dataType.type) {
                 case DBDataType.Geometry:
@@ -701,7 +801,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
             }
 
             case "setNullMenuItem": {
-                return !(editable && (info?.nullable ?? false));
+                return rowDeleted || !(editable && (info?.nullable ?? false));
+            }
+
+            case "setDefaultMenuItem": {
+                return rowDeleted || !editable;
             }
 
             case "saveToFileMenuItem": {
@@ -811,29 +915,26 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     // We cannot test this method as it depends on Tabulator content (which is not rendered in tests).
     // istanbul ignore next
     private handleCellContext = (e: Event, cell: CellComponent): void => {
-        if (this.selectedCell?.getElement()) {
-            this.selectedCell.getElement().classList.remove("manualFocus");
-        }
+        this.cellContextMenuRef.current?.close();
 
         // Need to cancel editing here, or tabulator will crash when we set a value via cell.setValue().
         this.editingCell?.cancelEdit();
-        this.selectedCell = cell;
-        cell.getElement().classList.add("manualFocus");
+        this.selectCell(cell, false);
 
         const event = e as MouseEvent;
         const targetRect = new DOMRect(event.clientX, event.clientY, 2, 2);
 
-        this.cellContextMenuRef.current?.close();
         this.cellContextMenuRef.current?.open(targetRect, false, {});
     };
 
     private handleCellClick = (_event: Event, cell: CellComponent): void => {
-        this.selectedCell = cell;
+        this.selectCell(cell);
     };
 
     private handleVerticalScroll = (rowIndex: number): void => {
         const { onVerticalScroll } = this.props;
         this.cellContextMenuRef.current?.close();
+        this.clearSelectedCellManualFocus();
 
         onVerticalScroll?.(rowIndex);
     };
@@ -889,6 +990,10 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
      * @returns The cell value formatted as string
      */
     private formatCell = (cell: CellComponent, unquoted = false): string => {
+        if (this.isDefaultCell(cell)) {
+            return "DEFAULT";
+        }
+
         if (cell.getValue() === null) {
             // NULL, never gets quoted
             return "NULL";
@@ -933,6 +1038,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
 
     private handleCellContextMenuItemClick = (props: IMenuItemProperties): boolean => {
         if (this.selectedCell) {
+            const { onFieldEdited } = this.props;
             let dataType = DBDataType.String;
             const info = this.columnInfoFromCell(this.selectedCell);
             if (info) {
@@ -997,6 +1103,14 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
 
                 case "setNullMenuItem": {
                     this.selectedCell.setValue(null);
+                    break;
+                }
+
+                case "setDefaultMenuItem": {
+                    const rowIndex = this.selectedCell.getRow().getPosition() as number - 1;
+                    const field = this.selectedCell.getColumn().getField();
+
+                    void onFieldEdited?.(rowIndex, field, defaultCellValue, this.selectedCell.getValue());
                     break;
                 }
 
@@ -1138,14 +1252,23 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                 default:
             }
 
-            // During testing the element is not rendered.
-            const element = this.selectedCell.getElement() as HTMLElement | undefined;
-            element?.classList.remove("manualFocus");
-            this.selectedCell = undefined;
+            this.clearSelectedCellManualFocus();
         }
 
         return true;
     };
+
+    private clearSelectedCellManualFocus = (): void => {
+        // During testing the element is not rendered.
+        this.cellElement(this.selectedCell)?.classList.remove("manualFocus");
+        this.selectedCell = undefined;
+    };
+
+    private cellElement(cell?: CellComponent): HTMLElement | undefined {
+        const element = cell?.getElement();
+
+        return element instanceof HTMLElement ? element : undefined;
+    }
 
     /**
      * Takes the content from the current cell and saves it to a file.
@@ -1320,7 +1443,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                         this.handleConfirm(cell);
                     }}
                     onCancel={(): void => {
-                        cancel(undefined);
+                        this.cancelCellEditor(cancel);
                     }}
                     onBlur={this.handleBlurEvent.bind(this, cell, success, cancel)}
                 />;
@@ -1395,7 +1518,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                         this.handleConfirm(cell);
                     }}
                     onCancel={(): void => {
-                        cancel(undefined);
+                        this.cancelCellEditor(cancel);
                         cell.checkHeight();
                     }}
                     onBlur={this.handleBlurEvent.bind(this, cell, success, cancel)}
@@ -1414,7 +1537,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                         this.handleConfirm(cell);
                     }}
                     onCancel={(): void => {
-                        cancel(undefined);
+                        this.cancelCellEditor(cancel);
                     }}
                     onBlur={this.handleBlurEvent.bind(this, cell, success, cancel)}
                 />;
@@ -1427,11 +1550,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                     type={IDateTimeValueType.DateTime}
                     value={value as string | undefined ?? ""}
                     onConfirm={(e: KeyboardEvent, props: IDateTimeChangeProperties): void => {
-                        success(props.value);
+                        success(this.normalizeEditorValue(cell, props.value));
                         this.handleConfirm(cell);
                     }}
                     onCancel={(): void => {
-                        cancel(undefined);
+                        this.cancelCellEditor(cancel);
                     }}
                     onBlur={this.handleBlurEvent.bind(this, cell, success, cancel)}
                 />;
@@ -1448,7 +1571,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                         this.handleConfirm(cell);
                     }}
                     onCancel={(): void => {
-                        cancel(undefined);
+                        this.cancelCellEditor(cancel);
                     }}
                     onBlur={this.handleBlurEvent.bind(this, cell, success, cancel)}
                 />;
@@ -1472,7 +1595,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                         }
                     }}
                     onCancel={(): void => {
-                        cancel(undefined);
+                        this.cancelCellEditor(cancel);
                     }}
                     onBlur={this.handleBlurEvent.bind(this, cell, success, cancel)}
                 >
@@ -1495,6 +1618,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private stringFormatter = (cell: CellComponent, formatterParams: IFormatterParams,
         onRendered: EmptyCallback): string | HTMLElement => {
         this.markIfChanged(cell);
+
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
+        }
 
         const value = cell.getValue() as unknown;
 
@@ -1524,6 +1652,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private jsonFormatter = (cell: CellComponent): string | HTMLElement => {
         this.markIfChanged(cell);
 
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
+        }
+
         const value = cell.getValue() as unknown;
 
         const host = document.createElement("div");
@@ -1540,9 +1673,9 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         onRendered: EmptyCallback): string | HTMLElement => {
         this.markIfChanged(cell);
 
-        const info = formatterParams.info;
-        if (this.isNewRow(cell) && info.autoIncrement) {
-            return "AI";
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
         }
 
         const value = cell.getValue() as unknown;
@@ -1568,6 +1701,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private binaryFormatter = (cell: CellComponent, formatterParams: IFormatterParams,
         onRendered: EmptyCallback): string | HTMLElement => {
         this.markIfChanged(cell);
+
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
+        }
 
         let element;
         const value = cell.getValue() as unknown;
@@ -1598,6 +1736,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private blobFormatter = (cell: CellComponent): string | HTMLElement => {
         this.markIfChanged(cell);
 
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
+        }
+
         const source = cell.getValue() === null ? Assets.data.nullIcon : Assets.data.blobIcon;
         const icon = <Icon src={source} />;
 
@@ -1612,6 +1755,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     // istanbul ignore next
     private vectorFormatter = (cell: CellComponent): string | HTMLElement => {
         this.markIfChanged(cell);
+
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
+        }
 
         const source = cell.getValue() === null ? Assets.data.nullIcon : Assets.data.vectorIcon;
         const icon = <Icon src={source} />;
@@ -1628,6 +1776,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private geometryFormatter = (cell: CellComponent): string | HTMLElement => {
         this.markIfChanged(cell);
 
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
+        }
+
         const source = cell.getValue() === null ? Assets.data.nullIcon : Assets.data.geometryIcon;
         const icon = <Icon src={source} />;
 
@@ -1643,6 +1796,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private dateFormatter = (cell: CellComponent, formatterParams: IFormatterParams,
         onRendered: EmptyCallback): string | HTMLElement => {
         this.markIfChanged(cell);
+
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
+        }
 
         const value = cell.getValue() as unknown;
         if (value === null) {
@@ -1706,6 +1864,11 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         onRendered: EmptyCallback): string | HTMLElement => {
         this.markIfChanged(cell);
 
+        const defaultIcon = this.defaultIcon(cell);
+        if (defaultIcon) {
+            return defaultIcon;
+        }
+
         const host = document.createElement("div");
         let element;
         if (cell.getValue() === null) {
@@ -1733,6 +1896,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
      */
     private markIfChanged(cell: CellComponent): boolean {
         const { rowChanges } = this.props;
+        const element = this.cellElement(cell);
         if (rowChanges) {
             const rowIndex = cell.getRow().getPosition() as number - 1;
             const rowChange = rowChanges[rowIndex];
@@ -1746,34 +1910,72 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
                     });
 
                     if (change !== undefined) {
-                        const element = cell.getElement();
-                        element.classList.add("changed");
+                        element?.classList.add("changed");
+                    } else {
+                        element?.classList.remove("changed");
                     }
+                } else {
+                    element?.classList.remove("changed");
                 }
 
                 return rowChange.added;
             }
         }
 
+        element?.classList.remove("changed");
+
         return false;
     }
 
-    /**
-     * @returns A boolean indicating if the given cell is part of a new row.
-     *
-     * @param cell The cell to check.
-     */
-    private isNewRow(cell: CellComponent): boolean {
+    private isDefaultCell(cell: CellComponent): boolean {
+        const change = this.activeCellChange(cell);
+
+        return change ? isDefaultCellValue(change.value) : false;
+    }
+
+    private activeCellChange(cell: CellComponent): IResultCellChange | undefined {
+        const rowChange = this.activeRowChange(cell);
+        if (rowChange) {
+            const field = cell.getColumn().getField();
+            for (let i = rowChange.changes.length - 1; i >= 0; --i) {
+                const change = rowChange.changes[i];
+                if (change.field === field) {
+                    return change;
+                }
+            }
+        }
+
+        return undefined;
+    }
+
+    private activeRowChange(cell: CellComponent): ResultRowChanges[number] | undefined {
         const { rowChanges } = this.props;
         if (rowChanges) {
             const rowIndex = cell.getRow().getPosition() as number - 1;
-            const rowChange = rowChanges[rowIndex];
 
             // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            return rowChange?.added ?? false;
+            return rowChanges[rowIndex]; // rowChanges is a sparse array.
         }
 
-        return false;
+        return undefined;
+    }
+
+    private isCellRowDeleted(cell: CellComponent): boolean {
+        return this.activeRowChange(cell)?.deleted ?? false;
+    }
+
+    private defaultIcon(cell: CellComponent): HTMLElement | undefined {
+        if (this.isDefaultCell(cell)) {
+            const host = document.createElement("div");
+            host.className = iconHostClassName;
+
+            const element = <Icon src={Assets.data.defaultValueIcon} />;
+            render(element, host);
+
+            return host;
+        }
+
+        return undefined;
     }
 
     /**
@@ -1828,23 +2030,47 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
 
     private handleBlurEvent = (cell: CellComponent, success: ValueBooleanCallback, cancel: ValueVoidCallback,
         e: FocusEvent): void => {
+        const { onFieldEdited } = this.props;
         const element = e.target as HTMLElement & { value: string | number; };
 
         const value = cell.getValue() as unknown;
         if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-            if (String(element.value) !== String(value)) {
+            const editorValue = this.normalizeEditorValue(cell, element.value);
+            if (this.cancellingCellEdit) {
+                cancel(undefined);
+            } else if (this.isDefaultCell(cell) && element.value === "") {
+                cancel(undefined);
+            } else if (String(editorValue) !== String(value)) {
+                let newValue: unknown;
+
                 // If this was using this.binaryFormatter then we have to convert back from HEX to Base64
                 if (cell.getColumn().getDefinition().formatter === this.binaryFormatter) {
                     if (element.value) {
-                        success(convertHexToBase64(element.value));
+                        newValue = convertHexToBase64(element.value);
                     } else {
-                        success(null);
+                        newValue = null;
                     }
                 } else {
-                    success(element.value);
+                    newValue = editorValue;
                 }
-                this.markIfChanged(cell);
+
+                const rowIndex = cell.getRow().getPosition() as number - 1;
+                const field = cell.getColumn().getField();
+                const editPromise = onFieldEdited?.(rowIndex, field, newValue, value);
+                const pendingCellEdit = editPromise?.then(() => {
+                    this.markIfChanged(cell);
+                }) ?? Promise.resolve();
+
+                success(newValue);
+
+                this.pendingCellEdit = pendingCellEdit;
+                void pendingCellEdit.finally(() => {
+                    if (this.pendingCellEdit === pendingCellEdit) {
+                        this.pendingCellEdit = undefined;
+                    }
+                });
             } else {
+                this.pendingCellEdit = undefined;
                 cancel(undefined);
             }
 
@@ -1876,6 +2102,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         if (this.lastInputType === "tab" || this.lastInputType === "shiftTab") {
             const target = (e.relatedTarget ?? document.activeElement) as HTMLElement;
             if (target.closest(".tabulator")) {
+                this.clearSelectedCellManualFocus();
                 if (this.lastInputType === "tab") {
                     if (!cell.navigateRight()) {
                         cell.navigateNext();
@@ -1889,21 +2116,47 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         };
     };
 
+    private normalizeEditorValue(cell: CellComponent, value: string | number): string | number {
+        if (this.columnInfoFromCell(cell)?.dataType.type === DBDataType.DateTime && typeof value === "string") {
+            const currentValue = cell.getValue();
+            if (typeof currentValue === "string" && currentValue.includes("T")) {
+                return value;
+            }
+
+            return value.replace("T", " ");
+        }
+
+        return value;
+    }
+
     private handleConfirm(cell: CellComponent): void {
         this.markIfChanged(cell);
+        this.editingCell = undefined;
+        this.cancelledCellEdit = undefined;
 
         cell.checkHeight();
     }
 
+    private cancelCellEditor(cancel: ValueVoidCallback): void {
+        this.cancellingCellEdit = true;
+        this.pendingCellEdit = undefined;
+        cancel(undefined);
+    }
+
     private columnInfoFromCell(cell: CellComponent): IColumnInfo | undefined {
-        const formatterParams = cell.getColumn().getDefinition().formatterParams;
+        const column = cell.getColumn();
+        const formatterParams = column.getDefinition().formatterParams;
         if (formatterParams && typeof formatterParams === "function") {
             const formatterParamsFunc = formatterParams as (cell: CellComponent) => { info: IColumnInfo; };
 
             return formatterParamsFunc(cell).info;
         }
 
-        return undefined;
+        const field = column.getField() ?? column.getDefinition().field;
+
+        return this.props.resultSet.columns.find((info) => {
+            return info.field === field;
+        });
     }
 
     /**
@@ -1912,6 +2165,106 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
     private handleMouseUp = (): void => {
         this.lastInputType = "other";
     };
+
+    private handleTabKeyDown(e: KeyboardEvent): boolean {
+        if (this.editingCell) {
+            return false;
+        }
+
+        const cell = this.focusedGridCell() ?? this.selectedCell;
+        if (!cell) {
+            return false;
+        }
+
+        const nextCell = e.shiftKey ? this.previousCell(cell) : this.nextCell(cell);
+        if (!nextCell) {
+            return false;
+        }
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this.selectCell(nextCell);
+
+        return true;
+    }
+
+    private handleArrowKeyDown(e: KeyboardEvent): boolean {
+        if (this.editingCell) {
+            return false;
+        }
+
+        const cell = this.focusedGridCell() ?? this.selectedCell;
+        if (!cell) {
+            return false;
+        }
+
+        let nextCell: CellComponent | undefined;
+        switch (e.key) {
+            case KeyboardKeys.ArrowLeft: {
+                nextCell = this.horizontalCell(cell, -1);
+                break;
+            }
+
+            case KeyboardKeys.ArrowRight: {
+                nextCell = this.horizontalCell(cell, 1);
+                break;
+            }
+
+            case KeyboardKeys.ArrowUp: {
+                nextCell = this.verticalCell(cell, -1);
+                break;
+            }
+
+            case KeyboardKeys.ArrowDown: {
+                nextCell = this.verticalCell(cell, 1);
+                break;
+            }
+
+            default: {
+                return false;
+            }
+        }
+
+        if (!nextCell) {
+            return false;
+        }
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this.selectCell(nextCell);
+
+        return true;
+    }
+
+    private horizontalCell(cell: CellComponent, offset: -1 | 1): CellComponent | undefined {
+        const cells = cell.getRow().getCells();
+        const index = cells.indexOf(cell);
+
+        return index > -1 ? cells[index + offset] : undefined;
+    }
+
+    private verticalCell(cell: CellComponent, offset: -1 | 1): CellComponent | undefined {
+        const row = cell.getRow();
+        const cells = row.getCells();
+        const index = cells.indexOf(cell);
+        const nextRow = offset < 0 ? row.getPrevRow() : row.getNextRow();
+
+        return nextRow && index > -1 ? nextRow.getCells()[index] : undefined;
+    }
+
+    private nextCell(cell: CellComponent): CellComponent | undefined {
+        const nextRow = cell.getRow().getNextRow();
+
+        return this.horizontalCell(cell, 1) ?? (nextRow ? nextRow.getCells()[0] : undefined);
+    }
+
+    private previousCell(cell: CellComponent): CellComponent | undefined {
+        const row = cell.getRow();
+        const previousRow = row.getPrevRow();
+        const previousRowCells = previousRow ? previousRow.getCells() : [];
+
+        return this.horizontalCell(cell, -1) ?? previousRowCells[previousRowCells.length - 1];
+    }
 
     /**
      * A handler for global key down. Used to track tab presses for focus-out handling.
@@ -1922,6 +2275,18 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
         const { editable, onAction } = this.props;
 
         switch (e.key) {
+            case KeyboardKeys.ArrowDown:
+            case KeyboardKeys.ArrowLeft:
+            case KeyboardKeys.ArrowRight:
+            case KeyboardKeys.ArrowUp: {
+                if (this.handleArrowKeyDown(e)) {
+                    break;
+                }
+
+                this.lastInputType = "other";
+                break;
+            }
+
             // Support to start editing via Return/Enter key
             case (KeyboardKeys.Enter): {
                 if (e.metaKey && onAction) {
@@ -1930,15 +2295,7 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
 
                     void onAction("commit");
                 } else if (editable && this.gridRef.current) {
-                    let cell;
-                    // If a cell has the focus, lookup the cell based on the HTMLElement and edit that sell
-                    if (document.activeElement?.parentElement?.classList.contains("tabulator-row")) {
-                        const activeRow = this.gridRef.current.getRow(document.activeElement.parentElement);
-                        cell = activeRow?.getCells().find((cell) => {
-                            return cell.getElement() === document.activeElement;
-                        });
-                    }
-
+                    const cell = this.focusedGridCell();
                     if (cell) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
@@ -1964,7 +2321,9 @@ export class ResultView extends ComponentBase<IResultViewProperties> {
             }
 
             case (KeyboardKeys.Tab): {
-                if (e.shiftKey) {
+                if (this.handleTabKeyDown(e)) {
+                    break;
+                } else if (e.shiftKey) {
                     this.lastInputType = "shiftTab";
                 } else {
                     this.lastInputType = "tab";

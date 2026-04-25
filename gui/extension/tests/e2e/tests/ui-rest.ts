@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -951,51 +951,50 @@ describe("MySQL REST Service", () => {
             existsInQueue = true;
             await driver.wait(TestQueue.poll(this.test!.title), constants.queuePollTimeout);
 
-            const treeActor = service3.restSchemas![0].restObjects![0].restObjectPath;
-            await dbTreeSection.openContextMenuAndSelect(treeActor!,
-                [constants.copyToClipboard, constants.restObjectRequestPath], constants.restObjCtxMenu);
-
             const servicePath = service3.servicePath;
             const schemaPath = service3.restSchemas![0].restSchemaPath;
             const actorTable = service3.restSchemas![0].restObjects![0].restObjectPath;
+            const treeActor = actorTable;
 
             const url = `https://localhost.*${servicePath}${schemaPath}${actorTable}`;
             await driver.wait(async () => {
-                if (clipboard.readSync()
-                    .match(new RegExp(url)) === null) {
+                const clipboardContent = clipboard.readSync();
+                if (clipboardContent.match(new RegExp(url)) === null) {
 
-                    E2ELogger.debug(`clipboard content: ${clipboard.readSync()}`);
-                    await dbTreeSection.openContextMenuAndSelect(treeActor!,
-                        [constants.copyToClipboard, constants.restObjectRequestPath], constants.restObjCtxMenu);
-                    await driver.wait(Workbench
-                        .untilNotificationExists("The DB Object Path was copied to the system clipboard"),
-                        constants.wait1second * 5);
-                } else {
-                    return true;
-                }
-            }, constants.wait1second * 15, `${url} was not found on the clipboard`);
-
-
-            const objectTreeName = `/${service3.restSchemas![0].restObjects![0].dataMapping!.dbObject}`;
-            await dbTreeSection.openContextMenuAndSelect(objectTreeName,
-                [constants.copyToClipboard, constants.copyCreateRestObjSt], constants.restObjCtxMenu);
-
-            const regexObject = new RegExp(`CREATE OR REPLACE REST VIEW /actor`);
-
-            await driver.wait(async () => {
-                if (clipboard.readSync()
-                    .match(regexObject) === null) {
-
-                    E2ELogger.debug(`clipboard content: ${clipboard.readSync()}`);
-                    await dbTreeSection.openContextMenuAndSelect(objectTreeName,
-                        [constants.copyToClipboard, constants.copyCreateRestObjSt], constants.restObjCtxMenu);
+                    E2ELogger.debug(`clipboard content: ${clipboardContent}`);
+                    try {
+                        await dbTreeSection.openContextMenuAndSelect(treeActor!,
+                            [constants.copyToClipboard, constants.restObjectRequestPath], constants.restObjCtxMenu);
+                        await driver.wait(Workbench
+                            .untilNotificationExists("The DB Object Path was copied to the system clipboard"),
+                            constants.wait1second * 5);
+                    } catch (e) {
+                        E2ELogger.debug(`Could not copy REST object request path: ${String(e)}`);
+                    }
 
                     return false;
                 }
 
-                await driver.wait(Workbench
-                    .untilNotificationExists(`The CREATE statement was copied to the system clipboard`),
-                    constants.wait1second * 5);
+                return true;
+            }, constants.wait1second * 15, `${url} was not found on the clipboard`);
+
+
+            const objectTreeName = `/${service3.restSchemas![0].restObjects![0].dataMapping!.dbObject}`;
+            const regexObject = new RegExp(`CREATE OR REPLACE REST VIEW /actor`);
+
+            clipboard.writeSync("");
+            await dbTreeSection.openContextMenuAndSelect(objectTreeName,
+                [constants.copyToClipboard, constants.copyCreateRestObjSt], constants.restObjCtxMenu);
+            await driver.wait(Workbench
+                .untilNotificationExists(`The CREATE statement was copied to the system clipboard`),
+                constants.wait1second * 5);
+
+            await driver.wait(async () => {
+                const clipboardContent = clipboard.readSync();
+                if (clipboardContent.match(regexObject) === null) {
+                    E2ELogger.debug(`clipboard content: ${clipboardContent}`);
+                    return false;
+                }
 
                 return true;
             }, constants.wait1second * 5, "Object create statement was not copied to the clipboard");

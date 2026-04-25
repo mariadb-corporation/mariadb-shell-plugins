@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,7 @@ import { Container, Orientation } from "../../../../components/ui/Container/Cont
 import { Image } from "../../../../components/ui/Image/Image.js";
 import { Assets } from "../../../../supplement/Assets.js";
 import { requisitions } from "../../../../supplement/Requisitions.js";
+import { KeyboardKeys } from "../../../../utilities/helpers.js";
 
 describe("Button component tests", (): void => {
     it("Test button click", async () => {
@@ -52,6 +53,44 @@ describe("Button component tests", (): void => {
         });
 
         expect(buttonClick).toHaveBeenCalled();
+
+        unmount();
+    });
+
+    it("activates buttons from the keyboard", async () => {
+        const buttonClick = vi.fn();
+        const { unmount, getByRole } = render(
+            <Button onClick={buttonClick}>
+                Test button
+            </Button>,
+        );
+
+        const button = getByRole("button");
+        await act(() => {
+            fireEvent.keyDown(button, { key: KeyboardKeys.Enter });
+        });
+        await act(() => {
+            fireEvent.keyDown(button, { key: KeyboardKeys.Space });
+        });
+
+        expect(buttonClick).toHaveBeenCalledTimes(2);
+
+        unmount();
+    });
+
+    it("does not activate disabled buttons from the keyboard", async () => {
+        const buttonClick = vi.fn();
+        const { unmount, getByRole } = render(
+            <Button disabled onClick={buttonClick}>
+                Test button
+            </Button>,
+        );
+
+        await act(() => {
+            fireEvent.keyDown(getByRole("button"), { key: KeyboardKeys.Enter });
+        });
+
+        expect(buttonClick).not.toHaveBeenCalled();
 
         unmount();
     });

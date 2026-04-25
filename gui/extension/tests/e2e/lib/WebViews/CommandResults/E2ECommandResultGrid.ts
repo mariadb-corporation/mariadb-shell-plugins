@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,6 @@ import * as interfaces from "../../interfaces";
 import * as locator from "../../locators";
 import { Os } from "../../Os";
 import { E2ECommandResult } from "./E2ECommandResult";
-import { ConfirmDialog } from "../Dialogs/ConfirmationDialog";
 import { E2ECodeEditor } from "../E2ECodeEditor";
 import { E2ELogger } from "../../E2ELogger";
 
@@ -1357,15 +1356,10 @@ export class E2ECommandResultGrid extends E2ECommandResult {
      * @returns A promise resolving when the view is selected
      */
     public selectView = async (name: string): Promise<void> => {
-        const view = await this.resultContext!.findElement(toolbarLocator.view.exists);
-        await view.click();
-        await driver.wait(until.elementLocated(toolbarLocator.view.isVisible), constants.wait1second * 5,
-            "Could not find the result grid view drop down list");
-
         if (name === constants.gridView) {
-            await driver.findElement(toolbarLocator.view.grid).click();
+            await this.resultContext!.findElement(toolbarLocator.view.grid).click();
         } else if (name === constants.previewView) {
-            await driver.findElement(toolbarLocator.view.preview).click();
+            await this.resultContext!.findElement(toolbarLocator.view.preview).click();
         } else {
             throw new Error(`Could not find the view with name ${name}`);
         }
@@ -1391,14 +1385,12 @@ export class E2ECommandResultGrid extends E2ECommandResult {
     };
 
     /**
-     * Clicks on the Rollback Changes button of a result grid
+     * Clicks on the Discard Changes button of a result grid.
      * 
      * @returns A promise resolving when the button is clicked
      */
     public rollbackChanges = async (): Promise<void> => {
         await this.resultContext!.findElement(toolbarLocator.rollbackButton).click();
-        const dialog = await new ConfirmDialog().untilExists();
-        await dialog.accept();
     };
 
     /**

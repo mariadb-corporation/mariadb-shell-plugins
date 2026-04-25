@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="45" height="13" viewBox="0 0 45 13" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <defs>
+        <mask id="defaultTextMask" maskUnits="userSpaceOnUse" x="0" y="0" width="45" height="13">
+            <rect x="0" y="0" width="45" height="13" fill="#fff"/>
+            <text x="22.5" y="8.9" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="7.6" font-weight="700" fill="#000">DEFAULT</text>
+        </mask>
+    </defs>
+    <path d="M45,1.676L45,11.324C45,12.249 44.249,13 43.324,13L1.676,13C0.751,13 0,12.249 0,11.324L0,1.676C0,0.751 0.751,0 1.676,0L43.324,0C44.249,0 45,0.751 45,1.676Z" mask="url(#defaultTextMask)"/>
+</svg>

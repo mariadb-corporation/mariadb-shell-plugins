@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026 Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -987,7 +987,7 @@ describe("RESULT GRIDS", () => {
             }
         });
 
-        it("Edit a result grid and rollback", async () => {
+        it("Edit a result grid and discard changes", async () => {
             try {
                 const modifiedText = "56";
                 let result = await notebook.codeEditor
@@ -1283,6 +1283,7 @@ describe("RESULT GRIDS", () => {
                     { columnName: "district", value: "Hill Valley" },
                     { columnName: "city_id", value: "300" },
                     { columnName: "postal_code", value: "35200" },
+                    { columnName: "phone", value: "555-0100" },
                 ];
 
                 await result.addRow(rowToAdd);
@@ -1502,7 +1503,7 @@ describe("RESULT GRIDS", () => {
                     }];
                 await result.editCells(cellsToEdit, constants.doubleClick);
 
-                const dialogMessage = /do you want to commit or rollback the changes before continuing/;
+                const dialogMessage = /do you want to commit or discard the changes before continuing/;
 
                 await (await dbTreeSection.getTreeItem(constants.serverStatus)).click();
                 let dialog = await new ConfirmDialog().untilExists();

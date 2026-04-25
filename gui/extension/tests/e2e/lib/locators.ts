@@ -226,17 +226,16 @@ export const notebook = {
                     },
                     applyButton: By.id("applyButton"),
                     rollbackButton: By.id("rollbackButton"),
-                    previewButton: By.id("previewButton"),
                     refreshButton: By.id("refreshButton"),
+                    previewButton: By.id("viewPreviewButton"),
                     editButton: By.id("editButton"),
                     addNewRowButton: By.id("addNewRow"),
                     maximize: By.id("toggleStateButton"),
                     normalize: By.id("normalizeResultStateButton"),
                     view: {
-                        exists: By.id("viewStyleDropDown"),
-                        isVisible: By.css("#viewStyleDropDownPopup .popup.visible"),
-                        grid: By.id("grid"),
-                        preview: By.id("preview"),
+                        exists: By.className("viewSelector"),
+                        grid: By.id("viewGridButton"),
+                        preview: By.id("viewPreviewButton"),
                     },
                 },
                 tabs: {
@@ -1058,4 +1057,3 @@ export const createLibraryDialog = {
     ok: By.id("ok"),
     cancel: By.id("cancel"),
 };
-
