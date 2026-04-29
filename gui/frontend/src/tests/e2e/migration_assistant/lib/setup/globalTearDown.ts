@@ -24,13 +24,18 @@
  */
 
 import { spawnSync } from "child_process";
+import {
+    migrationInvalidPort,
+    migrationPort,
+    mysqlServerPort
+} from "../../../../../../playwright.config.js";
 
 const globalTearDown = () => {
 
     const servers = [
-        8000,
-        8001,
-        4407
+        migrationPort,
+        migrationInvalidPort,
+        mysqlServerPort
     ];
 
     for (const server of servers) {

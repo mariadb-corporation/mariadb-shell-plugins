@@ -28,15 +28,19 @@
 import { defineConfig, devices } from "@playwright/test";
 
 export const mysqlServerPort = 4407;
+export const migrationPort = 8000;
+export const migrationInvalidPort = 8001;
+export const migrationToken = "1234";
+export const migrationInvalidToken = "1234test";
 
 export default defineConfig({
     timeout: 250000,
     globalTimeout: 400000,
     webServer: [
         {
-            command: `mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=8000,accept_remote_connections=True,single_instance_token='1234')"`,
+            command: `mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=${migrationPort},accept_remote_connections=True,single_instance_token='${migrationToken}')"`,
             timeout: 15000,
-            port: 8000,
+            port: migrationPort,
             name: "SHELL_SERVER_INVALID",
             env: {
                 ...process.env,
@@ -45,9 +49,9 @@ export default defineConfig({
             },
         },
         {
-            command: `mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=8001,accept_remote_connections=True,single_instance_token='1234test')"`,
+            command: `mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=${migrationInvalidPort},accept_remote_connections=True,single_instance_token='${migrationInvalidToken}')"`,
             timeout: 15000,
-            port: 8001,
+            port: migrationInvalidPort,
             name: "SHELL_SERVER_INVALID",
             env: {
                 ...process.env,

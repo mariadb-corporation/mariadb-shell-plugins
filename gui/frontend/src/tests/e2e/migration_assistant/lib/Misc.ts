@@ -29,13 +29,21 @@ import { Page, chromium, errors, Locator, Browser, expect, BrowserContext } from
 import * as locator from "./locators.js";
 import * as constants from "./constants.js";
 import * as interfaces from "./interfaces.js";
-import { mysqlServerPort } from "../../../../../playwright.config.js";
+import {
+    migrationInvalidPort,
+    migrationInvalidToken,
+    migrationPort,
+    migrationToken,
+    mysqlServerPort
+} from "../../../../../playwright.config.js";
 import { appendFileSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import * as types from "./types.js";
 
 export let page: Page;
 export let browser: Browser;
 export let context: BrowserContext;
+
+const migrationWsPattern = new RegExp(`ws://localhost:${migrationPort}`);
 
 export class Misc {
 
@@ -45,8 +53,10 @@ export class Misc {
         await context.grantPermissions(["clipboard-read", "clipboard-write"]);
         page = await context.newPage();
 
+        const isInvalidConfigSuite = testSuite === "Invalid config file";
+
         let feLog = "";
-        if (testSuite === "Invalid config file") {
+        if (isInvalidConfigSuite) {
             feLog = join(process.env.CONFIG_DIR_INVALID!, `fe_${testSuite}.log`);
         } else {
             feLog = join(process.env.CONFIG_DIR_DEFAULT!, `fe_${testSuite}.log`);
@@ -62,15 +72,13 @@ export class Misc {
             await this.mockMigration(page, mockStatus);
         }
 
-        if (testSuite === "Invalid config file") {
-            // eslint-disable-next-line max-len
-            await page.goto(`http://localhost:8001/?token=${globalThis.testConfig!.TOKEN}&subApp=migration&autoSendWebMessage=1&port=${mysqlServerPort}`,
-                { timeout: constants.wait1second * 60 });
-        } else {
-            // eslint-disable-next-line max-len
-            await page.goto(`http://localhost:8000/?token=${globalThis.testConfig!.TOKEN}&subApp=migration&autoSendWebMessage=1&port=${mysqlServerPort}`,
-                { timeout: constants.wait1second * 60 });
-        }
+        const targetPort = isInvalidConfigSuite ? migrationInvalidPort : migrationPort;
+        const targetToken = isInvalidConfigSuite ? migrationInvalidToken : migrationToken;
+
+        await page.goto(
+            `http://localhost:${targetPort}/?token=${targetToken}&subApp=migration&autoSendWebMessage=1&port=${mysqlServerPort}`,
+            { timeout: constants.wait1second * 60 }
+        );
 
         await expect.poll(async () => {
             try {
@@ -91,7 +99,7 @@ export class Misc {
 
     public static mockMigration = async (page: Page, status: types.MockMigrationStatus): Promise<void> => {
         if (status === constants.MockMigrationStatusEnum.Success) {
-            await page.routeWebSocket(/ws:\/\/localhost:8000/, ws => {
+            await page.routeWebSocket(migrationWsPattern, ws => {
                 const server = ws.connectToServer();
 
                 ws.onMessage((message) => {
@@ -116,7 +124,7 @@ export class Misc {
 
             });
         } else if (status === constants.MockMigrationStatusEnum.Running) {
-            await page.routeWebSocket(/ws:\/\/localhost:8000/, ws => {
+            await page.routeWebSocket(migrationWsPattern, ws => {
                 const server = ws.connectToServer();
 
                 ws.onMessage((message) => {
@@ -138,7 +146,7 @@ export class Misc {
 
             });
         } else if (status === constants.MockMigrationStatusEnum.Aborted) {
-            await page.routeWebSocket(/ws:\/\/localhost:8000/, ws => {
+            await page.routeWebSocket(migrationWsPattern, ws => {
                 const server = ws.connectToServer();
 
                 ws.onMessage((message) => {
@@ -170,7 +178,7 @@ export class Misc {
 
             });
         } else if (status === constants.MockMigrationStatusEnum.Failed) {
-            await page.routeWebSocket(/ws:\/\/localhost:8000/, ws => {
+            await page.routeWebSocket(migrationWsPattern, ws => {
                 const server = ws.connectToServer();
 
                 ws.onMessage((message) => {
