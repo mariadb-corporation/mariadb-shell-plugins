@@ -110,7 +110,7 @@ export class MigrationPlan {
 
     public setOciCompartment = async (value: string): Promise<void> => {
         await Misc.waitForLoadingIcon();
-        if (await this.getOciCompartment() !== value) {
+        if (!this.treeDropdownValueMatches(await this.getOciCompartment(), value)) {
             await expect.poll(async () => {
                 const box = page.locator(locator.steps.targetSelection.ociCompartment.box);
                 await box.click();
@@ -121,12 +121,12 @@ export class MigrationPlan {
                     .ociCompartment.selectList.item);
 
                 for (const option of await options.all()) {
-                    if ((await option.textContent()) === value) {
+                    if (this.treeDropdownValueMatches(await option.textContent(), value)) {
 
                         await option.click();
                         await Misc.waitForLoadingIcon();
 
-                        return (await this.getOciCompartment()) === value;
+                        return this.treeDropdownValueMatches(await this.getOciCompartment(), value);
                     }
                 }
 
@@ -154,7 +154,7 @@ export class MigrationPlan {
     };
 
     public setNetworkCompartment = async (value: string): Promise<void> => {
-        if (await this.getNetworkCompartment() !== value) {
+        if (!this.treeDropdownValueMatches(await this.getNetworkCompartment(), value)) {
             const box = page.locator(locator.steps.targetSelection.networkCompartment.box);
             await box.click();
             const selectList = page.locator(locator.steps.targetSelection.networkCompartment
@@ -164,13 +164,15 @@ export class MigrationPlan {
                 .networkCompartment.selectList.item).all();
 
             for (const option of options) {
-                if ((await option.textContent()) === value) {
+                if (this.treeDropdownValueMatches(await option.textContent(), value)) {
                     await option.click();
                     await Misc.waitForLoadingIcon();
 
                     return;
                 }
             }
+
+            throw new Error(`Could not find option '${value}'`);
         }
     };
 
@@ -422,5 +424,15 @@ export class MigrationPlan {
 
         return (await explanationLocator.count()) > 0;
     };
+
+    private normalizeTreeDropdownValue(value: string | null): string {
+        const leafValue = value?.split(/\s*\/\s*/u).at(-1) ?? "";
+
+        return leafValue.replace(/^[\s\-–—―]+/u, "").trim();
+    }
+
+    private treeDropdownValueMatches(actual: string | null, expected: string): boolean {
+        return this.normalizeTreeDropdownValue(actual) === this.normalizeTreeDropdownValue(expected);
+    }
 
 }

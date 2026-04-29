@@ -96,10 +96,10 @@ export const steps = {
             },
         },
         ociCompartment: {
-            box: "#hosting\\.compartmentId",
+            box: ".hosting\\.compartmentId [role='combobox']",
             selectList: {
-                exists: "#hosting\\.compartmentIdPopup",
-                item: "label"
+                exists: ".tds-list[role='listbox']",
+                item: "[role='option']",
             },
         },
         ociNetwork: {
@@ -112,10 +112,10 @@ export const steps = {
             }
         },
         networkCompartment: {
-            box: "#hosting\\.networkCompartmentId",
+            box: ".hosting\\.networkCompartmentId [role='combobox']",
             selectList: {
-                exists: "#hosting\\.networkCompartmentIdPopup",
-                item: "label",
+                exists: ".tds-list[role='listbox']",
+                item: "[role='option']",
             }
         },
         vcn: {
