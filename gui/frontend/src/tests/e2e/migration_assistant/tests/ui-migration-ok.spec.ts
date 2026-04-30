@@ -93,13 +93,13 @@ test.describe("Successful Migration", () => {
         }, constants.wait1second * 15);
 
         await migrationAssistant.migrationPlan.waitUntilStepIs({
-            caption: "Migration Type",
+            caption: constants.migrationType,
             isExpanded: true
         }, constants.wait1second * 15);
 
         await migrationAssistant.migrationPlan.setMigrationType(constants.MigrationTypeEnum.HotMigration);
         await migrationAssistant.migrationPlan.setNetworkConnectivity(constants.NetworkConnectivityEnum.SshTunnel);
-        await migrationAssistant.next();
+        await migrationAssistant.advanceToCompatibilityChecks();
 
         const issues = await migrationAssistant.migrationPlan.getCompatibilityIssues();
         expect(issues.length).toBeGreaterThan(0);

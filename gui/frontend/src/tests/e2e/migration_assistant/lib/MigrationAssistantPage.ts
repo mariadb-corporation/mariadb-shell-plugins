@@ -58,6 +58,27 @@ export class MigrationAssistantPage {
         await Misc.waitForLoadingIcon();
     };
 
+    public advanceToCompatibilityChecks = async (): Promise<void> => {
+        await this.next();
+
+        await this.migrationPlan.waitUntilStepIs({
+            caption: constants.objectSelection,
+            isExpanded: true
+        }, constants.wait1second * 15);
+
+        await this.next();
+
+        await this.migrationPlan.waitUntilStepIs({
+            caption: constants.objectSelection,
+            isExpanded: false
+        }, constants.wait1second * 15);
+
+        await this.migrationPlan.waitUntilStepIs({
+            caption: constants.schemaCompatibilityChecks,
+            isExpanded: true
+        }, constants.wait1second * 15);
+    };
+
     public isButtonEnabled = async (button: types.MigrationButton): Promise<boolean | undefined> => {
         if (button === constants.MigrationButtonEnum.Next) {
             const buttonLocator = page.locator(locator.mainPage.next);

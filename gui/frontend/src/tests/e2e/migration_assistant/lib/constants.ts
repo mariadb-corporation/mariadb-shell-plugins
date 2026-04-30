@@ -24,6 +24,10 @@
  */
 
 export const targetSelection = "Target Selection";
+export const migrationType = "Migration Type";
+export const objectSelection = "Object Selection";
+export const schemaCompatibilityChecks = "Schema Compatibility Checks";
+export const previewMigrationPlan = "Preview Migration Plan";
 export const wait1second = 1000;
 export enum MigrationTypeEnum {
     ColdMigration = "Cold Migration",
@@ -74,10 +78,11 @@ export enum MockMigrationStatusEnum {
 
 export const migrationPlan = "Migration Plan";
 export const migrationPlanSubSteps = [
-    "Target Selection",
-    "Migration Type",
-    "Schema Compatibility Checks",
-    "Preview Migration Plan"
+    targetSelection,
+    migrationType,
+    objectSelection,
+    schemaCompatibilityChecks,
+    previewMigrationPlan
 ];
 
 export const provisioning = "Provisioning";
@@ -120,4 +125,3 @@ export const tiles = new Map([
     [dataSynchronization, dataSynchronizationSubSteps],
     [finalize, finalizeSubSteps]
 ]);
-
