@@ -76,7 +76,7 @@ export class Misc {
         const targetToken = isInvalidConfigSuite ? migrationInvalidToken : migrationToken;
 
         await page.goto(
-            `http://localhost:${targetPort}/?token=${targetToken}&subApp=migration&autoSendWebMessage=1&port=${mysqlServerPort}`,
+            `http://localhost:${targetPort}/?token=${targetToken}&subApp=migration&autoSendWebMessage=1&forceNewProject=1&port=${mysqlServerPort}`,
             { timeout: constants.wait1second * 60 }
         );
 

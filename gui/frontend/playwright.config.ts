@@ -64,7 +64,7 @@ export default defineConfig({
     globalSetup: "./src/tests/e2e/migration_assistant/lib/setup/globalSetup.ts",
     globalTeardown: "./src/tests/e2e/migration_assistant/lib/setup/globalTearDown.ts",
     testDir: "src/tests/e2e/migration_assistant/tests",
-    workers: 2,
+    workers: 1,
     reporter: [
         ["html", { open: "never" }]
     ],
