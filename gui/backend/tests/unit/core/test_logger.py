@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,12 +21,43 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+import json
+
 from gui_plugin.core import Logger
 from gui_plugin.core import Filtering
-import json
+from gui_plugin.core import Db
+from gui_plugin.core.BackendDbLogger import BackendDbLogger, DEBUG_MODE_ENV_VAR
 
 allowed_levels = ['NONE', 'INTERNAL_ERROR', 'ERROR', 'WARNING',
                   'INFO', 'DEBUG', 'DEBUG2', 'DEBUG3']
+
+
+class FakeGuiBackendDb:
+    instances = 0
+
+    def __init__(self, log_rotation=False):
+        self.log_rotation = log_rotation
+        self.calls = []
+        FakeGuiBackendDb.instances += 1
+
+    def start_transaction(self):
+        self.calls.append("start_transaction")
+
+    def message(self, session_id, is_response, message, request_id):
+        self.calls.append(("message", session_id, is_response, message, request_id))
+
+    def log(self, event_type, message):
+        self.calls.append(("log", event_type, message))
+
+    def commit(self):
+        self.calls.append("commit")
+
+    def rollback(self):
+        self.calls.append("rollback")
+
+    def close(self):
+        self.calls.append("close")
+
 
 def test_log_level():
     current_level = Logger.get_log_level()
@@ -49,6 +80,37 @@ def test_log_level():
 
     level = Logger.get_log_level()
     assert level == current_level
+
+
+def test_backend_db_logging_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv(DEBUG_MODE_ENV_VAR, raising=False)
+    monkeypatch.setattr(Db, "GuiBackendDb", FakeGuiBackendDb)
+    FakeGuiBackendDb.instances = 0
+    BackendDbLogger.close()
+
+    assert BackendDbLogger.is_enabled() is False
+    assert BackendDbLogger.log("INFO", "message") is True
+    assert BackendDbLogger.message(1, "message", is_response=False) is True
+    assert FakeGuiBackendDb.instances == 0
+
+
+def test_backend_db_logger_get_instance_always_returns_singleton(monkeypatch):
+    monkeypatch.delenv(DEBUG_MODE_ENV_VAR, raising=False)
+    monkeypatch.setattr(Db, "GuiBackendDb", FakeGuiBackendDb)
+    FakeGuiBackendDb.instances = 0
+    BackendDbLogger.close()
+
+    instance = BackendDbLogger.get_instance()
+
+    assert instance is BackendDbLogger.get_instance()
+    assert FakeGuiBackendDb.instances == 1
+
+
+def test_backend_db_logging_is_enabled_in_debug_mode(monkeypatch):
+    monkeypatch.setenv(DEBUG_MODE_ENV_VAR, "1")
+    BackendDbLogger.close()
+
+    assert BackendDbLogger.is_enabled() is True
 
 
 def test_filter_sensitivity_data():

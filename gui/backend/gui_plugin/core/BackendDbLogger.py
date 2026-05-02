@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,11 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+from os import environ
 from threading import Lock
+
+DEBUG_MODE_ENV_VAR = "MYSQL_SHELL_GUI_DEBUG_MODE"
+
 
 class BackendDbLogger:
     __instance = None
@@ -32,7 +36,13 @@ class BackendDbLogger:
     def get_instance(log_rotation=False) -> 'BackendDbLogger':
         if BackendDbLogger.__instance is None:
             BackendDbLogger(log_rotation)
+
+        assert BackendDbLogger.__instance
         return BackendDbLogger.__instance
+
+    @staticmethod
+    def is_enabled():
+        return environ.get(DEBUG_MODE_ENV_VAR, '0') == '1'
 
     def __init__(self, log_rotation):
         if BackendDbLogger.__instance is not None:
@@ -43,42 +53,47 @@ class BackendDbLogger:
             BackendDbLogger.__instance = self
             self.__gui_backend_db = GuiBackendDb(log_rotation=log_rotation)
 
-    def _close(self):
-        if self.__gui_backend_db:
-            self.__gui_backend_db.close()
-            self.__gui_backend_db = None
-            self.__instance = None
-
     @staticmethod
     def close():
-        BackendDbLogger.get_instance()._close()
-
-    def _message(self, session_id, message, is_response, request_id):
-        with self.lock:
-            try:
-                self.__gui_backend_db.start_transaction()
-                self.__gui_backend_db.message(session_id, is_response, message, request_id)
-                self.__gui_backend_db.commit()
-            except Exception:
-                self.__gui_backend_db.rollback()
-                return False
-            return True
+        if BackendDbLogger.__instance is not None:
+            BackendDbLogger.__instance.__gui_backend_db.close()
+            BackendDbLogger.__instance.__gui_backend_db = None
+            BackendDbLogger.__instance = None
 
     @staticmethod
     def message(session_id, message, is_response, request_id=None):
-        return BackendDbLogger.get_instance()._message(session_id, message, is_response, request_id)
+        if not BackendDbLogger.is_enabled():
+            return True
 
-    def _log(self, event_type, message):
-        with self.lock:
+        instance = BackendDbLogger.get_instance()
+        if not instance.__gui_backend_db:
+            return False
+
+        with instance.lock:
             try:
-                self.__gui_backend_db.start_transaction()
-                self.__gui_backend_db.log(event_type, message)
-                self.__gui_backend_db.commit()
+                instance.__gui_backend_db.start_transaction()
+                instance.__gui_backend_db.message(session_id, is_response, message, request_id)
+                instance.__gui_backend_db.commit()
             except Exception:
-                self.__gui_backend_db.rollback()
+                instance.__gui_backend_db.rollback()
                 return False
             return True
 
     @staticmethod
     def log(event_type, message):
-        return BackendDbLogger.get_instance()._log(event_type, message)
+        if not BackendDbLogger.is_enabled():
+            return True
+
+        instance = BackendDbLogger.get_instance()
+        if not instance.__gui_backend_db:
+            return False
+
+        with instance.lock:
+            try:
+                instance.__gui_backend_db.start_transaction()
+                instance.__gui_backend_db.log(event_type, message)
+                instance.__gui_backend_db.commit()
+            except Exception:
+                instance.__gui_backend_db.rollback()
+                return False
+            return True

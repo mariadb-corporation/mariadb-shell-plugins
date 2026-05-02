@@ -42,6 +42,7 @@ PROCEDURES_PATH = WORKING_DIR.joinpath("sql", "4_procedures.sql")
 REPO_ROOT = THIS_FILE_PATH.parent.parent.parent.parent.parent.parent.absolute()
 
 TEXT_ONLY_OUTPUT = True
+BACKEND_DB_LOGGING_ENV_VAR = "MYSQL_SHELL_GUI_DEBUG_MODE"
 
 
 class TaskFailException(Exception):
@@ -792,6 +793,7 @@ class BEServer:
             mysqlsh_user_config_home = self.get_mysqlsh_home()
             environment["MYSQLSH_USER_CONFIG_HOME"] = mysqlsh_user_config_home
             environment["LOG_LEVEL"] = "DEBUG2"
+            environment[BACKEND_DB_LOGGING_ENV_VAR] = "1"
             timeout = time.time() + 30   # 30 seconds from now
 
             shell_args = [self.mysqlsh_executable, "--py", "-e"]
