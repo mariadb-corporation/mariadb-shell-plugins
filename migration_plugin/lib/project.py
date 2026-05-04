@@ -564,7 +564,9 @@ class Project:
 
         try:
             # this is non-fatal
-            user = oci_utils.OCIUser(self._oci_config, use_home_region=False)
+            user = oci_utils.OCIUser(
+                self._oci_config, use_home_region=False, retry_strategy=retry_strategy
+            )
             self.user_email = user.email
             logging.info(f"User email is {self.user_email}")
         except Exception as e:

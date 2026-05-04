@@ -106,6 +106,29 @@
     padding-right: 0;
 }
 
+.migration-sub-app .migration-navigation {
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.migration-sub-app .migration-navigation.with-status {
+    flex: 1 1 auto;
+}
+
+.migration-sub-app .footer-status {
+    color: var(--descriptionForeground);
+    flex: 1 1 auto;
+    font-size: 12px;
+    margin-right: 6px;
+    max-width: none;
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .migration-sub-app .footer-spacer {
     width: 40px;
 }

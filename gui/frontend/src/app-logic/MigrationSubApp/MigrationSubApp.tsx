@@ -187,12 +187,99 @@ interface BadUserInput {
 
 type OciNetworking = "create_new" | "use_existing";
 
-interface ISignInInfo {
+export interface ISignInInfo {
     message: string;
     info?: {
         url?: string;
     };
 }
+
+const newOciApiKeyStatusHint = "This may take longer than usual because the new OCI API keys need time to propagate.";
+
+export const parseOciSignInInfo = (info: unknown): ISignInInfo => {
+    if (typeof info === "object" && info !== null && "message" in info) {
+        const candidate = info as Partial<ISignInInfo>;
+
+        if (typeof candidate.message === "string") {
+            return {
+                message: candidate.message,
+                info: candidate.info,
+            };
+        }
+    }
+
+    if (typeof info !== "string") {
+        return { message: "Signing in to OCI..." };
+    }
+
+    const text = info.trim();
+    if (!text) {
+        return { message: "Signing in to OCI..." };
+    }
+
+    try {
+        const candidate = JSON.parse(text) as Partial<ISignInInfo>;
+        if (typeof candidate.message === "string") {
+            return {
+                message: candidate.message,
+                info: candidate.info,
+            };
+        }
+    } catch {
+        // OCI sign-in progress should be JSON, but keep displaying useful text if it is not.
+    }
+
+    return { message: text };
+};
+
+const appendNewOciApiKeyStatusHint = (message: string, appendHint?: boolean): string => {
+    if (!appendHint || message.includes(newOciApiKeyStatusHint)) {
+        return message;
+    }
+
+    const trimmedMessage = message.trim();
+    const separator = /[.!?]$/.test(trimmedMessage) ? " " : ". ";
+
+    return `${trimmedMessage}${separator}${newOciApiKeyStatusHint}`;
+};
+
+export interface IMigrationSetupStatusState {
+    backendRequestInProgress?: boolean;
+    backendRequestStatusMessage?: string;
+    isFetchingShapes?: boolean;
+    isFetchingSubnets?: boolean;
+    isFetchingVcns?: boolean;
+    ociLoginInProgress?: boolean;
+    ociNewApiKeyUploadedThisSession?: boolean;
+    ociSignInStatusMessage?: string;
+}
+
+export const getMigrationSetupStatusMessage = ({
+    backendRequestInProgress,
+    backendRequestStatusMessage,
+    isFetchingShapes,
+    isFetchingSubnets,
+    isFetchingVcns,
+    ociLoginInProgress,
+    ociNewApiKeyUploadedThisSession,
+    ociSignInStatusMessage,
+}: IMigrationSetupStatusState): string | undefined => {
+    let statusMessage: string | undefined;
+
+    if (ociLoginInProgress) {
+        statusMessage = ociSignInStatusMessage ?? "Signing in to OCI...";
+    } else if (isFetchingSubnets) {
+        statusMessage = "Loading subnets...";
+    } else if (isFetchingVcns) {
+        statusMessage = "Loading virtual cloud networks...";
+    } else if (isFetchingShapes) {
+        statusMessage = "Loading available shapes...";
+    } else if (backendRequestInProgress) {
+        statusMessage = backendRequestStatusMessage ?? "Processing migration plan request...";
+    }
+
+    return statusMessage ? appendNewOciApiKeyStatusHint(statusMessage, ociNewApiKeyUploadedThisSession) : undefined;
+};
 
 type MockStateText = keyof Pick<IMigrationAppState, "fakeWebMessage" | "workStatus" | "mockBackendState">;
 
@@ -220,6 +307,8 @@ export interface IMigrationAppState {
     hasOciConfig: boolean;
 
     ociSignInInfo?: ISignInInfo;
+    ociNewApiKeyUploadedThisSession?: boolean;
+    ociSignInStatusMessage?: string;
 
     isFetchingCompartments: boolean;
     isFetchingVcns: boolean;
@@ -244,6 +333,7 @@ export interface IMigrationAppState {
     filterInfo: MigrationFilterInfo;
 
     backendRequestInProgress: boolean;
+    backendRequestStatusMessage?: string;
     issueResolution: Partial<Record<string, string>>;
     expandedIssues: Partial<Record<string, boolean>>;
 
@@ -572,6 +662,8 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             ociLoginInProgress: false,
             hasOciConfig: false,
 
+            ociNewApiKeyUploadedThisSession: false,
+
             isFetchingCompartments: false,
             isFetchingVcns: false,
             isFetchingSubnets: false,
@@ -884,15 +976,39 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         this.setSubStep(sectionKey, true);
     }
 
+    private getFooterStatusMessage(): string | undefined {
+        return getMigrationSetupStatusMessage(this.state);
+    }
+
+    private renderFooterStatus(): VNode | null {
+        const statusMessage = this.getFooterStatusMessage();
+
+        if (!statusMessage) {
+            return null;
+        }
+
+        return (
+            <div className="footer-status" role="status" aria-live="polite">
+                {statusMessage}
+            </div>
+        );
+    }
+
     private renderNavigation() {
         const { backendRequestInProgress, currentSubStepId } = this.state;
+        const footerStatus = this.renderFooterStatus();
 
         // if (currentStep !== 1 || this.isStep1Finished) {
         //     return null;
         // }
 
         return (
-            <Container orientation={Orientation.LeftToRight}>
+            <Container
+                orientation={Orientation.LeftToRight}
+                className={`migration-navigation${footerStatus ? " with-status" : ""}`}
+            >
+                {footerStatus}
+
                 <Button
                     caption="Back"
                     disabled={!this.getPrevSubStep}
@@ -1148,11 +1264,14 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         console.log(`Refreshing from backend state`);
 
         try {
-            this.setState({ backendRequestInProgress: true });
+            this.setState({
+                backendRequestInProgress: true,
+                backendRequestStatusMessage: "Refreshing migration plan...",
+            });
             stepsState = await this.migration.planUpdate([]);
             this.handleSubStepStates(stepsState);
         } finally {
-            this.setState({ backendRequestInProgress: false });
+            this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
 
         return stepsState;
@@ -1164,11 +1283,14 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         this.log(`About to call planUpdate with `, configs);
 
         try {
-            this.setState({ backendRequestInProgress: true });
+            this.setState({
+                backendRequestInProgress: true,
+                backendRequestStatusMessage: "Updating migration plan...",
+            });
             stepsState = await this.migration.planUpdate(configs);
             this.handleSubStepStates(stepsState);
         } finally {
-            this.setState({ backendRequestInProgress: false });
+            this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
 
         return stepsState;
@@ -1181,11 +1303,14 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         this.log(`About to call planUpdateSubStep ${id} with `, data);
 
         try {
-            this.setState({ backendRequestInProgress: true });
+            this.setState({
+                backendRequestInProgress: true,
+                backendRequestStatusMessage: "Validating migration plan settings...",
+            });
             stepsState = await this.migration.planUpdateSubStep(id, data);
             this.handleSubStepStates([stepsState]);
         } finally {
-            this.setState({ backendRequestInProgress: false });
+            this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
 
         return stepsState;
@@ -1280,12 +1405,15 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             subStepId, `info: ${tile.caption}`);
 
         try {
-            this.setState({ backendRequestInProgress: true });
+            this.setState({
+                backendRequestInProgress: true,
+                backendRequestStatusMessage: "Saving migration plan step...",
+            });
 
             subStepState = await this.migration.planCommit(subStepId);
             this.handleSubStepState(subStepId, subStepState);
         } finally {
-            this.setState({ backendRequestInProgress: false });
+            this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
 
         return subStepState;
@@ -1422,11 +1550,18 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         if (project) {
             requisitions.executeRemote("migrationStarted", project);
         }
-        this.setState({ backendRequestInProgress: true });
+        this.setState({
+            backendRequestInProgress: true,
+            backendRequestStatusMessage: "Starting migration process...",
+        });
         try {
             const backendWorkState = await this.migration.workStart();
 
-            this.setState({ backendRequestInProgress: false, migrationInProgress: true });
+            this.setState({
+                backendRequestInProgress: false,
+                backendRequestStatusMessage: undefined,
+                migrationInProgress: true,
+            });
 
             await this.updateWorkStatus(tiles, backendWorkState);
         } catch (e) {
@@ -1434,14 +1569,21 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             const message = convertErrorToString(e);
             ui.showErrorMessage(`Failed to start: ${message}`, {});
         } finally {
-            this.setState({ backendRequestInProgress: false, migrationInProgress: false });
+            this.setState({
+                backendRequestInProgress: false,
+                backendRequestStatusMessage: undefined,
+                migrationInProgress: false,
+            });
         }
 
         await this.monitorWorkProgress();
     }
 
     private async stopMigration() {
-        this.setState({ backendRequestInProgress: true });
+        this.setState({
+            backendRequestInProgress: true,
+            backendRequestStatusMessage: "Aborting migration process...",
+        });
         try {
             await this.migration.workAbort();
         } catch (e) {
@@ -1449,7 +1591,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             const message = convertErrorToString(e);
             ui.showErrorMessage(`Failed to abort: ${message}`, {});
         } finally {
-            this.setState({ backendRequestInProgress: false });
+            this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
     }
 
@@ -1631,7 +1773,9 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             // case SubStepId.OCI_SETUP:
             //     return this.renderOciSetup();
             case SubStepId.OCI_PROFILE: {
-                return this.hasOciConfig ? this.renderOciProfiles() : this.renderOciSetup();
+                return this.hasOciConfig && !this.state.ociLoginInProgress
+                    ? this.renderOciProfiles()
+                    : this.renderOciSetup();
             }
             // case SubStepId.SOURCE_SELECTION:
             //     return this.renderSourceSelection(subStepId, formGroups);
@@ -1677,19 +1821,26 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
     }
 
     private renderOciSetup() {
-        if (this.hasOciConfig) {
+        const { ociLoginInProgress } = this.state;
+        if (this.hasOciConfig && !ociLoginInProgress) {
             return null;
         }
 
+        const profileIsBeingLoaded = this.hasOciConfig && ociLoginInProgress;
+
         return (
             <div>
-                <p><b>Access to Oracle Cloud is not configured for this computer.</b></p>
+                <p><b>{profileIsBeingLoaded
+                    ? "Oracle Cloud access is being configured."
+                    : "Access to Oracle Cloud is not configured for this computer."}</b></p>
 
                 <p>
-                    Before starting, access to Oracle Cloud needs to be prepared.
-                    Click <b>OCI Sign In</b> to securely sign in to your OCI account and automatically set up a
-                    configuration profile. If you do not have an OCI account yet, sign up for free by
-                    clicking <b>Sign Up to OCI</b>.
+                    {profileIsBeingLoaded
+                        ? "Please wait while the OCI profile is being loaded."
+                        : <>Before starting, access to Oracle Cloud needs to be prepared.
+                            Click <b>OCI Sign In</b> to securely sign in to your OCI account and automatically set up a
+                            configuration profile. If you do not have an OCI account yet, sign up for free by
+                            clicking <b>Sign Up to OCI</b>.</>}
                 </p>
 
                 {this.renderSignUpSignIn()}
@@ -2971,11 +3122,14 @@ Migration Assistant.`}
         const { deleteBucket, deleteJumpHost } = this.state;
 
         try {
-            this.setState({ backendRequestInProgress: true });
+            this.setState({
+                backendRequestInProgress: true,
+                backendRequestStatusMessage: "Deleting selected OCI resources...",
+            });
 
             await this.migration.workClean({ deleteBucket, deleteJumpHost });
         } finally {
-            this.setState({ backendRequestInProgress: false });
+            this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
     }
 
@@ -3131,7 +3285,11 @@ Migration Assistant.`}
 
     private handleOciLogin = async () => {
         try {
-            this.setState({ ociLoginInProgress: true, ociSignInInfo: undefined });
+            this.setState({
+                ociLoginInProgress: true,
+                ociSignInInfo: undefined,
+                ociSignInStatusMessage: "Signing in to OCI...",
+            });
 
             // NOTE: When setting up a new profile, after the user successfully logged in
             // it is taking up to 4 mins to get the profile propagated to the BE server
@@ -3142,32 +3300,34 @@ Migration Assistant.`}
             // - Confirm 2nd factor auth
             // For that reason we are configuring a 10 minute timeout
             await waitForPromise(this.ociSignInTimedOut, "ociSignIn", 1, 600000);
+            this.setState({ ociSignInStatusMessage: "Activating OCI profile..." });
             const promise = () => {
                 return this.processSubStep(SubStepId.OCI_PROFILE);
             };
             await waitForPromise(promise, "commitOci", 60, 10000);
+            this.setState({
+                ociNewApiKeyUploadedThisSession: true,
+                ociSignInStatusMessage: "Loading OCI profile...",
+            });
             await this.openProfile(this.profile ?? "DEFAULT", this.configFile, 10);
         } catch (e) {
             console.error(e);
             const message = convertErrorToString(e);
             ui.showErrorMessage(`Failed to setup OCI, please try again: ${message}`, {});
         } finally {
-            this.setState({ ociLoginInProgress: false });
+            this.setState({ ociLoginInProgress: false, ociSignInStatusMessage: undefined });
         }
     };
 
     private ociSignInTimedOut = (): Promise<void> => {
         return this.migration.signIn(false, (r) => {
-            const response = r as { result: { info: string; }; };
-            this.setState(() => {
-                return {
-                    ociSignInInfo: JSON.parse(response.result.info.trim()) as ISignInInfo,
-                };
-            });
+            const response = r as { result?: { info?: unknown; }; };
+            const signInInfo = parseOciSignInInfo(response.result?.info);
 
-            if (response.result.info.includes("Completed")) {
-                ui.showInformationMessage(response.result.info, {});
-            }
+            this.setState({
+                ociSignInInfo: signInInfo,
+                ociSignInStatusMessage: signInInfo.message,
+            });
 
             return Promise.resolve(true);
         });
@@ -3360,7 +3520,10 @@ Migration Assistant.`}
     };
 
     private async fetchCompartments(profile: string) {
-        this.setState({ isFetchingCompartments: true });
+        this.setState({
+            isFetchingCompartments: true,
+            ...(this.state.ociLoginInProgress ? { ociSignInStatusMessage: "Loading OCI compartments..." } : {}),
+        });
 
         let compartments: ICompartment[] = [];
         try {
@@ -3445,6 +3608,9 @@ Migration Assistant.`}
         // refresh the backend state using the new profile
         // this sometimes takes long as OCI requests may still fail with 401 until
         // profile is propagated to all OCI API servers
+        if (this.state.ociLoginInProgress) {
+            this.setState({ ociSignInStatusMessage: "Refreshing migration plan..." });
+        }
         await this.refreshFromBackend();
     };
 

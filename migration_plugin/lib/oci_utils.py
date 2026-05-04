@@ -443,9 +443,11 @@ class MySQLWorkRequest:
 class OCIUser:
     obj = None
 
-    def __init__(self, config, use_home_region: bool) -> None:
+    def __init__(self, config, use_home_region: bool, retry_strategy=None) -> None:
         self._config = config
-        self._iam_client = core.get_oci_identity_client(config=self._config)
+        self._iam_client = core.get_oci_identity_client(
+            config=self._config, retry_strategy=retry_strategy
+        )
         # certain ops (e.g. deleting API keys) need to be done from home region
         self.home_region = None
         if use_home_region:

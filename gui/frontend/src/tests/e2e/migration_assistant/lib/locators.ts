@@ -58,6 +58,7 @@ export const mainPage = {
     sourceInfoItem: ".source-info > div",
     back: `div[caption="Back"]`,
     next: `div[caption="Next"]`,
+    footerStatus: ".footer-status",
     startMigration: `div[caption="Start Migration Process"]`,
     abortMigration: `div[caption="Abort"]`,
     loadingIcon: "#backend-request-overlay .progressIndicatorHost, .target-selection .progressIndicatorHost",
