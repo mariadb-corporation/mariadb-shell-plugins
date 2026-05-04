@@ -1,6 +1,6 @@
 # MySQL Shell for VS Code Change Log
 
-## Changes in 2026.4.0+9.7.0
+## Changes in 2026.5.0+9.7.0
 
 ### Additions
 
