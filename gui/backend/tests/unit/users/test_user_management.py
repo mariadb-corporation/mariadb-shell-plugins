@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -133,6 +133,15 @@ def test_role_privileges(role, privilege, privilege_type):
     privileges = UserManagement.list_role_privileges(role)
     assert type_in_message(privilege_type, privileges) == True
     assert name_in_message(privilege, privileges) == True
+
+
+def test_single_server_role_privileges():
+    privileges = UserManagement.list_role_privileges("Single Server User")
+
+    assert name_in_message(
+        "Access to selected gui.users functions", privileges) == True
+    assert name_in_message(
+        "Limited access for Single Server Mode", privileges) == True
 
 
 @pytest.mark.parametrize("user, role, privilege", test_user_privileges_data)

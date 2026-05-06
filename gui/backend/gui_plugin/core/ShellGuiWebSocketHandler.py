@@ -56,6 +56,15 @@ from gui_plugin.core.lib.DataClassUtils import convert_value, is_dataclass_conve
 from mysqlsh.plugin_manager import registrar
 
 
+def command_matches_privileges(cmd, privileges):
+    for row in privileges:
+        p = re.compile(row['access_pattern'])
+        if p.fullmatch(cmd):
+            return True
+
+    return False
+
+
 class ShellGuiWebSocketHandler(HTTPWebSocketsHandler):
     _db = None
     session_uuid = ""
@@ -601,7 +610,6 @@ class ShellGuiWebSocketHandler(HTTPWebSocketsHandler):
                     'No command given. Please provide the command.')
 
             # Check if user is allowed to execute this command
-            allowed = False
             res = self.db.execute(
                 '''SELECT p.name, p.access_pattern
                 FROM privilege p
@@ -611,18 +619,9 @@ class ShellGuiWebSocketHandler(HTTPWebSocketsHandler):
                         ON r_p.role_id = u_r.role_id
                 WHERE u_r.user_id = ? AND p.privilege_type_id = 1''',
                 (self.session_user_id,)).fetch_all()
-            for row in res:
-                p = re.compile(row['access_pattern'])
-                m = p.match(cmd)
-                if not m:
-                    raise Exception(f'This user account has no privileges to '
-                                    f'execute the command {cmd}')
-                allowed = True
-                break
-
-            if not allowed:
-                raise Exception(f'This user does not have the necessary '
-                                f'privileges to execute the command {cmd}.')
+            if not command_matches_privileges(cmd, res):
+                raise Exception(f'This user account has no privileges to '
+                                f'execute the command {cmd}')
 
             # Argument need to be passed in a dict using the argument names as
             # the keys
