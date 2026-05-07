@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -147,13 +147,13 @@ def create_test_schema():
     command = executable if executable.endswith(
         "mysqlsh") or executable.endswith("mysqlsh.exe") else "mysqlsh"
 
-    subprocess.run([command, default_server_connection_string, '-f',
+    subprocess.run([command, "--disable-builtin-plugins", default_server_connection_string, '-f',
                     f'{sql_script_create_path}'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     yield
 
     sql_script_drop_path = os.path.join(path, "data", "drop_test_schema.sql")
-    subprocess.run([command, default_server_connection_string, '-f',
+    subprocess.run([command, "--disable-builtin-plugins", default_server_connection_string, '-f',
                     f'{sql_script_drop_path}'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 

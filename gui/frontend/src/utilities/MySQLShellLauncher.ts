@@ -390,14 +390,19 @@ export class MySQLShellLauncher {
                 this.launchDetails.port = port;
 
                 const secureString = secure ? "secure={}, " : "";
-                const parameters = [
-                    "--no-defaults",
+                // --no-defaults takes precedence
+                const parameters = ["--no-defaults"]
+                // If the extension is running the development mode, the development plugins should be used.
+                if (inDevelopment) {
+                    parameters.push('--disable-builtin-plugins')
+                }
+                parameters.push(
                     "--loose-execution-context=.vsc",
                     "--log-level=" + logLevel,
                     "--py",
                     "-e",
                     `gui.start.web_server(port=${this.launchDetails.port}, ${secureString}read_token_on_stdin=True)`,
-                ];
+                );
 
                 const onOutput = (output: string) => {
                     // If the MySQL Shell web server is running and indicates Single user mode, connect to it

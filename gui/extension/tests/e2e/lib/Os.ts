@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +42,7 @@ export class Os {
 
     /**
      * Verifies if the current os is Linux
-     * 
+     *
      * @returns A promise resolving with true if the current os is linux, false otherwise
      */
     public static isLinux = (): boolean => {
@@ -51,7 +51,7 @@ export class Os {
 
     /**
      * Verifies if the current os is macos
-     * 
+     *
      * @returns A promise resolving with true if the current os is macos, false otherwise
      */
     public static isMacOs = (): boolean => {
@@ -60,7 +60,7 @@ export class Os {
 
     /**
      * Verifies if the current os is windows
-     * 
+     *
      * @returns A promise resolving with true if the current os is windows, false otherwise
      */
     public static isWindows = (): boolean => {
@@ -69,7 +69,7 @@ export class Os {
 
     /**
      * Writes the router configuration file with the desired configurations
-     * 
+     *
      * @param options The options
      * @returns A promise resolving when the configuration file is set
      */
@@ -96,7 +96,7 @@ export class Os {
 
     /**
      * Gets the desired value of the router configuration file
-     * 
+     *
      * @param option The configuration option
      * @returns A promise resolving with the configuration value
      */
@@ -117,11 +117,11 @@ export class Os {
 
     /**
      * Deletes all credentials for database access using shell
-     * 
+     *
      * @returns A promise resolving when the credentials are deleted
      */
     public static deleteCredentials = async (): Promise<void> => {
-        const params = ["--js", "-e", "shell.deleteAllCredentials()"];
+        const params = ["--disable-builtin-plugins", "--js", "-e", "shell.deleteAllCredentials()"];
         const extDir = join(process.env.EXTENSIONS_DIR!, `ext-${String(process.env.TEST_SUITE)}`);
         const items = await fs.readdir(extDir);
         let extDirName = "";
@@ -137,7 +137,7 @@ export class Os {
 
     /**
      * Appends a value to the extension logs folder
-     * 
+     *
      * @param value The value to append
      */
     public static appendToExtensionLog = async (value: string): Promise<void> => {
@@ -166,7 +166,7 @@ export class Os {
 
     /**
      * Gets the location of the router configuration file
-     * 
+     *
      * @returns A promise resolving with the location of the router configuration file
      */
     public static getRouterConfigFile = async (): Promise<string> => {
@@ -179,7 +179,7 @@ export class Os {
 
     /**
      * Gets the location of the router log file
-     * 
+     *
      * @returns A promise resolving with the location of the router log file
      */
     public static getRouterLogFile = async (): Promise<string> => {
@@ -191,7 +191,7 @@ export class Os {
 
     /**
      * Verifies if the router log file exists
-     * 
+     *
      * @returns A condition resolving to true if the file exists, false otherwise
      */
     public static untilRouterLogFileExists = (): Condition<boolean> => {
@@ -202,7 +202,7 @@ export class Os {
 
     /**
      * Gets the location of the mysqlsh log file
-     * 
+     *
      * @returns A promise resolving with the location of the mysqlsh log file
      */
     public static getMysqlshLog = (): string => {
@@ -215,7 +215,7 @@ export class Os {
 
     /**
      * Selects and deletes the current line text
-     * 
+     *
      * @param line The line to delete
      */
     public static keyboardDeleteLine = async (line: string): Promise<void> => {
@@ -230,7 +230,7 @@ export class Os {
 
     /**
      * Presses CTRL+A
-     * 
+     *
      * @param el The element to perform the action on
      * @param useVscode Use vscode to perform the operation as a command
      * @returns A promise resolving when the command is executed
@@ -258,7 +258,7 @@ export class Os {
 
     /**
      * Presses CTRL+C
-     * 
+     *
      * @param el The element to perform the action on
      * @returns A promise resolving when the command is executed
      */
@@ -276,7 +276,7 @@ export class Os {
 
     /**
      * Presses CTRL+V
-     * 
+     *
      * @param el The element to perform the action on
      * @returns A promise resolving when the command is executed
      */
@@ -298,7 +298,7 @@ export class Os {
 
     /**
      * Presses CTRL+X
-     * 
+     *
      * @param el The element to perform the action on
      * @returns A promise resolving when the command is executed
      */
@@ -320,7 +320,7 @@ export class Os {
 
     /**
      * Right clicks on a tree element and select the desired item menu using the keyboard
-     * 
+     *
      * @param item The element to perform the action on
      * @param map The map of the context menu elements
      * @returns A promise resolving when the command is executed
@@ -336,7 +336,7 @@ export class Os {
 
     /**
      * Writes the mysqlsh logs into the console
-     * 
+     *
      * @returns A promise resolving when the logs are written
      */
     public static writeMySQLshLogs = async (): Promise<void> => {
@@ -346,7 +346,7 @@ export class Os {
 
     /**
      * Finds a text on the mysqlsh logs
-     * 
+     *
      * @param textToFind The text
      * @returns A promise resolving with true if the text is found, false otherwise
      */
@@ -369,7 +369,7 @@ export class Os {
      * Gets the clipboard content and applies the following rules:
      * - Removes all line breaks (\n characters)
      * - Removes hours, minutes and seconds (useful for clipboard content coming from result grids)
-     * 
+     *
      * @returns A promise resolving with the clipboard content as a string or array of string, if there are line breaks
      */
     public static getClipboardContent = (): string | string[] => {
@@ -399,7 +399,7 @@ export class Os {
 
     /**
      * Verifies if the router is active by searching for a specific string on the log file
-     * 
+     *
      * @returns A promise resolving with true if the router is active, false otherwise
      */
     public static untilRouterIsActive = (): Condition<boolean> => {
@@ -415,7 +415,7 @@ export class Os {
 
     /**
      * Verifies if the router is inactive by searching for a specific string on the log file
-     * 
+     *
      * @returns A promise resolving with true if the router is inactive, false otherwise
      */
     public static untilRouterIsInactive = (): Condition<boolean> => {
@@ -435,7 +435,7 @@ export class Os {
 
     /**
      * Gets the MySQL Shell for VS Code log file
-     * 
+     *
      * @returns A promise resolving with the location of the log file
      */
     public static getExtensionLogFile = async (): Promise<string> => {

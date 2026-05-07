@@ -236,8 +236,13 @@ class CheckVersionTask:
 
         else:
             try:
+                args = [self.executable]
+                if self.name == "MySQL Shell":
+                    args.append("--disable-builtin-plugins")
+                args.append("--version")
+
                 self.version = (
-                    subprocess.check_output([self.executable, "--version"])
+                    subprocess.check_output(args)
                     .decode("utf-8")
                     .strip()
                 )
@@ -312,7 +317,7 @@ class ShellTask(BaseTask):
 
         out = ""
         try:
-            args = [self.mysqlsh_executable, mode]
+            args = [self.mysqlsh_executable, "--disable-builtin-plugins", mode]
             if conn_str:
                 args.append("--quiet-start=2")
                 args.append(conn_str)
@@ -361,7 +366,7 @@ class ShellTask(BaseTask):
 
         out = ""
         try:
-            args = [self.mysqlsh_executable]
+            args = [self.mysqlsh_executable, "--disable-builtin-plugins"]
             for command in commands:
                 args.append(command)
             out = (
@@ -403,6 +408,7 @@ class AddUserToBE(ShellTask):
                     WORKING_DIR, f'port_{server.port}')
                 subprocess.Popen([
                     self.mysqlsh_executable,
+                    "--disable-builtin-plugins",
                     "--py",
                     "-e",
                     "gui.users.create_user('client', 'client', 'Administrator')",
@@ -796,7 +802,7 @@ class BEServer:
             environment[BACKEND_DB_LOGGING_ENV_VAR] = "1"
             timeout = time.time() + 30   # 30 seconds from now
 
-            shell_args = [self.mysqlsh_executable, "--py", "-e"]
+            shell_args = [self.mysqlsh_executable, "--disable-builtin-plugins", "--py", "-e"]
 
             if self.multi_user:
                 shell_args.append(f"gui.start.web_server(port={self.port})")

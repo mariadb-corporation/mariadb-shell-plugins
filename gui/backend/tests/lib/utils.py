@@ -249,7 +249,7 @@ def start_server(request, server_token=None):
     if 'executable' in dir(mysqlsh):
         executable = mysqlsh.executable
 
-    command_args = [executable, '--py', '-e', command_script]
+    command_args = [executable, '--disable-builtin-plugins', '--py', '-e', command_script]
     logger.debug(command_args)
     p = None
     try:
