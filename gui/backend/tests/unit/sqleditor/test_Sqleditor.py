@@ -57,12 +57,15 @@ def params():
 
     @backend_callback(1)
     def open_connection_cb(msg_type, msg, request_id, values):
-        if values['request_state']['type'] != "PENDING"\
-                or values['request_state']['msg'] != "Connection was successfully opened.":
-            raise Exception('Failed opening connection.')
+        if (
+            values["request_state"]["type"] != "PENDING"
+            or values["request_state"]["msg"] != "Connection was successfully opened."
+        ):
+            raise Exception("Failed opening connection.")
 
     parameters._web_session.register_callback(
-        open_connection_cb.request_id, open_connection_cb)
+        open_connection_cb.request_id, open_connection_cb
+    )
 
     _thread = threading.current_thread()
 
@@ -72,24 +75,30 @@ def params():
     setattr(_thread, "get_context", lambda: _context)
 
     result = sql_editor.start_session()
-    parameters._module_session_id = result['module_session_id']
+    parameters._module_session_id = result["module_session_id"]
     parameters._module_session = parameters._web_session.module_sessions[
-        parameters._module_session_id]
-    connection_options = config.Config.get_instance(
-    ).database_connections[0]['options'].copy()
-    del connection_options['portStr']
+        parameters._module_session_id
+    ]
+    connection_options = (
+        config.Config.get_instance().database_connections[0]["options"].copy()
+    )
+    del connection_options["portStr"]
 
-    result = db_connections.add_db_connection(1, {
-        "db_type": "MySQL",
-        "caption": "This is a test MySQL database",
-        "description": "This is a test MySQL database description",
-        "options": connection_options
-    }, '', parameters._web_session.db)
+    result = db_connections.add_db_connection(
+        1,
+        {
+            "db_type": "MySQL",
+            "caption": "This is a test MySQL database",
+            "description": "This is a test MySQL database description",
+            "options": connection_options,
+        },
+        "",
+        parameters._web_session.db,
+    )
 
     parameters._web_session.request_id = open_connection_cb.request_id
     parameters._db_connection_id = result[0]
-    sql_editor.open_connection(
-        parameters._db_connection_id, parameters._module_session)
+    sql_editor.open_connection(parameters._db_connection_id, parameters._module_session)
 
     open_connection_cb.join_and_validate()
 
@@ -108,16 +117,24 @@ class Test_sql_editor:
         original_pattern = mysqlsh.globals.shell.options["history.sql.ignorePattern"]
 
         try:
-            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = "*SECRET*:*PASSWORD*"
+            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = (
+                "*SECRET*:*PASSWORD*"
+            )
 
             assert sql_editor_module._should_ignore_history_entry("select 'secret';")
-            assert sql_editor_module._should_ignore_history_entry("set password = 'secret';")
+            assert sql_editor_module._should_ignore_history_entry(
+                "set password = 'secret';"
+            )
 
             mysqlsh.globals.shell.options["history.sql.ignorePattern"] = ""
 
-            assert not sql_editor_module._should_ignore_history_entry("select 'secret';")
+            assert not sql_editor_module._should_ignore_history_entry(
+                "select 'secret';"
+            )
         finally:
-            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = original_pattern
+            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = (
+                original_pattern
+            )
 
     def test_add_execution_history_entry_ignores_uppercase_sql_language_id(self):
         original_pattern = mysqlsh.globals.shell.options["history.sql.ignorePattern"]
@@ -125,22 +142,29 @@ class Test_sql_editor:
         try:
             mysqlsh.globals.shell.options["history.sql.ignorePattern"] = "*SECRET*"
 
-            assert sql_editor.add_execution_history_entry(
-                1, "select 'secret';", "SQL") == 0
+            assert (
+                sql_editor.add_execution_history_entry(1, "select 'secret';", "SQL")
+                == 0
+            )
         finally:
-            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = original_pattern
+            mysqlsh.globals.shell.options["history.sql.ignorePattern"] = (
+                original_pattern
+            )
 
-    @pytest.mark.parametrize("pattern, code, matches", [
-        ("*ble*", "select 'aaBLEaa';", True),
-        ("*bla*", "select 'bgi';", False),
-        ("?", "a", True),
-        ("?", "aa", False),
-        ("?*", "aa", True),
-        ("a?b?c*", "axbxcdddeefg;", True),
-        ("a?b?c*", "abxc;", False),
-        (r"\*", "*", True),
-        (r"\?", "?", True),
-    ])
+    @pytest.mark.parametrize(
+        "pattern, code, matches",
+        [
+            ("*ble*", "select 'aaBLEaa';", True),
+            ("*bla*", "select 'bgi';", False),
+            ("?", "a", True),
+            ("?", "aa", False),
+            ("?*", "aa", True),
+            ("a?b?c*", "axbxcdddeefg;", True),
+            ("a?b?c*", "abxc;", False),
+            (r"\*", "*", True),
+            (r"\?", "?", True),
+        ],
+    )
     def test_history_ignore_glob_matches_shell_semantics(self, pattern, code, matches):
         assert sql_editor_module._match_history_glob(pattern, code) == matches
 
@@ -154,17 +178,19 @@ class Test_sql_editor:
             logger.debug("callback_schemas")
 
         params._web_session.register_callback(
-            callback_request1.request_id, callback_request1)
+            callback_request1.request_id, callback_request1
+        )
         params._web_session.register_callback(
-            callback_schemas.request_id, callback_schemas)
+            callback_schemas.request_id, callback_schemas
+        )
 
         params._web_session.request_id = callback_schemas.request_id
-        sql_editor.execute(sql="SELECT SLEEP(3)",
-                          session=params._module_session._db_user_session)
+        sql_editor.execute(
+            sql="SELECT SLEEP(3)", session=params._module_session._db_user_session
+        )
         callback_schemas.join_and_validate()
         params._web_session.request_id = callback_request1.request_id
-        sql_editor.get_current_schema(
-            session=params._module_session._db_user_session)
+        sql_editor.get_current_schema(session=params._module_session._db_user_session)
         callback_request1.join_and_validate()
 
         params._web_session.request_id = None
@@ -175,21 +201,27 @@ class Test_sql_editor:
 
         with pytest.raises(MSGException) as e:
             sql_editor.execute(
-                session=params._module_session._db_user_session, sql="SELECT SLEEP(1)")
-        assert e.value.args[0] == "Error[MSG-1012]: Session required for this operation."
+                session=params._module_session._db_user_session, sql="SELECT SLEEP(1)"
+            )
+        assert (
+            e.value.args[0] == "Error[MSG-1012]: Session required for this operation."
+        )
 
         @backend_callback(1)
         def open_connection_cb(msg_type, msg, request_id, values):
-            if values['request_state']['type'] != "PENDING"\
-                    or values['request_state']['msg'] != "Connection was successfully opened.":
-                raise Exception('Failed opening connection.')
+            if (
+                values["request_state"]["type"] != "PENDING"
+                or values["request_state"]["msg"]
+                != "Connection was successfully opened."
+            ):
+                raise Exception("Failed opening connection.")
 
         params._web_session.register_callback(
-            open_connection_cb.request_id, open_connection_cb)
+            open_connection_cb.request_id, open_connection_cb
+        )
 
         params._web_session.request_id = open_connection_cb.request_id
-        sql_editor.open_connection(
-            params._db_connection_id, params._module_session)
+        sql_editor.open_connection(params._db_connection_id, params._module_session)
 
         open_connection_cb.join_and_validate()
         params._web_session.request_id = None
@@ -197,16 +229,19 @@ class Test_sql_editor:
     def test_execute_query_with_params(self, params):
         @backend_callback_with_pending()
         def callback_execute(msg_type, msg, request_id=None, values=None):
-            assert 'columns' in values
-            assert 'rows' in values
+            assert "columns" in values
+            assert "rows" in values
 
         params._web_session.register_callback(
-            callback_execute.request_id, callback_execute)
+            callback_execute.request_id, callback_execute
+        )
 
         params._web_session.request_id = callback_execute.request_id
         result = sql_editor.execute(
             session=params._module_session._db_user_session,
-            sql="SHOW DATABASES LIKE ?", params=['mysql'])
+            sql="SHOW DATABASES LIKE ?",
+            params=["mysql"],
+        )
 
         callback_execute.join_and_validate()
         params._web_session.request_id = None

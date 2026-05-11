@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,6 @@ import mysqlsh
 import string
 import random
 
-
 ProgrammingLanguage: TypeAlias = Literal["typescript", "python", "swift"]
 
 
@@ -44,7 +43,7 @@ SUPPORTED_LANGUAGES = {
 }
 
 
-SDK_PYTHON_DATACLASS_TEMPLATE = '''@dataclass(init=False, repr=True)
+SDK_PYTHON_DATACLASS_TEMPLATE = """@dataclass(init=False, repr=True)
 class I{name}({mixins}MrsDocument[I{name}Data]
 ):
 
@@ -67,7 +66,7 @@ class I{name}({mixins}MrsDocument[I{name}Data]
         return {primary_key_name}
 
 
-'''
+"""
 
 
 SDK_SWIFT_DATACLASS_TEMPLATE = """public class I{name}: {mixins} {{
@@ -106,7 +105,9 @@ class LanguageNotSupportedError(Exception):
 
     def __init__(self, sdk_language: Optional[ProgrammingLanguage]):
         self._sdk_language = "Language" if sdk_language is None else sdk_language
-        super().__init__(f"{self._sdk_language} not supported. The MRS SDK is only available for {", ".join(self.supported_languages[:-1])} and {self.supported_languages[-1]}.")
+        super().__init__(
+            f"{self._sdk_language} not supported. The MRS SDK is only available for {", ".join(self.supported_languages[:-1])} and {self.supported_languages[-1]}."
+        )
 
 
 def get_base_classes(
@@ -129,20 +130,32 @@ def get_base_classes(
         code = code.replace("export ", "")
         # Remove the part that does not belong in the runtime SDK
         delimiter = language_comment_delimiter(sdk_language)
-        code = re.sub(f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- Begin.*?" +
-                      f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- End\n",
-                      "", code, flags=re.DOTALL | re.MULTILINE)
+        code = re.sub(
+            f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- Begin.*?"
+            + f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- End\n",
+            "",
+            code,
+            flags=re.DOTALL | re.MULTILINE,
+        )
         code = remove_js_whitespace_and_comments(code)
 
     return code
 
 
-def generate_service_sdk(service, session, sdk_language: ProgrammingLanguage = "typescript", prepare_for_runtime=False, service_url=None):
+def generate_service_sdk(
+    service,
+    session,
+    sdk_language: ProgrammingLanguage = "typescript",
+    prepare_for_runtime=False,
+    service_url=None,
+):
     # If no services is given, return only the MRS runtime management TypeScript Code
     # that allows the user to manage specific MRS runtime settings
     if service is None:
         if prepare_for_runtime is True and sdk_language == "typescript":
-            return remove_js_whitespace_and_comments(get_mrs_runtime_management_code(session))
+            return remove_js_whitespace_and_comments(
+                get_mrs_runtime_management_code(session)
+            )
         return ""
 
     if sdk_language == "typescript":
@@ -155,7 +168,9 @@ def generate_service_sdk(service, session, sdk_language: ProgrammingLanguage = "
         raise LanguageNotSupportedError(sdk_language)
 
     path = os.path.abspath(__file__)
-    template = Path(os.path.dirname(path), "..", "sdk", sdk_language, file_name).read_text()
+    template = Path(
+        os.path.dirname(path), "..", "sdk", sdk_language, file_name
+    ).read_text()
 
     def binary_formatter(base64str: str):
         if base64str.startswith("type254:"):
@@ -189,33 +204,42 @@ def generate_service_sdk(service, session, sdk_language: ProgrammingLanguage = "
     )
 
     code = substitute_imports_in_template(
-        template=code.get("template"), enabled_crud_ops=code.get("enabled_crud_ops"),
-        required_datatypes=code.get("required_datatypes"), sdk_language=sdk_language,
-        requires_auth=code.get("requires_auth", False)
-        )
+        template=code.get("template"),
+        enabled_crud_ops=code.get("enabled_crud_ops"),
+        required_datatypes=code.get("required_datatypes"),
+        sdk_language=sdk_language,
+        requires_auth=code.get("requires_auth", False),
+    )
 
     template = code.get("template")
     delimiter = language_comment_delimiter(sdk_language)
 
     if prepare_for_runtime is True:
         # Remove imports as everything will be in a single file
-        template = re.sub('import.*?;', '', template,
-                          flags=re.DOTALL | re.MULTILINE)
+        template = re.sub("import.*?;", "", template, flags=re.DOTALL | re.MULTILINE)
         # Remove exports as everything will be in a single file
         template = template.replace("export ", "")
         # Remove the part that does not belong in the runtime SDK
-        template = re.sub(f"^[^\\S\r\n]*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- Begin.*?" +
-                          f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- End\n",
-                          "", template, flags=re.DOTALL | re.MULTILINE)
+        template = re.sub(
+            f"^[^\\S\r\n]*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- Begin.*?"
+            + f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- End\n",
+            "",
+            template,
+            flags=re.DOTALL | re.MULTILINE,
+        )
         # Add MRS management code
         template += get_mrs_runtime_management_code(session)
 
         template = remove_js_whitespace_and_comments(template)
     else:
         # Remove the part that does not belong in the generated SDK
-        template = re.sub(f"^[^\\S\r\n]*?{delimiter} --- MySQL Shell for VS Code Extension Only --- Begin.*?" +
-                          f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Only --- End\n",
-                          "", template, flags=re.DOTALL | re.MULTILINE)
+        template = re.sub(
+            f"^[^\\S\r\n]*?{delimiter} --- MySQL Shell for VS Code Extension Only --- Begin.*?"
+            + f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Only --- End\n",
+            "",
+            template,
+            flags=re.DOTALL | re.MULTILINE,
+        )
 
     return template
 
@@ -307,7 +331,14 @@ def substitute_imports_in_template(
     }
 
 
-def substitute_service_in_template(service, template, session, service_url, service_data, sdk_language: ProgrammingLanguage = "typescript"):
+def substitute_service_in_template(
+    service,
+    template,
+    session,
+    service_url,
+    service_data,
+    sdk_language: ProgrammingLanguage = "typescript",
+):
     # Currently, we only generate the SDK for a single service, but this might change in the future.
     existing_identifiers: list[str] = []
 
@@ -334,7 +365,7 @@ def substitute_service_in_template(service, template, session, service_url, serv
             f"{delimiter} --- serviceAuthenticateEnd\n"
         ),
         string=template,
-        flags=re.DOTALL | re.MULTILINE
+        flags=re.DOTALL | re.MULTILINE,
     )
     for auth_loop in auth_loops:
         if requires_auth:
@@ -362,7 +393,12 @@ def substitute_service_in_template(service, template, session, service_url, serv
 
     template = Template(template).substitute(**mapping)
 
-    return {"template": template, "enabled_crud_ops": code.get("enabled_crud_ops"), "required_datatypes": code.get("required_datatypes"), "requires_auth": requires_auth}
+    return {
+        "template": template,
+        "enabled_crud_ops": code.get("enabled_crud_ops"),
+        "required_datatypes": code.get("required_datatypes"),
+        "requires_auth": requires_auth,
+    }
 
 
 def substitute_schemas_in_template(
@@ -377,7 +413,11 @@ def substitute_schemas_in_template(
     )
 
     # BUG#37926204 Get database schemas if they have not been retrieved beforehand
-    db_schemas = lib.schemas.query_schemas(session, service_id=service.get("id")) if schemas is None else schemas
+    db_schemas = (
+        lib.schemas.query_schemas(session, service_id=service.get("id"))
+        if schemas is None
+        else schemas
+    )
 
     enabled_crud_ops = set()
     required_datatypes = set()
@@ -409,7 +449,7 @@ def substitute_schemas_in_template(
                     sdk_language=sdk_language,
                     session=session,
                     service_url=service_url,
-                    db_objs=None if schemas is None else schema.get("db_objects", [])
+                    db_objs=None if schemas is None else schema.get("db_objects", []),
                 )
 
                 schema_template_with_obj_filled = code.get("template")
@@ -460,9 +500,9 @@ def get_top_level_keywords(
         "service": {"authenticate", "deauthenticate", "getAuthApps", "getMetadata"},
     }
     if sdk_language == "python":
-        return sorted([
-            lib.core.convert_to_snake_case(keyword) for keyword in keywords[resource]
-        ])
+        return sorted(
+            [lib.core.convert_to_snake_case(keyword) for keyword in keywords[resource]]
+        )
     return sorted(keywords[resource])
 
 
@@ -491,22 +531,34 @@ def generate_identifier(
     sdk_language: ProgrammingLanguage = "typescript",
     # mutable objects for default values are re-used on subsequent function calls, let's leverage that
     existing_identifiers: list[str] = [],
-    allowed_special_characters: Optional[set[str]] = None
+    allowed_special_characters: Optional[set[str]] = None,
 ) -> str:
     if primitive == "class":
-        identifier = lib.core.convert_path_to_pascal_case(value, allowed_special_characters)
+        identifier = lib.core.convert_path_to_pascal_case(
+            value, allowed_special_characters
+        )
     elif sdk_language == "typescript":
         # variable and property names should be lowerCamelCase
-        identifier = lib.core.convert_path_to_camel_case(path=value, allowed_special_characters=allowed_special_characters, lower=True)
+        identifier = lib.core.convert_path_to_camel_case(
+            path=value,
+            allowed_special_characters=allowed_special_characters,
+            lower=True,
+        )
     elif sdk_language == "python":
-        identifier = lib.core.convert_to_snake_case(lib.core.convert_path_to_camel_case(value, allowed_special_characters))
+        identifier = lib.core.convert_to_snake_case(
+            lib.core.convert_path_to_camel_case(value, allowed_special_characters)
+        )
     elif sdk_language == "swift":
-        identifier = lib.core.convert_path_to_camel_case(value, allowed_special_characters)
+        identifier = lib.core.convert_path_to_camel_case(
+            value, allowed_special_characters
+        )
     else:
         identifier = value
     # If the stripped identifier would result in an empty one, create a random one
     if len(identifier) == 0:
-        identifier = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        identifier = "".join(
+            random.choices(string.ascii_uppercase + string.digits, k=6)
+        )
     identifier = f"_{identifier}" if identifier[0].isdigit() else identifier
     total_duplicates = existing_identifiers.count(identifier)
     # we want to track the identifier with a potential prefix, but without the suffix
@@ -529,7 +581,11 @@ def substitute_objects_in_template(
     )
 
     # BUG#37926204 Get database objects if they have not been retrieved beforehand
-    db_objects = lib.db_objects.query_db_objects(session, schema_id=schema.get("id")) if db_objs is None else db_objs
+    db_objects = (
+        lib.db_objects.query_db_objects(session, schema_id=schema.get("id"))
+        if db_objs is None
+        else db_objs
+    )
 
     crud_ops = [
         "Create",
@@ -541,14 +597,16 @@ def substitute_objects_in_template(
         "ReadUnique",
         "FunctionCall",
         "FunctionTaskRun",
-        "ProcedureTaskRun"
+        "ProcedureTaskRun",
     ]
 
     enabled_crud_ops = set()
     required_datatypes = set()
     requires_auth = False
 
-    schema_request_path = f"{service.get("url_context_root")}{schema.get("request_path")}"
+    schema_request_path = (
+        f"{service.get("url_context_root")}{schema.get("request_path")}"
+    )
     schema_class_name = generate_identifier(
         value=schema_request_path,
         primitive="class",
@@ -558,7 +616,9 @@ def substitute_objects_in_template(
     for loop in object_loops:
         # for each object loop, we need to restart tracking the identifiers
         # we should track reserved schema level keywords as existing identifiers
-        existing_identifiers = get_top_level_keywords(resource="schema", sdk_language=sdk_language)
+        existing_identifiers = get_top_level_keywords(
+            resource="schema", sdk_language=sdk_language
+        )
 
         filled_temp = ""
         for db_obj in db_objects:
@@ -586,8 +646,11 @@ def substitute_objects_in_template(
             obj_fixed_point_field_list = []
 
             # BUG#37926204 Get SDK objects if they have not been retrieved beforehand
-            objects = lib.db_objects.get_objects(
-                session, db_object_id=db_obj.get("id")) if db_obj.get("objects") is None else db_obj.get("objects")
+            objects = (
+                lib.db_objects.get_objects(session, db_object_id=db_obj.get("id"))
+                if db_obj.get("objects") is None
+                else db_obj.get("objects")
+            )
 
             # Loop over all objects and build interfaces
             for obj in objects:
@@ -595,13 +658,20 @@ def substitute_objects_in_template(
                     requires_auth |= db_obj.get("requires_auth") == 1
 
                 # BUG#37926204 Get object fields if they have not been retrieved beforehand
-                fields = lib.db_objects.get_object_fields_with_references(
-                    session=session, object_id=obj.get("id")) if obj.get("fields") is None else obj.get("fields")
+                fields = (
+                    lib.db_objects.get_object_fields_with_references(
+                        session=session, object_id=obj.get("id")
+                    )
+                    if obj.get("fields") is None
+                    else obj.get("fields")
+                )
 
                 for field in fields:
                     if field.get("lev") == 1:
                         # Build Primary Key lists (only if "UPDATE" is allowed)
-                        if field_is_pk(field) and "UPDATE" in db_obj.get("crud_operations", []):
+                        if field_is_pk(field) and "UPDATE" in db_obj.get(
+                            "crud_operations", []
+                        ):
                             obj_pk_list.append(field.get("name"))
                             obj_quoted_pk_list.append(f'"{field.get("name")}"')
                         # Build Unique list
@@ -620,7 +690,9 @@ def substitute_objects_in_template(
                             if db_not_null is False and sdk_language == "typescript":
                                 required_datatypes.add("MaybeNull")
 
-                            client_datatype = get_enhanced_datatype_mapping(db_datatype, sdk_language)
+                            client_datatype = get_enhanced_datatype_mapping(
+                                db_datatype, sdk_language
+                            )
 
                             if not datatype_is_primitive(client_datatype, sdk_language):
                                 required_datatypes.add(client_datatype)
@@ -636,13 +708,18 @@ def substitute_objects_in_template(
 
                                 if sdk_language == "typescript":
                                     if client_datatype == "BigInteger":
-                                        obj_bigint_field_list.append(f'"{field.get("name")}"')
+                                        obj_bigint_field_list.append(
+                                            f'"{field.get("name")}"'
+                                        )
                                     elif client_datatype == "Decimal":
-                                        obj_fixed_point_field_list.append(f'"{field.get("name")}"')
+                                        obj_fixed_point_field_list.append(
+                                            f'"{field.get("name")}"'
+                                        )
 
                 # Get sdk_language specific options
                 sdk_lang_options = get_mrs_object_sdk_language_options(
-                    obj.get("sdk_options"), sdk_language)
+                    obj.get("sdk_options"), sdk_language
+                )
 
                 # Either take the custom interface_name or the default class_name
                 type_alias_name = sdk_lang_options.get(
@@ -658,11 +735,22 @@ def substitute_objects_in_template(
                     # If db_objects results from calling lib.db_objects.get_objects, the value of the "crud_operations"
                     # key is already a list, if it results from calling lib.services.get_service_sdk_data, the value
                     # is a comma-separated string (BUG#37926204)
-                    db_object_crud_ops = db_object_crud_ops if isinstance(db_object_crud_ops, list) else db_object_crud_ops.split(",")
+                    db_object_crud_ops = (
+                        db_object_crud_ops
+                        if isinstance(db_object_crud_ops, list)
+                        else db_object_crud_ops.split(",")
+                    )
                     # If this DB Object has unique columns (PK or UNIQUE) allow ReadUnique
-                    if len(obj_unique_list) > 0 and "READUNIQUE" not in db_object_crud_ops:
+                    if (
+                        len(obj_unique_list) > 0
+                        and "READUNIQUE" not in db_object_crud_ops
+                    ):
                         db_object_crud_ops.append("READUNIQUE")
-                    if len(obj_unique_list) > 0 and "DELETE" in db_object_crud_ops and "DELETEUNIQUE" not in db_object_crud_ops:
+                    if (
+                        len(obj_unique_list) > 0
+                        and "DELETE" in db_object_crud_ops
+                        and "DELETEUNIQUE" not in db_object_crud_ops
+                    ):
                         db_object_crud_ops.append("DELETEUNIQUE")
                 # If the database object is a FUNCTION a PROCEDURE or a SCRIPT, CRUD operations should not be enabled
                 elif object_is_routine(db_obj, of_type={"FUNCTION", "SCRIPT"}):
@@ -676,7 +764,9 @@ def substitute_objects_in_template(
                     if sdk_language == "typescript":
                         required_datatypes.add("IMrsProcedureResult")
                     elif sdk_language == "python":
-                        required_datatypes.update({"MrsProcedureResultSet", "IMrsProcedureResponse"})
+                        required_datatypes.update(
+                            {"MrsProcedureResultSet", "IMrsProcedureResponse"}
+                        )
                     options = db_obj.get("options")
                     if options is not None and options.get("mysqlTask") is not None:
                         db_object_crud_ops = ["PROCEDURETASKRUN"]
@@ -696,7 +786,9 @@ def substitute_objects_in_template(
                 required_datatypes.update(required_obj_datatypes)
 
                 # Do not add obj_interfaces for FUNCTION results
-                if obj.get("kind") == "PARAMETERS" or not object_is_routine(db_obj, of_type={"FUNCTION"}):
+                if obj.get("kind") == "PARAMETERS" or not object_is_routine(
+                    db_obj, of_type={"FUNCTION"}
+                ):
                     obj_interfaces += obj_interfaces_def
 
                 if obj.get("kind") == "PARAMETERS" and object_is_routine(db_obj):
@@ -727,7 +819,8 @@ def substitute_objects_in_template(
                         if db_column_info:
                             obj_function_result_datatype = get_datatype_mapping(
                                 db_datatype=db_column_info.get("datatype"),
-                                sdk_language=sdk_language)
+                                sdk_language=sdk_language,
+                            )
 
             # If there are no typed result sets for a Procedure, all the result sets will be generic instances of JsonObject
             obj_procedure_result_set_datatype = None
@@ -760,14 +853,16 @@ def substitute_objects_in_template(
                         )
                         + "}"
                     )
-                obj_interfaces += generate_union(obj_meta_interface, interface_list, sdk_language)
+                obj_interfaces += generate_union(
+                    obj_meta_interface, interface_list, sdk_language
+                )
 
             # Define the mappings
             mapping = {
                 "obj_id": lib.core.convert_id_to_string(db_obj.get("id")),
                 "obj_name": name,
                 "obj_class_name": class_name,
-                "obj_param_interface": obj_param_interface, # empty if not FUNCTION/PROCEDURE
+                "obj_param_interface": obj_param_interface,  # empty if not FUNCTION/PROCEDURE
                 "obj_meta_interface": obj_meta_interface,
                 "obj_request_path": db_obj.get("request_path"),
                 "schema_class_name": schema_class_name,
@@ -793,19 +888,23 @@ def substitute_objects_in_template(
                 delimiter = language_comment_delimiter(sdk_language)
                 crud_op_loops = re.finditer(
                     f"^[^\\S\r\n]*?{delimiter} --- crud{crud_op}OnlyStart\n\\s*(^[\\S\\s]*?)^\\s*?{delimiter} --- crud{crud_op}OnlyEnd\n",
-                    obj_template, flags=re.DOTALL | re.MULTILINE)
+                    obj_template,
+                    flags=re.DOTALL | re.MULTILINE,
+                )
 
                 for crud_loop in crud_op_loops:
                     # If the CRUD operation is enabled for this DB Object, keep the identified code block
                     # if crud_op is "Update" and there is no primary key, update commands should not be available
-                    if crud_op.upper() in db_object_crud_ops and (crud_op != "Update" or len(obj_pk_list) > 0):
+                    if crud_op.upper() in db_object_crud_ops and (
+                        crud_op != "Update" or len(obj_pk_list) > 0
+                    ):
                         enabled_crud_ops.add(crud_op)
                         obj_template = obj_template.replace(
-                            crud_loop.group(), crud_loop.group(1))
+                            crud_loop.group(), crud_loop.group(1)
+                        )
                     else:
                         # Delete the identified code block otherwise
-                        obj_template = obj_template.replace(
-                            crud_loop.group(), "")
+                        obj_template = obj_template.replace(crud_loop.group(), "")
 
             # Trait-based API implementation (for now, only used on Swift).
             obj_traits = ["MrsBaseObject"]
@@ -830,7 +929,12 @@ def substitute_objects_in_template(
 
         template = template.replace(loop.group(), filled_temp)
 
-    return {"template": template, "enabled_crud_ops": enabled_crud_ops, "required_datatypes": required_datatypes, "requires_auth": requires_auth}
+    return {
+        "template": template,
+        "enabled_crud_ops": enabled_crud_ops,
+        "required_datatypes": required_datatypes,
+        "requires_auth": requires_auth,
+    }
 
 
 def get_datatype_mapping(db_datatype, sdk_language):
@@ -841,7 +945,9 @@ def get_datatype_mapping(db_datatype, sdk_language):
     if sdk_language == "typescript":
         if db_datatype.startswith(("tinyint(1)", "bit(1)")):
             return "boolean"
-        if db_datatype.startswith(("tinyint", "smallint", "mediumint", "int", "float", "double")):
+        if db_datatype.startswith(
+            ("tinyint", "smallint", "mediumint", "int", "float", "double")
+        ):
             return "number"
         if db_datatype.startswith("json"):
             return "JsonValue"
@@ -871,7 +977,9 @@ def get_datatype_mapping(db_datatype, sdk_language):
     if sdk_language == "python":
         if db_datatype.startswith(("tinyint(1)", "bit(1)")):
             return "bool"
-        if db_datatype.startswith(("tinyint", "smallint", "mediumint", "int", "bigint")):
+        if db_datatype.startswith(
+            ("tinyint", "smallint", "mediumint", "int", "bigint")
+        ):
             return "int"
         if db_datatype.startswith(("float", "double")):
             return "float"
@@ -995,7 +1103,9 @@ def get_interface_datatype(
             return client_datatype
 
         return maybe_null(client_datatype, sdk_language)
-    class_name_postfix = generate_identifier(value=field.get("name"), primitive="class", existing_identifiers=[])
+    class_name_postfix = generate_identifier(
+        value=field.get("name"), primitive="class", existing_identifiers=[]
+    )
     return f"I{class_name}{reference_class_name_suffix}{class_name_postfix}"
 
 
@@ -1051,7 +1161,9 @@ def field_is_pk(field):
 def field_is_unique(field):
     if field.get("lev") == 1:
         db_column_info = field.get("db_column")
-        if db_column_info and (db_column_info.get("is_primary") or db_column_info.get("is_unique")):
+        if db_column_info and (
+            db_column_info.get("is_primary") or db_column_info.get("is_unique")
+        ):
             return True
 
     return False
@@ -1094,7 +1206,12 @@ def field_is_required(field, obj):
     # if a field is maps to row ownership column, it should also be optional
     has_row_ownership = field_has_row_ownership(field, obj)
 
-    if not_null and id_generation is None and column_default is None and not has_row_ownership:
+    if (
+        not_null
+        and id_generation is None
+        and column_default is None
+        and not has_row_ownership
+    ):
         return True
 
     return False
@@ -1114,8 +1231,9 @@ def field_can_be_cursor(field):
     id_generation = db_column_info.get("id_generation")
     datatype = db_column_info.get("datatype")
 
-    if ((id_generation is not None and id_generation.startswith("auto_inc")) or
-        (datatype is not None and datatype.startswith("timestamp"))):
+    if (id_generation is not None and id_generation.startswith("auto_inc")) or (
+        datatype is not None and datatype.startswith("timestamp")
+    ):
         return True
 
     return False
@@ -1142,13 +1260,13 @@ def get_reduced_field_interface_datatype(field, fields, sdk_language, class_name
         if obj_ref and ref_field_id:
             # Convert id to binary
             ref_field_id = lib.core.id_to_binary(
-                ref_field_id, "reduce_to_value_of_field_id")
+                ref_field_id, "reduce_to_value_of_field_id"
+            )
 
             # Lookup the field to reduce to
             ref_field = get_field_by_id(fields, ref_field_id)
             if ref_field:
-                datatype = get_interface_datatype(
-                    ref_field, sdk_language, class_name)
+                datatype = get_interface_datatype(ref_field, sdk_language, class_name)
 
                 # If the reference mapping is "to_many", use an array
                 ref_mapping = obj_ref.get("reference_mapping")
@@ -1186,7 +1304,11 @@ def generate_type_declaration(
         field_block = [
             generate_type_declaration_field(
                 name,
-                f"I{nested_value_prefix}{value.lstrip("I")}" if name in nesting_fields else value,
+                (
+                    f"I{nested_value_prefix}{value.lstrip("I")}"
+                    if name in nesting_fields
+                    else value
+                ),
                 sdk_language,
                 non_mandatory=(name in non_mandatory_fields),
                 allowed_special_characters={"(", ")"},
@@ -1208,7 +1330,11 @@ def generate_type_declaration(
         field_block = [
             generate_type_declaration_field(
                 name,
-                f"list[I{nested_value_prefix}{value.lstrip("list[I")}" if name in nesting_fields else value,
+                (
+                    f"list[I{nested_value_prefix}{value.lstrip("list[I")}"
+                    if name in nesting_fields
+                    else value
+                ),
                 sdk_language,
                 non_mandatory=(
                     name in non_mandatory_fields
@@ -1243,7 +1369,13 @@ def generate_type_declaration(
 
 
 def generate_type_declaration_field(
-    name, value, sdk_language, non_mandatory=False, allowed_special_characters=None, readonly=False, initialized=True
+    name,
+    value,
+    sdk_language,
+    non_mandatory=False,
+    allowed_special_characters=None,
+    readonly=False,
+    initialized=True,
 ):
     name = generate_identifier(
         value=name,
@@ -1254,17 +1386,25 @@ def generate_type_declaration_field(
     indent = " " * 4
 
     if sdk_language == "typescript":
-        field_name_part = f"{indent}{"readonly " if readonly else ""}{name}?" if non_mandatory else f"{indent}{"readonly " if readonly else ""}{name}"
+        field_name_part = (
+            f"{indent}{"readonly " if readonly else ""}{name}?"
+            if non_mandatory
+            else f"{indent}{"readonly " if readonly else ""}{name}"
+        )
         if isinstance(value, list):
             return f"{field_name_part}: {value[0]}[],\n"
         return f"{field_name_part}: {value},\n"
 
     if sdk_language == "python":
         if isinstance(value, list):
-            hint = f"NotRequired[list[{value[0]}]]" if non_mandatory is True else f"list[{value[0]}]"
+            hint = (
+                f"NotRequired[list[{value[0]}]]"
+                if non_mandatory is True
+                else f"list[{value[0]}]"
+            )
         else:
             hint = f"NotRequired[{value}]" if non_mandatory is True else f"{value}"
-        return f'{indent}{name}: {hint}\n'
+        return f"{indent}{name}: {hint}\n"
     if sdk_language == "swift":
         if isinstance(value, list):
             hint = f"[{value[0]}]"
@@ -1286,9 +1426,9 @@ def generate_data_class(
     if sdk_language == "typescript":
         if len(primary_key_fields) > 0:
             if "UPDATE" in db_object_crud_ops:
-                fields.update({ "update()": f"Promise<I{name}>" })
+                fields.update({"update()": f"Promise<I{name}>"})
             if "DELETE" in db_object_crud_ops:
-                fields.update({ "delete()": f"Promise<void>" })
+                fields.update({"delete()": f"Promise<void>"})
         return generate_type_declaration(
             name=name,
             fields=fields,
@@ -1310,22 +1450,32 @@ def generate_data_class(
         field_profile = []
         for field_name, type_hint in [
             (
-                generate_identifier(value=field, sdk_language=sdk_language, existing_identifiers=[]),
+                generate_identifier(
+                    value=field, sdk_language=sdk_language, existing_identifiers=[]
+                ),
                 value[0] if isinstance(value, list) else value,
             )
             for field, value in fields.items()
         ]:
             field_profile.append(f'"{field_name}": {type_hint}')
         join_field_profile = (
-            "{\n" + f"{" "*16}" + f",\n{" "*16}".join(field_profile).rstrip() + f"\n{" "*12}" + "}"
+            "{\n"
+            + f"{" "*16}"
+            + f",\n{" "*16}".join(field_profile).rstrip()
+            + f"\n{" "*12}"
+            + "}"
         )
 
         mixins = []
         if len(primary_key_fields) > 0:
             if "UPDATE" in db_object_crud_ops:
-                mixins.append(f'\n\t_MrsDocumentUpdateMixin["I{name}Data", "I{name}", "I{name}Details"],')
+                mixins.append(
+                    f'\n\t_MrsDocumentUpdateMixin["I{name}Data", "I{name}", "I{name}Details"],'
+                )
             if "DELETE" in db_object_crud_ops:
-                mixins.append(f'\n\t_MrsDocumentDeleteMixin["I{name}Data", "I{name}Filterable"],')
+                mixins.append(
+                    f'\n\t_MrsDocumentDeleteMixin["I{name}Data", "I{name}Filterable"],'
+                )
             if mixins:
                 mixins.append("\n\t")
 
@@ -1335,7 +1485,9 @@ def generate_data_class(
             obj_endpoint=obj_endpoint,
             field_profile=join_field_profile,
             primary_key_name=(
-                None if len(primary_key_fields) == 0 else f'"{",".join([lib.core.convert_to_snake_case(pk_field) for pk_field in primary_key_fields])}"'
+                None
+                if len(primary_key_fields) == 0
+                else f'"{",".join([lib.core.convert_to_snake_case(pk_field) for pk_field in primary_key_fields])}"'
             ),
             mixins="".join(mixins),
         )
@@ -1409,7 +1561,9 @@ def generate_data_class(
     return ""
 
 
-def generate_field_enum(name, fields=None, sdk_language: ProgrammingLanguage = "typescript"):
+def generate_field_enum(
+    name, fields=None, sdk_language: ProgrammingLanguage = "typescript"
+):
     if sdk_language == "python":
         if not fields or len(fields) == 0:
             # To avoid conditional logic in the template, we can generate a placeholder declaration regardless.
@@ -1431,9 +1585,10 @@ def generate_enum(name, values, sdk_language):
         return f"I{name}: TypeAlias = {enum_def}\n\n\n"
     if sdk_language == "swift":
         items = [f'{" " * 4}case {value} = "{value}"' for value in values]
-        return (f"enum I{name}: String, CaseIterable {{\n" +
-            f"{'\n'.join(items)}\n" +
-            "}\n\n"
+        return (
+            f"enum I{name}: String, CaseIterable {{\n"
+            + f"{'\n'.join(items)}\n"
+            + "}\n\n"
         )
     return ""
 
@@ -1455,10 +1610,8 @@ def generate_literal_type(values, sdk_language):
         return f"{' | '.join(items)}"
     if sdk_language == "python":
         items = [f'{" " * 4}"{value}"' for value in values]
-        s = ',\n'.join(items)
-        return (f"Literal[\n" +
-            f"{s},\n" +
-            "]")
+        s = ",\n".join(items)
+        return f"Literal[\n" + f"{s},\n" + "]"
     return ""
 
 
@@ -1493,10 +1646,18 @@ def generate_selectable(name, fields, sdk_language):
     if sdk_language == "typescript":
         return ""
     if sdk_language == "python":
-        return generate_type_declaration(name=f"{name}Selectable", fields={ field: "bool" for field in fields },
-                                         sdk_language=sdk_language, non_mandatory_fields=set(fields))
+        return generate_type_declaration(
+            name=f"{name}Selectable",
+            fields={field: "bool" for field in fields},
+            sdk_language=sdk_language,
+            non_mandatory_fields=set(fields),
+        )
     if sdk_language == "swift":
-        return generate_enum(name=f"{name}Selectable", values=[field_name for field_name in fields], sdk_language=sdk_language)
+        return generate_enum(
+            name=f"{name}Selectable",
+            values=[field_name for field_name in fields],
+            sdk_language=sdk_language,
+        )
     return ""
 
 
@@ -1521,7 +1682,11 @@ def generate_sortable(
             requires_placeholder=True,
         )
     if sdk_language == "swift":
-        return generate_enum(name=f"{name}Sortable", values=[field_name for field_name in fields], sdk_language=sdk_language)
+        return generate_enum(
+            name=f"{name}Sortable",
+            values=[field_name for field_name in fields],
+            sdk_language=sdk_language,
+        )
     return ""
 
 
@@ -1613,15 +1778,21 @@ def generate_interfaces(
             if field.get("represents_reference_id"):
                 # nested field type aliases are already top-level type aliases for other REST objects
                 # we want to re-use them instead of clone them into a new ones
-                nested_class_name = class_name.rstrip(lib.core.convert_path_to_pascal_case(db_obj.get("name")))
-                datatype = get_interface_datatype(field, sdk_language, nested_class_name)
+                nested_class_name = class_name.rstrip(
+                    lib.core.convert_path_to_pascal_case(db_obj.get("name"))
+                )
+                datatype = get_interface_datatype(
+                    field, sdk_language, nested_class_name
+                )
                 has_nested_fields = True
                 # Check if the field should be reduced to the value of another field
                 reduced_to_datatype = get_reduced_field_interface_datatype(
                     field, fields, sdk_language, nested_class_name
                 )
                 if reduced_to_datatype:
-                    reduced_to_datatype_fields.update({field.get("name"): reduced_to_datatype})
+                    reduced_to_datatype_fields.update(
+                        {field.get("name"): reduced_to_datatype}
+                    )
                 else:
                     obj_ref = field.get("object_reference")
                     # Add field if the referred table is not unnested
@@ -1650,7 +1821,11 @@ def generate_interfaces(
                         ):
                             # RESULT
                             nested_datatype = None
-                            relationship = field.get("object_reference").get("reference_mapping").get("kind")
+                            relationship = (
+                                field.get("object_reference")
+                                .get("reference_mapping")
+                                .get("kind")
+                            )
                             if relationship == "1:n" and sdk_language == "typescript":
                                 nested_datatype = f"{datatype}[]"
                             elif relationship == "1:n" and sdk_language == "python":
@@ -1659,10 +1834,14 @@ def generate_interfaces(
                                 nested_datatype = f"[{datatype}]"
 
                             if nested_datatype is not None:
-                                interface_fields.update({field.get("name"): nested_datatype})
+                                interface_fields.update(
+                                    {field.get("name"): nested_datatype}
+                                )
                                 # Add all table fields that have allow_filtering set and SP params to the
                                 # param_interface_fields
-                                param_interface_fields.update({field.get("name"): nested_datatype})
+                                param_interface_fields.update(
+                                    {field.get("name"): nested_datatype}
+                                )
 
                     # Call recursive interface generation
                     generate_nested_interfaces(
@@ -1753,7 +1932,10 @@ def generate_interfaces(
                 )
 
         # Do not generate type aliases that have already been created whilst processing nested fields.
-        if "CREATE" in db_object_crud_ops and creatable_type_alias_name not in generated_type_aliases:
+        if (
+            "CREATE" in db_object_crud_ops
+            and creatable_type_alias_name not in generated_type_aliases
+        ):
             obj_non_mandatory_fields = set(
                 [
                     field.get("name")
@@ -1779,7 +1961,11 @@ def generate_interfaces(
 
         # Do not generate type aliases that have already been created whilst processing nested fields.
         # Do not generate CRUD-specific type aliases for Swift because we cannot downcast to them.
-        if "UPDATE" in db_object_crud_ops and updatable_type_alias_name not in generated_type_aliases and sdk_language in ("typescript", "python"):
+        if (
+            "UPDATE" in db_object_crud_ops
+            and updatable_type_alias_name not in generated_type_aliases
+            and sdk_language in ("typescript", "python")
+        ):
             # TODO: No partial update is supported yet. Once it is, the
             # `non-mandatory_fields` argument should not change.
             # This way, users can know what fields are required and which ones aren't.
@@ -1803,7 +1989,9 @@ def generate_interfaces(
             generated_type_aliases.add(updatable_type_alias_name)
 
         if class_name not in generated_type_aliases:
-            primary_key_fields = [field.get("name") for field in fields if field_is_pk(field)]
+            primary_key_fields = [
+                field.get("name") for field in fields if field_is_pk(field)
+            ]
             obj_interfaces.append(
                 generate_data_class(
                     name=class_name,
@@ -1819,7 +2007,9 @@ def generate_interfaces(
 
         obj_interfaces.append(
             generate_field_enum(
-                name=class_name, fields=interface_fields | reduced_to_datatype_fields, sdk_language=sdk_language
+                name=class_name,
+                fields=interface_fields | reduced_to_datatype_fields,
+                sdk_language=sdk_language,
             )
         )
 
@@ -1841,7 +2031,9 @@ def generate_interfaces(
             )
 
         obj_interfaces.append(
-            generate_selectable(class_name, interface_fields | reduced_to_datatype_fields, sdk_language)
+            generate_selectable(
+                class_name, interface_fields | reduced_to_datatype_fields, sdk_language
+            )
         )
 
         obj_interfaces.append(
@@ -1903,7 +2095,7 @@ def generate_interfaces(
                     )
                 )
 
-    else: # kind = "PARAMETERS"
+    else:  # kind = "PARAMETERS"
         if len(param_interface_fields) > 0:
             # Parameters are "optional" in a way that they can be NULL at the SQL level.
             if sdk_language == "typescript":
@@ -1939,44 +2131,60 @@ def generate_interfaces(
 
 # For now, this function is not used for ${DatabaseObject}Params type declarations
 def generate_nested_interfaces(
-        obj_interfaces, parent_interface_fields, parent_field,
-        reference_class_name_suffix,
-        fields, class_name, reference_obj,
-        sdk_language: ProgrammingLanguage = "typescript",
-        fully_qualified_parent_name: str = "",
-        nested_fields: set[str] = set(),
-        nesting_fields: set[str] = set(),
-        allowed_crud_ops: set[str] = set(),
-        generated_type_aliases: set[str] = set(),
-        required_datatypes: set[str] = set()):
+    obj_interfaces,
+    parent_interface_fields,
+    parent_field,
+    reference_class_name_suffix,
+    fields,
+    class_name,
+    reference_obj,
+    sdk_language: ProgrammingLanguage = "typescript",
+    fully_qualified_parent_name: str = "",
+    nested_fields: set[str] = set(),
+    nesting_fields: set[str] = set(),
+    allowed_crud_ops: set[str] = set(),
+    generated_type_aliases: set[str] = set(),
+    required_datatypes: set[str] = set(),
+):
     # Build interface name
     interface_name = f"{class_name}{reference_class_name_suffix}"
 
     # Check if the reference has unnest set, and if so, use the parent_interface_fields
     parent_obj_ref = parent_field.get("object_reference")
-    interface_fields = {} if not parent_obj_ref.get(
-        "unnest") else parent_interface_fields
+    interface_fields = (
+        {} if not parent_obj_ref.get("unnest") else parent_interface_fields
+    )
     reduced_to_datatype_fields = {}
 
     for field in fields:
-        if (field.get("parent_reference_id") == parent_field.get("represents_reference_id") and
-                field.get("enabled")):
+        if field.get("parent_reference_id") == parent_field.get(
+            "represents_reference_id"
+        ) and field.get("enabled"):
             # Handle references
             if field.get("represents_reference_id"):
                 # Check if the field should be reduced to the value of another field
                 reduced_to_datatype = get_reduced_field_interface_datatype(
-                    field, fields, sdk_language, class_name)
+                    field, fields, sdk_language, class_name
+                )
                 if reduced_to_datatype:
-                    reduced_to_datatype_fields.update({ field.get("name"): reduced_to_datatype })
+                    reduced_to_datatype_fields.update(
+                        {field.get("name"): reduced_to_datatype}
+                    )
                 else:
                     obj_ref = field.get("object_reference")
                     field_interface_name = lib.core.convert_path_to_pascal_case(
-                        field.get("name"))
+                        field.get("name")
+                    )
                     # Add field if the referred table is not unnested
                     if not obj_ref.get("unnest"):
                         datatype = f"{class_name}{reference_class_name_suffix + field.get("name")}"
                         # Should use the corresponding nested field type.
-                        interface_fields.update({ field.get("name"): f"I{interface_name}" + field_interface_name })
+                        interface_fields.update(
+                            {
+                                field.get("name"): f"I{interface_name}"
+                                + field_interface_name
+                            }
+                        )
 
                     # If not, do recursive call
                     generate_nested_interfaces(
@@ -1996,10 +2204,12 @@ def generate_nested_interfaces(
                     )
             else:
                 datatype = get_interface_datatype(field, sdk_language)
-                unwrapped_datatype = get_interface_datatype(field, sdk_language=sdk_language, unwrap=True)
+                unwrapped_datatype = get_interface_datatype(
+                    field, sdk_language=sdk_language, unwrap=True
+                )
                 if not datatype_is_primitive(unwrapped_datatype, sdk_language):
                     required_datatypes.add(unwrapped_datatype)
-                interface_fields.update({ field.get("name"): datatype })
+                interface_fields.update({field.get("name"): datatype})
 
     if not parent_obj_ref.get("unnest"):
         data_type_alias_name = f"{interface_name}Data"
@@ -2016,12 +2226,16 @@ def generate_nested_interfaces(
                 )
             )
         # Do not generate type aliases that have already been created whilst processing top-level fields.
-        if "CREATE" in allowed_crud_ops and creatable_type_alias_name not in generated_type_aliases:
+        if (
+            "CREATE" in allowed_crud_ops
+            and creatable_type_alias_name not in generated_type_aliases
+        ):
             non_mandatory_fields = [
                 field.get("name")
                 for field in fields
                 # exclude fields that are out of range (e.g. on different nesting levels)
-                if field.get("parent_reference_id") == parent_field.get("represents_reference_id")
+                if field.get("parent_reference_id")
+                == parent_field.get("represents_reference_id")
                 and field_is_required(field, reference_obj) is False
             ]
             obj_interfaces.append(
@@ -2075,7 +2289,9 @@ def generate_nested_interfaces(
             )
             generated_type_aliases.add(interface_name)
         nesting_fields.add(fully_qualified_parent_name)
-        nested_fields.update([f"{fully_qualified_parent_name}.{field}" for field in interface_fields])
+        nested_fields.update(
+            [f"{fully_qualified_parent_name}.{field}" for field in interface_fields]
+        )
 
 
 def get_mrs_runtime_management_code(session):
@@ -2093,7 +2309,7 @@ def get_mrs_runtime_management_code(session):
     """
     status = lib.general.get_status(session)
 
-    if status['service_configured'] is True:
+    if status["service_configured"] is True:
         services = lib.services.get_services(session=session)
     else:
         services = []
@@ -2124,7 +2340,8 @@ class Mrs {
     service_list = []
     for service in services:
         service_name = lib.core.convert_path_to_camel_case(
-            service.get("url_context_root"))
+            service.get("url_context_root")
+        )
         service_id = lib.core.convert_id_to_string(service.get("id"))
         host_ctx = service.get("host_ctx")
         url_context_root = service.get("url_context_root")
@@ -2135,29 +2352,37 @@ class Mrs {
             service_url = url_context_root + url_context_root
 
         if service.get("is_current") == 1:
-            s += f'    public {service_name} = {service_name};\n'
+            s += f"    public {service_name} = {service_name};\n"
         else:
             s += f'    public {service_name}: MrsService = new MrsService("{service_id}");\n'
-        service_list.append({
-            "serviceName": service_name, "url": service_url, "isCurrent": service.get("is_current") == 1})
+        service_list.append(
+            {
+                "serviceName": service_name,
+                "url": service_url,
+                "isCurrent": service.get("is_current") == 1,
+            }
+        )
 
-    if status['service_configured'] is False:
+    if status["service_configured"] is False:
         status_output = {
             "configured": False,
-            "info": "The MySQL REST Service has not been configured on this MySQL instance yet. Switch to " +
-            "SQL mode and use the CONFIGURE REST METADATA command to configure the instance.",
-            "services": []}
+            "info": "The MySQL REST Service has not been configured on this MySQL instance yet. Switch to "
+            + "SQL mode and use the CONFIGURE REST METADATA command to configure the instance.",
+            "services": [],
+        }
     elif len(service_list) == 0:
         status_output = {
             "configured": True,
-            "info": "No REST service has been created yet. Switch to SQL Mode and use the " +
-            "CREATE REST SERVICE command to create a new REST service.",
-            "services": []}
+            "info": "No REST service has been created yet. Switch to SQL Mode and use the "
+            + "CREATE REST SERVICE command to create a new REST service.",
+            "services": [],
+        }
     else:
         status_output = {
             "configured": True,
             "info": f'{len(service_list)} REST service{"s" if len(service_list) > 1 else ""} available.',
-            "services": service_list}
+            "services": service_list,
+        }
 
     s += f"""
     public getStatus = () => {{
@@ -2190,8 +2415,7 @@ def replace_group_1_match_only(m):
 def remove_js_whitespace_and_comments(code):
     # Remove comments. This regex does not match single line comments that
     # include a " character, which is ignored for simplicity.
-    code = re.sub(r"/\*.*?\*/|//[^\"]*?$", "",
-                  code, flags=re.DOTALL | re.MULTILINE)
+    code = re.sub(r"/\*.*?\*/|//[^\"]*?$", "", code, flags=re.DOTALL | re.MULTILINE)
 
     # Remove all empty linebreaks
     code = re.sub(r"^\s*\n", "", code, flags=re.DOTALL | re.MULTILINE)

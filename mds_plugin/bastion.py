@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -51,10 +51,12 @@ def format_bastion_listing(items, current=None) -> str:
     id = 1
     for i in items:
         index = f"*{id:>3} " if current == i.id else f"{id:>4} "
-        out += (index +
-                core.fixed_len(i.name, 24, ' ', True) +
-                core.fixed_len(i.lifecycle_state, 8, ' ') +
-                core.fixed_len(f"{i.time_created:%Y-%m-%d %H:%M}", 16, '\n'))
+        out += (
+            index
+            + core.fixed_len(i.name, 24, " ", True)
+            + core.fixed_len(i.lifecycle_state, 8, " ")
+            + core.fixed_len(f"{i.time_created:%Y-%m-%d %H:%M}", 16, "\n")
+        )
         id += 1
 
     return out
@@ -83,14 +85,16 @@ def format_session_listing(items, current=None) -> str:
         s_type = i.target_resource_details.session_type
         s_port = str(i.target_resource_details.target_resource_port)
         s_ip = i.target_resource_details.target_resource_private_ip_address
-        s_time = f'{i.time_created:%Y%m%d-%H%M%S}'
-        out += (index +
-                core.fixed_len(i.display_name, 24, ' ', True) +
-                core.fixed_len(i.lifecycle_state, 8, ' ') +
-                core.fixed_len(s_type, 15, ' ') +
-                core.fixed_len(s_ip, 15, ' ') +
-                core.fixed_len(s_port, 15, ' ') +
-                core.fixed_len(s_time, 15, '\n'))
+        s_time = f"{i.time_created:%Y%m%d-%H%M%S}"
+        out += (
+            index
+            + core.fixed_len(i.display_name, 24, " ", True)
+            + core.fixed_len(i.lifecycle_state, 8, " ")
+            + core.fixed_len(s_type, 15, " ")
+            + core.fixed_len(s_ip, 15, " ")
+            + core.fixed_len(s_port, 15, " ")
+            + core.fixed_len(s_time, 15, "\n")
+        )
         id += 1
         # try:
         #     out += "       " + i.ssh_metadata.get("command") + "\n"
@@ -100,7 +104,7 @@ def format_session_listing(items, current=None) -> str:
     return out
 
 
-@plugin_function('mds.list.bastions', shell=True, cli=True, web=True)
+@plugin_function("mds.list.bastions", shell=True, cli=True, web=True)
 def list_bastions(**kwargs):
     """Lists bastions
 
@@ -135,28 +139,30 @@ def list_bastions(**kwargs):
     interactive = kwargs.get("interactive", core.get_interactive_default())
     return_type = kwargs.get(
         "return_type",  # In interactive mode, default to formatted str return
-        core.RETURN_STR if interactive else core.RETURN_DICT)
+        core.RETURN_STR if interactive else core.RETURN_DICT,
+    )
     raise_exceptions = kwargs.get(
         "raise_exceptions",  # On internal call (RETURN_OBJ), raise exceptions
-        True if return_type == core.RETURN_OBJ else not interactive)
+        True if return_type == core.RETURN_OBJ else not interactive,
+    )
 
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
-        current_bastion_id = configuration.get_current_bastion_id(
-            config=config)
+            compartment_id=compartment_id, config=config
+        )
+        current_bastion_id = configuration.get_current_bastion_id(config=config)
 
         import oci.exceptions
+
         try:
             # Initialize the  Object Store client
             bastion_client = core.get_oci_bastion_client(config=config)
 
             # List the bastions
-            bastions = bastion_client.list_bastions(
-                compartment_id=compartment_id).data
+            bastions = bastion_client.list_bastions(compartment_id=compartment_id).data
 
             # Filter out all deleted bastions
             bastions = [b for b in bastions if b.lifecycle_state != "DELETED"]
@@ -164,13 +170,14 @@ def list_bastions(**kwargs):
             # Filter out all bastions that are not valid for the given DbSystem
             if valid_for_db_system_id:
                 # Just consider active bastions here
-                bastions = [
-                    b for b in bastions if b.lifecycle_state == "ACTIVE"]
+                bastions = [b for b in bastions if b.lifecycle_state == "ACTIVE"]
                 valid_bastions = []
                 db_system = mysql_database_service.get_db_system(
                     db_system_id=valid_for_db_system_id,
-                    config=config, interactive=False,
-                    return_python_object=True)
+                    config=config,
+                    interactive=False,
+                    return_python_object=True,
+                )
                 for b in bastions:
                     bastion = bastion_client.get_bastion(bastion_id=b.id).data
                     if bastion.target_subnet_id == db_system.subnet_id:
@@ -178,8 +185,7 @@ def list_bastions(**kwargs):
                 bastions = valid_bastions
 
             # Add the is_current field
-            current_bastion_id = configuration.get_current_bastion_id(
-                config=config)
+            current_bastion_id = configuration.get_current_bastion_id(config=config)
 
             for b in bastions:
                 # Add the is_current field to the object, also adding it to
@@ -196,18 +202,19 @@ def list_bastions(**kwargs):
                 oci_object=bastions,
                 return_type=return_type,
                 format_function=format_bastion_listing,
-                current=current_bastion_id)
+                current=current_bastion_id,
+            )
         except oci.exceptions.ServiceError as e:
             if raise_exceptions:
                 raise
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
     except Exception as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.get.bastion', shell=True, cli=True, web=True)
+@plugin_function("mds.get.bastion", shell=True, cli=True, web=True)
 def get_bastion(**kwargs):
     """Gets a Bastion with the given id
 
@@ -240,8 +247,7 @@ def get_bastion(**kwargs):
     bastion_id = kwargs.get("bastion_id")
     await_state = kwargs.get("await_state")
     ignore_current = kwargs.get("ignore_current", False)
-    fallback_to_any_in_compartment = kwargs.get(
-        "fallback_to_any_in_compartment", False)
+    fallback_to_any_in_compartment = kwargs.get("fallback_to_any_in_compartment", False)
 
     compartment_id = kwargs.get("compartment_id")
     config = kwargs.get("config")
@@ -251,42 +257,46 @@ def get_bastion(**kwargs):
     return_type = kwargs.get("return_type", core.RETURN_DICT)
     raise_exceptions = kwargs.get(
         "raise_exceptions",  # On internal call (RETURN_OBJ), raise exceptions
-        True if return_type == core.RETURN_OBJ else not interactive)
+        True if return_type == core.RETURN_OBJ else not interactive,
+    )
 
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         if not ignore_current and bastion_name is None:
             bastion_id = configuration.get_current_bastion_id(
-                bastion_id=bastion_id, config=config)
+                bastion_id=bastion_id, config=config
+            )
 
         import oci.exceptions
+
         try:
             # Initialize the Bastion client
             bastion_client = core.get_oci_bastion_client(config=config)
 
             if not interactive and not bastion_id and not bastion_name:
-                raise ValueError('No bastion_id nor bastion_name given.')
+                raise ValueError("No bastion_id nor bastion_name given.")
 
             bastion = None
 
             if bastion_id:
-                bastion = bastion_client.get_bastion(
-                    bastion_id=bastion_id).data
+                bastion = bastion_client.get_bastion(bastion_id=bastion_id).data
                 if not bastion:
-                    raise ValueError('The bastion with the given OCID '
-                                     f'{bastion_id} was not found.')
+                    raise ValueError(
+                        "The bastion with the given OCID "
+                        f"{bastion_id} was not found."
+                    )
 
             if not bastion and (bastion_name or interactive):
                 # List the Bastion of the current compartment
                 bastions = bastion_client.list_bastions(
-                    compartment_id=compartment_id).data
+                    compartment_id=compartment_id
+                ).data
 
                 # Filter out all deleted compartments
-                bastions = [
-                    u for u in bastions if u.lifecycle_state != "DELETED"]
+                bastions = [u for u in bastions if u.lifecycle_state != "DELETED"]
 
                 if len(bastions) == 0:
                     if interactive:
@@ -297,18 +307,18 @@ def get_bastion(**kwargs):
                 if bastion_name:
                     for b in bastions:
                         if b.name == bastion_name:
-                            bastion = bastion_client.get_bastion(
-                                bastion_id=b.id).data
+                            bastion = bastion_client.get_bastion(bastion_id=b.id).data
                             break
 
                     if bastion is None and not interactive:
-                        raise ValueError(f"Bastion {bastion_name} was not "
-                                         "found in this compartment.")
+                        raise ValueError(
+                            f"Bastion {bastion_name} was not "
+                            "found in this compartment."
+                        )
 
                 # Fallback to first in compartment
                 if fallback_to_any_in_compartment:
-                    bastion = bastion_client.get_bastion(
-                        bastion_id=bastions[0].id).data
+                    bastion = bastion_client.get_bastion(bastion_id=bastions[0].id).data
 
             if not bastion and interactive:
                 # If the user_name was not given or found, print out the list
@@ -319,57 +329,65 @@ def get_bastion(**kwargs):
                 # Let the user choose from the list
                 selected_bastion = core.prompt_for_list_item(
                     item_list=bastions,
-                    prompt_caption=("Please enter the name or index "
-                                    "of the Bastion: "),
-                    item_name_property="name", given_value=bastion_name)
+                    prompt_caption=(
+                        "Please enter the name or index " "of the Bastion: "
+                    ),
+                    item_name_property="name",
+                    given_value=bastion_name,
+                )
 
                 if selected_bastion:
                     bastion = bastion_client.get_bastion(
-                        bastion_id=selected_bastion.id).data
+                        bastion_id=selected_bastion.id
+                    ).data
 
             if bastion and await_state:
                 import time
+
                 if interactive:
-                    print(f'Waiting for Bastion to reach '
-                          f'{await_state} state...')
+                    print(f"Waiting for Bastion to reach " f"{await_state} state...")
 
                 bastion_id = bastion.id
 
                 # Wait for the Bastion Session to reach state await_state
                 cycles = 0
                 while cycles < 48:
-                    bastion = bastion_client.get_bastion(
-                        bastion_id=bastion_id).data
+                    bastion = bastion_client.get_bastion(bastion_id=bastion_id).data
                     if bastion.lifecycle_state == await_state:
                         break
                     else:
                         time.sleep(5)
                         s = "." * (cycles + 1)
                         if interactive:
-                            print(f'Waiting for Bastion to reach '
-                                  f'{await_state} state...{s}')
+                            print(
+                                f"Waiting for Bastion to reach "
+                                f"{await_state} state...{s}"
+                            )
                     cycles += 1
 
                 if bastion.lifecycle_state != await_state:
-                    raise Exception("Bastion did not reach the state "
-                                    f"{await_state} within 4 minutes.")
+                    raise Exception(
+                        "Bastion did not reach the state "
+                        f"{await_state} within 4 minutes."
+                    )
 
             return core.oci_object(
                 oci_object=bastion,
                 return_type=return_type,
-                format_function=format_bastion_listing)
+                format_function=format_bastion_listing,
+            )
         except oci.exceptions.ServiceError as e:
             if interactive:
                 raise
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
             return
     except Exception as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.create.bastion', shell=True, cli=True, web=True)
+@plugin_function("mds.create.bastion", shell=True, cli=True, web=True)
 def create_bastion(**kwargs):
     """Creates a Bastion
 
@@ -403,8 +421,7 @@ def create_bastion(**kwargs):
     bastion_name = kwargs.get("bastion_name")
     db_system_id = kwargs.get("db_system_id")
     client_cidr = kwargs.get("client_cidr", "0.0.0.0/0")
-    max_session_ttl_in_seconds = kwargs.get(
-        "max_session_ttl_in_seconds", 10800)
+    max_session_ttl_in_seconds = kwargs.get("max_session_ttl_in_seconds", 10800)
     target_subnet_id = kwargs.get("target_subnet_id")
     await_active_state = kwargs.get("await_active_state", False)
 
@@ -416,25 +433,30 @@ def create_bastion(**kwargs):
     interactive = kwargs.get("interactive", core.get_interactive_default())
     return_type = kwargs.get(
         "return_type",  # In interactive mode, default to formatted str return
-        core.RETURN_STR if interactive else core.RETURN_DICT)
+        core.RETURN_STR if interactive else core.RETURN_DICT,
+    )
     raise_exceptions = kwargs.get(
         "raise_exceptions",  # On internal call (RETURN_OBJ), raise exceptions
-        True if return_type == core.RETURN_OBJ else not interactive)
+        True if return_type == core.RETURN_OBJ else not interactive,
+    )
 
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         current_compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
         if not ignore_current:
             db_system_id = configuration.get_current_db_system_id(
-                db_system_id=db_system_id, config=config)
+                db_system_id=db_system_id, config=config
+            )
 
         import oci.bastion.models
         import oci.mysql.models
         import oci.exceptions
+
         try:
             # Initialize the Bastion client
             bastion_client = core.get_oci_bastion_client(config=config)
@@ -443,29 +465,34 @@ def create_bastion(**kwargs):
             if db_system_id:
                 db_system = mysql_database_service.get_db_system(
                     db_system_id=db_system_id,
-                    config=config, interactive=False,
-                    return_python_object=True)
+                    config=config,
+                    interactive=False,
+                    return_python_object=True,
+                )
                 if not db_system:
-                    raise ValueError("No db_system found with the given id. "
-                                     "Operation cancelled.")
+                    raise ValueError(
+                        "No db_system found with the given id. " "Operation cancelled."
+                    )
             elif interactive:
                 for_db_system = core.prompt(
                     "Should the new Bastion be used to connect to "
                     "a MySQL DB System? [Y/n]: ",
-                    options={'defaultValue': 'y'})
+                    options={"defaultValue": "y"},
+                )
                 if not for_db_system:
                     raise ValueError("Operation cancelled.")
 
-                if for_db_system.lower() == 'y':
+                if for_db_system.lower() == "y":
                     db_system = mysql_database_service.get_db_system(
                         compartment_id=current_compartment_id,
-                        config=config, interactive=interactive,
-                        return_python_object=True)
+                        config=config,
+                        interactive=interactive,
+                        return_python_object=True,
+                    )
                     if not db_system:
                         raise ValueError("Operation cancelled.")
             else:
-                raise ValueError("No db_system_id given. "
-                                 "Operation cancelled.")
+                raise ValueError("No db_system_id given. " "Operation cancelled.")
 
             # Check if the db_system already has a Bastion set in the
             # freeform_tags
@@ -504,18 +531,17 @@ def create_bastion(**kwargs):
             if not bastion_name:
                 if db_system:
                     from datetime import datetime
-                    bastion_name = (
-                        "Bastion" +
-                        datetime.now().strftime("%y%m%d%H%M"))
+
+                    bastion_name = "Bastion" + datetime.now().strftime("%y%m%d%H%M")
 
                 elif interactive:
                     bastion_name = core.prompt(
-                        'Please enter a name for this new Bastion: ')
+                        "Please enter a name for this new Bastion: "
+                    )
                     if not bastion_name:
                         raise ValueError("Operation cancelled.")
             if not bastion_name:
-                raise ValueError("No bastion_name given. "
-                                 "Operation cancelled.")
+                raise ValueError("No bastion_name given. " "Operation cancelled.")
 
             if not target_subnet_id:
                 if db_system:
@@ -524,15 +550,18 @@ def create_bastion(**kwargs):
                     # Get private subnet
                     subnet = network.get_subnet(
                         public_subnet=False,
-                        compartment_id=compartment_id, config=config,
-                        interactive=interactive)
+                        compartment_id=compartment_id,
+                        config=config,
+                        interactive=interactive,
+                    )
                     if subnet is None:
                         print("Operation cancelled.")
                         return
                     target_subnet_id = subnet.id
                 else:
-                    raise ValueError("No target_subnet_id given. "
-                                     "Operation cancelled.")
+                    raise ValueError(
+                        "No target_subnet_id given. " "Operation cancelled."
+                    )
 
             bastion_details = oci.bastion.models.CreateBastionDetails(
                 bastion_type="standard",
@@ -540,12 +569,13 @@ def create_bastion(**kwargs):
                 compartment_id=compartment_id,
                 max_session_ttl_in_seconds=max_session_ttl_in_seconds,
                 name=bastion_name,
-                target_subnet_id=target_subnet_id
+                target_subnet_id=target_subnet_id,
             )
 
             # Create the new bastion
             new_bastion = bastion_client.create_bastion(
-                create_bastion_details=bastion_details).data
+                create_bastion_details=bastion_details
+            ).data
 
             # Update the db_system freeform_tags to hold the assigned bastion
             # if db_system:
@@ -559,36 +589,39 @@ def create_bastion(**kwargs):
 
             if new_bastion and await_active_state:
                 import time
+
                 if interactive:
-                    print(f'Waiting for Bastion to reach '
-                          f'ACTIVE state...')
+                    print(f"Waiting for Bastion to reach " f"ACTIVE state...")
 
                 bastion_id = new_bastion.id
 
                 # Wait for the Bastion Session to reach state await_state
                 cycles = 0
                 while cycles < 60:
-                    bastion = bastion_client.get_bastion(
-                        bastion_id=bastion_id).data
+                    bastion = bastion_client.get_bastion(bastion_id=bastion_id).data
                     if bastion.lifecycle_state == "ACTIVE":
                         break
                     else:
                         time.sleep(5)
                         s = "." * (cycles + 1)
                         if interactive:
-                            print(f'Waiting for Bastion to reach '
-                                  f'ACTIVE state...{s}')
+                            print(
+                                f"Waiting for Bastion to reach " f"ACTIVE state...{s}"
+                            )
                     cycles += 1
 
                 if bastion.lifecycle_state != "ACTIVE":
-                    raise Exception("Bastion did not reach the state "
-                                    f"ACTIVE within 5 minutes.")
+                    raise Exception(
+                        "Bastion did not reach the state " f"ACTIVE within 5 minutes."
+                    )
 
                 return core.oci_object(
                     oci_object=bastion,
                     return_type=return_type,
                     format_function=lambda b: print(
-                        f"Bastion {b.name} has been created."))
+                        f"Bastion {b.name} has been created."
+                    ),
+                )
 
             else:
                 return core.oci_object(
@@ -597,19 +630,21 @@ def create_bastion(**kwargs):
                     format_function=lambda b: print(
                         f"Bastion {b.name} is being "
                         f"created. Use mds.list.bastions() to check "
-                        "it's provisioning state.\n"))
+                        "it's provisioning state.\n"
+                    ),
+                )
 
         except oci.exceptions.ServiceError as e:
             if raise_exceptions:
                 raise
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
     except Exception as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.delete.bastion', shell=True, cli=True, web=True)
+@plugin_function("mds.delete.bastion", shell=True, cli=True, web=True)
 def delete_bastion(**kwargs):
     """Deletes a Bastion with the given id
 
@@ -651,34 +686,44 @@ def delete_bastion(**kwargs):
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
         if not ignore_current and bastion_name is None:
             bastion_id = configuration.get_current_bastion_id(
-                bastion_id=bastion_id, config=config)
+                bastion_id=bastion_id, config=config
+            )
 
         import oci.identity
         import oci.mysql
+
         try:
             bastion = get_bastion(
                 bastion_name=bastion_name,
-                bastion_id=bastion_id, compartment_id=compartment_id,
-                config=config, ignore_current=ignore_current,
-                interactive=interactive, return_type=core.RETURN_OBJ)
+                bastion_id=bastion_id,
+                compartment_id=compartment_id,
+                config=config,
+                ignore_current=ignore_current,
+                interactive=interactive,
+                return_type=core.RETURN_OBJ,
+            )
             if not bastion:
-                raise ValueError(
-                    "No bastion given or found. "
-                    "Operation cancelled.")
+                raise ValueError("No bastion given or found. " "Operation cancelled.")
             bastion_id = bastion.id
 
             if interactive:
                 # Prompt the user for specifying a compartment
-                prompt = mysqlsh.globals.shell.prompt(
-                    f"Are you sure you want to delete the Bastion "
-                    f"{bastion.name} [yes/NO]: ",
-                    {'defaultValue': 'no'}).strip().lower()
+                prompt = (
+                    mysqlsh.globals.shell.prompt(
+                        f"Are you sure you want to delete the Bastion "
+                        f"{bastion.name} [yes/NO]: ",
+                        {"defaultValue": "no"},
+                    )
+                    .strip()
+                    .lower()
+                )
                 if prompt != "yes":
                     raise Exception("Deletion aborted.\n")
 
@@ -708,51 +753,50 @@ def delete_bastion(**kwargs):
             #                 db_system.get("id"), update_details)
 
             # If the current bastion has been deleted, clear it
-            if configuration.get_current_bastion_id(
-                    config=config) == bastion_id:
-                configuration.set_current_bastion(bastion_id='')
+            if configuration.get_current_bastion_id(config=config) == bastion_id:
+                configuration.set_current_bastion(bastion_id="")
 
             # If the function should wait till the bastion reaches the DELETED
             # lifecycle state
             if await_deletion:
                 import time
+
                 if interactive:
-                    print('Waiting for Bastion to be deleted...')
+                    print("Waiting for Bastion to be deleted...")
 
                 # Wait for the Bastion Session to be ACTIVE
                 cycles = 0
                 while cycles < 48:
-                    bastion = bastion_client.get_bastion(
-                        bastion_id=bastion_id).data
+                    bastion = bastion_client.get_bastion(bastion_id=bastion_id).data
                     if bastion.lifecycle_state == "DELETED":
                         break
                     else:
                         time.sleep(5)
                         s = "." * (cycles + 1)
                         if interactive:
-                            print(f'Waiting for Bastion to be deleted...{s}')
+                            print(f"Waiting for Bastion to be deleted...{s}")
                     cycles += 1
 
                 if bastion.lifecycle_state != "DELETED":
-                    raise Exception("Bastion did not reach the DELETED "
-                                    "state within 4 minutes.")
+                    raise Exception(
+                        "Bastion did not reach the DELETED " "state within 4 minutes."
+                    )
                 if interactive:
-                    print(
-                        f"Bastion '{bastion.name}' was deleted successfully.")
+                    print(f"Bastion '{bastion.name}' was deleted successfully.")
             elif interactive:
                 print(f"Bastion '{bastion.name}' is being deleted.")
 
         except oci.exceptions.ServiceError as e:
             if interactive:
                 raise
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
-    except (Exception) as e:
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
+    except Exception as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.list.bastionSessions', shell=True, cli=True, web=True)
+@plugin_function("mds.list.bastionSessions", shell=True, cli=True, web=True)
 def list_sessions(**kwargs):
     """Lists bastion sessions
 
@@ -784,22 +828,25 @@ def list_sessions(**kwargs):
     interactive = kwargs.get("interactive", core.get_interactive_default())
     return_type = kwargs.get(
         "return_type",  # In interactive mode, default to formatted str return
-        core.RETURN_STR if interactive else core.RETURN_DICT)
+        core.RETURN_STR if interactive else core.RETURN_DICT,
+    )
     raise_exceptions = kwargs.get(
         "raise_exceptions",  # On internal call (RETURN_OBJ), raise exceptions
-        True if return_type == core.RETURN_OBJ else not interactive)
+        True if return_type == core.RETURN_OBJ else not interactive,
+    )
 
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
-        current_bastion_id = configuration.get_current_bastion_id(
-            config=config)
+            compartment_id=compartment_id, config=config
+        )
+        current_bastion_id = configuration.get_current_bastion_id(config=config)
 
         import oci.exceptions
+
         try:
             # Initialize the  Object Store client
             bastion_client = core.get_oci_bastion_client(config=config)
@@ -809,9 +856,12 @@ def list_sessions(**kwargs):
 
             bastion = get_bastion(
                 bastion_id=bastion_id,
-                compartment_id=compartment_id, config=config,
-                ignore_current=ignore_current, interactive=interactive,
-                return_type=core.RETURN_OBJ)
+                compartment_id=compartment_id,
+                config=config,
+                ignore_current=ignore_current,
+                interactive=interactive,
+                return_type=core.RETURN_OBJ,
+            )
 
             sessions = bastion_client.list_sessions(bastion_id=bastion.id).data
 
@@ -822,7 +872,8 @@ def list_sessions(**kwargs):
             for s in sessions:
                 if s.lifecycle_state != "DELETED":
                     ext_sessions.append(
-                        bastion_client.get_session(session_id=s.id).data)
+                        bastion_client.get_session(session_id=s.id).data
+                    )
                 else:
                     ext_sessions.append(s)
 
@@ -832,18 +883,19 @@ def list_sessions(**kwargs):
             return core.oci_object(
                 oci_object=ext_sessions,
                 return_type=return_type,
-                format_function=format_session_listing)
+                format_function=format_session_listing,
+            )
         except oci.exceptions.ServiceError as e:
             if raise_exceptions:
                 raise
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
     except Exception as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.get.bastionSession', shell=True, cli=True, web=True)
+@plugin_function("mds.get.bastionSession", shell=True, cli=True, web=True)
 def get_session(**kwargs):
     """Gets a Bastion Session with the given id
 
@@ -882,17 +934,20 @@ def get_session(**kwargs):
     return_type = kwargs.get("return_type", core.RETURN_DICT)
     raise_exceptions = kwargs.get(
         "raise_exceptions",  # On internal call (RETURN_OBJ), raise exceptions
-        True if return_type == core.RETURN_OBJ else not interactive)
+        True if return_type == core.RETURN_OBJ else not interactive,
+    )
 
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
 
         import oci.exceptions
+
         try:
             # Initialize the Bastion client
             bastion_client = core.get_oci_bastion_client(config=config)
@@ -903,11 +958,13 @@ def get_session(**kwargs):
             if not bastion_id and interactive:
                 bastion_id = get_bastion(
                     compartment_id=compartment_id,
-                    config=config, ignore_current=ignore_current,
-                    interactive=interactive, return_type=core.RETURN_OBJ).id
+                    config=config,
+                    ignore_current=ignore_current,
+                    interactive=interactive,
+                    return_type=core.RETURN_OBJ,
+                ).id
             if not bastion_id:
-                raise Exception("No bastion_id given. "
-                                "Cancelling operation.")
+                raise Exception("No bastion_id given. " "Cancelling operation.")
 
             # List the Bastion of the current compartment
             sessions = bastion_client.list_sessions(bastion_id=bastion_id).data
@@ -924,28 +981,31 @@ def get_session(**kwargs):
             # Let the user choose from the list
             selected_session = core.prompt_for_list_item(
                 item_list=sessions,
-                prompt_caption=("Please enter the name or index "
-                                "of the Bastion Session: "),
-                item_name_property="display_name", given_value=session_name)
+                prompt_caption=(
+                    "Please enter the name or index " "of the Bastion Session: "
+                ),
+                item_name_property="display_name",
+                given_value=session_name,
+            )
 
-            session = bastion_client.get_session(
-                session_id=selected_session.id).data
+            session = bastion_client.get_session(session_id=selected_session.id).data
 
             return core.oci_object(
                 oci_object=session,
                 return_type=return_type,
-                format_function=format_session_listing)
+                format_function=format_session_listing,
+            )
         except oci.exceptions.ServiceError as e:
             if raise_exceptions:
                 raise
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
     except (ValueError, oci.exceptions.ClientError) as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.create.bastionSession', shell=True, cli=True, web=True)
+@plugin_function("mds.create.bastionSession", shell=True, cli=True, web=True)
 def create_session(**kwargs):
     """Creates a Bastion Session for the given bastion_id
 
@@ -1003,29 +1063,32 @@ def create_session(**kwargs):
     config = kwargs.get("config")
     config_profile = kwargs.get("config_profile")
     ignore_current = kwargs.get("ignore_current", False)
-    fallback_to_any_in_compartment = kwargs.get(
-        "fallback_to_any_in_compartment", False)
+    fallback_to_any_in_compartment = kwargs.get("fallback_to_any_in_compartment", False)
 
     interactive = kwargs.get("interactive", core.get_interactive_default())
     return_type = kwargs.get(
         "return_type",  # In interactive mode, default to formatted str return
-        core.RETURN_STR if interactive else core.RETURN_DICT)
+        core.RETURN_STR if interactive else core.RETURN_DICT,
+    )
     raise_exceptions = kwargs.get(
         "raise_exceptions",  # On internal call (RETURN_OBJ), raise exceptions
-        True if return_type == core.RETURN_OBJ else not interactive)
+        True if return_type == core.RETURN_OBJ else not interactive,
+    )
 
     from datetime import datetime
 
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config,
-            config_profile=config_profile, interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
         if not ignore_current and not bastion_name:
             bastion_id = configuration.get_current_bastion_id(
-                bastion_id=bastion_id, config=config)
+                bastion_id=bastion_id, config=config
+            )
 
         # Initialize the Bastion client
         bastion_client = core.get_oci_bastion_client(config=config)
@@ -1035,61 +1098,66 @@ def create_session(**kwargs):
                 bastion_name=bastion_name,
                 fallback_to_any_in_compartment=fallback_to_any_in_compartment,
                 compartment_id=compartment_id,
-                config=config, ignore_current=ignore_current,
-                interactive=interactive, return_type=core.RETURN_OBJ).id
+                config=config,
+                ignore_current=ignore_current,
+                interactive=interactive,
+                return_type=core.RETURN_OBJ,
+            ).id
 
         if not bastion_id:
             raise ValueError("No bastion_id or bastion_name specified.")
 
         if session_type == "MANAGED_SSH":
-            default_name = f'COMPUTE-{datetime.now():%Y%m%d-%H%M%S}'
+            default_name = f"COMPUTE-{datetime.now():%Y%m%d-%H%M%S}"
         else:
-            default_name = f'MDS-{datetime.now():%Y%m%d-%H%M%S}'
+            default_name = f"MDS-{datetime.now():%Y%m%d-%H%M%S}"
 
         if not session_name and interactive:
             session_name = core.prompt(
-                "Please specify a name for the Bastion Session "
-                f"({default_name}): ",
-                {'defaultValue': default_name}).strip()
+                "Please specify a name for the Bastion Session " f"({default_name}): ",
+                {"defaultValue": default_name},
+            ).strip()
 
         if not session_type and interactive:
             session_type = core.prompt_for_list_item(
                 item_list=["MANAGED_SSH", "PORT_FORWARDING"],
                 prompt_caption=(
-                    "Please select the Bastion Session type "
-                    "(PORT_FORWARDING): "),
+                    "Please select the Bastion Session type " "(PORT_FORWARDING): "
+                ),
                 print_list=True,
-                prompt_default_value="PORT_FORWARDING")
+                prompt_default_value="PORT_FORWARDING",
+            )
 
         if not session_type:
-            raise ValueError("No session_type given. "
-                             "Operation cancelled.")
+            raise ValueError("No session_type given. " "Operation cancelled.")
 
         if session_type == "MANAGED_SSH":
             if not target_id and interactive:
                 instance = compute.get_instance(
-                    compartment_id=compartment_id, config=config,
+                    compartment_id=compartment_id,
+                    config=config,
                     interactive=interactive,
-                    return_python_object=True)
+                    return_python_object=True,
+                )
                 if not instance:
-                    raise Exception("No target_id specified."
-                                    "Cancelling operation")
+                    raise Exception("No target_id specified." "Cancelling operation")
 
                 target_id = instance.id
 
             if target_id and not target_ip:
                 vnics = compute.list_vnics(
                     instance_id=target_id,
-                    compartment_id=compartment_id, config=config,
+                    compartment_id=compartment_id,
+                    config=config,
                     interactive=False,
-                    return_python_object=True)
+                    return_python_object=True,
+                )
                 for vnic in vnics:
                     if vnic.private_ip:
                         target_ip = vnic.private_ip
                         break
                 if not target_ip:
-                    raise ValueError(
-                        'No private IP found for this compute instance.')
+                    raise ValueError("No private IP found for this compute instance.")
 
             if not target_port:
                 target_port = 22
@@ -1099,11 +1167,12 @@ def create_session(**kwargs):
         else:
             if not target_ip and interactive:
                 db_system = mysql_database_service.get_db_system(
-                    compartment_id=compartment_id, config=config,
-                    return_python_object=True)
+                    compartment_id=compartment_id,
+                    config=config,
+                    return_python_object=True,
+                )
                 if not db_system:
-                    raise Exception("No target_id specified."
-                                    "Cancelling operation")
+                    raise Exception("No target_id specified." "Cancelling operation")
 
                 endpoint = db_system.endpoints[0]
                 target_ip = endpoint.ip_address
@@ -1111,91 +1180,100 @@ def create_session(**kwargs):
                     target_port = endpoint.port
 
         if not target_ip:
-            raise Exception("No target_ip specified."
-                            "Cancelling operation")
+            raise Exception("No target_ip specified." "Cancelling operation")
 
         if not target_port:
-            raise Exception("No target_port specified."
-                            "Cancelling operation")
+            raise Exception("No target_port specified." "Cancelling operation")
 
         if session_type == "MANAGED_SSH":
             if not target_id:
-                raise Exception("No target_id specified."
-                                "Cancelling operation")
+                raise Exception("No target_id specified." "Cancelling operation")
             if not target_user:
-                raise Exception("No target_user specified."
-                                "Cancelling operation")
+                raise Exception("No target_user specified." "Cancelling operation")
 
         # Convert Unix path to Windows
         import os.path
+
         ssh_key_location = os.path.abspath(os.path.expanduser("~/.ssh"))
 
         if not public_key_file and not public_key_content and interactive:
             from os import listdir
 
-            files = [f for f in listdir(ssh_key_location)
-                     if os.path.isfile(os.path.join(ssh_key_location, f)) and
-                     f.lower().endswith(".pub")]
+            files = [
+                f
+                for f in listdir(ssh_key_location)
+                if os.path.isfile(os.path.join(ssh_key_location, f))
+                and f.lower().endswith(".pub")
+            ]
 
             public_key_file = core.prompt_for_list_item(
-                item_list=files, print_list=True,
-                prompt_caption="Please select a public SSH Key: ")
+                item_list=files,
+                print_list=True,
+                prompt_caption="Please select a public SSH Key: ",
+            )
             if not public_key_file:
-                raise Exception("No public SSH Key specified."
-                                "Cancelling operation")
+                raise Exception("No public SSH Key specified." "Cancelling operation")
 
         default_key_file = os.path.join(ssh_key_location, "id_rsa_oci_tunnel.pub")
         if not public_key_file and os.path.exists(default_key_file):
             public_key_file = default_key_file
 
         if public_key_file and not public_key_content:
-            with open(os.path.join(
-                    ssh_key_location, public_key_file), 'r') as file:
+            with open(os.path.join(ssh_key_location, public_key_file), "r") as file:
                 public_key_content = file.read()
 
         if not public_key_content:
-            raise Exception("No public SSH Key specified. "
-                            "Cancelling operation")
+            raise Exception("No public SSH Key specified. " "Cancelling operation")
 
         import oci.identity
         import oci.bastion
         import hashlib
+
         try:
             if session_type == "MANAGED_SSH":
-                target_details = oci.bastion.models.\
-                    CreateManagedSshSessionTargetResourceDetails(
+                target_details = (
+                    oci.bastion.models.CreateManagedSshSessionTargetResourceDetails(
                         target_resource_id=target_id,
                         target_resource_port=target_port,
                         target_resource_private_ip_address=target_ip,
-                        target_resource_operating_system_user_name=target_user)
+                        target_resource_operating_system_user_name=target_user,
+                    )
+                )
             else:
-                target_details = oci.bastion.models.\
-                    CreatePortForwardingSessionTargetResourceDetails(
+                target_details = (
+                    oci.bastion.models.CreatePortForwardingSessionTargetResourceDetails(
                         target_resource_id=target_id,
                         target_resource_port=target_port,
-                        target_resource_private_ip_address=target_ip)
+                        target_resource_private_ip_address=target_ip,
+                    )
+                )
 
             if not session_name:
                 # Calculate unique fingerprint based on all params
                 params = (
-                    target_id + bastion_id +
-                    config_profile + public_key_content +
-                    f'{target_ip}:{target_port}')
+                    target_id
+                    + bastion_id
+                    + config_profile
+                    + public_key_content
+                    + f"{target_ip}:{target_port}"
+                )
 
-                fingerprint = hashlib.md5(params.encode('utf-8')).hexdigest()
-                session_name = f'MDS-{fingerprint}'
+                fingerprint = hashlib.md5(params.encode("utf-8")).hexdigest()
+                session_name = f"MDS-{fingerprint}"
 
             # Check if a session with this fingerprinted name already exists
             sessions = bastion_client.list_sessions(
                 bastion_id=bastion_id,
                 display_name=session_name,
-                session_lifecycle_state='ACTIVE').data
+                session_lifecycle_state="ACTIVE",
+            ).data
             if len(sessions) == 1:
                 # If so, return that session
                 return core.oci_object(
                     oci_object=sessions[0],
                     return_type=return_type,
-                    format_function=format_session_listing)
+                    format_function=format_session_listing,
+                )
 
             if session_type == "MANAGED_SSH":
                 # Check if Bastion Plugin is already enabled
@@ -1204,32 +1282,36 @@ def create_session(**kwargs):
                 bastion_plugin = ia_client.get_instance_agent_plugin(
                     instanceagent_id=target_id,
                     compartment_id=compartment_id,
-                    plugin_name="Bastion").data
+                    plugin_name="Bastion",
+                ).data
                 if bastion_plugin.status != "RUNNING":
                     # TODO: use UpdateInstanceDetails to enabled the bastion
                     # service
                     raise Exception(
-                        'Please enabled the Bastion plugin on '
-                        'this instance.')
+                        "Please enabled the Bastion plugin on " "this instance."
+                    )
 
             session_details = oci.bastion.models.CreateSessionDetails(
                 bastion_id=bastion_id,
                 display_name=session_name,
                 key_details=oci.bastion.models.PublicKeyDetails(
-                    public_key_content=public_key_content),
+                    public_key_content=public_key_content
+                ),
                 key_type="PUB",
                 session_ttl_in_seconds=ttl_in_seconds,
-                target_resource_details=target_details
+                target_resource_details=target_details,
             )
             new_session = bastion_client.create_session(session_details).data
 
             if await_creation:
                 import time
+
                 # Wait for the Bastion Session to be ACTIVE
                 cycles = 0
                 while cycles < 24:
                     bastion_session = bastion_client.get_session(
-                        session_id=new_session.id).data
+                        session_id=new_session.id
+                    ).data
                     if bastion_session.lifecycle_state == "ACTIVE":
                         # TODO: Report bug to the Bastion dev team.
                         # Ask them to only switch lifecycle_state to ACTIVE
@@ -1240,15 +1322,20 @@ def create_session(**kwargs):
                         time.sleep(5)
                         s = "." * (cycles + 1)
                         if interactive:
-                            print(f'Waiting for Bastion Session to become '
-                                  f'active...{s}')
+                            print(
+                                f"Waiting for Bastion Session to become "
+                                f"active...{s}"
+                            )
                     cycles += 1
 
                 bastion_session = bastion_client.get_session(
-                    session_id=new_session.id).data
+                    session_id=new_session.id
+                ).data
                 if bastion_session.lifecycle_state != "ACTIVE":
-                    raise Exception("Bastion Session did not reach ACTIVE "
-                                    "state within 2 minutes.")
+                    raise Exception(
+                        "Bastion Session did not reach ACTIVE "
+                        "state within 2 minutes."
+                    )
 
             return core.oci_object(
                 oci_object=new_session,
@@ -1256,19 +1343,21 @@ def create_session(**kwargs):
                 format_function=lambda s: print(
                     f"Bastion Session {s.display_name} is being\n"
                     f" created. Use mds.list.bastionSessions() to check "
-                    "it's provisioning state.\n"))
+                    "it's provisioning state.\n"
+                ),
+            )
 
         except oci.exceptions.ServiceError as e:
             if raise_exceptions:
                 raise
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
     except Exception as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.delete.bastionSession', shell=True, cli=True, web=True)
+@plugin_function("mds.delete.bastionSession", shell=True, cli=True, web=True)
 def delete_session(**kwargs):
     """Deletes a Bastion Session with the given id
 
@@ -1310,45 +1399,62 @@ def delete_session(**kwargs):
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
         if not ignore_current and bastion_name is None:
             bastion_id = configuration.get_current_bastion_id(
-                bastion_id=bastion_id, config=config)
+                bastion_id=bastion_id, config=config
+            )
 
         import oci.exceptions
+
         try:
             if not session_id:
                 bastion = get_bastion(
                     bastion_name=bastion_name,
-                    bastion_id=bastion_id, compartment_id=compartment_id,
-                    config=config, ignore_current=ignore_current,
-                    interactive=interactive, return_type=core.RETURN_OBJ)
+                    bastion_id=bastion_id,
+                    compartment_id=compartment_id,
+                    config=config,
+                    ignore_current=ignore_current,
+                    interactive=interactive,
+                    return_type=core.RETURN_OBJ,
+                )
                 if not bastion:
                     raise ValueError(
-                        "No bastion given or found. "
-                        "Operation cancelled.")
+                        "No bastion given or found. " "Operation cancelled."
+                    )
 
                 session = get_session(
-                    session_name=session_name, session_id=session_id,
-                    bastion_id=bastion.id, compartment_id=compartment_id,
-                    config=config, ignore_current=ignore_current,
-                    interactive=interactive, return_type=core.RETURN_OBJ)
+                    session_name=session_name,
+                    session_id=session_id,
+                    bastion_id=bastion.id,
+                    compartment_id=compartment_id,
+                    config=config,
+                    ignore_current=ignore_current,
+                    interactive=interactive,
+                    return_type=core.RETURN_OBJ,
+                )
                 if not session:
                     raise ValueError(
-                        "No bastion session given or found. "
-                        "Operation cancelled.")
+                        "No bastion session given or found. " "Operation cancelled."
+                    )
 
                 session_id = session.id
 
             if interactive:
                 # Prompt the user for specifying a compartment
-                prompt = mysqlsh.globals.shell.prompt(
-                    f"Are you sure you want to delete the bastion session? "
-                    f"[yes/NO]: ",
-                    {'defaultValue': 'no'}).strip().lower()
+                prompt = (
+                    mysqlsh.globals.shell.prompt(
+                        f"Are you sure you want to delete the bastion session? "
+                        f"[yes/NO]: ",
+                        {"defaultValue": "no"},
+                    )
+                    .strip()
+                    .lower()
+                )
                 if prompt != "yes":
                     raise Exception("Deletion aborted.\n")
 
@@ -1363,8 +1469,8 @@ def delete_session(**kwargs):
         except oci.exceptions.ServiceError as e:
             if interactive:
                 raise
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
-    except (Exception) as e:
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
+    except Exception as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")

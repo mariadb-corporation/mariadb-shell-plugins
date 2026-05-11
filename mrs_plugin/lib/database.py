@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -35,106 +35,178 @@ def quote_identifier(identifier):
 
 
 def get_schemas(session, ignore_system_schemas=True):
-    ignore = ['.%', 'mysql_%', 'mysql'] if ignore_system_schemas else []
-    wheres = ["SCHEMA_NAME NOT LIKE ?", "SCHEMA_NAME NOT LIKE ?",
-              "SCHEMA_NAME <> ?"] if ignore_system_schemas else None
+    ignore = [".%", "mysql_%", "mysql"] if ignore_system_schemas else []
+    wheres = (
+        ["SCHEMA_NAME NOT LIKE ?", "SCHEMA_NAME NOT LIKE ?", "SCHEMA_NAME <> ?"]
+        if ignore_system_schemas
+        else None
+    )
 
-    return core.select(table="INFORMATION_SCHEMA.SCHEMATA",
-                       cols="SCHEMA_NAME",
-                       where=wheres
-                       ).exec(session, params=ignore).items
+    return (
+        core.select(
+            table="INFORMATION_SCHEMA.SCHEMATA", cols="SCHEMA_NAME", where=wheres
+        )
+        .exec(session, params=ignore)
+        .items
+    )
 
 
 def get_schema(session, schema_name):
-    return core.select(table="INFORMATION_SCHEMA.SCHEMATA",
-                       cols="SCHEMA_NAME",
-                       where=["SCHEMA_NAME = ?"]
-                       ).exec(session, params=[schema_name]).first
+    return (
+        core.select(
+            table="INFORMATION_SCHEMA.SCHEMATA",
+            cols="SCHEMA_NAME",
+            where=["SCHEMA_NAME = ?"],
+        )
+        .exec(session, params=[schema_name])
+        .first
+    )
 
 
 def get_db_objects(session, schema_name, db_object_type):
     if db_object_type == "TABLE":
-        return core.select(table="INFORMATION_SCHEMA.TABLES", cols="TABLE_NAME AS OBJECT_NAME",
-                           where=["TABLE_SCHEMA=? /*=sakila*/",
-                                  "TABLE_TYPE = 'BASE TABLE'"],
-                           order="TABLE_NAME"
-                           ).exec(session, [schema_name]).items
+        return (
+            core.select(
+                table="INFORMATION_SCHEMA.TABLES",
+                cols="TABLE_NAME AS OBJECT_NAME",
+                where=["TABLE_SCHEMA=? /*=sakila*/", "TABLE_TYPE = 'BASE TABLE'"],
+                order="TABLE_NAME",
+            )
+            .exec(session, [schema_name])
+            .items
+        )
     elif db_object_type == "VIEW":
-        return core.select(table="INFORMATION_SCHEMA.TABLES", cols="TABLE_NAME AS OBJECT_NAME",
-                           where=["TABLE_SCHEMA=? /*=sakila*/",
-                                  "(TABLE_TYPE='VIEW' OR TABLE_TYPE='SYSTEM VIEW')"],
-                           order="TABLE_NAME"
-                           ).exec(session, [schema_name]).items
+        return (
+            core.select(
+                table="INFORMATION_SCHEMA.TABLES",
+                cols="TABLE_NAME AS OBJECT_NAME",
+                where=[
+                    "TABLE_SCHEMA=? /*=sakila*/",
+                    "(TABLE_TYPE='VIEW' OR TABLE_TYPE='SYSTEM VIEW')",
+                ],
+                order="TABLE_NAME",
+            )
+            .exec(session, [schema_name])
+            .items
+        )
     elif db_object_type == "PROCEDURE":
-        return core.select(table="INFORMATION_SCHEMA.ROUTINES", cols="ROUTINE_NAME AS OBJECT_NAME",
-                           where=["ROUTINE_SCHEMA=? /*=sakila*/",
-                                  "ROUTINE_TYPE='PROCEDURE'"],
-                           order="ROUTINE_NAME"
-                           ).exec(session, [schema_name]).items
+        return (
+            core.select(
+                table="INFORMATION_SCHEMA.ROUTINES",
+                cols="ROUTINE_NAME AS OBJECT_NAME",
+                where=["ROUTINE_SCHEMA=? /*=sakila*/", "ROUTINE_TYPE='PROCEDURE'"],
+                order="ROUTINE_NAME",
+            )
+            .exec(session, [schema_name])
+            .items
+        )
     elif db_object_type == "FUNCTION":
-        return core.select(table="INFORMATION_SCHEMA.ROUTINES", cols="ROUTINE_NAME AS OBJECT_NAME",
-                           where=["ROUTINE_SCHEMA=? /*=sakila*/",
-                                  "ROUTINE_TYPE='FUNCTION'"],
-                           order="ROUTINE_NAME"
-                           ).exec(session, [schema_name]).items
+        return (
+            core.select(
+                table="INFORMATION_SCHEMA.ROUTINES",
+                cols="ROUTINE_NAME AS OBJECT_NAME",
+                where=["ROUTINE_SCHEMA=? /*=sakila*/", "ROUTINE_TYPE='FUNCTION'"],
+                order="ROUTINE_NAME",
+            )
+            .exec(session, [schema_name])
+            .items
+        )
 
-    raise ValueError('Invalid db_object_type. Only valid types are '
-                     'TABLE, VIEW, PROCEDURE, FUNCTION and SCHEMA.')
+    raise ValueError(
+        "Invalid db_object_type. Only valid types are "
+        "TABLE, VIEW, PROCEDURE, FUNCTION and SCHEMA."
+    )
 
 
 def get_db_object(session, schema_name, db_object_name, db_object_type):
     if db_object_type == "TABLE":
-        return core.select(table="INFORMATION_SCHEMA.TABLES", cols="TABLE_NAME AS OBJECT_NAME",
-                           where=["TABLE_SCHEMA=?",
-                                  "TABLE_TYPE='BASE TABLE'", "TABLE_NAME=?"]
-                           ).exec(session, [schema_name, db_object_name]).first
+        return (
+            core.select(
+                table="INFORMATION_SCHEMA.TABLES",
+                cols="TABLE_NAME AS OBJECT_NAME",
+                where=["TABLE_SCHEMA=?", "TABLE_TYPE='BASE TABLE'", "TABLE_NAME=?"],
+            )
+            .exec(session, [schema_name, db_object_name])
+            .first
+        )
     elif db_object_type == "VIEW":
-        return core.select(table="INFORMATION_SCHEMA.TABLES", cols="TABLE_NAME AS OBJECT_NAME",
-                           where=[
-                               "TABLE_SCHEMA=?", "(TABLE_TYPE='VIEW' OR TABLE_TYPE='SYSTEM VIEW')", "TABLE_NAME=?"]
-                           ).exec(session, [schema_name, db_object_name]).first
+        return (
+            core.select(
+                table="INFORMATION_SCHEMA.TABLES",
+                cols="TABLE_NAME AS OBJECT_NAME",
+                where=[
+                    "TABLE_SCHEMA=?",
+                    "(TABLE_TYPE='VIEW' OR TABLE_TYPE='SYSTEM VIEW')",
+                    "TABLE_NAME=?",
+                ],
+            )
+            .exec(session, [schema_name, db_object_name])
+            .first
+        )
     elif db_object_type == "PROCEDURE":
-        return core.select(table="INFORMATION_SCHEMA.ROUTINES", cols="ROUTINE_NAME AS OBJECT_NAME",
-                           where=["ROUTINE_SCHEMA=?",
-                                  "ROUTINE_TYPE='PROCEDURE'", "ROUTINE_NAME=?"]
-                           ).exec(session, [schema_name, db_object_name]).first
+        return (
+            core.select(
+                table="INFORMATION_SCHEMA.ROUTINES",
+                cols="ROUTINE_NAME AS OBJECT_NAME",
+                where=[
+                    "ROUTINE_SCHEMA=?",
+                    "ROUTINE_TYPE='PROCEDURE'",
+                    "ROUTINE_NAME=?",
+                ],
+            )
+            .exec(session, [schema_name, db_object_name])
+            .first
+        )
     elif db_object_type == "FUNCTION":
-        return core.select(table="INFORMATION_SCHEMA.ROUTINES", cols="ROUTINE_NAME AS OBJECT_NAME",
-                           where=["ROUTINE_SCHEMA=?",
-                                  "ROUTINE_TYPE='FUNCTION'", "ROUTINE_NAME=?"]
-                           ).exec(session, [schema_name, db_object_name]).first
+        return (
+            core.select(
+                table="INFORMATION_SCHEMA.ROUTINES",
+                cols="ROUTINE_NAME AS OBJECT_NAME",
+                where=["ROUTINE_SCHEMA=?", "ROUTINE_TYPE='FUNCTION'", "ROUTINE_NAME=?"],
+            )
+            .exec(session, [schema_name, db_object_name])
+            .first
+        )
 
-    raise ValueError('Invalid db_object_type. Only valid types are '
-                     'TABLE, VIEW, PROCEDURE, FUNCTION and SCHEMA.')
+    raise ValueError(
+        "Invalid db_object_type. Only valid types are "
+        "TABLE, VIEW, PROCEDURE, FUNCTION and SCHEMA."
+    )
 
 
 def get_object_type_count(session, schema_name, db_object_type):
     if db_object_type == "TABLE":
-        query = core.select(table="INFORMATION_SCHEMA.TABLES",
-                            cols="COUNT(*) AS object_count",
-                            where=["TABLE_SCHEMA=?", "TABLE_TYPE='BASE TABLE'"]
-                            )
+        query = core.select(
+            table="INFORMATION_SCHEMA.TABLES",
+            cols="COUNT(*) AS object_count",
+            where=["TABLE_SCHEMA=?", "TABLE_TYPE='BASE TABLE'"],
+        )
     if db_object_type == "VIEW":
-        query = core.select(table="INFORMATION_SCHEMA.TABLES",
-                            cols="COUNT(*) AS object_count",
-                            where=[
-                                "TABLE_SCHEMA=?", "(TABLE_TYPE = 'VIEW' OR TABLE_TYPE = 'SYSTEM VIEW')"]
-                            )
+        query = core.select(
+            table="INFORMATION_SCHEMA.TABLES",
+            cols="COUNT(*) AS object_count",
+            where=[
+                "TABLE_SCHEMA=?",
+                "(TABLE_TYPE = 'VIEW' OR TABLE_TYPE = 'SYSTEM VIEW')",
+            ],
+        )
     elif db_object_type == "PROCEDURE":
-        query = core.select(table="INFORMATION_SCHEMA.ROUTINES",
-                            cols="COUNT(*) AS object_count",
-                            where=["ROUTINE_SCHEMA=?",
-                                   "ROUTINE_TYPE='PROCEDURE'"]
-                            )
+        query = core.select(
+            table="INFORMATION_SCHEMA.ROUTINES",
+            cols="COUNT(*) AS object_count",
+            where=["ROUTINE_SCHEMA=?", "ROUTINE_TYPE='PROCEDURE'"],
+        )
     elif db_object_type == "FUNCTION":
-        query = core.select(table="INFORMATION_SCHEMA.ROUTINES",
-                            cols="COUNT(*) AS object_count",
-                            where=["ROUTINE_SCHEMA=?",
-                                   "ROUTINE_TYPE='FUNCTION'"]
-                            )
+        query = core.select(
+            table="INFORMATION_SCHEMA.ROUTINES",
+            cols="COUNT(*) AS object_count",
+            where=["ROUTINE_SCHEMA=?", "ROUTINE_TYPE='FUNCTION'"],
+        )
     else:
-        raise ValueError('Invalid db_object_type. Only valid types are '
-                         'TABLE, VIEW, PROCEDURE and FUNCTION.')
+        raise ValueError(
+            "Invalid db_object_type. Only valid types are "
+            "TABLE, VIEW, PROCEDURE and FUNCTION."
+        )
 
     row = query.exec(session, [schema_name]).first
     return int(row["object_count"]) if row else 0
@@ -156,7 +228,11 @@ def get_db_object_parameters(session, db_schema_name, db_object_name, db_type):
         ORDER BY ORDINAL_POSITION
     """
 
-    return core.MrsDbExec(sql).exec(session, [db_schema_name, db_object_name, db_type]).items
+    return (
+        core.MrsDbExec(sql)
+        .exec(session, [db_schema_name, db_object_name, db_type])
+        .items
+    )
 
 
 def get_db_function_return_type(session, db_schema_name, db_object_name):
@@ -167,8 +243,7 @@ def get_db_function_return_type(session, db_schema_name, db_object_name):
             AND ROUTINE_NAME = ?
     """
 
-    row = core.MrsDbExec(sql).exec(
-        session, [db_schema_name, db_object_name]).first
+    row = core.MrsDbExec(sql).exec(session, [db_schema_name, db_object_name]).first
 
     return row["DATA_TYPE"] if row else None
 
@@ -179,8 +254,7 @@ def db_schema_object_is_table(session, db_schema_name, db_object_name):
         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
     """
 
-    row = core.MrsDbExec(sql).exec(
-        session, [db_schema_name, db_object_name]).first
+    row = core.MrsDbExec(sql).exec(session, [db_schema_name, db_object_name]).first
 
     return row and "TABLE" in row["TABLE_TYPE"]
 
@@ -211,8 +285,7 @@ def get_tables_used_in_view_including_required_grants(
         WHERE VIEW_SCHEMA = ? AND VIEW_NAME = ?
     """
 
-    rows = core.MrsDbExec(sql).exec(
-        session, [schema_name, db_object_name]).items
+    rows = core.MrsDbExec(sql).exec(session, [schema_name, db_object_name]).items
 
     return [
         (row["OBJ_NAME"], "TABLE", ["SELECT", "INSERT", "UPDATE", "DELETE"])
@@ -231,8 +304,7 @@ def get_routines_used_in_view_including_required_grants(
         WHERE t1.TABLE_SCHEMA = ? AND t1.TABLE_NAME = ?;
     """
 
-    rows = core.MrsDbExec(sql).exec(
-        session, [schema_name, db_object_name]).items
+    rows = core.MrsDbExec(sql).exec(session, [schema_name, db_object_name]).items
 
     return [(row["OBJ_NAME"], row["OBJ_TYPE"], ["EXECUTE"]) for row in rows]
 
@@ -254,12 +326,31 @@ def get_objects_used_in_view_including_required_grants(
 
 def verify_privilege(privilege):
     valid_privileges = [
-        'ALTER', 'ALTER ROUTINE', 'CREATE', 'CREATE ROUTINE',
-        'CREATE TEMPORARY TABLES', 'CREATE VIEW', 'DELETE', 'DROP', 'EVENT', 'EXECUTE', 'INDEX', 'INSERT',
-        'LOCK TABLES', 'REFERENCES', 'SELECT', 'SHOW DATABASES', 'SHOW VIEW', 'TRIGGER', 'UPDATE', 'USAGE']
+        "ALTER",
+        "ALTER ROUTINE",
+        "CREATE",
+        "CREATE ROUTINE",
+        "CREATE TEMPORARY TABLES",
+        "CREATE VIEW",
+        "DELETE",
+        "DROP",
+        "EVENT",
+        "EXECUTE",
+        "INDEX",
+        "INSERT",
+        "LOCK TABLES",
+        "REFERENCES",
+        "SELECT",
+        "SHOW DATABASES",
+        "SHOW VIEW",
+        "TRIGGER",
+        "UPDATE",
+        "USAGE",
+    ]
     if privilege.upper() not in valid_privileges:
         raise ValueError(
-            f'Invalid privilege {privilege} specified. Valid privileges are {", ".join(valid_privileges)}.')
+            f'Invalid privilege {privilege} specified. Valid privileges are {", ".join(valid_privileges)}.'
+        )
     return privilege
 
 
@@ -267,20 +358,26 @@ def get_normalized_grant_privileges(privileges):
     norm_privileges = []
 
     if isinstance(privileges, str):
-        norm_privileges = [{
-            "privilege": verify_privilege(privileges),
-        }]
+        norm_privileges = [
+            {
+                "privilege": verify_privilege(privileges),
+            }
+        ]
     elif isinstance(privileges, list):
         for priv in privileges:
             if isinstance(priv, str):
-                norm_privileges.append({
-                    "privilege": verify_privilege(priv),
-                })
+                norm_privileges.append(
+                    {
+                        "privilege": verify_privilege(priv),
+                    }
+                )
             elif isinstance(priv, dict):
-                norm_privileges.append({
-                    "privilege": verify_privilege(priv.get("privilege")),
-                    "columnList": priv.get("columnList")
-                })
+                norm_privileges.append(
+                    {
+                        "privilege": verify_privilege(priv.get("privilege")),
+                        "columnList": priv.get("columnList"),
+                    }
+                )
 
     return norm_privileges
 
@@ -292,22 +389,28 @@ def get_grant_statements_for_explicit_grants(grants):
     # Normalize privileges
     norm_grants = []
     if isinstance(grants, dict):
-        norm_grants = [{
-            "object": grants.get("object"),
-            "schema": grants.get("schema"),
-            "objectType": grants.get("objectType", None),
-            "privileges": get_normalized_grant_privileges(grants.get("privileges"))
-        }]
+        norm_grants = [
+            {
+                "object": grants.get("object"),
+                "schema": grants.get("schema"),
+                "objectType": grants.get("objectType", None),
+                "privileges": get_normalized_grant_privileges(grants.get("privileges")),
+            }
+        ]
 
     elif isinstance(grants, list):
         norm_grants = []
         for grant in grants:
-            norm_grants.append({
-                "object": grant.get("object"),
-                "schema": grant.get("schema"),
-                "objectType": grant.get("objectType", None),
-                "privileges": get_normalized_grant_privileges(grant.get("privileges"))
-            })
+            norm_grants.append(
+                {
+                    "object": grant.get("object"),
+                    "schema": grant.get("schema"),
+                    "objectType": grant.get("objectType", None),
+                    "privileges": get_normalized_grant_privileges(
+                        grant.get("privileges")
+                    ),
+                }
+            )
 
     # Build grant statements
     grant_statements = []
@@ -315,8 +418,12 @@ def get_grant_statements_for_explicit_grants(grants):
         privileges = []
         for privilege in grant["privileges"]:
             if privilege.get("columnList", None) is not None:
-                privileges.append(privilege.get(
-                    "privilege") + " (" + ", ".join(privilege.get("columnList")) + ")")
+                privileges.append(
+                    privilege.get("privilege")
+                    + " ("
+                    + ", ".join(privilege.get("columnList"))
+                    + ")"
+                )
             else:
                 privileges.append(privilege.get("privilege"))
 
@@ -327,15 +434,23 @@ def get_grant_statements_for_explicit_grants(grants):
 
         grant_statements.append(
             f"GRANT {privileges} ON {object_type}"
-            f"{quote_identifier(grant['schema'])}.{quote_identifier(grant['object'])} " +
-            "TO 'mysql_rest_service_data_provider'@'%'")
+            f"{quote_identifier(grant['schema'])}.{quote_identifier(grant['object'])} "
+            + "TO 'mysql_rest_service_data_provider'@'%'"
+        )
 
     return grant_statements
 
 
 def get_grant_statements(
-        session, schema_name, db_object_name, grant_privileges, objects, db_object_type=None, explicit_grants=None,
-        disable_automatic_grants=False):
+    session,
+    schema_name,
+    db_object_name,
+    grant_privileges,
+    objects,
+    db_object_type=None,
+    explicit_grants=None,
+    disable_automatic_grants=False,
+):
     # We can not grant/revoke the information_schema
     if schema_name.lower() == "information_schema":
         return []
@@ -373,13 +488,20 @@ def get_grant_statements(
         ]
 
         # If the object is not a procedure, also add all referenced tables and views
-        if db_object_type != "PROCEDURE" and db_object_type != "FUNCTION" and objects is not None:
+        if (
+            db_object_type != "PROCEDURE"
+            and db_object_type != "FUNCTION"
+            and objects is not None
+        ):
             for obj in objects:
                 for field in obj.get("fields"):
-                    if (field.get("object_reference") and
-                            (field["object_reference"].get("unnest") or field["enabled"])):
-                        ref_table = (f'{field["object_reference"]["reference_mapping"]["referenced_schema"]}' +
-                                    f'.{field["object_reference"]["reference_mapping"]["referenced_table"]}')
+                    if field.get("object_reference") and (
+                        field["object_reference"].get("unnest") or field["enabled"]
+                    ):
+                        ref_table = (
+                            f'{field["object_reference"]["reference_mapping"]["referenced_schema"]}'
+                            + f'.{field["object_reference"]["reference_mapping"]["referenced_table"]}'
+                        )
                         grants.append(f"""GRANT {','.join(grant_privileges)}
                             ON {ref_table}
                             TO 'mysql_rest_service_data_provider'@'%'""")
@@ -387,17 +509,31 @@ def get_grant_statements(
         grants = []
 
     if explicit_grants is not None:
-        grants.extend(
-            get_grant_statements_for_explicit_grants(explicit_grants))
+        grants.extend(get_grant_statements_for_explicit_grants(explicit_grants))
 
     return grants
 
 
-def grant_db_object(session, schema_name, db_object_name, grant_privileges, objects=None, db_object_type=None,
-                    explicit_grants=None, disable_automatic_grants=False):
+def grant_db_object(
+    session,
+    schema_name,
+    db_object_name,
+    grant_privileges,
+    objects=None,
+    db_object_type=None,
+    explicit_grants=None,
+    disable_automatic_grants=False,
+):
     grants = get_grant_statements(
-        session, schema_name, db_object_name, grant_privileges, objects, db_object_type,
-        explicit_grants, disable_automatic_grants)
+        session,
+        schema_name,
+        db_object_name,
+        grant_privileges,
+        objects,
+        db_object_type,
+        explicit_grants,
+        disable_automatic_grants,
+    )
     for grant in grants:
         session.run_sql(grant)
 
@@ -429,7 +565,9 @@ def revoke_all_from_db_object(session, schema_name, db_object_name, db_object_ty
     session.run_sql(sql)
 
 
-def get_table_columns_with_references(session, schema_name, db_object_name, db_object_type):
+def get_table_columns_with_references(
+    session, schema_name, db_object_name, db_object_type
+):
     sql = """
         CALL `mysql_rest_service_metadata`.`table_columns_with_references`(?, ?)
     """
@@ -448,7 +586,9 @@ def get_objects(session, db_object_id):
     return core.MrsDbExec(sql).exec(session, [db_object_id]).items
 
 
-def get_object_via_absolute_request_path(session, absolute_request_path, ignore_case=True):
+def get_object_via_absolute_request_path(
+    session, absolute_request_path, ignore_case=True
+):
     sql = """
         SELECT o.id
         FROM `mysql_rest_service_metadata`.`db_object` AS o
@@ -476,15 +616,19 @@ def get_object_fields_with_references(session, object_id, binary_formatter=None)
         WHERE object_id = ?
     """
 
-    return core.MrsDbExec(sql, binary_formatter=binary_formatter).exec(session, [object_id]).items
+    return (
+        core.MrsDbExec(sql, binary_formatter=binary_formatter)
+        .exec(session, [object_id])
+        .items
+    )
 
 
 def crud_mapping(crud_operations):
     crud_to_grant_mapping = {
-        'CREATE': 'INSERT',
-        'READ': 'SELECT',
-        'UPDATE': 'UPDATE',
-        'DELETE': 'DELETE'
+        "CREATE": "INSERT",
+        "READ": "SELECT",
+        "UPDATE": "UPDATE",
+        "DELETE": "DELETE",
     }
 
     grant_privileges = []

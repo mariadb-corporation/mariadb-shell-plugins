@@ -43,7 +43,6 @@ from mds_plugin import core, configuration, compute
 import oci
 import oci.core.models as oci_models
 
-
 k_my_id_tag_name = "mysql-migration-assistant-id"
 k_oracle_tags = "Oracle-Tags"
 
@@ -80,7 +79,9 @@ def freeform_tag(obj: object, tag: str = k_my_id_tag_name):
     return None
 
 
-def defined_tag(obj: object, namespace: str = k_oracle_tags, tag: str = k_my_id_tag_name):
+def defined_tag(
+    obj: object, namespace: str = k_oracle_tags, tag: str = k_my_id_tag_name
+):
     assert obj
     if hasattr(obj, "defined_tags") and obj.defined_tags and namespace in obj.defined_tags:  # type: ignore
         return obj.defined_tags[namespace].get(tag)  # type: ignore
@@ -88,9 +89,9 @@ def defined_tag(obj: object, namespace: str = k_oracle_tags, tag: str = k_my_id_
 
 
 def get_config(path: Optional[str] = None, profile: Optional[str] = None) -> dict:
-    return configuration.get_current_config(config_profile=profile,
-                                            config_file_path=path,
-                                            interactive=False)
+    return configuration.get_current_config(
+        config_profile=profile, config_file_path=path, interactive=False
+    )
 
 
 class ComputeAction(Enum):
@@ -158,9 +159,7 @@ def filter_sql_mode(sql_mode):
         "MYSQL40",
         "NO_AUTO_CREATE_USER",
     ]
-    modes = [
-        mode for mode in modes if mode and mode.upper() not in invalid_modes
-    ]
+    modes = [mode for mode in modes if mode and mode.upper() not in invalid_modes]
     return ",".join(modes)
 
 
@@ -272,13 +271,17 @@ def get_regions() -> list[str]:
     return oci.regions.REGIONS
 
 
-def wait_for_work_requests(work_requests: list[Any], context: str, sleep_for=60, show_fn=None):
+def wait_for_work_requests(
+    work_requests: list[Any], context: str, sleep_for=60, show_fn=None
+):
     show = show_fn or logging.info
     pending = {}
     work_id = 1
 
     for work in work_requests:
-        pending[f"{work.operation_type} ({work.resources[0].identifier if work.resources else work_id})"] = work
+        pending[
+            f"{work.operation_type} ({work.resources[0].identifier if work.resources else work_id})"
+        ] = work
         work_id += 1
 
     while pending:
@@ -294,8 +297,7 @@ def wait_for_work_requests(work_requests: list[Any], context: str, sleep_for=60,
                     show(f"Work request '{desc}' still pending...")
 
                 case work.STATUS_IN_PROGRESS:
-                    show(
-                        f"Work request '{desc}' progress: {work.percent_complete}%")
+                    show(f"Work request '{desc}' progress: {work.percent_complete}%")
 
                 case work.STATUS_CANCELING | work.STATUS_CANCELED:
                     done.append(desc)
@@ -335,7 +337,8 @@ class WorkRequest:
 
     def refresh(self):
         self.obj: oci.work_requests.models.WorkRequest = self._client.get_work_request(
-            self.id).data  # type: ignore
+            self.id
+        ).data  # type: ignore
 
     @property
     def operation_type(self) -> str:
@@ -376,7 +379,8 @@ class IdentityWorkRequest:
 
     def refresh(self):
         self.obj: oci.identity.models.WorkRequest = self._client.get_work_request(
-            self.id).data  # type: ignore
+            self.id
+        ).data  # type: ignore
 
     @property
     def operation_type(self) -> str:
@@ -415,7 +419,8 @@ class MySQLWorkRequest:
 
     def refresh(self):
         self.obj: oci.mysql.models.WorkRequest = self._client.get_work_request(
-            self.id).data  # type: ignore
+            self.id
+        ).data  # type: ignore
 
     @property
     def operation_type(self) -> str:
@@ -459,17 +464,18 @@ class OCIUser:
 
         # Get the list of region subscriptions for your tenancy
         region_subscriptions = self._iam_client.list_region_subscriptions(
-            tenancy_id).data  # type: ignore
+            tenancy_id
+        ).data  # type: ignore
 
         # Find the region marked as home region
         self.home_region = next(
-            (r.region_name for r in region_subscriptions if r.is_home_region), None)
+            (r.region_name for r in region_subscriptions if r.is_home_region), None
+        )
         if self.home_region != self._config["region"]:
             self._config = self._config.copy()
             logging.info(f"Switching to home region {self.home_region}")
             self._config["region"] = self.home_region
-            self._iam_client = core.get_oci_identity_client(
-                config=self._config)
+            self._iam_client = core.get_oci_identity_client(config=self._config)
 
     @property
     def user_id(self) -> str:
@@ -489,8 +495,7 @@ class OCIUser:
         self.obj = response.data
 
     def list_api_keys(self) -> list[oci.identity.models.ApiKey]:
-        return self._iam_client.list_api_keys(
-            self.user_id).data  # type: ignore
+        return self._iam_client.list_api_keys(self.user_id).data  # type: ignore
 
     def delete_api_key(self, fingerprint: str):
         self._iam_client.delete_api_key(self.user_id, fingerprint=fingerprint)
@@ -509,13 +514,13 @@ class ComputeInstance:
         assert ocid_or_instance
 
         self._config = configuration.get_current_config(config=config)
-        self._client = client or core.get_oci_compute_client(
-            config=self._config)
+        self._client = client or core.get_oci_compute_client(config=self._config)
 
         if isinstance(ocid_or_instance, str):
             self.id = ocid_or_instance
             self.obj = self._client.get_instance(
-                instance_id=self.id).data  # type: ignore
+                instance_id=self.id
+            ).data  # type: ignore
         else:
             self.obj = ocid_or_instance
             assert self.obj
@@ -525,9 +530,9 @@ class ComputeInstance:
         return repr(oci.util.to_dict(self.obj))
 
     def connect_ssh(self, ip: str, private_key_file_path: str):
-        return ssh_utils.connect_ssh(user="opc",
-                                     host=ip,
-                                     private_key_file_path=private_key_file_path)
+        return ssh_utils.connect_ssh(
+            user="opc", host=ip, private_key_file_path=private_key_file_path
+        )
 
     def freeform_tag(self, tag: str = k_my_id_tag_name):
         return freeform_tag(self.obj, tag)
@@ -553,8 +558,7 @@ class ComputeInstance:
         return self.obj.defined_tags  # type: ignore
 
     def refresh(self):
-        self.obj = self._client.get_instance(
-            instance_id=self.id).data  # type: ignore
+        self.obj = self._client.get_instance(instance_id=self.id).data  # type: ignore
 
     def stop(self):
         self._client.instance_action(instance_id=self.id, action="STOP")
@@ -608,7 +612,8 @@ class ComputeInstance:
             for bva in bvas:
                 show(f"        - attachment: {format_description(bva)}")
                 bv = bs_client.get_boot_volume(
-                    boot_volume_id=bva.boot_volume_id).data  # type: ignore
+                    boot_volume_id=bva.boot_volume_id
+                ).data  # type: ignore
                 show(f"        - volume: {format_description(bv)}")
 
     def delete_with_resources(self, show_fn=None):
@@ -617,12 +622,16 @@ class ComputeInstance:
 
         show(f"Terminating instance {self.display_name}")
         self._client.terminate_instance(
-            instance_id=self.id, preserve_boot_volume=False, preserve_data_volumes_created_at_launch=False)
+            instance_id=self.id,
+            preserve_boot_volume=False,
+            preserve_data_volumes_created_at_launch=False,
+        )
 
         while True:
             self.refresh()
             show(
-                f"Waiting termination of instance {self.display_name} ({self.lifecycle_state})")
+                f"Waiting termination of instance {self.display_name} ({self.lifecycle_state})"
+            )
             if (
                 self.lifecycle_state
                 == oci.core.models.Instance.LIFECYCLE_STATE_TERMINATED
@@ -635,8 +644,9 @@ class VCN:
     id: str
     _vcn: Optional[oci_models.Vcn]
 
-    def __init__(self, config, ocid_or_vcn: str | oci_models.Vcn, client=None,
-                 lazy_refresh=False) -> None:
+    def __init__(
+        self, config, ocid_or_vcn: str | oci_models.Vcn, client=None, lazy_refresh=False
+    ) -> None:
         self._config = configuration.get_current_config(config=config)
         self._client = client or core.get_oci_virtual_network_client(
             config=self._config
@@ -745,7 +755,9 @@ class VCN:
         ).data
         return nsgs
 
-    def get_all_network_security_group_vnics(self, nsg_id: str) -> list[oci_models.NetworkSecurityGroupVnic]:
+    def get_all_network_security_group_vnics(
+        self, nsg_id: str
+    ) -> list[oci_models.NetworkSecurityGroupVnic]:
         """Get all VNICs in a network security group."""
         vnics = oci.pagination.list_call_get_all_results(
             self._client.list_network_security_group_vnics,
@@ -761,14 +773,10 @@ class VCN:
         ).data  # type: ignore
 
         # remove given NSGs from the list of VNIC's NSGs
-        updated_nsg_ids = set(
-            cast(list[str], vnic.nsg_ids)
-        ).difference(nsg_ids)
+        updated_nsg_ids = set(cast(list[str], vnic.nsg_ids)).difference(nsg_ids)
 
         # update the VNIC
-        details = oci_models.UpdateVnicDetails(
-            nsg_ids=list(updated_nsg_ids)
-        )
+        details = oci_models.UpdateVnicDetails(nsg_ids=list(updated_nsg_ids))
         self._client.update_vnic(vnic_id=vnic_id, update_vnic_details=details)
 
     def find_internet_gateway_by_name(
@@ -784,11 +792,15 @@ class VCN:
     def find_service_gateway_by_name(
         self, name: str
     ) -> list[oci_models.ServiceGateway]:
-        return [svc for svc in oci.pagination.list_call_get_all_results(
-            self._client.list_service_gateways,
-            compartment_id=self.compartment_id,
-            vcn_id=self.id,
-        ).data if svc.display_name == name]
+        return [
+            svc
+            for svc in oci.pagination.list_call_get_all_results(
+                self._client.list_service_gateways,
+                compartment_id=self.compartment_id,
+                vcn_id=self.id,
+            ).data
+            if svc.display_name == name
+        ]
 
     def find_subnet_by_name(self, name: str) -> list[oci_models.Subnet]:
         return oci.pagination.list_call_get_all_results(
@@ -798,7 +810,9 @@ class VCN:
             display_name=name,
         ).data
 
-    def try_get_security_list_by_name(self, name: str) -> Optional[oci_models.SecurityList]:
+    def try_get_security_list_by_name(
+        self, name: str
+    ) -> Optional[oci_models.SecurityList]:
         matches = oci.pagination.list_call_get_all_results(
             self._client.list_security_lists,
             compartment_id=self.compartment_id,
@@ -812,9 +826,9 @@ class VCN:
         return None
 
     def add_route_rules(self, route_table_id: str, rules: list[oci_models.RouteRule]):
-        route_table = cast(oci_models.RouteTable,
-                           self._client.get_route_table(
-                               route_table_id).data)  # type: ignore
+        route_table = cast(
+            oci_models.RouteTable, self._client.get_route_table(route_table_id).data
+        )  # type: ignore
         existing_rules = cast(list, route_table.route_rules)
 
         logging.info(f"Adding rules {rules} to route table {route_table_id}")
@@ -828,10 +842,7 @@ class VCN:
 
     @log
     def create_internet_gateway(
-        self,
-        route_table_id: str,
-        name: str,
-        freeform_tags: dict
+        self, route_table_id: str, name: str, freeform_tags: dict
     ) -> oci_models.InternetGateway:
         create_igw_details = oci_models.CreateInternetGatewayDetails(
             compartment_id=self.compartment_id,
@@ -841,14 +852,20 @@ class VCN:
             freeform_tags=freeform_tags,
         )
         igw = self._client.create_internet_gateway(
-            create_igw_details).data  # type: ignore
+            create_igw_details
+        ).data  # type: ignore
 
         # Update the default route table for the VCN to include a route to the IGW
-        self.add_route_rules(route_table_id, [
-            oci_models.RouteRule(destination="0.0.0.0/0",
-                                 destination_type="CIDR_BLOCK",
-                                 network_entity_id=igw.id)
-        ])
+        self.add_route_rules(
+            route_table_id,
+            [
+                oci_models.RouteRule(
+                    destination="0.0.0.0/0",
+                    destination_type="CIDR_BLOCK",
+                    network_entity_id=igw.id,
+                )
+            ],
+        )
 
         return igw
 
@@ -861,11 +878,9 @@ class VCN:
     ) -> oci_models.InternetGateway:
         services = self._client.list_services().data  # type: ignore
 
-        services = [
-            svc for svc in services if svc.name.endswith("Object Storage")]
+        services = [svc for svc in services if svc.name.endswith("Object Storage")]
 
-        logging.info(
-            f"Creating service gateway {name} for services: {services}")
+        logging.info(f"Creating service gateway {name} for services: {services}")
 
         create_sgw_details = oci_models.CreateServiceGatewayDetails(
             compartment_id=self.compartment_id,
@@ -873,27 +888,33 @@ class VCN:
             display_name=name,
             freeform_tags=freeform_tags,
             services=[
-                oci_models.ServiceIdRequestDetails(
-                    service_id=svc.id) for svc in services
-            ]
+                oci_models.ServiceIdRequestDetails(service_id=svc.id)
+                for svc in services
+            ],
         )
         sgw = self._client.create_service_gateway(
-            create_sgw_details).data  # type: ignore
+            create_sgw_details
+        ).data  # type: ignore
 
         # Update the default route table for the VCN to include a route to the SGW
-        self.add_route_rules(route_table_id, [
-            oci_models.RouteRule(destination=svc.cidr_block,
-                                 destination_type="SERVICE_CIDR_BLOCK",
-                                 network_entity_id=sgw.id) for svc in services
-        ])
+        self.add_route_rules(
+            route_table_id,
+            [
+                oci_models.RouteRule(
+                    destination=svc.cidr_block,
+                    destination_type="SERVICE_CIDR_BLOCK",
+                    network_entity_id=sgw.id,
+                )
+                for svc in services
+            ],
+        )
 
         return sgw
 
     def _filter_security_lists_for_subnet(
         self, security_lists: list[oci_models.SecurityList], subnet_id: str
     ) -> list[oci_models.SecurityList]:
-        subnet = self._client.get_subnet(
-            subnet_id=subnet_id).data  # type: ignore
+        subnet = self._client.get_subnet(subnet_id=subnet_id).data  # type: ignore
 
         matches = []
         for sl in security_lists:
@@ -902,10 +923,9 @@ class VCN:
 
         return matches
 
-    def _match_ingress(self,
-                       rule: oci_models.IngressSecurityRule,
-                       port: int,
-                       source: str):
+    def _match_ingress(
+        self, rule: oci_models.IngressSecurityRule, port: int, source: str
+    ):
         """
         Check if the given ingress rule matches (TCP) port and source
         """
@@ -923,10 +943,7 @@ class VCN:
             return True
         return False
 
-    def _match_egress(self,
-                      rule: oci_models.EgressSecurityRule,
-                      port: int,
-                      dest: str):
+    def _match_egress(self, rule: oci_models.EgressSecurityRule, port: int, dest: str):
         """
         Check if the given egress rule matches (TCP) port and dest
         """
@@ -944,10 +961,12 @@ class VCN:
             return True
         return False
 
-    def verify_security_list(self,
-                             subnet_id: str,
-                             ingress: list[tuple[str, int, str]] = [],
-                             egress: list[tuple[str, int, str]] = []):
+    def verify_security_list(
+        self,
+        subnet_id: str,
+        ingress: list[tuple[str, int, str]] = [],
+        egress: list[tuple[str, int, str]] = [],
+    ):
         security_lists = self.get_all_security_lists()
 
         # First check if there's an ingress rule for the subnet already
@@ -989,9 +1008,7 @@ class VCN:
                 protocol="6",  # TCP
                 source=source_cidr,
                 tcp_options=oci_models.TcpOptions(
-                    destination_port_range=oci_models.PortRange(
-                        min=port, max=port
-                    )
+                    destination_port_range=oci_models.PortRange(min=port, max=port)
                 ),
                 description=description,
             )
@@ -1001,9 +1018,7 @@ class VCN:
                 protocol="6",  # TCP
                 destination=dest_cidr,
                 tcp_options=oci_models.TcpOptions(
-                    destination_port_range=oci_models.PortRange(
-                        min=port, max=port
-                    )
+                    destination_port_range=oci_models.PortRange(min=port, max=port)
                 ),
                 description=description,
             )
@@ -1012,7 +1027,8 @@ class VCN:
         security_list = self.try_get_security_list_by_name(security_list_name)
         if security_list:
             logging.info(
-                f"VCN {self.display_name} already has security list {security_list_name}")
+                f"VCN {self.display_name} already has security list {security_list_name}"
+            )
 
             # add missing rules
             new_ingress_rules = []
@@ -1020,42 +1036,46 @@ class VCN:
                 for rule in security_list.ingress_security_rules:  # type: ignore
                     if self._match_ingress(rule, source=source, port=port):
                         logging.info(
-                            f"security list {security_list_name} already has ingress for source={source} port={port}")
+                            f"security list {security_list_name} already has ingress for source={source} port={port}"
+                        )
                         break
                 else:
                     logging.info(
-                        f"adding ingress for source={source} port={port} to security list {security_list_name}")
+                        f"adding ingress for source={source} port={port} to security list {security_list_name}"
+                    )
                     new_ingress_rules.append(
-                        make_ingress_rule(source, port, description))
+                        make_ingress_rule(source, port, description)
+                    )
 
             new_egress_rules = []
             for dest, port, description in egress:
                 for rule in security_list.egress_security_rules:  # type: ignore
                     if self._match_egress(rule, dest=dest, port=port):
                         logging.info(
-                            f"security list {security_list_name} already has egress for dest={dest} port={port}")
+                            f"security list {security_list_name} already has egress for dest={dest} port={port}"
+                        )
                         break
                 else:
                     logging.info(
-                        f"adding egress for dest={dest} port={port} to security list {security_list_name}")
-                    new_egress_rules.append(
-                        make_egress_rule(dest, port, description))
+                        f"adding egress for dest={dest} port={port} to security list {security_list_name}"
+                    )
+                    new_egress_rules.append(make_egress_rule(dest, port, description))
 
             if new_ingress_rules or new_egress_rules:
                 update_security_list_details = oci.core.models.UpdateSecurityListDetails(
-                    ingress_security_rules=security_list.ingress_security_rules +  # type: ignore
-                    new_ingress_rules,
-                    egress_security_rules=security_list.egress_security_rules +  # type: ignore
-                    new_egress_rules
+                    ingress_security_rules=security_list.ingress_security_rules  # type: ignore
+                    + new_ingress_rules,
+                    egress_security_rules=security_list.egress_security_rules  # type: ignore
+                    + new_egress_rules,
                 )
                 self._client.update_security_list(
-                    security_list.id,
-                    update_security_list_details
+                    security_list.id, update_security_list_details
                 )
         else:
             # Security list by the name does not exist, create one
             logging.info(
-                f"VCN {self.display_name} does not have security list {security_list_name}, creating...")
+                f"VCN {self.display_name} does not have security list {security_list_name}, creating..."
+            )
 
             # create new Security list for the VCN
             create_security_list_details = oci_models.CreateSecurityListDetails(
@@ -1063,12 +1083,8 @@ class VCN:
                 vcn_id=self.id,
                 display_name=security_list_name,
                 freeform_tags=freeform_tags,
-                ingress_security_rules=[
-                    make_ingress_rule(*r) for r in ingress
-                ],
-                egress_security_rules=[
-                    make_egress_rule(*r) for r in egress
-                ],
+                ingress_security_rules=[make_ingress_rule(*r) for r in ingress],
+                egress_security_rules=[make_egress_rule(*r) for r in egress],
             )
             security_list = self._client.create_security_list(
                 create_security_list_details
@@ -1079,12 +1095,12 @@ class VCN:
             )
 
         # Update the subnet to add the security list (if not there yet)
-        subnet = self._client.get_subnet(
-            subnet_id=subnet_id).data  # type: ignore
+        subnet = self._client.get_subnet(subnet_id=subnet_id).data  # type: ignore
 
         if security_list.id not in subnet.security_list_ids:
             logging.info(
-                f"adding security_list={security_list.display_name} to subnet={subnet_id}")
+                f"adding security_list={security_list.display_name} to subnet={subnet_id}"
+            )
 
             update_subnet_details = oci_models.UpdateSubnetDetails(
                 security_list_ids=subnet.security_list_ids + [security_list.id]
@@ -1115,8 +1131,7 @@ class VCN:
         return self._client.create_subnet(subnet_details).data  # type: ignore
 
     def get_subnet(self, subnet_id: str) -> oci_models.Subnet:
-        return self._client.get_subnet(
-            subnet_id=subnet_id).data        # type: ignore
+        return self._client.get_subnet(subnet_id=subnet_id).data  # type: ignore
 
     @log
     def delete_route_table(self, route_table_id: str):
@@ -1128,8 +1143,7 @@ class VCN:
     def delete_route_table_rules(self, route_table_id: str):
         """Delete rules in route table."""
         logging.info(f"Deleting rules from route table {route_table_id}")
-        update_route_table_details = oci_models.UpdateRouteTableDetails(
-            route_rules=[])
+        update_route_table_details = oci_models.UpdateRouteTableDetails(route_rules=[])
         self._client.update_route_table(
             rt_id=route_table_id,
             update_route_table_details=update_route_table_details,
@@ -1145,9 +1159,7 @@ class VCN:
     def delete_network_security_group(self, nsg_id: str):
         """Delete network security group."""
         logging.info(f"Deleting network security group {nsg_id}")
-        self._client.delete_network_security_group(
-            network_security_group_id=nsg_id
-        )
+        self._client.delete_network_security_group(network_security_group_id=nsg_id)
 
     @log
     def delete_internet_gateway(self, igw_id: str):
@@ -1169,14 +1181,15 @@ class VCN:
 
     @log
     def detach_subnet_security_lists(self, subnet):
-        logging.info(
-            f"Detaching security lists from subnet {subnet.display_name}")
+        logging.info(f"Detaching security lists from subnet {subnet.display_name}")
 
         # we keep just the default security list
         update_subnet_details = oci.core.models.UpdateSubnetDetails(
-            security_list_ids=[self.vcn.default_security_list_id])
+            security_list_ids=[self.vcn.default_security_list_id]
+        )
         self._client.update_subnet(
-            subnet_id=subnet.id, update_subnet_details=update_subnet_details)
+            subnet_id=subnet.id, update_subnet_details=update_subnet_details
+        )
 
     def print_all_resources(self, show_fn=None) -> None:
         """Print the resources of a VCN."""
@@ -1210,8 +1223,9 @@ class VCN:
         if route_tables:
             show("      Route Tables:")
             for rt in route_tables:
-                rules = [(r.description, r.network_entity_id)
-                         for r in rt.route_rules]  # type: ignore
+                rules = [
+                    (r.description, r.network_entity_id) for r in rt.route_rules
+                ]  # type: ignore
                 show(f"        - {format_description(rt)} rules={rules}")
 
         # Print security lists
@@ -1226,9 +1240,7 @@ class VCN:
         if nsgs:
             show("      Network Security Groups:")
             for nsg in nsgs:
-                vnics = self.get_all_network_security_group_vnics(
-                    cast(str, nsg.id)
-                )
+                vnics = self.get_all_network_security_group_vnics(cast(str, nsg.id))
                 vnics = [vnic.vnic_id for vnic in vnics]
                 show(f"        - {format_description(nsg)} vnics={vnics}")
 
@@ -1290,16 +1302,17 @@ class VCN:
 class Channel:
     channel: oci.mysql.models.Channel
 
-    def __init__(self, config, ocid_or_channel: str | oci.mysql.models.Channel, client=None
-                 ) -> None:
+    def __init__(
+        self, config, ocid_or_channel: str | oci.mysql.models.Channel, client=None
+    ) -> None:
         self._config = configuration.get_current_config(config=config)
-        self._client = client or core.get_oci_mysql_channels_client(
-            config=self._config)
+        self._client = client or core.get_oci_mysql_channels_client(config=self._config)
 
         if isinstance(ocid_or_channel, str):
             self.id = ocid_or_channel
             self.channel = self._client.get_channel(
-                ocid_or_channel).data  # type: ignore
+                ocid_or_channel
+            ).data  # type: ignore
         else:
             self.channel = ocid_or_channel
             self.id = cast(str, ocid_or_channel.id)
@@ -1338,13 +1351,13 @@ class MySQLConfiguration:
         self, config, ocid_or_config: str | oci.mysql.models.Configuration, client=None
     ) -> None:
         self._config = configuration.get_current_config(config=config)
-        self._client = client or core.get_oci_mds_client(
-            config=self._config)
+        self._client = client or core.get_oci_mds_client(config=self._config)
 
         if isinstance(ocid_or_config, str):
             self.id = ocid_or_config
             self.conf = self._client.get_configuration(
-                ocid_or_config).data  # type: ignore
+                ocid_or_config
+            ).data  # type: ignore
         else:
             self.conf = ocid_or_config
             self.id = ocid_or_config.id  # type: ignore
@@ -1385,17 +1398,15 @@ class DBSystem:
         self, config, ocid_or_db_system: str | oci.mysql.models.DbSystem, client=None
     ) -> None:
         self._config = configuration.get_current_config(config=config)
-        self._client = client or core.get_oci_db_system_client(
-            config=self._config)
-        self._channel_client = core.get_oci_mysql_channels_client(
-            config=self._config)
-        self._backups_client = core.get_oci_db_backups_client(
-            config=self._config)
+        self._client = client or core.get_oci_db_system_client(config=self._config)
+        self._channel_client = core.get_oci_mysql_channels_client(config=self._config)
+        self._backups_client = core.get_oci_db_backups_client(config=self._config)
 
         if isinstance(ocid_or_db_system, str):
             self.id = ocid_or_db_system
             self.db_system = self._client.get_db_system(
-                ocid_or_db_system).data  # type: ignore
+                ocid_or_db_system
+            ).data  # type: ignore
         else:
             self.db_system = ocid_or_db_system
             self.id = ocid_or_db_system.id  # type: ignore
@@ -1404,8 +1415,7 @@ class DBSystem:
         return repr(oci.util.to_dict(self.db_system))
 
     def refresh(self):
-        self.db_system = self._client.get_db_system(
-            self.id).data  # type: ignore
+        self.db_system = self._client.get_db_system(self.id).data  # type: ignore
 
     @property
     def lifecycle_state(self):
@@ -1450,27 +1460,36 @@ class DBSystem:
     @property
     def configuration(self) -> MySQLConfiguration:
         return MySQLConfiguration(
-            self._config, self.db_system.configuration_id)  # type: ignore
+            self._config, self.db_system.configuration_id
+        )  # type: ignore
 
     def freeform_tag(self, tag: str = k_my_id_tag_name):
         return freeform_tag(self.db_system, tag)
 
-    def _update_db_system(self, details: oci.mysql.models.UpdateDbSystemDetails) -> Optional[MySQLWorkRequest]:
+    def _update_db_system(
+        self, details: oci.mysql.models.UpdateDbSystemDetails
+    ) -> Optional[MySQLWorkRequest]:
         response: oci.response.Response = self._client.update_db_system(
             db_system_id=self.id, update_db_system_details=details
         )  # type: ignore
 
         try:
-            return MySQLWorkRequest(self._config, response.headers[k_work_request_header])
+            return MySQLWorkRequest(
+                self._config, response.headers[k_work_request_header]
+            )
         except Exception as e:
             # for some reason OCI returns 404 errors in case of some update requests
             return None
 
     def update_crash_recovery(self, enable: bool) -> Optional[MySQLWorkRequest]:
         if enable:
-            crash_recovery = oci.mysql.models.UpdateDbSystemDetails.CRASH_RECOVERY_ENABLED
+            crash_recovery = (
+                oci.mysql.models.UpdateDbSystemDetails.CRASH_RECOVERY_ENABLED
+            )
         else:
-            crash_recovery = oci.mysql.models.UpdateDbSystemDetails.CRASH_RECOVERY_DISABLED
+            crash_recovery = (
+                oci.mysql.models.UpdateDbSystemDetails.CRASH_RECOVERY_DISABLED
+            )
         details = oci.mysql.models.UpdateDbSystemDetails(
             crash_recovery=crash_recovery,
         )
@@ -1481,34 +1500,33 @@ class DBSystem:
             access_mode = "RESTRICTED"
         else:
             access_mode = "UNRESTRICTED"
-        details = oci.mysql.models.UpdateDbSystemDetails(
-            access_mode=access_mode)
+        details = oci.mysql.models.UpdateDbSystemDetails(access_mode=access_mode)
         return self._update_db_system(details)
 
     def update_high_availability(self, enabled: bool) -> Optional[MySQLWorkRequest]:
-        details = oci.mysql.models.UpdateDbSystemDetails(
-            is_highly_available=enabled
-        )
+        details = oci.mysql.models.UpdateDbSystemDetails(is_highly_available=enabled)
 
         return self._update_db_system(details)
 
-    def create_channel(self,
-                       source_host: str,
-                       source_port: int,
-                       source_user: str,
-                       source_password: str,
-                       gtid_off_handling: Optional[dict] = None,
-                       freeform_tags: dict = {},
-                       replicate_ignore_db: list[str] = [],
-                       replicate_ignore_table: list[str] = [],
-                       replicate_wild_ignore_table: list[str] = [],
-                       ) -> Channel:
+    def create_channel(
+        self,
+        source_host: str,
+        source_port: int,
+        source_user: str,
+        source_password: str,
+        gtid_off_handling: Optional[dict] = None,
+        freeform_tags: dict = {},
+        replicate_ignore_db: list[str] = [],
+        replicate_ignore_table: list[str] = [],
+        replicate_wild_ignore_table: list[str] = [],
+    ) -> Channel:
         if gtid_off_handling:
             uuid_handling = oci.mysql.models.AssignManualUuidHandling(
                 policy="ASSIGN_MANUAL_UUID",
                 last_configured_log_filename=gtid_off_handling["binlog_file"],
                 last_configured_log_offset=gtid_off_handling["binlog_pos"],
-                uuid=gtid_off_handling["uuid"])
+                uuid=gtid_off_handling["uuid"],
+            )
         else:
             uuid_handling = None
 
@@ -1519,28 +1537,34 @@ class DBSystem:
             username=source_user,
             password=source_password,
             ssl_mode="REQUIRED",
-            anonymous_transactions_handling=uuid_handling
+            anonymous_transactions_handling=uuid_handling,
         )
 
         filters = []
 
         for db in replicate_ignore_db:
-            filters.append(oci.mysql.models.ChannelFilter(
-                type=oci.mysql.models.ChannelFilter.TYPE_REPLICATE_IGNORE_DB,
-                value=db
-            ))
+            filters.append(
+                oci.mysql.models.ChannelFilter(
+                    type=oci.mysql.models.ChannelFilter.TYPE_REPLICATE_IGNORE_DB,
+                    value=db,
+                )
+            )
 
         for table in replicate_ignore_table:
-            filters.append(oci.mysql.models.ChannelFilter(
-                type=oci.mysql.models.ChannelFilter.TYPE_REPLICATE_IGNORE_TABLE,
-                value=table
-            ))
+            filters.append(
+                oci.mysql.models.ChannelFilter(
+                    type=oci.mysql.models.ChannelFilter.TYPE_REPLICATE_IGNORE_TABLE,
+                    value=table,
+                )
+            )
 
         for table in replicate_wild_ignore_table:
-            filters.append(oci.mysql.models.ChannelFilter(
-                type=oci.mysql.models.ChannelFilter.TYPE_REPLICATE_WILD_IGNORE_TABLE,
-                value=table
-            ))
+            filters.append(
+                oci.mysql.models.ChannelFilter(
+                    type=oci.mysql.models.ChannelFilter.TYPE_REPLICATE_WILD_IGNORE_TABLE,
+                    value=table,
+                )
+            )
 
         target = oci.mysql.models.CreateChannelTargetFromDbSystemDetails(
             target_type="DBSYSTEM",
@@ -1559,63 +1583,76 @@ class DBSystem:
         )
 
         logging.info(
-            f"CreateChannel: {util.sanitize_dict_any_pass(cast(dict, oci.util.to_dict(channel_details)))}")
+            f"CreateChannel: {util.sanitize_dict_any_pass(cast(dict, oci.util.to_dict(channel_details)))}"
+        )
 
         # Create the channel
         response = self._channel_client.create_channel(channel_details)
         channel = response.data  # type: ignore
 
-        return Channel(config=self._config,
-                       ocid_or_channel=channel,
-                       client=self._channel_client)
+        return Channel(
+            config=self._config, ocid_or_channel=channel, client=self._channel_client
+        )
 
     def delete_channel(self, channel_id: str):
         response: oci.response.Response = self._channel_client.delete_channel(
-            channel_id=channel_id)  # type: ignore
+            channel_id=channel_id
+        )  # type: ignore
         return MySQLWorkRequest(self._config, response.headers[k_work_request_header])
 
     def try_get_channel(self) -> Optional[Channel]:
         channels = self._channel_client.list_channels(
-            compartment_id=self.db_system.compartment_id,
-            db_system_id=self.id).data  # type: ignore
+            compartment_id=self.db_system.compartment_id, db_system_id=self.id
+        ).data  # type: ignore
 
-        channels = [ch for ch in channels if ch.lifecycle_state not in (
-            "DELETING", "DELETED")]
+        channels = [
+            ch for ch in channels if ch.lifecycle_state not in ("DELETING", "DELETED")
+        ]
 
         # supposedly only 1 channel per DBSystem
         assert len(channels) <= 1
         if not channels:
             return None
-        return Channel(config=self._config,
-                       ocid_or_channel=channels[0],
-                       client=self._channel_client)
+        return Channel(
+            config=self._config,
+            ocid_or_channel=channels[0],
+            client=self._channel_client,
+        )
 
     def get_all_backups(self) -> list[oci.mysql.models.BackupSummary]:
         """Get all backups of this DB instance."""
         return oci.pagination.list_call_get_all_results(
-            self._backups_client.list_backups, compartment_id=self.db_system.compartment_id, db_system_id=self.id
+            self._backups_client.list_backups,
+            compartment_id=self.db_system.compartment_id,
+            db_system_id=self.id,
         ).data
 
     def delete_backup(self, ocid: str) -> MySQLWorkRequest:
         """Deletes backup with the given OCID"""
         response: oci.response.Response = self._backups_client.delete_backup(
-            backup_id=ocid)  # type: ignore
+            backup_id=ocid
+        )  # type: ignore
         return MySQLWorkRequest(self._config, response.headers[k_work_request_header])
 
     def delete_db_system(self) -> MySQLWorkRequest:
         """Deletes this DB system"""
         response: oci.response.Response = self._client.delete_db_system(
-            db_system_id=self.id)  # type: ignore
+            db_system_id=self.id
+        )  # type: ignore
         return MySQLWorkRequest(self._config, response.headers[k_work_request_header])
 
-    def add_heatwave_cluster(self, shape_name: str, cluster_size: int, is_lakehouse_enabled: bool = False):
+    def add_heatwave_cluster(
+        self, shape_name: str, cluster_size: int, is_lakehouse_enabled: bool = False
+    ):
         add_heatwave_cluster_details = oci.mysql.models.AddHeatWaveClusterDetails()
         add_heatwave_cluster_details.shape_name = shape_name
         add_heatwave_cluster_details.cluster_size = cluster_size
         add_heatwave_cluster_details.is_lakehouse_enabled = is_lakehouse_enabled
 
         response: oci.response.Response = self._client.add_heat_wave_cluster(
-            db_system_id=self.id, add_heat_wave_cluster_details=add_heatwave_cluster_details)  # type: ignore
+            db_system_id=self.id,
+            add_heat_wave_cluster_details=add_heatwave_cluster_details,
+        )  # type: ignore
 
         return MySQLWorkRequest(self._config, response.headers[k_work_request_header])
 
@@ -1623,8 +1660,7 @@ class DBSystem:
         show = show_fn or logging.info
 
         show(f"    - {format_description(self)}:")
-        show(
-            f"      Configuration: {format_description(self.configuration)}")
+        show(f"      Configuration: {format_description(self.configuration)}")
 
         channel = self.try_get_channel()
         if channel:
@@ -1651,8 +1687,7 @@ class DBSystem:
             for backup in backups:
                 work_requests.append(self.delete_backup(cast(str, backup.id)))
 
-        wait_for_work_requests(
-            work_requests, "deleting DB instance", show_fn=show)
+        wait_for_work_requests(work_requests, "deleting DB instance", show_fn=show)
 
 
 class Compartment:
@@ -1670,15 +1705,12 @@ class Compartment:
         name: None | str = None,
     ) -> None:
         self._config = configuration.get_current_config(config=config)
-        self._client = client or core.get_oci_identity_client(
-            config=self._config)
-        self._net_client = core.get_oci_virtual_network_client(
-            config=self._config)
+        self._client = client or core.get_oci_identity_client(config=self._config)
+        self._net_client = core.get_oci_virtual_network_client(config=self._config)
         self._compute_client = core.get_oci_compute_client(config=self._config)
         self._dbs_client = core.get_oci_db_system_client(config=self._config)
         self._mds_client = core.get_oci_mds_client(config=self._config)
-        self._os_client = core.get_oci_object_storage_client(
-            config=self._config)
+        self._os_client = core.get_oci_object_storage_client(config=self._config)
 
         self._obj = None  # type: ignore
         self._name = name
@@ -1707,20 +1739,15 @@ class Compartment:
     def refresh(self, retry_strategy=None):
         if self._is_tenancy:
             self._obj = self._client.get_tenancy(
-                self.id,
-                retry_strategy=retry_strategy
+                self.id, retry_strategy=retry_strategy
             ).data  # type: ignore
         else:
             self._obj = self._client.get_compartment(
-                self.id,
-                retry_strategy=retry_strategy
+                self.id, retry_strategy=retry_strategy
             ).data  # type: ignore
 
     def validate_profile(self, retry_strategy=None):
-        self._client.get_tenancy(
-            self._config["tenancy"],
-            retry_strategy=retry_strategy
-        )
+        self._client.get_tenancy(self._config["tenancy"], retry_strategy=retry_strategy)
 
     @property
     def obj(self) -> oci.identity.models.Compartment:
@@ -1800,13 +1827,16 @@ class Compartment:
 
         # Create the compartment
         compartment = client.create_compartment(
-            compartment_details).data  # type: ignore
+            compartment_details
+        ).data  # type: ignore
 
         # the compartment has been created, retry on 404 errors, as it takes
         # some time for the OCI to propagate the new compartment
         MIGRATION_RETRY_STRATEGY.retry_on_not_found_errors()
 
-        return Compartment(config, ocid_or_compartment=compartment, client=client, name=name)
+        return Compartment(
+            config, ocid_or_compartment=compartment, client=client, name=name
+        )
 
     def get_full_path(self) -> list[str]:
         names = []
@@ -1814,13 +1844,13 @@ class Compartment:
         compartment_id = self.id
         while True:
             if compartment_id == self._config["tenancy"]:
-                compartment = self._client.get_tenancy(
-                    tenancy_id).data  # type: ignore
+                compartment = self._client.get_tenancy(tenancy_id).data  # type: ignore
                 names.append(compartment.name)
                 break
             else:
                 compartment = self._client.get_compartment(
-                    compartment_id).data  # type: ignore
+                    compartment_id
+                ).data  # type: ignore
                 names.append(compartment.name)
                 compartment_id = compartment.compartment_id  # Move to parent
         return list(reversed(names))
@@ -1828,11 +1858,16 @@ class Compartment:
     def get_all_compartments(self) -> list["Compartment"]:
         return [
             Compartment(
-                config=self._config, ocid_or_compartment=i, client=self._client, name=i.name
+                config=self._config,
+                ocid_or_compartment=i,
+                client=self._client,
+                name=i.name,
             )
             for i in oci.pagination.list_call_get_all_results(
                 self._client.list_compartments, compartment_id=self.id
-            ).data if i.lifecycle_state not in (
+            ).data
+            if i.lifecycle_state
+            not in (
                 oci.identity.models.Compartment.LIFECYCLE_STATE_DELETED,
                 oci.identity.models.Compartment.LIFECYCLE_STATE_DELETING,
             )
@@ -1858,7 +1893,8 @@ class Compartment:
             va
             for va in oci.pagination.list_call_get_all_results(
                 self._compute_client.list_vnic_attachments,
-                compartment_id=self.id, instance_id=instance_id,
+                compartment_id=self.id,
+                instance_id=instance_id,
             ).data
             if va.lifecycle_state
             not in (
@@ -1917,7 +1953,8 @@ class Compartment:
         result = []
         for private_ip in private_ips:
             vnic = self._net_client.get_vnic(
-                vnic_id=private_ip.vnic_id).data  # type: ignore
+                vnic_id=private_ip.vnic_id
+            ).data  # type: ignore
             if vnic.lifecycle_state not in (
                 Vnic.LIFECYCLE_STATE_AVAILABLE,
                 Vnic.LIFECYCLE_STATE_PROVISIONING,
@@ -2066,7 +2103,9 @@ class Compartment:
         domains = [cast(str, d.name) for d in self.list_availability_domains()]
         return random.choice(domains)
 
-    def list_db_shapes(self, availability_domain: Optional[str] = None) -> list[oci.mysql.models.ShapeSummary]:
+    def list_db_shapes(
+        self, availability_domain: Optional[str] = None
+    ) -> list[oci.mysql.models.ShapeSummary]:
         """List MySQL DB System shapes"""
         return oci.pagination.list_call_get_all_results(
             self._mds_client.list_shapes,
@@ -2074,7 +2113,12 @@ class Compartment:
             availability_domain=availability_domain,
         ).data
 
-    def list_db_configurations(self, default: bool = True, custom: bool = True, shape_name: Optional[str] = None) -> list[oci.mysql.models.ConfigurationSummary]:
+    def list_db_configurations(
+        self,
+        default: bool = True,
+        custom: bool = True,
+        shape_name: Optional[str] = None,
+    ) -> list[oci.mysql.models.ConfigurationSummary]:
         """List MySQL configurations"""
         types: list[str] = []
 
@@ -2085,7 +2129,10 @@ class Compartment:
             types.append(oci.mysql.models.Configuration.TYPE_CUSTOM)
 
         return oci.pagination.list_call_get_all_results(
-            self._mds_client.list_configurations, compartment_id=self.id, type=types, shape_name=shape_name
+            self._mds_client.list_configurations,
+            compartment_id=self.id,
+            type=types,
+            shape_name=shape_name,
         ).data
 
     def list_db_versions(self) -> list[oci.mysql.models.VersionSummary]:
@@ -2096,7 +2143,9 @@ class Compartment:
         result: list[oci.mysql.models.VersionSummary] = response.data
         # BUG#38884595 - do not list MySQL 8.0
         result = [
-            summary for summary in result if not cast(str, summary.version_family).startswith("8.0")
+            summary
+            for summary in result
+            if not cast(str, summary.version_family).startswith("8.0")
         ]
         return result
 
@@ -2115,7 +2164,9 @@ class Compartment:
         ).data
         return images
 
-    def list_compute_shapes(self, availability_domain: Optional[str] = None) -> list[oci.core.models.Shape]:
+    def list_compute_shapes(
+        self, availability_domain: Optional[str] = None
+    ) -> list[oci.core.models.Shape]:
         shapes = oci.pagination.list_call_get_all_results(
             self._compute_client.list_shapes,
             compartment_id=self.id,
@@ -2138,7 +2189,7 @@ class Compartment:
         return VCN(
             self._config,
             ocid_or_vcn=create_vcn_response.data,  # type: ignore
-            client=self._net_client
+            client=self._net_client,
         )
 
     @log
@@ -2200,35 +2251,42 @@ class Compartment:
     ) -> tuple[MySQLConfiguration, list[str]]:
         # find parent configurations for the given shape name
         configurations = self.list_db_configurations(
-            custom=False, shape_name=shape_name)
+            custom=False, shape_name=shape_name
+        )
         logging.debug(
-            f"Candidate configurations for shape={shape_name}: {configurations}")
+            f"Candidate configurations for shape={shape_name}: {configurations}"
+        )
 
         # now filter by purpose
         suffix = ".HA" if use_ha else ".Standalone"
         configurations = [
-            configuration for configuration in configurations if cast(str, configuration.display_name).endswith(suffix)
+            configuration
+            for configuration in configurations
+            if cast(str, configuration.display_name).endswith(suffix)
         ]
-        logging.debug(
-            f"Candidate configurations for suffix={suffix}: {configurations}")
+        logging.debug(f"Candidate configurations for suffix={suffix}: {configurations}")
 
         # select the parent configuration
         parent_configuration = None
         if configurations:
             parent_configuration = MySQLConfiguration(
-                self._config, cast(str, configurations[0].id))
+                self._config, cast(str, configurations[0].id)
+            )
         logging.debug(
-            f"Chosen parent configuration: {parent_configuration.display_name if parent_configuration else None}")
+            f"Chosen parent configuration: {parent_configuration.display_name if parent_configuration else None}"
+        )
 
         if "lower_case_table_names" in variables:
             lower_case_table_names = str(variables["lower_case_table_names"])
 
             if lower_case_table_names == "0":
-                lctn = \
+                lctn = (
                     oci.mysql.models.InitializationVariables.LOWER_CASE_TABLE_NAMES_CASE_SENSITIVE
+                )
             else:
-                lctn = \
+                lctn = (
                     oci.mysql.models.InitializationVariables.LOWER_CASE_TABLE_NAMES_CASE_INSENSITIVE_LOWERCASE
+                )
 
             init_variables_obj = oci.mysql.models.InitializationVariables(
                 lower_case_table_names=lctn
@@ -2249,7 +2307,10 @@ class Compartment:
                 message: str = ""
 
                 if k in k_configuration_variables_metadata.keys():
-                    if parent_configuration and getattr(parent_configuration.variables, k) is not None:
+                    if (
+                        parent_configuration
+                        and getattr(parent_configuration.variables, k) is not None
+                    ):
                         message = f"The MySQL system variable '{k}' was not migrated because it is already set in the parent DB Configuration."
                 else:
                     message = f"The MySQL system variable '{k}' was not migrated because it cannot be set in the DB Configuration."
@@ -2273,27 +2334,34 @@ class Compartment:
             shape_name=shape_name,
             init_variables=init_variables_obj,
             variables=variables_obj,
-            parent_configuration_id=parent_configuration.id if parent_configuration else None
+            parent_configuration_id=(
+                parent_configuration.id if parent_configuration else None
+            ),
         )
 
         logging.info(
             f"Creating configuration object for DBSystem: {oci.util.to_dict(details)}"
         )
         response: oci.response.Response = self._mds_client.create_configuration(
-            details)  # type: ignore
-        return (MySQLConfiguration(self._config, cast(oci.mysql.models.Configuration, response.data)), issues)
+            details
+        )  # type: ignore
+        return (
+            MySQLConfiguration(
+                self._config, cast(oci.mysql.models.Configuration, response.data)
+            ),
+            issues,
+        )
 
     def delete_configuration(self, configuration_id: str):
         """Delete MySQL configuration."""
-        self._mds_client.delete_configuration(
-            configuration_id=configuration_id)
+        self._mds_client.delete_configuration(configuration_id=configuration_id)
 
     def get_db_system(self, db_system_id: str) -> DBSystem:
         return DBSystem(
             config=self._config, ocid_or_db_system=db_system_id, client=self._dbs_client
         )
 
-# TODO fill contact email by default from user account
+    # TODO fill contact email by default from user account
     @log
     def create_db_system(
         self,
@@ -2316,11 +2384,12 @@ class Compartment:
         enable_ha: bool,
         enable_rest: bool,
         enable_backup: bool,
-        crash_recovery: bool
+        crash_recovery: bool,
     ) -> tuple[DBSystem, MySQLWorkRequest]:
         if enable_ha and enable_rest:
             logging.warning(
-                f"DB system cannot have both HA and REST enabled, disabling REST")
+                f"DB system cannot have both HA and REST enabled, disabling REST"
+            )
             enable_rest = False
 
         if auto_expand_storage:
@@ -2337,14 +2406,20 @@ class Compartment:
 
         if enable_rest:
             create_rest_details = oci.mysql.models.CreateRestDetails()
-            create_rest_details.configuration = oci.mysql.models.CreateRestDetails.CONFIGURATION_DBSYSTEM_ONLY
+            create_rest_details.configuration = (
+                oci.mysql.models.CreateRestDetails.CONFIGURATION_DBSYSTEM_ONLY
+            )
         else:
             create_rest_details = None
 
         if crash_recovery:
-            crash_recovery_value = oci.mysql.models.CreateDbSystemDetails.CRASH_RECOVERY_ENABLED
+            crash_recovery_value = (
+                oci.mysql.models.CreateDbSystemDetails.CRASH_RECOVERY_ENABLED
+            )
         else:
-            crash_recovery_value = oci.mysql.models.CreateDbSystemDetails.CRASH_RECOVERY_DISABLED
+            crash_recovery_value = (
+                oci.mysql.models.CreateDbSystemDetails.CRASH_RECOVERY_DISABLED
+            )
 
         if shape_name == "MySQL.Free":
             # MySQL.Free has some unexpected limitation:
@@ -2353,7 +2428,8 @@ class Compartment:
             backup_policy = None
             crash_recovery_value = None
             logging.info(
-                f"DB System shape is {shape_name}, so backup policy and crash recovery will be forced to default")
+                f"DB System shape is {shape_name}, so backup policy and crash recovery will be forced to default"
+            )
         else:
             backup_policy = oci.mysql.models.CreateBackupPolicyDetails(
                 is_enabled=enable_backup
@@ -2380,22 +2456,24 @@ class Compartment:
             freeform_tags=freeform_tags,
             rest=create_rest_details,
             backup_policy=backup_policy,
-            crash_recovery=crash_recovery_value
+            crash_recovery=crash_recovery_value,
         )
 
         logging.info(
-            f"CreateDbSystem: {util.sanitize_dict_any_pass(cast(dict, oci.util.to_dict(db_system_details)))}")
+            f"CreateDbSystem: {util.sanitize_dict_any_pass(cast(dict, oci.util.to_dict(db_system_details)))}"
+        )
 
         response: oci.response.Response = self._dbs_client.create_db_system(
-            db_system_details)  # type: ignore
+            db_system_details
+        )  # type: ignore
 
         return (
             DBSystem(
                 config=self._config,
                 ocid_or_db_system=response.data,
-                client=self._dbs_client),
-            MySQLWorkRequest(
-                self._config, response.headers[k_work_request_header])
+                client=self._dbs_client,
+            ),
+            MySQLWorkRequest(self._config, response.headers[k_work_request_header]),
         )
 
     def delete_all_db_systems(self, show_fn=None):
@@ -2409,19 +2487,18 @@ class Compartment:
             for db in db_systems:
                 db.delete_with_resources(show_fn=show)
 
-            show(
-                f"All DB systems in compartment {self.name} have been deleted")
+            show(f"All DB systems in compartment {self.name} have been deleted")
 
         configurations = self.list_db_configurations(default=False)
         if configurations:
-            show(
-                f"Deleting all MySQL configurations in compartment {self.name}")
+            show(f"Deleting all MySQL configurations in compartment {self.name}")
 
             for configuration in configurations:
                 self.delete_configuration(cast(str, configuration.id))
 
             show(
-                f"All MySQL configurations in compartment {self.name} have been deleted")
+                f"All MySQL configurations in compartment {self.name} have been deleted"
+            )
 
     @log
     def create_instance(
@@ -2466,8 +2543,7 @@ class Compartment:
             source_details=oci.core.models.InstanceSourceViaImageDetails(
                 image_id=image_id
             ),
-            create_vnic_details=oci.core.models.CreateVnicDetails(
-                subnet_id=subnet_id),
+            create_vnic_details=oci.core.models.CreateVnicDetails(subnet_id=subnet_id),
             defined_tags=defined_tags,
             freeform_tags=freeform_tags,
             agent_config=oci.core.models.LaunchInstanceAgentConfigDetails(
@@ -2482,22 +2558,26 @@ class Compartment:
         )
 
         response: oci.response.Response = self._compute_client.launch_instance(
-            launch_instance_details)  # type: ignore
+            launch_instance_details
+        )  # type: ignore
 
         return (
             ComputeInstance(
-                config=self._config, ocid_or_instance=response.data, client=self._compute_client
+                config=self._config,
+                ocid_or_instance=response.data,
+                client=self._compute_client,
             ),
-            WorkRequest(
-                self._config, response.headers[k_work_request_header]
-            )
+            WorkRequest(self._config, response.headers[k_work_request_header]),
         )
 
     def delete_instance(self, instance_id: str):
         """Delete compute instance with the given OCID, block and data volumes are kept intact."""
         logging.info(f"Deleting Instance {instance_id}")
         self._compute_client.terminate_instance(
-            instance_id, preserve_boot_volume=True, preserve_data_volumes_created_at_launch=True)
+            instance_id,
+            preserve_boot_volume=True,
+            preserve_data_volumes_created_at_launch=True,
+        )
 
     def delete_all_instances(self, show_fn=None, filter_fn=None):
         """Delete all compute instances in a compartment."""
@@ -2515,7 +2595,8 @@ class Compartment:
                 if not filter_fn or filter_fn(instance):
                     if filter_fn:
                         show(
-                            f"Deleting matching compute instance {instance.display_name}")
+                            f"Deleting matching compute instance {instance.display_name}"
+                        )
                     instance.delete_with_resources(show)
                     count += 1
                 else:
@@ -2528,9 +2609,7 @@ class Compartment:
                     f"{'Selected' if filter_fn else 'All'} compute instances in compartment {self.name} have been deleted"
                 )
             else:
-                show(
-                    f"No matching compute instances found in compartment {self.name}"
-                )
+                show(f"No matching compute instances found in compartment {self.name}")
 
     def create_bucket(self, name: str, freeform_tags: dict):
         CreateBucketDetails = oci.object_storage.models.CreateBucketDetails
@@ -2546,7 +2625,9 @@ class Compartment:
             namespace_name=self.namespace, create_bucket_details=create_bucket_details
         )
 
-    def get_bucket(self, name: str, approximate_count: bool = False) -> oci.object_storage.models.Bucket:
+    def get_bucket(
+        self, name: str, approximate_count: bool = False
+    ) -> oci.object_storage.models.Bucket:
         """Get bucket with a given name."""
         fields: list[str] = []
 
@@ -2554,7 +2635,8 @@ class Compartment:
             fields.append("approximateCount")
 
         return self._os_client.get_bucket(
-            namespace_name=self.namespace, bucket_name=name, fields=fields).data  # type: ignore
+            namespace_name=self.namespace, bucket_name=name, fields=fields
+        ).data  # type: ignore
 
     def list_objects(self, bucket_name: str, prefix: str):
         """A generator which returns objects with the given prefix"""
@@ -2565,7 +2647,7 @@ class Compartment:
                 namespace_name=self.namespace,
                 bucket_name=bucket_name,
                 prefix=prefix,
-                start=start
+                start=start,
             )  # type: ignore
 
             objects = list_response.data.objects
@@ -2588,12 +2670,14 @@ class Compartment:
     def delete_object(self, bucket_name: str, object_name: str):
         """Delete an object from the given bucket."""
         self._os_client.delete_object(
-            namespace_name=self.namespace, bucket_name=bucket_name, object_name=object_name)
+            namespace_name=self.namespace,
+            bucket_name=bucket_name,
+            object_name=object_name,
+        )
 
     def delete_bucket(self, name: str):
         """Delete a bucket."""
-        self._os_client.delete_bucket(
-            namespace_name=self.namespace, bucket_name=name)
+        self._os_client.delete_bucket(namespace_name=self.namespace, bucket_name=name)
 
     def wipe_bucket(self, bucket_name: str, threads: int = 4, show_fn=None):
         """Delete all associated resources of a bucket and the bucket itself."""
@@ -2605,11 +2689,13 @@ class Compartment:
         uploads = self.get_all_multipart_uploads(bucket_name)
 
         show(
-            f"Wiping out bucket {bucket_name}: approx. {bucket.approximate_count if bucket.approximate_count else '???'} objects, {len(pars)} PARs, {len(uploads)} uploads")
+            f"Wiping out bucket {bucket_name}: approx. {bucket.approximate_count if bucket.approximate_count else '???'} objects, {len(pars)} PARs, {len(uploads)} uploads"
+        )
 
         def initializer(compartment: Compartment):
             local_context.compartment = Compartment(
-                compartment._config, compartment.obj)
+                compartment._config, compartment.obj
+            )
 
         def worker(task: Callable[[Compartment], None], descr: str):
             try:
@@ -2624,22 +2710,25 @@ class Compartment:
             return lambda comp: comp.delete_bucket_par(bucket_name, id)
 
         def abort_multipart(mp):
-            return lambda comp: comp.abort_multipart_upload(bucket_name, mp.object, mp.upload_id)
+            return lambda comp: comp.abort_multipart_upload(
+                bucket_name, mp.object, mp.upload_id
+            )
 
         with ThreadPoolExecutor(
             max_workers=threads, initializer=initializer, initargs=(self,)
         ) as executor:
             for o in self.list_objects(bucket_name, ""):
-                executor.submit(worker, delete_object(o),
-                                f"deleting '{o}' object")
+                executor.submit(worker, delete_object(o), f"deleting '{o}' object")
 
             for p in pars:
-                executor.submit(worker, delete_par(p.id),
-                                f"deleting '{p.id}' PAR")
+                executor.submit(worker, delete_par(p.id), f"deleting '{p.id}' PAR")
 
             for u in uploads:
-                executor.submit(worker, abort_multipart(u),
-                                f"aborting multipart upload of '{u.object}', upload ID: {u.upload_id}")
+                executor.submit(
+                    worker,
+                    abort_multipart(u),
+                    f"aborting multipart upload of '{u.object}', upload ID: {u.upload_id}",
+                )
 
             executor.shutdown()
 
@@ -2704,16 +2793,24 @@ class Compartment:
             namespace_name=self.namespace, bucket_name=bucket_name, par_id=par_id
         )
 
-    def abort_multipart_upload(self, bucket_name: str, object_name: str, upload_id: str):
+    def abort_multipart_upload(
+        self, bucket_name: str, object_name: str, upload_id: str
+    ):
         """Abort a multipart upload."""
         self._os_client.abort_multipart_upload(
-            namespace_name=self.namespace, bucket_name=bucket_name, object_name=object_name, upload_id=upload_id
+            namespace_name=self.namespace,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            upload_id=upload_id,
         )
 
     def delete_compartment(self) -> IdentityWorkRequest:
         response: oci.response.Response = self._client.delete_compartment(
-            compartment_id=self.id)  # type: ignore
-        return IdentityWorkRequest(self._config, response.headers[k_work_request_header])
+            compartment_id=self.id
+        )  # type: ignore
+        return IdentityWorkRequest(
+            self._config, response.headers[k_work_request_header]
+        )
 
     def print_all_resources(self, show_fn=None):
         show = show_fn or logging.info
@@ -2757,20 +2854,24 @@ class Compartment:
                 objects = bucket_obj.approximate_count
                 pars = len(self.get_all_pars(bucket))
                 uploads = len(self.get_all_multipart_uploads(bucket))
-                show(f"    - {bucket}"
-                     f" CreatedBy={defined_tag(bucket_obj, tag="CreatedBy")}"
-                     f"{f', approx. {objects} objects' if objects else ''}"
-                     f"{f', {pars} PARs' if pars else ''}"
-                     f"{f', {uploads} multipart uploads' if uploads else ''}")
+                show(
+                    f"    - {bucket}"
+                    f" CreatedBy={defined_tag(bucket_obj, tag="CreatedBy")}"
+                    f"{f', approx. {objects} objects' if objects else ''}"
+                    f"{f', {pars} PARs' if pars else ''}"
+                    f"{f', {uploads} multipart uploads' if uploads else ''}"
+                )
 
 
-class ProfilePropagationRetryStrategy(oci.retry.ExponentialBackOffWithDecorrelatedJitterRetryStrategy):
+class ProfilePropagationRetryStrategy(
+    oci.retry.ExponentialBackOffWithDecorrelatedJitterRetryStrategy
+):
     def __init__(self) -> None:
         checkers = []
         checkers.append(
-            oci.retry.retry_checkers.LimitBasedRetryChecker(max_attempts=30))
-        checkers.append(
-            oci.retry.retry_checkers.TotalTimeExceededRetryChecker())
+            oci.retry.retry_checkers.LimitBasedRetryChecker(max_attempts=30)
+        )
+        checkers.append(oci.retry.retry_checkers.TotalTimeExceededRetryChecker())
 
         retryable_statuses = copy.deepcopy(
             oci.retry.retry_checkers.RETRYABLE_STATUSES_AND_CODES
@@ -2779,16 +2880,25 @@ class ProfilePropagationRetryStrategy(oci.retry.ExponentialBackOffWithDecorrelat
 
         checkers.append(
             oci.retry.retry_checkers.TimeoutConnectionAndServiceErrorRetryChecker(
-                service_error_retry_config=retryable_statuses)
+                service_error_retry_config=retryable_statuses
+            )
         )
 
-        super().__init__(base_sleep_time_seconds=1, exponent_growth_factor=2, max_wait_between_calls_seconds=10,
-                         checker_container=oci.retry.retry_checkers.RetryCheckerContainer(checkers=checkers))
+        super().__init__(
+            base_sleep_time_seconds=1,
+            exponent_growth_factor=2,
+            max_wait_between_calls_seconds=10,
+            checker_container=oci.retry.retry_checkers.RetryCheckerContainer(
+                checkers=checkers
+            ),
+        )
 
     def do_sleep(self, attempt, exception):
-        if isinstance(exception, oci.exceptions.ServiceError) and exception.status == 401:
-            logging.debug(
-                f"In profile propagation retry loop, attempt {attempt}...")
+        if (
+            isinstance(exception, oci.exceptions.ServiceError)
+            and exception.status == 401
+        ):
+            logging.debug(f"In profile propagation retry loop, attempt {attempt}...")
             time.sleep(10)
         else:
             super().do_sleep(attempt, exception)
@@ -2814,8 +2924,10 @@ class RetryStrategy:
 
         builder.add_max_attempts(max_attempts=10)
         builder.add_total_elapsed_time(total_elapsed_time_seconds=600)
-        builder.add_service_error_check(service_error_retry_config=self._retryable_statuses,
-                                        service_error_retry_on_any_5xx=True)
+        builder.add_service_error_check(
+            service_error_retry_config=self._retryable_statuses,
+            service_error_retry_on_any_5xx=True,
+        )
 
         self._retry_strategy = builder.get_retry_strategy()
         self._retry_on_unauthorized_errors = False
@@ -2828,10 +2940,10 @@ class RetryStrategy:
         _do_sleep_orig = retry_strategy.do_sleep
 
         def do_sleep(self, attempt, exception):
-            target_service = getattr(exception, 'target_service', None)
-            operation_name = getattr(exception, 'operation_name', None)
-            status_code = getattr(exception, 'status', None)
-            error_code = getattr(exception, 'code', None)
+            target_service = getattr(exception, "target_service", None)
+            operation_name = getattr(exception, "operation_name", None)
+            status_code = getattr(exception, "status", None)
+            error_code = getattr(exception, "code", None)
 
             logging.debug(
                 f"Sleeping before retrying OCI request {target_service}.{operation_name} which has failed with: {exception}"

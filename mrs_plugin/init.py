@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024 Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ from mysqlsh.plugin_manager import plugin
 
 
 @plugin
-class mrs():
+class mrs:
     """Plugin to manage the MySQL REST Data Service (MRS).
 
     This global object is used to manage the MySQL REST Data Service (MRS).
@@ -58,87 +58,87 @@ class mrs():
         from mrs_plugin import db_objects, content_sets, content_files
         from mrs_plugin import dump, users, roles, routers, script
 
-    class enable():
+    class enable:
         """Used to enable MRS services, schemas and schema objects.
 
         A collection of functions to enable MRS services, schemas and
         schema objects.
         """
 
-    class disable():
+    class disable:
         """Used to disable MRS services, schemas and schema objects.
 
         A collection of functions to disable MRS services, schemas and
         schema objects.
         """
 
-    class get():
+    class get:
         """Used to get MRS objects.
 
         A collection of functions to get MRS objects
         """
 
-    class set():
+    class set:
         """Used to set MRS object properties.
 
         A collection of functions to set MRS object properties
         """
 
-        class service():
+        class service:
             """Used to work with MRS services.
 
             A collection of functions to work with MRS services
             """
 
-        class schema():
+        class schema:
             """Used to work with MRS schemas.
 
             A collection of functions to work with MRS schemas
             """
 
-        class dbObject():
+        class dbObject:
             """Used to work with MRS DB objects.
 
             A collection of functions to work with MRS DB objects
             """
 
-    class update():
+    class update:
         """Used to update MRS object properties.
 
         A collection of functions to update MRS object properties
         """
 
-    class list():
+    class list:
         """Used to list MRS objects.
 
         A collection of functions to list MRS objects
         """
 
-    class add():
+    class add:
         """Used to add MRS objects.
 
         A collection of functions to get MRS objects
         """
 
-    class delete():
+    class delete:
         """Used to delete MRS objects.
 
         A collection of functions to delete MRS objects
         """
 
-    class dump():
+    class dump:
         """Used to dump MRS metadata to JSON files
 
         A collection of functions to dump MRS metadata to JSON files
         """
 
-    class load():
+    class load:
         """Used to load MRS metadata from JSON files
 
         A collection of functions to load MRS metadata from JSON files
         """
 
-    class run():
+    class run:
         """Used to run MRS scripts
 
         A collection of functions to run MRS scripts

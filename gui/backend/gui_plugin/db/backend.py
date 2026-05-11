@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,12 +27,24 @@ from gui_plugin.core.dbms import DbSession, DbSessionFactory
 
 def get_db_session(session: object) -> DbSession:
     if session is None:
-        raise Error.MSGException(Error.CORE_INVALID_PARAMETER,
-                                 "Session required for this operation.")
+        raise Error.MSGException(
+            Error.CORE_INVALID_PARAMETER, "Session required for this operation."
+        )
 
     if not isinstance(session, DbSession):
         session = DbSessionFactory.create(
-            "MySQL", None, False, None, None, True, None, None, None, None,
-            None, session)
+            "MySQL",
+            None,
+            False,
+            None,
+            None,
+            True,
+            None,
+            None,
+            None,
+            None,
+            None,
+            session,
+        )
 
     return session

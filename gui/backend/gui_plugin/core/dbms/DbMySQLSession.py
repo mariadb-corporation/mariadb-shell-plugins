@@ -34,22 +34,27 @@ from gui_plugin.core import Filtering
 from gui_plugin.core.Context import get_context
 from gui_plugin.core.dbms import DbMySQLSessionSetupTasks as SetupTasks
 from gui_plugin.core.dbms import DbPingHandlerTask
-from gui_plugin.core.dbms.DbMySQLSessionTasks import (MySQLBaseObjectTask,
-                                                      MySQLColumnsMetadataTask,
-                                                      MySQLOneFieldListTask,
-                                                      MySQLOneFieldTask,
-                                                      MySQLTableObjectTask,
-                                                      MySQLColumnObjectTask,
-                                                      MySQLColumnsListTask,
-                                                      MySQLRoutinesListTask,
-                                                      MySQLLibrariesListTask,
-                                                      MySQLJdvTableColumnsWithReferencesTask,
-                                                      MySQLJdvViewInfoTask,
-                                                      MySQLJdvObjectFieldsWithReferencesTask)
-from gui_plugin.core.dbms.DbSession import (DbSession, DbSessionFactory,
-                                            ReconnectionMode, lock_usage)
-from gui_plugin.core.dbms.DbSessionTasks import (DbExecuteTask,
-                                                 check_supported_type)
+from gui_plugin.core.dbms.DbMySQLSessionTasks import (
+    MySQLBaseObjectTask,
+    MySQLColumnsMetadataTask,
+    MySQLOneFieldListTask,
+    MySQLOneFieldTask,
+    MySQLTableObjectTask,
+    MySQLColumnObjectTask,
+    MySQLColumnsListTask,
+    MySQLRoutinesListTask,
+    MySQLLibrariesListTask,
+    MySQLJdvTableColumnsWithReferencesTask,
+    MySQLJdvViewInfoTask,
+    MySQLJdvObjectFieldsWithReferencesTask,
+)
+from gui_plugin.core.dbms.DbSession import (
+    DbSession,
+    DbSessionFactory,
+    ReconnectionMode,
+    lock_usage,
+)
+from gui_plugin.core.dbms.DbSessionTasks import DbExecuteTask, check_supported_type
 from gui_plugin.core.Error import MSGException
 from gui_plugin.core.lib.OciUtils import BastionSessionRegistry
 
@@ -57,33 +62,50 @@ _MYSQL_INACTIVITY_TIMEOUT_ERROR = 4031
 _MYSQL_SERVER_LOST_ERROR = 2013
 
 
-@DbSessionFactory.register_session('MySQL')
+@DbSessionFactory.register_session("MySQL")
 class DbMysqlSession(DbSession):
-    _supported_types = [{"name": "Schema",        "type": "CATALOG_OBJECT"},
-                        {"name": "User Variable", "type": "CATALOG_OBJECT"},
-                        {"name": "User",          "type": "CATALOG_OBJECT"},
-                        {"name": "Engine",        "type": "CATALOG_OBJECT"},
-                        {"name": "Plugin",        "type": "CATALOG_OBJECT"},
-                        {"name": "Character Set", "type": "CATALOG_OBJECT"},
-                        {"name": "Table",         "type": "SCHEMA_OBJECT"},
-                        {"name": "View",          "type": "SCHEMA_OBJECT"},
-                        {"name": "Jdv",           "type": "SCHEMA_OBJECT"},
-                        {"name": "Routine",       "type": "SCHEMA_OBJECT"},
-                        {"name": "Library",       "type": "SCHEMA_OBJECT"},
-                        {"name": "Event",         "type": "SCHEMA_OBJECT"},
-                        {"name": "Trigger",       "type": "TABLE_OBJECT"},
-                        {"name": "Foreign Key",   "type": "TABLE_OBJECT"},
-                        {"name": "Primary Key",   "type": "TABLE_OBJECT"},
-                        {"name": "Index",         "type": "TABLE_OBJECT"},
-                        {"name": "Column",        "type": "TABLE_OBJECT"}]
+    _supported_types = [
+        {"name": "Schema", "type": "CATALOG_OBJECT"},
+        {"name": "User Variable", "type": "CATALOG_OBJECT"},
+        {"name": "User", "type": "CATALOG_OBJECT"},
+        {"name": "Engine", "type": "CATALOG_OBJECT"},
+        {"name": "Plugin", "type": "CATALOG_OBJECT"},
+        {"name": "Character Set", "type": "CATALOG_OBJECT"},
+        {"name": "Table", "type": "SCHEMA_OBJECT"},
+        {"name": "View", "type": "SCHEMA_OBJECT"},
+        {"name": "Jdv", "type": "SCHEMA_OBJECT"},
+        {"name": "Routine", "type": "SCHEMA_OBJECT"},
+        {"name": "Library", "type": "SCHEMA_OBJECT"},
+        {"name": "Event", "type": "SCHEMA_OBJECT"},
+        {"name": "Trigger", "type": "TABLE_OBJECT"},
+        {"name": "Foreign Key", "type": "TABLE_OBJECT"},
+        {"name": "Primary Key", "type": "TABLE_OBJECT"},
+        {"name": "Index", "type": "TABLE_OBJECT"},
+        {"name": "Column", "type": "TABLE_OBJECT"},
+    ]
 
-    def __init__(self, id, threaded, connection_options, data={},
-                 auto_reconnect=ReconnectionMode.NONE, task_state_cb=None, on_connected_cb=None, on_failed_cb=None,
-                 prompt_cb=None, message_callback=None, session=None):
-        super().__init__(id, threaded if session is None else False,
-                         connection_options if session is None else {},
-                         data if session is None else None,
-                         auto_reconnect=auto_reconnect, task_state_cb=task_state_cb)
+    def __init__(
+        self,
+        id,
+        threaded,
+        connection_options,
+        data={},
+        auto_reconnect=ReconnectionMode.NONE,
+        task_state_cb=None,
+        on_connected_cb=None,
+        on_failed_cb=None,
+        prompt_cb=None,
+        message_callback=None,
+        session=None,
+    ):
+        super().__init__(
+            id,
+            threaded if session is None else False,
+            connection_options if session is None else {},
+            data if session is None else None,
+            auto_reconnect=auto_reconnect,
+            task_state_cb=task_state_cb,
+        )
 
         self._prompt_cb = prompt_cb
         self._connected_cb = on_connected_cb
@@ -101,23 +123,30 @@ class DbMysqlSession(DbSession):
 
         # If the session object is already provided, no connection will be created
         if self.session is None:
-            if not 'scheme' in self._connection_options:
-                raise MSGException(Error.DB_INVALID_OPTIONS,
-                                   "MySQL scheme not defined in the connection options.")
+            if not "scheme" in self._connection_options:
+                raise MSGException(
+                    Error.DB_INVALID_OPTIONS,
+                    "MySQL scheme not defined in the connection options.",
+                )
 
             if self._connection_options["scheme"] not in ["mysql", "mysqlx"]:
-                raise MSGException(Error.DB_INVALID_OPTIONS,
-                                   "Invalid MySQL scheme defined in the connection options. Valid values are 'mysql' and 'mysqlx'.")
+                raise MSGException(
+                    Error.DB_INVALID_OPTIONS,
+                    "Invalid MySQL scheme defined in the connection options. Valid values are 'mysql' and 'mysqlx'.",
+                )
 
             self.open()
 
     def _initialize_setup_tasks(self):
-        return [SetupTasks.SessionInfoTask(self),
-                SetupTasks.HeatWaveCheckTask(self),
-                SetupTasks.BastionHandlerTask(
-                    self, lambda message: self._message_callback('PENDING', "", message)),
-                SetupTasks.RemoveExternalOptionsTask(self),
-                DbPingHandlerTask(self)]
+        return [
+            SetupTasks.SessionInfoTask(self),
+            SetupTasks.HeatWaveCheckTask(self),
+            SetupTasks.BastionHandlerTask(
+                self, lambda message: self._message_callback("PENDING", "", message)
+            ),
+            SetupTasks.RemoveExternalOptionsTask(self),
+            DbPingHandlerTask(self),
+        ]
 
     @property
     def database_type(self):
@@ -148,34 +177,38 @@ class DbMysqlSession(DbSession):
     def set_option_tracker_feature_id(self, feature_id):
         # The function to report tracking options is only available
         # in classic protocol sessions
-        if hasattr(self.session, 'set_option_tracker_feature_id'):
+        if hasattr(self.session, "set_option_tracker_feature_id"):
             self.session.set_option_tracker_feature_id(feature_id)
 
     def on_shell_prompt(self, text, options):
-        if 'type' in options:
+        if "type" in options:
             # On Bastion Sessions, this prompt is produced in 2 known scenarios:
             # - On a new connection through Bastion Session if the session is
             #   new, sometimes fails with "Access Denied" error and Shell
             #   triggers prompt to retry.
             # - When the reconnection logic is triggered with data for an
             #   expired Bastion Session
-            if self.bastion_session is not None and options['type'] == 'confirm' and text == "Access denied":
+            if (
+                self.bastion_session is not None
+                and options["type"] == "confirm"
+                and text == "Access denied"
+            ):
                 # If this is a new Bastion Session, a retry logic is successfully enough
                 # to make the connection succeed
                 if self.bastion_session.is_new:
                     if self._bastion_access_denied_retries < 3:
                         self._bastion_access_denied_retries += 1
                         time.sleep(2)
-                        return True, options['yes']
+                        return True, options["yes"]
                 # If this is not a new Bastion Session, then there's no reason to retry,
                 # the credentials are wrong, i.e. maybe expired
                 else:
-                    return False, ''
+                    return False, ""
 
         replied, value = self._prompt_cb(text, options)
 
-        if 'type' in options and options['type'] == 'password':
-            self.connection_options['password'] = value
+        if "type" in options and options["type"] == "password":
+            self.connection_options["password"] = value
 
         return replied, value
 
@@ -191,10 +224,14 @@ class DbMysqlSession(DbSession):
     def _do_open_database(self, notify_success=True):
         shell = mysqlsh.globals.shell
 
-        self._shell_ctx = shell.create_context({"printDelegate": lambda x: self.on_shell_print(x),
-                                                "diagDelegate": lambda x: self.on_shell_print_diag(x),
-                                                "errorDelegate": lambda x: self.on_shell_print_error(x),
-                                                "promptDelegate": lambda x, o: self.on_shell_prompt(x, o), })
+        self._shell_ctx = shell.create_context(
+            {
+                "printDelegate": lambda x: self.on_shell_print(x),
+                "diagDelegate": lambda x: self.on_shell_print_diag(x),
+                "errorDelegate": lambda x: self.on_shell_print_error(x),
+                "promptDelegate": lambda x, o: self.on_shell_prompt(x, o),
+            }
+        )
         self._shell = self._shell_ctx.get_shell()
 
         return self._do_connect(failed_cb=self._failed_cb)
@@ -223,12 +260,15 @@ class DbMysqlSession(DbSession):
                 self._on_connect()
 
                 # Open Shell connection
-                self.session = self._shell.open_session(
-                    self._connection_options)
+                self.session = self._shell.open_session(self._connection_options)
 
                 return True
             except Exception as e:
-                if self.bastion_session is not None and "Tunnel connection cancelled" in str(e) and handle_expired_tunnel:
+                if (
+                    self.bastion_session is not None
+                    and "Tunnel connection cancelled" in str(e)
+                    and handle_expired_tunnel
+                ):
                     # Try to recreate a new bastion session by expiring the
                     # current session first
                     handle_expired_tunnel = False
@@ -267,7 +307,11 @@ class DbMysqlSession(DbSession):
         # Send a notification to the FE so the user is aware about a reconnection happening
         if is_auto_reconnect and self._auto_reconnect == ReconnectionMode.STANDARD:
             self._message_callback(
-                "PENDING", "Connection lost, reconnecting session...", None, self._current_task_id)
+                "PENDING",
+                "Connection lost, reconnecting session...",
+                None,
+                self._current_task_id,
+            )
 
         self._close_database(False)
 
@@ -298,9 +342,8 @@ class DbMysqlSession(DbSession):
     def do_execute(self, sql, params=None, options=None):
         while True:
             try:
-                if options and 'feature_id' in options:
-                    self.set_option_tracker_feature_id(
-                        options.pop('feature_id'))
+                if options and "feature_id" in options:
+                    self.set_option_tracker_feature_id(options.pop("feature_id"))
                 self.cursor = self.session.run_sql(sql, params)
                 return self.cursor
             except mysqlsh.DBError as e:
@@ -329,9 +372,13 @@ class DbMysqlSession(DbSession):
         columns = []
         for column in self.cursor.get_columns():
             data_type = column.get_type()
-            columns.append({"name": column.get_column_label(),
-                            "type": data_type.data if data_type else "VECTOR",
-                            "length": column.get_length()})
+            columns.append(
+                {
+                    "name": column.get_column_label(),
+                    "type": data_type.data if data_type else "VECTOR",
+                    "length": column.get_length(),
+                }
+            )
 
         return columns
 
@@ -340,9 +387,9 @@ class DbMysqlSession(DbSession):
         for index in range(len(columns)):
             # If the data is stored in bytes, convert to a base64 string.
             if type(row[index]) is bytes:
-                row_data += (base64.b64encode(row[index]).decode("utf-8"), )
+                row_data += (base64.b64encode(row[index]).decode("utf-8"),)
             else:
-                row_data += (row[index], )
+                row_data += (row[index],)
 
         return row_data
 
@@ -353,22 +400,25 @@ class DbMysqlSession(DbSession):
         finally:
             return {
                 "last_insert_id": last_insert_id,
-                "rows_affected": resultset.get_affected_items_count()
+                "rows_affected": resultset.get_affected_items_count(),
             }
 
     def info(self):
         ret_val = {}
         if common.MySQLData.VERSION_INFO in self.data:
             version_info = self.data[common.MySQLData.VERSION_INFO]
-            ret_val["version"] = version_info.split('-')[0]
-            ret_val["edition"] = version_info.split(
-                '-')[1] if "-" in version_info else ""
+            ret_val["version"] = version_info.split("-")[0]
+            ret_val["edition"] = (
+                version_info.split("-")[1] if "-" in version_info else ""
+            )
 
         if common.MySQLData.SQL_MODE in self.data:
             ret_val["sql_mode"] = self.data[common.MySQLData.SQL_MODE]
 
         if common.MySQLData.HEATWAVE_AVAILABLE in self.data:
-            ret_val["heat_wave_available"] = self.data[common.MySQLData.HEATWAVE_AVAILABLE]
+            ret_val["heat_wave_available"] = self.data[
+                common.MySQLData.HEATWAVE_AVAILABLE
+            ]
 
         if common.MySQLData.MLE_AVAILABLE in self.data:
             ret_val["mle_available"] = self.data[common.MySQLData.MLE_AVAILABLE]
@@ -397,14 +447,25 @@ class DbMysqlSession(DbSession):
             self.run_sql(f"KILL QUERY {user_session.connection_id}")
 
     def get_default_schema(self):
-        return self._connection_options['schema'] if 'schema' in self._connection_options else ''
+        return (
+            self._connection_options["schema"]
+            if "schema" in self._connection_options
+            else ""
+        )
 
     def get_current_schema(self, callback=None, options=None):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLOneFieldTask(self, task_id=task_id,
-                                            sql="SELECT DATABASE()", result_callback=callback, options=options))
+            self.add_task(
+                MySQLOneFieldTask(
+                    self,
+                    task_id=task_id,
+                    sql="SELECT DATABASE()",
+                    result_callback=callback,
+                    options=options,
+                )
+            )
         else:
             return self.execute("SELECT DATABASE()")
 
@@ -412,8 +473,15 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(DbExecuteTask(self, task_id=task_id,
-                                        sql=f"USE {schema_name}", result_callback=callback, options=options))
+            self.add_task(
+                DbExecuteTask(
+                    self,
+                    task_id=task_id,
+                    sql=f"USE {schema_name}",
+                    result_callback=callback,
+                    options=options,
+                )
+            )
         else:
             return self.execute(f"USE {schema_name}")
 
@@ -421,8 +489,15 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLOneFieldTask(self, task_id=task_id,
-                                            sql="SELECT @@AUTOCOMMIT", result_callback=callback, options=options))
+            self.add_task(
+                MySQLOneFieldTask(
+                    self,
+                    task_id=task_id,
+                    sql="SELECT @@AUTOCOMMIT",
+                    result_callback=callback,
+                    options=options,
+                )
+            )
         else:
             return self.execute("SELECT @@AUTOCOMMIT")
 
@@ -430,8 +505,15 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(DbExecuteTask(self, task_id=task_id,
-                                        sql=f"SET AUTOCOMMIT={state}", result_callback=callback, options=options))
+            self.add_task(
+                DbExecuteTask(
+                    self,
+                    task_id=task_id,
+                    sql=f"SET AUTOCOMMIT={state}",
+                    result_callback=callback,
+                    options=options,
+                )
+            )
         else:
             self.execute("SET AUTOCOMMIT=?", (state,))
 
@@ -475,8 +557,9 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLOneFieldListTask(
-                self, task_id=task_id, sql=sql, params=params))
+            self.add_task(
+                MySQLOneFieldListTask(self, task_id=task_id, sql=sql, params=params)
+            )
         else:
             return self.execute(sql, params)
 
@@ -515,8 +598,11 @@ class DbMysqlSession(DbSession):
                 sql += " AND ROUTINE_TYPE = ?"
             sql += " AND ROUTINE_NAME like ?"
             sql += " ORDER BY ROUTINE_NAME"
-            params = (schema_name, routine_type.upper(),
-                      filter) if routine_type else (schema_name, filter)
+            params = (
+                (schema_name, routine_type.upper(), filter)
+                if routine_type
+                else (schema_name, filter)
+            )
         elif type == "Library":
             sql = """SELECT LIBRARY_NAME
                     FROM information_schema.LIBRARIES
@@ -534,10 +620,9 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLOneFieldListTask(self,
-                                                task_id=task_id,
-                                                sql=sql,
-                                                params=params))
+            self.add_task(
+                MySQLOneFieldListTask(self, task_id=task_id, sql=sql, params=params)
+            )
         else:
             return self.execute(sql, params)
 
@@ -585,16 +670,15 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLOneFieldListTask(self,
-                                                task_id=task_id,
-                                                sql=sql,
-                                                params=params))
+            self.add_task(
+                MySQLOneFieldListTask(self, task_id=task_id, sql=sql, params=params)
+            )
         else:
             return self.execute(sql, params)
 
     @check_supported_type
     def get_catalog_object(self, type, name):
-        params = (name, )
+        params = (name,)
         if type == "Schema":
             sql = """SELECT SCHEMA_NAME
                     FROM information_schema.schemata
@@ -623,12 +707,11 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLBaseObjectTask(self,
-                                              task_id=task_id,
-                                              sql=sql,
-                                              type=type,
-                                              name=name,
-                                              params=params))
+            self.add_task(
+                MySQLBaseObjectTask(
+                    self, task_id=task_id, sql=sql, type=type, name=name, params=params
+                )
+            )
         else:
             result = self.execute(sql, params).fetch_one()
             return {"name": result[0]} if result else {}
@@ -638,29 +721,36 @@ class DbMysqlSession(DbSession):
         params = (schema_name, name)
 
         if type == "Table":
-            sql = ["""SELECT TABLE_NAME
+            sql = [
+                """SELECT TABLE_NAME
                     FROM information_schema.tables
                     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?""",
-                   """SELECT COLUMN_NAME
+                """SELECT COLUMN_NAME
                     FROM information_schema.COLUMNS
                     WHERE TABLE_SCHEMA=? AND TABLE_NAME=?
-                    ORDER BY ORDINAL_POSITION"""
-                   ]
+                    ORDER BY ORDINAL_POSITION""",
+            ]
 
             if self.threaded:
                 context = get_context()
                 task_id = context.request_id if context else None
-                self.add_task(MySQLTableObjectTask(self,
-                                                   task_id=task_id,
-                                                   sql=sql,
-                                                   name=f"{schema_name}.{name}",
-                                                   params=params))
+                self.add_task(
+                    MySQLTableObjectTask(
+                        self,
+                        task_id=task_id,
+                        sql=sql,
+                        name=f"{schema_name}.{name}",
+                        params=params,
+                    )
+                )
             else:
                 result = {}
                 resultset = self.execute(sql[0], params).fetch_one()
                 if not resultset:
-                    raise MSGException(Error.DB_OBJECT_DOES_NOT_EXISTS,
-                                       f"The table '{schema_name}.{name}' does not exist.")
+                    raise MSGException(
+                        Error.DB_OBJECT_DOES_NOT_EXISTS,
+                        f"The table '{schema_name}.{name}' does not exist.",
+                    )
                 result["name"] = resultset[0] if resultset else ""
                 resultset = self.execute(sql[1], params).fetch_all()
                 result["columns"] = [name[0] for name in resultset]
@@ -692,17 +782,23 @@ class DbMysqlSession(DbSession):
             if self.threaded:
                 context = get_context()
                 task_id = context.request_id if context else None
-                self.add_task(MySQLBaseObjectTask(self,
-                                                  task_id=task_id,
-                                                  sql=sql,
-                                                  type=type,
-                                                  name=f"{schema_name}.{name}",
-                                                  params=params))
+                self.add_task(
+                    MySQLBaseObjectTask(
+                        self,
+                        task_id=task_id,
+                        sql=sql,
+                        type=type,
+                        name=f"{schema_name}.{name}",
+                        params=params,
+                    )
+                )
             else:
                 result = self.execute(sql, params).fetch_one()
                 if not result:
-                    raise MSGException(Error.DB_OBJECT_DOES_NOT_EXISTS,
-                                       f"The view '{schema_name}.{name}' does not exist.")
+                    raise MSGException(
+                        Error.DB_OBJECT_DOES_NOT_EXISTS,
+                        f"The view '{schema_name}.{name}' does not exist.",
+                    )
                 return {"name": result[0]}
 
     @check_supported_type
@@ -748,22 +844,34 @@ class DbMysqlSession(DbSession):
             context = get_context()
             task_id = context.request_id if context else None
             if type == "Column":
-                self.add_task(MySQLColumnObjectTask(self,
-                                                    task_id=task_id,
-                                                    sql=sql,
-                                                    type=type, name=f"{table_name}.{name}",
-                                                    params=params))
+                self.add_task(
+                    MySQLColumnObjectTask(
+                        self,
+                        task_id=task_id,
+                        sql=sql,
+                        type=type,
+                        name=f"{table_name}.{name}",
+                        params=params,
+                    )
+                )
             else:
-                self.add_task(MySQLBaseObjectTask(self,
-                                                  task_id=task_id,
-                                                  sql=sql,
-                                                  type=type, name=f"{table_name}.{name}",
-                                                  params=params))
+                self.add_task(
+                    MySQLBaseObjectTask(
+                        self,
+                        task_id=task_id,
+                        sql=sql,
+                        type=type,
+                        name=f"{table_name}.{name}",
+                        params=params,
+                    )
+                )
         else:
             result = self.execute(sql, params).fetch_one()
             if not result:
-                raise MSGException(Error.DB_OBJECT_DOES_NOT_EXISTS,
-                                   f"The {type.lower()} '{schema_name}.{name}' does not exist.")
+                raise MSGException(
+                    Error.DB_OBJECT_DOES_NOT_EXISTS,
+                    f"The {type.lower()} '{schema_name}.{name}' does not exist.",
+                )
             return {"name": result[0]}
 
     def get_columns_metadata(self, names):
@@ -774,8 +882,9 @@ class DbMysqlSession(DbSession):
             if self.threaded:
                 context = get_context()
                 task_id = context.request_id if context else None
-                self.add_task(MySQLColumnsMetadataTask(
-                    self, task_id=task_id, sql="", params=[]))
+                self.add_task(
+                    MySQLColumnsMetadataTask(self, task_id=task_id, sql="", params=[])
+                )
                 return
             else:
                 return {"columns": []}
@@ -789,29 +898,32 @@ class DbMysqlSession(DbSession):
                 WHERE """
         for name in names:
             where_clause.append(
-                "(TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?)")
-            params.extend([name['schema'], name['table'], name['column']])
+                "(TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?)"
+            )
+            params.extend([name["schema"], name["table"], name["column"]])
 
         sql += " OR ".join(where_clause)
 
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLColumnsMetadataTask(
-                self, task_id=task_id, sql=sql, params=params))
+            self.add_task(
+                MySQLColumnsMetadataTask(self, task_id=task_id, sql=sql, params=params)
+            )
         else:
             result = self.execute(sql, params).fetch_all()
             if not result:
-                column_names = [name['name'] for name in names]
-                raise MSGException(Error.DB_OBJECT_DOES_NOT_EXISTS,
-                                   f"The columns {column_names} do not exist.")
+                column_names = [name["name"] for name in names]
+                raise MSGException(
+                    Error.DB_OBJECT_DOES_NOT_EXISTS,
+                    f"The columns {column_names} do not exist.",
+                )
             return {"columns": result}
 
     def get_routines_metadata(self, schema_name):
         params = (schema_name,)
 
-        has_external_language = self._column_exists(
-            "ROUTINES", "EXTERNAL_LANGUAGE")
+        has_external_language = self._column_exists("ROUTINES", "EXTERNAL_LANGUAGE")
         if has_external_language:
             sql = """SELECT ROUTINE_NAME as 'name', ROUTINE_TYPE as 'type', EXTERNAL_LANGUAGE as 'language'
                     FROM information_schema.ROUTINES
@@ -825,10 +937,9 @@ class DbMysqlSession(DbSession):
             context = get_context()
             task_id = context.request_id if context else None
 
-            self.add_task(MySQLRoutinesListTask(self,
-                                                task_id=task_id,
-                                                sql=sql,
-                                                params=params))
+            self.add_task(
+                MySQLRoutinesListTask(self, task_id=task_id, sql=sql, params=params)
+            )
         else:
             cursor = self.execute(sql, params)
             if cursor:
@@ -836,13 +947,14 @@ class DbMysqlSession(DbSession):
             else:
                 result = []
             if not result:
-                raise MSGException(Error.DB_OBJECT_DOES_NOT_EXISTS,
-                                   f"The '{schema_name}' does not exist.")
+                raise MSGException(
+                    Error.DB_OBJECT_DOES_NOT_EXISTS,
+                    f"The '{schema_name}' does not exist.",
+                )
             return {"routines": result}
 
     def get_libraries_metadata(self, schema_name):
-        libraries_available = self._column_exists(
-            "LIBRARIES", "LIBRARY_CATALOG")
+        libraries_available = self._column_exists("LIBRARIES", "LIBRARY_CATALOG")
         if not libraries_available:
             return []
 
@@ -856,10 +968,9 @@ class DbMysqlSession(DbSession):
             context = get_context()
             task_id = context.request_id if context else None
 
-            self.add_task(MySQLLibrariesListTask(self,
-                                                 task_id=task_id,
-                                                 sql=sql,
-                                                 params=params))
+            self.add_task(
+                MySQLLibrariesListTask(self, task_id=task_id, sql=sql, params=params)
+            )
         else:
             cursor = self.execute(sql, params)
             if cursor:
@@ -867,8 +978,10 @@ class DbMysqlSession(DbSession):
             else:
                 result = []
             if not result:
-                raise MSGException(Error.DB_OBJECT_DOES_NOT_EXISTS,
-                                   f"The '{schema_name}' does not exist.")
+                raise MSGException(
+                    Error.DB_OBJECT_DOES_NOT_EXISTS,
+                    f"The '{schema_name}' does not exist.",
+                )
             return {"libraries": result}
 
     def get_jdv_table_columns_with_references(self, schema_name, table_name):
@@ -937,13 +1050,18 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLJdvTableColumnsWithReferencesTask(
-                self, task_id=task_id, sql=sql, params=params))
+            self.add_task(
+                MySQLJdvTableColumnsWithReferencesTask(
+                    self, task_id=task_id, sql=sql, params=params
+                )
+            )
         else:
             result = self.execute(sql, params).fetch_all()
             if not result:
-                raise MSGException(Error.DB_OBJECT_DOES_NOT_EXISTS,
-                                   f"Table '{schema_name}.{table_name}' does not exist.")
+                raise MSGException(
+                    Error.DB_OBJECT_DOES_NOT_EXISTS,
+                    f"Table '{schema_name}.{table_name}' does not exist.",
+                )
             return {"result": result}
 
     def get_jdv_view_info(self, jdv_schema_name, jdv_name):
@@ -979,18 +1097,28 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLJdvViewInfoTask(
-                self, task_id=task_id, sql=sql, params=params))
+            self.add_task(
+                MySQLJdvViewInfoTask(self, task_id=task_id, sql=sql, params=params)
+            )
         else:
             result = self.execute(sql, params).fetch_all()
             if not result:
-                raise MSGException(Error.JDV_OBJECT_DOES_NOT_EXISTS,
-                                   f"View '{jdv_schema_name}.{jdv_name}' does not exist.")
+                raise MSGException(
+                    Error.JDV_OBJECT_DOES_NOT_EXISTS,
+                    f"View '{jdv_schema_name}.{jdv_name}' does not exist.",
+                )
             return {"result": result}
 
-    def get_jdv_object_fields_with_references(self, jdv_schema_name, jdv_name, jdv_object_id):
-        params = [jdv_object_id, jdv_object_id,
-                  jdv_schema_name, jdv_name, jdv_object_id]
+    def get_jdv_object_fields_with_references(
+        self, jdv_schema_name, jdv_name, jdv_object_id
+    ):
+        params = [
+            jdv_object_id,
+            jdv_object_id,
+            jdv_schema_name,
+            jdv_name,
+            jdv_object_id,
+        ]
 
         # first, get columns
         sql = """
@@ -1010,8 +1138,9 @@ class DbMysqlSession(DbSession):
         """
 
         # union the child table references
-        params.extend([jdv_object_id, jdv_object_id,
-                      jdv_schema_name, jdv_name, jdv_object_id])
+        params.extend(
+            [jdv_object_id, jdv_object_id, jdv_schema_name, jdv_name, jdv_object_id]
+        )
         sql += """
             UNION
             SELECT 
@@ -1052,13 +1181,18 @@ class DbMysqlSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(MySQLJdvObjectFieldsWithReferencesTask(
-                self, task_id=task_id, sql=sql, params=params))
+            self.add_task(
+                MySQLJdvObjectFieldsWithReferencesTask(
+                    self, task_id=task_id, sql=sql, params=params
+                )
+            )
         else:
             result = self.execute(sql, params).fetch_all()
             if not result:
-                raise MSGException(Error.JDV_OBJECT_DOES_NOT_EXISTS,
-                                   f"View '{jdv_schema_name}.{jdv_name} (REFERENCED_TABLE_ID = {jdv_object_id})' does not exist.")
+                raise MSGException(
+                    Error.JDV_OBJECT_DOES_NOT_EXISTS,
+                    f"View '{jdv_schema_name}.{jdv_name} (REFERENCED_TABLE_ID = {jdv_object_id})' does not exist.",
+                )
             return {"result": result}
 
     def _column_exists(self, table_name, column_name):

@@ -81,48 +81,42 @@ def test_command_requires_full_pattern_match():
 
 
 def test_single_server_user_can_execute_allowed_gui_users_subset():
-    assert command_matches_privileges(
-        "gui.users.get_profile", SINGLE_SERVER_PRIVILEGES)
+    assert command_matches_privileges("gui.users.get_profile", SINGLE_SERVER_PRIVILEGES)
 
 
 def test_single_server_user_cannot_execute_unlisted_gui_users_commands():
     assert not command_matches_privileges(
-        "gui.users.list_users", SINGLE_SERVER_PRIVILEGES)
+        "gui.users.list_users", SINGLE_SERVER_PRIVILEGES
+    )
 
 
 def test_single_server_user_keeps_non_users_single_server_access():
-    assert command_matches_privileges(
-        "mrs.foo.bar", SINGLE_SERVER_PRIVILEGES)
+    assert command_matches_privileges("mrs.foo.bar", SINGLE_SERVER_PRIVILEGES)
 
 
 def test_single_server_user_cannot_execute_gui_shell_commands():
-    assert not command_matches_privileges(
-        "gui.shell.execute", SINGLE_SERVER_PRIVILEGES)
+    assert not command_matches_privileges("gui.shell.execute", SINGLE_SERVER_PRIVILEGES)
 
 
-def test_fresh_sqlite_schema_single_server_privileges_match_commands(tmp_path, monkeypatch):
+def test_fresh_sqlite_schema_single_server_privileges_match_commands(
+    tmp_path, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     db = sqlite3.connect(tmp_path / "gui_backend.sqlite3")
     try:
-        db.executescript(
-            (SCHEMA_DIR / "mysqlsh_gui_backend.sqlite.sql").read_text())
+        db.executescript((SCHEMA_DIR / "mysqlsh_gui_backend.sqlite.sql").read_text())
         privileges = [
-            {"access_pattern": row[0]}
-            for row in db.execute(
-                """SELECT p.access_pattern
+            {"access_pattern": row[0]} for row in db.execute("""SELECT p.access_pattern
                 FROM privilege p
                     INNER JOIN role_has_privilege r_p
                         ON p.id = r_p.privilege_id
                 WHERE r_p.role_id = 4 AND p.privilege_type_id = 1""")
         ]
 
-        assert command_matches_privileges(
-            "gui.users.get_profile", privileges)
+        assert command_matches_privileges("gui.users.get_profile", privileges)
         assert command_matches_privileges("mrs.foo.bar", privileges)
-        assert not command_matches_privileges(
-            "gui.users.list_users", privileges)
-        assert not command_matches_privileges(
-            "gui.shell.execute", privileges)
+        assert not command_matches_privileges("gui.users.list_users", privileges)
+        assert not command_matches_privileges("gui.shell.execute", privileges)
     finally:
         db.close()
 
@@ -149,12 +143,10 @@ def test_sqlite_migration_updates_single_server_privileges(tmp_path):
             INSERT INTO role_has_privilege VALUES (4, 6);
         """)
         db.executescript(
-            (SCHEMA_DIR / "mysqlsh_gui_backend_0.0.23_to_0.0.24.sqlite.sql")
-            .read_text())
+            (SCHEMA_DIR / "mysqlsh_gui_backend_0.0.23_to_0.0.24.sqlite.sql").read_text()
+        )
         privileges = [
-            {"access_pattern": row[0]}
-            for row in db.execute(
-                """SELECT p.access_pattern
+            {"access_pattern": row[0]} for row in db.execute("""SELECT p.access_pattern
                 FROM privilege p
                     INNER JOIN role_has_privilege r_p
                         ON p.id = r_p.privilege_id
@@ -162,12 +154,10 @@ def test_sqlite_migration_updates_single_server_privileges(tmp_path):
         ]
 
         assert db.execute(
-            "SELECT major, minor, patch FROM schema_version").fetchone() == (
-                0, 0, 24)
-        assert command_matches_privileges(
-            "gui.users.get_profile", privileges)
+            "SELECT major, minor, patch FROM schema_version"
+        ).fetchone() == (0, 0, 24)
+        assert command_matches_privileges("gui.users.get_profile", privileges)
         assert command_matches_privileges("mrs.foo.bar", privileges)
-        assert not command_matches_privileges(
-            "gui.users.list_users", privileges)
+        assert not command_matches_privileges("gui.users.list_users", privileges)
     finally:
         db.close()

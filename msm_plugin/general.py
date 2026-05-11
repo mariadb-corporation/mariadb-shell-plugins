@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -31,18 +31,21 @@ import msm_plugin.lib as lib
 import os
 from pathlib import Path
 
-@plugin_function('msm.info', shell=True, cli=True, web=True)
+
+@plugin_function("msm.info", shell=True, cli=True, web=True)
 def info() -> str:
     """Returns basic information about this plugin.
 
     Returns:
         str
     """
-    return (f"MySQL Schema Management Plugin Version {lib.general.VERSION} PREVIEW\n"
-            "Warning! For testing purposes only!")
+    return (
+        f"MySQL Schema Management Plugin Version {lib.general.VERSION} PREVIEW\n"
+        "Warning! For testing purposes only!"
+    )
 
 
-@plugin_function('msm.version', shell=True, cli=True, web=True)
+@plugin_function("msm.version", shell=True, cli=True, web=True)
 def version() -> str:
     """Returns the version number of the plugin
 
@@ -52,7 +55,7 @@ def version() -> str:
     return lib.general.VERSION
 
 
-@plugin_function('msm.pwd', shell=True, cli=True, web=False)
+@plugin_function("msm.pwd", shell=True, cli=True, web=False)
 def pwd() -> str:
     """Returns the current working directory.
 
@@ -62,7 +65,7 @@ def pwd() -> str:
     return lib.core.get_working_dir()
 
 
-@plugin_function('msm.cd', shell=True, cli=True, web=False)
+@plugin_function("msm.cd", shell=True, cli=True, web=False)
 def cd(directory: str) -> None:
     """Changes the current working directory.
 
@@ -75,7 +78,11 @@ def cd(directory: str) -> None:
     """
     working_dir = lib.core.get_working_dir()
 
-    if directory.startswith("/") or directory.startswith("\\") or directory.startswith("~"):
+    if (
+        directory.startswith("/")
+        or directory.startswith("\\")
+        or directory.startswith("~")
+    ):
         new_path = os.path.expanduser(directory)
     elif directory == "..":
         new_path = Path(working_dir).parent
@@ -90,7 +97,7 @@ def cd(directory: str) -> None:
     config_file.store()
 
 
-@plugin_function('msm.ls', shell=True, cli=True, web=False)
+@plugin_function("msm.ls", shell=True, cli=True, web=False)
 def ls(path: str = None) -> list[str]:
     """Shows the content of the current working directory.
 

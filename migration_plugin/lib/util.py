@@ -47,12 +47,15 @@ def sanitize_par_uri_in_list(l: list[str]) -> list[str]:
     return [sanitize_par_uri(i) for i in l]
 
 
-k_san_dict_par = {"access_uri": sanitize_par_uri,
-                  "full_path": sanitize_par_uri}
+k_san_dict_par = {"access_uri": sanitize_par_uri, "full_path": sanitize_par_uri}
 k_san_dict_connection = {"password": lambda s: "****"}
 
-k_sensitive_fields = ["password", "adminPassword",
-                      "adminPasswordConfirm", "pass_phrase"]
+k_sensitive_fields = [
+    "password",
+    "adminPassword",
+    "adminPasswordConfirm",
+    "pass_phrase",
+]
 
 
 def sanitize_dict(d: dict, f: dict) -> dict:
@@ -96,24 +99,25 @@ def sanitize_dict_any_pass(d: Optional[dict], delete: bool = False) -> Optional[
 
 
 def is_windows():
-    return sys.platform == 'win32' or sys.platform == 'cygwin'
+    return sys.platform == "win32" or sys.platform == "cygwin"
 
 
 def get_user_domain():
     if is_windows():
         # Try Windows environment variable first
-        domain = os.environ.get('USERDOMAIN')
+        domain = os.environ.get("USERDOMAIN")
         if domain:
             return domain
         # Fallback: Use windows API
         try:
             import ctypes
+
             name = ctypes.create_unicode_buffer(256)
             size = ctypes.pointer(ctypes.c_ulong(256))
             # NameSamCompatible
-            windll = ctypes.windll  # type:ignore
+            windll = ctypes.windll  # type: ignore
             if windll.secur32.GetUserNameExW(2, name, size):
-                return name.value.split('\\')[0]
+                return name.value.split("\\")[0]
         except Exception:
             pass
     # For non-Windows platforms, no true domain concept exists.
@@ -123,7 +127,10 @@ def get_user_domain():
 def apply_user_only_access_permissions(path):
     if not os.path.exists(path):
         raise RuntimeError(
-            "Failed attempting to set permissions on path that does not exist: {}".format(path))
+            "Failed attempting to set permissions on path that does not exist: {}".format(
+                path
+            )
+        )
 
     if is_windows():
         # General permissions strategy is:
@@ -136,34 +143,68 @@ def apply_user_only_access_permissions(path):
         userWithDomain = username
         if userdomain:
             userWithDomain = userdomain + "\\" + username
-        admin_grp = '*S-1-5-32-544'
-        system_usr = '*S-1-5-18'
+        admin_grp = "*S-1-5-32-544"
+        system_usr = "*S-1-5-18"
         try:
             if os.path.isfile(path):
                 subprocess.check_output(
-                    'icacls "{path}" /reset'.format(path=path), stderr=subprocess.STDOUT)
+                    'icacls "{path}" /reset'.format(path=path), stderr=subprocess.STDOUT
+                )
                 try:
-                    subprocess.check_output('icacls "{path}" /inheritance:r /grant:r "{username}:F" /grant {admin_grp}:F /grant {system_usr}:F'.format(
-                        path=path, username=userWithDomain, admin_grp=admin_grp, system_usr=system_usr), stderr=subprocess.STDOUT)
+                    subprocess.check_output(
+                        'icacls "{path}" /inheritance:r /grant:r "{username}:F" /grant {admin_grp}:F /grant {system_usr}:F'.format(
+                            path=path,
+                            username=userWithDomain,
+                            admin_grp=admin_grp,
+                            system_usr=system_usr,
+                        ),
+                        stderr=subprocess.STDOUT,
+                    )
                 except subprocess.CalledProcessError:
-                    subprocess.check_output('icacls "{path}" /inheritance:r /grant:r "{username}:F" /grant {admin_grp}:F /grant {system_usr}:F'.format(
-                        path=path, username=username, admin_grp=admin_grp, system_usr=system_usr), stderr=subprocess.STDOUT)
+                    subprocess.check_output(
+                        'icacls "{path}" /inheritance:r /grant:r "{username}:F" /grant {admin_grp}:F /grant {system_usr}:F'.format(
+                            path=path,
+                            username=username,
+                            admin_grp=admin_grp,
+                            system_usr=system_usr,
+                        ),
+                        stderr=subprocess.STDOUT,
+                    )
             else:
                 if os.listdir(path):
                     # safety check to make sure we aren't changing permissions of existing files
                     raise RuntimeError(
-                        "Failed attempting to set permissions on existing folder that is not empty.")
+                        "Failed attempting to set permissions on existing folder that is not empty."
+                    )
                 subprocess.check_output(
-                    'icacls "{path}" /reset'.format(path=path), stderr=subprocess.STDOUT)
+                    'icacls "{path}" /reset'.format(path=path), stderr=subprocess.STDOUT
+                )
                 try:
-                    subprocess.check_output('icacls "{path}" /inheritance:r /grant:r "{username}:(OI)(CI)F"  /grant:r {admin_grp}:(OI)(CI)F /grant:r {system_usr}:(OI)(CI)F'.format(
-                        path=path, username=userWithDomain, admin_grp=admin_grp, system_usr=system_usr), stderr=subprocess.STDOUT)
+                    subprocess.check_output(
+                        'icacls "{path}" /inheritance:r /grant:r "{username}:(OI)(CI)F"  /grant:r {admin_grp}:(OI)(CI)F /grant:r {system_usr}:(OI)(CI)F'.format(
+                            path=path,
+                            username=userWithDomain,
+                            admin_grp=admin_grp,
+                            system_usr=system_usr,
+                        ),
+                        stderr=subprocess.STDOUT,
+                    )
                 except subprocess.CalledProcessError:
-                    subprocess.check_output('icacls "{path}" /inheritance:r /grant:r "{username}:(OI)(CI)F"  /grant:r {admin_grp}:(OI)(CI)F /grant:r {system_usr}:(OI)(CI)F'.format(
-                        path=path, username=username, admin_grp=admin_grp, system_usr=system_usr), stderr=subprocess.STDOUT)
+                    subprocess.check_output(
+                        'icacls "{path}" /inheritance:r /grant:r "{username}:(OI)(CI)F"  /grant:r {admin_grp}:(OI)(CI)F /grant:r {system_usr}:(OI)(CI)F'.format(
+                            path=path,
+                            username=username,
+                            admin_grp=admin_grp,
+                            system_usr=system_usr,
+                        ),
+                        stderr=subprocess.STDOUT,
+                    )
         except subprocess.CalledProcessError as exc_info:
-            print("Error occurred while attempting to set permissions for {path}: {exception}".format(
-                path=path, exception=str(exc_info)))
+            print(
+                "Error occurred while attempting to set permissions for {path}: {exception}".format(
+                    path=path, exception=str(exc_info)
+                )
+            )
             sys.exit(exc_info.returncode)
     else:
         if os.path.isfile(path):
@@ -178,7 +219,8 @@ g_ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 
 DEFAULT_PUBLIC_IP_URLS = tuple(
-    url for url in (
+    url
+    for url in (
         os.getenv("PUBLIC_IP_URL"),
         "https://cloudflare.com/cdn-cgi/trace",
         "https://ifconfig.co/json",

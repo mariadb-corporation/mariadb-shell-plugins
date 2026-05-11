@@ -37,9 +37,7 @@ from mds_plugin import configuration as mds_configuration
 def get_plugin_data_path(create=True) -> str:
     # Get migration plugin data folder, create if it does not exist yet
     plugin_data_path = os.path.abspath(
-        plugin_manager_general.get_shell_user_dir(
-            "plugin_data", "migration_plugin"
-        )
+        plugin_manager_general.get_shell_user_dir("plugin_data", "migration_plugin")
     )
 
     if create:
@@ -49,11 +47,7 @@ def get_plugin_data_path(create=True) -> str:
 
 
 def get_mysqlsh_log_path() -> str:
-    return os.path.abspath(
-        plugin_manager_general.get_shell_user_dir(
-            "mysqlsh.log"
-        )
-    )
+    return os.path.abspath(plugin_manager_general.get_shell_user_dir("mysqlsh.log"))
 
 
 def default_projects_directory(create: bool):

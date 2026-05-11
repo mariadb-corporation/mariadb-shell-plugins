@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -485,13 +485,11 @@ class MrsDdlListener(MRSListener):
             )
 
             if schema is None:
-                raise Exception(
-                    f"""The REST schema `{
+                raise Exception(f"""The REST schema `{
                         url_host_name if url_host_name is not None else ''}{
                             url_context_root if url_context_root is not None else ''}{
                                 schema_request_path if schema_request_path is not None else ''
-                    }` was not found."""
-                )
+                    }` was not found.""")
             schema_id = schema["id"]
 
         db_object = lib.db_objects.get_db_object(
@@ -500,11 +498,9 @@ class MrsDdlListener(MRSListener):
             request_path=self.mrs_object.get("request_path"),
         )
         if db_object is None:
-            raise Exception(
-                f"""REST object `{url_host_name}{url_context_root}{
+            raise Exception(f"""REST object `{url_host_name}{url_context_root}{
                     schema_request_path}{
-                        self.mrs_object.get("request_path")}` was not found."""
-            )
+                        self.mrs_object.get("request_path")}` was not found.""")
 
         return db_object
 
@@ -520,10 +516,8 @@ class MrsDdlListener(MRSListener):
             self.mrs_object["name"] = ctx.qualifiedIdentifier().getText()
 
             if self.mrs_ddl_executor.current_schema_id is None:
-                raise Exception(
-                    f'The database schema for `{
-                        self.mrs_object["name"]}` was not given.'
-                )
+                raise Exception(f'The database schema for `{
+                        self.mrs_object["name"]}` was not given.')
 
             schema = lib.schemas.get_schema(
                 session=self.session, schema_id=self.mrs_ddl_executor.current_schema_id
@@ -531,10 +525,8 @@ class MrsDdlListener(MRSListener):
             if schema is not None:
                 self.mrs_object["schema_name"] = schema.get("name")
             else:
-                raise Exception(
-                    f'The database schema was not found for `{
-                        self.mrs_object["name"]}`'
-                )
+                raise Exception(f'The database schema was not found for `{
+                        self.mrs_object["name"]}`')
         else:
             self.mrs_object["name"] = (
                 ctx.qualifiedIdentifier()
@@ -1415,7 +1407,10 @@ class MrsDdlListener(MRSListener):
         )
 
         if "@" in self.mrs_object["new_url_context_root"]:
-            self.mrs_object["new_developer_list"], self.mrs_object["new_url_context_root"] = self.mrs_object["new_url_context_root"].split("@")
+            (
+                self.mrs_object["new_developer_list"],
+                self.mrs_object["new_url_context_root"],
+            ) = self.mrs_object["new_url_context_root"].split("@")
 
     def exitAlterRestServiceStatement(self, ctx):
         self.mrs_ddl_executor.alterRestService(self.mrs_object)
@@ -1922,7 +1917,9 @@ class MrsDdlListener(MRSListener):
         self.mrs_object = {
             "line": ctx.start.line,
             "current_operation": "SHOW REST AUTH APPS",
-            "url_context_root": ctx.serviceRequestPath().getText() if ctx.serviceRequestPath() else None
+            "url_context_root": (
+                ctx.serviceRequestPath().getText() if ctx.serviceRequestPath() else None
+            ),
         }
 
     def exitShowRestAuthAppsStatement(self, ctx):
@@ -2085,13 +2082,14 @@ class MrsDdlListener(MRSListener):
             "line": ctx.start.line,
             "current_operation": "DUMP REST SERVICE",
             "directory_file_path": os.path.expanduser(
-                get_text_without_quotes(ctx.directoryFilePath().getText())),
+                get_text_without_quotes(ctx.directoryFilePath().getText())
+            ),
             "include_database_endpoints": ctx.DATABASE_SYMBOL() is not None
-                or ctx.ALL_SYMBOL() is not None,
+            or ctx.ALL_SYMBOL() is not None,
             "include_static_endpoints": ctx.STATIC_SYMBOL() is not None
-                or ctx.ALL_SYMBOL() is not None,
+            or ctx.ALL_SYMBOL() is not None,
             "include_dynamic_endpoints": ctx.DYNAMIC_SYMBOL() is not None
-                or ctx.ALL_SYMBOL() is not None,
+            or ctx.ALL_SYMBOL() is not None,
             "zip": ctx.ZIP_SYMBOL() is not None,
         }
 
@@ -2100,41 +2098,52 @@ class MrsDdlListener(MRSListener):
 
     # ------------------------------------------------------------------------------------------------------------------
     # DUMP REST PROJECT
-    def enterDumpRestProjectStatement(self, ctx:MRSParser.DumpRestProjectStatementContext):
+    def enterDumpRestProjectStatement(
+        self, ctx: MRSParser.DumpRestProjectStatementContext
+    ):
         self.mrs_object = {
             "line": ctx.start.line,
             "current_operation": "DUMP REST PROJECT",
             "services": [],
             "schemas": [],
             "directory_file_path": os.path.expanduser(
-                get_text_without_quotes(ctx.directoryFilePath().getText())),
+                get_text_without_quotes(ctx.directoryFilePath().getText())
+            ),
             "zip": ctx.ZIP_SYMBOL() is not None,
         }
 
     def enterDumpRestProjectService(self, ctx):
         all = ctx.ALL_SYMBOL() is not None
-        name = lib.core.make_string_valid_for_filesystem(ctx.serviceRequestPath().getText(), "<>:\"|?*")
+        name = lib.core.make_string_valid_for_filesystem(
+            ctx.serviceRequestPath().getText(), '<>:"|?*'
+        )
 
-        self.mrs_object["services"].append({
-            "name": name,
-            "include_database_endpoints": ctx.DATABASE_SYMBOL() is not None or all,
-            "include_static_endpoints": ctx.STATIC_SYMBOL() is not None or all,
-            "include_dynamic_endpoints": ctx.DYNAMIC_SYMBOL() is not None or all,
-        })
-
+        self.mrs_object["services"].append(
+            {
+                "name": name,
+                "include_database_endpoints": ctx.DATABASE_SYMBOL() is not None or all,
+                "include_static_endpoints": ctx.STATIC_SYMBOL() is not None or all,
+                "include_dynamic_endpoints": ctx.DYNAMIC_SYMBOL() is not None or all,
+            }
+        )
 
     def enterDumpRestProjectDatabaseSchema(self, ctx):
-        file_path = get_text_without_quotes(ctx.restProjectDatabaseSchemaFilePath().getText()) \
-            if ctx.restProjectDatabaseSchemaFilePath() else None
+        file_path = (
+            get_text_without_quotes(ctx.restProjectDatabaseSchemaFilePath().getText())
+            if ctx.restProjectDatabaseSchemaFilePath()
+            else None
+        )
         name = get_text_without_quotes(ctx.schemaName().getText())
         name = lib.core.make_string_valid_for_filesystem(name)
 
         lib.core.validate_path_for_filesystem(file_path)
 
-        self.mrs_object["schemas"].append({
-            "name": name,
-            "file_path": os.path.expanduser(file_path) if file_path else None,
-        })
+        self.mrs_object["schemas"].append(
+            {
+                "name": name,
+                "file_path": os.path.expanduser(file_path) if file_path else None,
+            }
+        )
 
     def enterRestProjectIconFilePath(self, ctx):
         icon_file_path = get_text_without_quotes(ctx.textStringLiteral().getText())
@@ -2142,18 +2151,28 @@ class MrsDdlListener(MRSListener):
         self.mrs_object["icon_file_path"] = os.path.expanduser(icon_file_path)
 
     def enterRestProjectDescription(self, ctx):
-        self.mrs_object["description"] = get_text_without_quotes(ctx.textStringLiteral().getText())
+        self.mrs_object["description"] = get_text_without_quotes(
+            ctx.textStringLiteral().getText()
+        )
 
     def enterRestProjectPublisher(self, ctx):
-        self.mrs_object["publisher"] = get_text_without_quotes(ctx.textStringLiteral().getText())
+        self.mrs_object["publisher"] = get_text_without_quotes(
+            ctx.textStringLiteral().getText()
+        )
 
     def enterRestProjectName(self, ctx):
-        self.mrs_object["project_name"] = get_text_without_quotes(ctx.textStringLiteral().getText())
+        self.mrs_object["project_name"] = get_text_without_quotes(
+            ctx.textStringLiteral().getText()
+        )
 
     def enterRestProjectVersion(self, ctx):
-        self.mrs_object["version"] = get_text_without_quotes(ctx.textStringLiteral().getText())
+        self.mrs_object["version"] = get_text_without_quotes(
+            ctx.textStringLiteral().getText()
+        )
 
-    def exitDumpRestProjectStatement(self, ctx:MRSParser.DumpRestProjectStatementContext):
+    def exitDumpRestProjectStatement(
+        self, ctx: MRSParser.DumpRestProjectStatementContext
+    ):
         self.mrs_ddl_executor.dumpRestProject(self.mrs_object)
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -2163,10 +2182,13 @@ class MrsDdlListener(MRSListener):
             "line": ctx.start.line,
             "current_operation": "LOAD REST SERVICE",
             "directory_file_path": os.path.expanduser(
-                get_text_without_quotes(ctx.directoryFilePath().getText())),
-            "request_path": get_text_without_quotes(
-                ctx.serviceRequestPath().getText()
-            ) if ctx.serviceRequestPath() is not None else None,
+                get_text_without_quotes(ctx.directoryFilePath().getText())
+            ),
+            "request_path": (
+                get_text_without_quotes(ctx.serviceRequestPath().getText())
+                if ctx.serviceRequestPath() is not None
+                else None
+            ),
             "zip": ctx.ZIP_SYMBOL() is not None,
             "url": ctx.URL_SYMBOL() is not None,
         }
@@ -2176,16 +2198,21 @@ class MrsDdlListener(MRSListener):
 
     # ------------------------------------------------------------------------------------------------------------------
     # LOAD REST PROJECT
-    def enterLoadRestProjectStatement(self, ctx:MRSParser.LoadRestProjectStatementContext):
+    def enterLoadRestProjectStatement(
+        self, ctx: MRSParser.LoadRestProjectStatementContext
+    ):
         self.mrs_object = {
             "line": ctx.start.line,
             "current_operation": "LOAD REST PROJECT",
             "directory_file_path": os.path.expanduser(
-                get_text_without_quotes(ctx.directoryFilePath().getText())),
+                get_text_without_quotes(ctx.directoryFilePath().getText())
+            ),
             # "zip": ctx.ZIP_SYMBOL() is not None,
         }
 
-    def exitLoadRestProjectStatement(self, ctx:MRSParser.LoadRestProjectStatementContext):
+    def exitLoadRestProjectStatement(
+        self, ctx: MRSParser.LoadRestProjectStatementContext
+    ):
         self.mrs_ddl_executor.loadRestProject(self.mrs_object)
 
 

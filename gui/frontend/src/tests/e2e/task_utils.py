@@ -92,7 +92,7 @@ def get_configuration():
 
 
 def save_configuration(data):
-    with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), 'w') as file:
+    with open(os.path.join(WORKING_DIR, "..", ".env.test.json"), "w") as file:
         json.dump(data, file, indent=4)
 
 
@@ -121,16 +121,18 @@ def get_executables(name: str) -> str:
     if system == "Linux":
         executables["Chrome browser"] = "chrome"
     elif system == "Windows":
-        executables[
-            "Chrome browser"
-        ] = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        executables["Chrome browser"] = (
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        )
     else:
-        executables[
-            "Chrome browser"
-        ] = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        executables["Chrome browser"] = (
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        )
 
     executables["VSCode"] = "code.exe" if system == "Windows" else "code"
-    executables["MySQL Router"] = "mysqlrouter.exe" if system == "Windows" else "mysqlrouter"
+    executables["MySQL Router"] = (
+        "mysqlrouter.exe" if system == "Windows" else "mysqlrouter"
+    )
 
     return executables[name]
 
@@ -232,7 +234,7 @@ class CheckVersionTask:
             )
             reg_sz = "REG_SZ    "
             if reg_sz in output:
-                self.version = output[output.index(reg_sz) + len(reg_sz):]
+                self.version = output[output.index(reg_sz) + len(reg_sz) :]
 
         else:
             try:
@@ -241,11 +243,7 @@ class CheckVersionTask:
                     args.append("--disable-builtin-plugins")
                 args.append("--version")
 
-                self.version = (
-                    subprocess.check_output(args)
-                    .decode("utf-8")
-                    .strip()
-                )
+                self.version = subprocess.check_output(args).decode("utf-8").strip()
             except FileNotFoundError:
                 return False
 
@@ -322,8 +320,7 @@ class ShellTask(BaseTask):
                 args.append("--quiet-start=2")
                 args.append(conn_str)
             args.append("-f" if file else "-e")
-            args.append(command_or_file_path if file else quote(
-                command_or_file_path))
+            args.append(command_or_file_path if file else quote(command_or_file_path))
             out = (
                 subprocess.check_output(
                     args,
@@ -395,7 +392,9 @@ class ShellTask(BaseTask):
 
 
 class AddUserToBE(ShellTask):
-    def __init__(self, environment: typing.Dict[str, str], dir_name: str, servers: typing.List) -> None:
+    def __init__(
+        self, environment: typing.Dict[str, str], dir_name: str, servers: typing.List
+    ) -> None:
         super().__init__(environment)
         self.dir_name = dir_name
         self.environment = environment
@@ -405,15 +404,17 @@ class AddUserToBE(ShellTask):
         for server in self.servers:
             if server.multi_user:
                 self.environment["MYSQLSH_USER_CONFIG_HOME"] = os.path.join(
-                    WORKING_DIR, f'port_{server.port}')
-                subprocess.Popen([
-                    self.mysqlsh_executable,
-                    "--disable-builtin-plugins",
-                    "--py",
-                    "-e",
-                    "gui.users.create_user('client', 'client', 'Administrator')",
-                ],
-                    env=self.environment
+                    WORKING_DIR, f"port_{server.port}"
+                )
+                subprocess.Popen(
+                    [
+                        self.mysqlsh_executable,
+                        "--disable-builtin-plugins",
+                        "--py",
+                        "-e",
+                        "gui.users.create_user('client', 'client', 'Administrator')",
+                    ],
+                    env=self.environment,
                 )
         Logger.success("BE user has been added")
 
@@ -434,13 +435,12 @@ class SetPluginsTask(BaseTask):
 
         if self.servers is not None:
             self.set_custom_config_folders()
-            Logger.success(
-                "Sets custom config folders for servers successfully")
+            Logger.success("Sets custom config folders for servers successfully")
 
     def get_repo_plugin_path(self, plugin_name):
         """Gets the path to given plugin name"""
 
-        if plugin_name == 'gui_plugin':
+        if plugin_name == "gui_plugin":
             return REPO_ROOT.joinpath("gui", "backend", plugin_name)
         else:
             return REPO_ROOT.joinpath(plugin_name)
@@ -458,12 +458,12 @@ class SetPluginsTask(BaseTask):
 
         os.makedirs(self.plugins_path, exist_ok=True)
 
-        self.link_plugin('gui_plugin')
-        self.link_plugin('mds_plugin')
-        self.link_plugin('mrs_plugin')
-        self.link_plugin('msm_plugin')
-        self.link_plugin('util_plugin')
-        self.link_plugin('migration_plugin')
+        self.link_plugin("gui_plugin")
+        self.link_plugin("mds_plugin")
+        self.link_plugin("mrs_plugin")
+        self.link_plugin("msm_plugin")
+        self.link_plugin("util_plugin")
+        self.link_plugin("migration_plugin")
 
     def set_custom_config_folders(self) -> None:
         """Sets custom config folders for all servers"""
@@ -471,23 +471,35 @@ class SetPluginsTask(BaseTask):
         os.makedirs(self.plugins_path, exist_ok=True)
 
         for server in self.servers:
-            path = os.path.join(WORKING_DIR, f'port_{server.port}')
-            if (os.path.exists(path)):
+            path = os.path.join(WORKING_DIR, f"port_{server.port}")
+            if os.path.exists(path):
                 shutil.rmtree(path)
 
-            os.makedirs(os.path.join(path,  "plugins"))
-            create_symlink(self.get_repo_plugin_path('gui_plugin'), os.path.join(
-                path, "plugins", "gui_plugin"))
-            create_symlink(self.get_repo_plugin_path('mds_plugin'), os.path.join(
-                path, "plugins", "mds_plugin"))
-            create_symlink(self.get_repo_plugin_path('mrs_plugin'), os.path.join(
-                path, "plugins", "mrs_plugin"))
-            create_symlink(self.get_repo_plugin_path('msm_plugin'), os.path.join(
-                path, "plugins", "msm_plugin"))
-            create_symlink(self.get_repo_plugin_path('util_plugin'), os.path.join(
-                path, "plugins", "util_plugin"))
-            create_symlink(self.get_repo_plugin_path('migration_plugin'), os.path.join(
-                path, "plugins", "migration_plugin"))
+            os.makedirs(os.path.join(path, "plugins"))
+            create_symlink(
+                self.get_repo_plugin_path("gui_plugin"),
+                os.path.join(path, "plugins", "gui_plugin"),
+            )
+            create_symlink(
+                self.get_repo_plugin_path("mds_plugin"),
+                os.path.join(path, "plugins", "mds_plugin"),
+            )
+            create_symlink(
+                self.get_repo_plugin_path("mrs_plugin"),
+                os.path.join(path, "plugins", "mrs_plugin"),
+            )
+            create_symlink(
+                self.get_repo_plugin_path("msm_plugin"),
+                os.path.join(path, "plugins", "msm_plugin"),
+            )
+            create_symlink(
+                self.get_repo_plugin_path("util_plugin"),
+                os.path.join(path, "plugins", "util_plugin"),
+            )
+            create_symlink(
+                self.get_repo_plugin_path("migration_plugin"),
+                os.path.join(path, "plugins", "migration_plugin"),
+            )
 
 
 class SetMySQLServerTask(ShellTask):
@@ -500,10 +512,19 @@ class SetMySQLServerTask(ShellTask):
     i.e. MYSQL_URI=root:@localhost:3306
     """
 
-    def __init__(self, environment: typing.Dict[str, str], dir_name: str, port: str, set_ssl_root_folder: bool = False) -> None:
+    def __init__(
+        self,
+        environment: typing.Dict[str, str],
+        dir_name: str,
+        port: str,
+        set_ssl_root_folder: bool = False,
+    ) -> None:
         super().__init__(environment)
         self.dir_name = dir_name
-        self.sandbox_deployed = environment["EXECUTION_MODE"] == "teardown" and 'MYSQL_URI' not in self.environment
+        self.sandbox_deployed = (
+            environment["EXECUTION_MODE"] == "teardown"
+            and "MYSQL_URI" not in self.environment
+        )
         self.set_ssl_root_folder = set_ssl_root_folder
         self.port = port
 
@@ -513,22 +534,20 @@ class SetMySQLServerTask(ShellTask):
         data = get_configuration()
 
         if self.set_ssl_root_folder:
-            data['SSL_ROOT_FOLDER'] = f"{self.dir_name}/{self.port}/sandboxdata"
+            data["SSL_ROOT_FOLDER"] = f"{self.dir_name}/{self.port}/sandboxdata"
 
-        existing_uri = ''
-        if 'MYSQL_URI' in self.environment:
-            existing_uri = self.environment['MYSQL_URI']
-            ssl_root_folder = pathlib.Path(
-                self.find_ssl_root_folder(existing_uri))
+        existing_uri = ""
+        if "MYSQL_URI" in self.environment:
+            existing_uri = self.environment["MYSQL_URI"]
+            ssl_root_folder = pathlib.Path(self.find_ssl_root_folder(existing_uri))
             if not ssl_root_folder.joinpath("ca.pem").exists():
                 raise RuntimeError(
-                    f"Unable to find SSL certificates for {existing_uri} in {ssl_root_folder}")
-            data['SSL_ROOT_FOLDER'] = ssl_root_folder
+                    f"Unable to find SSL certificates for {existing_uri} in {ssl_root_folder}"
+                )
+            data["SSL_ROOT_FOLDER"] = ssl_root_folder
 
         save_configuration(data)
-        conn_string = (
-            f"{self.environment['DBUSERNAME']}:{self.environment['DBPASSWORD']}@localhost:{self.port}"
-        )
+        conn_string = f"{self.environment['DBUSERNAME']}:{self.environment['DBPASSWORD']}@localhost:{self.port}"
 
         if existing_uri == conn_string:
             Logger.info("Using existing MySQL Server")
@@ -538,9 +557,7 @@ class SetMySQLServerTask(ShellTask):
         else:
             Logger.info("Start deploying MySQL Server")
             self.deploy_mysql_instance()
-            Logger.success(
-                "MySQL instance was successfully deployed and running"
-            )
+            Logger.success("MySQL instance was successfully deployed and running")
             self.sandbox_deployed = True
 
         self.install_schema(name="sakila", path=str(SAKILA_SQL_PATH))
@@ -569,9 +586,7 @@ class SetMySQLServerTask(ShellTask):
             path (str): path to SQL script that creates schema
         """
 
-        conn_string = (
-            f"{self.environment['DBUSERNAME']}:{self.environment['DBPASSWORD']}@localhost:{self.port}"
-        )
+        conn_string = f"{self.environment['DBUSERNAME']}:{self.environment['DBPASSWORD']}@localhost:{self.port}"
         out = ""
         try:
             self.shell_command_execute(
@@ -581,35 +596,35 @@ class SetMySQLServerTask(ShellTask):
             out = str(exc)
 
         if "exit status 1" in out:
-            self.shell_file_execute(
-                file_path=path, mode="--sql", conn_str=conn_string
-            )
+            self.shell_file_execute(file_path=path, mode="--sql", conn_str=conn_string)
 
     def deploy_mysql_instance(self) -> None:
         """Deploying new MySQL server instance in temp dir"""
 
         self.shell_command_execute_cli(
-            ["--",
-             "dba",
-             "deploy-sandbox-instance",
-             self.port,
-             f"--password={self.environment['DBPASSWORD']}",
-             f"--sandbox-dir={self.dir_name}"
-             ])
+            [
+                "--",
+                "dba",
+                "deploy-sandbox-instance",
+                self.port,
+                f"--password={self.environment['DBPASSWORD']}",
+                f"--sandbox-dir={self.dir_name}",
+            ]
+        )
 
-        cert_path = pathlib.Path(
-            self.dir_name, f"{self.port}", "sandboxdata")
+        cert_path = pathlib.Path(self.dir_name, f"{self.port}", "sandboxdata")
 
         if not cert_path.joinpath("ca.pem").exists():
             raise RuntimeError("Unable to find SSL certificates")
 
         # We will use the certs deployed with the server
-        self.environment['SSL_CA_CERT_PATH'] = str(
-            (cert_path.joinpath("ca.pem")))
-        self.environment['SSL_CLIENT_CERT_PATH'] = str(
-            (cert_path.joinpath("client-cert.pem")))
-        self.environment['SSL_CLIENT_KEY_PATH'] = str(
-            (cert_path.joinpath("client-key.pem")))
+        self.environment["SSL_CA_CERT_PATH"] = str((cert_path.joinpath("ca.pem")))
+        self.environment["SSL_CLIENT_CERT_PATH"] = str(
+            (cert_path.joinpath("client-cert.pem"))
+        )
+        self.environment["SSL_CLIENT_KEY_PATH"] = str(
+            (cert_path.joinpath("client-key.pem"))
+        )
 
     def find_ssl_root_folder(self, conn_string: str) -> str:
         """Returns the SSL rot folder for custom MySQL Server"""
@@ -627,12 +642,25 @@ class SetMySQLServerTask(ShellTask):
 
         if self.sandbox_deployed:
             self.shell_command_execute_cli(
-                ["--",
-                 "dba", "kill-sandbox-instance", self.port, f"--sandbox-dir={self.dir_name}"])
+                [
+                    "--",
+                    "dba",
+                    "kill-sandbox-instance",
+                    self.port,
+                    f"--sandbox-dir={self.dir_name}",
+                ]
+            )
             Logger.success("Successfully stopped MySQL instance")
 
             self.shell_command_execute_cli(
-                ["--", "dba", "delete-sandbox-instance", self.port, f"--sandbox-dir={self.dir_name}"])
+                [
+                    "--",
+                    "dba",
+                    "delete-sandbox-instance",
+                    self.port,
+                    f"--sandbox-dir={self.dir_name}",
+                ]
+            )
             Logger.success("Successfully deleted MySQL instance")
 
 
@@ -642,9 +670,7 @@ class InstallMRSSchema(ShellTask):
         self.port = mysqlPort
 
     def run(self) -> None:
-        conn_string = (
-            f"{self.environment['DBUSERNAME']}:{self.environment['DBPASSWORD']}@localhost:{self.port}"
-        )
+        conn_string = f"{self.environment['DBUSERNAME']}:{self.environment['DBPASSWORD']}@localhost:{self.port}"
         self.shell_command_execute_cli(
             [conn_string, "--sql", "-e", "CONFIGURE REST METADATA;"]
         )
@@ -656,9 +682,7 @@ class ClearCredentials(ShellTask):
         super().__init__(environment)
 
     def run(self) -> None:
-        self.shell_command_execute(
-            command="shell.delete_all_credentials()"
-        )
+        self.shell_command_execute(command="shell.delete_all_credentials()")
         Logger.success("Shell credentials were cleaned")
 
 
@@ -698,8 +722,7 @@ class TaskExecutor:
         self.tasks: typing.List[Runnable] = []
         self.prerequisites: typing.List[Checkable] = []
         self.environment = os.environ.copy()
-        self.environment["MYSQLSH_USER_CONFIG_HOME"] = os.path.join(
-            dir_name, "mysqlsh")
+        self.environment["MYSQLSH_USER_CONFIG_HOME"] = os.path.join(dir_name, "mysqlsh")
 
     def add_task(self, task: Runnable) -> None:
         """Adding new task to be executed
@@ -753,7 +776,14 @@ class TaskExecutor:
 
 
 class BEServer:
-    def __init__(self, environment: typing.Dict[str, str], port: int, multi_user=False, single_server=False, start_process: bool = True) -> None:
+    def __init__(
+        self,
+        environment: typing.Dict[str, str],
+        port: int,
+        multi_user=False,
+        single_server=False,
+        start_process: bool = True,
+    ) -> None:
         self.mysqlsh_executable = get_executables("MySQL Shell")
         self.port = port
         self.multi_user = multi_user
@@ -773,13 +803,12 @@ class BEServer:
                 raise RuntimeError(f"The PID file does not exist: {pid_file}")
 
     def search_str(self, file_path, word):
-        with open(file_path, 'r', encoding="UTF-8") as file:
+        with open(file_path, "r", encoding="UTF-8") as file:
             content = file.read()
             return word in content
 
     def get_mysqlsh_home(self):
-        mysqlsh_user_config_home = os.path.join(
-            WORKING_DIR, f'port_{self.port}')
+        mysqlsh_user_config_home = os.path.join(WORKING_DIR, f"port_{self.port}")
         os.makedirs(mysqlsh_user_config_home, exist_ok=True)
 
         return mysqlsh_user_config_home
@@ -794,30 +823,34 @@ class BEServer:
         if self.environment["EXECUTION_MODE"] == "setup":
             preexec_fn = os.setsid
 
-        with open(self.be_log_path, 'a', encoding="UTF-8") as be_log:
+        with open(self.be_log_path, "a", encoding="UTF-8") as be_log:
             environment = self.environment.copy()
             mysqlsh_user_config_home = self.get_mysqlsh_home()
             environment["MYSQLSH_USER_CONFIG_HOME"] = mysqlsh_user_config_home
             environment["LOG_LEVEL"] = "DEBUG2"
             environment[BACKEND_DB_LOGGING_ENV_VAR] = "1"
-            timeout = time.time() + 30   # 30 seconds from now
+            timeout = time.time() + 30  # 30 seconds from now
 
-            shell_args = [self.mysqlsh_executable, "--disable-builtin-plugins", "--py", "-e"]
+            shell_args = [
+                self.mysqlsh_executable,
+                "--disable-builtin-plugins",
+                "--py",
+                "-e",
+            ]
 
             if self.multi_user:
                 shell_args.append(f"gui.start.web_server(port={self.port})")
             elif self.single_server:
                 shell_args.append(
-                    f"gui.start.web_server(single_server='localhost:2208', accept_remote_connections=True, port={self.port})")
+                    f"gui.start.web_server(single_server='localhost:2208', accept_remote_connections=True, port={self.port})"
+                )
             else:
                 shell_args.append(
-                    f'gui.start.web_server(port={self.port}, single_instance_token="{TOKEN}")')
+                    f'gui.start.web_server(port={self.port}, single_instance_token="{TOKEN}")'
+                )
 
             self.server = subprocess.Popen(
-                shell_args,
-                stdout=be_log,
-                env=environment,
-                preexec_fn=preexec_fn
+                shell_args, stdout=be_log, env=environment, preexec_fn=preexec_fn
             )
 
             # Save the PID file
@@ -836,14 +869,14 @@ class BEServer:
                     is_timeout = True
                     break
 
-                if (self.search_str(self.be_log_path, to_search)):
-                    Logger.success(
-                        f"Shell Server {self.port} has been started")
+                if self.search_str(self.be_log_path, to_search):
+                    Logger.success(f"Shell Server {self.port} has been started")
                     break
 
         if is_timeout:
             raise TaskFailException(
-                f"Shell Server: {self.port} did not start after 30secs")
+                f"Shell Server: {self.port} did not start after 30secs"
+            )
 
     def stop(self) -> None:
         if self.server is not None:
@@ -853,7 +886,8 @@ class BEServer:
                 os.kill(self.pid, signal.SIGTERM)
             except ProcessLookupError as err:
                 Logger.warning(
-                    f"Failed to terminate BE Server with PID: {self.pid}: {err}")
+                    f"Failed to terminate BE Server with PID: {self.pid}: {err}"
+                )
         pid_file = self.get_pid_file()
         if os.path.exists(pid_file):
             os.remove(pid_file)
@@ -877,20 +911,21 @@ class DisableTests:
 
             for test in tests_to_disable:
                 for file in files:
-                    test_file = pathlib.Path(
-                        tests_dir.joinpath(file)).read_text()
+                    test_file = pathlib.Path(tests_dir.joinpath(file)).read_text()
 
                     log = ""
 
                     if test in test_file:
-                        if f"describe(\"{test}" in test_file:
+                        if f'describe("{test}' in test_file:
                             log += "Test Suite"
                             to_replace = test_file.replace(
-                                f"describe(\"{test}\"", f"describe.skip(\"{test}\"")
-                        elif f"it(\"{test}" in test_file:
+                                f'describe("{test}"', f'describe.skip("{test}"'
+                            )
+                        elif f'it("{test}' in test_file:
                             log += "Test"
                             to_replace = test_file.replace(
-                                f"it(\"{test}\"", f"it.skip(\"{test}\"")
+                                f'it("{test}"', f'it.skip("{test}"'
+                            )
                         else:
                             continue
 
@@ -898,6 +933,5 @@ class DisableTests:
                         f.write(to_replace)
                         f.close()
 
-                        Logger.info(
-                            f"{log} \"{test}\" on file \"{file}\" was DISABLED")
+                        Logger.info(f'{log} "{test}" on file "{file}" was DISABLED')
                         break

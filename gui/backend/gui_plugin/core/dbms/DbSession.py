@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -58,8 +58,7 @@ class DbSessionFactory:
         if len(self.registry) == 0:
             import gui_plugin.core.dbms
         if name not in self.registry:
-            raise Exception(
-                f'There is not registered session with the name: {name}')
+            raise Exception(f"There is not registered session with the name: {name}")
 
         db_class = self.registry[name]
         db_session = db_class(*args)
@@ -88,15 +87,24 @@ def lock_usage(lock_mutex, timeout=-1):
 class DbSession(threading.Thread):
     _cancel_requests = []
 
-    def __init__(self, id, threaded, connection_options, data={}, auto_reconnect=ReconnectionMode.NONE, task_state_cb=None):
+    def __init__(
+        self,
+        id,
+        threaded,
+        connection_options,
+        data={},
+        auto_reconnect=ReconnectionMode.NONE,
+        task_state_cb=None,
+    ):
         super().__init__()
         self._id = id
         # Enable auto-reconnect logic for this session
         self._auto_reconnect = auto_reconnect
 
         if not isinstance(connection_options, dict):
-            raise MSGException(Error.DB_INVALID_OPTIONS,
-                               'No connection_options dict given.')
+            raise MSGException(
+                Error.DB_INVALID_OPTIONS, "No connection_options dict given."
+            )
 
         # Creates a local copy of the connection options
         self._connection_options = connection_options.copy()
@@ -242,9 +250,8 @@ class DbSession(threading.Thread):
     def terminate_thread(self):
         self._close_database(True)
         if self.thread_error is not None:
-            logger.error(
-                f"Thread {self._id} exiting with code {self.thread_error}")
-            self._message_callback('ERROR', self.thread_error)
+            logger.error(f"Thread {self._id} exiting with code {self.thread_error}")
+            self._message_callback("ERROR", self.thread_error)
         self._term_complete.set()
 
     def execute_thread(self, sql, params, options=None):
@@ -270,9 +277,11 @@ class DbSession(threading.Thread):
 
     def update_stats(self, execution_time, final_update=False):
         stats = self._get_stats(self.cursor)
-        if not (final_update and stats['rows_affected'] <= 0 and self._rows_affected > 0):
-            self._rows_affected = stats['rows_affected']
-        self._last_insert_id = stats['last_insert_id']
+        if not (
+            final_update and stats["rows_affected"] <= 0 and self._rows_affected > 0
+        ):
+            self._rows_affected = stats["rows_affected"]
+        self._last_insert_id = stats["last_insert_id"]
         self._last_execution_time = execution_time
 
     def get_last_row_id(self):
@@ -329,16 +338,32 @@ class DbSession(threading.Thread):
     def add_task(self, task):
         self._request_queue.put(task)
 
-    def execute(self, sql, params=None, result_queue=None, request_id=None,
-                callback=None, options=None):
+    def execute(
+        self,
+        sql,
+        params=None,
+        result_queue=None,
+        request_id=None,
+        callback=None,
+        options=None,
+    ):
 
         if self.threaded:
             context = get_context()
             if request_id is None:
                 request_id = context.request_id if context else None
             self._killed = False
-            self.add_task(DbSqlTask(self, task_id=request_id, sql=sql, params=params,
-                                    result_queue=result_queue, result_callback=callback, options=options))
+            self.add_task(
+                DbSqlTask(
+                    self,
+                    task_id=request_id,
+                    sql=sql,
+                    params=params,
+                    result_queue=result_queue,
+                    result_callback=callback,
+                    options=options,
+                )
+            )
         else:
             return self.execute_thread(sql, params, options=options)
 
@@ -346,10 +371,10 @@ class DbSession(threading.Thread):
         raise NotImplementedError()
 
     def commit(self):
-        self.execute('COMMIT;')
+        self.execute("COMMIT;")
 
     def rollback(self):
-        self.execute('ROLLBACK;')
+        self.execute("ROLLBACK;")
 
     @property
     def last_status(self):  # pragma: no cover
@@ -357,11 +382,10 @@ class DbSession(threading.Thread):
             if self._last_error:
                 return {"type": "ERROR", "msg": self._last_error}
 
-            status_msg = ''
+            status_msg = ""
 
             if self._last_execution_time:
-                status_msg = (
-                    f"Query finished in {self._last_execution_time} seconds.")
+                status_msg = f"Query finished in {self._last_execution_time} seconds."
 
             return {"type": "OK", "msg": status_msg}
 
@@ -392,10 +416,12 @@ class DbSession(threading.Thread):
             return copy.copy(self._rows_affected)
         return None
 
-    def get_current_schema(self, callback=None, options=None):    # pragma: no cover
+    def get_current_schema(self, callback=None, options=None):  # pragma: no cover
         raise NotImplementedError()
 
-    def set_current_schema(self, schema_name, callback=None, options=None):  # pragma: no cover
+    def set_current_schema(
+        self, schema_name, callback=None, options=None
+    ):  # pragma: no cover
         raise NotImplementedError()
 
     def kill_query(self, user_session):  # pragma: no cover
@@ -407,10 +433,14 @@ class DbSession(threading.Thread):
     def get_catalog_object_names(self, type, filter):  # pragma: no cover
         raise NotImplementedError()
 
-    def get_schema_object_names(self, type, schema_name, filter, routine_type=None):  # pragma: no cover
+    def get_schema_object_names(
+        self, type, schema_name, filter, routine_type=None
+    ):  # pragma: no cover
         raise NotImplementedError()
 
-    def get_table_object_names(self, type, schema_name, table_name, filter):  # pragma: no cover
+    def get_table_object_names(
+        self, type, schema_name, table_name, filter
+    ):  # pragma: no cover
         raise NotImplementedError()
 
     def get_catalog_object(self, type, name):  # pragma: no cover
@@ -431,17 +461,21 @@ class DbSession(threading.Thread):
     def get_libraries_metadata(self, schema_name):  # pragma: no cover
         raise NotImplementedError()
 
-    def get_jdv_table_columns_with_references(self, schema_name, table_name): # pragma: no cover
+    def get_jdv_table_columns_with_references(
+        self, schema_name, table_name
+    ):  # pragma: no cover
         raise NotImplementedError()
 
-    def get_jdv_view_info(self, jdv_schema_name, jdv_name): # pragma: no cover
+    def get_jdv_view_info(self, jdv_schema_name, jdv_name):  # pragma: no cover
         raise NotImplementedError()
 
-    def get_jdv_object_fields_with_references(self, jdv_schema_name, jdv_name, jdv_object_id): # pragma: no cover
+    def get_jdv_object_fields_with_references(
+        self, jdv_schema_name, jdv_name, jdv_object_id
+    ):  # pragma: no cover
         raise NotImplementedError()
 
     def run(self):
-        threading.current_thread().name = f'sql-{self._id}'
+        threading.current_thread().name = f"sql-{self._id}"
 
         self.initialize_thread()
 

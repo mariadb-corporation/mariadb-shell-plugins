@@ -36,6 +36,7 @@ def info() -> str:
         str
     """
     from . import lib
+
     return (
         f"Migration Plugin Version {lib.general.VERSION} PREVIEW\n"
         "Warning! For testing purposes only!"
@@ -50,4 +51,5 @@ def version() -> str:
         str
     """
     from . import lib
+
     return lib.general.VERSION

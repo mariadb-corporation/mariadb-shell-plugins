@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,8 +33,7 @@ class SessionInfoTask(DbSessionSetupTask):
         super().__init__(session, progress_cb)
 
     def on_connected(self):
-        result = self.execute(
-            """SELECT connection_id(),
+        result = self.execute("""SELECT connection_id(),
                         @@version,
                         @@SESSION.sql_mode""").fetch_all()[0]
 
@@ -44,14 +43,13 @@ class SessionInfoTask(DbSessionSetupTask):
 
 
 class HeatWaveCheckTask(DbSessionSetupTask):
-    _OPT = 'disable-heat-wave-check'
+    _OPT = "disable-heat-wave-check"
 
     def __init__(self, session) -> None:
         super().__init__(session)
 
         # The check is enabled if the value is not known
-        self._already_known = self.has_data(
-            common.MySQLData.HEATWAVE_AVAILABLE)
+        self._already_known = self.has_data(common.MySQLData.HEATWAVE_AVAILABLE)
 
         self._skip_hw_check = self._already_known
 
@@ -64,14 +62,10 @@ class HeatWaveCheckTask(DbSessionSetupTask):
             self._skip_hw_check = True
 
             # Since check was explicitly disabled, mark it as unavailable
-            self.define_data(
-                common.MySQLData.HEATWAVE_AVAILABLE, False)
-            self.define_data(
-                common.MySQLData.IS_CLOUD_INSTANCE, False)
-            self.define_data(
-                common.MySQLData.MLE_AVAILABLE, False)
-            self.define_data(
-                common.MySQLData.HAS_EXPLAIN_ERROR, False)
+            self.define_data(common.MySQLData.HEATWAVE_AVAILABLE, False)
+            self.define_data(common.MySQLData.IS_CLOUD_INSTANCE, False)
+            self.define_data(common.MySQLData.MLE_AVAILABLE, False)
+            self.define_data(common.MySQLData.HAS_EXPLAIN_ERROR, False)
 
     def on_connected(self):
         if not self._skip_hw_check:
@@ -83,20 +77,17 @@ class HeatWaveCheckTask(DbSessionSetupTask):
                         AND TABLE_NAME = 'rpd_nodes'
                 """).fetch_all()
             if len(result) == 1:
+                self.define_data(common.MySQLData.HEATWAVE_AVAILABLE, True)
                 self.define_data(
-                    common.MySQLData.HEATWAVE_AVAILABLE, True)
-                self.define_data(
-                    common.MySQLData.IS_CLOUD_INSTANCE, result[0][1].endswith("cloud"))
+                    common.MySQLData.IS_CLOUD_INSTANCE, result[0][1].endswith("cloud")
+                )
             else:
-                self.define_data(
-                    common.MySQLData.HEATWAVE_AVAILABLE, False)
-                self.define_data(
-                    common.MySQLData.IS_CLOUD_INSTANCE, False)
+                self.define_data(common.MySQLData.HEATWAVE_AVAILABLE, False)
+                self.define_data(common.MySQLData.IS_CLOUD_INSTANCE, False)
 
             # Check if MLE is available
             result = self.execute("SHOW STATUS LIKE 'mle_status'").fetch_all()
-            self.define_data(
-                common.MySQLData.MLE_AVAILABLE, len(result) > 0)
+            self.define_data(common.MySQLData.MLE_AVAILABLE, len(result) > 0)
 
             # Check if sys.EXPLAIN_ERROR procedure is available
             result = self.execute("""
@@ -106,12 +97,11 @@ class HeatWaveCheckTask(DbSessionSetupTask):
                                     AND ROUTINE_NAME="mle_explain_error"
                                     AND ROUTINE_TYPE="PROCEDURE"
                                   """).fetch_all()
-            self.define_data(
-                common.MySQLData.HAS_EXPLAIN_ERROR, len(result) > 0)
+            self.define_data(common.MySQLData.HAS_EXPLAIN_ERROR, len(result) > 0)
 
 
 class BastionHandlerTask(DbSessionSetupTask):
-    _OPT = 'mysql-db-system-id'
+    _OPT = "mysql-db-system-id"
 
     def __init__(self, session, progress_cb=None) -> None:
         super().__init__(session, progress_cb=progress_cb)
@@ -129,11 +119,13 @@ class BastionHandlerTask(DbSessionSetupTask):
             # If the bastion session was previously registered, reuses it
             if self.has_data(common.MySQLData.BASTION_SESSION):
                 bastion_session = BastionSessionRegistry().get_bastion_session(
-                    self.get_data(common.MySQLData.BASTION_SESSION))
+                    self.get_data(common.MySQLData.BASTION_SESSION)
+                )
 
             else:
-                bastion_session = BastionSessionRegistry(
-                ).create_bastion_session(self.connection_options)
+                bastion_session = BastionSessionRegistry().create_bastion_session(
+                    self.connection_options
+                )
 
             bastion_session.ensure_active(self.report_progress)
 
@@ -144,8 +136,7 @@ class BastionHandlerTask(DbSessionSetupTask):
                 self.define_option(option, bastion_session.options[option])
 
             # Adds metadata the Bastion Session ID to the Session metadata
-            self.define_data(
-                common.MySQLData.BASTION_SESSION, bastion_session.id)
+            self.define_data(common.MySQLData.BASTION_SESSION, bastion_session.id)
 
     def on_connected(self):
         # Restores to restore the original connection options but excludes

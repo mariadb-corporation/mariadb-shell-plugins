@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,7 @@ import gui_plugin.core.WebSocketCommon as WebSocket
 
 
 class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
-    _ws_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+    _ws_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
     _single_instance_token = None
     cookies = None
     connected = False
@@ -58,12 +58,12 @@ class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
         with self.mutex:
             try:
                 message = self.on_ws_sending_message(
-                    message)  # pylint: disable=no-member
+                    message
+                )  # pylint: disable=no-member
                 if message is not None:
                     packet = WebSocket.Packet(message)
                     packet.send(self.request)
-                    logger.debug2(message=packet.message,
-                                  sensitive=True, prefix="-> ")
+                    logger.debug2(message=packet.message, sensitive=True, prefix="-> ")
             except Exception as e:
                 logger.error(f"Exception sending a message. {e}")
 
@@ -82,9 +82,11 @@ class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
 
     def send_auth_header(self):
         self.send_response(401)
-        self.send_header('WWW-Authenticate', 'Basic realm="Please enter '
-                         'your MySQL GUI Shell credentials."')
-        self.send_header('Content-type', 'text/html')
+        self.send_header(
+            "WWW-Authenticate",
+            'Basic realm="Please enter ' 'your MySQL GUI Shell credentials."',
+        )
+        self.send_header("Content-type", "text/html")
         self.end_headers()
 
     def do_GET(self):
@@ -92,19 +94,19 @@ class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
 
         url_params = dict(parse_qsl(query))
         if "token" in url_params:
-            self._single_instance_token = url_params['token']
+            self._single_instance_token = url_params["token"]
 
         auth_header = None
         if self.server.perform_auth:  # type: ignore
-            auth_header = self.headers.get('Authorization')
+            auth_header = self.headers.get("Authorization")
 
         self.cookies = {}
-        cookie_string = self.headers.get('Cookie', '').strip()
+        cookie_string = self.headers.get("Cookie", "").strip()
         if len(cookie_string) > 0:
-            for cookie in cookie_string.split(';'):
+            for cookie in cookie_string.split(";"):
                 cookie = cookie.strip()
-                if '=' in cookie:
-                    key, value = cookie.split('=')
+                if "=" in cookie:
+                    key, value = cookie.split("=")
                     self.cookies[key] = value
                 else:
                     self.cookies[cookie] = None
@@ -119,15 +121,17 @@ class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
         # if authentication is required and there was no auth in the header
         elif self.server.perform_auth and auth_header is None:  # type: ignore
             self.send_auth_header()
-            self.wfile.write(b'no auth header received')
+            self.wfile.write(b"no auth header received")
         # if authentication is required and auth data was provided, check it
-        elif not self.server.perform_auth or (self.server.perform_auth and  # type: ignore
-                                              self.check_credentials(auth_header)):
+        elif not self.server.perform_auth or (
+            self.server.perform_auth  # type: ignore
+            and self.check_credentials(auth_header)
+        ):
             SimpleHTTPRequestHandler.do_GET(self)
         # if the auth data provided was incorrect
         else:
             self.send_auth_header()
-            self.wfile.write(b'not authenticated')
+            self.wfile.write(b"not authenticated")
 
     def _read_messages(self):
         timeout_retry_count = 0
@@ -141,19 +145,21 @@ class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
                 error_msg = str(e)
                 logger.error(f"Error reading from the web socket: {error_msg}")
 
-                if 'Websocket read aborted while listening' in error_msg:
+                if "Websocket read aborted while listening" in error_msg:
                     self._ws_close()
                     break
-                elif 'timed out' in error_msg.lower():
+                elif "timed out" in error_msg.lower():
                     timeout_retry_count += 1
                     if timeout_retry_count >= max_timeout_retries:
-                        logger.error("WebSocket connection failed after 3 timeout attempts, closing connection")
+                        logger.error(
+                            "WebSocket connection failed after 3 timeout attempts, closing connection"
+                        )
                         self._ws_close()
                         break
 
-                    logger.warning(f"WebSocket timeout error (attempt {timeout_retry_count}/{max_timeout_retries})")
-
-
+                    logger.warning(
+                        f"WebSocket timeout error (attempt {timeout_retry_count}/{max_timeout_retries})"
+                    )
 
     def _read_next_message(self):
         frame = WebSocket.FrameReceiver(self.rfile)
@@ -174,29 +180,27 @@ class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
         headers = self.headers
         if headers.get("Upgrade", None) != "websocket":
             return
-        key = headers['Sec-WebSocket-Key']
-        k = key.encode('ascii') + self._ws_GUID.encode('ascii')
-        digest = base64.b64encode(sha1(k).digest()).decode('ascii')
-        self.send_response(101, 'Switching Protocols')
-        self.send_header('Upgrade', 'websocket')
-        self.send_header('Connection', 'Upgrade')
-        self.send_header('Sec-WebSocket-Accept', str(digest))
+        key = headers["Sec-WebSocket-Key"]
+        k = key.encode("ascii") + self._ws_GUID.encode("ascii")
+        digest = base64.b64encode(sha1(k).digest()).decode("ascii")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", str(digest))
         self.end_headers()
         self.connected = True
         self.on_ws_connected()
 
     def _ws_close(self):
         if not self.connected:
-            logger.info(
-                "Closing the already closed socket connection. Ignore.")
+            logger.info("Closing the already closed socket connection. Ignore.")
             return
 
         self.connected = False
 
         with self.mutex:
             try:
-                WebSocket.FrameSender(
-                    WebSocket.Operation.Close, buffer=self.request)
+                WebSocket.FrameSender(WebSocket.Operation.Close, buffer=self.request)
             except Exception as e:
                 logger.exception(e, "Exception while sending close request.")
 
@@ -209,7 +213,8 @@ class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
         elif frame.opcode == WebSocket.Operation.Ping:
             with self.mutex:
                 WebSocket.FrameSender(
-                    WebSocket.Operation.Pong, message=frame.message, buffer=self.request)
+                    WebSocket.Operation.Pong, message=frame.message, buffer=self.request
+                )
         elif frame.opcode == WebSocket.Operation.Pong:
             pass
 
@@ -228,4 +233,4 @@ class HTTPWebSocketsHandler(SimpleHTTPRequestHandler):
         logger.debug(format % args, sensitive=self.is_local_session)
 
     def get_cache(self):
-        return self.server.cache # type: ignore
+        return self.server.cache  # type: ignore

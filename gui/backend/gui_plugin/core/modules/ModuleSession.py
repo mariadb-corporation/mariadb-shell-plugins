@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,8 @@
 import uuid
 from gui_plugin.core.Context import get_context
 
-class ModuleSession():
+
+class ModuleSession:
     def __init__(self):
         context = get_context()
         self._web_session = context.web_handler if context else None
@@ -59,11 +60,9 @@ class ModuleSession():
         self._web_session.send_command_response(request_id, values)
 
     def _handle_api_response(self, type, message, request_id, result=None):
-        self._web_session.send_response_message(type,
-                                                message if message else '',
-                                                request_id,
-                                                result,
-                                                api=True)
+        self._web_session.send_response_message(
+            type, message if message else "", request_id, result, api=True
+        )
 
     def send_prompt_response(self, request_id, prompt, prompt_event_cb):
         """
@@ -100,14 +99,13 @@ class ModuleSession():
         self._web_session.send_prompt_response(request_id, prompt, self)
 
     def process_prompt_reply(self, reply):
-        request_id = reply['request_id']
+        request_id = reply["request_id"]
 
         if not self._expected_prompt == request_id:
-            raise Exception(
-                f"Unexpected request_id in prompt reply: {request_id}")
+            raise Exception(f"Unexpected request_id in prompt reply: {request_id}")
 
-        self._prompt_replied = reply['type'] == "OK"
-        self._prompt_reply = reply['reply']
+        self._prompt_replied = reply["type"] == "OK"
+        self._prompt_reply = reply["reply"]
 
         self._prompt_event_callback()
         self._expected_prompt = None

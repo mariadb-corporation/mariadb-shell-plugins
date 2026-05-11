@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,7 @@
 import os
 import mysqlsh
 
+
 def get_connection_data():
     return {
         "user": os.environ.get("MYSQL_USER", "root"),
@@ -31,6 +32,7 @@ def get_connection_data():
         "port": os.environ.get("MYSQL_PORT", "3388"),
         "password": os.environ.get("MYSQL_PASSWORD", ""),
     }
+
 
 def create_shell_session() -> mysqlsh.globals.session:
     connection_data = get_connection_data()

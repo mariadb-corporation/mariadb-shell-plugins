@@ -59,5 +59,14 @@ def test_log_coalesce():
         output = []
         for line in f.readlines():
             output.append(line.decode("utf-8").split(":")[-1].strip())
-    assert output == ['line 1', 'line 2', 'line 3', 'line 3', 'line 4',
-                      'line 4 (repeated 2 times)', 'line 5', 'line 5 (repeated 4 times)', 'exit']
+    assert output == [
+        "line 1",
+        "line 2",
+        "line 3",
+        "line 3",
+        "line 4",
+        "line 4 (repeated 2 times)",
+        "line 5",
+        "line 5 (repeated 4 times)",
+        "exit",
+    ]

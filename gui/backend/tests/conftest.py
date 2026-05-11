@@ -40,10 +40,10 @@ import gui_plugin.core.Logger as logger
 
 
 def signal_handler(sig, frame):
-    logger.debug(f'2) Ctrl+C! captured: {sig}')
+    logger.debug(f"2) Ctrl+C! captured: {sig}")
 
 
-if os.name == 'nt':
+if os.name == "nt":
     signal.signal(signal.SIGINT, signal_handler)
 
 
@@ -55,12 +55,14 @@ def debug_info():
 server_token = str(uuid.uuid1())
 port, nossl = config.Config.get_instance().get_server_params()
 server_params = [(port, nossl)]
-default_server_connection_string = config.Config.get_instance(
-).get_default_mysql_connection_string()
+default_server_connection_string = (
+    config.Config.get_instance().get_default_mysql_connection_string()
+)
 
 FORMAT = "[%(asctime)-15s][%(levelname)s] %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=FORMAT,
-                    filename=("./TestWebSocket.log"))
+logging.basicConfig(
+    level=logging.DEBUG, format=FORMAT, filename=("./TestWebSocket.log")
+)
 file_logger = logging.getLogger("TestWebSocket")
 
 
@@ -68,39 +70,18 @@ file_logger = logging.getLogger("TestWebSocket")
 def create_users():
     db = GuiBackendDb()
     users = {
-        "admin1": {
-            "password": "admin1",
-            "role": "Administrator"
-        },
-        "admin2": {
-            "password": "admin2",
-            "role": "Administrator"
-        },
-        "power1": {
-            "password": "power1",
-            "role": "Poweruser"
-        },
-        "power2": {
-            "password": "power2",
-            "role": "Poweruser"
-        },
-        "user1": {
-            "password": "user1",
-            "role": "User"
-        },
-        "user2": {
-            "password": "user2",
-            "role": "User"
-        },
-        "user3": {
-            "password": "user3",
-            "role": "User"
-        },
+        "admin1": {"password": "admin1", "role": "Administrator"},
+        "admin2": {"password": "admin2", "role": "Administrator"},
+        "power1": {"password": "power1", "role": "Poweruser"},
+        "power2": {"password": "power2", "role": "Poweruser"},
+        "user1": {"password": "user1", "role": "User"},
+        "user2": {"password": "user2", "role": "User"},
+        "user3": {"password": "user3", "role": "User"},
     }
 
     def user_exists(user, user_list):
         for stock_user in user_list:
-            if stock_user['name'] == user:
+            if stock_user["name"] == user:
                 return True
         return False
 
@@ -110,22 +91,29 @@ def create_users():
         db.start_transaction()
         for key, value in users.items():
             if not user_exists(key, user_list):
-                user_id = user_handler.create_user(db,
-                                                   key, value['password'], value['role'])
+                user_id = user_handler.create_user(
+                    db, key, value["password"], value["role"]
+                )
 
                 if key == "admin1":
                     user_dir = mysqlsh.plugin_manager.general.get_shell_user_dir(  # pylint: disable=no-member
-                        'plugin_data', 'gui_plugin', f'user_{user_id}')
-                    os.makedirs(os.path.join(
-                        user_dir, "directory1", "subdirectory1"))
+                        "plugin_data", "gui_plugin", f"user_{user_id}"
+                    )
+                    os.makedirs(os.path.join(user_dir, "directory1", "subdirectory1"))
                     os.makedirs(os.path.join(user_dir, "inaccessible"))
                     os.chmod(os.path.join(user_dir, "inaccessible"), 0o077)
 
                     with open(os.path.join(user_dir, "some_file"), "w+") as f:
                         f.write("some text")
-                    with open(os.path.join(user_dir, "directory1", "subdirectory1", "file1"), "w+") as f:
+                    with open(
+                        os.path.join(user_dir, "directory1", "subdirectory1", "file1"),
+                        "w+",
+                    ) as f:
                         f.write("some text")
-                    with open(os.path.join(user_dir, "directory1", "subdirectory1", "file2"), "w+") as f:
+                    with open(
+                        os.path.join(user_dir, "directory1", "subdirectory1", "file2"),
+                        "w+",
+                    ) as f:
                         f.write("some text")
         db.commit()
     except Exception:
@@ -137,24 +125,44 @@ def create_users():
 @pytest.fixture(scope="session")
 def create_test_schema():
     path, _ = os.path.split(os.path.abspath(__file__))
-    sql_script_create_path = os.path.join(
-        path, "data", "create_test_schema.sql")
+    sql_script_create_path = os.path.join(path, "data", "create_test_schema.sql")
 
     executable = sys.executable
-    if 'executable' in dir(mysqlsh):
+    if "executable" in dir(mysqlsh):
         executable = mysqlsh.executable
 
-    command = executable if executable.endswith(
-        "mysqlsh") or executable.endswith("mysqlsh.exe") else "mysqlsh"
+    command = (
+        executable
+        if executable.endswith("mysqlsh") or executable.endswith("mysqlsh.exe")
+        else "mysqlsh"
+    )
 
-    subprocess.run([command, "--disable-builtin-plugins", default_server_connection_string, '-f',
-                    f'{sql_script_create_path}'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    subprocess.run(
+        [
+            command,
+            "--disable-builtin-plugins",
+            default_server_connection_string,
+            "-f",
+            f"{sql_script_create_path}",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
     yield
 
     sql_script_drop_path = os.path.join(path, "data", "drop_test_schema.sql")
-    subprocess.run([command, "--disable-builtin-plugins", default_server_connection_string, '-f',
-                    f'{sql_script_drop_path}'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    subprocess.run(
+        [
+            command,
+            "--disable-builtin-plugins",
+            default_server_connection_string,
+            "-f",
+            f"{sql_script_drop_path}",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 
 def get_logger():

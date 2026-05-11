@@ -25,16 +25,19 @@ import json
 
 import mysqlsh  # pylint: disable=import-error
 
-from mysqlsh.plugin_manager import \
-    plugin_function  # pylint: disable=import-error
+from mysqlsh.plugin_manager import plugin_function  # pylint: disable=import-error
 
 from gui_plugin.core import Error
 from gui_plugin.core.Context import get_context
 from gui_plugin.core.Db import BackendDatabase, BackendTransaction
 from gui_plugin.core.Error import MSGException
 from gui_plugin.db import backend as db_backend
-from gui_plugin.modules.Modules import (add_data, delete_data,
-                                        get_data_category_id, list_data)
+from gui_plugin.modules.Modules import (
+    add_data,
+    delete_data,
+    get_data_category_id,
+    list_data,
+)
 from gui_plugin.sql_editor.SqlEditorModuleSession import SqlEditorModuleSession
 
 from . import backend as sql_editor_backend
@@ -71,7 +74,11 @@ def _match_history_glob(pattern, sql):
                 pattern_index += 1
                 continue
             else:
-                if char == "\\" and pattern_index + 1 < pattern_length and pattern[pattern_index + 1] in "\\*?":
+                if (
+                    char == "\\"
+                    and pattern_index + 1 < pattern_length
+                    and pattern[pattern_index + 1] in "\\*?"
+                ):
                     pattern_index += 1
                     char = pattern[pattern_index]
 
@@ -101,7 +108,7 @@ def _should_ignore_history_entry(code):
     return False
 
 
-@plugin_function('gui.sqlEditor.isGuiModuleBackend', web=True)
+@plugin_function("gui.sqlEditor.isGuiModuleBackend", web=True)
 def is_gui_module_backend():
     """Indicates whether this module is a GUI backend module
 
@@ -111,19 +118,21 @@ def is_gui_module_backend():
     return True
 
 
-@plugin_function('gui.sqlEditor.getGuiModuleDisplayInfo', web=True)
+@plugin_function("gui.sqlEditor.getGuiModuleDisplayInfo", web=True)
 def get_gui_module_display_info():
     """Returns display information about the module
 
     Returns:
         dict: display information for the module
     """
-    return {"name": "SQL Editor",
-            "description": "A graphical SQL Editor",
-            "icon_path": "/images/icons/modules/gui.sqlEditor.svg"}
+    return {
+        "name": "SQL Editor",
+        "description": "A graphical SQL Editor",
+        "icon_path": "/images/icons/modules/gui.sqlEditor.svg",
+    }
 
 
-@plugin_function('gui.sqlEditor.startSession', shell=False, web=True)
+@plugin_function("gui.sqlEditor.startSession", shell=False, web=True)
 def start_session():
     """Starts a SQL Editor Session
 
@@ -135,7 +144,7 @@ def start_session():
     return {"module_session_id": new_session.module_session_id}
 
 
-@plugin_function('gui.sqlEditor.closeSession', shell=False, web=True)
+@plugin_function("gui.sqlEditor.closeSession", shell=False, web=True)
 def close_session(module_session):
     """Closes the SQL Editor Session
 
@@ -147,7 +156,7 @@ def close_session(module_session):
     module_session.close()
 
 
-@plugin_function('gui.sqlEditor.openConnection', shell=False, web=True)
+@plugin_function("gui.sqlEditor.openConnection", shell=False, web=True)
 def open_connection(db_connection_id, module_session, password=None):
     """Opens the SQL Editor Session
 
@@ -162,7 +171,7 @@ def open_connection(db_connection_id, module_session, password=None):
     module_session.open_connection(db_connection_id, password)
 
 
-@plugin_function('gui.sqlEditor.reconnect', shell=False, web=True)
+@plugin_function("gui.sqlEditor.reconnect", shell=False, web=True)
 def reconnect(module_session):
     """Reconnects the SQL Editor Session
 
@@ -175,7 +184,7 @@ def reconnect(module_session):
     module_session.reconnect()
 
 
-@plugin_function('gui.sqlEditor.startTransaction', shell=False, web=True)
+@plugin_function("gui.sqlEditor.startTransaction", shell=False, web=True)
 def start_transaction(session):
     """Starts a new transaction
 
@@ -190,7 +199,7 @@ def start_transaction(session):
     session.start_transaction()
 
 
-@plugin_function('gui.sqlEditor.commitTransaction', shell=False, web=True)
+@plugin_function("gui.sqlEditor.commitTransaction", shell=False, web=True)
 def commit_transaction(session):
     """Starts a new transaction
 
@@ -205,7 +214,7 @@ def commit_transaction(session):
     session.commit()
 
 
-@plugin_function('gui.sqlEditor.rollbackTransaction', shell=False, web=True)
+@plugin_function("gui.sqlEditor.rollbackTransaction", shell=False, web=True)
 def rollback_transaction(session):
     """Starts a new transaction
 
@@ -220,7 +229,7 @@ def rollback_transaction(session):
     session.rollback()
 
 
-@plugin_function('gui.sqlEditor.execute', shell=True, web=True)
+@plugin_function("gui.sqlEditor.execute", shell=True, web=True)
 def execute(session, sql, params=None, options=None):
     """Executes the given SQL.
 
@@ -244,7 +253,7 @@ def execute(session, sql, params=None, options=None):
     return session.execute(sql=sql, params=params, options=options)
 
 
-@plugin_function('gui.sqlEditor.killQuery', shell=False, web=True)
+@plugin_function("gui.sqlEditor.killQuery", shell=False, web=True)
 def kill_query(module_session):
     """Stops the query that is currently executing.
 
@@ -257,7 +266,7 @@ def kill_query(module_session):
     module_session.kill_query()
 
 
-@plugin_function('gui.sqlEditor.getCurrentSchema', shell=True, web=True)
+@plugin_function("gui.sqlEditor.getCurrentSchema", shell=True, web=True)
 def get_current_schema(session):
     """Requests the current schema for this module.
 
@@ -271,7 +280,7 @@ def get_current_schema(session):
     return session.get_current_schema()
 
 
-@plugin_function('gui.sqlEditor.setCurrentSchema', shell=True, web=True)
+@plugin_function("gui.sqlEditor.setCurrentSchema", shell=True, web=True)
 def set_current_schema(session, schema_name):
     """Requests to change the current schema for this module.
 
@@ -286,7 +295,7 @@ def set_current_schema(session, schema_name):
     session.set_current_schema(schema_name=schema_name)
 
 
-@plugin_function('gui.sqlEditor.getAutoCommit', shell=True, web=True)
+@plugin_function("gui.sqlEditor.getAutoCommit", shell=True, web=True)
 def get_auto_commit(session):
     """Requests the auto-commit status for this module.
 
@@ -300,7 +309,7 @@ def get_auto_commit(session):
     return session.get_auto_commit()
 
 
-@plugin_function('gui.sqlEditor.setAutoCommit', shell=True, web=True)
+@plugin_function("gui.sqlEditor.setAutoCommit", shell=True, web=True)
 def set_auto_commit(session, state):
     """Requests to change the auto-commit status for this module.
 
@@ -315,8 +324,10 @@ def set_auto_commit(session, state):
     session.set_auto_commit(state=state)
 
 
-@plugin_function('gui.sqlEditor.addExecutionHistoryEntry', shell=False, web=True)
-def add_execution_history_entry(connection_id, code, language_id, profile_id=None, be_session=None):
+@plugin_function("gui.sqlEditor.addExecutionHistoryEntry", shell=False, web=True)
+def add_execution_history_entry(
+    connection_id, code, language_id, profile_id=None, be_session=None
+):
     """Adds a new entry in the execution_history
 
     Adds an entry of the code + language_id + current_timestamp at the beginning of
@@ -337,7 +348,9 @@ def add_execution_history_entry(connection_id, code, language_id, profile_id=Non
         int: the id of the new record, or 0 if the entry was ignored.
     """
 
-    if str(language_id).lower() in ("sql", "mysql") and _should_ignore_history_entry(code):
+    if str(language_id).lower() in ("sql", "mysql") and _should_ignore_history_entry(
+        code
+    ):
         return 0
 
     max_entries = 50
@@ -347,30 +360,39 @@ def add_execution_history_entry(connection_id, code, language_id, profile_id=Non
 
     with BackendDatabase(be_session) as db:
         context = get_context()
-        group_id = context.web_handler.user_personal_group_id if context is not None else None
-        folder_id = sql_editor_backend.get_folder_id(
-            db, connection_id, group_id)
+        group_id = (
+            context.web_handler.user_personal_group_id if context is not None else None
+        )
+        folder_id = sql_editor_backend.get_folder_id(db, connection_id, group_id)
 
         history_entries = list_data(folder_id, category_id, be_session)
-        history_entries.sort(key=lambda x: x['last_update'], reverse=True)
+        history_entries.sort(key=lambda x: x["last_update"], reverse=True)
 
         # Check if the last entry has the same code
         if history_entries and len(history_entries) > 0:
             previous_entry_code = sql_editor_backend.get_entry(
-                db, history_entries[0]['id'])["code"]
+                db, history_entries[0]["id"]
+            )["code"]
             if previous_entry_code == code:
-                return history_entries[0]['id']
+                return history_entries[0]["id"]
 
-        entry_id = add_data(language_id, code, category_id,
-                            tree_identifier, folder_name, profile_id, be_session)
+        entry_id = add_data(
+            language_id,
+            code,
+            category_id,
+            tree_identifier,
+            folder_name,
+            profile_id,
+            be_session,
+        )
 
         if len(history_entries) >= max_entries:
-            delete_data(history_entries[0]['id'], folder_id, be_session)
+            delete_data(history_entries[0]["id"], folder_id, be_session)
 
     return entry_id
 
 
-@plugin_function('gui.sqlEditor.getExecutionHistoryEntry', shell=False, web=True)
+@plugin_function("gui.sqlEditor.getExecutionHistoryEntry", shell=False, web=True)
 def get_execution_history_entry(connection_id, index, profile_id=None, be_session=None):
     """Returns an entry of the execution_history
 
@@ -392,23 +414,33 @@ def get_execution_history_entry(connection_id, index, profile_id=None, be_sessio
     with BackendDatabase(be_session) as db:
         with BackendTransaction(db):
             context = get_context()
-            group_id = context.web_handler.user_personal_group_id if context is not None else None
-            category_id = get_data_category_id(
-                "DB Notebook Code History", be_session)
+            group_id = (
+                context.web_handler.user_personal_group_id
+                if context is not None
+                else None
+            )
+            category_id = get_data_category_id("DB Notebook Code History", be_session)
             folder_id = sql_editor_backend.get_folder_id(
-                db, connection_id, group_id, profile_id)
+                db, connection_id, group_id, profile_id
+            )
 
             history_entries = list_data(folder_id, category_id, be_session)
-            history_entries.sort(key=lambda x: x['last_update'], reverse=True)
+            history_entries.sort(key=lambda x: x["last_update"], reverse=True)
 
             if index < len(history_entries):
-                return sql_editor_backend.get_entry(db, history_entries[index]['id'])
+                return sql_editor_backend.get_entry(db, history_entries[index]["id"])
             else:
                 return {}
 
 
-@plugin_function('gui.sqlEditor.getExecutionHistoryEntries', shell=False, web=True)
-def get_execution_history_entries(connection_id, language_id="", truncate_code_length=-1, profile_id=None, be_session=None):
+@plugin_function("gui.sqlEditor.getExecutionHistoryEntries", shell=False, web=True)
+def get_execution_history_entries(
+    connection_id,
+    language_id="",
+    truncate_code_length=-1,
+    profile_id=None,
+    be_session=None,
+):
     """Returns the full list execution_history but truncates the code to truncate_code_length
 
     Used to display a list of history entries in the UI. If truncate_code_length is set to -1,
@@ -433,36 +465,52 @@ def get_execution_history_entries(connection_id, language_id="", truncate_code_l
         with BackendTransaction(db):
             list_of_history_entries = []
             context = get_context()
-            group_id = context.web_handler.user_personal_group_id if context is not None else None
-            category_id = get_data_category_id(
-                "DB Notebook Code History", be_session)
+            group_id = (
+                context.web_handler.user_personal_group_id
+                if context is not None
+                else None
+            )
+            category_id = get_data_category_id("DB Notebook Code History", be_session)
             folder_id = sql_editor_backend.get_folder_id(
-                db, connection_id, group_id, profile_id)
+                db, connection_id, group_id, profile_id
+            )
 
             history_entries = list_data(folder_id, category_id, be_session)
             if language_id != "":
                 history_entries = [
-                    entry for entry in history_entries if entry['caption'] == language_id]
-            history_entries.sort(key=lambda x: x['last_update'], reverse=True)
+                    entry
+                    for entry in history_entries
+                    if entry["caption"] == language_id
+                ]
+            history_entries.sort(key=lambda x: x["last_update"], reverse=True)
             for entry in history_entries:
                 result = db.select(
-                    """SELECT content FROM data WHERE id = ?""", (entry['id'],))
+                    """SELECT content FROM data WHERE id = ?""", (entry["id"],)
+                )
                 try:
-                    content = json.loads(result[0]['content'])
+                    content = json.loads(result[0]["content"])
                     if truncate_code_length != -1:
                         content = content[:truncate_code_length]
                 except Exception as e:
-                    raise MSGException(Error.CORE_INVALID_DATA_FORMAT,
-                                       f'Error decoding data content: {str(e)}') from e
-                list_of_history_entries.append({"code": content,
-                                                "language_id": entry['caption'],
-                                                "current_timestamp": entry['last_update']})
+                    raise MSGException(
+                        Error.CORE_INVALID_DATA_FORMAT,
+                        f"Error decoding data content: {str(e)}",
+                    ) from e
+                list_of_history_entries.append(
+                    {
+                        "code": content,
+                        "language_id": entry["caption"],
+                        "current_timestamp": entry["last_update"],
+                    }
+                )
 
             return list_of_history_entries
 
 
-@plugin_function('gui.sqlEditor.removeExecutionHistoryEntry', shell=False, web=True)
-def remove_execution_history_entry(connection_id, index=-1, profile_id=None, be_session=None):
+@plugin_function("gui.sqlEditor.removeExecutionHistoryEntry", shell=False, web=True)
+def remove_execution_history_entry(
+    connection_id, index=-1, profile_id=None, be_session=None
+):
     """Removes the execution_history entry with the given index
 
     If -1 is passed as index, the whole execution_history list for this connection_id is cleared.
@@ -480,21 +528,24 @@ def remove_execution_history_entry(connection_id, index=-1, profile_id=None, be_
 
     with BackendDatabase(be_session) as db:
         context = get_context()
-        group_id = context.web_handler.user_personal_group_id if context is not None else None
-        category_id = get_data_category_id(
-            "DB Notebook Code History", be_session)
+        group_id = (
+            context.web_handler.user_personal_group_id if context is not None else None
+        )
+        category_id = get_data_category_id("DB Notebook Code History", be_session)
         folder_id = sql_editor_backend.get_folder_id(
-            db, connection_id, group_id, profile_id)
+            db, connection_id, group_id, profile_id
+        )
 
         history_entries = list_data(folder_id, category_id, be_session)
-        history_entries.sort(key=lambda x: x['last_update'], reverse=True)
+        history_entries.sort(key=lambda x: x["last_update"], reverse=True)
 
         if index >= len(history_entries):
-            raise MSGException(Error.CORE_INVALID_PARAMETER,
-                               "Parameter 'index' is out of range.")
+            raise MSGException(
+                Error.CORE_INVALID_PARAMETER, "Parameter 'index' is out of range."
+            )
 
         if index == -1:
             for entry in history_entries:
-                delete_data(entry['id'], folder_id, be_session)
+                delete_data(entry["id"], folder_id, be_session)
         else:
-            delete_data(history_entries[index]['id'], folder_id, be_session)
+            delete_data(history_entries[index]["id"], folder_id, be_session)

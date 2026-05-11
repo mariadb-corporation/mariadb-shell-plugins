@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 from mysqlsh.plugin_manager import plugin_function  # pylint: disable=no-name-in-module
 
 
-@plugin_function('gui.cluster.isGuiModuleBackend', web=True)
+@plugin_function("gui.cluster.isGuiModuleBackend", web=True)
 def is_gui_module_backend():
     """Indicates whether this module is a GUI backend module
 
@@ -34,13 +34,15 @@ def is_gui_module_backend():
     return False
 
 
-@plugin_function('gui.cluster.getGuiModuleDisplayInfo', web=True)
+@plugin_function("gui.cluster.getGuiModuleDisplayInfo", web=True)
 def get_gui_module_display_info():
     """Returns display information about the module
 
     Returns:
         A dict with display information for the module
     """
-    return {"name": "InnoDB Cluster Manager",
-            "description": "An graphical manager for InnoDB Clusters",
-            "icon_path": "/images/icons/modules/gui.cluster.svg"}
+    return {
+        "name": "InnoDB Cluster Manager",
+        "description": "An graphical manager for InnoDB Clusters",
+        "icon_path": "/images/icons/modules/gui.cluster.svg",
+    }

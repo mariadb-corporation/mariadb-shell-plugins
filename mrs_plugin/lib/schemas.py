@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -139,10 +139,17 @@ def update_schema(session, schemas: list, value: dict, merge_options=False):
             options = value.get("options", None)
             # Check if there are options set already, if so, merge the options
             if options is not None:
-                row = core.MrsDbExec("""
+                row = (
+                    core.MrsDbExec(
+                        """
                     SELECT options IS NULL AS options_is_null
                     FROM `mysql_rest_service_metadata`.`db_schema`
-                    WHERE id = ?""", [schema_id]).exec(session).first
+                    WHERE id = ?""",
+                        [schema_id],
+                    )
+                    .exec(session)
+                    .first
+                )
                 if row and row["options_is_null"] == 1:
                     merge_options = False
                 else:
@@ -155,11 +162,14 @@ def update_schema(session, schemas: list, value: dict, merge_options=False):
 
         # Merge options if requested
         if merge_options and options is not None:
-            core.MrsDbExec("""
+            core.MrsDbExec(
+                """
                 UPDATE `mysql_rest_service_metadata`.`db_schema`
                 SET options = JSON_MERGE_PATCH(options, ?)
                 WHERE id = ?
-                """, [options, schema_id]).exec(session)
+                """,
+                [options, schema_id],
+            ).exec(session)
 
 
 def query_schemas(
@@ -408,10 +418,12 @@ def get_current_schema(session):
     return current_schema
 
 
-def get_schema_create_statement(session, schema, include_database_endpoints: bool = False) -> str:
+def get_schema_create_statement(
+    session, schema, include_database_endpoints: bool = False
+) -> str:
     output = [
         f'CREATE OR REPLACE REST SCHEMA {schema.get("request_path")} ON SERVICE {schema.get("host_ctx")}',
-        f'    FROM `{schema.get("name")}`'
+        f'    FROM `{schema.get("name")}`',
     ]
 
     if schema.get("enabled") == 2:
@@ -436,21 +448,28 @@ def get_schema_create_statement(session, schema, include_database_endpoints: boo
 
         for schema_db_object in schema_db_objects:
             objects = db_objects.get_objects(session, schema_db_object.get("id"))
-            result.append(db_objects.get_db_object_create_statement(session, schema_db_object, objects))
+            result.append(
+                db_objects.get_db_object_create_statement(
+                    session, schema_db_object, objects
+                )
+            )
 
     return "\n\n".join(result)
 
+
 def clone_schema(session, schema, new_service_id):
-    new_schema_id = add_schema(session,
-               schema_name=schema["name"],
-               service_id=new_service_id,
-               request_path=schema["request_path"],
-               enabled=schema["enabled"],
-               items_per_page=schema["items_per_page"],
-               comments=schema["comments"],
-               options=schema["options"],
-               metadata=schema["metadata"],
-               internal=schema["internal"])
+    new_schema_id = add_schema(
+        session,
+        schema_name=schema["name"],
+        service_id=new_service_id,
+        request_path=schema["request_path"],
+        enabled=schema["enabled"],
+        items_per_page=schema["items_per_page"],
+        comments=schema["comments"],
+        options=schema["options"],
+        metadata=schema["metadata"],
+        internal=schema["internal"],
+    )
 
     # Get the db objects, inner objects and fields. We'll need to replace the ids for all of those
     for db_object in db_objects.get_db_objects(session, schema["id"]):

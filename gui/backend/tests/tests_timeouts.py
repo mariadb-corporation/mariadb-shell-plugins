@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,15 +21,17 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-def response_timeout(value = None):
-    if not hasattr(response_timeout, 'value'):
+
+def response_timeout(value=None):
+    if not hasattr(response_timeout, "value"):
         response_timeout.value = 10
     if value is not None:
         response_timeout.value = value
     return response_timeout.value
 
-def server_timeout(value = None):
-    if not hasattr(server_timeout, 'value'):
+
+def server_timeout(value=None):
+    if not hasattr(server_timeout, "value"):
         server_timeout.value = 10
     if value is not None:
         server_timeout.value = value

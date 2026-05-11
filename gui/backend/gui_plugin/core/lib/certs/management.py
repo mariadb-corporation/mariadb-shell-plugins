@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,9 @@ from gui_plugin.core.lib.certs import locations
 
 
 def get_cert_path():
-    return general.get_shell_user_dir("plugin_data", "gui_plugin", "web_certs", "rootCA.crt")
+    return general.get_shell_user_dir(
+        "plugin_data", "gui_plugin", "web_certs", "rootCA.crt"
+    )
 
 
 def create_certificate(cert_path):
@@ -53,18 +55,19 @@ def create_certificate(cert_path):
         # ----------------------------------------------------
         # Attributes to be used on the certificate generation
         # ----------------------------------------------------
-        subject = issuer = x509.Name([
-            x509.NameAttribute(NameOID.COUNTRY_NAME, u"US"),
-            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"Texas"),
-            x509.NameAttribute(NameOID.LOCALITY_NAME, u"Austin"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"Oracle"),
-            x509.NameAttribute(
-                NameOID.ORGANIZATIONAL_UNIT_NAME, u"MySQL"),
-            x509.NameAttribute(NameOID.EMAIL_ADDRESS,
-                               u"support@mysql.com"),
-            x509.NameAttribute(NameOID.COMMON_NAME,
-                               u"MySQL Shell Auto Generated CA Certificate"),
-        ])
+        subject = issuer = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+                x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Texas"),
+                x509.NameAttribute(NameOID.LOCALITY_NAME, "Austin"),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Oracle"),
+                x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "MySQL"),
+                x509.NameAttribute(NameOID.EMAIL_ADDRESS, "support@mysql.com"),
+                x509.NameAttribute(
+                    NameOID.COMMON_NAME, "MySQL Shell Auto Generated CA Certificate"
+                ),
+            ]
+        )
 
         today = datetime.datetime.today()
         one_day = datetime.timedelta(1, 0, 0)
@@ -80,9 +83,8 @@ def create_certificate(cert_path):
         # Generation of the Private Key for the Root CA
         # ---------------------------------------------
         ca_private_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048,
-            backend=backends.default_backend())
+            public_exponent=65537, key_size=2048, backend=backends.default_backend()
+        )
 
         # --------------------------------
         # Generation of the CA certificate
@@ -100,23 +102,23 @@ def create_certificate(cert_path):
 
         # CA should be True in order enable registration in Firefox
         ca_builder = ca_builder.add_extension(
-            x509.BasicConstraints(ca=True, path_length=None), critical=False)
+            x509.BasicConstraints(ca=True, path_length=None), critical=False
+        )
 
         ca_builder = ca_builder.add_extension(
-            x509.SubjectAlternativeName(
-                [x509.DNSName(u'localhost')]
-            ),
-            critical=False
+            x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False
         )
 
         # Signs the CA certificate and creates the file
         ca_cert = ca_builder.sign(
-            private_key=ca_private_key, algorithm=hashes.SHA256(),
-            backend=backends.default_backend()
+            private_key=ca_private_key,
+            algorithm=hashes.SHA256(),
+            backend=backends.default_backend(),
         )
 
         # Serialization of the root CA certificate
         from cryptography.hazmat.primitives import serialization
+
         root_ca_path = os.path.join(cert_path, "rootCA.crt")
         with open(root_ca_path, "wb") as f:
             f.write(ca_cert.public_bytes(serialization.Encoding.PEM))
@@ -125,36 +127,35 @@ def create_certificate(cert_path):
         # Server Key
         # --------------------------------
         server_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048,
-            backend=backends.default_backend())
+            public_exponent=65537, key_size=2048, backend=backends.default_backend()
+        )
 
         # cSpell:ignore PKCS
         # Serialization of the Private Key
         pem = server_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
+            encryption_algorithm=serialization.NoEncryption(),
         )
 
         server_key_path = os.path.join(cert_path, "server.key")
-        with open(server_key_path, 'wb') as pem_out:
+        with open(server_key_path, "wb") as pem_out:
             pem_out.write(pem)
 
         # ------------------
         # Server Certificate
         # ------------------
-        cert_subject = x509.Name([
-            x509.NameAttribute(NameOID.COUNTRY_NAME, u"US"),
-            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"Texas"),
-            x509.NameAttribute(NameOID.LOCALITY_NAME, u"Austin"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"Oracle"),
-            x509.NameAttribute(
-                NameOID.ORGANIZATIONAL_UNIT_NAME, u"MySQL"),
-            x509.NameAttribute(NameOID.EMAIL_ADDRESS,
-                               u"support@mysql.com"),
-            x509.NameAttribute(NameOID.COMMON_NAME, u"localhost"),
-        ])
+        cert_subject = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+                x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Texas"),
+                x509.NameAttribute(NameOID.LOCALITY_NAME, "Austin"),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Oracle"),
+                x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "MySQL"),
+                x509.NameAttribute(NameOID.EMAIL_ADDRESS, "support@mysql.com"),
+                x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
+            ]
+        )
         server_public_key = server_key.public_key()
         builder = x509.CertificateBuilder()
         builder = builder.issuer_name(ca_cert.issuer)
@@ -164,36 +165,46 @@ def create_certificate(cert_path):
         builder = builder.not_valid_after(today + validity)
 
         builder = builder.add_extension(
-            x509.SubjectAlternativeName(
-                [x509.DNSName(u'localhost')]
-            ),
-            critical=False
+            x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False
         )
 
         builder = builder.serial_number(x509.random_serial_number())
         builder = builder.public_key(server_public_key)
         builder = builder.add_extension(
-            x509.BasicConstraints(
-                ca=False, path_length=None), critical=False)
+            x509.BasicConstraints(ca=False, path_length=None), critical=False
+        )
 
         # Sets the CA Authority for the server cert using the CA Key
         authority_key = x509.AuthorityKeyIdentifier.from_issuer_public_key(
-            ca_public_key)
+            ca_public_key
+        )
         builder = builder.add_extension(authority_key, critical=False)
 
         # Defines the use cases for the server certificate
-        key_usage = x509.KeyUsage(digital_signature=True, key_encipherment=True, key_cert_sign=False,
-                                  key_agreement=False, content_commitment=True, data_encipherment=True,
-                                  crl_sign=False, encipher_only=False, decipher_only=False)
+        key_usage = x509.KeyUsage(
+            digital_signature=True,
+            key_encipherment=True,
+            key_cert_sign=False,
+            key_agreement=False,
+            content_commitment=True,
+            data_encipherment=True,
+            crl_sign=False,
+            encipher_only=False,
+            decipher_only=False,
+        )
         builder = builder.add_extension(key_usage, critical=False)
 
         builder = builder.add_extension(
-            x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False
+            x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]),
+            critical=False,
         )
 
         # Signs the server certificate using the CA private key
         certificate = builder.sign(
-            private_key=ca_private_key, algorithm=hashes.SHA256(), backend=backends.default_backend())
+            private_key=ca_private_key,
+            algorithm=hashes.SHA256(),
+            backend=backends.default_backend(),
+        )
 
         # Serialization of the Server Certificate
         server_crt_path = os.path.join(cert_path, "server.crt")
@@ -219,7 +230,7 @@ def delete_certificate(cert_path):
 
 
 def linux_has_certutil():
-    exit_code, output = SystemUtils.run_system_command(['which', 'certutil'])
+    exit_code, output = SystemUtils.run_system_command(["which", "certutil"])
     return exit_code == 0
 
 
@@ -229,10 +240,9 @@ NOBOLD = "\\033[0m"
 
 def create_certificate_script(type, certs):
     installing = type == "install"
-    cert_path = general.get_shell_user_dir(
-        "plugin_data", "gui_plugin", "web_certs")
+    cert_path = general.get_shell_user_dir("plugin_data", "gui_plugin", "web_certs")
 
-    script_path = os.path.join(cert_path, f'{type}.sh')
+    script_path = os.path.join(cert_path, f"{type}.sh")
     script_sections = []
     script_actions = []
 
@@ -244,11 +254,12 @@ def create_certificate_script(type, certs):
                     script_actions.append(f'echo "  - {req.desc}"')
 
     if len(script_actions):
-        script_actions.insert(
-            0, 'echo "- Install the following requirements:"')
+        script_actions.insert(0, 'echo "- Install the following requirements:"')
 
     # Add the required removal operations
-    uninstall_message = 'echo "- Remove the MySQL Shell GUI certificate from the following locations:"'
+    uninstall_message = (
+        'echo "- Remove the MySQL Shell GUI certificate from the following locations:"'
+    )
     for r in certs:
         if r.installed and (not installing or not r.valid or r.deprecated):
             if len(uninstall_message):
@@ -270,8 +281,10 @@ def create_certificate_script(type, certs):
 
     if len(script_sections):
         str_script_actions = "\n".join(script_actions)
-        exit_code, output = SystemUtils.run_system_command(['which', 'bash'])
-        script_sections.insert(0, f"""#!{output}
+        exit_code, output = SystemUtils.run_system_command(["which", "bash"])
+        script_sections.insert(
+            0,
+            f"""#!{output}
 echo "The MySQL Shell Web Root Certificate required by the MySQL for VS Code extension will now be {type}ed on your system."
 echo -e "\\n"
 
@@ -288,7 +301,8 @@ echo -e "\\n"
 read -r -p "Do you want to continue [Y/n] ? " response
 response=${{response,,}} # tolower
 
-if [[ $response =~ ^(yes|y| ) ]] || [[ -z $response ]]; then""")
+if [[ $response =~ ^(yes|y| ) ]] || [[ -z $response ]]; then""",
+        )
 
     if len(script_sections):
         script_sections.append(f"""
@@ -319,14 +333,13 @@ def get_required_locations(include_keychain):
 
             # Add deprecated certificates for a successful uninstall
             if os_type == "fedora":
-                cert_locations.append(locations.Trust(
-                    user_home_cert, deprecated=True))
+                cert_locations.append(locations.Trust(user_home_cert, deprecated=True))
             else:
-                ca_cert = locations.Ca_cert_folder(
-                    user_home_cert, deprecated=True)
+                ca_cert = locations.Ca_cert_folder(user_home_cert, deprecated=True)
                 cert_locations.append(ca_cert)
                 cert_locations.append(
-                    locations.Ssl_cert_folder(ca_cert, deprecated=True))
+                    locations.Ssl_cert_folder(ca_cert, deprecated=True)
+                )
 
     return cert_locations
 
@@ -355,7 +368,10 @@ def reset_deployment(certs, type):
             installed = cert_location.installed
             valid = cert_location.valid
 
-            if installing and ((installed and deprecated) or (not deprecated and (not installed or not valid))):
+            if installing and (
+                (installed and deprecated)
+                or (not deprecated and (not installed or not valid))
+            ):
                 scripted = True
             elif not installing and installed:
                 scripted = True
@@ -363,19 +379,18 @@ def reset_deployment(certs, type):
     # If any of the locations was scripted, all of the install is done through a script
     if scripted:
         script = create_certificate_script(type, certs)
-        cert_path = general.get_shell_user_dir(
-            "plugin_data", "gui_plugin", "web_certs")
+        cert_path = general.get_shell_user_dir("plugin_data", "gui_plugin", "web_certs")
 
         Path(cert_path).mkdir(parents=True, exist_ok=True)
 
-        script_path = os.path.join(cert_path, f'{type}.sh')
+        script_path = os.path.join(cert_path, f"{type}.sh")
 
         # Save the script
-        with open(script_path, 'w') as file:
+        with open(script_path, "w") as file:
             file.write(script)
 
         # Make the script executable
-        SystemUtils.run_system_command(['chmod', 'u+x', script_path])
+        SystemUtils.run_system_command(["chmod", "u+x", script_path])
 
         terminal_error = None
         cmd = None
@@ -390,9 +405,9 @@ def reset_deployment(certs, type):
             terminal_error = f"Could not {type} the Shell GUI certificate. Please execute '{script_path}' to install it manually"
 
             if SystemUtils.in_vs_code():
-                terminal_error += ' and restart Visual Studio Code.'
+                terminal_error += " and restart Visual Studio Code."
             else:
-                terminal_error += '.'
+                terminal_error += "."
 
         if not terminal_error is None:
             raise Exception(terminal_error)
@@ -400,12 +415,20 @@ def reset_deployment(certs, type):
     else:
         for cert_location in certs:
             if not cert_location.scripted:
-                while cert_location.installed and (not installing or not cert_location.valid or cert_location.deprecated):
+                while cert_location.installed and (
+                    not installing
+                    or not cert_location.valid
+                    or cert_location.deprecated
+                ):
                     cert_location.uninstall()
 
         if installing:
             for cert_location in certs:
-                if not cert_location.scripted and not cert_location.deprecated and (not cert_location.installed or not cert_location.valid):
+                if (
+                    not cert_location.scripted
+                    and not cert_location.deprecated
+                    and (not cert_location.installed or not cert_location.valid)
+                ):
                     cert_location.install()
 
     return True

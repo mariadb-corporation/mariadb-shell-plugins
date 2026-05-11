@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,23 +30,28 @@ import time
 import gui_plugin.core.Error as Error
 import gui_plugin.core.Logger as logger
 from gui_plugin.core.Context import get_context
-from gui_plugin.core.dbms.DbSession import (DbSession, DbSessionFactory,
-                                            ReconnectionMode)
+from gui_plugin.core.dbms.DbSession import DbSession, DbSessionFactory, ReconnectionMode
 from gui_plugin.core.dbms.DbSessionTasks import check_supported_type
 from gui_plugin.core.dbms.DbSqliteSessionTasks import (
-    SqliteBaseObjectTask, SqliteColumnObjectTask, SqliteColumnsListTask,
-    SqliteColumnsMetadataTask, SqliteGetAutoCommit, SqliteOneFieldListTask,
-    SqliteSetCurrentSchemaTask, SqliteTableObjectTask)
+    SqliteBaseObjectTask,
+    SqliteColumnObjectTask,
+    SqliteColumnsListTask,
+    SqliteColumnsMetadataTask,
+    SqliteGetAutoCommit,
+    SqliteOneFieldListTask,
+    SqliteSetCurrentSchemaTask,
+    SqliteTableObjectTask,
+)
 from gui_plugin.core.Error import MSGException
 
 
 def find_schema_name(config):
-    if 'database_name' in config and config['database_name'] != '':
-        return config['database_name']
-    elif 'db_file' in config:
-        return os.path.splitext(os.path.basename(config['db_file']))[0]
+    if "database_name" in config and config["database_name"] != "":
+        return config["database_name"]
+    elif "db_file" in config:
+        return os.path.splitext(os.path.basename(config["db_file"]))[0]
     else:
-        return ''
+        return ""
 
 
 class SqliteConnection(sqlite3.Connection):
@@ -106,21 +111,40 @@ class DbCursor(sqlite3.Cursor):
         return self.lastrowid
 
 
-@DbSessionFactory.register_session('Sqlite')
+@DbSessionFactory.register_session("Sqlite")
 class DbSqliteSession(DbSession):
-    _supported_types = [{"name": "Schema",      "type": "CATALOG_OBJECT"},
-                        {"name": "Table",       "type": "SCHEMA_OBJECT"},
-                        {"name": "View",        "type": "SCHEMA_OBJECT"},
-                        {"name": "Trigger",     "type": "TABLE_OBJECT"},
-                        {"name": "Primary Key", "type": "TABLE_OBJECT"},
-                        {"name": "Index",       "type": "TABLE_OBJECT"},
-                        {"name": "Column",      "type": "TABLE_OBJECT"}]
+    _supported_types = [
+        {"name": "Schema", "type": "CATALOG_OBJECT"},
+        {"name": "Table", "type": "SCHEMA_OBJECT"},
+        {"name": "View", "type": "SCHEMA_OBJECT"},
+        {"name": "Trigger", "type": "TABLE_OBJECT"},
+        {"name": "Primary Key", "type": "TABLE_OBJECT"},
+        {"name": "Index", "type": "TABLE_OBJECT"},
+        {"name": "Column", "type": "TABLE_OBJECT"},
+    ]
 
-    def __init__(self, id, threaded, connection_options, data={}, auto_reconnect=ReconnectionMode.NONE, task_state_cb=None,
-                 on_connected_cb=None, on_failed_cb=None, prompt_cb=None, pwd_prompt_cb=None,
-                 message_callback=None):
-        super().__init__(id, threaded, connection_options, data,
-                         auto_reconnect=auto_reconnect, task_state_cb=task_state_cb)
+    def __init__(
+        self,
+        id,
+        threaded,
+        connection_options,
+        data={},
+        auto_reconnect=ReconnectionMode.NONE,
+        task_state_cb=None,
+        on_connected_cb=None,
+        on_failed_cb=None,
+        prompt_cb=None,
+        pwd_prompt_cb=None,
+        message_callback=None,
+    ):
+        super().__init__(
+            id,
+            threaded,
+            connection_options,
+            data,
+            auto_reconnect=auto_reconnect,
+            task_state_cb=task_state_cb,
+        )
 
         self._connected_cb = on_connected_cb
         self._failed_cb = on_failed_cb
@@ -130,11 +154,10 @@ class DbSqliteSession(DbSession):
 
         self._add_database(self._connection_options)
 
-        self._default_schema = self._current_schema = list(
-            self._databases.keys())[0]
+        self._default_schema = self._current_schema = list(self._databases.keys())[0]
 
-        if 'attach' in self._connection_options:
-            for attach in self._connection_options['attach']:
+        if "attach" in self._connection_options:
+            for attach in self._connection_options["attach"]:
                 self._add_database(attach)
 
         self.open()
@@ -151,11 +174,17 @@ class DbSqliteSession(DbSession):
         # Set the database_name if not available
         db_name = find_schema_name(config)
 
-        if 'db_file' in config and isinstance(config['db_file'], str) and config['db_file'] != "":
-            self._databases[db_name] = config['db_file']
+        if (
+            "db_file" in config
+            and isinstance(config["db_file"], str)
+            and config["db_file"] != ""
+        ):
+            self._databases[db_name] = config["db_file"]
         else:
-            raise MSGException(Error.DB_INVALID_OPTIONS,
-                               "The 'db_file' option was not set for the '%s' database." % db_name)
+            raise MSGException(
+                Error.DB_INVALID_OPTIONS,
+                "The 'db_file' option was not set for the '%s' database." % db_name,
+            )
 
     def _do_open_database(self, notify_success=True):
         max_retries = 3
@@ -166,12 +195,18 @@ class DbSqliteSession(DbSession):
                 self._on_connect()
 
                 # open the database connection with longer timeout
-                self.conn = sqlite3.connect(self._databases[self._current_schema], timeout=30, factory=SqliteConnection,
-                                            isolation_level=None, check_same_thread=False)
+                self.conn = sqlite3.connect(
+                    self._databases[self._current_schema],
+                    timeout=30,
+                    factory=SqliteConnection,
+                    isolation_level=None,
+                    check_same_thread=False,
+                )
 
                 # restrict permissions to the database file
-                os.chmod(self._databases[self._current_schema],
-                         stat.S_IRUSR | stat.S_IWUSR)
+                os.chmod(
+                    self._databases[self._current_schema], stat.S_IRUSR | stat.S_IWUSR
+                )
 
                 # Cursor to be used for statements from the owner of this instance
                 self.cursor = None
@@ -179,11 +214,10 @@ class DbSqliteSession(DbSession):
                 init_cursor = self.conn.execute("PRAGMA journal_mode = WAL")
                 init_cursor.close()
 
-                for (database_name, db_file) in self._databases.items():
+                for database_name, db_file in self._databases.items():
                     if database_name == self._current_schema:
                         continue
-                    self.conn.execute(
-                        f"ATTACH '{db_file}' AS '{database_name}';")
+                    self.conn.execute(f"ATTACH '{db_file}' AS '{database_name}';")
 
                 if self._connected_cb is not None and notify_success:
                     self._connected_cb(self)
@@ -193,7 +227,8 @@ class DbSqliteSession(DbSession):
             except sqlite3.OperationalError as e:
                 if "database is locked" in str(e) and attempt < max_retries - 1:
                     logger.warning(
-                        f"Database locked, retrying in {retry_delay} seconds (attempt {attempt + 1}/{max_retries})")
+                        f"Database locked, retrying in {retry_delay} seconds (attempt {attempt + 1}/{max_retries})"
+                    )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     continue
@@ -245,7 +280,7 @@ class DbSqliteSession(DbSession):
     def _get_stats(self, resultset):
         return {
             "last_insert_id": resultset.lastrowid,
-            "rows_affected": resultset.rowcount
+            "rows_affected": resultset.rowcount,
         }
 
     def next_result(self):
@@ -267,8 +302,15 @@ class DbSqliteSession(DbSession):
         #   - boolean cannot be distinguished from int
         #   - both real and numeric becomes float
         #   - if value is None, we have no clue about type, so we assume is str
-        return [{"name": description[0], "type": "str" if type(row[i]).__name__ is None else type(row[i]).__name__}
-                for i, description in enumerate(self.cursor.description)]
+        return [
+            {
+                "name": description[0],
+                "type": (
+                    "str" if type(row[i]).__name__ is None else type(row[i]).__name__
+                ),
+            }
+            for i, description in enumerate(self.cursor.description)
+        ]
 
     def row_to_container(self, row, columns):
         return tuple(row)
@@ -277,7 +319,7 @@ class DbSqliteSession(DbSession):
         return {}
 
     def start_transaction(self):
-        self.execute('BEGIN TRANSACTION;')
+        self.execute("BEGIN TRANSACTION;")
 
     def kill_query(self, user_session):
         user_session._killed = True
@@ -297,21 +339,32 @@ class DbSqliteSession(DbSession):
     def set_current_schema(self, schema_name, callback=None, options=None):
         if options is None:
             options = {}
-        options['__new_current_schema__'] = schema_name
+        options["__new_current_schema__"] = schema_name
         context = get_context()
         task_id = context.request_id if context else None
-        self.add_task(SqliteSetCurrentSchemaTask(self, task_id, params=[
-                      schema_name], result_callback=callback, options=options))
+        self.add_task(
+            SqliteSetCurrentSchemaTask(
+                self,
+                task_id,
+                params=[schema_name],
+                result_callback=callback,
+                options=options,
+            )
+        )
 
     def get_auto_commit(self, callback=None, options=None):
         context = get_context()
         task_id = context.request_id if context else None
-        self.add_task(SqliteGetAutoCommit(self, task_id,
-                                          result_callback=callback, options=options))
+        self.add_task(
+            SqliteGetAutoCommit(
+                self, task_id, result_callback=callback, options=options
+            )
+        )
 
     def set_auto_commit(self, state, callback=None, options=None):
-        raise MSGException(Error.CORE_FEATURE_NOT_SUPPORTED,
-                           "This feature is not supported.")
+        raise MSGException(
+            Error.CORE_FEATURE_NOT_SUPPORTED, "This feature is not supported."
+        )
 
     def get_objects_types(self):
         return self._supported_types
@@ -330,8 +383,9 @@ class DbSqliteSession(DbSession):
         if self.threaded:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(SqliteOneFieldListTask(
-                self, task_id=task_id, sql=sql, params=params))
+            self.add_task(
+                SqliteOneFieldListTask(self, task_id=task_id, sql=sql, params=params)
+            )
         else:
             return self.execute(sql, params)
 
@@ -349,12 +403,13 @@ class DbSqliteSession(DbSession):
                     WHERE type = 'view'
                     AND name like ?
                     ORDER BY name;"""
-        params = (filter, )
+        params = (filter,)
 
         context = get_context()
         task_id = context.request_id if context else None
-        self.add_task(SqliteOneFieldListTask(self, task_id=task_id, sql=sql,
-                                             params=params))
+        self.add_task(
+            SqliteOneFieldListTask(self, task_id=task_id, sql=sql, params=params)
+        )
 
     @check_supported_type
     def get_table_object_names(self, type, schema_name, table_name, filter):
@@ -400,8 +455,9 @@ class DbSqliteSession(DbSession):
 
         context = get_context()
         task_id = context.request_id if context else None
-        self.add_task(SqliteOneFieldListTask(self, task_id=task_id, sql=sql,
-                                             params=params))
+        self.add_task(
+            SqliteOneFieldListTask(self, task_id=task_id, sql=sql, params=params)
+        )
 
     @check_supported_type
     def get_catalog_object(self, type, name):
@@ -413,8 +469,11 @@ class DbSqliteSession(DbSession):
 
         context = get_context()
         task_id = context.request_id if context else None
-        self.add_task(SqliteBaseObjectTask(self, task_id=task_id, sql=sql,
-                                           type=type, name=name, params=params))
+        self.add_task(
+            SqliteBaseObjectTask(
+                self, task_id=task_id, sql=sql, type=type, name=name, params=params
+            )
+        )
 
     @check_supported_type
     def get_schema_object(self, type, schema_name, name):
@@ -422,14 +481,23 @@ class DbSqliteSession(DbSession):
         context = get_context()
         task_id = context.request_id if context else None
         if type == "Table":
-            sql = f"""SELECT name
+            sql = (
+                f"""SELECT name
                         FROM `{schema_name}`.sqlite_master
                         WHERE type = "table"
                             AND name = ?
                         ORDER BY name;""",
+            )
 
-            self.add_task(SqliteTableObjectTask(self, task_id=task_id, sql=sql,
-                                                name=f"{schema_name}.{name}", params=params))
+            self.add_task(
+                SqliteTableObjectTask(
+                    self,
+                    task_id=task_id,
+                    sql=sql,
+                    name=f"{schema_name}.{name}",
+                    params=params,
+                )
+            )
         else:
             if type == "View":
                 sql = f"""SELECT name
@@ -438,8 +506,15 @@ class DbSqliteSession(DbSession):
                             AND name = ?
                         ORDER BY name;"""
 
-            self.add_task(SqliteBaseObjectTask(self, task_id=task_id, sql=sql,
-                                               type=type, name=f"{schema_name}.{name}"))
+            self.add_task(
+                SqliteBaseObjectTask(
+                    self,
+                    task_id=task_id,
+                    sql=sql,
+                    type=type,
+                    name=f"{schema_name}.{name}",
+                )
+            )
 
     @check_supported_type
     def get_table_object(self, type, schema_name, table_name, name):
@@ -476,13 +551,27 @@ class DbSqliteSession(DbSession):
         context = get_context()
         task_id = context.request_id if context else None
         if type == "Column":
-            self.add_task(SqliteColumnObjectTask(self, task_id=task_id, sql=sql,
-                                                 type=type, name=f"{schema_name}.{name}",
-                                                 params=params))
+            self.add_task(
+                SqliteColumnObjectTask(
+                    self,
+                    task_id=task_id,
+                    sql=sql,
+                    type=type,
+                    name=f"{schema_name}.{name}",
+                    params=params,
+                )
+            )
         else:
-            self.add_task(SqliteBaseObjectTask(self, task_id=task_id, sql=sql,
-                                               type=type, name=f"{schema_name}.{name}",
-                                               params=params))
+            self.add_task(
+                SqliteBaseObjectTask(
+                    self,
+                    task_id=task_id,
+                    sql=sql,
+                    type=type,
+                    name=f"{schema_name}.{name}",
+                    params=params,
+                )
+            )
 
     def get_columns_metadata(self, names):
         sql_parts = []
@@ -491,8 +580,9 @@ class DbSqliteSession(DbSession):
         if not names:
             context = get_context()
             task_id = context.request_id if context else None
-            self.add_task(SqliteColumnsMetadataTask(
-                self, task_id=task_id, sql="", params=[]))
+            self.add_task(
+                SqliteColumnsMetadataTask(self, task_id=task_id, sql="", params=[])
+            )
             return
 
         for name in names:
@@ -503,11 +593,12 @@ class DbSqliteSession(DbSession):
                         FROM pragma_table_info('{name['table']}', '{name['schema']}')
                         WHERE name = ?
             """)
-            params.extend([name['column']])
+            params.extend([name["column"]])
 
         sql = " UNION ALL ".join(sql_parts)
 
         context = get_context()
         task_id = context.request_id if context else None
-        self.add_task(SqliteColumnsMetadataTask(
-            self, task_id=task_id, sql=sql, params=params))
+        self.add_task(
+            SqliteColumnsMetadataTask(self, task_id=task_id, sql=sql, params=params)
+        )

@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,18 +33,7 @@ from .Error import SYSTEM_GENERIC_ERROR, MSGException
 class Response:
     @staticmethod
     def standard(type, msg, args={}, state={}):
-        return {
-            **{
-                "request_state": {
-                    **{
-                        "type": type,
-                        "msg": msg
-                    },
-                    **state
-                }
-            },
-            **args
-        }
+        return {**{"request_state": {**{"type": type, "msg": msg}, **state}}, **args}
 
     @staticmethod
     def ok(msg, args={}):
@@ -57,49 +46,37 @@ class Response:
     @staticmethod
     def exception(e, args={}):
         if isinstance(e, mysqlsh.DBError):
-            return Response.error(e.msg, args, {
-                "source": "MYSQL",
-                "code": e.code,
-                "sqlstate": e.sqlstate
-            })
+            return Response.error(
+                e.msg, args, {"source": "MYSQL", "code": e.code, "sqlstate": e.sqlstate}
+            )
         elif isinstance(e, mysqlsh.Error):
-            return Response.error(e.msg, args, {
-                "source": "MYSQLSH",
-                "code": e.code
-            })
+            return Response.error(e.msg, args, {"source": "MYSQLSH", "code": e.code})
         elif isinstance(e, sqlite3.Error):
-            return Response.error(str(e), args, {
-                "source": "SQLITE"
-            })
+            return Response.error(str(e), args, {"source": "SQLITE"})
         elif isinstance(e, MSGException):
-            return Response.error(e.msg, args, {
-                "source": e.source,
-                "code": e.code
-            })
+            return Response.error(e.msg, args, {"source": e.source, "code": e.code})
         elif isinstance(e, Exception):
             lines = traceback.format_exception_only(e)
             if len(lines) > 1:
-                msg = lines[0].strip()+"\n"+lines[-1].strip()
+                msg = lines[0].strip() + "\n" + lines[-1].strip()
             else:
                 msg = str(e)
-            return Response.error(msg, args, {
-                "source": "MSG",
-                "code": SYSTEM_GENERIC_ERROR
-            })
+            return Response.error(
+                msg, args, {"source": "MSG", "code": SYSTEM_GENERIC_ERROR}
+            )
         else:
             # Check if we're getting a json/dictionary in the exception
             # message and make sure we output in valid json
             try:
-                e.args = (json.dumps(eval("{" + str(e).split("{", 1)[1])), )
+                e.args = (json.dumps(eval("{" + str(e).split("{", 1)[1])),)
             except:
                 # This looked like a json response, but it's not. keep going with the
                 # standard handling
                 pass
 
-            return Response.error(str(e), args, {
-                "source": "MSG",
-                "code": SYSTEM_GENERIC_ERROR
-            })
+            return Response.error(
+                str(e), args, {"source": "MSG", "code": SYSTEM_GENERIC_ERROR}
+            )
 
     @staticmethod
     def pending(msg=None, args={}):
@@ -109,7 +86,7 @@ class Response:
 
     @staticmethod
     def fromStatus(status, args={}):
-        return Response.standard(status['type'], status['msg'], args)
+        return Response.standard(status["type"], status["msg"], args)
 
     @staticmethod
     def cancelled(msg, args={}, state={}):
@@ -119,22 +96,18 @@ class Response:
 class Protocol(object):
     @staticmethod
     def get_message(msg_type, message, request_id: None):
-        request_id_str = request_id if request_id else ''
+        request_id_str = request_id if request_id else ""
         response = {
             "request_id": request_id_str,
-            "request_state": {
-                "type": msg_type,
-                "msg": message
-            }
+            "request_state": {"type": msg_type, "msg": message},
         }
 
-        return json.dumps(response, separators=(',', ':'))
+        return json.dumps(response, separators=(",", ":"))
 
     @staticmethod
     def get_response(msg_type, message, request_id=None, values=None):
-        msg_text = json.dumps(message) if isinstance(
-            message, dict) else message
-        request_id_str = request_id if request_id else ''
+        msg_text = json.dumps(message) if isinstance(message, dict) else message
+        request_id_str = request_id if request_id else ""
 
         response = {
             "response": msg_type,
@@ -148,4 +121,4 @@ class Protocol(object):
             else:
                 response.update({"result": str(values)})
 
-        return json.dumps(response, separators=(',', ':'))
+        return json.dumps(response, separators=(",", ":"))

@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -498,40 +498,30 @@ def create_test_db(session, schema_name):
     )
 
     session.run_sql(f"USE `{schema_name}`;")
-    session.run_sql(
-        f"""CREATE TABLE IF NOT EXISTS `{schema_name}`.`Contacts` (
+    session.run_sql(f"""CREATE TABLE IF NOT EXISTS `{schema_name}`.`Contacts` (
                         `id` INT NOT NULL,
                         `f_name` VARCHAR(45) NULL,
                         `l_name` VARCHAR(45) NULL,
                         `number` VARCHAR(20) NULL,
                         `email` VARCHAR(45) NULL,
                         PRIMARY KEY (`id`))
-                        ENGINE = InnoDB;"""
-    )
-    session.run_sql(
-        f"""CREATE TABLE IF NOT EXISTS `{schema_name}`.`Addresses` (
+                        ENGINE = InnoDB;""")
+    session.run_sql(f"""CREATE TABLE IF NOT EXISTS `{schema_name}`.`Addresses` (
                         `id` INT NOT NULL,
                         `address_line` VARCHAR(256) NULL,
                         `city` VARCHAR(128) NULL,
                         PRIMARY KEY (`id`))
-                        ENGINE = InnoDB;"""
-    )
-    session.run_sql(
-        """CREATE PROCEDURE `GetAllContacts` ()
+                        ENGINE = InnoDB;""")
+    session.run_sql("""CREATE PROCEDURE `GetAllContacts` ()
                         BEGIN
                             SELECT * FROM Contacts;
-                        END"""
-    )
-    session.run_sql(
-        """CREATE OR REPLACE VIEW `ContactsWithEmail` AS
+                        END""")
+    session.run_sql("""CREATE OR REPLACE VIEW `ContactsWithEmail` AS
                         SELECT * FROM `Contacts`
-                        WHERE `email` is not NULL;"""
-    )
-    session.run_sql(
-        """CREATE OR REPLACE VIEW `ContactBasicInfo` AS
+                        WHERE `email` is not NULL;""")
+    session.run_sql("""CREATE OR REPLACE VIEW `ContactBasicInfo` AS
                         SELECT f_name, l_name, number FROM `Contacts`
-                        WHERE `email` is not NULL;"""
-    )
+                        WHERE `email` is not NULL;""")
     session.run_sql(
         f"""CREATE TABLE IF NOT EXISTS `{schema_name}`.`Notes` (
                         `id` INT NOT NULL,
@@ -546,11 +536,9 @@ def create_test_db(session, schema_name):
                         RETURNS VARCHAR(91) DETERMINISTIC
                         RETURN CONCAT(first_name, ' ', last_name);"""
     )
-    session.run_sql(
-        """CREATE OR REPLACE SQL SECURITY INVOKER VIEW `ContactNotes` AS
+    session.run_sql("""CREATE OR REPLACE SQL SECURITY INVOKER VIEW `ContactNotes` AS
                         SELECT `format_name`(t1.`f_name`, t1.`l_name`), t1.`number`, t2.`title`, t2.`content` FROM `Contacts` t1
-                        JOIN `Notes` t2 ON t1.`id` = t2.`contact_id`;"""
-    )
+                        JOIN `Notes` t2 ON t1.`id` = t2.`contact_id`;""")
 
 
 def reset_mrs_database(session):
@@ -606,34 +594,22 @@ def reset_privileges(session):
         "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_schema_admin'@'%' IGNORE UNKNOWN USER"
     )
 
-    entries = (
-        lib.core.MrsDbExec(
-            f"""
+    entries = lib.core.MrsDbExec(f"""
         SELECT *
         FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
         WHERE GRANTEE LIKE '%mysql_rest_service_data_provider%'
-        """
-        )
-        .exec(session)
-        .items
-    )
+        """).exec(session).items
 
     assert len(entries) == 0
 
 
 def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp_dir):
 
-    entries = (
-        lib.core.MrsDbExec(
-            """
+    entries = lib.core.MrsDbExec("""
         SELECT *
         FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
         WHERE GRANTEE LIKE '%mysql_rest_service_data_provider%'
-        """
-        )
-        .exec(session)
-        .items
-    )
+        """).exec(session).items
 
     service = lib.services.get_service(session, url_context_root=service_context_root)
 
@@ -889,30 +865,18 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
     db_object = lib.db_objects.get_db_object(session, db_object_id)
     assert db_object is not None
 
-    entries = (
-        lib.core.MrsDbExec(
-            f"""
+    entries = lib.core.MrsDbExec(f"""
         SELECT *
         FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
         WHERE GRANTEE LIKE '%mysql_rest_service_data_provider%'
-        """
-        )
-        .exec(session)
-        .items
-    )
+        """).exec(session).items
 
-    grants = (
-        lib.core.MrsDbExec(
-            f"""
+    grants = lib.core.MrsDbExec(f"""
         SELECT *
         FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
         WHERE TABLE_SCHEMA = '{db_object['schema_name']}'
             AND TABLE_NAME = '{db_object['name']}'
-        """
-        )
-        .exec(session)
-        .items
-    )
+        """).exec(session).items
 
     grants = [g["PRIVILEGE_TYPE"] for g in grants]
     # assert sorted(grants) == ["SELECT"], f"{sorted(grants)}"
@@ -1006,18 +970,12 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
 
 
 def get_db_object_privileges(session, schema_name, db_object_name):
-    grants = (
-        lib.core.MrsDbExec(
-            f"""
+    grants = lib.core.MrsDbExec(f"""
         SELECT PRIVILEGE_TYPE
         FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
         WHERE TABLE_SCHEMA = '{schema_name}'
             AND TABLE_NAME = '{db_object_name}'
-        """
-        )
-        .exec(session)
-        .items
-    )
+        """).exec(session).items
 
     # The Db and Routine_name column values are identifier names, which on mysql.* tables are bound to some
     # case-sensitivity constraints (https://dev.mysql.com/doc/refman/8.4/en/identifier-case-sensitivity.html).
@@ -1025,18 +983,12 @@ def get_db_object_privileges(session, schema_name, db_object_name):
     # constraints on every platform, regardless of the value of the `lower_case_table_names` system variable.
     # One way to do that is by using case-insensitive pattern matching with REGEXP_LIKE (
     # https://dev.mysql.com/doc/refman/8.4/en/pattern-matching.html).
-    grants2 = (
-        lib.core.MrsDbExec(
-            """
+    grants2 = lib.core.MrsDbExec("""
         SELECT PROC_PRIV
         FROM mysql.procs_priv
         WHERE REGEXP_LIKE(DB, ?, 'i')
             AND REGEXP_LIKE(ROUTINE_NAME, ?, 'i')
-        """
-        )
-        .exec(session, [schema_name, db_object_name])
-        .items
-    )
+        """).exec(session, [schema_name, db_object_name]).items
 
     if grants2:
         grants2 = [g.upper() for g in grants2[0]["PROC_PRIV"]]

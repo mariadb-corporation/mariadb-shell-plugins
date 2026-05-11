@@ -29,10 +29,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
-HELPER_PATH = (
-    Path(__file__).resolve().parents[1] / "scripts" / "version_bump_helper.py"
-)
+HELPER_PATH = Path(__file__).resolve().parents[1] / "scripts" / "version_bump_helper.py"
 
 
 def load_helper_module():
@@ -67,7 +64,9 @@ class GatherCommitsTest(unittest.TestCase):
                 if version == "2026.2.0+9.6.1"
                 else self.fail(f"Unexpected version lookup: {version!r}")
             ),
-        ), mock.patch.object(helper, "git", side_effect=fake_git):
+        ), mock.patch.object(
+            helper, "git", side_effect=fake_git
+        ):
             commits = helper.gather_commits()
 
         self.assertEqual(
@@ -113,8 +112,7 @@ k_repo_mysqlsh_url = {
     "aarch64": "https://cdn.mysql.com/Downloads/MySQL-Shell/mysql-shell-9.7.0-1.el8.aarch64.rpm",
     "x86_64": "https://cdn.mysql.com/Downloads/MySQL-Shell/mysql-shell-9.7.0-1.el8.x86_64.rpm",
 }
-""".strip()
-                + "\n",
+""".strip() + "\n",
                 encoding="utf-8",
             )
 
@@ -136,7 +134,9 @@ k_repo_mysqlsh_url = {
             all(entry["matches_expected_prefix"] for entry in result["entries"])
         )
 
-    def test_validate_remote_helper_urls_detects_mismatch_against_summarized_version(self):
+    def test_validate_remote_helper_urls_detects_mismatch_against_summarized_version(
+        self,
+    ):
         helper = load_helper_module()
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -150,8 +150,7 @@ k_repo_mysqlsh_url = {
 k_repo_mysqlsh_url = {
     "aarch64": "https://cdn.mysql.com/Downloads/MySQL-Shell/mysql-shell-9.6.1-1.el8.aarch64.rpm",
 }
-""".strip()
-                + "\n",
+""".strip() + "\n",
                 encoding="utf-8",
             )
 

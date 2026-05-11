@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -43,7 +43,12 @@ def ws():
     ws.close()
 
 
-@pytest.mark.usefixtures("shell_start_server", "create_users", "create_test_schema", "clear_module_data_tables")
+@pytest.mark.usefixtures(
+    "shell_start_server",
+    "create_users",
+    "create_test_schema",
+    "clear_module_data_tables",
+)
 @pytest.mark.parametrize("story", script_list)
 def test_user_stories(story, ws):
     with ScopedCallback(lambda: print("====== ENDING EXECUTION =====")):

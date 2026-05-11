@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -42,16 +42,15 @@ SCHEMA_METADATA_LOCK_ERROR = "Failed to acquire schema metadata lock. Please ens
 def get_msm_plugin_data_path() -> str:
     # Get msm plugin data folder, create if it does not exist yet
     msm_plugin_data_path = os.path.abspath(
-        mysqlsh.plugin_manager.general.get_shell_user_dir(
-            'plugin_data', 'msm_plugin'))
+        mysqlsh.plugin_manager.general.get_shell_user_dir("plugin_data", "msm_plugin")
+    )
     pathlib.Path(msm_plugin_data_path).mkdir(parents=True, exist_ok=True)
 
     return msm_plugin_data_path
 
 
 def get_msm_schema_update_log_path() -> str:
-    return os.path.join(
-        get_msm_plugin_data_path(), 'msm_schema_update_log.txt')
+    return os.path.join(get_msm_plugin_data_path(), "msm_schema_update_log.txt")
 
 
 def write_to_msm_schema_update_log(type, message):
@@ -62,15 +61,14 @@ def write_to_msm_schema_update_log(type, message):
 
 class ConfigFile:
     def __new__(cls):
-        if not hasattr(cls, 'instance'):
+        if not hasattr(cls, "instance"):
             cls.instance = super(ConfigFile, cls).__new__(cls)
         return cls.instance
 
     def __init__(self) -> None:
         self._settings = {}
 
-        self._filename = os.path.join(
-            get_msm_plugin_data_path(), "config.json")
+        self._filename = os.path.join(get_msm_plugin_data_path(), "config.json")
         try:
             with open(self._filename, "r") as f:
                 self._settings = json.load(f)
@@ -103,8 +101,7 @@ class ConfigFile:
 
 
 def get_working_dir():
-    return os.path.expanduser(
-        ConfigFile().settings.get("workingDirectory", "~"))
+    return os.path.expanduser(ConfigFile().settings.get("workingDirectory", "~"))
 
 
 def get_interactive_default():
@@ -202,8 +199,7 @@ def get_db_schema_version(session, schema_name):
     )
 
     if not row:
-        raise Exception(
-            "Unable to fetch the MSM database schema version.")
+        raise Exception("Unable to fetch the MSM database schema version.")
 
     return [row["major"], row["minor"], row["patch"]]
 
@@ -214,14 +210,11 @@ def get_db_schema_version_int(session):
 
 
 def db_schema_exists(session, schema_name):
-    row = (
-        MsmDbExec("""
+    row = MsmDbExec("""
         SELECT COUNT(*) > 0 AS schema_exists
         FROM INFORMATION_SCHEMA.SCHEMATA
         WHERE SCHEMA_NAME = ?
-    """)
-        .exec(session, [schema_name]).first
-    )
+    """).exec(session, [schema_name]).first
     return row["schema_exists"]
 
 
@@ -462,15 +455,12 @@ class MsmDbExec:
         self._params = self._params + params
         try:
             # convert lists and dicts to store in the database
-            self._params = [self._convert_to_database(
-                param) for param in self._params]
+            self._params = [self._convert_to_database(param) for param in self._params]
 
             self._result = session.run_sql(self._sql, self._params)
         except Exception as e:
-            mysqlsh.globals.shell.log(
-                LogLevel.WARNING.name, f"[{e}\nsql: {
-                    self._sql}\nparams: {self._params}"
-            )
+            mysqlsh.globals.shell.log(LogLevel.WARNING.name, f"[{e}\nsql: {
+                    self._sql}\nparams: {self._params}")
             raise
         return self
 
@@ -483,8 +473,7 @@ class MsmDbExec:
 
     @property
     def first(self):
-        result = get_sql_result_as_dict_list(
-            self._result, self._binary_formatter)
+        result = get_sql_result_as_dict_list(self._result, self._binary_formatter)
         if not result:
             return None
         return result[0]
@@ -651,9 +640,14 @@ def convert_version_str_to_list(version: str) -> list[int]:
     version_match = re.match(r"(\d+)\.(\d+)\.(\d+)", version)
     if version_match is None:
         raise ValueError(
-            "The version needs to be specified using the following format: major.minor.patch")
+            "The version needs to be specified using the following format: major.minor.patch"
+        )
 
-    return [int(version_match.group(1)), int(version_match.group(2)), int(version_match.group(3))]
+    return [
+        int(version_match.group(1)),
+        int(version_match.group(2)),
+        int(version_match.group(3)),
+    ]
 
 
 class MsmDbExec:
@@ -679,8 +673,7 @@ class MsmDbExec:
         self._params = self._params + params
         try:
             # convert lists and dicts to store in the database
-            self._params = [self._convert_to_database(
-                param) for param in self._params]
+            self._params = [self._convert_to_database(param) for param in self._params]
 
             self._result = session.run_sql(self._sql, self._params)
         except Exception as e:
@@ -699,8 +692,7 @@ class MsmDbExec:
 
     @property
     def first(self):
-        result = get_sql_result_as_dict_list(
-            self._result, self._binary_formatter)
+        result = get_sql_result_as_dict_list(self._result, self._binary_formatter)
         if not result:
             return None
         return result[0]
@@ -719,8 +711,8 @@ class MsmDbExec:
 
 
 def execute_msm_sql_script(
-        session, sql_script: str = None, script_name: str = None,
-        sql_file_path: str = None):
+    session, sql_script: str = None, script_name: str = None, sql_file_path: str = None
+):
     if sql_script is None and sql_file_path is None:
         raise ValueError("No script or sql_file_path specified.")
     if sql_script is not None and script_name is None:
@@ -728,8 +720,7 @@ def execute_msm_sql_script(
     if script_name is None and sql_file_path is not None:
         script_name = sql_file_path
 
-    write_to_msm_schema_update_log(
-        "INFO", f"Running SQL script `{script_name}` ...")
+    write_to_msm_schema_update_log("INFO", f"Running SQL script `{script_name}` ...")
 
     if sql_file_path is not None:
         with open(sql_file_path) as f:
@@ -748,7 +739,8 @@ def execute_msm_sql_script(
         if msm_lock == 0:
             raise Exception(
                 "Failed to acquire MSM schema update lock. Please ensure no "
-                "other MSM schema update is running, then try again.")
+                "other MSM schema update is running, then try again."
+            )
 
         # Execute all commands
         current_cmd = ""
@@ -759,17 +751,19 @@ def execute_msm_sql_script(
                     session.run_sql(current_cmd)
 
             write_to_msm_schema_update_log(
-                "INFO", f"SQL script {script_name} executed successfully.")
+                "INFO", f"SQL script {script_name} executed successfully."
+            )
         except mysqlsh.DBError as e:
             # On exception, drop the schema and re-raise
             write_to_msm_schema_update_log(
-                "ERROR", f"Failed to run the the SQL script `{script_name}`.\n{current_cmd}\n{e}")
-            raise Exception(
-                f"Failed to run the SQL script.\n{current_cmd}\n{e}"
+                "ERROR",
+                f"Failed to run the the SQL script `{script_name}`.\n{current_cmd}\n{e}",
             )
+            raise Exception(f"Failed to run the SQL script.\n{current_cmd}\n{e}")
     finally:
         if msm_lock == 1:
             MsmDbExec('SELECT RELEASE_LOCK("MSM_METADATA_LOCK")').exec(session)
+
 
 def get_uuid_string():
     return str(uuid.uuid4()).replace("-", "")

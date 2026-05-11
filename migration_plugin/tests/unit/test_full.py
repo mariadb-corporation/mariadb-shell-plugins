@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,14 @@ import os
 import mysqlsh  # type: ignore
 import pytest
 import time
-from .test_plan_step import set_source, set_type, set_oci, set_checks, set_target, fix_uri
+from .test_plan_step import (
+    set_source,
+    set_type,
+    set_oci,
+    set_checks,
+    set_target,
+    fix_uri,
+)
 from migration_plugin import work_step
 from migration_plugin.lib import migration, errors, core
 from migration_plugin.lib.backend import model
@@ -38,12 +45,15 @@ from .helpers import load_sakila, resolve_vcn
 
 
 def check_runnable():
-    return os.environ.get('MIGRATION_TEST_SKIP_OCI_TESTS') is None and os.environ.get('MIGRATION_TEST_ROOT_COMPARTMENT_ID') is not None
+    return (
+        os.environ.get("MIGRATION_TEST_SKIP_OCI_TESTS") is None
+        and os.environ.get("MIGRATION_TEST_ROOT_COMPARTMENT_ID") is not None
+    )
 
 
 pytestmark = pytest.mark.skipif(
     not check_runnable(),
-    reason="Skipping because MIGRATION_TEST_SKIP_OCI_TESTS is set and/or MIGRATION_TEST_ROOT_COMPARTMENT_ID not set"
+    reason="Skipping because MIGRATION_TEST_SKIP_OCI_TESTS is set and/or MIGRATION_TEST_ROOT_COMPARTMENT_ID not set",
 )
 
 
@@ -135,7 +145,7 @@ def show_status(status):
         line = []
         for title, w, fmt in columns:
             if info["status"] == "in_progress":
-                line.append("\033[94;44m"+fmt(info[title]).ljust(w)+"\033[0m")
+                line.append("\033[94;44m" + fmt(info[title]).ljust(w) + "\033[0m")
             else:
                 line.append(fmt(info[title]).ljust(w))
         emoji = "⏱️ "
@@ -153,11 +163,18 @@ def show_status(status):
     print("status=", status["status"])
 
 
-def do_one_migration(test_name, session, connectivity: model.CloudConnectivity,
-                     reuse_compute: bool, reuse_db: bool, vcn_id: str = "",
-                     reset_project: bool = False,
-                     on_stage_start=None, on_stage_finished=None,
-                     on_iteration=None):
+def do_one_migration(
+    test_name,
+    session,
+    connectivity: model.CloudConnectivity,
+    reuse_compute: bool,
+    reuse_db: bool,
+    vcn_id: str = "",
+    reset_project: bool = False,
+    on_stage_start=None,
+    on_stage_finished=None,
+    on_iteration=None,
+):
     load_sakila(session)
 
     sentinel_gtid = f"deadbeef-cafe-0000-0000-{int(time.time()):012}"
@@ -179,14 +196,18 @@ def do_one_migration(test_name, session, connectivity: model.CloudConnectivity,
                 if gtid_mode != "OFF":
                     session.run_sql(f"SET gtid_next='{sentinel_gtid}:1'")
                 session.run_sql(
-                    "INSERT INTO sakila.city VALUES (DEFAULT, 'San Francisco', 103, DEFAULT)")
+                    "INSERT INTO sakila.city VALUES (DEFAULT, 'San Francisco', 103, DEFAULT)"
+                )
                 if gtid_mode != "OFF":
                     session.run_sql(f"SET gtid_next='{sentinel_gtid}:2'")
                 session.run_sql(
-                    "INSERT INTO sakila.city VALUES (DEFAULT, 'Los Angeles', 103, DEFAULT)")
+                    "INSERT INTO sakila.city VALUES (DEFAULT, 'Los Angeles', 103, DEFAULT)"
+                )
                 sentinel_row_id = session.run_sql(
-                    "select last_insert_id()").fetch_one()[0]
+                    "select last_insert_id()"
+                ).fetch_one()[0]
                 waiting_trxs = True
+
         if type != "cold":
             check_channel()
         if on_stage_start:
@@ -209,27 +230,38 @@ def do_one_migration(test_name, session, connectivity: model.CloudConnectivity,
                 if not helper:
                     # end test when our trxs arrive at target
                     if gtid_mode != "OFF":
-                        gtid_executed = project.work_step.migrator._watch_channel._target_gtid_executed
+                        gtid_executed = (
+                            project.work_step.migrator._watch_channel._target_gtid_executed
+                        )
                         if gtid_executed:
-                            if sentinel_gtid+":1-2" in [g.strip() for g in gtid_executed.split(",")]:
+                            if sentinel_gtid + ":1-2" in [
+                                g.strip() for g in gtid_executed.split(",")
+                            ]:
                                 _print(
-                                    "Sentinel transactions arrived at destination...")
+                                    "Sentinel transactions arrived at destination..."
+                                )
                                 raise EndTest("Sentinel transactions arrived")
                     elif sentinel_row_id:
                         if type == "hot-direct":
                             if not target_session:
-                                target_ip = project.work_step.project.resources.dbSystemIP
+                                target_ip = (
+                                    project.work_step.project.resources.dbSystemIP
+                                )
                                 target_session = mysqlsh.globals.shell.open_session(
-                                    f"admin:Sakila1!@{target_ip}")
+                                    f"admin:Sakila1!@{target_ip}"
+                                )
                             last_city_id = target_session.run_sql(
-                                "select max(city_id) from sakila.city").fetch_one()[0]
+                                "select max(city_id) from sakila.city"
+                            ).fetch_one()[0]
                             print(
-                                f"max(city_id) at dest = {last_city_id} (waiting for {sentinel_row_id})")
+                                f"max(city_id) at dest = {last_city_id} (waiting for {sentinel_row_id})"
+                            )
                             if last_city_id == sentinel_row_id:
                                 _print("Sentinel row arrived at destination")
                                 raise EndTest("Sentinel transactions arrived")
                         else:
                             _print("Can't check for sentinel transactions")
+
         if type != "cold":
             check_sentinel(project)
         if on_iteration:
@@ -264,14 +296,20 @@ def do_one_migration(test_name, session, connectivity: model.CloudConnectivity,
         vcn_options = {}
     set_source(source_uri)
     set_type(
-        model.MigrationType.COLD if model.CloudConnectivity.NOT_SET == connectivity else model.MigrationType.HOT,
-        connectivity
+        (
+            model.MigrationType.COLD
+            if model.CloudConnectivity.NOT_SET == connectivity
+            else model.MigrationType.HOT
+        ),
+        connectivity,
     )
-    set_target(reuse_compartment=reuse_compute or reuse_db,
-               reuse_compute=reuse_compute,
-               reuse_db=reuse_db,
-               compartment_id=root_compartment_id,
-               **vcn_options)
+    set_target(
+        reuse_compartment=reuse_compute or reuse_db,
+        reuse_compute=reuse_compute,
+        reuse_db=reuse_db,
+        compartment_id=root_compartment_id,
+        **vcn_options,
+    )
     set_checks(auto_resolve=True)
 
     _print("Executing migration")
@@ -298,7 +336,9 @@ def do_one_migration(test_name, session, connectivity: model.CloudConnectivity,
 
             iterated(project)
 
-            assert status["status"] != "error", f"migration failed with an error: {status}"
+            assert (
+                status["status"] != "error"
+            ), f"migration failed with an error: {status}"
             if status["status"] in ("finished", "ready"):
                 break
 
@@ -317,6 +357,7 @@ def do_one_migration(test_name, session, connectivity: model.CloudConnectivity,
 
     # delete the project and other data once it finishes
 
+
 #
 
 
@@ -332,10 +373,14 @@ def test_hot_local_tunnel_fresh(sandbox_repl_session, reset_project):
     - Use --wipe-full-tests to reset state (and wipe resources)
     """
 
-    do_one_migration("test_hot_local_tunnel_fresh",
-                     sandbox_repl_session, connectivity=model.CloudConnectivity.LOCAL_SSH_TUNNEL,
-                     reuse_compute=False, reuse_db=False,
-                     reset_project=reset_project)
+    do_one_migration(
+        "test_hot_local_tunnel_fresh",
+        sandbox_repl_session,
+        connectivity=model.CloudConnectivity.LOCAL_SSH_TUNNEL,
+        reuse_compute=False,
+        reuse_db=False,
+        reset_project=reset_project,
+    )
 
 
 def test_hot_local_tunnel_reuse(sandbox_repl_session):
@@ -343,9 +388,14 @@ def test_hot_local_tunnel_reuse(sandbox_repl_session):
     This is the same as the provision test (with same project file),
     so nothing should happen. Equivalent to a retry after restart.
     """
-    do_one_migration("test_hot_local_tunnel_reuse",
-                     sandbox_repl_session, connectivity=model.CloudConnectivity.LOCAL_SSH_TUNNEL,
-                     reuse_compute=True, reuse_db=True)
+    do_one_migration(
+        "test_hot_local_tunnel_reuse",
+        sandbox_repl_session,
+        connectivity=model.CloudConnectivity.LOCAL_SSH_TUNNEL,
+        reuse_compute=True,
+        reuse_db=True,
+    )
+
 
 #
 
@@ -354,10 +404,14 @@ def test_cold_fresh(sandbox_session, reset_project):
     """
     Cold migration provisioning all resources.
     """
-    do_one_migration("test_cold_fresh",
-                     sandbox_session, connectivity=model.CloudConnectivity.NOT_SET,
-                     reuse_compute=False, reuse_db=False,
-                     reset_project=reset_project)
+    do_one_migration(
+        "test_cold_fresh",
+        sandbox_session,
+        connectivity=model.CloudConnectivity.NOT_SET,
+        reuse_compute=False,
+        reuse_db=False,
+        reset_project=reset_project,
+    )
 
 
 def test_cold_reuse(sandbox_session):
@@ -365,24 +419,38 @@ def test_cold_reuse(sandbox_session):
     Cold migration reusing all resources.
     Must be executed after test_hot_local_tunnel_provision()
     """
-    do_one_migration("test_cold_reuse",
-                     sandbox_session, connectivity=model.CloudConnectivity.NOT_SET,
-                     reuse_compute=True, reuse_db=True)
+    do_one_migration(
+        "test_cold_reuse",
+        sandbox_session,
+        connectivity=model.CloudConnectivity.NOT_SET,
+        reuse_compute=True,
+        reuse_db=True,
+    )
+
 
 #
 
 
 def test_hot_tunnel_fresh(sandbox_repl_session, reset_project):
-    do_one_migration("test_hot_tunnel_fresh",
-                     sandbox_repl_session, connectivity=model.CloudConnectivity.SSH_TUNNEL,
-                     reuse_compute=False, reuse_db=False,
-                     reset_project=reset_project)
+    do_one_migration(
+        "test_hot_tunnel_fresh",
+        sandbox_repl_session,
+        connectivity=model.CloudConnectivity.SSH_TUNNEL,
+        reuse_compute=False,
+        reuse_db=False,
+        reset_project=reset_project,
+    )
 
 
 def test_hot_tunnel_reuse(sandbox_repl_session):
-    do_one_migration("test_hot_tunnel_reuse",
-                     sandbox_repl_session, connectivity=model.CloudConnectivity.SSH_TUNNEL,
-                     reuse_compute=True, reuse_db=True)
+    do_one_migration(
+        "test_hot_tunnel_reuse",
+        sandbox_repl_session,
+        connectivity=model.CloudConnectivity.SSH_TUNNEL,
+        reuse_compute=True,
+        reuse_db=True,
+    )
+
 
 #
 
@@ -391,17 +459,27 @@ def test_hot_direct_fresh(site_to_site_vcn, sandbox_repl_session, reset_project)
     """
     Direct connectivity migration test, via site-to-site vpn.
     """
-    do_one_migration("test_hot_direct_fresh",
-                     sandbox_repl_session, connectivity=model.CloudConnectivity.SITE_TO_SITE,
-                     reuse_compute=False, reuse_db=False,
-                     vcn_id=site_to_site_vcn, reset_project=reset_project)
+    do_one_migration(
+        "test_hot_direct_fresh",
+        sandbox_repl_session,
+        connectivity=model.CloudConnectivity.SITE_TO_SITE,
+        reuse_compute=False,
+        reuse_db=False,
+        vcn_id=site_to_site_vcn,
+        reset_project=reset_project,
+    )
 
 
 def test_hot_direct_reuse(site_to_site_vcn, sandbox_repl_session):
-    do_one_migration("test_hot_direct_reuse",
-                     sandbox_repl_session, connectivity=model.CloudConnectivity.SITE_TO_SITE,
-                     reuse_compute=True, reuse_db=True,
-                     vcn_id=site_to_site_vcn)
+    do_one_migration(
+        "test_hot_direct_reuse",
+        sandbox_repl_session,
+        connectivity=model.CloudConnectivity.SITE_TO_SITE,
+        reuse_compute=True,
+        reuse_db=True,
+        vcn_id=site_to_site_vcn,
+    )
+
 
 #
 
@@ -414,11 +492,15 @@ def test_hot_direct_oci_fresh(site_to_site_vcn, reset_project):
     assert uri
     session = mysqlsh.globals.shell.open_session(uri)
 
-    do_one_migration("test_hot_direct_oci_fresh",
-                     session, connectivity=model.CloudConnectivity.SITE_TO_SITE,
-                     reuse_compute=False, reuse_db=False,
-                     reset_project=reset_project,
-                     vcn_id=site_to_site_vcn)
+    do_one_migration(
+        "test_hot_direct_oci_fresh",
+        session,
+        connectivity=model.CloudConnectivity.SITE_TO_SITE,
+        reuse_compute=False,
+        reuse_db=False,
+        reset_project=reset_project,
+        vcn_id=site_to_site_vcn,
+    )
 
 
 def test_hot_direct_oci_reuse(site_to_site_vcn):
@@ -426,7 +508,11 @@ def test_hot_direct_oci_reuse(site_to_site_vcn):
     assert uri
     session = mysqlsh.globals.shell.open_session(uri)
 
-    do_one_migration("test_hot_direct_oci_reuse",
-                     session, connectivity=model.CloudConnectivity.SITE_TO_SITE,
-                     reuse_compute=True, reuse_db=True,
-                     vcn_id=site_to_site_vcn)
+    do_one_migration(
+        "test_hot_direct_oci_reuse",
+        session,
+        connectivity=model.CloudConnectivity.SITE_TO_SITE,
+        reuse_compute=True,
+        reuse_db=True,
+        vcn_id=site_to_site_vcn,
+    )

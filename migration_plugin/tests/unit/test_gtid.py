@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,8 +22,12 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 from migration_plugin.lib.gtid import (
-    parse_gtid_set, serialize_gtid_set, interval_subtract,
-    gtid_subtract, gtid_count, gtid_contains
+    parse_gtid_set,
+    serialize_gtid_set,
+    interval_subtract,
+    gtid_subtract,
+    gtid_count,
+    gtid_contains,
 )
 
 
@@ -42,20 +46,26 @@ class TestParseGtidSet:
         assert result == expected
 
         result = parse_gtid_set("12345678-1234-1234-1234-123456789abc:1-5:10-15:20")
-        expected = {"12345678-1234-1234-1234-123456789abc": [(1, 5), (10, 15), (20, 20)]}
-        assert result == expected
-
-        result = parse_gtid_set("12345678-1234-1234-1234-123456789abc:1-5,87654321-4321-4321-4321-cba987654321:10-15")
         expected = {
-            "12345678-1234-1234-1234-123456789abc": [(1, 5)],
-            "87654321-4321-4321-4321-cba987654321": [(10, 15)]
+            "12345678-1234-1234-1234-123456789abc": [(1, 5), (10, 15), (20, 20)]
         }
         assert result == expected
 
-        result = parse_gtid_set(" 12345678-1234-1234-1234-123456789abc:1-5 , 87654321-4321-4321-4321-cba987654321:10-15 ")
+        result = parse_gtid_set(
+            "12345678-1234-1234-1234-123456789abc:1-5,87654321-4321-4321-4321-cba987654321:10-15"
+        )
         expected = {
             "12345678-1234-1234-1234-123456789abc": [(1, 5)],
-            "87654321-4321-4321-4321-cba987654321": [(10, 15)]
+            "87654321-4321-4321-4321-cba987654321": [(10, 15)],
+        }
+        assert result == expected
+
+        result = parse_gtid_set(
+            " 12345678-1234-1234-1234-123456789abc:1-5 , 87654321-4321-4321-4321-cba987654321:10-15 "
+        )
+        expected = {
+            "12345678-1234-1234-1234-123456789abc": [(1, 5)],
+            "87654321-4321-4321-4321-cba987654321": [(10, 15)],
         }
         assert result == expected
 
@@ -81,17 +91,21 @@ class TestSerializeGtidSet:
         result = serialize_gtid_set(gtid_dict)
         assert result == "12345678-1234-1234-1234-123456789abc:1-5"
 
-        gtid_dict = {"12345678-1234-1234-1234-123456789abc": [(1, 5), (10, 15), (20, 20)]}
+        gtid_dict = {
+            "12345678-1234-1234-1234-123456789abc": [(1, 5), (10, 15), (20, 20)]
+        }
         result = serialize_gtid_set(gtid_dict)
         assert result == "12345678-1234-1234-1234-123456789abc:1-5:10-15:20"
 
         gtid_dict = {
             "12345678-1234-1234-1234-123456789abc": [(1, 5)],
-            "87654321-4321-4321-4321-cba987654321": [(10, 15)]
+            "87654321-4321-4321-4321-cba987654321": [(10, 15)],
         }
         result = serialize_gtid_set(gtid_dict)
-        assert ("12345678-1234-1234-1234-123456789abc:1-5" in result and
-                "87654321-4321-4321-4321-cba987654321:10-15" in result)
+        assert (
+            "12345678-1234-1234-1234-123456789abc:1-5" in result
+            and "87654321-4321-4321-4321-cba987654321:10-15" in result
+        )
 
         original = "12345678-1234-1234-1234-123456789abc:1-5:10-15,87654321-4321-4321-4321-cba987654321:20-25"
         parsed = parse_gtid_set(original)
@@ -201,9 +215,16 @@ class TestGtidCount:
 
         assert gtid_count("12345678-1234-1234-1234-123456789abc:1-5") == 5
 
-        assert gtid_count("12345678-1234-1234-1234-123456789abc:1-5:10-15:20") == 12  # 5 + 6 + 1
+        assert (
+            gtid_count("12345678-1234-1234-1234-123456789abc:1-5:10-15:20") == 12
+        )  # 5 + 6 + 1
 
-        assert gtid_count("12345678-1234-1234-1234-123456789abc:1-5,87654321-4321-4321-4321-cba987654321:10-15") == 11  # 5 + 6
+        assert (
+            gtid_count(
+                "12345678-1234-1234-1234-123456789abc:1-5,87654321-4321-4321-4321-cba987654321:10-15"
+            )
+            == 11
+        )  # 5 + 6
 
         assert gtid_count("12345678-1234-1234-1234-123456789abc:1-1000") == 1000
 
@@ -216,23 +237,42 @@ class TestGtidContains:
         gtid_set = "12345678-1234-1234-1234-123456789abc:1-5"
 
         assert gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:3") is True
-        assert gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:1") is True  # at start
-        assert gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:5") is True  # at end
+        assert (
+            gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:1") is True
+        )  # at start
+        assert (
+            gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:5") is True
+        )  # at end
 
-        assert gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:10") is False
+        assert (
+            gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:10") is False
+        )
 
-        assert gtid_contains(gtid_set, "87654321-4321-4321-4321-cba987654321:3") is False
+        assert (
+            gtid_contains(gtid_set, "87654321-4321-4321-4321-cba987654321:3") is False
+        )
 
-        assert gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:tag1:tag2:3") is True
+        assert (
+            gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:tag1:tag2:3")
+            is True
+        )
 
         assert gtid_contains(gtid_set, "invalid-format") is False
-        assert gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:abc") is False
+        assert (
+            gtid_contains(gtid_set, "12345678-1234-1234-1234-123456789abc:abc") is False
+        )
 
         assert gtid_contains("", "12345678-1234-1234-1234-123456789abc:1") is False
 
         gtid_set_multi = "12345678-1234-1234-1234-123456789abc:1-5:10-15:20-25"
-        assert gtid_contains(gtid_set_multi, "12345678-1234-1234-1234-123456789abc:12") is True
-        assert gtid_contains(gtid_set_multi, "12345678-1234-1234-1234-123456789abc:8") is False
+        assert (
+            gtid_contains(gtid_set_multi, "12345678-1234-1234-1234-123456789abc:12")
+            is True
+        )
+        assert (
+            gtid_contains(gtid_set_multi, "12345678-1234-1234-1234-123456789abc:8")
+            is False
+        )
 
 
 class TestEdgeCases:
@@ -246,7 +286,9 @@ class TestEdgeCases:
         expected = {"12345678-1234-1234-1234-123456789abc": [(0, 0)]}
         assert result == expected
 
-        result = parse_gtid_set("12345678-1234-1234-1234-123456789abc:1-5,12345678-1234-1234-1234-123456789abc:10-15")
+        result = parse_gtid_set(
+            "12345678-1234-1234-1234-123456789abc:1-5,12345678-1234-1234-1234-123456789abc:10-15"
+        )
         expected = {"12345678-1234-1234-1234-123456789abc": [(1, 5), (10, 15)]}
         assert result == expected
 

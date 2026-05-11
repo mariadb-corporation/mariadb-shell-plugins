@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -428,16 +428,14 @@ def test_user_sql(phone_book):
     assert user["mapped_user_id"] == "vendorboss123"
     assert json.dumps(user["app_options"]) == '{"myoption": 12345}'
 
-    session.run_sql(
-        """ALTER REST USER "boss"@"MRS Auth App" OPTIONS {
+    session.run_sql("""ALTER REST USER "boss"@"MRS Auth App" OPTIONS {
                     "custom2": "Custom Value2",
                     "email": "boss@example2.com",
                     "vendor_user_id": "vendor2",
                     "mapped_user_id": "vendor123"
                     } APP OPTIONS {
                     "anything": [32]
-                    };"""
-    )
+                    };""")
     user = lib.users.get_user(
         session=session,
         user_name="boss",
@@ -453,8 +451,7 @@ def test_user_sql(phone_book):
 
     res = session.run_sql('show create rest user "boss"@"MRS Auth App";')
     ddl = res.fetch_one()[0]
-    assert (
-        """CREATE OR REPLACE REST USER `boss`@`MRS Auth App`
+    assert """CREATE OR REPLACE REST USER `boss`@`MRS Auth App`
     ACCOUNT LOCK
     IDENTIFIED BY '[Stored Password]'
     OPTIONS {
@@ -467,9 +464,7 @@ def test_user_sql(phone_book):
         "anything": [
             32
         ]
-    };"""
-        == ddl
-    )
+    };""" == ddl
 
     session.run_sql('ALTER REST USER "boss"@"MRS Auth App" ACCOUNT UNLOCK;')
     user = lib.users.get_user(

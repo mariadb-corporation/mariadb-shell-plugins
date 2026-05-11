@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -31,18 +31,26 @@ from .interactive import resolve_content_file, resolve_overwrite_file, resolve_f
 
 
 def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_binary(["service_id", "content_set_id", "content_file_id"], kwargs)
+    lib.core.convert_ids_to_binary(
+        ["service_id", "content_set_id", "content_file_id"], kwargs
+    )
     service_id = kwargs.get("service_id")
     content_set_id = kwargs.get("content_set_id")
     content_file_id = kwargs.get("content_file_id")
 
-    with lib.core.MrsDbSession(exception_handler=lib.core.print_exception, **kwargs) as session:
-        content_file = resolve_content_file(session, content_file_id, content_set_id, service_id)
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, **kwargs
+    ) as session:
+        content_file = resolve_content_file(
+            session, content_file_id, content_set_id, service_id
+        )
 
-        return lib.content_files.get_content_file_create_statement(session, content_file)
+        return lib.content_files.get_content_file_create_statement(
+            session, content_file
+        )
 
 
-@plugin_function('mrs.list.contentFiles', shell=True, cli=True, web=True)
+@plugin_function("mrs.list.contentFiles", shell=True, cli=True, web=True)
 def get_content_files(content_set_id, **kwargs):
     """Returns all files for the given content set
 
@@ -63,18 +71,25 @@ def get_content_files(content_set_id, **kwargs):
 
     include_enable_state = kwargs.get("include_enable_state")
 
-    with lib.core.MrsDbSession(exception_handler=lib.core.print_exception, **kwargs) as session:
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, **kwargs
+    ) as session:
         if content_set_id:
-            content_files = lib.content_files.get_content_files(session=session,
-                content_set_id=content_set_id, include_enable_state=include_enable_state)
+            content_files = lib.content_files.get_content_files(
+                session=session,
+                content_set_id=content_set_id,
+                include_enable_state=include_enable_state,
+            )
 
         if lib.core.get_interactive_result():
-            return lib.content_files.format_content_file_listing(content_files, print_header=True)
+            return lib.content_files.format_content_file_listing(
+                content_files, print_header=True
+            )
         else:
             return content_files
 
 
-@plugin_function('mrs.get.contentFileCreateStatement', shell=True, cli=True, web=True)
+@plugin_function("mrs.get.contentFileCreateStatement", shell=True, cli=True, web=True)
 def get_create_statement(**kwargs):
     """Returns the corresponding CREATE REST CONTENT FILE SQL statement of the given MRS service object.
 
@@ -93,7 +108,7 @@ def get_create_statement(**kwargs):
     return generate_create_statement(**kwargs)
 
 
-@plugin_function('mrs.dump.contentFileCreateStatement', shell=True, cli=True, web=True)
+@plugin_function("mrs.dump.contentFileCreateStatement", shell=True, cli=True, web=True)
 def store_create_statement(**kwargs):
     """Stores the corresponding CREATE REST CONTENT SET SQL statement of the given MRS service
     into a file.

@@ -21,7 +21,16 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from migration_plugin.lib.backend.model import CheckStatus, CompatibilityFlags, DBSystemOptions, IncludeList, MessageLevel, MigrationCheckResults, MigrationOptions, CompatibilityFlags
+from migration_plugin.lib.backend.model import (
+    CheckStatus,
+    CompatibilityFlags,
+    DBSystemOptions,
+    IncludeList,
+    MessageLevel,
+    MigrationCheckResults,
+    MigrationOptions,
+    CompatibilityFlags,
+)
 from migration_plugin.lib.backend.source_check import MySQLSourceCheck
 import mysqlsh  # type: ignore
 import pathlib
@@ -32,13 +41,16 @@ from .test_check_compatibility import validate_checks
 
 
 def load_upgrade_issues(session):
-    execute_script(session, pathlib.Path(__file__).parent.parent /
-                   "sql" / "upgrade_issues.sql")
+    execute_script(
+        session, pathlib.Path(__file__).parent.parent / "sql" / "upgrade_issues.sql"
+    )
 
 
 def cleanup_upgrade_issues(session):
-    execute_script(session, pathlib.Path(__file__).parent.parent /
-                   "sql" / "upgrade_issues_cleanup.sql")
+    execute_script(
+        session,
+        pathlib.Path(__file__).parent.parent / "sql" / "upgrade_issues_cleanup.sql",
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -55,9 +67,7 @@ def setup_test(sandbox_session):
 def setup_migration_options(session) -> MigrationOptions:
     options = MigrationOptions()
 
-    options.sourceConnectionOptions = mysqlsh.globals.shell.parse_uri(
-        session.uri
-    )
+    options.sourceConnectionOptions = mysqlsh.globals.shell.parse_uri(session.uri)
 
     options.filters.schemas = IncludeList()
     options.filters.schemas.include = ["upgrade_issues", "upgrade_issues_ex"]
@@ -82,8 +92,7 @@ def test_check_upgrade(sandbox_session):
     if server_version(sandbox_session) >= (8, 0, 0):
         pytest.skip("This test requires 5.7 server")
 
-    acutal_issues = run_upgrade_checks(
-        setup_migration_options(sandbox_session))
+    acutal_issues = run_upgrade_checks(setup_migration_options(sandbox_session))
 
     expected_issues = MigrationCheckResults()
 
@@ -117,7 +126,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -134,7 +143,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -151,7 +160,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -168,7 +177,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -185,7 +194,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -209,7 +218,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
             CompatibilityFlags.IGNORE,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -228,7 +237,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -245,7 +254,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -262,7 +271,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/rel
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -285,7 +294,7 @@ https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_zero_in_date">d
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     # TODO: schemaInconsistency - requires manipulation of datadir
@@ -306,7 +315,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     # TODO: invalid57Names - requires manipulation of datadir (adding a directory)
@@ -324,7 +333,7 @@ They have to be cleaned up or the upgrade will fail.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -343,7 +352,7 @@ They have to be cleaned up or the upgrade will fail.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     # TODO: indexTooLarge - requires server <= 5.7.34
@@ -360,7 +369,7 @@ They have to be cleaned up or the upgrade will fail.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     # TODO: add syntax validation - not reported due to BUG#38555376
@@ -377,7 +386,7 @@ They have to be cleaned up or the upgrade will fail.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -397,7 +406,7 @@ You may:
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -416,7 +425,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/rel
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -431,7 +440,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/rel
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -450,7 +459,7 @@ You may:
             CompatibilityFlags.IGNORE,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -467,7 +476,7 @@ For more information, please refer to the <a href="https://dev.mysql.com/doc/ref
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     validate_checks(expected_issues, acutal_issues)

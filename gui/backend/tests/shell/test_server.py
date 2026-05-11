@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -39,8 +39,14 @@ def shell_start_server(request):
     yield p
 
     logger.info("sending sigint to the shell subprocess")
-    os.kill(p.pid,
-            signal.CTRL_BREAK_EVENT if hasattr(signal, 'CTRL_BREAK_EVENT') else signal.SIGINT)
+    os.kill(
+        p.pid,
+        (
+            signal.CTRL_BREAK_EVENT
+            if hasattr(signal, "CTRL_BREAK_EVENT")
+            else signal.SIGINT
+        ),
+    )
 
     logger.info(f"Waiting for server to shutdown")
     p.wait()
@@ -51,7 +57,7 @@ def shell_start_server(request):
 def shell_connect(shell_start_server):
     ws, session_id = connect_and_get_session()
 
-    ws.headers['Cookie'] = "SessionId=%s" % session_id
+    ws.headers["Cookie"] = "SessionId=%s" % session_id
 
     def send_json(self, request):
         self.send(request.dumps(request))
@@ -80,7 +86,7 @@ def test_new_session(shell_connect):
     ws2.close()
 
 
-@pytest.fixture(scope='function')
+@pytest.fixture(scope="function")
 def authenticate_user1(shell_start_server, create_users):
     with authenticated_user("user1") as (ws, session_id):
         yield (ws, session_id)

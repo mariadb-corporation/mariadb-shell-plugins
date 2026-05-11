@@ -100,25 +100,28 @@ class MigrationMessage(object):
 
         def parse_simple_type(value, expected_types: list[type]):
             if value is None:
-                assert any([isinstance(value, t) for t in expected_types]
-                           ), f"{field} types={expected_types} value={value}"
+                assert any(
+                    [isinstance(value, t) for t in expected_types]
+                ), f"{field} types={expected_types} value={value}"
                 return None
 
             if isinstance(value, dict) and "_class" in value:
                 if value["_class"] not in [t.__name__ for t in expected_types]:
                     raise Exception(
-                        f"Message contains invalid value for '{field}' _class={value["_class"]} but expected={expected_types})")
+                        f"Message contains invalid value for '{field}' _class={value["_class"]} but expected={expected_types})"
+                    )
 
                 o = parse(value, expected_types)
-                assert any([isinstance(o, t) for t in expected_types]
-                           ), f"{field} type={type(o)} types={expected_types}"
+                assert any(
+                    [isinstance(o, t) for t in expected_types]
+                ), f"{field} type={type(o)} types={expected_types}"
                 return o
             else:
                 # if _class is not in the object being parsed, then polymorphism is not allowed
-                not_none_types = [
-                    t for t in expected_types if t is not type(None)]
-                assert len(
-                    not_none_types) <= 1, f"{field} too many expected types={not_none_types}"
+                not_none_types = [t for t in expected_types if t is not type(None)]
+                assert (
+                    len(not_none_types) <= 1
+                ), f"{field} too many expected types={not_none_types}"
                 if not_none_types:
                     expected_type = not_none_types[0]
                     if inspect.isclass(expected_type) and issubclass(
@@ -147,8 +150,9 @@ class MigrationMessage(object):
                 parsed.append(parse_simple_type(v, expected_types))
         elif container_type is dict:
             # typed dict is here, untyped dict is handled as regular type
-            assert isinstance(expected_types, tuple) and len(
-                expected_types) == 2, expected_types
+            assert (
+                isinstance(expected_types, tuple) and len(expected_types) == 2
+            ), expected_types
             key_type = expected_types[0]
             value_type = expected_types[1]
             parsed = {}
@@ -157,8 +161,7 @@ class MigrationMessage(object):
 
                 origin = get_origin(value_type)
                 if origin in (Union, UnionType):
-                    parsed_value = parse_simple_type(
-                        v, list(get_args(value_type)))
+                    parsed_value = parse_simple_type(v, list(get_args(value_type)))
                 else:
                     parsed_value = parse_simple_type(v, [value_type])
 
@@ -304,6 +307,7 @@ class OCIHostingOptions(TargetHostingOptions):
 
     bucketName: str = "migrated-data"
 
+
 # For created/resolved resources
 
 
@@ -406,13 +410,13 @@ class MigrationFilters(MigrationMessage):
     # Note: All object names must be quoted and fully qualified
     # additionally, only exclude lists are supported atm
     users: IncludeList = field(default_factory=IncludeList)
-    schemas: IncludeList= field(default_factory=IncludeList)
-    tables: IncludeList= field(default_factory=IncludeList)
-    views: IncludeList= field(default_factory=IncludeList)
-    routines: IncludeList= field(default_factory=IncludeList)
-    events: IncludeList= field(default_factory=IncludeList)
-    libraries: IncludeList= field(default_factory=IncludeList)
-    triggers: IncludeList= field(default_factory=IncludeList)
+    schemas: IncludeList = field(default_factory=IncludeList)
+    tables: IncludeList = field(default_factory=IncludeList)
+    views: IncludeList = field(default_factory=IncludeList)
+    routines: IncludeList = field(default_factory=IncludeList)
+    events: IncludeList = field(default_factory=IncludeList)
+    libraries: IncludeList = field(default_factory=IncludeList)
+    triggers: IncludeList = field(default_factory=IncludeList)
 
 
 @dataclass
@@ -425,6 +429,7 @@ class SchemaSelectionOptions(MigrationMessage):
     migrateEvents: bool = True
     migrateLibraries: bool = True
     migrateUsers: bool = True
+
 
 @dataclass
 class MigrationOptions(MigrationMessage):
@@ -440,7 +445,9 @@ class MigrationOptions(MigrationMessage):
 
     # DB migration options
     compatibilityFlags: list[CompatibilityFlags] = field(default_factory=list)
-    schemaSelection: SchemaSelectionOptions = field(default_factory=SchemaSelectionOptions)
+    schemaSelection: SchemaSelectionOptions = field(
+        default_factory=SchemaSelectionOptions
+    )
 
 
 class CheckStatus(IntEnum):
@@ -540,10 +547,7 @@ class ValidationResults(MigrationMessage):
     issues: list[ValidationIssue] = field(default_factory=list)
 
     def _add(self, level: MessageLevel, option: str, message: str):
-        issue = ValidationIssue(
-            level=level,
-            option=option,
-            message=message)
+        issue = ValidationIssue(level=level, option=option, message=message)
         self.issues.append(issue)
 
 
@@ -740,10 +744,7 @@ class WorkStatusInfo(MigrationMessage):
         self.stages = []
         for ws in SubStepId:
             if ws >= 2000:
-                info = WorkStageInfo(
-                    stage=ws,
-                    caption=ws.name,
-                    errors=[])
+                info = WorkStageInfo(stage=ws, caption=ws.name, errors=[])
                 self.stages.append(info)
 
     def _stage(self, stage: SubStepId) -> WorkStageInfo:

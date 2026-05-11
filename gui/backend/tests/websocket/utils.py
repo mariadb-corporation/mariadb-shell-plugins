@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -39,8 +39,7 @@ def get_user_stories(single_user_mode: bool, authenticated_mode: bool):
     """
     # Gets the user stories from the Debugger and filters accordingly
     all_scripts = Debugger.list_scripts()
-    exclude_prefixes = ["skip", "_",
-                        "windows" if os.name == "posix" else "posix"]
+    exclude_prefixes = ["skip", "_", "windows" if os.name == "posix" else "posix"]
 
     script_list = []
 
@@ -69,27 +68,32 @@ def get_user_stories(single_user_mode: bool, authenticated_mode: bool):
     return script_list
 
 
-def get_unit_tests(single_user_mode: bool, authenticated_mode: bool, only_sql_editor: bool):
+def get_unit_tests(
+    single_user_mode: bool, authenticated_mode: bool, only_sql_editor: bool
+):
     this_file = Path(__file__)
     all_scripts = []
     test_list = []
-    root = Path(os.path.join(this_file.parent,
-                "single_user" if single_user_mode else "multi_user",
-                             "as_admin" if authenticated_mode else "not_authenticated"))
+    root = Path(
+        os.path.join(
+            this_file.parent,
+            "single_user" if single_user_mode else "multi_user",
+            "as_admin" if authenticated_mode else "not_authenticated",
+        )
+    )
 
     if root.exists:
         for path in root.rglob("*"):
-            if not path.as_posix().endswith('.py'):
+            if not path.as_posix().endswith(".py"):
                 continue
 
-            if only_sql_editor ^ path.parents[0].as_posix().endswith('sql_editor'):
+            if only_sql_editor ^ path.parents[0].as_posix().endswith("sql_editor"):
                 continue
 
             if path.is_file():
                 all_scripts.append(path.as_posix())
 
-        exclude_prefixes = ["skip", "_",
-                            "windows" if os.name == "posix" else "posix"]
+        exclude_prefixes = ["skip", "_", "windows" if os.name == "posix" else "posix"]
         for test in all_scripts:
             exclude = False
             for prefix in exclude_prefixes:
@@ -105,34 +109,40 @@ def get_unit_tests(single_user_mode: bool, authenticated_mode: bool, only_sql_ed
 def unit_test_reader(path):
     target = Path(path)
     if target.is_file():
-        return target.read_text(encoding='utf-8')
+        return target.read_text(encoding="utf-8")
     else:
-        raise Exception(
-            f"The requested test does not exist: {path} in {target}")
+        raise Exception(f"The requested test does not exist: {path} in {target}")
 
 
 def print_user_story_stack_trace(ws, exc):
     import sys
     import traceback
+
     _, _, exc_traceback = sys.exc_info()
     stack = traceback.format_exception(Exception, exc, exc_traceback)
     logger.debug(
-        "----------------------------------------------------------------------------------------------")
+        "----------------------------------------------------------------------------------------------"
+    )
     logger.debug("User story stack trace")
     logger.debug(
-        "----------------------------------------------------------------------------------------------")
+        "----------------------------------------------------------------------------------------------"
+    )
     logger.debug("Exception")
     logger.debug(str(exc))
     logger.debug(
-        "----------------------------------------------------------------------------------------------")
+        "----------------------------------------------------------------------------------------------"
+    )
     logger.debug("Stack trace")
     logger.debug(
-        "----------------------------------------------------------------------------------------------")
+        "----------------------------------------------------------------------------------------------"
+    )
     for line in stack:
         if line.find('  File "<string>"') > -1:
             important_parts = line.replace(
-                '  File "<string>"', f'File: "{ws._story_stack[0]}"').split(", ")
+                '  File "<string>"', f'File: "{ws._story_stack[0]}"'
+            ).split(", ")
             logger.debug(f"{important_parts[0]}: {important_parts[1]}")
             ws._story_stack = ws._story_stack[1:]
     logger.debug(
-        "----------------------------------------------------------------------------------------------")
+        "----------------------------------------------------------------------------------------------"
+    )

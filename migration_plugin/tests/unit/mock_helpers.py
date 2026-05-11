@@ -42,7 +42,7 @@ class TestOrchestrator(OrchestratorInterface):
                 "user": "root",
                 "host": "localhost",
                 "port": 3306,
-                "password": "rootpassword"
+                "password": "rootpassword",
             }
 
         if not self._project._source_info:
@@ -59,11 +59,12 @@ class TestOrchestrator(OrchestratorInterface):
     @property
     def oci_config(self) -> dict:
         return {
-            'user': 'ocid1.user.oc1..dummydummydummydummydummydummydummydummydummydummydummydummy',
-            'region': 'dummy',
-            'key_file': 'dummy',
-            'fingerprint': 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa',
-            'tenancy': 'ocid1.tenancy.oc1..dummydummydummydummydummydummydummydummydummydummydummydummy'}
+            "user": "ocid1.user.oc1..dummydummydummydummydummydummydummydummydummydummydummydummy",
+            "region": "dummy",
+            "key_file": "dummy",
+            "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
+            "tenancy": "ocid1.tenancy.oc1..dummydummydummydummydummydummydummydummydummydummydummydummy",
+        }
 
     @property
     def cloud_resources(self) -> model.CloudResources:
@@ -112,5 +113,4 @@ def mock_get_db_system(mocker):
     mock_db_system.display_name = "test_db_system"
     mock_db_system.lifecycle_state = "ACTIVE"
 
-    mocker.patch("oci.mysql.DbSystemClient.get_db_system",
-                 return_value=mock_db_system)
+    mocker.patch("oci.mysql.DbSystemClient.get_db_system", return_value=mock_db_system)

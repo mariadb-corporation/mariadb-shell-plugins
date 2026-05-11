@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,13 @@
 
 from mysqlsh.plugin_manager import plugin_function
 import mrs_plugin.lib as lib
-from .interactive import service_query_selection, resolve_file_path, resolve_overwrite_file, role_query_selection, resolve_role
+from .interactive import (
+    service_query_selection,
+    resolve_file_path,
+    resolve_overwrite_file,
+    role_query_selection,
+    resolve_role,
+)
 
 
 def generate_create_statement(**kwargs) -> str:
@@ -32,7 +38,9 @@ def generate_create_statement(**kwargs) -> str:
 
     role_query = role_query_selection(**kwargs)
 
-    with lib.core.MrsDbSession(exception_handler=lib.core.print_exception, **kwargs) as session:
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, **kwargs
+    ) as session:
         role = resolve_role(session, role_query=role_query)
 
         if role is None:
@@ -199,7 +207,7 @@ def delete_role_privilege(role_id=None, session=None, operations=None, **kwargs)
             return lib.roles.get_role(session, role_id)
 
 
-@plugin_function('mrs.get.roleCreateStatement', shell=True, cli=True, web=True)
+@plugin_function("mrs.get.roleCreateStatement", shell=True, cli=True, web=True)
 def get_create_statement(**kwargs):
     """Returns the corresponding CREATE REST ROLE SQL statement of the given MRS service object.
 
@@ -223,7 +231,7 @@ def get_create_statement(**kwargs):
     return generate_create_statement(**kwargs)
 
 
-@plugin_function('mrs.dump.roleCreateStatement', shell=True, cli=True, web=True)
+@plugin_function("mrs.dump.roleCreateStatement", shell=True, cli=True, web=True)
 def store_create_statement(**kwargs):
     """Stores the corresponding CREATE REST role SQL statement of the given MRS role
     object into a file.

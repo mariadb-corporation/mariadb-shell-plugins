@@ -37,7 +37,7 @@ from migration_plugin.lib import core, errors
 class TestProjectCreation:
 
     def test_project_create(self, temp_dir):
-        with patch('migration_plugin.lib.core.default_projects_directory') as mock_dir:
+        with patch("migration_plugin.lib.core.default_projects_directory") as mock_dir:
             mock_dir.return_value = temp_dir
 
             project = Project.create("test-project")
@@ -48,7 +48,7 @@ class TestProjectCreation:
             assert (project.path / "data.json").exists()
 
     def test_project_open(self, temp_dir):
-        with patch('migration_plugin.lib.core.default_projects_directory') as mock_dir:
+        with patch("migration_plugin.lib.core.default_projects_directory") as mock_dir:
             mock_dir.return_value = temp_dir
 
             project = Project.create("test-project")
@@ -101,8 +101,8 @@ class TestProjectProperties:
         project = Project(id="test-project", path=project_path)
 
         assert project.options is not None
-        assert hasattr(project.options, 'targetHostingOptions')
-        assert hasattr(project.options, 'targetMySQLOptions')
+        assert hasattr(project.options, "targetHostingOptions")
+        assert hasattr(project.options, "targetMySQLOptions")
 
     def test_resources_property(self, temp_dir):
         project_path = pathlib.Path(temp_dir) / "test-project"
@@ -157,7 +157,7 @@ class TestProjectProperties:
 class TestProjectMethods:
 
     def test_save_method(self, temp_dir):
-        with patch('migration_plugin.lib.core.default_projects_directory') as mock_dir:
+        with patch("migration_plugin.lib.core.default_projects_directory") as mock_dir:
             mock_dir.return_value = temp_dir
 
             project = Project.create("test-project")
@@ -165,7 +165,7 @@ class TestProjectMethods:
             data_file = project.path / "data.json"
             assert data_file.exists()
 
-            with open(data_file, 'r', encoding='utf-8') as f:
+            with open(data_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             assert data["id"] == project.id
@@ -187,6 +187,7 @@ class TestProjectMethods:
         project = Project(id="test-project", path=project_path)
 
         from migration_plugin.lib.backend.model import SubStepId, WorkStatusEvent
+
         mock_stage = SubStepId.ORCHESTRATION
         mock_event = WorkStatusEvent.BEGIN
 
@@ -196,7 +197,7 @@ class TestProjectMethods:
         progress_file = project.path / "progress.json"
         assert progress_file.exists()
 
-        with open(progress_file, 'r', encoding='utf-8') as f:
+        with open(progress_file, "r", encoding="utf-8") as f:
             content = f.read()
             assert "in_progress" in content
 
@@ -297,66 +298,76 @@ class TestOCIConfiguration:
         def mock_get_config(path, profile):
             return {"region": "us-ashburn-1", "profile": "DEFAULT"}
 
-        with patch('migration_plugin.lib.oci_utils.get_config', side_effect=mock_get_config):
+        with patch(
+            "migration_plugin.lib.oci_utils.get_config", side_effect=mock_get_config
+        ):
             project.oci_config_file = str(config_file)
             result = project.open_oci_profile()
 
             assert result is True
             assert project.oci_config == {
-                "region": "us-ashburn-1", "profile": "DEFAULT"}
+                "region": "us-ashburn-1",
+                "profile": "DEFAULT",
+            }
             assert project.region == "us-ashburn-1"
 
 
 class TestSSHKeyManagement:
 
     def test_create_ssh_key_pair(self, temp_dir):
-        with patch('migration_plugin.lib.core.default_projects_directory') as mock_dir:
+        with patch("migration_plugin.lib.core.default_projects_directory") as mock_dir:
             mock_dir.return_value = temp_dir
 
             project = Project.create("test-project")
 
             def mock_create_ssh_key_pair(private_key_path, public_key_path):
                 pathlib.Path(private_key_path).write_text(
-                    "private key", encoding='utf-8')
-                pathlib.Path(public_key_path).write_text(
-                    "public key", encoding='utf-8')
+                    "private key", encoding="utf-8"
+                )
+                pathlib.Path(public_key_path).write_text("public key", encoding="utf-8")
 
-            with patch('migration_plugin.lib.ssh_utils.create_ssh_key_pair', side_effect=mock_create_ssh_key_pair):
+            with patch(
+                "migration_plugin.lib.ssh_utils.create_ssh_key_pair",
+                side_effect=mock_create_ssh_key_pair,
+            ):
                 project.create_ssh_key_pair()
 
                 assert project._ssh_private_key_path.endswith("ssh_rsa")
                 assert project._ssh_public_key_path.endswith("ssh_rsa.pub")
 
     def test_save_shared_ssh_key_pair(self, temp_dir):
-        with patch('migration_plugin.lib.core.default_projects_directory') as mock_dir:
+        with patch("migration_plugin.lib.core.default_projects_directory") as mock_dir:
             mock_dir.return_value = temp_dir
 
             project = Project.create("test-project")
 
             project._ssh_private_key_path = str(project.path / "ssh_rsa")
-            project._ssh_public_key_path = str(
-                project.path / "ssh_rsa.pub")
+            project._ssh_public_key_path = str(project.path / "ssh_rsa.pub")
             pathlib.Path(project._ssh_private_key_path).write_text(
-                "private key", encoding='utf-8')
+                "private key", encoding="utf-8"
+            )
             pathlib.Path(project._ssh_public_key_path).write_text(
-                "public key", encoding='utf-8')
+                "public key", encoding="utf-8"
+            )
 
             shared_dir = temp_dir + "/shared"
             os.makedirs(shared_dir, exist_ok=True)
 
-            with patch('migration_plugin.lib.core.default_shared_ssh_key_directory') as mock_shared_dir:
+            with patch(
+                "migration_plugin.lib.core.default_shared_ssh_key_directory"
+            ) as mock_shared_dir:
                 mock_shared_dir.return_value = shared_dir
 
                 def mock_rename(src, dst):
                     shutil.move(src, dst)
 
-                with patch('os.rename', side_effect=mock_rename):
-                    with patch('shutil.move') as mock_move:
+                with patch("os.rename", side_effect=mock_rename):
+                    with patch("shutil.move") as mock_move:
                         project.save_shared_ssh_key_pair(
-                            "ocid1.instance.oc1.ashburn.12345")
+                            "ocid1.instance.oc1.ashburn.12345"
+                        )
 
-                        assert project._ssh_private_key_path_shared.endswith(
-                            "12345")
+                        assert project._ssh_private_key_path_shared.endswith("12345")
 
     def test_save_shared_ssh_key_pair_already_shared(self, temp_dir):
         project_path = pathlib.Path(temp_dir) / "test-project"
@@ -365,8 +376,7 @@ class TestSSHKeyManagement:
 
         project._ssh_private_key_path_shared = "/shared/key"
 
-        project.save_shared_ssh_key_pair(
-            "ocid1.instance.oc1.ashburn.12345")
+        project.save_shared_ssh_key_pair("ocid1.instance.oc1.ashburn.12345")
         assert project._ssh_private_key_path_shared == "/shared/key"
 
     def test_find_shared_ssh_key_exists(self, temp_dir):
@@ -377,13 +387,11 @@ class TestSSHKeyManagement:
         shared_dir = temp_dir + "/shared"
         os.makedirs(shared_dir, exist_ok=True)
         shared_key_path = shared_dir + "/12345"
-        pathlib.Path(shared_key_path).write_text(
-            "private key", encoding='utf-8')
+        pathlib.Path(shared_key_path).write_text("private key", encoding="utf-8")
 
         project._shared_ssh_key_directory = shared_dir
 
-        result = project.find_shared_ssh_key(
-            "ocid1.instance.oc1.ashburn.12345")
+        result = project.find_shared_ssh_key("ocid1.instance.oc1.ashburn.12345")
 
         assert result
         assert project._ssh_private_key_path_shared == shared_key_path
@@ -396,11 +404,12 @@ class TestSSHKeyManagement:
         shared_dir = temp_dir + "/shared"
         os.makedirs(shared_dir, exist_ok=True)
 
-        with patch('migration_plugin.lib.core.default_shared_ssh_key_directory') as mock_shared_dir:
+        with patch(
+            "migration_plugin.lib.core.default_shared_ssh_key_directory"
+        ) as mock_shared_dir:
             mock_shared_dir.return_value = shared_dir
 
-            result = project.find_shared_ssh_key(
-                "ocid1.instance.oc1.ashburn.12345")
+            result = project.find_shared_ssh_key("ocid1.instance.oc1.ashburn.12345")
 
             assert not result
 
@@ -527,7 +536,7 @@ class TestEdgeCases:
             pass
 
     def test_project_with_special_characters_in_name(self, temp_dir):
-        with patch('migration_plugin.lib.core.default_projects_directory') as mock_dir:
+        with patch("migration_plugin.lib.core.default_projects_directory") as mock_dir:
             mock_dir.return_value = temp_dir
 
             project = Project.create("test-project@#$%")
@@ -536,7 +545,7 @@ class TestEdgeCases:
             assert project.name == "test-project@#$%"
 
     def test_project_path_creation_with_existing_directory(self, temp_dir):
-        with patch('migration_plugin.lib.core.default_projects_directory') as mock_dir:
+        with patch("migration_plugin.lib.core.default_projects_directory") as mock_dir:
             mock_dir.return_value = temp_dir
 
             project1 = Project.create("test-project")
@@ -550,11 +559,9 @@ class TestEdgeCases:
 
 
 def test_project_save_open():
-    project = migration.new_project(
-        "myproject", source_url="root@localhost:3306")
+    project = migration.new_project("myproject", source_url="root@localhost:3306")
 
-    trash = migration.new_project(
-        "myproject2", source_url="admin@example.com:3306")
+    trash = migration.new_project("myproject2", source_url="admin@example.com:3306")
 
     project2 = migration.open_project(project["id"])
     assert project["name"] == project2["name"]

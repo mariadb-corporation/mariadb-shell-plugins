@@ -31,7 +31,13 @@ import webbrowser
 import threading
 from typing import TYPE_CHECKING, Optional, Type, TypeAlias, TypeVar, cast
 
-from .lib.backend.mysql_utils import InstanceCache, InstanceContents, SchemaObjects, SchemaTables, fetch_instance_contents
+from .lib.backend.mysql_utils import (
+    InstanceCache,
+    InstanceContents,
+    SchemaObjects,
+    SchemaTables,
+    fetch_instance_contents,
+)
 from .lib import errors, logging
 from .lib.logging import plugin_log
 from .lib.backend import model
@@ -87,18 +93,17 @@ def apply_object_changes(base, changes: dict, prefix: str = "") -> list:
         if isinstance(current_value, dict):
             if current_value != value:
                 setattr(base, key, value)
-                changed_keys.append(prefix+key)
+                changed_keys.append(prefix + key)
         elif isinstance(current_value, list):
             if len(current_value) != len(value):
                 setattr(base, key, value)
-                changed_keys.append(prefix+key)
-        elif hasattr(current_value, '__dict__'):  # Object
-            changed_keys += apply_object_changes(current_value, value,
-                                                 prefix=key+".")
+                changed_keys.append(prefix + key)
+        elif hasattr(current_value, "__dict__"):  # Object
+            changed_keys += apply_object_changes(current_value, value, prefix=key + ".")
         else:
             if current_value != value:
                 setattr(base, key, value)
-                changed_keys.append(prefix+key)
+                changed_keys.append(prefix + key)
 
     return changed_keys
 
@@ -154,8 +159,7 @@ class MigrationChecksData(MigrationMessage):
 
 @dataclass
 class PreviewPlanData(MigrationMessage):
-    options: model.MigrationOptions = field(
-        default_factory=model.MigrationOptions)
+    options: model.MigrationOptions = field(default_factory=model.MigrationOptions)
     computeResolutionNotice: str = ""
     channelInfo: Optional[ReplicationChannelInfo] = None
 
@@ -188,8 +192,7 @@ class MigrationTypeOptions(MigrationMessage):
 
 @dataclass
 class MigrationChecksOptions(MigrationMessage):
-    issueResolution: dict[str, model.CompatibilityFlags] = field(
-        default_factory=dict)
+    issueResolution: dict[str, model.CompatibilityFlags] = field(default_factory=dict)
 
 
 @dataclass
@@ -198,8 +201,22 @@ class TargetOptionsOptions(MigrationMessage):
     database: Optional[model.DBSystemOptions] = None
 
 
-SubStepData: TypeAlias = SourceSelectionData | MigrationTypeData | SchemaSelectionData | MigrationChecksData | TargetOptionsData | PreviewPlanData
-SubStepValues: TypeAlias = OCIProfileOptions | SourceSelectionOptions | MigrationTypeOptions | SchemaSelectionOptions | MigrationChecksOptions | TargetOptionsOptions
+SubStepData: TypeAlias = (
+    SourceSelectionData
+    | MigrationTypeData
+    | SchemaSelectionData
+    | MigrationChecksData
+    | TargetOptionsData
+    | PreviewPlanData
+)
+SubStepValues: TypeAlias = (
+    OCIProfileOptions
+    | SourceSelectionOptions
+    | MigrationTypeOptions
+    | SchemaSelectionOptions
+    | MigrationChecksOptions
+    | TargetOptionsOptions
+)
 
 T = TypeVar("T")
 
@@ -300,8 +317,7 @@ class PlanSubStep:
 
     @property
     def _has_fatal_errors(self) -> bool:
-        return len(
-            [e for e in self._errors if e.level == MessageLevel.ERROR]) > 0
+        return len([e for e in self._errors if e.level == MessageLevel.ERROR]) > 0
 
     def info_values(self) -> Optional[SubStepValues]:
         return None
@@ -329,8 +345,7 @@ class PlanSubStep:
             return parse(config["values"], [options_class])
         except Exception as e:
             logging.exception(f"parse error for {config['values']}")
-            raise errors.BadRequest(
-                f"Invalid value in request: {config['values']}")
+            raise errors.BadRequest(f"Invalid value in request: {config['values']}")
 
 
 class OCIProfileSubStep(PlanSubStep):
@@ -350,16 +365,15 @@ class OCIProfileSubStep(PlanSubStep):
                 self._config_exists = True
                 self._project.check_oci_config()
                 logging.info(
-                    f"OCI config profile {self._project.oci_profile} at {self._project.oci_config_file} works")
+                    f"OCI config profile {self._project.oci_profile} at {self._project.oci_config_file} works"
+                )
                 return True
             except Exception as e:
-                logging.exception(
-                    f"Error checking OCI configuration/profile")
+                logging.exception(f"Error checking OCI configuration/profile")
                 self._errors.append(model.MigrationError._from_exception(e))
         else:
             self._config_exists = False
-            logging.info(
-                f"There's no valid OCI config file at expected locations")
+            logging.info(f"There's no valid OCI config file at expected locations")
 
         return False
 
@@ -384,9 +398,7 @@ class OCIProfileSubStep(PlanSubStep):
 
         if not self._project.oci_config:
             if options.configFile:
-                logging.debug(
-                    f"{self}: config file set to {options.configFile}"
-                )
+                logging.debug(f"{self}: config file set to {options.configFile}")
                 self._project.oci_config_file = options.configFile
                 changed = True
 
@@ -395,10 +407,11 @@ class OCIProfileSubStep(PlanSubStep):
                 self._project.oci_profile = options.profile
                 changed = True
         else:
-            if options.configFile and self._project.oci_config_file != options.configFile:
-                raise errors.BadRequest(
-                    "changing configFile path not yet supported"
-                )
+            if (
+                options.configFile
+                and self._project.oci_config_file != options.configFile
+            ):
+                raise errors.BadRequest("changing configFile path not yet supported")
 
             if options.profile and self._project.oci_profile != options.profile:
                 logging.debug(f"{self}: profile changed to {options.profile}")
@@ -436,6 +449,7 @@ class OCIProfileSubStep(PlanSubStep):
 
 class SourceSelectionSubStep(PlanSubStep):
     "Used internally only by the frontend"
+
     id = SubStepId.SOURCE_SELECTION
     caption = "Source Database"
 
@@ -454,10 +468,12 @@ class SourceSelectionSubStep(PlanSubStep):
         assert self._owner.options.sourceConnectionOptions
         if res.connectError:
             if res.connectErrno == mysql.ErrorCode.ER_ACCESS_DENIED_ERROR:
-                return [MigrationError._from_exception(
-                    errors.BadUserInput(res.connectError, input="password"),
-                    f"Please enter the password for user '{self._owner.options.sourceConnectionOptions['user']}' at the source database.",
-                )]
+                return [
+                    MigrationError._from_exception(
+                        errors.BadUserInput(res.connectError, input="password"),
+                        f"Please enter the password for user '{self._owner.options.sourceConnectionOptions['user']}' at the source database.",
+                    )
+                ]
             else:
                 e = MigrationError()
                 e.level = MessageLevel.ERROR
@@ -468,12 +484,18 @@ class SourceSelectionSubStep(PlanSubStep):
         err, result = self._source_check.check_source()
         self._server_info = result.serverInfo
         self._replication_issue = self._source_check.check_replication(
-            self._server_info)
+            self._server_info
+        )
         # TODO include binlog purge period
-        if self._replication_issue and self._replication_issue.level == MessageLevel.ERROR:
+        if (
+            self._replication_issue
+            and self._replication_issue.level == MessageLevel.ERROR
+        ):
             self._server_info.replicationStatus = f"Replication Not Possible"
         else:
-            self._server_info.replicationStatus = f"Replication Possible (gtid_mode={self._server_info.gtidMode})"
+            self._server_info.replicationStatus = (
+                f"Replication Possible (gtid_mode={self._server_info.gtidMode})"
+            )
         if self._replication_issue:
             self._replication_issue.info = {"input": "type"}
             self._replication_issue.type = "InvalidParameter"
@@ -506,7 +528,8 @@ class SourceSelectionSubStep(PlanSubStep):
         if "user" not in coptions or "host" not in coptions:
             raise errors.BadUserInput(
                 "Invalid URI format for source database: must be <user>@<host>[:<port>]",
-                input="sourceUri",)
+                input="sourceUri",
+            )
 
         # a cold or hot-local-tunnel migration wouldn't need this check
         # if coptions["host"] in ("localhost", "127.0.0.1", "0"):
@@ -556,8 +579,9 @@ class SourceSelectionSubStep(PlanSubStep):
 
     def info_values(self) -> SourceSelectionOptions:
         if self._owner.options.sourceConnectionOptions:
-            return SourceSelectionOptions(sourceUri=format_uri(
-                self._owner.options.sourceConnectionOptions))
+            return SourceSelectionOptions(
+                sourceUri=format_uri(self._owner.options.sourceConnectionOptions)
+            )
         return SourceSelectionOptions()
 
     def info_data(self) -> Optional[SourceSelectionData]:
@@ -570,20 +594,25 @@ class MigrationTypeSubStep(PlanSubStep):
 
     def __init__(self, owner: "MigrationPlanStep"):
         super().__init__(owner)
-        self._source_check = cast(SourceSelectionSubStep,
-                                  owner.steps[SourceSelectionSubStep.id])._source_check
+        self._source_check = cast(
+            SourceSelectionSubStep, owner.steps[SourceSelectionSubStep.id]
+        )._source_check
         self._start_mutex = threading.Lock()
         self._checked = False
 
     @property
     def replication_issue(self) -> Optional[MigrationError]:
-        source_step = cast(SourceSelectionSubStep, self._owner.get_step(
-            SubStepId.SOURCE_SELECTION))
+        source_step = cast(
+            SourceSelectionSubStep, self._owner.get_step(SubStepId.SOURCE_SELECTION)
+        )
         return source_step.replication_issue
 
     @property
     def has_replication(self) -> bool:
-        return not self.replication_issue or self.replication_issue.level != model.MessageLevel.ERROR
+        return (
+            not self.replication_issue
+            or self.replication_issue.level != model.MessageLevel.ERROR
+        )
 
     def start(self, blocking=True):
         logging.info(f"{self}.start")
@@ -598,7 +627,9 @@ class MigrationTypeSubStep(PlanSubStep):
         try:
             if self.has_replication:
                 self._owner.options.migrationType = model.MigrationType.HOT
-                self._owner.options.cloudConnectivity = model.CloudConnectivity.LOCAL_SSH_TUNNEL
+                self._owner.options.cloudConnectivity = (
+                    model.CloudConnectivity.LOCAL_SSH_TUNNEL
+                )
             else:
                 self._owner.options.migrationType = model.MigrationType.COLD
             self._started = True
@@ -607,9 +638,13 @@ class MigrationTypeSubStep(PlanSubStep):
 
     def check_selection(self) -> bool:
         self._errors = []
-        if self._owner.options.migrationType != model.MigrationType.COLD and self.replication_issue:
+        if (
+            self._owner.options.migrationType != model.MigrationType.COLD
+            and self.replication_issue
+        ):
             logging.info(
-                f"{self}: migrationType {self._owner.options.migrationType} is not possible from this source")
+                f"{self}: migrationType {self._owner.options.migrationType} is not possible from this source"
+            )
 
             self._errors.append(self.replication_issue)
 
@@ -620,11 +655,14 @@ class MigrationTypeSubStep(PlanSubStep):
         assert self._owner.options.targetMySQLOptions
 
         # handle You cannot create a Channel with anonymous source on a high availability DB System.
-        if (self._owner.options.migrationType == model.MigrationType.HOT
+        if (
+            self._owner.options.migrationType == model.MigrationType.HOT
             and self._owner.source_info.gtidMode != "ON"
-                and self._owner.options.targetMySQLOptions.enableHA):
+            and self._owner.options.targetMySQLOptions.enableHA
+        ):
             logging.info(
-                f"GTID_MODE of source is {self._owner.source_info.gtidMode} and MDS does not support creating a channel with HA in this case")
+                f"GTID_MODE of source is {self._owner.source_info.gtidMode} and MDS does not support creating a channel with HA in this case"
+            )
             self._errors.append(
                 model.MigrationError._from_exception(
                     errors.InvalidParameter(
@@ -635,36 +673,56 @@ class MigrationTypeSubStep(PlanSubStep):
                                         <li>enable GTID_MODE at the source and start over;
                                         <li>disable the High Availability option and enable it after migration is over;
                                         or perform a cold migration
-                                        </ul>""", input="type")))
+                                        </ul>""",
+                        input="type",
+                    )
+                )
+            )
             return False
 
         # check that the source password complies with the
         # the channel API will refuse to create the channel with status 400
         pwd_issues = _target_config().validate_password(
             self._owner.project.source_password,
-            username=self._owner.options.sourceConnectionOptions["user"])
+            username=self._owner.options.sourceConnectionOptions["user"],
+        )
         if self._owner.options.migrationType == model.MigrationType.HOT and pwd_issues:
             sourceUri = format_uri(self._owner.options.sourceConnectionOptions)
             logging.info(
-                f"Password for {sourceUri} does not comply with strength requirements")
+                f"Password for {sourceUri} does not comply with strength requirements"
+            )
 
             # input=type so that the error is displayed next to the migrationType section
-            self._errors.append(model.MigrationError._from_exception(
-                errors.InvalidParameter(
-                    f"""The given password for the source database {sourceUri} does not meet strength requirements for
+            self._errors.append(
+                model.MigrationError._from_exception(
+                    errors.InvalidParameter(
+                        f"""The given password for the source database {sourceUri} does not meet strength requirements for
                     a hot migration: {pwd_issues}
 Please change the password for that account or start over using an account with a suitable password.""",
-                    input="type")))
+                        input="type",
+                    )
+                )
+            )
             return False
 
         # DB System can't do inbound replication from localhost
-        if (self._owner.options.migrationType == model.MigrationType.HOT
-                and self._owner.options.cloudConnectivity == model.CloudConnectivity.SITE_TO_SITE
-                and self._owner.options.sourceConnectionOptions.get("host") in ("localhost", "127.0.0.1")):
-            self._errors.append(model.MigrationError._from_exception(errors.InvalidParameter(
-                f"""The address {self._owner.options.sourceConnectionOptions.get("host")} cannot
+        if (
+            self._owner.options.migrationType == model.MigrationType.HOT
+            and self._owner.options.cloudConnectivity
+            == model.CloudConnectivity.SITE_TO_SITE
+            and self._owner.options.sourceConnectionOptions.get("host")
+            in ("localhost", "127.0.0.1")
+        ):
+            self._errors.append(
+                model.MigrationError._from_exception(
+                    errors.InvalidParameter(
+                        f"""The address {self._owner.options.sourceConnectionOptions.get("host")} cannot
                                          be used to perform a hot migration using Site-to-Site VPN. Please start over
-                                        using an address that can be reached through the VPN.""", input="type")))
+                                        using an address that can be reached through the VPN.""",
+                        input="type",
+                    )
+                )
+            )
             return False
 
         return True
@@ -682,10 +740,14 @@ Please change the password for that account or start over using an account with 
             self._owner.options.migrationType = options.type
             changed = True
 
-        if options.connectivity and self._owner.options.cloudConnectivity != options.connectivity:
+        if (
+            options.connectivity
+            and self._owner.options.cloudConnectivity != options.connectivity
+        ):
             self._done = False
             logging.debug(
-                f"{self}: cloudConnectivity changed to {options.connectivity}")
+                f"{self}: cloudConnectivity changed to {options.connectivity}"
+            )
             self._owner.options.cloudConnectivity = options.connectivity
             changed = True
 
@@ -701,7 +763,10 @@ Please change the password for that account or start over using an account with 
         if (
             self._started
             and options.migrationType
-            and (options.migrationType == model.MigrationType.COLD or options.cloudConnectivity != model.CloudConnectivity.NOT_SET)
+            and (
+                options.migrationType == model.MigrationType.COLD
+                or options.cloudConnectivity != model.CloudConnectivity.NOT_SET
+            )
             and self.check_selection()
             and self._owner.steps[SourceSelectionSubStep.id]._done
         ):
@@ -725,7 +790,8 @@ Please change the password for that account or start over using an account with 
     def info_values(self) -> MigrationTypeOptions:
         return MigrationTypeOptions(
             type=self._owner.options.migrationType,
-            connectivity=self._owner.options.cloudConnectivity)
+            connectivity=self._owner.options.cloudConnectivity,
+        )
 
     def info_data(self) -> Optional[MigrationTypeData]:
         allowed_connectivity = []
@@ -740,8 +806,8 @@ Please change the password for that account or start over using an account with 
             allowed_types = [model.MigrationType.COLD.value]
 
         return MigrationTypeData(
-            allowedTypes=allowed_types,
-            allowedConnectivity=allowed_connectivity)
+            allowedTypes=allowed_types, allowedConnectivity=allowed_connectivity
+        )
 
 
 class SchemaSelectionSubStep(PlanSubStep):
@@ -763,7 +829,8 @@ class SchemaSelectionSubStep(PlanSubStep):
 
     def fetch_schema_data(self):
         self._source_data = SchemaSelectionData(
-            contents=fetch_instance_contents(self._owner.source_session))
+            contents=fetch_instance_contents(self._owner.source_session)
+        )
 
     def start(self, blocking=True):
         logging.info(f"{self}.start")
@@ -818,7 +885,8 @@ class SchemaSelectionSubStep(PlanSubStep):
                     for table_name in table_data.tables:
                         if table_name not in table_set:
                             include_list.exclude.append(
-                                quote_db_object(schema_name, table_name))
+                                quote_db_object(schema_name, table_name)
+                            )
 
                 include_list.include = []
 
@@ -830,10 +898,8 @@ class SchemaSelectionSubStep(PlanSubStep):
 
             # flatten schema and table lists into exclude only
             if self._owner.options.schemaSelection.filter:
-                flatten_schemas(
-                    self._owner.options.schemaSelection.filter.schemas)
-                flatten_tables(
-                    self._owner.options.schemaSelection.filter.tables)
+                flatten_schemas(self._owner.options.schemaSelection.filter.schemas)
+                flatten_tables(self._owner.options.schemaSelection.filter.tables)
 
             self._options.filter = self._owner.options.schemaSelection.filter
 
@@ -856,8 +922,9 @@ class MigrationChecksSubStep(PlanSubStep):
             self.status: model.CheckStatus = model.CheckStatus.OK
 
         def _merge_results(self, results: model.MigrationCheckResults) -> None:
-            updated_issues = {result.checkId: result
-                              for result in results.checks if result.checkId}
+            updated_issues = {
+                result.checkId: result for result in results.checks if result.checkId
+            }
 
             for check_id, current_issue in self.issues.items():
                 if check_id in updated_issues:
@@ -876,9 +943,7 @@ class MigrationChecksSubStep(PlanSubStep):
 
                     # merge the choices, make sure choices are unique, keep the order
                     current_issue.choices.extend(updated_issue.choices)
-                    current_issue.choices = list(
-                        dict.fromkeys(current_issue.choices)
-                    )
+                    current_issue.choices = list(dict.fromkeys(current_issue.choices))
 
                     # remove updated issue
                     updated_issues.pop(check_id)
@@ -898,12 +963,14 @@ class MigrationChecksSubStep(PlanSubStep):
                 if issue.status > self.status:
                     self.status = issue.status
 
-        def ignore_issues(self,
-                          issue_resolution:
-                          dict[str, model.CompatibilityFlags]) -> None:
+        def ignore_issues(
+            self, issue_resolution: dict[str, model.CompatibilityFlags]
+        ) -> None:
             ignored_checks: list[str] = [
-                check_id for check_id, flag in issue_resolution.items()
-                if model.CompatibilityFlags.IGNORE == flag]
+                check_id
+                for check_id, flag in issue_resolution.items()
+                if model.CompatibilityFlags.IGNORE == flag
+            ]
 
             for check_id in ignored_checks:
                 issue = self.issues.get(check_id)
@@ -913,9 +980,10 @@ class MigrationChecksSubStep(PlanSubStep):
             self._update_status()
 
         def update(
-                self, results: model.MigrationCheckResults,
-                issue_resolution: dict[str, model.CompatibilityFlags]) -> list[
-                model.CheckResult]:
+            self,
+            results: model.MigrationCheckResults,
+            issue_resolution: dict[str, model.CompatibilityFlags],
+        ) -> list[model.CheckResult]:
             self._merge_results(results)
             self.ignore_issues(issue_resolution)
 
@@ -924,15 +992,21 @@ class MigrationChecksSubStep(PlanSubStep):
     def __init__(self, owner: "MigrationPlanStep"):
         super().__init__(owner)
         self._source_check: MySQLSourceCheck = cast(
-            SourceSelectionSubStep, owner.steps[SourceSelectionSubStep.id])._source_check
-        self._compatibility_check_summary: MigrationChecksSubStep.CheckSummary = MigrationChecksSubStep.CheckSummary()
-        self._upgrade_check_summary: MigrationChecksSubStep.CheckSummary = MigrationChecksSubStep.CheckSummary()
+            SourceSelectionSubStep, owner.steps[SourceSelectionSubStep.id]
+        )._source_check
+        self._compatibility_check_summary: MigrationChecksSubStep.CheckSummary = (
+            MigrationChecksSubStep.CheckSummary()
+        )
+        self._upgrade_check_summary: MigrationChecksSubStep.CheckSummary = (
+            MigrationChecksSubStep.CheckSummary()
+        )
         self._start_mutex = threading.Lock()
 
         self._current_selection: Optional[model.SchemaSelectionOptions] = None
         data = self._project.plan_step_data(self.id)
         self._issue_resolution: dict[str, model.CompatibilityFlags] = data.get(
-            "issueResolution", {})
+            "issueResolution", {}
+        )
 
         self.__execution_errors: list[MigrationError] = []
 
@@ -940,9 +1014,14 @@ class MigrationChecksSubStep(PlanSubStep):
         result: list[model.CompatibilityFlags] = []
 
         for flag in self._issue_resolution.values():
-            if flag not in (
-                    model.CompatibilityFlags.IGNORE, model.CompatibilityFlags.
-                    EXCLUDE_OBJECT) and flag not in result:
+            if (
+                flag
+                not in (
+                    model.CompatibilityFlags.IGNORE,
+                    model.CompatibilityFlags.EXCLUDE_OBJECT,
+                )
+                and flag not in result
+            ):
                 result.append(flag)
 
         return result
@@ -954,8 +1033,10 @@ class MigrationChecksSubStep(PlanSubStep):
         filters = selection.filter
 
         checks_with_excluded_objects: list[str] = [
-            check_id for check_id, flag in self._issue_resolution.items()
-            if model.CompatibilityFlags.EXCLUDE_OBJECT == flag]
+            check_id
+            for check_id, flag in self._issue_resolution.items()
+            if model.CompatibilityFlags.EXCLUDE_OBJECT == flag
+        ]
 
         for check_id in checks_with_excluded_objects:
             issue = self._compatibility_check_summary.issues.get(check_id)
@@ -971,7 +1052,7 @@ class MigrationChecksSubStep(PlanSubStep):
 
                 if -1 != pos:
                     object_type = object[0:pos].lower()
-                    object_name = object[pos + 1:]
+                    object_name = object[pos + 1 :]
                     where = None
 
                     # select the filter
@@ -988,18 +1069,14 @@ class MigrationChecksSubStep(PlanSubStep):
                             # exclude the table instead
                             where = "tables"
                             unquoted = unquote_db_object(object_name)
-                            object_name = quote_db_object(
-                                unquoted[0], unquoted[1]
-                            )
+                            object_name = quote_db_object(unquoted[0], unquoted[1])
                         case "function" | "procedure" | "routine":
                             where = "routines"
                         case "parameter":
                             # exclude the routine instead
                             where = "routines"
                             unquoted = unquote_db_object(object_name)
-                            object_name = quote_db_object(
-                                unquoted[0], unquoted[1]
-                            )
+                            object_name = quote_db_object(unquoted[0], unquoted[1])
                         case "event":
                             where = "events"
                         case "trigger":
@@ -1028,8 +1105,14 @@ class MigrationChecksSubStep(PlanSubStep):
 
         # make sure excludes we've added above are unique
         for attr in [
-            "schemas", "tables", "routines", "events", "libraries", "triggers",
-                "users"]:
+            "schemas",
+            "tables",
+            "routines",
+            "events",
+            "libraries",
+            "triggers",
+            "users",
+        ]:
             il = getattr(filters, attr)
 
             if il is not None:
@@ -1043,8 +1126,7 @@ class MigrationChecksSubStep(PlanSubStep):
             self._current_selection = self._get_schema_selection()
 
             compatibility_issues = self._source_check.check_compatibility(
-                self._get_compatibility_flags(),
-                self._current_selection
+                self._get_compatibility_flags(), self._current_selection
             )
 
             errors = self._compatibility_check_summary.update(
@@ -1107,28 +1189,25 @@ class MigrationChecksSubStep(PlanSubStep):
         else:
             options = self.parse_values(config, MigrationChecksOptions)
 
-            if merge_issue_resolution(
-                    self._issue_resolution, options.issueResolution):
+            if merge_issue_resolution(self._issue_resolution, options.issueResolution):
                 logging.debug(
                     f"{self.id}: compatibility fixes changed to {self._issue_resolution}"
                 )
                 self._project.set_plan_step_data(
-                    self.id, {"issueResolution": self._issue_resolution})
+                    self.id, {"issueResolution": self._issue_resolution}
+                )
                 changed = True
                 updated_filters = self._get_schema_selection()
-                self._compatibility_check_summary.ignore_issues(
-                    self._issue_resolution
-                )
-                self._upgrade_check_summary.ignore_issues(
-                    self._issue_resolution)
+                self._compatibility_check_summary.ignore_issues(self._issue_resolution)
+                self._upgrade_check_summary.ignore_issues(self._issue_resolution)
 
         if self._current_selection != updated_filters:
-            logging.debug(
-                f"{self.id}: object filters changed to {updated_filters}"
-            )
+            logging.debug(f"{self.id}: object filters changed to {updated_filters}")
             changed = True
             if changed_base_filters:
-                self._compatibility_check_summary = MigrationChecksSubStep.CheckSummary()
+                self._compatibility_check_summary = (
+                    MigrationChecksSubStep.CheckSummary()
+                )
                 self._upgrade_check_summary = MigrationChecksSubStep.CheckSummary()
 
         if changed:
@@ -1160,10 +1239,11 @@ class MigrationChecksSubStep(PlanSubStep):
     def start(self, blocking=True):
         logging.info(f"{self}.start")
         if not self._owner.is_finished(
-                SubStepId.SOURCE_SELECTION) or not self._owner.is_finished(
-                SubStepId.TARGET_OPTIONS):
+            SubStepId.SOURCE_SELECTION
+        ) or not self._owner.is_finished(SubStepId.TARGET_OPTIONS):
             logging.info(
-                f"{self}.start: {' '.join([s.name + '=' + str(self._owner.is_finished(s)) for s in [SubStepId.SOURCE_SELECTION, SubStepId.TARGET_OPTIONS]])}")
+                f"{self}.start: {' '.join([s.name + '=' + str(self._owner.is_finished(s)) for s in [SubStepId.SOURCE_SELECTION, SubStepId.TARGET_OPTIONS]])}"
+            )
             return
         if not self._start_mutex.acquire(blocking=blocking):
             logging.info(f"{self}.start (busy)")
@@ -1202,13 +1282,12 @@ class MigrationChecksSubStep(PlanSubStep):
         return self.info()
 
     def info_values(self) -> MigrationChecksOptions:
-        return MigrationChecksOptions(
-            issueResolution=self._issue_resolution)
+        return MigrationChecksOptions(issueResolution=self._issue_resolution)
 
     def info_data(self) -> Optional[MigrationChecksData]:
-        issues: list[model.CheckResult] = \
-            list(self._compatibility_check_summary.issues.values()) + \
-            list(self._upgrade_check_summary.issues.values())
+        issues: list[model.CheckResult] = list(
+            self._compatibility_check_summary.issues.values()
+        ) + list(self._upgrade_check_summary.issues.values())
 
         # put all errors first
         # TODO put errors that have no solution other than EXCLUDE first
@@ -1224,20 +1303,20 @@ def sanitize_bucket_name(name: str) -> str:
     # Convert to lowercase
     name = name.lower()
     # Only allow a-z, 0-9, -, .
-    name = re.sub(r'[^a-z0-9\-.]', '-', name)
+    name = re.sub(r"[^a-z0-9\-.]", "-", name)
     # Remove consecutive periods or hyphens
-    name = re.sub(r'\.\.+', '.', name)
-    name = re.sub(r'-+', '-', name)
+    name = re.sub(r"\.\.+", ".", name)
+    name = re.sub(r"-+", "-", name)
     # Remove hyphen next to period (replace '-.' or '.-' with '-')
-    name = re.sub(r'(\.-)|(-\.)', '-', name)
+    name = re.sub(r"(\.-)|(-\.)", "-", name)
     # Trim to valid length
     name = name[:63]
     # Remove leading/trailing non-alphanumeric
-    name = re.sub(r'^[^a-z0-9]+', '', name)
-    name = re.sub(r'[^a-z0-9]+$', '', name)
+    name = re.sub(r"^[^a-z0-9]+", "", name)
+    name = re.sub(r"[^a-z0-9]+$", "", name)
     # Ensure length is at least 3
     if len(name) < 3:
-        name = (name + 'bucket')[:3]
+        name = (name + "bucket")[:3]
     return name
 
 
@@ -1251,28 +1330,34 @@ class TargetOptionsSubStep(PlanSubStep):
         super().__init__(owner)
 
         self._override_root_compartment_id = os.getenv(
-            "MIGRATION_TEST_ROOT_COMPARTMENT_ID", "")
+            "MIGRATION_TEST_ROOT_COMPARTMENT_ID", ""
+        )
         if self._override_root_compartment_id:
             logging.info(
-                f"MIGRATION_TEST_ROOT_COMPARTMENT_ID set to {self._override_root_compartment_id}")
+                f"MIGRATION_TEST_ROOT_COMPARTMENT_ID set to {self._override_root_compartment_id}"
+            )
 
         self._default_compartment_name = os.getenv(
-            "MIGRATION_TEST_DEFAULT_COMPARTMENT_NAME", "")
+            "MIGRATION_TEST_DEFAULT_COMPARTMENT_NAME", ""
+        )
         if self._default_compartment_name:
             logging.info(
-                f"MIGRATION_TEST_DEFAULT_COMPARTMENT_NAME set to {self._default_compartment_name}")
+                f"MIGRATION_TEST_DEFAULT_COMPARTMENT_NAME set to {self._default_compartment_name}"
+            )
 
         self._default_networks_compartment_name = os.getenv(
-            "MIGRATION_TEST_DEFAULT_NETWORKS_COMPARTMENT_NAME", "")
+            "MIGRATION_TEST_DEFAULT_NETWORKS_COMPARTMENT_NAME", ""
+        )
         if self._default_networks_compartment_name:
             logging.info(
-                f"MIGRATION_TEST_DEFAULT_NETWORKS_COMPARTMENT_NAME set to {self._default_networks_compartment_name}")
+                f"MIGRATION_TEST_DEFAULT_NETWORKS_COMPARTMENT_NAME set to {self._default_networks_compartment_name}"
+            )
 
-        self._default_vcn_name = os.getenv(
-            "MIGRATION_TEST_DEFAULT_VCN_NAME", "")
+        self._default_vcn_name = os.getenv("MIGRATION_TEST_DEFAULT_VCN_NAME", "")
         if self._default_vcn_name:
             logging.info(
-                f"MIGRATION_TEST_DEFAULT_VCN_NAME set to {self._default_vcn_name}")
+                f"MIGRATION_TEST_DEFAULT_VCN_NAME set to {self._default_vcn_name}"
+            )
 
         self._start_mutex = threading.Lock()
         self.reset()
@@ -1306,11 +1391,13 @@ class TargetOptionsSubStep(PlanSubStep):
 
         if not self._target_check:
             self._target_check = target_config.ConfigureTargetDBSystem(
-                self._owner.oci_config, self._owner.project.find_shared_ssh_key, self._owner.source_info,
+                self._owner.oci_config,
+                self._owner.project.find_shared_ssh_key,
+                self._owner.source_info,
                 override_root_compartment_id=self._override_root_compartment_id,
                 default_compartment_name=self._default_compartment_name,
                 default_networks_compartment_name=self._default_networks_compartment_name,
-                default_vcn_name=self._default_vcn_name
+                default_vcn_name=self._default_vcn_name,
             )
 
         logging.info(f"{self}.set_defaults: gathering initial OCI options")
@@ -1321,7 +1408,8 @@ class TargetOptionsSubStep(PlanSubStep):
 
         # ensure bucket name is unique
         self._owner.options.targetHostingOptions.bucketName = sanitize_bucket_name(
-            self._owner.project.id)
+            self._owner.project.id
+        )
 
         logging.info(f"{self}.set_defaults: gathering initial MySQL options")
         self._owner.options.targetMySQLOptions = (
@@ -1334,11 +1422,13 @@ class TargetOptionsSubStep(PlanSubStep):
         self._owner.options.mysqlConfiguration = target_config.get_sysvars(
             self._owner.source_session
         )
-        self._owner.options.mysqlConfiguration, issues = target_config.adjust_mysql_configuration(
-            self._owner.options.mysqlConfiguration)
+        self._owner.options.mysqlConfiguration, issues = (
+            target_config.adjust_mysql_configuration(
+                self._owner.options.mysqlConfiguration
+            )
+        )
         # TODO: push the config adjustments to the frontend
-        logging.info(
-            f"{self}.set_defaults: configuration adjustments/issues: {issues}")
+        logging.info(f"{self}.set_defaults: configuration adjustments/issues: {issues}")
 
         logging.info(f"{self}.set_defaults: done")
 
@@ -1373,6 +1463,7 @@ class TargetOptionsSubStep(PlanSubStep):
                     else:
                         n += 1
                 return n
+
             if count_values(values) <= 1:
                 return True
             return False
@@ -1382,17 +1473,18 @@ class TargetOptionsSubStep(PlanSubStep):
         # parse for type validation
         self.parse_values(config, TargetOptionsOptions)
         hosting_changes = apply_object_changes(
-            self._owner.options.targetHostingOptions, config["values"].get(
-                "hosting", {}),
-            "hosting.")
+            self._owner.options.targetHostingOptions,
+            config["values"].get("hosting", {}),
+            "hosting.",
+        )
 
         database_changes = apply_object_changes(
-            self._owner.options.targetMySQLOptions, config["values"].get(
-                "database", {}),
-            "database.")
+            self._owner.options.targetMySQLOptions,
+            config["values"].get("database", {}),
+            "database.",
+        )
 
-        logging.debug(
-            f"{self}.apply: changes: {database_changes} {hosting_changes}")
+        logging.debug(f"{self}.apply: changes: {database_changes} {hosting_changes}")
 
         if hosting_changes or database_changes or not partial_update:
             assert self._target_check
@@ -1406,22 +1498,29 @@ class TargetOptionsSubStep(PlanSubStep):
         return True if hosting_changes or database_changes else False
 
     def _run_checks(
-            self, hosting_changes: list[str] | None = None,
-            database_changes: list[str] | None = None):
+        self,
+        hosting_changes: list[str] | None = None,
+        database_changes: list[str] | None = None,
+    ):
         assert self._target_check
 
         option_errors = []
         if self._owner.options.targetHostingOptions and (
-                hosting_changes or hosting_changes is None):
+            hosting_changes or hosting_changes is None
+        ):
             option_errors += self._target_check.validate_target_options(
                 self._owner.options.targetHostingOptions, hosting_changes
             )
             self._target_check.resolve_jump_host(
-                self._owner.options.targetHostingOptions)
-            self._compute_resolution_notice = self._target_check.compute_resolution_notice
+                self._owner.options.targetHostingOptions
+            )
+            self._compute_resolution_notice = (
+                self._target_check.compute_resolution_notice
+            )
 
         if self._owner.options.targetMySQLOptions and (
-                database_changes or database_changes is None):
+            database_changes or database_changes is None
+        ):
             option_errors += self._target_check.validate_target_mysql_options(
                 self._owner.options.targetMySQLOptions, database_changes
             )
@@ -1432,17 +1531,19 @@ class TargetOptionsSubStep(PlanSubStep):
             self._option_errors = option_errors
         else:
             self._update_option_errors(
-                option_errors, hosting_changes + database_changes)
+                option_errors, hosting_changes + database_changes
+            )
 
     def _update_option_errors(
-            self, errors: list[MigrationError],
-            changed_options: list[str]):
+        self, errors: list[MigrationError], changed_options: list[str]
+    ):
         def clear_error(option: str):
             cleaned = []
             for err in self._option_errors:
                 error_option = err.info.get("input")
                 if error_option != option and not (
-                        option.endswith(".") and error_option.startswith(option)):
+                    option.endswith(".") and error_option.startswith(option)
+                ):
                     cleaned.append(err)
             self._option_errors = cleaned
 
@@ -1453,8 +1554,11 @@ class TargetOptionsSubStep(PlanSubStep):
         # detail options of an option that changed
         if "hosting.createVcn" in changed_options:
             for option in [
-                "hosting.networkCompartmentId", "hosting.vcnId",
-                    "hosting.privateSubnet.", "hosting.publicSubnet."]:
+                "hosting.networkCompartmentId",
+                "hosting.vcnId",
+                "hosting.privateSubnet.",
+                "hosting.publicSubnet.",
+            ]:
                 clear_error(option)
 
         # add new errors
@@ -1462,7 +1566,11 @@ class TargetOptionsSubStep(PlanSubStep):
 
     def errors(self, errors_only=False) -> list[MigrationError]:
         if errors_only:
-            return [e for e in self._errors + self._option_errors if e.level == MessageLevel.ERROR]
+            return [
+                e
+                for e in self._errors + self._option_errors
+                if e.level == MessageLevel.ERROR
+            ]
         else:
             return self._errors + self._option_errors
 
@@ -1486,12 +1594,15 @@ class TargetOptionsSubStep(PlanSubStep):
         # if reusing an old compute:
         # - reuse key saved for later (handled during provisioning)
         # - user specified key (not supported yet)
-        if not self._owner.options.targetHostingOptions.computeId and not self._owner.project.resources.computeId:
+        if (
+            not self._owner.options.targetHostingOptions.computeId
+            and not self._owner.project.resources.computeId
+        ):
             # new compute
             logging.info("Generating SSH key pair for new compute")
             self._project.create_ssh_key_pair()
         # else:
-            # TODO when handling user specified key, validate it here
+        # TODO when handling user specified key, validate it here
 
     def commit(self) -> MigrationPlanState:
         assert self._target_check
@@ -1499,16 +1610,17 @@ class TargetOptionsSubStep(PlanSubStep):
         logging.info(
             f"{self}: commit hosting={self._owner.options.targetHostingOptions}"
         )
+        logging.info(f"{self}: commit mysql={self._owner.options.targetMySQLOptions}")
         logging.info(
-            f"{self}: commit mysql={self._owner.options.targetMySQLOptions}")
-        logging.info(
-            f"{self}: commit mysql-config={self._owner.options.mysqlConfiguration}")
+            f"{self}: commit mysql-config={self._owner.options.mysqlConfiguration}"
+        )
 
         if not self.errors(errors_only=True):
             self._done = True
         else:
             logging.info(
-                f"{self}.commit: commit failed because errors: {self.errors()}")
+                f"{self}.commit: commit failed because errors: {self.errors()}"
+            )
 
         return self.info()
 
@@ -1517,7 +1629,8 @@ class TargetOptionsSubStep(PlanSubStep):
             return TargetOptionsData(
                 compartmentPath=self._target_check.get_full_compartment_path(),
                 networkCompartmentPath=self._target_check.get_full_network_compartment_path(),
-                allowCreateNewVcn=not self._target_check.default_vcn_exists)
+                allowCreateNewVcn=not self._target_check.default_vcn_exists,
+            )
 
         return TargetOptionsData()
 
@@ -1543,12 +1656,14 @@ class PreviewPlanSubStep(PlanSubStep):
     caption = "Preview Migration Plan"
 
     def info_data(self) -> Optional[PreviewPlanData]:
-        target = cast(TargetOptionsSubStep,
-                      self._owner.get_step(SubStepId.TARGET_OPTIONS))
+        target = cast(
+            TargetOptionsSubStep, self._owner.get_step(SubStepId.TARGET_OPTIONS)
+        )
 
         data = PreviewPlanData(
             options=copy.deepcopy(self._owner.options),
-            computeResolutionNotice=target.compute_resolution_notice)
+            computeResolutionNotice=target.compute_resolution_notice,
+        )
 
         if data.options.targetMySQLOptions:
             data.options.targetMySQLOptions.adminPassword = ""
@@ -1558,8 +1673,14 @@ class PreviewPlanSubStep(PlanSubStep):
             assert self._owner.options and self._owner.options.sourceConnectionOptions
 
             channel_info = ReplicationChannelInfo()
-            channel_info.sourceUser = self._owner.options.sourceConnectionOptions["user"]
-            channel_info.replicateIgnoreDb, channel_info.replicateIgnoreTable, channel_info.replicateWildIgnoreTable = self._owner.project.compute_replication_filters()
+            channel_info.sourceUser = self._owner.options.sourceConnectionOptions[
+                "user"
+            ]
+            (
+                channel_info.replicateIgnoreDb,
+                channel_info.replicateIgnoreTable,
+                channel_info.replicateWildIgnoreTable,
+            ) = self._owner.project.compute_replication_filters()
 
             data.channelInfo = channel_info
 
@@ -1587,7 +1708,7 @@ class MigrationPlanStep:
         MigrationTypeSubStep,
         SchemaSelectionSubStep,
         MigrationChecksSubStep,
-        PreviewPlanSubStep
+        PreviewPlanSubStep,
     ]
 
     _frontend_classes = [
@@ -1595,7 +1716,7 @@ class MigrationPlanStep:
         MigrationTypeSubStep,
         SchemaSelectionSubStep,
         MigrationChecksSubStep,
-        PreviewPlanSubStep
+        PreviewPlanSubStep,
     ]
 
     @classmethod
@@ -1673,13 +1794,14 @@ class MigrationPlanStep:
         if event == PlanEvent.SOURCE_CONNECTED:
             self._instance_cache = InstanceCache()
 
-    def update(self, sub_step_id: int, input: dict, nolock: bool = False) -> MigrationPlanState:
+    def update(
+        self, sub_step_id: int, input: dict, nolock: bool = False
+    ) -> MigrationPlanState:
         _name = f"{self._name}.update"
 
         if sub_step_id not in self.steps:
             logging.error(f"{_name}: Invalid input {sub_step_id}")
-            raise errors.BadRequest(
-                f"{_name}: invalid step id {sub_step_id}")
+            raise errors.BadRequest(f"{_name}: invalid step id {sub_step_id}")
         step = self.steps[sub_step_id]
 
         if not nolock:
@@ -1765,8 +1887,9 @@ class MigrationPlanStep:
         except Exception as e:
             logging.exception(f"{_name}")
             res = MigrationPlanState(
-                sub_step_id, status=MigrationStepStatus.ERROR, errors=[
-                    MigrationError._from_exception(e)]
+                sub_step_id,
+                status=MigrationStepStatus.ERROR,
+                errors=[MigrationError._from_exception(e)],
             )
         logging.debug(f"{_name}: result={res}")
 
@@ -1779,24 +1902,22 @@ class MigrationPlanStep:
         # TODO - this has a race condition
         # Start/init steps that depend on the given one
         if sub_step_id == SubStepId.SOURCE_SELECTION:
+
             def init():
-                logging.info(
-                    "Pre-initializing dependencies of SOURCE_SELECTION")
+                logging.info("Pre-initializing dependencies of SOURCE_SELECTION")
                 self.steps[SubStepId.MIGRATION_TYPE].start(blocking=False)
                 self.steps[SubStepId.MIGRATION_CHECKS].start(blocking=False)
                 if self.is_finished(SubStepId.OCI_PROFILE):
-                    logging.info(
-                        "Pre-initializing dependencies of OCI_PROFILE")
-                    self.steps[SubStepId.TARGET_OPTIONS].start(
-                        blocking=False)
+                    logging.info("Pre-initializing dependencies of OCI_PROFILE")
+                    self.steps[SubStepId.TARGET_OPTIONS].start(blocking=False)
 
             thread = threading.Thread(target=init, daemon=True)
             thread.start()
 
         elif sub_step_id == SubStepId.OCI_PROFILE:
+
             def init():
-                logging.info(
-                    "Pre-initializing dependencies of OCI_PROFILE")
+                logging.info("Pre-initializing dependencies of OCI_PROFILE")
                 self.steps[SubStepId.TARGET_OPTIONS].start(blocking=False)
 
             if self.is_finished(SubStepId.SOURCE_SELECTION):
@@ -1814,7 +1935,8 @@ class MigrationPlanStep:
                 for step in self.steps.values():
                     if step.current_status != MigrationStepStatus.FINISHED:
                         logging.warning(
-                            f"Step {step} is still in state {step.current_status}")
+                            f"Step {step} is still in state {step.current_status}"
+                        )
                         ready = False
                         break
                 if not ready:
@@ -1838,8 +1960,7 @@ class MigrationPlanStep:
             logging.info(msg)
             print(msg)
 
-        if not force_bootstrap and os.path.exists(
-                self.project.oci_config_file):
+        if not force_bootstrap and os.path.exists(self.project.oci_config_file):
             self.project.open_oci_profile()
             return
 
@@ -1857,21 +1978,23 @@ class MigrationPlanStep:
                 config_location=str(self.project.oci_config_file),
                 region=self.region,
                 passphrase="",
-                report_cb=report_progress
+                report_cb=report_progress,
             )
         except oci.exceptions.ServiceError as e:
             logging.error(f"Could not bootstrap an OCI profile: {e}")
             raise errors.OCIRuntimeError(
-                f"Could not bootstrap an OCI profile for region '{self.region}'. Please ensure you have selected the correct tenancy and a region you are subscribed to.")
+                f"Could not bootstrap an OCI profile for region '{self.region}'. Please ensure you have selected the correct tenancy and a region you are subscribed to."
+            )
         except Exception as e:
             raise errors.OCIRuntimeError(
-                f"Could not bootstrap an OCI profile for region '{self.region}'. {e}")
+                f"Could not bootstrap an OCI profile for region '{self.region}'. {e}"
+            )
 
         report_progress(
-            f"Authentication completed successfully and an OCI configuration file and profile was created. Please wait a few moments for your new OCI profile to be activated.")
+            f"Authentication completed successfully and an OCI configuration file and profile was created. Please wait a few moments for your new OCI profile to be activated."
+        )
         logging.info(f"Created OCI profile {profile_info}")
-        assert profile_info["config_file"] == str(
-            self.project.oci_config_file)
+        assert profile_info["config_file"] == str(self.project.oci_config_file)
 
         self.region = profile_info["home_region"]
 
@@ -1908,8 +2031,7 @@ class MigrationPlanStep:
         PlanDataItemType.SCHEMA_LIBRARIES: _get_schema_libraries,
     }
 
-    def get_data_item(
-            self, what: PlanDataItemType, detail: str) -> PlanDataItem:
+    def get_data_item(self, what: PlanDataItemType, detail: str) -> PlanDataItem:
         fn = self._data_item_getter.get(PlanDataItemType(what))
         if fn:
             return fn(self, detail)
@@ -1919,15 +2041,18 @@ class MigrationPlanStep:
 
 def get_plan() -> MigrationPlanStep:
     from migration_plugin.lib.migration import get_project
+
     return get_project().plan_step
 
 
-k_log_filters = {"logfilters": [{"type": "key", "keys": [
-    "password", "adminPassword", "adminPasswordConfirm"]}]}
+k_log_filters = {
+    "logfilters": [
+        {"type": "key", "keys": ["password", "adminPassword", "adminPasswordConfirm"]}
+    ]
+}
 
 
-@plugin_function("migration.planUpdate", shell=True, cli=False,
-                 web=k_log_filters)
+@plugin_function("migration.planUpdate", shell=True, cli=False, web=k_log_filters)
 @plugin_log
 def plan_update(configs: list[dict]) -> list[MigrationPlanState]:
     """
@@ -1941,8 +2066,7 @@ def plan_update(configs: list[dict]) -> list[MigrationPlanState]:
     return plan.update_all(configs)
 
 
-@plugin_function("migration.planGetDataItem", shell=True, cli=False,
-                 web=k_log_filters)
+@plugin_function("migration.planGetDataItem", shell=True, cli=False, web=k_log_filters)
 @plugin_log
 def plan_get_data_item(what: PlanDataItemType, detail: str) -> PlanDataItem:
     """
@@ -1957,11 +2081,11 @@ def plan_get_data_item(what: PlanDataItemType, detail: str) -> PlanDataItem:
     return plan.get_data_item(what, detail)
 
 
-@plugin_function("migration.planUpdateSubStep", shell=True, cli=False,
-                 web=k_log_filters)
+@plugin_function(
+    "migration.planUpdateSubStep", shell=True, cli=False, web=k_log_filters
+)
 @plugin_log
-def plan_update_sub_step(
-        sub_step_id: int, configs: dict) -> MigrationPlanState:
+def plan_update_sub_step(sub_step_id: int, configs: dict) -> MigrationPlanState:
     """
     Fetch and/or update migration plan sub-step with user input.
 
@@ -1974,8 +2098,7 @@ def plan_update_sub_step(
     return plan.update(sub_step_id, configs)
 
 
-@plugin_function("migration.planCommit", shell=True, cli=False,
-                 web=k_log_filters)
+@plugin_function("migration.planCommit", shell=True, cli=False, web=k_log_filters)
 @plugin_log
 def plan_commit(sub_step_id: SubStepId) -> MigrationPlanState:
     """

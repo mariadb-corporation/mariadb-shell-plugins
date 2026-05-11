@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -147,7 +147,9 @@ def get_user(
     mask_password=True,
 ):
     if not user_id and not service_id and not auth_app_id and not auth_app_name:
-        raise ValueError("One of user_id or service_id or auth_app_id or auth_app_name is required")
+        raise ValueError(
+            "One of user_id or service_id or auth_app_id or auth_app_name is required"
+        )
 
     result = get_users(
         session,
@@ -160,7 +162,7 @@ def get_user(
     )
     if not result:
         return None
-    assert len(result)==1
+    assert len(result) == 1
     return result[0]
 
 
@@ -171,7 +173,7 @@ def password_strength_valid(auth_string: str) -> bool:
         return False
     if not any(c.isdigit() for c in auth_string):
         return False
-    if not any(c in '!#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~' for c in auth_string):
+    if not any(c in "!#$%&'()*+,-./:;<=>?@[\\]^_`{|}~" for c in auth_string):
         return False
 
     return True
@@ -194,11 +196,14 @@ def add_user(
         if not auth_string:
             raise ValueError("The authentication string is required for this app.")
         if len(auth_string) < 8:
-            raise ValueError("The minimum authentication string length is 8 characters.")
+            raise ValueError(
+                "The minimum authentication string length is 8 characters."
+            )
         if not password_strength_valid(auth_string):
             raise ValueError(
                 "The authentication string needs to contain at least "
-                "one uppercase, lowercase, a special and a numeric character.")
+                "one uppercase, lowercase, a special and a numeric character."
+            )
         auth_string = cypher_auth_string(auth_string)
     else:
         if auth_string is not None:
@@ -271,12 +276,14 @@ def update_user(session, user_id, value: dict):
             auth_string = value.get("auth_string")
             if len(auth_string) < 8:
                 raise ValueError(
-                    "The minimum authentication string length is 8 characters.")
+                    "The minimum authentication string length is 8 characters."
+                )
             if not password_strength_valid(auth_string):
                 raise ValueError(
                     "The authentication string needs to contain at least "
                     "one uppercase, lowercase, a special and a numeric "
-                    "character.")
+                    "character."
+                )
             value["auth_string"] = cypher_auth_string(value["auth_string"])
         else:
             raise ValueError(
@@ -345,12 +352,16 @@ def delete_user_roles(session, user_id, role_id=None):
 
 
 def format_grant_statement(user: dict, role: dict) -> str:
-    full_user_name = f'{core.quote_user(user["name"])}@{core.quote_auth_app(user["auth_app_name"])}'
+    full_user_name = (
+        f'{core.quote_user(user["name"])}@{core.quote_auth_app(user["auth_app_name"])}'
+    )
     if role["specific_to_service_id"] is None:
         role_service = "ON ANY SERVICE"
     else:
         role_service = f"ON SERVICE {core.quote_rpath(role['specific_to_service'])}"
-    grant = [f'GRANT REST ROLE {core.quote_role(role["caption"])} {role_service} TO {full_user_name}']
+    grant = [
+        f'GRANT REST ROLE {core.quote_role(role["caption"])} {role_service} TO {full_user_name}'
+    ]
 
     if role["comments"] is not None:
         grant.append(f'    COMMENT {core.quote_text(role["comments"])}')
@@ -362,15 +373,19 @@ def format_grant_statement(user: dict, role: dict) -> str:
 
 def get_user_create_statement(session, user, include_all_objects) -> str:
     auth_app = auth_apps.get_auth_app(session, user["auth_app_id"])
-    full_user_name = f'{core.quote_user(user["name"])}@{core.quote_auth_app(auth_app["name"])}'
+    full_user_name = (
+        f'{core.quote_user(user["name"])}@{core.quote_auth_app(auth_app["name"])}'
+    )
 
     output = []
-    output.append(f'CREATE OR REPLACE REST USER {full_user_name}')
+    output.append(f"CREATE OR REPLACE REST USER {full_user_name}")
 
     if not user["login_permitted"]:
         output.append("    ACCOUNT LOCK")
 
-    if user["auth_string"] is not None and user["auth_app_id"] != core.id_to_binary("0x31000000000000000000000000000000", "MySQL App"):
+    if user["auth_string"] is not None and user["auth_app_id"] != core.id_to_binary(
+        "0x31000000000000000000000000000000", "MySQL App"
+    ):
         output.append(f'    IDENTIFIED BY {core.quote_text(user["auth_string"])}')
 
     options = user.get("options") or {}
@@ -384,8 +399,7 @@ def get_user_create_statement(session, user, include_all_objects) -> str:
         output.append(core.format_json_entry("OPTIONS", options))
 
     if user["app_options"] is not None:
-        output.append(core.format_json_entry("APP OPTIONS",
-                                            user.get("app_options")))
+        output.append(core.format_json_entry("APP OPTIONS", user.get("app_options")))
 
     result = ["\n".join(output) + ";"]
     # Taking care of the user roles
@@ -396,4 +410,3 @@ def get_user_create_statement(session, user, include_all_objects) -> str:
             result.append(grant)
 
     return "\n\n".join(result)
-

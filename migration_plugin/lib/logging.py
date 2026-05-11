@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -52,19 +52,21 @@ class CoalesceLogs:
     count = 0
     last_time = 0
     time_limit = 30
-    max_time_without_flush = 60*15
+    max_time_without_flush = 60 * 15
 
     def __call__(self, level: str, msg: str):
         # buffer the message if its the same as the previous one
         if self.last_level == level and self.last_msg == msg:
-            if self.last_time == 0 or time.monotonic() - self.last_time < self.time_limit:
+            if (
+                self.last_time == 0
+                or time.monotonic() - self.last_time < self.time_limit
+            ):
                 # repeat same msg, skip it
                 self.count += 1
                 return
             self.flush()
 
-            self.time_limit = min(self.time_limit+60,
-                                  self.max_time_without_flush)
+            self.time_limit = min(self.time_limit + 60, self.max_time_without_flush)
         else:
             omsg = self.last_msg
             if self.count > 0:
@@ -80,8 +82,9 @@ class CoalesceLogs:
     def flush(self):
         if self.last_level:
             if self.count > 1:
-                shell.log(self.last_level, self.last_msg +
-                          f" (repeated {self.count} times)")
+                shell.log(
+                    self.last_level, self.last_msg + f" (repeated {self.count} times)"
+                )
             else:
                 shell.log(self.last_level, self.last_msg)
 
@@ -123,15 +126,21 @@ def debug2(msg: str):
 
 
 def devdebug(devmsg: str, msg: str = "", iftag: str = "", abort: bool = False):
-    debug = os.getenv("DEBUG_MIGRATION", "") or \
-        os.getenv("MIGRATION_DEBUG_DEVDEBUG", "")
-    debug_pattern = ","+debug+","
+    debug = os.getenv("DEBUG_MIGRATION", "") or os.getenv(
+        "MIGRATION_DEBUG_DEVDEBUG", ""
+    )
+    debug_pattern = "," + debug + ","
 
     if debug:
-        if (not iftag or ","+iftag+"," in debug_pattern
-                or ("*" in debug and ",-"+iftag+"," not in debug_pattern)):
+        if (
+            not iftag
+            or "," + iftag + "," in debug_pattern
+            or ("*" in debug and ",-" + iftag + "," not in debug_pattern)
+        ):
             shell.log(
-                "debug", f"\033[91m{_fmt_msg(devmsg)}\033[0m" + (f"({iftag})" if iftag else ""))
+                "debug",
+                f"\033[91m{_fmt_msg(devmsg)}\033[0m" + (f"({iftag})" if iftag else ""),
+            )
             if abort:
                 raise InternalError(f"Internal error: {devmsg}")
             return
@@ -152,13 +161,16 @@ def plugin_log(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
-            devdebug(f"begin call {func.__name__}(args={args} kwargs={kwargs})",
-                     f"begin call {func.__name__}(...)")
+            devdebug(
+                f"begin call {func.__name__}(args={args} kwargs={kwargs})",
+                f"begin call {func.__name__}(...)",
+            )
 
             result = func(*args, **kwargs)
 
-            devdebug(f"end call {func.__name__}() => {result}",
-                     f"end call {func.__name__}()")
+            devdebug(
+                f"end call {func.__name__}() => {result}", f"end call {func.__name__}()"
+            )
 
             return result
         except Exception as e:

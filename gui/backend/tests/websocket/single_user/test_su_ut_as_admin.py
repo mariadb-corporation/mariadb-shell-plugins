@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,28 +36,33 @@ unit_tests = utils.get_unit_tests(True, True, False)
 def ws(shell_start_local_user_mode_server, create_users):
     _, token = shell_start_local_user_mode_server
     ws = TestWebSocket.TWebSocket(
-        token=token, logger=get_logger(), script_reader=utils.unit_test_reader)
+        token=token, logger=get_logger(), script_reader=utils.unit_test_reader
+    )
 
-    ws.send({
-        "request": "authenticate",
-        "username": "LocalAdministrator",
-        "request_id": ws.generateRequestId()
-    })
-
-    ws.validateLastResponse({
-        "request_state": {
-            "type": "OK",
-            "msg": "User LocalAdministrator was successfully authenticated."
-        },
-        "request_id": ws.lastGeneratedRequestId,
-        "active_profile": {
-            "id": ws.matchRegexp("\\d+"),
-            "user_id": ws.matchRegexp("\\d+"),
-            "name": "Default",
-            "description": "Default Profile",
-            "options": {}
+    ws.send(
+        {
+            "request": "authenticate",
+            "username": "LocalAdministrator",
+            "request_id": ws.generateRequestId(),
         }
-    })
+    )
+
+    ws.validateLastResponse(
+        {
+            "request_state": {
+                "type": "OK",
+                "msg": "User LocalAdministrator was successfully authenticated.",
+            },
+            "request_id": ws.lastGeneratedRequestId,
+            "active_profile": {
+                "id": ws.matchRegexp("\\d+"),
+                "user_id": ws.matchRegexp("\\d+"),
+                "name": "Default",
+                "description": "Default Profile",
+                "options": {},
+            },
+        }
+    )
 
     ws.tokens["active_profile"] = ws.lastResponse["active_profile"]
 

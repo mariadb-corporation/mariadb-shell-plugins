@@ -95,7 +95,8 @@
             "migration_plugin": true,
             "util_plugin": true,
             "MySQLShellPluginDevelopment.code-workspace": true,
-        }
+        },
+        "editor.defaultFormatter": "ms-python.black-formatter"
     },
     "launch": {
         "version": "0.2.0",
@@ -278,7 +279,10 @@
                 },
                 "problemMatcher": {
                     "owner": "shell",
-                    "fileLocation": ["relative", "${workspaceFolder}"],
+                    "fileLocation": [
+                        "relative",
+                        "${workspaceFolder}"
+                    ],
                     "pattern": [
                         {
                             "regexp": "^.*\\[.*\\]:\\s(Error|Warning|Info):\\s(.*)",

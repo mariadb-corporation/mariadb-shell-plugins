@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -96,15 +96,17 @@ class Aborted(RuntimeError):
 
 class RemoteHelperFailed(RuntimeError):
     "Errors from the helper itself failing (net error, bad install, corrupt etc)"
+
     pass
 
 
 class MigrationRecoveryError(RuntimeError):
     "Can't recover/restart/resume migration project"
+
     pass
 
 
-def format_exception(e: Exception, msg: str = "Error") -> tuple[str, str,  dict]:
+def format_exception(e: Exception, msg: str = "Error") -> tuple[str, str, dict]:
     if isinstance(e, InvalidParameter):
         return (e.__class__.__name__, str(e), {"input": e.input})
     elif isinstance(e, BadUserInput):

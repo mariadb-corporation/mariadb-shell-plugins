@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +37,7 @@ def shell_start_local_user_mode_server(request):
 
     yield (p, server_token)
 
-    if hasattr(signal, 'CTRL_C_EVENT'):
+    if hasattr(signal, "CTRL_C_EVENT"):
         # windows. Need CTRL_C_EVENT to raise the signal in the whole process group
         os.kill(p.pid, signal.CTRL_C_EVENT)  # pylint: disable=no-member
     else:

@@ -26,18 +26,21 @@ from mysqlsh.plugin_manager import plugin_function
 # Define plugin version
 VERSION = "2026.5.0"
 
-@plugin_function('gui.info', shell=True, cli=True, web=True)
+
+@plugin_function("gui.info", shell=True, cli=True, web=True)
 def info():
     """Returns basic information about this plugin.
 
     Returns:
         str
     """
-    return (f"MySQL GUI Plugin Version {VERSION} PREVIEW\n"
-             "Warning! For testing purposes only!")
+    return (
+        f"MySQL GUI Plugin Version {VERSION} PREVIEW\n"
+        "Warning! For testing purposes only!"
+    )
 
 
-@plugin_function('gui.version', shell=True, cli=True, web=True)
+@plugin_function("gui.version", shell=True, cli=True, web=True)
 def version():
     """Returns the version number of the plugin
 

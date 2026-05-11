@@ -100,34 +100,50 @@ class OrchestratorInterface(Protocol):
             return asdict(data)
         else:
             raise Exception(
-                f"{context} data requires either a dictionary or a @dataclass instance")
+                f"{context} data requires either a dictionary or a @dataclass instance"
+            )
 
-    def push_progress(self, source: model.SubStepId, message: str, data: Optional[Any] = None):
+    def push_progress(
+        self, source: model.SubStepId, message: str, data: Optional[Any] = None
+    ):
         if data is None:
             self.on_push_progress(source, message)
         else:
             self.on_push_progress(
-                source, message, self._resolve_data('push_progress', data))
+                source, message, self._resolve_data("push_progress", data)
+            )
 
     def on_push_progress(self, source: model.SubStepId, message: str, data: dict = {}):
         raise NotImplementedError()
 
-    def push_status(self, source: model.SubStepId, status: WorkStatusEvent, data: Optional[Any] = None, message: str = ""):
+    def push_status(
+        self,
+        source: model.SubStepId,
+        status: WorkStatusEvent,
+        data: Optional[Any] = None,
+        message: str = "",
+    ):
         if data is None:
             self.on_push_status(source, status, {}, message)
         else:
             self.on_push_status(
-                source, status, self._resolve_data('push_status', data), message)
+                source, status, self._resolve_data("push_status", data), message
+            )
 
-    def on_push_status(self, source: model.SubStepId, status: WorkStatusEvent, data: dict = {}, message: str = ""):
+    def on_push_status(
+        self,
+        source: model.SubStepId,
+        status: WorkStatusEvent,
+        data: dict = {},
+        message: str = "",
+    ):
         raise NotImplementedError()
 
     def push_message(self, source: model.SubStepId, data: Optional[Any] = None):
         if data is None:
             self.on_push_message(source, {})
         else:
-            self.on_push_message(
-                source, self._resolve_data('push_message', data))
+            self.on_push_message(source, self._resolve_data("push_message", data))
 
     def on_push_message(self, source: model.SubStepId, data: dict):
         raise NotImplementedError()
@@ -159,7 +175,11 @@ class Stage:
     _fatal_error: Optional[Exception] = None
     # TODO add timeouts (with per stage customization)
 
-    def __init__(self, id: SubStepId,  owner: OrchestratorInterface, ) -> None:
+    def __init__(
+        self,
+        id: SubStepId,
+        owner: OrchestratorInterface,
+    ) -> None:
         self._id = id
         self._owner = owner
         self._dependencies: List[Stage] = []
@@ -197,8 +217,7 @@ class Stage:
             flags.append("finished")
         if self._fatal_error:
             flags.append(f"{type(self._fatal_error)}")
-        logging.debug("  " * indent + "-" + self._name +
-                      f" ({','.join(flags)})")
+        logging.debug("  " * indent + "-" + self._name + f" ({','.join(flags)})")
         for dep in self._dependencies:
             dep._dump(indent + 1, seen)
         seen.add(self)
@@ -210,7 +229,9 @@ class Stage:
         if message or data:
             self._owner.push_progress(self._id, message, data)
 
-    def push_status(self, event: WorkStatusEvent, data: Optional[Any] = None, message=""):
+    def push_status(
+        self, event: WorkStatusEvent, data: Optional[Any] = None, message=""
+    ):
         if message:
             logging.info(f"{self._name}: {message}")
 
@@ -234,7 +255,8 @@ class Stage:
         try:
             while deps:
                 logging.info(
-                    f"{self._name} waiting deps: {[f'{d._name} started={1 if d._is_started else 0}' for d in deps]}")
+                    f"{self._name} waiting deps: {[f'{d._name} started={1 if d._is_started else 0}' for d in deps]}"
+                )
                 delay = 1
                 for d in deps[:]:
                     if d._is_started:
@@ -272,14 +294,16 @@ class Stage:
             if self._is_finished:
                 return False
             deps = [
-                dep for dep in self._dependencies if not dep._is_finished and dep._enabled]
+                dep
+                for dep in self._dependencies
+                if not dep._is_finished and dep._enabled
+            ]
             self.wait_dependencies(deps)
             return False
         self.__started = (
             True  # TODO make this thread safe (atomic set and get at the top)
         )
-        logging.debug(
-            f"{len(parents)*"  "}{self._name} start: {'/'.join(parents)}")
+        logging.debug(f"{len(parents)*"  "}{self._name} start: {'/'.join(parents)}")
 
         deps = []
         for dep in self._dependencies:
@@ -351,7 +375,8 @@ class ThreadedStage(Stage):
 
         if not self._enabled or self.__done:
             logging.info(
-                f"Skipping {'done' if self.__done else 'disabled'} stage {self._name}")
+                f"Skipping {'done' if self.__done else 'disabled'} stage {self._name}"
+            )
             self.__done = True
             return True
 
@@ -378,7 +403,8 @@ class ThreadedStage(Stage):
     def update(self) -> bool:
         if self._fatal_error:
             logging.info(
-                f"{self._name} thread failed with an error: {self._fatal_error}")
+                f"{self._name} thread failed with an error: {self._fatal_error}"
+            )
             raise self._fatal_error
         logging.devdebug(f"{self._name}.update={self.__done}")
         return self.__done
@@ -405,10 +431,10 @@ class ThreadedStage(Stage):
                 self.push_status(WorkStatusEvent.ABORTED)
                 self._fatal_error = e
             except Exception as e:
-                logging.exception(
-                    f"{self._name} threw an exception in thread")
-                self.push_status(WorkStatusEvent.ERROR,
-                                 model.MigrationError._from_exception(e))
+                logging.exception(f"{self._name} threw an exception in thread")
+                self.push_status(
+                    WorkStatusEvent.ERROR, model.MigrationError._from_exception(e)
+                )
                 self._fatal_error = e
             finally:
                 mysqlsh.thread_end()

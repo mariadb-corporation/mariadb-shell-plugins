@@ -34,7 +34,9 @@ from migration_plugin.migration import *
 @pytest.fixture
 def migration():
     assert not migration_lib.g_open_projects
-    with tempfile.TemporaryDirectory() as temp_dir, patch('migration_plugin.lib.core.default_projects_directory') as mock_default_projects_directory:
+    with tempfile.TemporaryDirectory() as temp_dir, patch(
+        "migration_plugin.lib.core.default_projects_directory"
+    ) as mock_default_projects_directory:
         mock_default_projects_directory.return_value = str(temp_dir)
         yield {"projects_dir": temp_dir}
         migration_lib.close_all_projects()
@@ -52,12 +54,13 @@ def test_get_migration_steps(migration):
     steps = get_migration_steps()
 
     assert isinstance(steps, list)
-    assert (len(steps) == 5)
+    assert len(steps) == 5
 
 
 def test_open_project(migration):
     project_context = migration_lib.new_project(
-        "Test_project", "mysql://user@host:3306")
+        "Test_project", "mysql://user@host:3306"
+    )
     migration_lib.close_project(project_context.project.id)
 
     result_project = open_project(project_context.project.id)

@@ -50,8 +50,13 @@ k_repo_mysqlsh_url = {
 }
 
 
-def setup_mysqlsh(ssh, sftp, local_basedir: str, target_basedir: str,
-                  progress_fn: Callable[[str], None]):
+def setup_mysqlsh(
+    ssh,
+    sftp,
+    local_basedir: str,
+    target_basedir: str,
+    progress_fn: Callable[[str], None],
+):
     def run(cmd) -> tuple[int, str]:
         logging.debug(f"jumphost: executing {cmd}...")
         rc, data = ssh.executeWithStdin(cmd, "")
@@ -65,7 +70,7 @@ def setup_mysqlsh(ssh, sftp, local_basedir: str, target_basedir: str,
     # retry all rpm cmds just in case
     def run_rpm(cmd) -> tuple[int, str]:
         def should_retry(output):
-            return ("transaction lock" in data or "Curl error" in data)
+            return "transaction lock" in data or "Curl error" in data
 
         attempt = 100
         while True:
@@ -74,8 +79,7 @@ def setup_mysqlsh(ssh, sftp, local_basedir: str, target_basedir: str,
             logging.info(f"jumphost: {cmd}: rc={rc} '''{data}'''")
             if rc != 0 and should_retry(data) and attempt > 0:
                 attempt -= 1
-                logging.warning(
-                    f"jumphost: error, retrying rpm command after 5s...")
+                logging.warning(f"jumphost: error, retrying rpm command after 5s...")
                 time.sleep(5)
             else:
                 return rc, data
@@ -90,8 +94,7 @@ def setup_mysqlsh(ssh, sftp, local_basedir: str, target_basedir: str,
 
     if bundled_rpm_name:
         bundled_path = os.path.join(local_basedir, "data", bundled_rpm_name)
-        logging.debug(
-            f"checking for bundled mysqlsh package at {bundled_path}")
+        logging.debug(f"checking for bundled mysqlsh package at {bundled_path}")
     else:
         bundled_path = None
     if bundled_path and os.path.exists(bundled_path):
@@ -101,22 +104,24 @@ def setup_mysqlsh(ssh, sftp, local_basedir: str, target_basedir: str,
         logging.info(f"jumphost: Upload done, uninstalling old package...")
         # uninstall old package
         status, data = run_rpm(
-            f"sudo rpm -e mysql-shell || sudo rpm -e mysql-shell-commercial")
+            f"sudo rpm -e mysql-shell || sudo rpm -e mysql-shell-commercial"
+        )
 
         progress_fn("Installing mysqlsh")
         # install new package
         status, data = run_rpm(f"sudo rpm -Uvh {bundled_rpm_name}")
         if status != 0:
             raise errors.RemoteHelperFailed(
-                f"Could not install {bundled_rpm_name} on jump host")
+                f"Could not install {bundled_rpm_name} on jump host"
+            )
     elif arch in k_repo_mysqlsh_url:
         progress_fn("Installing mysqlsh")
         # if there's no bundled mysqlsh, install it from repo
-        status, data = run_rpm(
-            f"sudo yum -y install {k_repo_mysqlsh_url[arch]}")
+        status, data = run_rpm(f"sudo yum -y install {k_repo_mysqlsh_url[arch]}")
         if status != 0:
             raise errors.RemoteHelperFailed(
-                "Could not install mysql-shell on jump host")
+                "Could not install mysql-shell on jump host"
+            )
     else:
         raise errors.RemoteHelperFailed(
             f"Could not find mysql-shell {arch} to install on jump host"
@@ -157,12 +162,10 @@ class RemoteHelperClient:
             on_output=on_output,
         )
         if not status:
-            logging.error(
-                f"remote helper cmd={cmd} exited with an error: {data}")
+            logging.error(f"remote helper cmd={cmd} exited with an error: {data}")
             raise errors.RemoteHelperFailed("Remote helper error")
         else:
-            logging.devdebug(
-                f"remote helper cmd={cmd} result={data}", iftag="helper")
+            logging.devdebug(f"remote helper cmd={cmd} result={data}", iftag="helper")
         if data:
             try:
                 d = json.loads(data)
@@ -171,10 +174,10 @@ class RemoteHelperClient:
                 raise errors.RemoteHelperFailed()
 
             logging.debug(
-                f"remote helper cmd={cmd} status={d.get("status")} error={d.get("error")}")
+                f"remote helper cmd={cmd} status={d.get("status")} error={d.get("error")}"
+            )
             if d["status"] == "fail":
-                raise errors.RemoteHelperFailed(
-                    f"Remote helper error: {d['error']}")
+                raise errors.RemoteHelperFailed(f"Remote helper error: {d['error']}")
             return d
         return {}
 
@@ -191,17 +194,14 @@ class RemoteHelperClient:
                 return
 
         logging.error(f"remote helper expected to be running, but is not")
-        raise errors.RemoteHelperFailed(
-            "Jump host helper process not running")
+        raise errors.RemoteHelperFailed("Jump host helper process not running")
 
     def exists(self):
         assert self.ssh
 
         try:
-            logging.debug(
-                "checking if remote mysql-migration/helper.pid exists")
-            pid = self.ssh.get_remote_file_contents(
-                "./mysql-migration/helper.pid")
+            logging.debug("checking if remote mysql-migration/helper.pid exists")
+            pid = self.ssh.get_remote_file_contents("./mysql-migration/helper.pid")
             logging.debug("it does")
             return True
         except IOError as e:
@@ -254,18 +254,24 @@ class RemoteHelperClient:
         directory_path = os.path.dirname(source_path)
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for plugin_path in [source_path, os.path.join(directory_path, "mds_plugin")]:
+            for plugin_path in [
+                source_path,
+                os.path.join(directory_path, "mds_plugin"),
+            ]:
                 for root, dirs, files in os.walk(plugin_path):
                     for d in list(dirs):
                         if d.startswith(".") or d in ["__pycache__", "htmlcov"]:
                             dirs.remove(d)
                     for file in files:
-                        if file.endswith(".zip") or file.endswith(".rpm") or file.startswith("."):
+                        if (
+                            file.endswith(".zip")
+                            or file.endswith(".rpm")
+                            or file.startswith(".")
+                        ):
                             continue
                         abs_path = os.path.join(root, file)
                         # Add file with a relative path
-                        rel_path = os.path.relpath(
-                            abs_path, start=directory_path)
+                        rel_path = os.path.relpath(abs_path, start=directory_path)
                         zipf.write(abs_path, arcname=rel_path)
 
         self.helper_zip_path = zip_path
@@ -314,13 +320,18 @@ class RemoteHelperClient:
             sftp.mkdir(target_basedir)
 
             # Install/Upload mysqlsh itself
-            setup_mysqlsh(ssh=self.ssh, sftp=sftp, local_basedir=self.local_basedir,
-                          target_basedir=target_basedir,
-                          progress_fn=progress_fn)
+            setup_mysqlsh(
+                ssh=self.ssh,
+                sftp=sftp,
+                local_basedir=self.local_basedir,
+                target_basedir=target_basedir,
+                progress_fn=progress_fn,
+            )
 
             # Upload helper scripts
-            self._upload_scripts(sftp=sftp, basedir=basedir,
-                                 target_basedir=target_basedir)
+            self._upload_scripts(
+                sftp=sftp, basedir=basedir, target_basedir=target_basedir
+            )
         finally:
             sftp.close()
 
@@ -418,17 +429,16 @@ class RemoteHelperClient:
         res = self._command("enable-tunneling", {})
         logging.debug(f"enable_tunneling: {res}")
         if res["status"] == "error":
-            logging.error(
-                f"Could not enable SSH tunneling at jump host: {res}")
+            logging.error(f"Could not enable SSH tunneling at jump host: {res}")
             raise errors.RemoteHelperFailed(
-                "Could not enable SSH tunneling at jump host")
+                "Could not enable SSH tunneling at jump host"
+            )
         else:
             logging.info("SSH tunneling enabled at jump just")
 
     def test_tunnel(self, user: str, password: str) -> bool:
         logging.debug(f"test_tunnel begin")
-        res = self._command(
-            "test-tunnel", {"user": user, "password": password})
+        res = self._command("test-tunnel", {"user": user, "password": password})
         logging.debug(f"test_tunnel: {res}")
         if res["status"] == "error":
             logging.error(f"remote tunnel test failed with an error: {res}")
@@ -453,7 +463,8 @@ class RemoteHelperClient:
     def target_run_sql(self, sql: str, args: list, connect_options: dict):
         logging.debug(f"run_sql remotely at target: {sql}")
         res = self._command(
-            "target-run-sql", {"sql": sql, "args": args, "connection": connect_options})
+            "target-run-sql", {"sql": sql, "args": args, "connection": connect_options}
+        )
         if res["status"] == "error":
             logging.error(f"remote run_sql failed with an error: {res}")
             raise RuntimeError("Error running SQL remotely at target")

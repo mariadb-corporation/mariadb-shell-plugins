@@ -1,13 +1,20 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 # MySQL Workbench Plugin
 # Module with Audit Log Trigger function
 # Written in MySQL Workbench 8.0.26
 
 from wb import *
 import grt
-#import mforms
 
-ModuleInfo = DefineModule("Audit_Log_Triggers", author="MikeZ", version="1.2", description="Contains Plugin Audit_Log_Triggers")
+# import mforms
+
+ModuleInfo = DefineModule(
+    "Audit_Log_Triggers",
+    author="MikeZ",
+    version="1.2",
+    description="Contains Plugin Audit_Log_Triggers",
+)
+
 
 def get_wb_doc_dir(filename, *argv):
     """Returns the doc dir of the current model
@@ -20,24 +27,29 @@ def get_wb_doc_dir(filename, *argv):
     """
     import os.path, platform
 
-    home_dir = os.path.expanduser('~')
+    home_dir = os.path.expanduser("~")
     if not home_dir:
         raise Exception("No home directory set")
     os_name = platform.system()
     if os_name == "Windows":
         wb_dir = os.path.join(
-            home_dir, "AppData", "Roaming", "MySQL",
-            "Workbench", filename + "d"
+            home_dir, "AppData", "Roaming", "MySQL", "Workbench", filename + "d"
         )
     else:
         wb_dir = os.path.join(
-            home_dir, "Library", "Application Support", "MySQL",
-            "Workbench", filename + "d")
+            home_dir,
+            "Library",
+            "Application Support",
+            "MySQL",
+            "Workbench",
+            filename + "d",
+        )
 
     for arg in argv:
         wb_dir = os.path.join(wb_dir, arg)
 
     return wb_dir
+
 
 def create_audit_log_table():
     import datetime
@@ -48,17 +60,17 @@ def create_audit_log_table():
     # Check if audit_log table is already in the schema
     audit_log_table = False
     for table in schema.tables:
-        if table.name == 'audit_log':
+        if table.name == "audit_log":
             audit_log_table = True
             break
     if not audit_log_table:
-        audit_table = schema.addNewTable("db.mysql") # grt.classes.db_mysql_Table()
+        audit_table = schema.addNewTable("db.mysql")  # grt.classes.db_mysql_Table()
         audit_table.owner = grt.root.wb.doc.physicalModels[0].catalog.schemata[0]
         audit_table.name = "audit_log"
         audit_table.oldName = "audit_log"
         audit_table.tableEngine = "InnoDB"
-        audit_table.createDate = f'{datetime.datetime.now():%Y-%m-%d %H:%M:%S}'
-        audit_table.lastChangeDate = f'{datetime.datetime.now():%Y-%m-%d %H:%M:%S}'
+        audit_table.createDate = f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}"
+        audit_table.lastChangeDate = f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}"
         # Column ---------
         c_id = grt.classes.db_mysql_Column()
         c_id.autoIncrement = 1
@@ -164,7 +176,9 @@ def create_audit_log_table():
         c_o_r_i.precision = -1
         c_o_r_i.scale = -1
         c_o_r_i.owner = audit_table
-        c_o_r_i.simpleType = grt.root.wb.doc.physicalModels[0].catalog.simpleDatatypes[3]
+        c_o_r_i.simpleType = grt.root.wb.doc.physicalModels[0].catalog.simpleDatatypes[
+            3
+        ]
         audit_table.addColumn(c_o_r_i)
         # Column ---------
         c_n_r_i = grt.classes.db_mysql_Column()
@@ -179,7 +193,9 @@ def create_audit_log_table():
         c_n_r_i.precision = -1
         c_n_r_i.scale = -1
         c_n_r_i.owner = audit_table
-        c_n_r_i.simpleType = grt.root.wb.doc.physicalModels[0].catalog.simpleDatatypes[3]
+        c_n_r_i.simpleType = grt.root.wb.doc.physicalModels[0].catalog.simpleDatatypes[
+            3
+        ]
         audit_table.addColumn(c_n_r_i)
 
         # Index ---------
@@ -275,7 +291,13 @@ def create_audit_log_table():
 
 
 # This plugin takes no arguments
-@ModuleInfo.plugin("Audit_Log_Triggers", caption="Generate audit_log Table and Trigger Script", description="Generates an audit_log table and the corresponding Trigger statements for all tables in the model as an SQL script", input=[], pluginMenu="Utilities")
+@ModuleInfo.plugin(
+    "Audit_Log_Triggers",
+    caption="Generate audit_log Table and Trigger Script",
+    description="Generates an audit_log table and the corresponding Trigger statements for all tables in the model as an SQL script",
+    input=[],
+    pluginMenu="Utilities",
+)
 @ModuleInfo.export(grt.INT)
 def Audit_Log_Triggers():
     import datetime
@@ -289,9 +311,9 @@ def Audit_Log_Triggers():
     # Check if the audit_log.old_row_id is a generated column
     generated_id_cols = False
     for table in schema.tables:
-        if table.name == 'audit_log':
+        if table.name == "audit_log":
             for col in table.columns:
-                if col.name == 'old_row_id':
+                if col.name == "old_row_id":
                     generated_id_cols = col.generated == 1
                     break
             break
@@ -310,7 +332,7 @@ END%%"""
 
     # Loop over all schema tables
     for table in schema.tables:
-        if table.name == 'audit_log':
+        if table.name == "audit_log":
             continue
         if "no_audit_log" in table.comment:
             continue
@@ -318,53 +340,75 @@ END%%"""
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
         table_name, dml_type, old_row_data, new_row_data"""
         if not generated_id_cols:
-            insert_header += ', old_row_id, new_row_id'
+            insert_header += ", old_row_id, new_row_id"
         insert_header += """, changed_by, changed_at)
     VALUES ("""
         insert_trigger = (
-            f'DROP TRIGGER IF EXISTS `{table.name}_AFTER_INSERT_AUDIT_LOG`%%\n'
-            f'CREATE TRIGGER `{table.name}_AFTER_INSERT_AUDIT_LOG`\n'
-            f'    AFTER INSERT ON `{table.name}` FOR EACH ROW\nBEGIN{insert_header}\n'
-            f'{" ":8}"{table.name}", \n{" ":8}"INSERT", \n{" ":8}NULL,\n{" ":8}JSON_OBJECT(\n')
+            f"DROP TRIGGER IF EXISTS `{table.name}_AFTER_INSERT_AUDIT_LOG`%%\n"
+            f"CREATE TRIGGER `{table.name}_AFTER_INSERT_AUDIT_LOG`\n"
+            f"    AFTER INSERT ON `{table.name}` FOR EACH ROW\nBEGIN{insert_header}\n"
+            f'{" ":8}"{table.name}", \n{" ":8}"INSERT", \n{" ":8}NULL,\n{" ":8}JSON_OBJECT(\n'
+        )
         update_trigger = (
-            f'DROP TRIGGER IF EXISTS `{table.name}_AFTER_UPDATE_AUDIT_LOG`%%\n'
-            f'CREATE TRIGGER `{table.name}_AFTER_UPDATE_AUDIT_LOG`\n'
-            f'    AFTER UPDATE ON `{table.name}` FOR EACH ROW\nBEGIN{insert_header}\n'
-            f'{" ":8}"{table.name}", \n{" ":8}"UPDATE", \n{" ":8}JSON_OBJECT(\n')
+            f"DROP TRIGGER IF EXISTS `{table.name}_AFTER_UPDATE_AUDIT_LOG`%%\n"
+            f"CREATE TRIGGER `{table.name}_AFTER_UPDATE_AUDIT_LOG`\n"
+            f"    AFTER UPDATE ON `{table.name}` FOR EACH ROW\nBEGIN{insert_header}\n"
+            f'{" ":8}"{table.name}", \n{" ":8}"UPDATE", \n{" ":8}JSON_OBJECT(\n'
+        )
         delete_trigger = (
-            f'DROP TRIGGER IF EXISTS `{table.name}_AFTER_DELETE_AUDIT_LOG`%%\n'
-            f'CREATE TRIGGER `{table.name}_AFTER_DELETE_AUDIT_LOG`\n'
-            f'    AFTER DELETE ON `{table.name}` FOR EACH ROW\nBEGIN{insert_header}\n'
-            f'{" ":8}"{table.name}", \n{" ":8}"DELETE", \n{" ":8}JSON_OBJECT(\n')
+            f"DROP TRIGGER IF EXISTS `{table.name}_AFTER_DELETE_AUDIT_LOG`%%\n"
+            f"CREATE TRIGGER `{table.name}_AFTER_DELETE_AUDIT_LOG`\n"
+            f"    AFTER DELETE ON `{table.name}` FOR EACH ROW\nBEGIN{insert_header}\n"
+            f'{" ":8}"{table.name}", \n{" ":8}"DELETE", \n{" ":8}JSON_OBJECT(\n'
+        )
         old_rows = ""
         new_rows = ""
         for column in table.columns:
             data_type = column.formattedRawType.upper()
-            if not ('BLOB' in data_type or 'TEXT' in data_type):
+            if not ("BLOB" in data_type or "TEXT" in data_type):
                 old_rows += f'{" ":12}"{column.name}", OLD.{column.name},\n'
                 new_rows += f'{" ":12}"{column.name}", NEW.{column.name},\n'
 
-        old_rows = old_rows[:-2] + '),'
-        new_rows = new_rows[:-2] + '),'
+        old_rows = old_rows[:-2] + "),"
+        new_rows = new_rows[:-2] + "),"
 
         # Check if table has at least one PK column, if so use the first column for old_row_id/new_row_id
-        old_row_id = 'NULL,'
-        new_row_id = 'NULL,'
+        old_row_id = "NULL,"
+        new_row_id = "NULL,"
         if len(table.primaryKey.columns) >= 1:
-            old_row_id = 'OLD.' + table.primaryKey.columns[0].referencedColumn.name + ','
-            new_row_id = 'NEW.' + table.primaryKey.columns[0].referencedColumn.name + ','
+            old_row_id = (
+                "OLD." + table.primaryKey.columns[0].referencedColumn.name + ","
+            )
+            new_row_id = (
+                "NEW." + table.primaryKey.columns[0].referencedColumn.name + ","
+            )
 
-        insert_trigger += (new_rows
-            + (f'\n{" ":8}NULL,\n{" ":8}{new_row_id}' if not generated_id_cols else '')
-            + trigger_footer)
-        update_trigger += (old_rows + f'\n{" ":8}JSON_OBJECT(\n' + new_rows
-            + (f'\n{" ":8}{old_row_id}\n{" ":8}{new_row_id}' if not generated_id_cols else '')
-            + trigger_footer)
-        delete_trigger += (old_rows + f'\n{" ":8}NULL,'
-            + (f'\n{" ":8}{old_row_id}\n{" ":8}NULL,' if not generated_id_cols else '')
-            + trigger_footer)
+        insert_trigger += (
+            new_rows
+            + (f'\n{" ":8}NULL,\n{" ":8}{new_row_id}' if not generated_id_cols else "")
+            + trigger_footer
+        )
+        update_trigger += (
+            old_rows
+            + f'\n{" ":8}JSON_OBJECT(\n'
+            + new_rows
+            + (
+                f'\n{" ":8}{old_row_id}\n{" ":8}{new_row_id}'
+                if not generated_id_cols
+                else ""
+            )
+            + trigger_footer
+        )
+        delete_trigger += (
+            old_rows
+            + f'\n{" ":8}NULL,'
+            + (f'\n{" ":8}{old_row_id}\n{" ":8}NULL,' if not generated_id_cols else "")
+            + trigger_footer
+        )
 
-        sql_script += insert_trigger + "\n\n" + update_trigger + "\n\n" + delete_trigger + "\n\n"
+        sql_script += (
+            insert_trigger + "\n\n" + update_trigger + "\n\n" + delete_trigger + "\n\n"
+        )
 
     sql_script += "DELIMITER ;\n"
 
@@ -372,33 +416,36 @@ END%%"""
     scripts = grt.root.wb.doc.physicalModels[0].scripts
     file_name = None
     for script in scripts:
-        if script.name == 'Audit Log Triggers':
+        if script.name == "Audit Log Triggers":
             file_name = script.filename[9:]
-            script.lastChangeDate = f'{datetime.datetime.now():%Y-%m-%d %H:%M:%S}'
+            script.lastChangeDate = f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}"
 
     # If there is no 'Audit Log Triggers' script yet, add it
     if not file_name:
-        file_name = 'audit_log_triggers.sql'
+        file_name = "audit_log_triggers.sql"
         script = grt.classes.db_Script()
-        script.name = 'Audit Log Triggers'
+        script.name = "Audit Log Triggers"
         script.forwardEngineerScriptPosition = "bottom_file"
-        script.createDate = f'{datetime.datetime.now():%Y-%m-%d %H:%M:%S}'
-        script.lastChangeDate = f'{datetime.datetime.now():%Y-%m-%d %H:%M:%S}'
-        script.filename = '@scripts/audit_log_triggers.sql'
+        script.createDate = f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}"
+        script.lastChangeDate = f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}"
+        script.filename = "@scripts/audit_log_triggers.sql"
         script.owner = grt.root.wb.doc.physicalModels[0]
 
         grt.root.wb.doc.physicalModels[0].scripts.append(script)
 
     # Write script to file inside the WB Doc's workdir
     import os.path
-    wb_doc_script_dir = get_wb_doc_dir(os.path.basename(grt.root.wb.docPath), "@scripts")
+
+    wb_doc_script_dir = get_wb_doc_dir(
+        os.path.basename(grt.root.wb.docPath), "@scripts"
+    )
     if not os.path.exists(wb_doc_script_dir):
         os.makedirs(wb_doc_script_dir)
-    file_path = os.path.join(wb_doc_script_dir, 'audit_log_triggers.sql')
+    file_path = os.path.join(wb_doc_script_dir, "audit_log_triggers.sql")
 
     if file_path:
         print(f"Writing file {file_path}...")
-        with open(file_path, 'w') as out:
+        with open(file_path, "w") as out:
             out.write(sql_script)
 
     return 0

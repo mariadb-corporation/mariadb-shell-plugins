@@ -57,12 +57,11 @@ sys.path.insert(0, os.path.join(g_basedir, "helper.zip"))
 from migration_plugin.lib.backend import submysqlsh  # nopep8
 from migration_plugin.lib.backend.source_check import MySQLSourceCheck  # nopep8
 
-
 k_bind_address = ("localhost", 8888)
 
 
 def http_get(url, headers=None) -> tuple[int, bytes]:
-    req = urllib.request.Request(url, headers=headers or {}, method='GET')
+    req = urllib.request.Request(url, headers=headers or {}, method="GET")
     with urllib.request.urlopen(req) as response:
         status_code = response.getcode()
         data = response.read()
@@ -74,7 +73,8 @@ def http_post(url, payload: Optional[dict] = None) -> tuple[int, bytes]:
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8") if payload else payload,
-        method='POST')
+        method="POST",
+    )
     with urllib.request.urlopen(req) as response:
         status_code = response.getcode()
         data = response.read()
@@ -86,7 +86,8 @@ def http_post_stream(handle_line: Callable, url, payload: dict = {}):
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8") if payload else payload,
-        method='POST')
+        method="POST",
+    )
     with urllib.request.urlopen(req) as response:
         for line in response:
             if line.strip():
@@ -101,60 +102,76 @@ def enable_replication_tunneling():
     - configure the firewall to allow connections to 3306
     """
     try:
-        subprocess.run(["sudo", "sed",
-                        "-e", r"s/^#\?GatewayPorts.*/GatewayPorts yes/",
-                        "-i", "/etc/ssh/sshd_config"],
-                       check=True,
-                       text=True,
-                       capture_output=True)
-        subprocess.run(["sudo", "service", "sshd", "restart"],
-                       check=True,
-                       text=True,
-                       capture_output=True)
+        subprocess.run(
+            [
+                "sudo",
+                "sed",
+                "-e",
+                r"s/^#\?GatewayPorts.*/GatewayPorts yes/",
+                "-i",
+                "/etc/ssh/sshd_config",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["sudo", "service", "sshd", "restart"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
     except subprocess.CalledProcessError as e:
         shell.log("error", f"error enabling GatewayPorts for sshd: {e.stdout}")
-        raise RuntimeError(
-            f"Error updating sshd configuration: {e.stdout} {e.stderr}")
+        raise RuntimeError(f"Error updating sshd configuration: {e.stdout} {e.stderr}")
 
     try:
         subprocess.run(
             ["sudo", "firewall-cmd", "--add-port=3306/tcp", "--permanent"],
             check=True,
             text=True,
-            capture_output=True)
-        subprocess.run(["sudo", "firewall-cmd", "--reload"],
-                       check=True,
-                       text=True,
-                       capture_output=True)
+            capture_output=True,
+        )
+        subprocess.run(
+            ["sudo", "firewall-cmd", "--reload"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
     except subprocess.CalledProcessError as e:
         shell.log(
-            "error", f"error adding tunnel port to firewall rules: stdout={e.stdout} stderr={e.stderr}")
+            "error",
+            f"error adding tunnel port to firewall rules: stdout={e.stdout} stderr={e.stderr}",
+        )
         raise RuntimeError(
-            f"Error updating firewall configuration: {e.stdout} {e.stderr}")
+            f"Error updating firewall configuration: {e.stdout} {e.stderr}"
+        )
 
 
 def get_channel_status(sess) -> dict:
     status = {}
     gtid_executed, gtid_purged = sess.run_sql(
-        "select @@gtid_executed, @@gtid_purged").fetch_one()
+        "select @@gtid_executed, @@gtid_purged"
+    ).fetch_one()
     status["gtid_executed"] = gtid_executed
     status["gtid_purged"] = gtid_purged
 
     status["connection_status"] = []
-    res = sess.run_sql(
-        "select * from performance_schema.replication_connection_status")
+    res = sess.run_sql("select * from performance_schema.replication_connection_status")
     for row in iter(res.fetch_one_object, None):
         status["connection_status"].append(row)
 
     status["applier_status_by_worker"] = []
     res = sess.run_sql(
-        "select * from performance_schema.replication_applier_status_by_worker")
+        "select * from performance_schema.replication_applier_status_by_worker"
+    )
     for row in iter(res.fetch_one_object, None):
         status["applier_status_by_worker"].append(row)
 
     status["applier_status_by_coordinator"] = []
     res = sess.run_sql(
-        "select * from performance_schema.replication_applier_status_by_coordinator")
+        "select * from performance_schema.replication_applier_status_by_coordinator"
+    )
     for row in iter(res.fetch_one_object, None):
         status["applier_status_by_coordinator"].append(row)
 
@@ -184,7 +201,9 @@ class BackgroundThread:
     def is_running(self) -> bool:
         return self._process is not None
 
-    def start(self, create_process: Callable[[Callable[[dict], None]], submysqlsh.SubMysqlsh]):
+    def start(
+        self, create_process: Callable[[Callable[[dict], None]], submysqlsh.SubMysqlsh]
+    ):
         def do_start():
             self._process = create_process(self._on_stdout)
             rc = self._process.process()
@@ -234,7 +253,10 @@ class Helper:
         if check_result.connectErrno:
             return {"status": "error", "result": check_result._json(noclass=False)}
         elif not has_ssl:
-            return {"status": "error", "error": "Could not connect to DB instance using SSL."}
+            return {
+                "status": "error",
+                "error": "Could not connect to DB instance using SSL.",
+            }
         else:
             return {"status": "ok"}
 
@@ -252,8 +274,10 @@ class Helper:
             return {"status": "error", "error": "SSH_CONNECTION not set"}
         parts = ssh_conn.split(" ")
         if len(parts) != 4:
-            return {"status": "error",
-                    "error": f"SSH_CONNECTION has unexpected format {ssh_conn}"}
+            return {
+                "status": "error",
+                "error": f"SSH_CONNECTION has unexpected format {ssh_conn}",
+            }
         my_ip = parts[2]
 
         # first try through localhost
@@ -267,10 +291,10 @@ class Helper:
                     "ssl-mode": "REQUIRED",
                 }
             )
-            local_server_uuid = sess.run_sql(
-                "select @@server_uuid").fetch_one()[0]
-            shell.log("info",
-                      f"server_uuid through localhost:3306 is {local_server_uuid}")
+            local_server_uuid = sess.run_sql("select @@server_uuid").fetch_one()[0]
+            shell.log(
+                "info", f"server_uuid through localhost:3306 is {local_server_uuid}"
+            )
         except Exception as e:
             shell.log("info", f"tunnel test through localhost failed: {e}")
             return {"status": "fail", "error": str(e)}
@@ -286,17 +310,17 @@ class Helper:
                     "ssl-mode": "REQUIRED",
                 }
             )
-            ip_server_uuid = sess.run_sql(
-                "select @@server_uuid").fetch_one()[0]
-            shell.log("info",
-                      f"server_uuid through {my_ip}:3306 is {ip_server_uuid}")
+            ip_server_uuid = sess.run_sql("select @@server_uuid").fetch_one()[0]
+            shell.log("info", f"server_uuid through {my_ip}:3306 is {ip_server_uuid}")
         except Exception as e:
             shell.log("error", f"tunnel test through {my_ip} failed: {e}")
             return {"status": "fail", "error": str(e)}
 
         if local_server_uuid != ip_server_uuid:
-            return {"status": "fail",
-                    "error": f"Unexpected MySQL tunnel behavior: server at localhost is {local_server_uuid} but at {my_ip} is {ip_server_uuid}"}
+            return {
+                "status": "fail",
+                "error": f"Unexpected MySQL tunnel behavior: server at localhost is {local_server_uuid} but at {my_ip} is {ip_server_uuid}",
+            }
 
         return {"status": "ok", "server_uuid": local_server_uuid}
 
@@ -305,7 +329,8 @@ class Helper:
             sess = shell.connect(data | {"ssl-mode": "REQUIRED"})
         except Exception as e:
             shell.log(
-                "info", f"channel status check could not connect to DBSystem: {e}")
+                "info", f"channel status check could not connect to DBSystem: {e}"
+            )
             return {"status": "error", "error": str(e)}
 
         try:
@@ -315,7 +340,8 @@ class Helper:
 
         except Exception as e:
             shell.log(
-                "info", f"channel status check could not connect to DBSystem: {e}")
+                "info", f"channel status check could not connect to DBSystem: {e}"
+            )
 
             return {"status": "error", "error": str(e)}
         finally:
@@ -333,7 +359,8 @@ class Helper:
         threads = min(threads, max_threads if max_threads else 2)
 
         shell.log(
-            "info", f"Host has {ncpu} cpus, max_threads={max_threads} will {context} using {threads} threads"
+            "info",
+            f"Host has {ncpu} cpus, max_threads={max_threads} will {context} using {threads} threads",
         )
 
         return threads
@@ -346,18 +373,18 @@ class Helper:
 
         threads = self._compute_threads(data, "dump")
 
-        self._dump_thread.start(lambda on_output: submysqlsh.dump_instance(
-            on_output,
-            connection_params=data["connection_params"] | {
-                "ssl-mode": "REQUIRED"
-            },
-            storage_prefix=data["storage_prefix"],
-            storage_args=data["storage_args"],
-            compatibility_args=data["compatibility_args"],
-            extra_args=data["extra_args"],
-            target_version=data["target_version"],
-            threads=threads
-        ))
+        self._dump_thread.start(
+            lambda on_output: submysqlsh.dump_instance(
+                on_output,
+                connection_params=data["connection_params"] | {"ssl-mode": "REQUIRED"},
+                storage_prefix=data["storage_prefix"],
+                storage_args=data["storage_args"],
+                compatibility_args=data["compatibility_args"],
+                extra_args=data["extra_args"],
+                target_version=data["target_version"],
+                threads=threads,
+            )
+        )
 
         return {"status": "STARTED"}
 
@@ -377,17 +404,17 @@ class Helper:
 
         threads = self._compute_threads(data, "load")
 
-        self._load_thread.start(lambda on_output: submysqlsh.load_dump(
-            on_output,
-            connection_params=data["connection_params"] | {
-                "ssl-mode": "REQUIRED"
-            },
-            storage_prefix=data["storage_prefix"],
-            storage_args=data["storage_args"],
-            progress_path=os.path.join(g_basedir, "load_progress.json"),
-            extra_args=data["extra_args"],
-            threads=threads
-        ))
+        self._load_thread.start(
+            lambda on_output: submysqlsh.load_dump(
+                on_output,
+                connection_params=data["connection_params"] | {"ssl-mode": "REQUIRED"},
+                storage_prefix=data["storage_prefix"],
+                storage_args=data["storage_args"],
+                progress_path=os.path.join(g_basedir, "load_progress.json"),
+                extra_args=data["extra_args"],
+                threads=threads,
+            )
+        )
 
         return {"status": "STARTED"}
 
@@ -407,8 +434,7 @@ class Helper:
         try:
             sess = shell.connect(data["connection"] | {"ssl-mode": "REQUIRED"})
         except Exception as e:
-            shell.log(
-                "info", f"target_run_sql could not connect to DBSystem: {e}")
+            shell.log("info", f"target_run_sql could not connect to DBSystem: {e}")
             return {"status": "error", "error": str(e)}
 
         try:
@@ -417,8 +443,7 @@ class Helper:
             return {"status": "ok", "result": res.fetch_all()}
 
         except Exception as e:
-            shell.log(
-                "info", f"target_run_sql error running SQL: {e}")
+            shell.log("info", f"target_run_sql error running SQL: {e}")
 
             return {"status": "error", "error": str(e)}
         finally:
@@ -498,8 +523,7 @@ class HelperCommandHandler(BaseHTTPRequestHandler):
 
             command = self.path[1:].replace("-", "_")
             if command == "quit":
-                threading.Thread(target=self.server.shutdown,
-                                 daemon=True).start()
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
                 self._respond(200, {"status": "quitting..."})
             else:
                 attr = getattr(g_helper, f"get_{command}")
@@ -507,11 +531,13 @@ class HelperCommandHandler(BaseHTTPRequestHandler):
                     self._respond(200, attr())
                 else:
                     self._respond(
-                        404, {"status": "error", "error": f"unhandled {self.path}"})
+                        404, {"status": "error", "error": f"unhandled {self.path}"}
+                    )
         except Exception:
             shell.log("error", str(traceback.format_exc()))
             self._respond(
-                500, {"status": "error", "error": str(traceback.format_exc())})
+                500, {"status": "error", "error": str(traceback.format_exc())}
+            )
             raise
 
     def do_POST(self):
@@ -530,31 +556,29 @@ class HelperCommandHandler(BaseHTTPRequestHandler):
                 if g_helper.is_dumping() or g_helper.has_dump_output:
                     self._stream_status(g_helper.dump_status)
                 else:
-                    self._respond(
-                        425, {"status": "error", "error": "dump not running"}
-                    )
+                    self._respond(425, {"status": "error", "error": "dump not running"})
             elif command == "load_status":
                 if g_helper.is_loading() or g_helper.has_load_output:
                     self._stream_status(g_helper.load_status)
                 else:
-                    self._respond(
-                        425, {"status": "error", "error": "load not running"}
-                    )
+                    self._respond(425, {"status": "error", "error": "load not running"})
             else:
                 attr = getattr(g_helper, f"handle_{command}")
                 if attr:
                     self._respond(200, attr(data))
                 else:
                     self._respond(
-                        404, {
+                        404,
+                        {
                             "status": "error",
                             "error": f"unhandled {self.path}",
-                        }
+                        },
                     )
         except Exception:
             shell.log("error", str(traceback.format_exc()))
             self._respond(
-                500, {"status": "error", "error": str(traceback.format_exc())})
+                500, {"status": "error", "error": str(traceback.format_exc())}
+            )
             raise
 
 
@@ -570,8 +594,7 @@ class HelperClient:
 
     def _post(self, path, data: dict, **kwargs):
         shell.log("debug", f"POST {path}")
-        status, response = http_post(
-            f"{self.url}{path}", payload=data, **kwargs)
+        status, response = http_post(f"{self.url}{path}", payload=data, **kwargs)
         shell.log("debug", f"{status} {response}")
         return json.loads(response)
 
@@ -623,9 +646,7 @@ class HelperClient:
         timeout = 60
         while True:
             try:
-                http_post_stream(
-                    on_status, f"{self.url}/{cmd}", payload=data
-                )
+                http_post_stream(on_status, f"{self.url}/{cmd}", payload=data)
                 break
             except urllib.error.HTTPError as e:
                 timeout -= 1
@@ -644,8 +665,7 @@ class HelperClient:
             return self._get("/quit")
         except:
             pid_file = os.path.join(g_basedir, "helper.pid")
-            shell.log(
-                "error", f"error trying to quit server, checking {pid_file}")
+            shell.log("error", f"error trying to quit server, checking {pid_file}")
             if os.path.exists(pid_file):
                 with open(pid_file) as f:
                     pid = int(f.read().strip())
@@ -739,7 +759,8 @@ def client(cmd):
         # should be importing from the zip when running in the jump host
         if "helper.zip" not in submysqlsh.__file__:
             raise Exception(
-                f"Internal error: submysqlsh module is {submysqlsh.__file__}")
+                f"Internal error: submysqlsh module is {submysqlsh.__file__}"
+            )
 
         client = HelperClient()
 
@@ -749,12 +770,12 @@ def client(cmd):
 
         print(json.dumps(handler(json.loads(data) if data else {})))
     except Exception as e:
-        shell.log(
-            "error", f"exception executing {cmd}: {traceback.format_exc()}"
+        shell.log("error", f"exception executing {cmd}: {traceback.format_exc()}")
+        print(
+            json.dumps(
+                {"status": "error", "error": f"internal error executing {cmd}: {e}"}
+            )
         )
-        print(json.dumps(
-            {"status": "error", "error": f"internal error executing {cmd}: {e}"}
-        ))
 
 
 if __name__ == "__main__":

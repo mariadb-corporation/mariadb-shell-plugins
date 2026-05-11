@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,7 @@ from tests.websocket.TestWebSocket import TWebSocket
 
 ws: TWebSocket
 
-test_session_id = ws.tokens['test_session_id']
+test_session_id = ws.tokens["test_session_id"]
 
 default_mysql_options = ws.tokens.defaults.database_connections.mysql[0].options
 
@@ -38,13 +38,12 @@ connection_options = {
     "user": default_mysql_options.user,
     "password": default_mysql_options.password,
     "scheme": default_mysql_options.scheme,
-    "schema": "information_schema"
+    "schema": "information_schema",
 }
 
 
 def get_session_ids(session, session_id):
-    res = session.run_sql(
-        f"""SELECT PROCESSLIST_ID
+    res = session.run_sql(f"""SELECT PROCESSLIST_ID
             FROM performance_schema.session_connect_attrs
             WHERE ATTR_NAME='test_session_id'
             AND ATTR_VALUE='{session_id}'
@@ -66,24 +65,28 @@ session = mysqlsh.globals.shell.open_session(connection_options)
 service_session_id, user_session_id = get_session_ids(session, test_session_id)
 kill_session(session, user_session_id)
 
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "SELECT 1 as result;",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-},
+ws.sendAndValidate(
+    {
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "SELECT 1 as result;",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
+        },
+    },
     [
         {
             "request_id": ws.lastGeneratedRequestId,
-            "request_state": {"type": "PENDING", "msg": "Execution started..."}
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
         },
         {
-            "request_state": {"type": "PENDING", "msg": "Connection lost, reconnecting session..."},
-            "request_id": ws.lastGeneratedRequestId
+            "request_state": {
+                "type": "PENDING",
+                "msg": "Connection lost, reconnecting session...",
+            },
+            "request_id": ws.lastGeneratedRequestId,
         },
         {
             "request_state": {"type": "PENDING", "msg": ""},
@@ -92,15 +95,15 @@ ws.sendAndValidate({
                 "rows": [[1]],
                 "columns": [{"name": "result", "type": "INT", "length": ws.ignore}],
                 "total_row_count": 1,
-                "execution_time": ws.ignore
-            }
+                "execution_time": ws.ignore,
+            },
         },
         {
             "request_state": {"type": "OK", "msg": ""},
             "request_id": ws.lastGeneratedRequestId,
-            "done": true
-        }
-]
+            "done": true,
+        },
+    ],
 )
 
 # Validates that the user session is new (and so comes last)
@@ -112,30 +115,32 @@ user_session_id = id2
 # Kills the service session and executes command that uses the Service Session
 # Automatic reconnection happens with no notification for the FE
 kill_session(session, service_session_id)
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.db.get_catalog_object_names",
-    "args": {
-        "module_session_id": ws.tokens["module_session_id"],
-        "type": "Schema"
-    }
-}, [
+ws.sendAndValidate(
     {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {"type": "PENDING", "msg": "Execution started..."}
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.db.get_catalog_object_names",
+        "args": {"module_session_id": ws.tokens["module_session_id"], "type": "Schema"},
     },
-    {
-        "request_state": {"type": "PENDING", "msg": ""},
-        "request_id": ws.lastGeneratedRequestId,
-        "result": ws.matchList(["information_schema", "mysql", "performance_schema"], 0)
-    },
-    {
-        "request_state": {"type": "OK", "msg": ""},
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
+    [
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+        },
+        {
+            "request_state": {"type": "PENDING", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "result": ws.matchList(
+                ["information_schema", "mysql", "performance_schema"], 0
+            ),
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)
 
 # Validates that the service session is new (and so comes last)
 id1, id2 = get_session_ids(session, test_session_id)
@@ -145,38 +150,38 @@ service_session_id = id2
 
 
 # Tests reconnection triggered by the user
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.sql_editor.reconnect",
-    "args": {
-        "module_session_id": ws.tokens["module_session_id"],
-    }
-},
+ws.sendAndValidate(
+    {
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.sql_editor.reconnect",
+        "args": {
+            "module_session_id": ws.tokens["module_session_id"],
+        },
+    },
     [
         {
-            "request_state": {"type": "PENDING", "msg": "Connection was successfully opened."},
-            "result":
-            {
+            "request_state": {
+                "type": "PENDING",
+                "msg": "Connection was successfully opened.",
+            },
+            "result": {
                 "module_session_id": ws.tokens["module_session_id"],
                 "info": {
                     "version": ws.matchRegexp("\\d+\\.\\d+\\.\\d+"),
                     "edition": ws.ignore,
-                    "sql_mode": ws.ignore
+                    "sql_mode": ws.ignore,
                 },
                 "default_schema": connection_options["schema"],
             },
-            "request_id": ws.lastGeneratedRequestId
+            "request_id": ws.lastGeneratedRequestId,
         },
-    {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "OK", "msg": ""},
+            "done": True,
         },
-        "done": True
-    }
-]
+    ],
 )
 
 # Validates that both sessions are new (and so come in order)

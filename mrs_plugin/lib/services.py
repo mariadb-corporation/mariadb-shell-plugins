@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -785,7 +785,7 @@ def auto_detect_project_dependencies(session, service_id):
 
     for schema in schemas.get_schemas(session, service_id):
         if schema["schema_type"] == "DATABASE_SCHEMA":
-            result.append({ "name": schema["name"], "file_path": None })
+            result.append({"name": schema["name"], "file_path": None})
 
     return result
 
@@ -953,6 +953,7 @@ def is_url(url) -> bool:
     result: ParseResult = urlparse(url)
     return all([result.scheme, result.netloc])
 
+
 def is_github_shortcut(url) -> bool:
     if "/" not in url:
         return False
@@ -964,6 +965,7 @@ def is_github_shortcut(url) -> bool:
         return False
 
     return True
+
 
 class LoadProjectFileContext:
     def __init__(self, path: str) -> None:
@@ -980,14 +982,18 @@ class LoadProjectFileContext:
                 path, branch = path.split("|")
 
             _, user, self.repo = path.split("/")
-            path = f"https://github.com/{user}/{self.repo}/archive/refs/heads/{branch}.zip"
+            path = (
+                f"https://github.com/{user}/{self.repo}/archive/refs/heads/{branch}.zip"
+            )
 
         # if it's a remote file, download it
         if is_url(path):
             self.download_dir = TemporaryDirectory(delete=False)
             self.path = os.path.join(self.download_dir.name, "download.zip")
 
-            with urllib.request.urlopen(path, context=ssl._create_unverified_context()) as response:
+            with urllib.request.urlopen(
+                path, context=ssl._create_unverified_context()
+            ) as response:
 
                 with open(self.path, "w+b") as f:
                     f.write(response.read())
@@ -1000,9 +1006,10 @@ class LoadProjectFileContext:
             self.path = self.extract_dir.name
 
             sub_items = os.listdir(self.path)
-            if len(sub_items) == 1 and os.path.isdir(os.path.join(self.path, sub_items[0])):
+            if len(sub_items) == 1 and os.path.isdir(
+                os.path.join(self.path, sub_items[0])
+            ):
                 self.path = os.path.join(self.path, sub_items[0])
-
 
     def __enter__(self) -> str:
         return self.path
@@ -1059,13 +1066,20 @@ def load_project(session, path: str):
                         mysqlsh.globals.shell.set_session(session.session)
 
                     with core.ServerLocalInFile(session, True):
-                        mysqlsh.globals.util.load_dump(schema_path, ignoreExistingObjects=True)
+                        mysqlsh.globals.util.load_dump(
+                            schema_path, ignoreExistingObjects=True
+                        )
                 else:
                     raise Exception("Invalid schema format.")
 
             for service in project_config.get("restServices", []):
-                if get_service(session, url_context_root=service["serviceName"]) is not None:
-                    raise ValueError(f"The service '{service["serviceName"]}' already exists.")
+                if (
+                    get_service(session, url_context_root=service["serviceName"])
+                    is not None
+                ):
+                    raise ValueError(
+                        f"The service '{service["serviceName"]}' already exists."
+                    )
 
                 with open(os.path.join(base_directory, service["fileName"])) as f:
                     content = f.read()

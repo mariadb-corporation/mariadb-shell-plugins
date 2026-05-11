@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,16 +22,19 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 import pytest
-from ... general import *
+from ...general import *
 import mrs_plugin.lib as lib
 import mysqlsh
 import mrs_plugin.tests.unit.helpers as helpers
 
+
 def test_info():
     info_output = info()
     assert info_output is not None
-    assert info_output == (f"MySQL REST Data Service (MRS) Plugin Version {lib.general.VERSION} PREVIEW\n"
-                           "Warning! For testing purposes only!")
+    assert info_output == (
+        f"MySQL REST Data Service (MRS) Plugin Version {lib.general.VERSION} PREVIEW\n"
+        "Warning! For testing purposes only!"
+    )
 
 
 def test_version():
@@ -41,9 +44,7 @@ def test_version():
 
 
 def test_configure(phone_book):
-    config = {
-        "session": phone_book["session"]
-    }
+    config = {"session": phone_book["session"]}
 
     session_backup = mysqlsh.globals.session
     mysqlsh.globals.shell.set_session(None)
@@ -51,11 +52,17 @@ def test_configure(phone_book):
     helpers.create_shell_session()
     mysqlsh.globals.session.close()
 
-    with pytest.raises(Exception, match="MySQL session not specified. Please either pass a session object when calling the function or open a database connection in the MySQL Shell first.") as exp:
+    with pytest.raises(
+        Exception,
+        match="MySQL session not specified. Please either pass a session object when calling the function or open a database connection in the MySQL Shell first.",
+    ) as exp:
         config_output = configure()
     mysqlsh.globals.shell.set_session(None)
 
-    with pytest.raises(Exception, match="MySQL session not specified. Please either pass a session object when calling the function or open a database connection in the MySQL Shell first.") as exp:
+    with pytest.raises(
+        Exception,
+        match="MySQL session not specified. Please either pass a session object when calling the function or open a database connection in the MySQL Shell first.",
+    ) as exp:
         config_output = configure()
 
     mysqlsh.globals.shell.set_session(session_backup)
@@ -66,7 +73,7 @@ def test_configure(phone_book):
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "mrs_enabled": True,
-        "schema_changed": False
+        "schema_changed": False,
     }
 
     # ensure session data does not change
@@ -76,42 +83,33 @@ def test_configure(phone_book):
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "mrs_enabled": True,
-        "schema_changed": False
+        "schema_changed": False,
     }
 
-    config = {
-        "enable_mrs": False,
-        "session": phone_book["session"]
-    }
+    config = {"enable_mrs": False, "session": phone_book["session"]}
 
     config_output = configure(**config)
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "mrs_enabled": False,
-        "schema_changed": False
+        "schema_changed": False,
     }
 
-    config = {
-        "enable_mrs": True,
-        "session": phone_book["session"]
-    }
+    config = {"enable_mrs": True, "session": phone_book["session"]}
     config_output = configure(**config)
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "mrs_enabled": True,
-        "schema_changed": False
+        "schema_changed": False,
     }
 
-    config = {
-        "enable_mrs": False,
-        "session": phone_book["session"]
-    }
+    config = {"enable_mrs": False, "session": phone_book["session"]}
     config_output = configure(**config)
     assert config_output is not None
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "schema_changed": False,
-        "mrs_enabled": False
+        "mrs_enabled": False,
     }
 
     config = {
@@ -123,7 +121,7 @@ def test_configure(phone_book):
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "schema_changed": False,
-        "mrs_enabled": True
+        "mrs_enabled": True,
     }
 
 
@@ -135,6 +133,7 @@ def test_ls(phone_book):
     assert list_output is None
 
     from ...lib.core import set_current_objects
+
     set_current_objects()
 
     list_output = ls("/test")
@@ -144,7 +143,8 @@ def test_ls(phone_book):
     assert list_output is None
 
     set_current_objects(
-        service_id=phone_book["service_id"], schema_id=phone_book["schema_id"])
+        service_id=phone_book["service_id"], schema_id=phone_book["schema_id"]
+    )
 
     list_output = ls("/test")
     assert list_output is None
@@ -174,7 +174,7 @@ def test_status(phone_book):
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "mrs_enabled": False,
-        "schema_changed": False
+        "schema_changed": False,
     }
 
     status_output = status(phone_book["session"])
@@ -198,7 +198,7 @@ def test_status(phone_book):
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "mrs_enabled": True,
-        "schema_changed": False
+        "schema_changed": False,
     }
 
     status_output = status(phone_book["session"])
@@ -221,7 +221,7 @@ def test_status(phone_book):
     assert config_output == {
         "info_msg": config_output["info_msg"],
         "mrs_enabled": enabled,
-        "schema_changed": False
+        "schema_changed": False,
     }
 
     status_output = status(phone_book["session"])

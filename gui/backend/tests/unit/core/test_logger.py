@@ -28,8 +28,16 @@ from gui_plugin.core import Filtering
 from gui_plugin.core import Db
 from gui_plugin.core.BackendDbLogger import BackendDbLogger, DEBUG_MODE_ENV_VAR
 
-allowed_levels = ['NONE', 'INTERNAL_ERROR', 'ERROR', 'WARNING',
-                  'INFO', 'DEBUG', 'DEBUG2', 'DEBUG3']
+allowed_levels = [
+    "NONE",
+    "INTERNAL_ERROR",
+    "ERROR",
+    "WARNING",
+    "INFO",
+    "DEBUG",
+    "DEBUG2",
+    "DEBUG3",
+]
 
 
 class FakeGuiBackendDb:
@@ -114,63 +122,54 @@ def test_backend_db_logging_is_enabled_in_debug_mode(monkeypatch):
 
 
 def test_filter_sensitivity_data():
-    message = {
-                "request": "authenticate",
-                "username": "admin1",
-                "password": "admin1"
-            }
+    message = {"request": "authenticate", "username": "admin1", "password": "admin1"}
 
-    expected = {
-                "request": "authenticate",
-                "username": "admin1",
-                "password": "****"
-            }
+    expected = {"request": "authenticate", "username": "admin1", "password": "****"}
 
     output = Logger.BackendLogger.get_instance()._filter(json.dumps(message))
     assert output == json.dumps(expected)
 
     message = {
-                    "request": "execute",
-                    "command": "gui.db_connections.add_db_connection",
-                    "args": {
-                        "profile_id": 1,
-                        "connection": {
-                            "db_type":
-                            "MySQL",
-                            "caption": "This is a test database",
-                            "description": "This is a test database description",
-                            "options": {
-                                "host": "localhost",
-                                "port":3306,
-                                "user": "root",
-                                "password": "password",
-                                "scheme": "mysql",
-                                "schema": "information_schema"
-                            }
-                        },
-                    }
-                }
+        "request": "execute",
+        "command": "gui.db_connections.add_db_connection",
+        "args": {
+            "profile_id": 1,
+            "connection": {
+                "db_type": "MySQL",
+                "caption": "This is a test database",
+                "description": "This is a test database description",
+                "options": {
+                    "host": "localhost",
+                    "port": 3306,
+                    "user": "root",
+                    "password": "password",
+                    "scheme": "mysql",
+                    "schema": "information_schema",
+                },
+            },
+        },
+    }
 
     expected = {
-                    "request": "execute",
-                    "command": "gui.db_connections.add_db_connection",
-                    "args": {
-                        "profile_id": 1,
-                        "connection": {
-                            "db_type": "MySQL",
-                            "caption": "This is a test database",
-                            "description": "This is a test database description",
-                            "options": {
-                                "host": "localhost",
-                                "port": 3306,
-                                "user": "root",
-                                "password": "****",
-                                "scheme": "mysql",
-                                "schema": "information_schema"
-                            }
-                        },
-                    }
-                }
+        "request": "execute",
+        "command": "gui.db_connections.add_db_connection",
+        "args": {
+            "profile_id": 1,
+            "connection": {
+                "db_type": "MySQL",
+                "caption": "This is a test database",
+                "description": "This is a test database description",
+                "options": {
+                    "host": "localhost",
+                    "port": 3306,
+                    "user": "root",
+                    "password": "****",
+                    "scheme": "mysql",
+                    "schema": "information_schema",
+                },
+            },
+        },
+    }
 
     output = Logger.BackendLogger.get_instance()._filter(json.dumps(message))
     assert output == json.dumps(expected)
@@ -180,13 +179,10 @@ def test_filter_sensitivity_data():
     assert output == message
 
     message = {
-                "request": "execute",
-                "command": "gui.db_connections.remove_db_connection",
-                "args": {
-                    "profile_id": 1,
-                    "connection_id": 1
-                }
-            }
+        "request": "execute",
+        "command": "gui.db_connections.remove_db_connection",
+        "args": {"profile_id": 1, "connection_id": 1},
+    }
 
     output = Logger.BackendLogger.get_instance()._filter(json.dumps(message))
     assert output == json.dumps(message)
@@ -195,12 +191,14 @@ def test_filter_sensitivity_data():
     output = Logger.BackendLogger.get_instance()._filter(message)
     assert output == message
 
-    Logger.BackendLogger.get_instance().add_filter({
-                "type": "substring",
-                "start": "token=",
-                "end": " HTTP",
-                "expire": Filtering.FilterExpire.OnUse,
-            })
+    Logger.BackendLogger.get_instance().add_filter(
+        {
+            "type": "substring",
+            "start": "token=",
+            "end": " HTTP",
+            "expire": Filtering.FilterExpire.OnUse,
+        }
+    )
 
     message = "GET 1.1 HTTP"
     output = Logger.BackendLogger.get_instance()._filter(message)

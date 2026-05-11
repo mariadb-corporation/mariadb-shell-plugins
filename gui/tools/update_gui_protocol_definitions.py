@@ -31,35 +31,33 @@ import glob
 
 
 def create_symlink(target: Path, link_name: Path, is_dir: bool):
-    if os.name == 'nt':
+    if os.name == "nt":
         if is_dir:
-            p = subprocess.run(
-                f'mklink /J "{link_name}" "{target}"', shell=True)
+            p = subprocess.run(f'mklink /J "{link_name}" "{target}"', shell=True)
         else:
-            p = subprocess.run(
-                f'mklink /H "{link_name}" "{target}"', shell=True)
+            p = subprocess.run(f'mklink /H "{link_name}" "{target}"', shell=True)
         p.check_returncode()
     else:
         os.symlink(target, link_name)
 
 
 dot_mysqlsh = tempfile.TemporaryDirectory(dir=os.path.dirname(__file__))
-plugins_dir = os.path.join(dot_mysqlsh.name, 'plugins')
-startup_dir = os.path.join(dot_mysqlsh.name, 'init.d')
-gui_plugin = os.path.join(plugins_dir, 'gui_plugin')
-mrs_plugin = os.path.join(plugins_dir, 'mrs_plugin')
-mds_plugin = os.path.join(plugins_dir, 'mds_plugin')
-msm_plugin = os.path.join(plugins_dir, 'msm_plugin')
-migration_plugin = os.path.join(plugins_dir, 'migration_plugin')
+plugins_dir = os.path.join(dot_mysqlsh.name, "plugins")
+startup_dir = os.path.join(dot_mysqlsh.name, "init.d")
+gui_plugin = os.path.join(plugins_dir, "gui_plugin")
+mrs_plugin = os.path.join(plugins_dir, "mrs_plugin")
+mds_plugin = os.path.join(plugins_dir, "mds_plugin")
+msm_plugin = os.path.join(plugins_dir, "msm_plugin")
+migration_plugin = os.path.join(plugins_dir, "migration_plugin")
 
 
-src_root = os.path.abspath(f'{os.path.dirname(__file__)}/../..')
-src_gui_plugin = os.path.join(src_root, 'gui', 'backend', 'gui_plugin')
-src_mrs_plugin = os.path.join(src_root, 'mrs_plugin')
-src_mds_plugin = os.path.join(src_root, 'mds_plugin')
-src_msm_plugin = os.path.join(src_root, 'msm_plugin')
-src_migration_plugin = os.path.join(src_root, 'migration_plugin')
-src_protocols_root = os.path.join(src_root, 'gui', 'tools', 'src', 'protocol')
+src_root = os.path.abspath(f"{os.path.dirname(__file__)}/../..")
+src_gui_plugin = os.path.join(src_root, "gui", "backend", "gui_plugin")
+src_mrs_plugin = os.path.join(src_root, "mrs_plugin")
+src_mds_plugin = os.path.join(src_root, "mds_plugin")
+src_msm_plugin = os.path.join(src_root, "msm_plugin")
+src_migration_plugin = os.path.join(src_root, "migration_plugin")
+src_protocols_root = os.path.join(src_root, "gui", "tools", "src", "protocol")
 
 Path(plugins_dir).mkdir()
 
@@ -71,10 +69,9 @@ create_symlink(src_migration_plugin, migration_plugin, True)
 create_symlink(src_protocols_root, startup_dir, True)
 
 env = os.environ.copy()
-env['MYSQLSH_USER_CONFIG_HOME'] = dot_mysqlsh.name
-env['MYSQL_SHELL_GUI_DEBUG_MODE'] = '1'
-mysqlsh = shutil.which(
-    'mysqlsh.exe') if os.name == 'nt' else shutil.which('mysqlsh')
+env["MYSQLSH_USER_CONFIG_HOME"] = dot_mysqlsh.name
+env["MYSQL_SHELL_GUI_DEBUG_MODE"] = "1"
+mysqlsh = shutil.which("mysqlsh.exe") if os.name == "nt" else shutil.which("mysqlsh")
 
 command = f"{mysqlsh} --disable-builtin-plugins --py -e \"print('Protocol files have been updated')\""
 
@@ -84,8 +81,7 @@ shell = subprocess.run(command, shell=True, env=env)
 
 home_path = os.path.expanduser("~")
 temp_path = os.path.basename(os.path.dirname(dot_mysqlsh.name))
-final_log_path = os.path.join(
-    home_path, '.mysqlsh', f'mysqlsh-{temp_path}.log')
-this_log_path = os.path.join(dot_mysqlsh.name, 'mysqlsh.log')
+final_log_path = os.path.join(home_path, ".mysqlsh", f"mysqlsh-{temp_path}.log")
+this_log_path = os.path.join(dot_mysqlsh.name, "mysqlsh.log")
 shutil.move(this_log_path, final_log_path)
-print(f'Log file moved to: {final_log_path}')
+print(f"Log file moved to: {final_log_path}")

@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,28 +36,33 @@ unit_tests = utils.get_unit_tests(True, True, True)
 def ws(shell_start_local_user_mode_server, create_users):
     _, token = shell_start_local_user_mode_server
     ws = TestWebSocket.TWebSocket(
-        token=token, logger=get_logger(), script_reader=utils.unit_test_reader)
+        token=token, logger=get_logger(), script_reader=utils.unit_test_reader
+    )
 
-    ws.send({
-        "request": "authenticate",
-        "username": "LocalAdministrator",
-        "request_id": ws.generateRequestId()
-    })
-
-    ws.validateLastResponse({
-        "request_state": {
-            "type": "OK",
-            "msg": "User LocalAdministrator was successfully authenticated."
-        },
-        "request_id": ws.lastGeneratedRequestId,
-        "active_profile": {
-            "id": ws.matchRegexp("\\d+"),
-            "user_id": ws.matchRegexp("\\d+"),
-            "name": "Default",
-            "description": "Default Profile",
-            "options": {}
+    ws.send(
+        {
+            "request": "authenticate",
+            "username": "LocalAdministrator",
+            "request_id": ws.generateRequestId(),
         }
-    })
+    )
+
+    ws.validateLastResponse(
+        {
+            "request_state": {
+                "type": "OK",
+                "msg": "User LocalAdministrator was successfully authenticated.",
+            },
+            "request_id": ws.lastGeneratedRequestId,
+            "active_profile": {
+                "id": ws.matchRegexp("\\d+"),
+                "user_id": ws.matchRegexp("\\d+"),
+                "name": "Default",
+                "description": "Default Profile",
+                "options": {},
+            },
+        }
+    )
 
     ws.tokens["active_profile"] = ws.lastResponse["active_profile"]
 
@@ -69,7 +74,7 @@ def ws(shell_start_local_user_mode_server, create_users):
 @pytest.fixture(scope="module")
 def add_connection(ws):
     test_session_id = ws.generateRequestId()
-    ws.tokens['test_session_id'] = test_session_id
+    ws.tokens["test_session_id"] = test_session_id
 
     default_mysql_options = ws.tokens.defaults.database_connections.mysql[0].options
 
@@ -79,7 +84,7 @@ def add_connection(ws):
         "user": default_mysql_options.user,
         "password": default_mysql_options.password,
         "scheme": default_mysql_options.scheme,
-        "schema": "information_schema"
+        "schema": "information_schema",
     }
 
     params = {
@@ -89,134 +94,145 @@ def add_connection(ws):
             "description": "This is a test database description",
             "options": {
                 **connection_options,
-                "connection-attributes": [f"test_session_id={test_session_id}"]
-            }
+                "connection-attributes": [f"test_session_id={test_session_id}"],
+            },
         },
         "profile_id": 1,
     }
 
-    ws.sendAndValidate({
-        "request": "execute",
-        "request_id": ws.generateRequestId(),
-        "command": "gui.db_connections.add_db_connection",
-        "args": {
-            "profile_id": params["profile_id"],
-            "connection": params["connection"],
-        }
-    }, [
+    ws.sendAndValidate(
         {
-            "request_id": ws.lastGeneratedRequestId,
-            "request_state": {"type": "PENDING", "msg": ws.ignore},
-            "result": ws.ignore
-        }
-    ])
+            "request": "execute",
+            "request_id": ws.generateRequestId(),
+            "command": "gui.db_connections.add_db_connection",
+            "args": {
+                "profile_id": params["profile_id"],
+                "connection": params["connection"],
+            },
+        },
+        [
+            {
+                "request_id": ws.lastGeneratedRequestId,
+                "request_state": {"type": "PENDING", "msg": ws.ignore},
+                "result": ws.ignore,
+            }
+        ],
+    )
 
     connection_id = ws.lastResponse["result"][0]
 
-    ws.validateLastResponse({
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {"type": "OK", "msg": ws.ignore},
-        "done": True
-    })
+    ws.validateLastResponse(
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "OK", "msg": ws.ignore},
+            "done": True,
+        }
+    )
 
     yield connection_id
 
-    ws.sendAndValidate({
-        "request": "execute",
-        "request_id": ws.generateRequestId(),
-        "command": "gui.db_connections.remove_db_connection",
-        "args": {
-            "profile_id": 1,
-            "connection_id": connection_id
-        }
-    }, [
+    ws.sendAndValidate(
         {
-            "request_id": ws.lastGeneratedRequestId,
-            "request_state": {
-                "type": "OK",
-                "msg": ws.ignore
+            "request": "execute",
+            "request_id": ws.generateRequestId(),
+            "command": "gui.db_connections.remove_db_connection",
+            "args": {"profile_id": 1, "connection_id": connection_id},
+        },
+        [
+            {
+                "request_id": ws.lastGeneratedRequestId,
+                "request_state": {"type": "OK", "msg": ws.ignore},
             }
-        }
-    ])
+        ],
+    )
 
 
 @pytest.fixture(scope="function")
 def sqlide_session(ws, add_connection):
     connection_id = add_connection
 
-    ws.sendAndValidate({
-        "request": "execute",
-        "request_id": ws.generateRequestId(),
-        "command": "gui.sql_editor.start_session",
-        "args": {}
-    }, [
+    ws.sendAndValidate(
+        {
+            "request": "execute",
+            "request_id": ws.generateRequestId(),
+            "command": "gui.sql_editor.start_session",
+            "args": {},
+        },
+        [
+            {
+                "request_id": ws.lastGeneratedRequestId,
+                "request_state": {"type": "PENDING", "msg": ""},
+                "result": {
+                    "module_session_id": ws.matchRegexp(
+                        "[a-f0-9]{8}-[a-f0-9]{4}-1[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+                    )
+                },
+            }
+        ],
+    )
+
+    module_session_id = ws.lastResponse["result"]["module_session_id"]
+
+    ws.validateLastResponse(
         {
             "request_id": ws.lastGeneratedRequestId,
-            "request_state": {"type": "PENDING", "msg": ""},
-            "result": {
-                "module_session_id": ws.matchRegexp("[a-f0-9]{8}-[a-f0-9]{4}-1[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$")
-            }
+            "request_state": {"type": "OK", "msg": ""},
+            "done": True,
         }
-    ])
+    )
 
-    module_session_id = ws.lastResponse['result']['module_session_id']
-
-    ws.validateLastResponse({
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {"type": "OK", "msg": ""},
-        "done": True
-    })
-
-    ws.sendAndValidate({
-        "request": "execute",
-        "request_id": ws.generateRequestId(),
-        "command": "gui.sql_editor.open_connection",
-        "args": {
-            "db_connection_id": connection_id,
-            "module_session_id": module_session_id,
-        }
-    }, [{
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {"type": "PENDING", "msg": "Connection was successfully opened."},
-        "result":
+    ws.sendAndValidate(
         {
-            "module_session_id": module_session_id,
-            "info": {
-                "version": ws.matchRegexp("\\d+\\.\\d+\\.\\d+"),
-                "edition": ws.ignore,
-                "sql_mode": ws.ignore
+            "request": "execute",
+            "request_id": ws.generateRequestId(),
+            "command": "gui.sql_editor.open_connection",
+            "args": {
+                "db_connection_id": connection_id,
+                "module_session_id": module_session_id,
             },
-            "default_schema": "information_schema"
-        }
-    }, {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {
-            "type": "OK",
-            "msg": ""
         },
-        "done": True
-    }
-    ])
+        [
+            {
+                "request_id": ws.lastGeneratedRequestId,
+                "request_state": {
+                    "type": "PENDING",
+                    "msg": "Connection was successfully opened.",
+                },
+                "result": {
+                    "module_session_id": module_session_id,
+                    "info": {
+                        "version": ws.matchRegexp("\\d+\\.\\d+\\.\\d+"),
+                        "edition": ws.ignore,
+                        "sql_mode": ws.ignore,
+                    },
+                    "default_schema": "information_schema",
+                },
+            },
+            {
+                "request_id": ws.lastGeneratedRequestId,
+                "request_state": {"type": "OK", "msg": ""},
+                "done": True,
+            },
+        ],
+    )
 
     yield module_session_id
 
-    ws.sendAndValidate({
-        "request": "execute",
-        "request_id": ws.generateRequestId(),
-        "command": "gui.sql_editor.close_session",
-        "args": {
-            "module_session_id": module_session_id
-        }
-    },
-        [{
-            "request_id": ws.lastGeneratedRequestId,
-            "request_state": {
-                "type": "OK",
-                "msg": ""
-            },
-            "done": True
-        }
-    ])
+    ws.sendAndValidate(
+        {
+            "request": "execute",
+            "request_id": ws.generateRequestId(),
+            "command": "gui.sql_editor.close_session",
+            "args": {"module_session_id": module_session_id},
+        },
+        [
+            {
+                "request_id": ws.lastGeneratedRequestId,
+                "request_state": {"type": "OK", "msg": ""},
+                "done": True,
+            }
+        ],
+    )
 
 
 @pytest.mark.usefixtures("sqlide_session")
@@ -224,7 +240,7 @@ def sqlide_session(ws, add_connection):
 def test_over_websocket(test, ws, sqlide_session):
     with ScopedCallback(lambda: print("====== ENDING EXECUTION =====")):
         try:
-            ws.tokens['module_session_id'] = sqlide_session
+            ws.tokens["module_session_id"] = sqlide_session
             print("===== STARTING EXECUTION =====")
             ws.execute(test)
         except Exception as e:

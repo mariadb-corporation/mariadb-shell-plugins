@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -197,17 +197,13 @@ def test_sql_show(phone_book):
     #     )
     # )
 
-    mysqlsh.globals.shell.dump_rows(
-        session.run_sql(
-            """select
+    mysqlsh.globals.shell.dump_rows(session.run_sql("""select
                         u.id, s.url_context_root, u.name, a.name from mysql_rest_service_metadata.mrs_user u
                             join mysql_rest_service_metadata.auth_app a
                                 on a.id = u.auth_app_id
                             join mysql_rest_service_metadata.service_has_auth_app sa on sa.auth_app_id = a.id
                             join mysql_rest_service_metadata.service s on s.id = sa.service_id
-            """
-        )
-    )
+            """))
 
     global_roles = {"roleA", "roleB", "Full Access"}
 
@@ -470,7 +466,9 @@ def test_sql_role_service(phone_book):
             run_sql(f"revoke rest role myrole {role_service} from me@`MySQL`")
 
             # revoke priv
-            run_sql(f"revoke rest read on service `*` schema `*` object `*` from myrole {role_service}")
+            run_sql(
+                f"revoke rest read on service `*` schema `*` object `*` from myrole {role_service}"
+            )
 
             # drop role
             run_sql(f"drop rest role myrole {role_service}")

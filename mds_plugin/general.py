@@ -31,24 +31,28 @@ from mds_plugin import core, configuration
 VERSION = "2026.5.0"
 
 
-@plugin_function('mds.info')
+@plugin_function("mds.info")
 def info():
     """Prints basic information about this plugin.
 
     Returns:
         None
     """
-    print("MySQL Shell MDS Plugin for managing the MySQL Database Service (MDS) "
-          f"Version {VERSION} PREVIEW\n"
-          "Warning! For testing purposes only!")
+    print(
+        "MySQL Shell MDS Plugin for managing the MySQL Database Service (MDS) "
+        f"Version {VERSION} PREVIEW\n"
+        "Warning! For testing purposes only!"
+    )
 
-    print(f"\n- mds.ls() can be used to list the current compartment's "
-          f"resources, \n- mds.cd() to change the current compartment and "
-          f"\n- mds.set.* functions to change the current objects.\n\n"
-          f"For more help type \\? mds.\n")
+    print(
+        f"\n- mds.ls() can be used to list the current compartment's "
+        f"resources, \n- mds.cd() to change the current compartment and "
+        f"\n- mds.set.* functions to change the current objects.\n\n"
+        f"For more help type \\? mds.\n"
+    )
 
 
-@plugin_function('mds.version')
+@plugin_function("mds.version")
 def version():
     """Returns the version number of the plugin
 
@@ -58,7 +62,7 @@ def version():
     return VERSION
 
 
-@plugin_function('mds.ls')
+@plugin_function("mds.ls")
 def ls(compartment_path="", compartment_id=None, config=None):
     """Lists the compartment's sub-compartments and other resources
 
@@ -82,7 +86,8 @@ def ls(compartment_path="", compartment_id=None, config=None):
     try:
         config = configuration.get_current_config(config=config)
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
     except ValueError as e:
         print(f"ERROR: {str(e)}")
         return
@@ -92,8 +97,10 @@ def ls(compartment_path="", compartment_id=None, config=None):
 
     if compartment_path != "":
         compartment_id = compartment.get_compartment_id_by_path(
-            compartment_path=compartment_path, compartment_id=compartment_id,
-            config=config)
+            compartment_path=compartment_path,
+            compartment_id=compartment_id,
+            config=config,
+        )
 
     comp_list = ""
     db_sys_list = ""
@@ -105,14 +112,17 @@ def ls(compartment_path="", compartment_id=None, config=None):
         comp_list = ""
         if compartment_id is not None:
             # Get the full path of this tenancy
-            full_path = compartment.get_compartment_full_path(
-                compartment_id, config)
+            full_path = compartment.get_compartment_full_path(compartment_id, config)
 
             print(f"Directory of compartment {full_path}\n")
 
         comp_list = compartment.list_compartments(
-            compartment_id=compartment_id, config=config, interactive=False,
-            raise_exceptions=True, return_formatted=True)
+            compartment_id=compartment_id,
+            config=config,
+            interactive=False,
+            raise_exceptions=True,
+            return_formatted=True,
+        )
 
         # List Child Compartments
         if comp_list:
@@ -123,86 +133,105 @@ def ls(compartment_path="", compartment_id=None, config=None):
         if e.status == 404:
             print("No privileges to list compartments.")
         else:
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
             return
     except Exception as e:
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
         return
 
     try:
         # List MySQL DB Systems
         db_sys_list = mysql_database_service.list_db_systems(
-            compartment_id=compartment_id, config=config, interactive=False,
-            raise_exceptions=True, return_formatted=True)
+            compartment_id=compartment_id,
+            config=config,
+            interactive=False,
+            raise_exceptions=True,
+            return_formatted=True,
+        )
         if db_sys_list:
             print("MySQL DB Systems:")
             print(db_sys_list)
     except oci.exceptions.ServiceError as e:
         # If a 404 error occurs, the user does not have privileges to list items
         if e.status == 404:
-            print("No privileges to list MySQL DB Systems in this "
-                  "compartment.")
+            print("No privileges to list MySQL DB Systems in this " "compartment.")
         else:
-            print(f'Could not list the MySQL DB Systems.')
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"Could not list the MySQL DB Systems.")
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
             return
     except Exception as e:
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
         return
 
     # List Compute Instances
     try:
         compute_list = compute.list_instances(
-            compartment_id=compartment_id, config=config, interactive=False,
-            raise_exceptions=True, return_formatted=True)
+            compartment_id=compartment_id,
+            config=config,
+            interactive=False,
+            raise_exceptions=True,
+            return_formatted=True,
+        )
 
         if compute_list != "":
             print("Compute Instances:")
             print(compute_list)
     except oci.exceptions.ServiceError as e:
         if e.status == 404:
-            print("No privileges to list the compute instances in this "
-                  "compartment.")
+            print("No privileges to list the compute instances in this " "compartment.")
         else:
-            print(f'Could not list the compute instances.')
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"Could not list the compute instances.")
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
 
     # List Bastions and Sessions
     try:
         bastion_list = bastion.list_bastions(
-            compartment_id=compartment_id, config=config, interactive=False,
-            raise_exceptions=True, return_type=core.RETURN_STR)
+            compartment_id=compartment_id,
+            config=config,
+            interactive=False,
+            raise_exceptions=True,
+            return_type=core.RETURN_STR,
+        )
 
         if bastion_list != "":
             print("Bastions:")
             print(bastion_list)
     except oci.exceptions.ServiceError as e:
         if e.status == 404:
-            print("No privileges to list the bastions in this "
-                  "compartment.")
+            print("No privileges to list the bastions in this " "compartment.")
         else:
-            print(f'Could not list the bastions.')
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"Could not list the bastions.")
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
 
     # List Object Store Buckets
     try:
         bucket_list = object_store.list_buckets(
-            compartment_id=compartment_id, config=config, interactive=False,
-            raise_exceptions=True, return_formatted=True)
+            compartment_id=compartment_id,
+            config=config,
+            interactive=False,
+            raise_exceptions=True,
+            return_formatted=True,
+        )
 
         if bucket_list != "":
             print("Object Store Buckets:")
             print(bucket_list)
     except oci.exceptions.ServiceError as e:
         if e.status == 404:
-            print('No privileges to list the object store buckets in this '
-                  'compartment.')
+            print(
+                "No privileges to list the object store buckets in this " "compartment."
+            )
         else:
-            print(f'Could not list the object store buckets.')
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"Could not list the object store buckets.")
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
 
-    if comp_list == "" and db_sys_list == "" and compute_list == "" and \
-            bastion_list == "" and bucket_list == "":
+    if (
+        comp_list == ""
+        and db_sys_list == ""
+        and compute_list == ""
+        and bastion_list == ""
+        and bucket_list == ""
+    ):
         print("-\n")
 
     # if compartment_id == config.get('tenancy'):
@@ -211,10 +240,14 @@ def ls(compartment_path="", compartment_id=None, config=None):
     #           "   - Groups\n")
 
 
-@plugin_function('mds.cd')
-def cd(compartment_path=None, compartment_id=None,
-       config=None, profile_name=None,
-       file_location="~/.oci/oci_cli_rc"):
+@plugin_function("mds.cd")
+def cd(
+    compartment_path=None,
+    compartment_id=None,
+    config=None,
+    profile_name=None,
+    file_location="~/.oci/oci_cli_rc",
+):
     """Change the current compartment to the given one
 
     If no compartment is specified, let the user choose one
@@ -237,11 +270,15 @@ def cd(compartment_path=None, compartment_id=None,
     """
 
     configuration.set_current_compartment(
-        compartment_path=compartment_path, compartment_id=compartment_id,
-        config=config, profile_name=profile_name, file_location=file_location)
+        compartment_path=compartment_path,
+        compartment_id=compartment_id,
+        config=config,
+        profile_name=profile_name,
+        file_location=file_location,
+    )
 
 
-@plugin_function('mds.ociBootstrap')
+@plugin_function("mds.ociBootstrap")
 def oci_bootstrap(**kwargs):
     """
     Creates an OCI config file using username / password based login through a browser.
@@ -277,13 +314,15 @@ def oci_bootstrap(**kwargs):
     from mds_plugin.bootstrap import interactive
 
     # Ensures a valid region is used
-    region = interactive.resolve_region(kwargs.get('region', None))
+    region = interactive.resolve_region(kwargs.get("region", None))
 
     config_location, overwrite_config = interactive.resolve_config_location(
-        kwargs.get('config_location', None))
+        kwargs.get("config_location", None)
+    )
 
-    profile_name = interactive.resolve_profile_name(config_location, overwrite_config,
-                                                    kwargs.get('profile_name', None))
+    profile_name = interactive.resolve_profile_name(
+        config_location, overwrite_config, kwargs.get("profile_name", None)
+    )
 
     user_session = cli_setup_bootstrap.create_user_session(region=region)
 
@@ -307,9 +346,9 @@ def oci_bootstrap(**kwargs):
             break
 
     connection_timeout = kwargs.get(
-        'connection_timeout', cli_setup_bootstrap.DEFAULT_CONNECTION_TIMEOUT)
-    read_timeout = kwargs.get(
-        'read_timeout', cli_setup_bootstrap.DEFAULT_READ_TIMEOUT)
+        "connection_timeout", cli_setup_bootstrap.DEFAULT_CONNECTION_TIMEOUT
+    )
+    read_timeout = kwargs.get("read_timeout", cli_setup_bootstrap.DEFAULT_READ_TIMEOUT)
 
     client = identity.IdentityClient(
         {"region": home_region},
@@ -318,8 +357,9 @@ def oci_bootstrap(**kwargs):
     )
 
     create_api_key_details = identity.models.CreateApiKeyDetails()
-    create_api_key_details.key = cli_util.serialize_key(
-        public_key=public_key).decode("UTF-8")
+    create_api_key_details.key = cli_util.serialize_key(public_key=public_key).decode(
+        "UTF-8"
+    )
 
     try:
         result = client.upload_api_key(user_ocid, create_api_key_details)
@@ -357,16 +397,17 @@ def oci_bootstrap(**kwargs):
         #         "Couldn't upload any more API keys. Delete some to make room for more"
         #     )
         raise RuntimeError(
-            "Couldn't upload any more API keys. Delete some to make room for more")
+            "Couldn't upload any more API keys. Delete some to make room for more"
+        )
 
     print("Uploaded new API key with fingerprint: {}".format(fingerprint))
 
     passphrase, persist_passphrase = interactive.resolve_passphrase_usage(
-        kwargs.get('passphrase', None), kwargs.get('persistPassphrase', None))
+        kwargs.get("passphrase", None), kwargs.get("persistPassphrase", None)
+    )
 
     # write credentials to filesystem
-    config_loc = os.path.expanduser(
-        config_location) if config_location else None
+    config_loc = os.path.expanduser(config_location) if config_location else None
 
     profile_name, config_location = cli_setup_bootstrap.persist_user_session(
         user_session,

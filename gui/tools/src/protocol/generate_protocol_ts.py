@@ -121,62 +121,133 @@ type_hint_interfaces = {}
 return_value_bindings = {}
 
 nullable_bindings = {
-    'Gui': {
-        'IShellDbConnection': ['dbType', 'caption', 'description', 'options', 'settings']
+    "Gui": {
+        "IShellDbConnection": [
+            "dbType",
+            "caption",
+            "description",
+            "options",
+            "settings",
+        ]
     },
-    'Mrs': {
-        'IShellMrsAddServiceKwargs': ['options'],
-        'IShellMrsGetServiceKwargs': ['serviceId', 'urlContextRoot', 'urlHostName', 'getDefault', 'autoSelectSingle'],
-        'IShellMrsEnableServiceKwargs': ['serviceId', 'urlContextRoot', 'urlHostName'],
-        'IShellMrsDisableServiceKwargs': ['serviceId', 'urlContextRoot', 'urlHostName'],
-        'IShellMrsDeleteServiceKwargs': ['serviceId', 'urlContextRoot', 'urlHostName'],
-        'IShellMrsSetServiceContextPathKwargs': ['serviceId', 'urlContextRoot', 'urlHostName', 'value'],
-        'IShellMrsSetServiceProtocolKwargs': ['serviceId', 'urlContextRoot', 'urlHostName', 'value'],
-        'IShellMrsSetServiceCommentsKwargs': ['serviceId', 'urlContextRoot', 'urlHostName', 'value'],
-        'IShellMrsUpdateServiceKwargs': ['serviceId', 'urlContextRoot', 'urlHostName', 'value'],
-        'IShellMrsAddSchemaKwargs': ['itemsPerPage', 'options'],
-        'IShellMrsGetSchemaKwargs': ['serviceId', 'requestPath', 'schemaName', 'schemaId', 'autoSelectSingle'],
-        'IShellMrsEnableSchemaKwargs': ['schemaId', 'serviceId', 'schemaName'],
-        'IShellMrsDisableSchemaKwargs': ['schemaId', 'serviceId', 'schemaName'],
-        'IShellMrsDeleteSchemaKwargs': ['schemaId', 'serviceId', 'schemaName'],
-        'IShellMrsSetSchemaNameKwargs': ['schemaId', 'serviceId', 'schemaName', 'value'],
-        'IShellMrsSetSchemaRequestPathKwargs': ['schemaId', 'serviceId', 'schemaName', 'value'],
-        'IShellMrsSetSchemaRequiresAuthKwargs': ['schemaId', 'serviceId', 'schemaName', 'value'],
-        'IShellMrsSetSchemaItemsPerPageKwargs': ['schemaId', 'serviceId', 'schemaName', 'value'],
-        'IShellMrsSetSchemaCommentsKwargs': ['schemaId', 'serviceId', 'schemaName', 'value'],
-        'IShellMrsUpdateSchemaKwargsValue': ['itemsPerPage', 'options'],
-        'IShellMrsUpdateSchemaKwargs': ['value'],
-        'IShellMrsAddAuthenticationAppKwargs': ['defaultRoleId'],
-        'IShellMrsUpdateAuthenticationAppKwargsValue': ['defaultRoleId'],
-        'IShellMrsUpdateAuthenticationAppKwargs': ['value'],
-        'IShellMrsAddDbObjectKwargs': ['options', 'metadata'],
-        'IShellMrsEnableDbObjectKwargs': ['dbObjectId'],
-        'IShellMrsDisableDbObjectKwargs': ['dbObjectId'],
-        'IShellMrsDeleteDbObjectKwargs': ['dbObjectId'],
-        'IShellMrsUpdateDbObjectKwargsValue': ['options', 'itemsPerPage', 'metadata'],
-        'IShellMrsAddContentSetKwargs': ['requestPath', 'requiresAuth', 'options'],
-        'IShellMrsAddUserKwargs': ['options', 'appOptions'],
-        'IShellMrsUpdateUserKwargsValue': ['name', 'email', 'vendorUserId', 'mappedUserId', 'options', 'appOptions', 'authString']
-    }
+    "Mrs": {
+        "IShellMrsAddServiceKwargs": ["options"],
+        "IShellMrsGetServiceKwargs": [
+            "serviceId",
+            "urlContextRoot",
+            "urlHostName",
+            "getDefault",
+            "autoSelectSingle",
+        ],
+        "IShellMrsEnableServiceKwargs": ["serviceId", "urlContextRoot", "urlHostName"],
+        "IShellMrsDisableServiceKwargs": ["serviceId", "urlContextRoot", "urlHostName"],
+        "IShellMrsDeleteServiceKwargs": ["serviceId", "urlContextRoot", "urlHostName"],
+        "IShellMrsSetServiceContextPathKwargs": [
+            "serviceId",
+            "urlContextRoot",
+            "urlHostName",
+            "value",
+        ],
+        "IShellMrsSetServiceProtocolKwargs": [
+            "serviceId",
+            "urlContextRoot",
+            "urlHostName",
+            "value",
+        ],
+        "IShellMrsSetServiceCommentsKwargs": [
+            "serviceId",
+            "urlContextRoot",
+            "urlHostName",
+            "value",
+        ],
+        "IShellMrsUpdateServiceKwargs": [
+            "serviceId",
+            "urlContextRoot",
+            "urlHostName",
+            "value",
+        ],
+        "IShellMrsAddSchemaKwargs": ["itemsPerPage", "options"],
+        "IShellMrsGetSchemaKwargs": [
+            "serviceId",
+            "requestPath",
+            "schemaName",
+            "schemaId",
+            "autoSelectSingle",
+        ],
+        "IShellMrsEnableSchemaKwargs": ["schemaId", "serviceId", "schemaName"],
+        "IShellMrsDisableSchemaKwargs": ["schemaId", "serviceId", "schemaName"],
+        "IShellMrsDeleteSchemaKwargs": ["schemaId", "serviceId", "schemaName"],
+        "IShellMrsSetSchemaNameKwargs": [
+            "schemaId",
+            "serviceId",
+            "schemaName",
+            "value",
+        ],
+        "IShellMrsSetSchemaRequestPathKwargs": [
+            "schemaId",
+            "serviceId",
+            "schemaName",
+            "value",
+        ],
+        "IShellMrsSetSchemaRequiresAuthKwargs": [
+            "schemaId",
+            "serviceId",
+            "schemaName",
+            "value",
+        ],
+        "IShellMrsSetSchemaItemsPerPageKwargs": [
+            "schemaId",
+            "serviceId",
+            "schemaName",
+            "value",
+        ],
+        "IShellMrsSetSchemaCommentsKwargs": [
+            "schemaId",
+            "serviceId",
+            "schemaName",
+            "value",
+        ],
+        "IShellMrsUpdateSchemaKwargsValue": ["itemsPerPage", "options"],
+        "IShellMrsUpdateSchemaKwargs": ["value"],
+        "IShellMrsAddAuthenticationAppKwargs": ["defaultRoleId"],
+        "IShellMrsUpdateAuthenticationAppKwargsValue": ["defaultRoleId"],
+        "IShellMrsUpdateAuthenticationAppKwargs": ["value"],
+        "IShellMrsAddDbObjectKwargs": ["options", "metadata"],
+        "IShellMrsEnableDbObjectKwargs": ["dbObjectId"],
+        "IShellMrsDisableDbObjectKwargs": ["dbObjectId"],
+        "IShellMrsDeleteDbObjectKwargs": ["dbObjectId"],
+        "IShellMrsUpdateDbObjectKwargsValue": ["options", "itemsPerPage", "metadata"],
+        "IShellMrsAddContentSetKwargs": ["requestPath", "requiresAuth", "options"],
+        "IShellMrsAddUserKwargs": ["options", "appOptions"],
+        "IShellMrsUpdateUserKwargsValue": [
+            "name",
+            "email",
+            "vendorUserId",
+            "mappedUserId",
+            "options",
+            "appOptions",
+            "authString",
+        ],
+    },
 }
 
 
 class TypeScriptHelper:
     """Helper class to generate TypeScript code.
 
-        Attributes
-            _params_to_replace : dict
-                The file contains keys that are parameter names needs
-                to be replaced for param that is know to frontend.
-                Inside this key it should contain `mapping` key that
-                collects what should be replaced:
-                    * `name` - name of parameter
-                    * `param_type` - type of target parameter
-                    * `brief` - could be simple string with new docstring
-                                or dictionary with two keys `search` and `replace`
-                                that search and replace original docstring
+    Attributes
+        _params_to_replace : dict
+            The file contains keys that are parameter names needs
+            to be replaced for param that is know to frontend.
+            Inside this key it should contain `mapping` key that
+            collects what should be replaced:
+                * `name` - name of parameter
+                * `param_type` - type of target parameter
+                * `brief` - could be simple string with new docstring
+                            or dictionary with two keys `search` and `replace`
+                            that search and replace original docstring
 
- """
+    """
 
     _params_to_replace = {
         "session": {
@@ -192,14 +263,14 @@ class TypeScriptHelper:
                 "param_type": "string",
                 "brief": {
                     "search": "The module session object",
-                    "replace": "The string id for the module session object"
+                    "replace": "The string id for the module session object",
                 },
             }
         },
         "connection": {
             "mapping": {
                 "param_type": "IShellDbConnection | number",
-                "interface_name": "IShellDbConnection"
+                "interface_name": "IShellDbConnection",
             }
         },
     }
@@ -235,24 +306,27 @@ class TypeScriptHelper:
         return ts_type
 
     @classmethod
-    def replace_param(cls, param_name: str, param_type: str, brief: str) -> typing.Tuple[str, str, str]:
+    def replace_param(
+        cls, param_name: str, param_type: str, brief: str
+    ) -> typing.Tuple[str, str, str]:
         """Replaces some params names and types onto different
 
-            This function can replace param that is internal for backend function with
-            param that can be passed from frontend, f. e.: `session` is internal backend
-            parameter and frontend doesn't have access to it, so it must be replaced
-            with `module_session_id` which is known to frontend parameter and can be easy
-            used in backend to obtain proper session object.
+        This function can replace param that is internal for backend function with
+        param that can be passed from frontend, f. e.: `session` is internal backend
+        parameter and frontend doesn't have access to it, so it must be replaced
+        with `module_session_id` which is known to frontend parameter and can be easy
+        used in backend to obtain proper session object.
         """
 
         if param_name in cls._params_to_replace:
-            override = cls._params_to_replace[param_name]['mapping']
-            param_name = override.get('name', param_name)
-            param_type = override.get('param_type', param_type)
-            if 'brief' in override:
+            override = cls._params_to_replace[param_name]["mapping"]
+            param_name = override.get("name", param_name)
+            param_type = override.get("param_type", param_type)
+            if "brief" in override:
                 if isinstance(override["brief"], dict):
                     brief = brief.replace(
-                        override["brief"]["search"], override["brief"]["replace"])
+                        override["brief"]["search"], override["brief"]["replace"]
+                    )
                 else:
                     brief = override["brief"]
 
@@ -263,9 +337,13 @@ class TypeScriptHelper:
         """Gets interface name for the given param name"""
 
         interface_name = None
-        if param_name in cls._params_to_replace and \
-                'interface_name' in cls._params_to_replace[param_name]['mapping']:
-            interface_name = cls._params_to_replace[param_name]['mapping']['interface_name']
+        if (
+            param_name in cls._params_to_replace
+            and "interface_name" in cls._params_to_replace[param_name]["mapping"]
+        ):
+            interface_name = cls._params_to_replace[param_name]["mapping"][
+                "interface_name"
+            ]
 
         return interface_name
 
@@ -273,7 +351,9 @@ class TypeScriptHelper:
 class ProtocolBuilder:
     """Class to build the protocol bindings."""
 
-    def __init__(self, plugin_name: str, definition: registrar.PluginRegistrar.FunctionData) -> None:
+    def __init__(
+        self, plugin_name: str, definition: registrar.PluginRegistrar.FunctionData
+    ) -> None:
         self._plugin_name = plugin_name
         self._definition = definition
         self._protocol_file_content = PROTOCOL_TEMPLATE
@@ -300,7 +380,7 @@ class ProtocolBuilder:
     def build(self) -> None:
         """Builds the protocol bindings for the given API."""
         hints = get_type_hints(self._definition.function)
-        handle_type_hints = 'return' in hints
+        handle_type_hints = "return" in hints
         if handle_type_hints:
             for param in self._definition.parameters:
                 info = param.format_info()
@@ -309,11 +389,12 @@ class ProtocolBuilder:
                     break
 
         ts_function = TypeScriptFunction(
-            self._plugin_name, self._definition, handle_type_hints)
+            self._plugin_name, self._definition, handle_type_hints
+        )
 
         for param in self._definition.parameters:
             info = param.format_info()
-            if info['name'] == "kwargs":
+            if info["name"] == "kwargs":
                 ts_function.add_kwargs_parameter(info)
             else:
                 ts_function.add_args_parameter(info)
@@ -327,14 +408,14 @@ class ProtocolBuilder:
         """Generates the protocol bindings.
 
 
-            Function generates interface that binds every function in module
-            to backend fully qualified function name, also adds doc string to it f. e.:
+        Function generates interface that binds every function in module
+        to backend fully qualified function name, also adds doc string to it f. e.:
 
-            export enum ShellAPIMrs {
-                /** Adds a new MRS service */
-                MrsAddService = "mrs.add.service",
-                ...
-            }
+        export enum ShellAPIMrs {
+            /** Adds a new MRS service */
+            MrsAddService = "mrs.add.service",
+            ...
+        }
         """
 
         return ",\n".join(
@@ -348,20 +429,20 @@ class ProtocolBuilder:
         """Generates the parameter bindings.
 
 
-            Function generates interfaces for every function in module,
-            it adds comment, name and type for all parameters and put it
-            inside interface, f. e.:
+        Function generates interfaces for every function in module,
+        it adds comment, name and type for all parameters and put it
+        inside interface, f. e.:
 
-            export interface IShellMrsStatusKwargs {
-                /** The string id for the module session object, holding the database session to be used on the operation. */
-                moduleSessionId?: string;
-                /** Indicates whether to execute in interactive mode */
-                interactive?: boolean;
-                /** If set to true exceptions are raised */
-                raiseExceptions?: boolean;
-                /** If set to true, a list object is returned */
-                returnFormatted?: boolean;
-            }
+        export interface IShellMrsStatusKwargs {
+            /** The string id for the module session object, holding the database session to be used on the operation. */
+            moduleSessionId?: string;
+            /** Indicates whether to execute in interactive mode */
+            interactive?: boolean;
+            /** If set to true exceptions are raised */
+            raiseExceptions?: boolean;
+            /** If set to true, a list object is returned */
+            returnFormatted?: boolean;
+        }
         """
 
         output = []
@@ -376,8 +457,9 @@ class ProtocolBuilder:
                 key_nullables = nullables[key] if key in nullables else []
                 arg_nullable = arg_name in key_nullables
                 args.append(
-                    f"    /** {arg_brief} */\n    {arg_name}{'' if arg_required or arg_nullable else '?'}: {arg_type}{' | null' if arg_nullable else ''};")
-            args = '\n'.join(args)
+                    f"    /** {arg_brief} */\n    {arg_name}{'' if arg_required or arg_nullable else '?'}: {arg_type}{' | null' if arg_nullable else ''};"
+                )
+            args = "\n".join(args)
             output.append(f"export interface {key} {{\n{args}\n}}")
 
         return output
@@ -385,39 +467,42 @@ class ProtocolBuilder:
     def _generate_parameter_mapper_bindings(self, bindings: dict) -> None:
         """Generates the parameter mapper bindings.
 
-            Function creates interface for the module, for every function in module generates
-            dictionary that contains parameters that are bound to the function, f. e.:
+        Function creates interface for the module, for every function in module generates
+        dictionary that contains parameters that are bound to the function, f. e.:
 
-            export interface IProtocolMrsParameters {
-                [ShellAPIMrs.MrsAddService]: { args: {urlContextRoot?: string, urlHostName?: string, enabled?: boolean}; kwargs?: IShellMrsAddServiceKwargs };
-                ...
-            }
+        export interface IProtocolMrsParameters {
+            [ShellAPIMrs.MrsAddService]: { args: {urlContextRoot?: string, urlHostName?: string, enabled?: boolean}; kwargs?: IShellMrsAddServiceKwargs };
+            ...
+        }
 
         """
 
         output = ""
         for func_name in bindings:
-            name_parts = re.sub(
-                "([a-z])([A-Z])", r"\1 \2", func_name).split(" ")
+            name_parts = re.sub("([a-z])([A-Z])", r"\1 \2", func_name).split(" ")
             output += f"    [ShellAPI{name_parts[0]}.{func_name}]: "
             line_args = "args: { "
             line_kwargs = ""
             contains_args = False
             contains_kwargs = False
-            for argument in bindings[func_name]['args']:
-                if isinstance(bindings[func_name]['args'][argument], list):
+            for argument in bindings[func_name]["args"]:
+                if isinstance(bindings[func_name]["args"][argument], list):
                     line_args += f"{argument}: {{ "
-                    for option in bindings[func_name]['args'][argument]:
-                        line_args += f"{option[0]}{'' if option[3] else '?'}: {option[1]}; "
+                    for option in bindings[func_name]["args"][argument]:
+                        line_args += (
+                            f"{option[0]}{'' if option[3] else '?'}: {option[1]}; "
+                        )
                     line_args = line_args[:-1] + " }; "
                 else:
-                    param_type, required, _, default_none = bindings[func_name]['args'][argument]
+                    param_type, required, _, default_none = bindings[func_name]["args"][
+                        argument
+                    ]
                     line_args += f"{argument}{'?' if default_none or not required else ''}: {param_type}; "
                 contains_args = True
 
             line_args = line_args[:-1] + " };"
 
-            for argument in bindings[func_name]['kwargs']:
+            for argument in bindings[func_name]["kwargs"]:
                 line_kwargs += f"{bindings[func_name]['kwargs'][argument][0]}?: {bindings[func_name]['kwargs'][argument][1]}; "
                 contains_kwargs = True
 
@@ -446,14 +531,14 @@ class ProtocolBuilder:
     def _generate_return_value_bindings(self, bindings: dict) -> None:
         errors = []
         for func_name in bindings:
-            name_parts = re.sub(
-                "([a-z])([A-Z])", r"\1 \2", func_name).split(" ")
+            name_parts = re.sub("([a-z])([A-Z])", r"\1 \2", func_name).split(" ")
             id = f"ShellAPI{name_parts[0]}.{func_name}"
 
             for mapping in self._results_mapping:
                 if mapping.find(id) != -1:
                     errors.append(
-                        f"Result mapping for {id} is hardcoded, ensure it is removed and it's associated interfaces too")
+                        f"Result mapping for {id} is hardcoded, ensure it is removed and it's associated interfaces too"
+                    )
 
             line = f"    [{id}]: "
             if bindings[func_name] is None:
@@ -475,7 +560,7 @@ class ProtocolBuilder:
                 if result_lines[index].find(mapping_interface) != -1:
                     self._results_pre = result_lines[:index]
             elif result_lines[index] == "}":
-                self._results_post = result_lines[index+1:]
+                self._results_post = result_lines[index + 1 :]
                 break
             else:
                 self._results_mapping.append(result_lines[index])
@@ -502,52 +587,73 @@ class ProtocolBuilder:
     def _generate(self) -> None:
         """Generates the protocol files."""
 
-        global protocol_bindings          # pylint: disable=invalid-name, global-variable-not-assigned
+        global protocol_bindings  # pylint: disable=invalid-name, global-variable-not-assigned
         global parameter_mapper_bindings  # pylint: disable=invalid-name, global-variable-not-assigned
-        global parameter_types_bindings   # pylint: disable=invalid-name, global-variable-not-assigned
-        global type_hint_interfaces    # pylint: disable=invalid-name, global-variable-not-assigned
-        global return_value_bindings      # pylint: disable=invalid-name, global-variable-not-assigned
+        global parameter_types_bindings  # pylint: disable=invalid-name, global-variable-not-assigned
+        global type_hint_interfaces  # pylint: disable=invalid-name, global-variable-not-assigned
+        global return_value_bindings  # pylint: disable=invalid-name, global-variable-not-assigned
 
         current_year = datetime.datetime.now().year
-        years = f"{current_year}" if current_year == BEGINNING_YEAR else f"{BEGINNING_YEAR}, {current_year}"
+        years = (
+            f"{current_year}"
+            if current_year == BEGINNING_YEAR
+            else f"{BEGINNING_YEAR}, {current_year}"
+        )
         self._protocol_file_content = self._protocol_file_content.replace(
-            "{__YEARS__}", years)
+            "{__YEARS__}", years
+        )
 
         self._protocol_file_content = self._protocol_file_content.replace(
-            "{__PREAMBLE__}", self._load_file_content("preamble_"))
+            "{__PREAMBLE__}", self._load_file_content("preamble_")
+        )
 
         self._protocol_file_content = self._protocol_file_content.replace(
-            "{__AUTOGENERATED_API_NAME__}", f"ShellAPI{self._plugin_name}")
+            "{__AUTOGENERATED_API_NAME__}", f"ShellAPI{self._plugin_name}"
+        )
         self._protocol_file_content = self._protocol_file_content.replace(
-            "{__AUTOGENERATED_API_NAMES__}", self._generate_protocol_bindings(protocol_bindings[self._plugin_name]))
+            "{__AUTOGENERATED_API_NAMES__}",
+            self._generate_protocol_bindings(protocol_bindings[self._plugin_name]),
+        )
 
-        nullables = nullable_bindings[self._plugin_name] if self._plugin_name in nullable_bindings else {
-        }
+        nullables = (
+            nullable_bindings[self._plugin_name]
+            if self._plugin_name in nullable_bindings
+            else {}
+        )
 
         all_interfaces = self._generate_parameter_bindings(
-            parameter_types_bindings[self._plugin_name], nullables)
+            parameter_types_bindings[self._plugin_name], nullables
+        )
 
         if self._plugin_name in type_hint_interfaces:
-            all_interfaces += type_hint_interfaces[self._plugin_name].generate(
-            )
+            all_interfaces += type_hint_interfaces[self._plugin_name].generate()
 
         self._protocol_file_content = self._protocol_file_content.replace(
-            "{__AUTOGENERATED_PARAMETER_TYPES__}", "\n\n".join(all_interfaces))
+            "{__AUTOGENERATED_PARAMETER_TYPES__}", "\n\n".join(all_interfaces)
+        )
 
         self._protocol_file_content = self._protocol_file_content.replace(
-            "{__AUTOGENERATED_PROTOCOL_NAME__}", f"IProtocol{self._plugin_name}Parameters")
+            "{__AUTOGENERATED_PROTOCOL_NAME__}",
+            f"IProtocol{self._plugin_name}Parameters",
+        )
         self._protocol_file_content = self._protocol_file_content.replace(
-            "{__AUTOGENERATED_MAPPINGS__}", self._generate_parameter_mapper_bindings(parameter_mapper_bindings[self._plugin_name]))
+            "{__AUTOGENERATED_MAPPINGS__}",
+            self._generate_parameter_mapper_bindings(
+                parameter_mapper_bindings[self._plugin_name]
+            ),
+        )
 
         self._process_results_file()
 
         if self._plugin_name in return_value_bindings:
             self._generate_return_value_bindings(
-                return_value_bindings[self._plugin_name])
+                return_value_bindings[self._plugin_name]
+            )
 
         results = self._generate_results()
         self._protocol_file_content = self._protocol_file_content.replace(
-            "{__RESULTS__}", results)
+            "{__RESULTS__}", results
+        )
 
     def _load_file_content(self, prefix: str) -> str:
         """Loads the file content from the file."""
@@ -586,19 +692,20 @@ class TypeScriptInterface:
         interface_params = []
         for option in self._options:
             param_name, param_type, param_brief = TypeScriptHelper.replace_param(
-                option['name'], option['type'],  option['brief'])
+                option["name"], option["type"], option["brief"]
+            )
             param_name = TypeScriptHelper.convert_name_to_ts(param_name)
             param_type = TypeScriptHelper.convert_python_type_to_ts(param_type)
-            required = option['required'] if 'required' in option else False
+            required = option["required"] if "required" in option else False
 
-            if 'options' in option and len(option['options']) > 0:
+            if "options" in option and len(option["options"]) > 0:
                 param_type = f"{self._name}{option['name'].capitalize()}"
                 interface = TypeScriptInterface(
-                    self._plugin_name, param_type, option['options'])
+                    self._plugin_name, param_type, option["options"]
+                )
                 interface.add_bindings()
 
-            interface_params.append(
-                (param_name, param_type, param_brief, required))
+            interface_params.append((param_name, param_type, param_brief, required))
 
         parameter_types_bindings[self._plugin_name][self._name] = interface_params
 
@@ -609,26 +716,35 @@ class TypeScriptParameter(ABC):
     def __init__(self, plugin_name: str, func_name: str) -> None:
         self._plugin_name = plugin_name
         self._func_name = func_name
-        self._params_to_ignore = ['request_id',
-                                  'web_session', 'be_session', '_user_id']
+        self._params_to_ignore = ["request_id", "web_session", "be_session", "_user_id"]
 
     def add_bindings(self) -> None:
         """Adds the bindings for the parameter."""
 
         raise NotImplementedError(
-            f"{TypeScriptParameter} is an abstract class and cannot be instantiated.")
+            f"{TypeScriptParameter} is an abstract class and cannot be instantiated."
+        )
 
 
 class TypeScriptSimpleParameter(TypeScriptParameter):
     """Represents a simple parameter."""
 
-    def __init__(self, plugin_name: str, func_name: str, name: str, param_type: str,
-                 default_none: bool, required: bool, param_doc) -> None:
+    def __init__(
+        self,
+        plugin_name: str,
+        func_name: str,
+        name: str,
+        param_type: str,
+        default_none: bool,
+        required: bool,
+        param_doc,
+    ) -> None:
         super().__init__(plugin_name, func_name)
         self._default_none = default_none
         self._required = required
         self._name, self._param_type, self._param_doc = TypeScriptHelper.replace_param(
-            name, param_type, param_doc)
+            name, param_type, param_doc
+        )
 
     def add_bindings(self) -> None:
         """Adds a binding to the parameter mapper."""
@@ -636,20 +752,35 @@ class TypeScriptSimpleParameter(TypeScriptParameter):
         global parameter_mapper_bindings  # pylint: disable=invalid-name, global-variable-not-assigned
 
         if self._name not in self._params_to_ignore:
-            parameter_mapper_bindings[self._plugin_name][self._func_name]['args'][TypeScriptHelper.convert_name_to_ts(self._name)] = (
-                TypeScriptHelper.convert_python_type_to_ts(self._param_type), self._required, self._param_doc, self._default_none)
+            parameter_mapper_bindings[self._plugin_name][self._func_name]["args"][
+                TypeScriptHelper.convert_name_to_ts(self._name)
+            ] = (
+                TypeScriptHelper.convert_python_type_to_ts(self._param_type),
+                self._required,
+                self._param_doc,
+                self._default_none,
+            )
 
 
 class TypeScriptObjectParameter(TypeScriptParameter):
     """Represents an already processed object parameter."""
 
-    def __init__(self, plugin_name: str, func_name: str, name: str, param_type: str,
-                 default_none: bool, required: bool, param_doc) -> None:
+    def __init__(
+        self,
+        plugin_name: str,
+        func_name: str,
+        name: str,
+        param_type: str,
+        default_none: bool,
+        required: bool,
+        param_doc,
+    ) -> None:
         super().__init__(plugin_name, func_name)
         self._default_none = default_none
         self._required = required
         self._name, self._param_type, self._param_doc = TypeScriptHelper.replace_param(
-            name, param_type, param_doc)
+            name, param_type, param_doc
+        )
 
     def add_bindings(self) -> None:
         """Adds a binding to the parameter mapper."""
@@ -657,15 +788,25 @@ class TypeScriptObjectParameter(TypeScriptParameter):
         global parameter_mapper_bindings  # pylint: disable=invalid-name, global-variable-not-assigned
 
         if self._name not in self._params_to_ignore:
-            parameter_mapper_bindings[self._plugin_name][self._func_name]['args'][TypeScriptHelper.convert_name_to_ts(self._name)] = (
-                self._param_type, self._required, self._param_doc, self._default_none)
+            parameter_mapper_bindings[self._plugin_name][self._func_name]["args"][
+                TypeScriptHelper.convert_name_to_ts(self._name)
+            ] = (self._param_type, self._required, self._param_doc, self._default_none)
 
 
 class TypeScriptDictionaryParameter(TypeScriptParameter):
     """Represents a dictionary parameter."""
 
-    def __init__(self, plugin_name: str, func_name: str, name: str, param_type: str,
-                 default_none: bool, required: bool, param_doc: str, options: list) -> None:
+    def __init__(
+        self,
+        plugin_name: str,
+        func_name: str,
+        name: str,
+        param_type: str,
+        default_none: bool,
+        required: bool,
+        param_doc: str,
+        options: list,
+    ) -> None:
         super().__init__(plugin_name, func_name)
         self._name = name
         self._param_type = param_type
@@ -683,23 +824,47 @@ class TypeScriptDictionaryParameter(TypeScriptParameter):
             interface_name = TypeScriptHelper.get_interface_name(self._name)
             if interface_name is not None:
                 interface = TypeScriptInterface(
-                    self._plugin_name, interface_name, self._options)
+                    self._plugin_name, interface_name, self._options
+                )
 
-                parameter_mapper_bindings[self._plugin_name][self._func_name]['args'][TypeScriptHelper.convert_name_to_ts(
-                    self._name)] = (interface_name, self._required, self._param_doc, self._default_none)
+                parameter_mapper_bindings[self._plugin_name][self._func_name]["args"][
+                    TypeScriptHelper.convert_name_to_ts(self._name)
+                ] = (
+                    interface_name,
+                    self._required,
+                    self._param_doc,
+                    self._default_none,
+                )
 
                 interface.add_bindings()
             else:
-                parameter_mapper_bindings[self._plugin_name][self._func_name]['args'][TypeScriptHelper.convert_name_to_ts(self._name)] = [
-                    (TypeScriptHelper.convert_name_to_ts(option['name']), TypeScriptHelper.convert_python_type_to_ts(option['type']), option['brief'], option['required'] if 'required' in option else False) for option in self._options
+                parameter_mapper_bindings[self._plugin_name][self._func_name]["args"][
+                    TypeScriptHelper.convert_name_to_ts(self._name)
+                ] = [
+                    (
+                        TypeScriptHelper.convert_name_to_ts(option["name"]),
+                        TypeScriptHelper.convert_python_type_to_ts(option["type"]),
+                        option["brief"],
+                        option["required"] if "required" in option else False,
+                    )
+                    for option in self._options
                 ]
 
 
 class TypeScriptKwargsParameter(TypeScriptParameter):
     """Represents an kwargs parameter."""
 
-    def __init__(self, plugin_name: str, func_name: str, name: str, param_type: str,
-                 default_none: bool, required: bool, param_doc, options: list) -> None:
+    def __init__(
+        self,
+        plugin_name: str,
+        func_name: str,
+        name: str,
+        param_type: str,
+        default_none: bool,
+        required: bool,
+        param_doc,
+        options: list,
+    ) -> None:
         super().__init__(plugin_name, func_name)
         self._param_type = param_type
         self._default_none = default_none
@@ -714,7 +879,8 @@ class TypeScriptKwargsParameter(TypeScriptParameter):
 
         interface_name = f"IShell{self._func_name}{TypeScriptHelper.convert_name_to_ts(self._name).capitalize()}"
         self._interface = TypeScriptInterface(
-            self._plugin_name, interface_name, self._options)
+            self._plugin_name, interface_name, self._options
+        )
 
     def add_bindings(self) -> None:
         """Adds a binding to the parameter mapper."""
@@ -723,8 +889,9 @@ class TypeScriptKwargsParameter(TypeScriptParameter):
 
         if self._name not in self._params_to_ignore:
             interface_name = f"IShell{self._func_name}{TypeScriptHelper.convert_name_to_ts(self._name).capitalize()}"
-            parameter_mapper_bindings[self._plugin_name][self._func_name]['kwargs'][TypeScriptHelper.convert_name_to_ts(self._name)] = (
-                self._name, interface_name, self._param_doc, self._default_none)
+            parameter_mapper_bindings[self._plugin_name][self._func_name]["kwargs"][
+                TypeScriptHelper.convert_name_to_ts(self._name)
+            ] = (self._name, interface_name, self._param_doc, self._default_none)
 
         self._interface.add_bindings()
 
@@ -732,7 +899,12 @@ class TypeScriptKwargsParameter(TypeScriptParameter):
 class TypeScriptFunction:
     """Holds information about a TypeScript function."""
 
-    def __init__(self, plugin_name: str, definition: registrar.PluginRegistrar.FunctionData, use_type_hints=False) -> None:
+    def __init__(
+        self,
+        plugin_name: str,
+        definition: registrar.PluginRegistrar.FunctionData,
+        use_type_hints=False,
+    ) -> None:
         self._plugin_name = plugin_name
         self._params: list[TypeScriptParameter] = []
         self._func_doc = definition.docs.brief
@@ -748,12 +920,15 @@ class TypeScriptFunction:
         # Creates name for the Shell API from fully qualified name
         # example: "gui.core.listRoles" -> "GuiCoreListRoles"
         self._ts_fully_qualified_name = "".join(
-            [x[0].upper() + x[1:] for x in full_name.split(".")])
+            [x[0].upper() + x[1:] for x in full_name.split(".")]
+        )
 
         # Creates proper name for BE function from fully qualified name
         # example: "gui.core.listRoles" -> "gui.core.list_roles"
-        self._py_fully_qualified_name = ".".join(full_name.split(
-            ".")[:-1] + [TypeScriptHelper.snakify(full_name.split(".")[-1])])
+        self._py_fully_qualified_name = ".".join(
+            full_name.split(".")[:-1]
+            + [TypeScriptHelper.snakify(full_name.split(".")[-1])]
+        )
 
     def add_bindings(self) -> None:
         """Adds bindings to the parameter mapper."""
@@ -761,7 +936,9 @@ class TypeScriptFunction:
         global protocol_bindings  # pylint: disable=invalid-name, global-variable-not-assigned
 
         protocol_bindings[self._plugin_name][self._ts_fully_qualified_name] = (
-            self._py_fully_qualified_name, self._func_doc)
+            self._py_fully_qualified_name,
+            self._func_doc,
+        )
 
         self._init_params_binding()
 
@@ -771,28 +948,35 @@ class TypeScriptFunction:
     def _init_params_binding(self) -> None:
         global parameter_mapper_bindings  # pylint: disable=invalid-name, global-variable-not-assigned
 
-        if self._ts_fully_qualified_name not in parameter_mapper_bindings[self._plugin_name]:
-            parameter_mapper_bindings[self._plugin_name][self._ts_fully_qualified_name] = {
-            }
-            parameter_mapper_bindings[self._plugin_name][self._ts_fully_qualified_name]['args'] = {
-            }
-            parameter_mapper_bindings[self._plugin_name][self._ts_fully_qualified_name]['kwargs'] = {
-            }
+        if (
+            self._ts_fully_qualified_name
+            not in parameter_mapper_bindings[self._plugin_name]
+        ):
+            parameter_mapper_bindings[self._plugin_name][
+                self._ts_fully_qualified_name
+            ] = {}
+            parameter_mapper_bindings[self._plugin_name][self._ts_fully_qualified_name][
+                "args"
+            ] = {}
+            parameter_mapper_bindings[self._plugin_name][self._ts_fully_qualified_name][
+                "kwargs"
+            ] = {}
 
     def add_kwargs_parameter(self, param: dict) -> None:
         """Adds a kwargs parameter to the function."""
 
-        default_none = param['default'] is None if 'default' in param else False
-        required = param['required'] == "True" if 'required' in param else False
+        default_none = param["default"] is None if "default" in param else False
+        required = param["required"] == "True" if "required" in param else False
         parameter = TypeScriptKwargsParameter(
             self._plugin_name,
             self._ts_fully_qualified_name,
-            param['name'],
-            param['type'],
+            param["name"],
+            param["type"],
             default_none,
             required,
-            param['brief'],
-            param['options'])
+            param["brief"],
+            param["options"],
+        )
 
         parameter.add_interface()
         self._params.append(parameter)
@@ -800,41 +984,45 @@ class TypeScriptFunction:
     def add_args_parameter(self, param: dict) -> None:
         """Adds an args parameter to the function."""
 
-        default_none = param['default'] is None if 'default' in param else False
-        required = param['required'] == "True" if 'required' in param else True
+        default_none = param["default"] is None if "default" in param else False
+        required = param["required"] == "True" if "required" in param else True
 
         parameter = None
-        if param['type'] == "dictionary":
+        if param["type"] == "dictionary":
             parameter = TypeScriptDictionaryParameter(
                 self._plugin_name,
                 self._ts_fully_qualified_name,
-                param['name'],
-                param['type'],
+                param["name"],
+                param["type"],
                 default_none,
                 required,
-                param['brief'],
-                param['options'] if 'options' in param else [])
-        elif self._type_hints is not None and param['name'] in self._type_hints:
+                param["brief"],
+                param["options"] if "options" in param else [],
+            )
+        elif self._type_hints is not None and param["name"] in self._type_hints:
             param_type = type_mapper.generate_ts_interfaces(
-                self._type_hints[param["name"]], self.get_type_hint_interfaces())
+                self._type_hints[param["name"]], self.get_type_hint_interfaces()
+            )
             parameter = TypeScriptObjectParameter(
                 self._plugin_name,
                 self._ts_fully_qualified_name,
-                param['name'],
+                param["name"],
                 param_type,
                 default_none,
                 required,
-                param['brief'])
+                param["brief"],
+            )
 
         if parameter is None:
             parameter = TypeScriptSimpleParameter(
                 self._plugin_name,
                 self._ts_fully_qualified_name,
-                param['name'],
-                param['type'],
+                param["name"],
+                param["type"],
                 default_none,
                 required,
-                param['brief'])
+                param["brief"],
+            )
 
         self._params.append(parameter)
 
@@ -842,7 +1030,8 @@ class TypeScriptFunction:
         global type_hint_interfaces
 
         if self._plugin_name not in type_hint_interfaces:
-            type_hint_interfaces[self._plugin_name] = type_mapper.PluginInterfaceRegistry(
+            type_hint_interfaces[self._plugin_name] = (
+                type_mapper.PluginInterfaceRegistry()
             )
 
         return type_hint_interfaces[self._plugin_name]
@@ -853,11 +1042,15 @@ class TypeScriptFunction:
         if self._plugin_name not in return_value_bindings:
             return_value_bindings[self._plugin_name] = {}
 
-        if self._ts_fully_qualified_name not in return_value_bindings[self._plugin_name]:
-            return_value_bindings[self._plugin_name][self._ts_fully_qualified_name] = {
-            }
+        if (
+            self._ts_fully_qualified_name
+            not in return_value_bindings[self._plugin_name]
+        ):
+            return_value_bindings[self._plugin_name][self._ts_fully_qualified_name] = {}
 
-        return_value_bindings[self._plugin_name][self._ts_fully_qualified_name] = return_type
+        return_value_bindings[self._plugin_name][
+            self._ts_fully_qualified_name
+        ] = return_type
 
     def handle_return_value(self) -> None:
         """Adds the interfaces for the annotated return value"""
@@ -868,13 +1061,16 @@ class TypeScriptFunction:
         global return_value_bindings
         global type_hint_interfaces
         try:
-            return_type = self._type_hints.get('return')
+            return_type = self._type_hints.get("return")
             if return_type is None:
                 type_mapper.raise_error(
-                    self._function, f"Function {self._function.__name__} return type is not annotated")
+                    self._function,
+                    f"Function {self._function.__name__} return type is not annotated",
+                )
 
             return_type = type_mapper.generate_ts_interfaces(
-                return_type, self.get_type_hint_interfaces())
+                return_type, self.get_type_hint_interfaces()
+            )
 
             # The main function should return None instead of null
             if return_type == "null":
@@ -883,7 +1079,8 @@ class TypeScriptFunction:
             self.add_return_type(return_type)
         except Exception as e:
             raise Exception(
-                f"Functions in the {self._plugin_name} require the return value annotated") from e
+                f"Functions in the {self._plugin_name} require the return value annotated"
+            ) from e
 
 
 def add_to_protocol_ts(definition: registrar.PluginRegistrar.FunctionData) -> None:
@@ -897,8 +1094,7 @@ def add_to_protocol_ts(definition: registrar.PluginRegistrar.FunctionData) -> No
     # base_name = ".".join(name_path[0:-1])
     plugin_name = f"{name_path[0][0].upper()}{name_path[0][1:]}"
 
-    base_plugin_path = Path(__file__).resolve(
-        strict=True).parents[3].as_posix()
+    base_plugin_path = Path(__file__).resolve(strict=True).parents[3].as_posix()
 
     protocol_ts = ProtocolBuilder(plugin_name, definition)
     protocol_ts.build()

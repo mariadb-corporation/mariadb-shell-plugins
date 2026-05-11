@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -601,9 +601,7 @@ def test_sql_service_add_authapp(phone_book):
         "create rest service /myTestSvc add auth app `MyAuthApp` if exists add auth app `Invalid` if exists"
     )
     ddl = session.run_sql("show create rest service /myTestSvc").fetch_one()[0]
-    assert (
-        ddl
-        == """CREATE OR REPLACE REST SERVICE /myTestSvc
+    assert ddl == """CREATE OR REPLACE REST SERVICE /myTestSvc
     OPTIONS {
         "http": {
             "allowedOrigin": "auto"
@@ -628,14 +626,11 @@ def test_sql_service_add_authapp(phone_book):
         "returnInternalErrorDetails": true
     }
     ADD AUTH APP `MyAuthApp` IF EXISTS;"""
-    )
     session.run_sql(
         "alter rest service /myTestSvc remove auth app `MyAuthApp` if exists remove auth app `Invalid` if exists add auth app `MyAuthApp2`"
     )
     ddl = session.run_sql("show create rest service /myTestSvc").fetch_one()[0]
-    assert (
-        ddl
-        == """CREATE OR REPLACE REST SERVICE /myTestSvc
+    assert ddl == """CREATE OR REPLACE REST SERVICE /myTestSvc
     OPTIONS {
         "http": {
             "allowedOrigin": "auto"
@@ -660,7 +655,6 @@ def test_sql_service_add_authapp(phone_book):
         "returnInternalErrorDetails": true
     }
     ADD AUTH APP `MyAuthApp2` IF EXISTS;"""
-    )
 
     session.run_sql("drop rest auth app `MyAuthApp`")
     session.run_sql("drop rest auth app `MyAuthApp2`")

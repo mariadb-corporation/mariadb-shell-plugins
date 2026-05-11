@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -94,8 +94,7 @@ arg_parser.add_argument(
     type=Path,
     default=os.environ.get(
         "MYSQLSH",
-        shutil.which("mysqlsh.exe") if os.name == "nt" else shutil.which(
-            "mysqlsh"),
+        shutil.which("mysqlsh.exe") if os.name == "nt" else shutil.which("mysqlsh"),
     ),
     help="Path to MySQL Shell binary",
 )
@@ -168,8 +167,7 @@ class MyPaths:
         else:
             self.runtime.root = Path(userhome_path)
 
-        self.runtime.plugins.root = Path(
-            os.path.join(self.runtime.root, "plugins"))
+        self.runtime.plugins.root = Path(os.path.join(self.runtime.root, "plugins"))
         self.runtime.plugins.gui_plugin = Path(
             os.path.join(self.runtime.plugins.root, "gui_plugin")
         )
@@ -187,10 +185,8 @@ class MyPaths:
             os.path.join(self.runtime.root, "plugin_data")
         )
 
-        self.source.root = Path(os.path.abspath(
-            os.path.join(Path().cwd(), "..")))
-        self.source.plugin = Path(os.path.join(
-            self.source.root, "migration_plugin"))
+        self.source.root = Path(os.path.abspath(os.path.join(Path().cwd(), "..")))
+        self.source.plugin = Path(os.path.join(self.source.root, "migration_plugin"))
 
         self.source.pytest_config = Path(
             os.path.join(

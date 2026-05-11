@@ -28,7 +28,12 @@ import pytest
 from migration_plugin.lib.backend import model
 from migration_plugin.lib.backend.sync_stages import CreateChannel
 
-from .mock_helpers import make_stage_for_test, make_test_project, mock_get_db_system, mock_mds_plugin
+from .mock_helpers import (
+    make_stage_for_test,
+    make_test_project,
+    mock_get_db_system,
+    mock_mds_plugin,
+)
 
 
 def test_create_channel_filtering(mocker):
@@ -47,7 +52,8 @@ def test_create_channel_filtering(mocker):
         project.options.schemaSelection.filter = filters
 
         mock_create_channel = mocker.patch(
-            "migration_plugin.lib.oci_utils.DBSystem.create_channel")
+            "migration_plugin.lib.oci_utils.DBSystem.create_channel"
+        )
 
         mock_get_db_system(mocker)
 
@@ -59,138 +65,154 @@ def test_create_channel_filtering(mocker):
         def fixup(s):
             return s.replace("`", "")
 
-        assert set(
-            kwargs["replicate_ignore_db"]) == set(
-            [fixup(s) for s in filters.schemas.exclude])
-        assert set(
-            kwargs["replicate_ignore_table"]) == set(
-            [fixup(t) for t in filters.tables.exclude])
-        assert set(kwargs["replicate_wild_ignore_table"]
-                   ) == set(wild_ignore_tables)
-
-    test_one(model.MigrationFilters(
-        schemas=model.IncludeList(
-            include=[],
-            exclude=[],
-        ),
-        tables=model.IncludeList(
-            include=[],
-            exclude=[],
-        ),
-        users=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        views=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        routines=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        events=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        libraries=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        triggers=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-    ))
-
-    test_one(model.MigrationFilters(
-        schemas=model.IncludeList(
-            include=[],
-            exclude=["mydb1", "mydb2"],
-        ),
-        tables=model.IncludeList(
-            include=[],
-            exclude=["`db1`.`table1`", "`db2`.`table2`"],
-        ),
-        users=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        views=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        routines=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        events=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        libraries=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-        triggers=model.IncludeList(
-            include=["ignore"],
-            exclude=["ignore"],
-        ),
-    ))
-
-    test_one(model.MigrationFilters(
-        schemas=model.IncludeList(
-            include=[],
-            exclude=[],
-        ),
-        tables=model.IncludeList(
-            include=[],
-            exclude=["`db1`.`table1`", "`db2`.`table2`"],
+        assert set(kwargs["replicate_ignore_db"]) == set(
+            [fixup(s) for s in filters.schemas.exclude]
         )
-    ))
-
-    test_one(model.MigrationFilters(
-        schemas=model.IncludeList(
-            include=[],
-            exclude=["mydb1", "mydb2"],
-        ),
-        tables=model.IncludeList(
-            include=[],
-            exclude=[],
+        assert set(kwargs["replicate_ignore_table"]) == set(
+            [fixup(t) for t in filters.tables.exclude]
         )
-    ))
+        assert set(kwargs["replicate_wild_ignore_table"]) == set(wild_ignore_tables)
+
+    test_one(
+        model.MigrationFilters(
+            schemas=model.IncludeList(
+                include=[],
+                exclude=[],
+            ),
+            tables=model.IncludeList(
+                include=[],
+                exclude=[],
+            ),
+            users=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            views=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            routines=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            events=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            libraries=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            triggers=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+        )
+    )
+
+    test_one(
+        model.MigrationFilters(
+            schemas=model.IncludeList(
+                include=[],
+                exclude=["mydb1", "mydb2"],
+            ),
+            tables=model.IncludeList(
+                include=[],
+                exclude=["`db1`.`table1`", "`db2`.`table2`"],
+            ),
+            users=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            views=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            routines=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            events=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            libraries=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+            triggers=model.IncludeList(
+                include=["ignore"],
+                exclude=["ignore"],
+            ),
+        )
+    )
+
+    test_one(
+        model.MigrationFilters(
+            schemas=model.IncludeList(
+                include=[],
+                exclude=[],
+            ),
+            tables=model.IncludeList(
+                include=[],
+                exclude=["`db1`.`table1`", "`db2`.`table2`"],
+            ),
+        )
+    )
+
+    test_one(
+        model.MigrationFilters(
+            schemas=model.IncludeList(
+                include=[],
+                exclude=["mydb1", "mydb2"],
+            ),
+            tables=model.IncludeList(
+                include=[],
+                exclude=[],
+            ),
+        )
+    )
 
     project._source_info.serverType = model.ServerType.RDS
-    test_one(model.MigrationFilters(
-        schemas=model.IncludeList(
-            include=[],
-            exclude=[],
+    test_one(
+        model.MigrationFilters(
+            schemas=model.IncludeList(
+                include=[],
+                exclude=[],
+            ),
+            tables=model.IncludeList(
+                include=[],
+                exclude=[],
+            ),
         ),
-        tables=model.IncludeList(
-            include=[],
-            exclude=[],
-        )
-    ), wild_ignore_tables=["mysql.rds%"])
+        wild_ignore_tables=["mysql.rds%"],
+    )
 
-    test_one(model.MigrationFilters(
-        schemas=model.IncludeList(
-            include=[],
-            exclude=["mydb1", "mydb2"],
+    test_one(
+        model.MigrationFilters(
+            schemas=model.IncludeList(
+                include=[],
+                exclude=["mydb1", "mydb2"],
+            ),
+            tables=model.IncludeList(
+                include=[],
+                exclude=[],
+            ),
         ),
-        tables=model.IncludeList(
-            include=[],
-            exclude=[],
-        )
-    ), wild_ignore_tables=["mysql.rds%"])
+        wild_ignore_tables=["mysql.rds%"],
+    )
 
     project._source_info.serverType = model.ServerType.Aurora
-    test_one(model.MigrationFilters(
-        schemas=model.IncludeList(
-            include=[],
-            exclude=["mydb1", "mydb2"],
+    test_one(
+        model.MigrationFilters(
+            schemas=model.IncludeList(
+                include=[],
+                exclude=["mydb1", "mydb2"],
+            ),
+            tables=model.IncludeList(
+                include=[],
+                exclude=[],
+            ),
         ),
-        tables=model.IncludeList(
-            include=[],
-            exclude=[],
-        )
-    ), wild_ignore_tables=["mysql.rds%", "mysql.aurora%"])
+        wild_ignore_tables=["mysql.rds%", "mysql.aurora%"],
+    )

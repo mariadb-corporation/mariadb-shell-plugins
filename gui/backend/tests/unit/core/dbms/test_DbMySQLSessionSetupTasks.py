@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@ class MockResult:
     def fetch_one(self):
         if self._next < len(self._result):
             self._next += 1
-            return self._result[self._next-1]
+            return self._result[self._next - 1]
         return None
 
     def fetch_all(self):
@@ -44,7 +44,17 @@ class MockResult:
 
 
 class MockDbSession(DbMySQLSession.DbMysqlSession):
-    def __init__(self, task_class, open_connection, connection_options, on_connect_connection_options, on_connected_data, known_data={}, message_callback=None, expected_queries=[]):
+    def __init__(
+        self,
+        task_class,
+        open_connection,
+        connection_options,
+        on_connect_connection_options,
+        on_connected_data,
+        known_data={},
+        message_callback=None,
+        expected_queries=[],
+    ):
         self._task_class = task_class
         self._open_connection = open_connection
         self._original_connection_options = connection_options.copy()
@@ -53,8 +63,13 @@ class MockDbSession(DbMySQLSession.DbMysqlSession):
         self._on_connected_data = on_connected_data
         self._expected_queries = expected_queries
         self._next_query = 0
-        super().__init__(0, False, connection_options,
-                         data=known_data.copy(), message_callback=message_callback)
+        super().__init__(
+            0,
+            False,
+            connection_options,
+            data=known_data.copy(),
+            message_callback=message_callback,
+        )
 
         # Since the parent class already attempts connection, we can check here if the data is as expected
         assert self._on_connected_data == self.data, "Unexpected Session Data"
@@ -80,27 +95,38 @@ class MockDbSession(DbMySQLSession.DbMysqlSession):
     def _reset_setup_tasks(self):
         super()._reset_setup_tasks()
         self._next_query = 0
-        assert self._original_connection_options == self.connection_options, "Options did not go to the original state"
-        assert self._original_known_data == self.data, "Data did not go to the original state"
+        assert (
+            self._original_connection_options == self.connection_options
+        ), "Options did not go to the original state"
+        assert (
+            self._original_known_data == self.data
+        ), "Data did not go to the original state"
 
     def _on_connect(self):
         super()._on_connect()
-        assert self._on_connect_connection_options == self.connection_options, "Options were not cleaned up as expected"
+        assert (
+            self._on_connect_connection_options == self.connection_options
+        ), "Options were not cleaned up as expected"
 
     def _on_connected(self, notify_success):
         super()._on_connected(notify_success=notify_success)
         assert self._next_query == len(
-            self._expected_queries), "Not all the queries were executed"
+            self._expected_queries
+        ), "Not all the queries were executed"
         assert self._on_connected_data == self.data, "Unexpected data after connection"
 
     def execute_thread(self, sql, params, options=None):
         assert self._next_query < len(
-            self._expected_queries), f"Unexpected query received, no more expected: {sql}"
+            self._expected_queries
+        ), f"Unexpected query received, no more expected: {sql}"
 
-        ((esql, eparams), result) = self._expected_queries[self._next_query]
+        (esql, eparams), result = self._expected_queries[self._next_query]
         assert self.normalize_string(esql) == self.normalize_string(
-            sql), f"Unexpected SQL Received, expected {esql}, received {sql}"
-        assert eparams == params, f"Unexpected SQL Parameters Received, expected {eparams}, received {params}"
+            sql
+        ), f"Unexpected SQL Received, expected {esql}, received {sql}"
+        assert (
+            eparams == params
+        ), f"Unexpected SQL Parameters Received, expected {eparams}, received {params}"
         self._next_query += 1
         return result
 
@@ -108,32 +134,41 @@ class MockDbSession(DbMySQLSession.DbMysqlSession):
 class TestSessionInfoTask:
     def test_initialization(self):
         try:
-            options = {'scheme': 'mysql'}
+            options = {"scheme": "mysql"}
             on_connect_options = options.copy()
 
-            session = MockDbSession(Tasks.SessionInfoTask,
-                                    False,
-                                    options,
-                                    on_connect_options, {})
+            session = MockDbSession(
+                Tasks.SessionInfoTask, False, options, on_connect_options, {}
+            )
         except Exception as e:
             assert False, f"Unexpected Error Happened: {str(e)}"
 
     def test_connection(self):
         try:
-            options = {'scheme': 'mysql'}
+            options = {"scheme": "mysql"}
             on_connect_options = options.copy()
-            session = MockDbSession(Tasks.SessionInfoTask,
-                                    True,
-                                    options,
-                                    on_connect_options,
-                                    {
-                                        common.MySQLData.CONNECTION_ID: 5,
-                                        common.MySQLData.VERSION_INFO: "8.0.30",
-                                        common.MySQLData.SQL_MODE: "SOME SQL MODE"
-                                    },
-                                    expected_queries=[(("""SELECT connection_id(),
+            session = MockDbSession(
+                Tasks.SessionInfoTask,
+                True,
+                options,
+                on_connect_options,
+                {
+                    common.MySQLData.CONNECTION_ID: 5,
+                    common.MySQLData.VERSION_INFO: "8.0.30",
+                    common.MySQLData.SQL_MODE: "SOME SQL MODE",
+                },
+                expected_queries=[
+                    (
+                        (
+                            """SELECT connection_id(),
                             @@version,
-                            @@SESSION.sql_mode""", None), MockResult([[5, "8.0.30", "SOME SQL MODE"]]))])
+                            @@SESSION.sql_mode""",
+                            None,
+                        ),
+                        MockResult([[5, "8.0.30", "SOME SQL MODE"]]),
+                    )
+                ],
+            )
 
             session.reconnect()
 
@@ -144,19 +179,21 @@ class TestSessionInfoTask:
 class TestHeatWaveCheckTask:
     def test_initialization(self):
         try:
-            options = {'scheme': 'mysql', Tasks.HeatWaveCheckTask._OPT: True}
+            options = {"scheme": "mysql", Tasks.HeatWaveCheckTask._OPT: True}
             on_connect_options = options.copy()
             on_connect_options.pop(Tasks.HeatWaveCheckTask._OPT)
-            session = MockDbSession(Tasks.HeatWaveCheckTask,
-                                    True,
-                                    options,
-                                    on_connect_options,
-                                    {
-                                        common.MySQLData.MLE_AVAILABLE: False,
-                                        common.MySQLData.HEATWAVE_AVAILABLE: False,
-                                        common.MySQLData.IS_CLOUD_INSTANCE: False,
-                                        common.MySQLData.HAS_EXPLAIN_ERROR: False,
-                                    })
+            session = MockDbSession(
+                Tasks.HeatWaveCheckTask,
+                True,
+                options,
+                on_connect_options,
+                {
+                    common.MySQLData.MLE_AVAILABLE: False,
+                    common.MySQLData.HEATWAVE_AVAILABLE: False,
+                    common.MySQLData.IS_CLOUD_INSTANCE: False,
+                    common.MySQLData.HAS_EXPLAIN_ERROR: False,
+                },
+            )
         except Exception as e:
             assert False, f"Unexpected Error Happened: {str(e)}"
 
@@ -174,7 +211,6 @@ class TestHeatWaveCheckTask:
                 (False, False, False),  # not skipped, known to be False
                 # (False, None, True),  # not skipped, should be True
                 (False, None, False),  # not skipped, should be False
-
                 # Backwards compatibility tests for the case where the option
                 # is missing on the connection data
                 (None, True, True),  # skipped not set, known to be True
@@ -186,7 +222,7 @@ class TestHeatWaveCheckTask:
             for tuple in test_data:
                 skipped, known, expected = tuple
 
-                options = {'scheme': 'mysql'}
+                options = {"scheme": "mysql"}
                 on_connect_options = options.copy()
 
                 if skipped is not None:
@@ -203,33 +239,51 @@ class TestHeatWaveCheckTask:
                     common.MySQLData.MLE_AVAILABLE: False,
                     common.MySQLData.HAS_EXPLAIN_ERROR: False,
                     common.MySQLData.HEATWAVE_AVAILABLE: expected,
-                    common.MySQLData.IS_CLOUD_INSTANCE: expected
+                    common.MySQLData.IS_CLOUD_INSTANCE: expected,
                 }
 
                 expected_queries = []
                 if not skipped and known is None:
                     if expected:
-                        result = MockResult([['rpd_nodes']])
+                        result = MockResult([["rpd_nodes"]])
                     else:
                         result = MockResult([])
 
-                    expected_queries = [(("""SELECT TABLE_NAME, @@version AS version FROM `information_schema`.`TABLES`
+                    expected_queries = [
+                        (
+                            (
+                                """SELECT TABLE_NAME, @@version AS version FROM `information_schema`.`TABLES`
                     WHERE TABLE_SCHEMA = 'performance_schema'
-                        AND TABLE_NAME = 'rpd_nodes'""", None), result), (("SHOW STATUS LIKE 'mle_status'", None), result), (("""
+                        AND TABLE_NAME = 'rpd_nodes'""",
+                                None,
+                            ),
+                            result,
+                        ),
+                        (("SHOW STATUS LIKE 'mle_status'", None), result),
+                        (
+                            (
+                                """
                                   SELECT ROUTINE_NAME
                                   FROM information_schema.routines
                                   WHERE ROUTINE_SCHEMA="sys"
                                     AND ROUTINE_NAME="mle_explain_error"
                                     AND ROUTINE_TYPE="PROCEDURE"
-                                  """, None), result)]
+                                  """,
+                                None,
+                            ),
+                            result,
+                        ),
+                    ]
 
-                session = MockDbSession(Tasks.HeatWaveCheckTask,
-                                        True,
-                                        options,
-                                        on_connect_options,
-                                        expected_data,
-                                        known_data=known_data,
-                                        expected_queries=expected_queries)
+                session = MockDbSession(
+                    Tasks.HeatWaveCheckTask,
+                    True,
+                    options,
+                    on_connect_options,
+                    expected_data,
+                    known_data=known_data,
+                    expected_queries=expected_queries,
+                )
                 session.reconnect()
         except Exception as e:
             assert False, f"Unexpected Error Happened: {str(e)}"

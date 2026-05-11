@@ -32,7 +32,7 @@ from .plan_step import MigrationPlanStep
 
 
 @plugin_log
-@plugin_function('migration.getSteps', shell=True, cli=False, web=True)
+@plugin_function("migration.getSteps", shell=True, cli=False, web=True)
 def get_migration_steps() -> list[MigrationSteps]:
     """Returns the list of migration steps
     Returns:
@@ -41,32 +41,21 @@ def get_migration_steps() -> list[MigrationSteps]:
     from .work_step import MigrationWorkStep
 
     MIGRATION_STEPS = [
+        MigrationSteps(1000, "Migration Plan", MigrationPlanStep.get_sub_steps()),
+        MigrationSteps(2000, "Provisioning", MigrationWorkStep.get_sub_steps(2000)),
         MigrationSteps(
-            1000,
-            "Migration Plan",
-            MigrationPlanStep.get_sub_steps()),
+            3000, "Database Migration", MigrationWorkStep.get_sub_steps(3000)
+        ),
         MigrationSteps(
-            2000,
-            "Provisioning",
-            MigrationWorkStep.get_sub_steps(2000)),
-        MigrationSteps(
-            3000,
-            "Database Migration",
-            MigrationWorkStep.get_sub_steps(3000)),
-        MigrationSteps(
-            4000,
-            "Data Synchronization",
-            MigrationWorkStep.get_sub_steps(4000)),
-        MigrationSteps(
-            5000,
-            "Finalize",
-            MigrationWorkStep.get_sub_steps(5000)),
+            4000, "Data Synchronization", MigrationWorkStep.get_sub_steps(4000)
+        ),
+        MigrationSteps(5000, "Finalize", MigrationWorkStep.get_sub_steps(5000)),
     ]
 
     return MIGRATION_STEPS
 
 
-@plugin_function('migration.newProject', shell=True, cli=False, web=True)
+@plugin_function("migration.newProject", shell=True, cli=False, web=True)
 @plugin_log
 def new_project(name: str, source_url: str = "") -> ProjectData:
     """Returns the migration plan status for a new migration project
@@ -80,10 +69,7 @@ def new_project(name: str, source_url: str = "") -> ProjectData:
     """
     import migration_plugin.lib as lib
 
-    project = lib.migration.new_project(
-        name=name,
-        source_url=source_url
-    )
+    project = lib.migration.new_project(name=name, source_url=source_url)
     return project.data()
 
 

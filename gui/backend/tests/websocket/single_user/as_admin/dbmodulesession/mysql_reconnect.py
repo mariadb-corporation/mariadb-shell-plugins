@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -34,8 +34,7 @@ default_mysql_options = ws.tokens.defaults.database_connections.mysql[0].options
 
 
 def get_session_id(session, session_id):
-    res = session.run_sql(
-        f"""SELECT PROCESSLIST_ID
+    res = session.run_sql(f"""SELECT PROCESSLIST_ID
             FROM performance_schema.session_connect_attrs
             WHERE ATTR_NAME='test_session_id'
             AND ATTR_VALUE='{session_id}'""")
@@ -53,7 +52,7 @@ connection_options = {
     "user": default_mysql_options.user,
     "password": default_mysql_options.password,
     "scheme": default_mysql_options.scheme,
-    "schema": "information_schema"
+    "schema": "information_schema",
 }
 
 session = mysqlsh.globals.shell.open_session(connection_options)
@@ -65,135 +64,144 @@ params = {
         "description": "This is a test database description",
         "options": {
             **connection_options,
-            "connection-attributes": [f"test_session_id={test_session_id}"]
-        }
+            "connection-attributes": [f"test_session_id={test_session_id}"],
+        },
     },
     "folder_path": "",
     "profile_id": 1,
 }
 
-await ws.send({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.db_connections.add_folder_path",
-    "args": {
-        "profile_id": 1,
-        "caption": params["folder_path"]
-    }
-})
-
-ws.validateLastResponse({
-    "request_state": {
-        "type": "PENDING",
-        "msg": ""
-    },
-    "request_id": ws.lastGeneratedRequestId,
-    "result": ws.ignore
-})
-
-
-ws.tokens['folder_path_id'] = ws.lastResponse['result']['id']
-
-ws.validateLastResponse({
-    "request_state": {
-        "type": "OK",
-        "msg": ""
-    },
-    "request_id": ws.lastGeneratedRequestId,
-    "done": true
-})
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.db_connections.add_db_connection",
-    "args": {
-        "profile_id": params["profile_id"],
-        "connection": params["connection"],
-        "folder_path_id": ws.tokens['folder_path_id']
-    }
-}, [
+await ws.send(
     {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {"type": "PENDING", "msg": ws.ignore},
-        "result": ws.ignore
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.db_connections.add_folder_path",
+        "args": {"profile_id": 1, "caption": params["folder_path"]},
     }
-])
+)
+
+ws.validateLastResponse(
+    {
+        "request_state": {"type": "PENDING", "msg": ""},
+        "request_id": ws.lastGeneratedRequestId,
+        "result": ws.ignore,
+    }
+)
+
+
+ws.tokens["folder_path_id"] = ws.lastResponse["result"]["id"]
+
+ws.validateLastResponse(
+    {
+        "request_state": {"type": "OK", "msg": ""},
+        "request_id": ws.lastGeneratedRequestId,
+        "done": true,
+    }
+)
+
+ws.sendAndValidate(
+    {
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.db_connections.add_db_connection",
+        "args": {
+            "profile_id": params["profile_id"],
+            "connection": params["connection"],
+            "folder_path_id": ws.tokens["folder_path_id"],
+        },
+    },
+    [
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "PENDING", "msg": ws.ignore},
+            "result": ws.ignore,
+        }
+    ],
+)
 
 connection_id = ws.lastResponse["result"][0]
 
-ws.validateLastResponse({
-    "request_id": ws.lastGeneratedRequestId,
-    "request_state": {"type": "OK", "msg": ws.ignore},
-    "done": True
-})
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.db.start_session",
-    "args": {
-        "connection": connection_id,
-    }
-}, [
+ws.validateLastResponse(
     {
-        "request_state": {"type": "PENDING", "msg": "Connection was successfully opened."},
-        "result": {
-            "module_session_id": ws.lastModuleSessionId,
-            "info":
-                {
+        "request_id": ws.lastGeneratedRequestId,
+        "request_state": {"type": "OK", "msg": ws.ignore},
+        "done": True,
+    }
+)
+
+ws.sendAndValidate(
+    {
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.db.start_session",
+        "args": {
+            "connection": connection_id,
+        },
+    },
+    [
+        {
+            "request_state": {
+                "type": "PENDING",
+                "msg": "Connection was successfully opened.",
+            },
+            "result": {
+                "module_session_id": ws.lastModuleSessionId,
+                "info": {
                     "version": ws.ignore,
                     "edition": ws.ignore,
                     "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
-                    "heat_wave_available": false
+                    "heat_wave_available": false,
                 },
-            "default_schema": "information_schema",
+                "default_schema": "information_schema",
+            },
+            "request_id": ws.lastGeneratedRequestId,
         },
-        "request_id": ws.lastGeneratedRequestId
-    },
-    {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "OK", "msg": ""},
+            "done": True,
         },
-        "done": True
-    }
-])
+    ],
+)
 
 
 # Kills the session and sends new statement which will retrigger automatic reconnection
 session_id = get_session_id(session, test_session_id)
 kill_session(session, session_id)
 
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.db.get_catalog_object_names",
-    "args": {
-        "module_session_id": ws.lastModuleSessionId,
-        "type": "Schema"
-    }
-}, [
+ws.sendAndValidate(
     {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {"type": "PENDING", "msg": "Execution started..."}
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.db.get_catalog_object_names",
+        "args": {"module_session_id": ws.lastModuleSessionId, "type": "Schema"},
     },
-    {
-        "request_state": {"type": "PENDING", "msg": "Connection lost, reconnecting session..."},
-        "request_id": ws.lastGeneratedRequestId
-    },
-    {
-        "request_state": {"type": "PENDING", "msg": ""},
-        "request_id": ws.lastGeneratedRequestId,
-        "result": ws.matchList(["information_schema", "mysql", "performance_schema"], 0)
-    },
-    {
-        "request_state": {"type": "OK", "msg": ""},
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
+    [
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+        },
+        {
+            "request_state": {
+                "type": "PENDING",
+                "msg": "Connection lost, reconnecting session...",
+            },
+            "request_id": ws.lastGeneratedRequestId,
+        },
+        {
+            "request_state": {"type": "PENDING", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "result": ws.matchList(
+                ["information_schema", "mysql", "performance_schema"], 0
+            ),
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)
 
 
 # Validates that the session is new
@@ -202,56 +210,55 @@ assert session_id != id, "Unexpected Session ID"
 
 
 # Tests reconnection triggered by the user
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.db.reconnect",
-    "args": {
-        "module_session_id": ws.lastModuleSessionId,
-    }
-},
+ws.sendAndValidate(
+    {
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.db.reconnect",
+        "args": {
+            "module_session_id": ws.lastModuleSessionId,
+        },
+    },
     [
         {
-            "request_state": {"type": "PENDING", "msg": "Connection was successfully opened."},
+            "request_state": {
+                "type": "PENDING",
+                "msg": "Connection was successfully opened.",
+            },
             "result": {
                 "module_session_id": ws.lastModuleSessionId,
                 "info": {
                     "version": ws.matchRegexp("\\d+\\.\\d+\\.\\d+"),
                     "edition": ws.ignore,
-                    "sql_mode": ws.ignore
+                    "sql_mode": ws.ignore,
                 },
                 "default_schema": params["connection"]["options"]["schema"],
             },
-            "request_id": ws.lastGeneratedRequestId
+            "request_id": ws.lastGeneratedRequestId,
         },
-    {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "OK", "msg": ""},
+            "done": True,
         },
-        "done": True
-    }
-]
+    ],
 )
 
-await ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.db_connections.remove_folder_path",
-    "args": {
-        "folder_path_id": ws.tokens['folder_path_id']
-    }
-}, [
+await ws.sendAndValidate(
     {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {
-            "type": "OK",
-            "msg": ws.ignore
-        },
-        "done": true
-    }
-])
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.db_connections.remove_folder_path",
+        "args": {"folder_path_id": ws.tokens["folder_path_id"]},
+    },
+    [
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "OK", "msg": ws.ignore},
+            "done": true,
+        }
+    ],
+)
 
 # Validates that both sessions are new
 id = get_session_id(session, test_session_id)

@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -43,23 +43,27 @@ def format_auth_app_listing(auth_apps, print_header=False):
         return "No items available."
 
     if print_header:
-        output = (f"{'ID':>3} {'NAME':26} {'DESCRIPTION':36} {'AUTH VENDOR':16} "
-                  f"{'ENABLED':8}\n")
+        output = (
+            f"{'ID':>3} {'NAME':26} {'DESCRIPTION':36} {'AUTH VENDOR':16} "
+            f"{'ENABLED':8}\n"
+        )
     else:
         output = ""
 
     i = 0
     for item in auth_apps:
         i += 1
-        description = item['description'] if item['description'] is not None else ""
+        description = item["description"] if item["description"] is not None else ""
 
         if len(description) > 36:
             description = f"{description[:33]}..."
 
-        output += (f"{i:>3} {item['name'][:25]:26} "
-                   f"{description[:35]:36} "
-                   f"{item['auth_vendor'][:15]:16} "
-                   f"{'Yes' if item['enabled'] else '-':8} ")
+        output += (
+            f"{i:>3} {item['name'][:25]:26} "
+            f"{description[:35]:36} "
+            f"{item['auth_vendor'][:15]:16} "
+            f"{'Yes' if item['enabled'] else '-':8} "
+        )
         if i < len(auth_apps):
             output += "\n"
 
@@ -97,7 +101,9 @@ def get_auth_vendor(session, vendor_id=None, name=None):
 
 
 def get_auth_app(session, app_id=None, name=None):
-    with core.MrsDbSession(exception_handler=core.print_exception, session=session) as session:
+    with core.MrsDbSession(
+        exception_handler=core.print_exception, session=session
+    ) as session:
         # Get current version of metadata schema
         current_version = core.get_mrs_schema_version(session)
 
@@ -168,14 +174,15 @@ def get_auth_apps(session, service_id: bytes, include_enable_state=None):
     Returns:
         list of dicts representing the authorized applications
     """
-    with core.MrsDbSession(exception_handler=core.print_exception, session=session) as session:
+    with core.MrsDbSession(
+        exception_handler=core.print_exception, session=session
+    ) as session:
         # Get current version of metadata schema
         current_version = core.get_mrs_schema_version(session)
 
         # Check the given service_id
         if service_id is not None:
-            service = services.get_service(
-                service_id=service_id, session=session)
+            service = services.get_service(service_id=service_id, session=session)
 
             if current_version[0] <= 2:
                 sql = """
@@ -202,8 +209,9 @@ def get_auth_apps(session, service_id: bytes, include_enable_state=None):
                     WHERE sa.service_id = ? /*=1*/
                 """
             if include_enable_state is not None:
-                sql += ("AND a.enabled = "
-                        f"{'TRUE' if include_enable_state else 'FALSE'} ")
+                sql += (
+                    "AND a.enabled = " f"{'TRUE' if include_enable_state else 'FALSE'} "
+                )
 
             sql += "ORDER BY a.name"
 
@@ -219,111 +227,180 @@ def get_auth_apps(session, service_id: bytes, include_enable_state=None):
                         ON v.id = a.auth_vendor_id
             """
             if include_enable_state is not None:
-                sql += ("WHERE a.enabled = "
-                        f"{'TRUE' if include_enable_state else 'FALSE'} ")
+                sql += (
+                    "WHERE a.enabled = "
+                    f"{'TRUE' if include_enable_state else 'FALSE'} "
+                )
 
             sql += "ORDER BY a.name"
 
             return core.MrsDbExec(sql).exec(session).items
 
 
-def add_auth_app(session, service_id, auth_vendor_id, app_name, description, url, url_direct_auth,
-                 access_token, app_id, limit_to_reg_users, default_role_id, enabled=True, options=None):
+def add_auth_app(
+    session,
+    service_id,
+    auth_vendor_id,
+    app_name,
+    description,
+    url,
+    url_direct_auth,
+    access_token,
+    app_id,
+    limit_to_reg_users,
+    default_role_id,
+    enabled=True,
+    options=None,
+):
 
-    with core.MrsDbSession(exception_handler=core.print_exception, session=session) as session:
+    with core.MrsDbSession(
+        exception_handler=core.print_exception, session=session
+    ) as session:
         # Get current version of metadata schema
         current_version = core.get_mrs_schema_version(session)
 
         auth_app_id = core.get_sequence_id(session)
 
         if current_version[0] <= 2:
-            core.insert(table="auth_app", values=[
-                "id", "auth_vendor_id", "service_id", "name", "description", "url",
-                "url_direct_auth", "access_token", "app_id", "enabled",
-                "limit_to_registered_users",
-                "default_role_id",
-            ]).exec(session, [
-                auth_app_id,
-                auth_vendor_id,
-                service_id,
-                app_name,
-                description,
-                url,
-                url_direct_auth,
-                access_token,
-                app_id,
-                int(enabled),
-                int(limit_to_reg_users) if limit_to_reg_users else 0,
-                default_role_id
-            ])
+            core.insert(
+                table="auth_app",
+                values=[
+                    "id",
+                    "auth_vendor_id",
+                    "service_id",
+                    "name",
+                    "description",
+                    "url",
+                    "url_direct_auth",
+                    "access_token",
+                    "app_id",
+                    "enabled",
+                    "limit_to_registered_users",
+                    "default_role_id",
+                ],
+            ).exec(
+                session,
+                [
+                    auth_app_id,
+                    auth_vendor_id,
+                    service_id,
+                    app_name,
+                    description,
+                    url,
+                    url_direct_auth,
+                    access_token,
+                    app_id,
+                    int(enabled),
+                    int(limit_to_reg_users) if limit_to_reg_users else 0,
+                    default_role_id,
+                ],
+            )
         else:
-            core.insert(table="auth_app", values=[
-                "id", "auth_vendor_id", "name", "description", "url",
-                "url_direct_auth", "access_token", "app_id", "enabled",
-                "limit_to_registered_users",
-                "default_role_id",
-                "options"
-            ]).exec(session, [
-                auth_app_id,
-                auth_vendor_id,
-                app_name,
-                description,
-                url,
-                url_direct_auth,
-                access_token,
-                app_id,
-                int(enabled),
-                int(limit_to_reg_users) if limit_to_reg_users else 0,
-                default_role_id,
-                options
-            ])
+            core.insert(
+                table="auth_app",
+                values=[
+                    "id",
+                    "auth_vendor_id",
+                    "name",
+                    "description",
+                    "url",
+                    "url_direct_auth",
+                    "access_token",
+                    "app_id",
+                    "enabled",
+                    "limit_to_registered_users",
+                    "default_role_id",
+                    "options",
+                ],
+            ).exec(
+                session,
+                [
+                    auth_app_id,
+                    auth_vendor_id,
+                    app_name,
+                    description,
+                    url,
+                    url_direct_auth,
+                    access_token,
+                    app_id,
+                    int(enabled),
+                    int(limit_to_reg_users) if limit_to_reg_users else 0,
+                    default_role_id,
+                    options,
+                ],
+            )
 
             if service_id is not None:
-                core.insert(table="service_has_auth_app", values={
-                    "service_id": service_id,
-                    "auth_app_id": auth_app_id,
-                }).exec(session)
+                core.insert(
+                    table="service_has_auth_app",
+                    values={
+                        "service_id": service_id,
+                        "auth_app_id": auth_app_id,
+                    },
+                ).exec(session)
 
         return auth_app_id
 
 
 def link_auth_app(session, auth_app_id, service_id):
-    with core.MrsDbSession(exception_handler=core.print_exception, session=session) as session:
+    with core.MrsDbSession(
+        exception_handler=core.print_exception, session=session
+    ) as session:
         try:
-            core.insert(table="service_has_auth_app", values=[
-                "service_id", "auth_app_id"
-            ]).exec(session, [
-                service_id,
-                auth_app_id,
-            ])
+            core.insert(
+                table="service_has_auth_app", values=["service_id", "auth_app_id"]
+            ).exec(
+                session,
+                [
+                    service_id,
+                    auth_app_id,
+                ],
+            )
         except Exception as e:
             if "1062" in str(e):
-                raise Exception("The REST auth app as already been added to the REST service.")
+                raise Exception(
+                    "The REST auth app as already been added to the REST service."
+                )
             else:
                 raise
 
 
 def unlink_auth_app(session, auth_app_id, service_id):
-    with core.MrsDbSession(exception_handler=core.print_exception, session=session) as session:
-        res = core.MrsDbExec("""
+    with core.MrsDbSession(
+        exception_handler=core.print_exception, session=session
+    ) as session:
+        res = core.MrsDbExec(
+            """
             DELETE FROM `mysql_rest_service_metadata`.`service_has_auth_app`
             WHERE service_id = ? AND auth_app_id = ?
-        """, [service_id, auth_app_id]).exec(session)
+        """,
+            [service_id, auth_app_id],
+        ).exec(session)
         if res.affected_count == 0:
-            raise Exception("The REST auth app cannot be removed as it is not assigned to the REST service.")
+            raise Exception(
+                "The REST auth app cannot be removed as it is not assigned to the REST service."
+            )
 
 
 def delete_auth_app(session, app_id):
-    with core.MrsDbSession(exception_handler=core.print_exception, session=session) as session:
+    with core.MrsDbSession(
+        exception_handler=core.print_exception, session=session
+    ) as session:
         # Get current version of metadata schema
         current_version = core.get_mrs_schema_version(session)
 
         if current_version[0] > 2:
-            core.MrsDbExec("""DELETE FROM `mysql_rest_service_metadata`.`service_has_auth_app`
-                            WHERE auth_app_id = ?""", [app_id]).exec(session)
+            core.MrsDbExec(
+                """DELETE FROM `mysql_rest_service_metadata`.`service_has_auth_app`
+                            WHERE auth_app_id = ?""",
+                [app_id],
+            ).exec(session)
 
-        core.MrsDbExec("""DELETE FROM `mysql_rest_service_metadata`.`auth_app`
-                        WHERE id = ?""", [app_id]).exec(session)
+        core.MrsDbExec(
+            """DELETE FROM `mysql_rest_service_metadata`.`auth_app`
+                        WHERE id = ?""",
+            [app_id],
+        ).exec(session)
 
 
 def update_auth_app(session, app_id, data: dict):
@@ -353,7 +430,9 @@ def get_auth_app_create_statement(session, auth_app, include_all_objects) -> str
         vendor = core.quote_ident(auth_app["auth_vendor"])
 
     output = []
-    output.append(f'CREATE OR REPLACE REST AUTH APP {core.quote_auth_app(auth_app.get("name"))}')
+    output.append(
+        f'CREATE OR REPLACE REST AUTH APP {core.quote_auth_app(auth_app.get("name"))}'
+    )
     output.append(f"    VENDOR {vendor}")
 
     if auth_app["enabled"] is False or auth_app["enabled"] == 0:
@@ -367,10 +446,7 @@ def get_auth_app_create_statement(session, auth_app, include_all_objects) -> str
 
     # Get default role
     if auth_app.get("default_role_id") is not None:
-        role = roles.get_role(
-            session=session, role_id=auth_app.get(
-                "default_role_id")
-        )
+        role = roles.get_role(session=session, role_id=auth_app.get("default_role_id"))
         if role is not None:
             output.append(f'    DEFAULT ROLE {core.quote_role(role.get("caption"))}')
 
@@ -378,10 +454,10 @@ def get_auth_app_create_statement(session, auth_app, include_all_objects) -> str
 
     if include_all_objects:
         included_users = users.get_users(
-            session, auth_app_id=auth_app["id"], mask_password=False)
+            session, auth_app_id=auth_app["id"], mask_password=False
+        )
 
         for user in included_users:
-            result.append(users.get_user_create_statement(
-                session, user, True))
+            result.append(users.get_user_create_statement(session, user, True))
 
     return "\n\n".join(result)

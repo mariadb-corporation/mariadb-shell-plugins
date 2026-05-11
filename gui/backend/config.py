@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,7 @@ class Config:
     __instance = None
 
     @staticmethod
-    def get_instance() -> 'Config':
+    def get_instance() -> "Config":
         if Config.__instance == None:
             Config()
         return Config.__instance
@@ -37,7 +37,8 @@ class Config:
     def __init__(self):
         if Config.__instance != None:
             raise Exception(
-                "This class is a singleton, use get_instance function to get an instance.")
+                "This class is a singleton, use get_instance function to get an instance."
+            )
         else:
             Config.__instance = self
 
@@ -58,22 +59,30 @@ class Config:
         # All sections starting with mysql-server define the configuration for
         # a mysql server to be used on the test suite.
         mysql_default_port = 3306
-        if 'MYSQL_PORT' in os.environ:
+        if "MYSQL_PORT" in os.environ:
             try:
-                mysql_default_port = int(os.environ['MYSQL_PORT'])
+                mysql_default_port = int(os.environ["MYSQL_PORT"])
             except:
                 pass
         mysqlx_default_port = mysql_default_port * 10
-        if 'MYSQLX_PORT' in os.environ:
+        if "MYSQLX_PORT" in os.environ:
             try:
-                mysqlx_default_port = int(os.environ['MYSQLX_PORT'])
+                mysqlx_default_port = int(os.environ["MYSQLX_PORT"])
             except:
                 pass
 
-        mysql_default_host = os.environ['MYSQL_HOST'] if 'MYSQL_HOST' in os.environ else 'localhost'
-        mysql_default_user = os.environ['MYSQL_USER'] if 'MYSQL_USER' in os.environ else 'root'
-        mysql_default_password = os.environ['MYSQL_PASSWORD'] if 'MYSQL_PASSWORD' in os.environ else ''
-        mysql_default_scheme = os.environ['MYSQL_SCHEME'] if 'MYSQL_SCHEME' in os.environ else 'mysql'
+        mysql_default_host = (
+            os.environ["MYSQL_HOST"] if "MYSQL_HOST" in os.environ else "localhost"
+        )
+        mysql_default_user = (
+            os.environ["MYSQL_USER"] if "MYSQL_USER" in os.environ else "root"
+        )
+        mysql_default_password = (
+            os.environ["MYSQL_PASSWORD"] if "MYSQL_PASSWORD" in os.environ else ""
+        )
+        mysql_default_scheme = (
+            os.environ["MYSQL_SCHEME"] if "MYSQL_SCHEME" in os.environ else "mysql"
+        )
 
         self.database_connections = []
         for section in self.config.sections():
@@ -87,31 +96,46 @@ class Config:
                 connection["options"] = {}
 
                 connection["options"]["host"] = self.config.get(
-                    section, "host", fallback=mysql_default_host)
+                    section, "host", fallback=mysql_default_host
+                )
                 connection["options"]["user"] = self.config.get(
-                    section, "user", fallback=mysql_default_user)
+                    section, "user", fallback=mysql_default_user
+                )
                 connection["options"]["password"] = self.config.get(
-                    section, "password", fallback=mysql_default_password)
+                    section, "password", fallback=mysql_default_password
+                )
                 connection["options"]["scheme"] = self.config.get(
-                    section, "scheme", fallback=mysql_default_scheme)
+                    section, "scheme", fallback=mysql_default_scheme
+                )
                 connection["options"]["port"] = self.config.getint(
-                    section, "port", fallback=mysql_default_port
-                    if connection["options"]["scheme"] == 'mysql'
-                    else mysqlx_default_port)
-                connection["options"]["portStr"] = str(self.config.get(
-                    section, "port", fallback=mysql_default_port
-                    if connection["options"]["scheme"] == 'mysql'
-                    else mysqlx_default_port))
+                    section,
+                    "port",
+                    fallback=(
+                        mysql_default_port
+                        if connection["options"]["scheme"] == "mysql"
+                        else mysqlx_default_port
+                    ),
+                )
+                connection["options"]["portStr"] = str(
+                    self.config.get(
+                        section,
+                        "port",
+                        fallback=(
+                            mysql_default_port
+                            if connection["options"]["scheme"] == "mysql"
+                            else mysqlx_default_port
+                        ),
+                    )
+                )
 
                 self.database_connections.append(connection)
 
         if len(self.database_connections) == 0:
-            raise Exception(
-                "No connections were supplied in the configuration data.")
+            raise Exception("No connections were supplied in the configuration data.")
 
     def get_server_params(self):
         return (self.port, self.nossl)
 
     def get_default_mysql_connection_string(self):
-        default_options = self.database_connections[0]['options']
+        default_options = self.database_connections[0]["options"]
         return f"{default_options['user']}:@{default_options['host']}:{default_options['port']}"

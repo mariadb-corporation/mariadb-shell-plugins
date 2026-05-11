@@ -32,13 +32,13 @@ from oci.identity.models.api_key import ApiKey
 
 def get_default_oci_config_path():
     """Get the default OCI config file path based on the operating system."""
-    if 'OCI_CLI_CONFIG_FILE' in os.environ:
-        return os.environ['OCI_CLI_CONFIG_FILE']
+    if "OCI_CLI_CONFIG_FILE" in os.environ:
+        return os.environ["OCI_CLI_CONFIG_FILE"]
 
-    if os.name == 'nt':  # Windows
-        appdata = os.getenv('APPDATA')
+    if os.name == "nt":  # Windows
+        appdata = os.getenv("APPDATA")
         if appdata:
-            return os.path.join(appdata, 'Oracle', 'oci', 'config')
+            return os.path.join(appdata, "Oracle", "oci", "config")
         else:
             raise EnvironmentError("APPDATA environment variable is not set.")
     else:  # MacOS and Linux
@@ -61,7 +61,9 @@ def find_home_region(signer, tenancy_id: str) -> str:
         "sa-santiago-1",
     ]
 
-    for region in popular_regions + list(set(oci.regions.REGIONS) - set(popular_regions)):
+    for region in popular_regions + list(
+        set(oci.regions.REGIONS) - set(popular_regions)
+    ):
         client = oci.identity.IdentityClient({"region": region}, signer=signer)
         try:
             result = client.list_region_subscriptions(tenancy_id)
@@ -72,16 +74,18 @@ def find_home_region(signer, tenancy_id: str) -> str:
         except:
             continue
 
-    raise RuntimeError(
-        f"Could not find the home region for tenancy {tenancy_id}")
+    raise RuntimeError(f"Could not find the home region for tenancy {tenancy_id}")
 
 
 def bootstrap_migration_profile(
-        region: str, passphrase: str = None, config_location: str = "",
-        profile_name: str = cli_setup.DEFAULT_PROFILE_NAME,
-        connection_timeout: int = cli_setup_bootstrap.DEFAULT_CONNECTION_TIMEOUT,
-        read_timeout: int = cli_setup_bootstrap.DEFAULT_READ_TIMEOUT,
-        report_cb=None):
+    region: str,
+    passphrase: str = None,
+    config_location: str = "",
+    profile_name: str = cli_setup.DEFAULT_PROFILE_NAME,
+    connection_timeout: int = cli_setup_bootstrap.DEFAULT_CONNECTION_TIMEOUT,
+    read_timeout: int = cli_setup_bootstrap.DEFAULT_READ_TIMEOUT,
+    report_cb=None,
+):
     """
     Creates an OCI config file using username/password based login through a
     browser.
@@ -110,18 +114,18 @@ def bootstrap_migration_profile(
     if not config_location:
         mysqlsh_user_home = mysqlsh.plugin_manager.general.get_shell_user_dir()
         migration_id = str(uuid.uuid4())
-        migration_location = os.path.join(
-            mysqlsh_user_home, 'migrations', migration_id)
+        migration_location = os.path.join(mysqlsh_user_home, "migrations", migration_id)
 
         # Ensures the folder exists
         cli_util.create_directory(migration_location)
 
-        config_location = os.path.join(migration_location, 'config')
+        config_location = os.path.join(migration_location, "config")
     else:
         migration_location = os.path.dirname(config_location)
 
     user_session = cli_setup_bootstrap.create_user_session(
-        region=region, report_cb=report_cb)
+        region=region, report_cb=report_cb
+    )
 
     public_key = user_session.public_key
     private_key = user_session.private_key
@@ -152,8 +156,10 @@ def bootstrap_migration_profile(
         user_session.region = home_region
 
     if report_cb:
-        report_cb(f"Home region is {home_region}",
-                  {"region": home_region, "home_region": home_region})
+        report_cb(
+            f"Home region is {home_region}",
+            {"region": home_region, "home_region": home_region},
+        )
 
     client = oci.identity.IdentityClient(
         {"region": home_region},
@@ -161,21 +167,24 @@ def bootstrap_migration_profile(
         timeout=(connection_timeout, read_timeout),
     )
 
-    api_keys: list[ApiKey] = client.list_api_keys(
-        user_ocid).data  # type: ignore
+    api_keys: list[ApiKey] = client.list_api_keys(user_ocid).data  # type: ignore
     api_keys_length = len(api_keys)
 
     if report_cb:
-        report_cb(f"User currently has {api_keys_length} API key{'' if 1 == api_keys_length else 's'}",
-                  {"fingerprints": [k.fingerprint for k in api_keys]})
+        report_cb(
+            f"User currently has {api_keys_length} API key{'' if 1 == api_keys_length else 's'}",
+            {"fingerprints": [k.fingerprint for k in api_keys]},
+        )
 
     create_api_key_details = oci.identity.models.CreateApiKeyDetails()
-    create_api_key_details.key = cli_util.serialize_key(
-        public_key=public_key).decode("UTF-8")
+    create_api_key_details.key = cli_util.serialize_key(public_key=public_key).decode(
+        "UTF-8"
+    )
 
     try:
         api_key: ApiKey = client.upload_api_key(
-            user_ocid, create_api_key_details).data  # type: ignore
+            user_ocid, create_api_key_details
+        ).data  # type: ignore
     except oci.exceptions.ServiceError as e:
         if api_keys_length >= 3:  # this is the documented limit
             raise RuntimeError(
@@ -185,15 +194,16 @@ def bootstrap_migration_profile(
             raise
 
     if report_cb:
-        report_cb(f"Waiting for the uploaded API key to become active",
-                  {"fingerprint": api_key.fingerprint})
+        report_cb(
+            f"Waiting for the uploaded API key to become active",
+            {"fingerprint": api_key.fingerprint},
+        )
 
     while api_key.lifecycle_state != ApiKey.LIFECYCLE_STATE_ACTIVE:
         time.sleep(1)
 
         api_keys = client.list_api_keys(user_ocid).data  # type: ignore
-        k = next((k for k in api_keys if k.fingerprint ==
-                 api_key.fingerprint), None)
+        k = next((k for k in api_keys if k.fingerprint == api_key.fingerprint), None)
 
         if k:
             api_key = k
@@ -207,12 +217,12 @@ def bootstrap_migration_profile(
         persist_passphrase=True,
         persist_token=False,
         bootstrap=True,
-        session_auth_root=migration_location
+        session_auth_root=migration_location,
     )
 
     return {
         "config_file": config_location,
         "user_ocid": user_ocid,
         "token_expiration": user_session.token_expiration,
-        "home_region": home_region
+        "home_region": home_region,
     }

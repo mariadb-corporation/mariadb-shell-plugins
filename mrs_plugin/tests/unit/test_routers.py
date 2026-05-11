@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@ from mrs_plugin import lib
 from mrs_plugin import routers
 from tests.unit.helpers import TableContents
 
+
 def test_add_delete_router(phone_book, table_contents):
     session = phone_book["session"]
     router_table: TableContents = table_contents("router")
@@ -38,8 +39,10 @@ def test_add_delete_router(phone_book, table_contents):
         "address": "localhost",
         "product_name": "MySQL Router",
         "version": "8.0.32",
-        "attributes": { "test_router_attribute_1": "this is the test router attribute 1" },
-        "options": { "test_router_option_1": "this is the test router option 1" }
+        "attributes": {
+            "test_router_attribute_1": "this is the test router attribute 1"
+        },
+        "options": {"test_router_option_1": "this is the test router option 1"},
     }
 
     sql = """
@@ -54,7 +57,7 @@ def test_add_delete_router(phone_book, table_contents):
         router_data["product_name"],
         router_data["version"],
         router_data["attributes"],
-        router_data["options"]
+        router_data["options"],
     ]
 
     router_id = lib.core.MrsDbExec(sql, params).exec(session).id

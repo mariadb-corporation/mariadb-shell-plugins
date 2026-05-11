@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -39,7 +39,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
 
-from mds_plugin.bootstrap.cli_setup import DEFAULT_KEY_NAME, PUBLIC_KEY_FILENAME_SUFFIX, PRIVATE_KEY_FILENAME_SUFFIX
+from mds_plugin.bootstrap.cli_setup import (
+    DEFAULT_KEY_NAME,
+    PUBLIC_KEY_FILENAME_SUFFIX,
+    PRIVATE_KEY_FILENAME_SUFFIX,
+)
 
 
 import oci
@@ -71,8 +75,7 @@ def create_user_session(region: str, report_cb, tenancy_name=None):
     while attempts:
         try:
             server_address = ("", BOOTSTRAP_SERVICE_PORT)
-            httpd = StoppableHttpServer(
-                server_address, StoppableHttpRequestHandler)
+            httpd = StoppableHttpServer(server_address, StoppableHttpRequestHandler)
             break
         except OSError as e:
             # Reached when a previous server is shutting down, but still not
@@ -83,7 +86,8 @@ def create_user_session(region: str, report_cb, tenancy_name=None):
                     time.sleep(3)
                 else:
                     raise RuntimeError(
-                        f"Could not complete bootstrap process because port {BOOTSTRAP_SERVICE_PORT} is already in use.")
+                        f"Could not complete bootstrap process because port {BOOTSTRAP_SERVICE_PORT} is already in use."
+                    )
             else:
                 raise e
 
@@ -100,8 +104,7 @@ def create_user_session(region: str, report_cb, tenancy_name=None):
     jwk_content = key
 
     bytes_jwk_content = jwk_content.encode("UTF-8")
-    b64_jwk_content = base64.urlsafe_b64encode(
-        bytes_jwk_content).decode("UTF-8")
+    b64_jwk_content = base64.urlsafe_b64encode(bytes_jwk_content).decode("UTF-8")
     public_key_jwk = b64_jwk_content
 
     query = {
@@ -132,11 +135,15 @@ def create_user_session(region: str, report_cb, tenancy_name=None):
     # attempt to open browser to console log in page
     try:
         if webbrowser.open_new(url):
-            report_cb("Please switch to the newly opened browser window to login.",
-                      {"url": url})
+            report_cb(
+                "Please switch to the newly opened browser window to login.",
+                {"url": url},
+            )
         else:
-            report_cb("Please open the following URL in a browser to login and continue.",
-                      {"url": url})
+            report_cb(
+                "Please open the following URL in a browser to login and continue.",
+                {"url": url},
+            )
     except webbrowser.Error as e:
         raise RuntimeError(
             "Could not launch web browser to complete login process, exiting bootstrap command. Error: {exc_info}.".format(
@@ -149,7 +156,8 @@ def create_user_session(region: str, report_cb, tenancy_name=None):
 
     if token is None:
         raise RuntimeError(
-            "Unable to complete browser authentication, exiting bootstrap command.")
+            "Unable to complete browser authentication, exiting bootstrap command."
+        )
 
     report_cb("Completed browser authentication process")
 
@@ -163,43 +171,70 @@ def create_user_session(region: str, report_cb, tenancy_name=None):
     expiration = token_data["exp"]
 
     return UserSession(
-        user_ocid, tenancy_ocid, region, token, expiration, public_key, private_key, fingerprint
+        user_ocid,
+        tenancy_ocid,
+        region,
+        token,
+        expiration,
+        public_key,
+        private_key,
+        fingerprint,
     )
 
 
-def persist_user_session(user_session, config_location, overwrite_config,
-                         profile_name, key_passphrase=None, persist_passphrase=False,
-                         persist_token=False, bootstrap=False, persist_only_public_key=False,
-                         session_auth_root=None):
+def persist_user_session(
+    user_session,
+    config_location,
+    overwrite_config,
+    profile_name,
+    key_passphrase=None,
+    persist_passphrase=False,
+    persist_token=False,
+    bootstrap=False,
+    persist_only_public_key=False,
+    session_auth_root=None,
+):
     # prompt for directory to place keys
     if session_auth_root is None:
-        session_auth_location = os.path.abspath(os.path.join(
-            cli_setup.DEFAULT_TOKEN_DIRECTORY, profile_name))
+        session_auth_location = os.path.abspath(
+            os.path.join(cli_setup.DEFAULT_TOKEN_DIRECTORY, profile_name)
+        )
     else:
         session_auth_location = os.path.abspath(
-            os.path.join(session_auth_root, "sessions", profile_name))
+            os.path.join(session_auth_root, "sessions", profile_name)
+        )
 
     if not os.path.exists(session_auth_location):
         cli_util.create_directory(session_auth_location)
 
     public_key_file_path = os.path.join(
-        session_auth_location, DEFAULT_KEY_NAME + PUBLIC_KEY_FILENAME_SUFFIX)
+        session_auth_location, DEFAULT_KEY_NAME + PUBLIC_KEY_FILENAME_SUFFIX
+    )
     if not persist_only_public_key:
         private_key_file_path = os.path.join(
-            session_auth_location, DEFAULT_KEY_NAME + PRIVATE_KEY_FILENAME_SUFFIX)
-    if not cli_setup.write_public_key_to_file(public_key_file_path, user_session.public_key, overwrite_config, True):
+            session_auth_location, DEFAULT_KEY_NAME + PRIVATE_KEY_FILENAME_SUFFIX
+        )
+    if not cli_setup.write_public_key_to_file(
+        public_key_file_path, user_session.public_key, overwrite_config, True
+    ):
         raise RuntimeError(BOOTSTRAP_PROCESS_CANCELED_MESSAGE)
     cli_util.apply_user_only_access_permissions(public_key_file_path)
 
     if not persist_only_public_key:
-        if not cli_setup.write_private_key_to_file(private_key_file_path, user_session.private_key, key_passphrase, overwrite_config, True):
+        if not cli_setup.write_private_key_to_file(
+            private_key_file_path,
+            user_session.private_key,
+            key_passphrase,
+            overwrite_config,
+            True,
+        ):
             raise RuntimeError(BOOTSTRAP_PROCESS_CANCELED_MESSAGE)
         cli_util.apply_user_only_access_permissions(private_key_file_path)
 
     # write token to a file so we can refresh it without having to read / write the entire config
     if persist_token:
-        token_location = os.path.join(session_auth_location, 'token')
-        with open(token_location, 'w') as security_token_file:
+        token_location = os.path.join(session_auth_location, "token")
+        with open(token_location, "w") as security_token_file:
             security_token_file.write(user_session.token)
         cli_util.apply_user_only_access_permissions(token_location)
 
@@ -220,13 +255,16 @@ def persist_user_session(user_session, config_location, overwrite_config,
         filename=config_location,
         user_id=userId,
         fingerprint=user_session.fingerprint,
-        key_file=os.path.abspath(
-            private_key_file_path) if not persist_only_public_key else "Update_private_key_path",
+        key_file=(
+            os.path.abspath(private_key_file_path)
+            if not persist_only_public_key
+            else "Update_private_key_path"
+        ),
         tenancy=user_session.tenancy_ocid,
         region=user_session.region,
         pass_phrase=key_passphrase,
         profile_name=profile_name,
-        security_token_file=token_location if persist_token else None
+        security_token_file=token_location if persist_token else None,
     )
 
     return profile_name, config_location
@@ -281,7 +319,9 @@ class StoppableHttpRequestHandler(BaseHTTPRequestHandler):
 class StoppableHttpServer(HTTPServer):
     """http server that reacts to self.stop flag"""
 
-    def __init__(self, server_address, RequestHandlerClass, timeout=3600):  # 1 h default timeout
+    def __init__(
+        self, server_address, RequestHandlerClass, timeout=3600
+    ):  # 1 h default timeout
         super().__init__(server_address, RequestHandlerClass)
         self.timeout = timeout
         self.last_request_time = time.time()
@@ -307,12 +347,12 @@ class StoppableHttpServer(HTTPServer):
         if self.ret_value is not None:
             # Since shutting down is a blocking call, it needs to be done from
             # a separate thread
-            self.completion_thread = threading.Thread(
-                target=lambda: self.shutdown())
+            self.completion_thread = threading.Thread(target=lambda: self.shutdown())
             self.completion_thread.start()
         elif time.time() - self.last_request_time > self.timeout:
             raise RuntimeError(
-                f"Timeout: No requests received for {self.timeout} seconds. Stopping server.")
+                f"Timeout: No requests received for {self.timeout} seconds. Stopping server."
+            )
 
 
 class UserSession(object):

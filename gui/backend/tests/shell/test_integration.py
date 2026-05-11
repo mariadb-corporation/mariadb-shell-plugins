@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,14 +25,18 @@ import pytest
 
 try:
     import mysqlsh
+
     has_gui_plugin = "gui" in dir(mysqlsh.globals)
 except ModuleNotFoundError:
     has_gui_plugin = False
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui():
-    help_text = '''NAME
+    help_text = """NAME
       gui - MySQL Shell GUI backend plugin.
 
 DESCRIPTION
@@ -83,14 +87,17 @@ FUNCTIONS
             Returns basic information about this plugin.
 
       version()
-            Returns the version number of the plugin'''
+            Returns the version number of the plugin"""
 
-    assert help_text == mysqlsh.globals.gui.help() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.help()  # pylint: disable=no-member
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_cluster():
-    help_text = '''NAME
+    help_text = """NAME
       cluster - The InnoDB Cluster MySQL Shell GUI backend module
 
 SYNTAX
@@ -108,17 +115,22 @@ FUNCTIONS
             Provides help about this object and it's members
 
       is_gui_module_backend()
-            Indicates whether this module is a GUI backend module'''
+            Indicates whether this module is a GUI backend module"""
 
-    assert help_text == mysqlsh.globals.gui.cluster.help() # pylint: disable=no-member
-    info = mysqlsh.globals.gui.cluster.get_gui_module_display_info() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.cluster.help()  # pylint: disable=no-member
+    info = (
+        mysqlsh.globals.gui.cluster.get_gui_module_display_info()
+    )  # pylint: disable=no-member
     assert info["name"] == "InnoDB Cluster Manager"
     assert info["description"] == "An graphical manager for InnoDB Clusters"
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_core():
-    help_text = '''NAME
+    help_text = """NAME
       core - The Core MySQL Shell GUI backend module
 
 SYNTAX
@@ -145,14 +157,17 @@ FUNCTIONS
             Checks if the MySQL Shell GUI webserver certificate is installed
 
       remove_shell_web_certificate()
-            Removes the MySQL Shell GUI webserver certificate'''
+            Removes the MySQL Shell GUI webserver certificate"""
 
-    assert help_text == mysqlsh.globals.gui.core.help() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.core.help()  # pylint: disable=no-member
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_db_connections():
-    help_text = '''NAME
+    help_text = """NAME
       db_connections - The DB Connections MySQL Shell GUI backend module
 
 SYNTAX
@@ -226,15 +241,19 @@ FUNCTIONS
             Update the data for a database connection
 
       update_folder_settings(folder_path_id, new_settings[, be_session])
-            Rename a folder path'''
+            Rename a folder path"""
+
+    assert (
+        help_text == mysqlsh.globals.gui.db_connections.help()
+    )  # pylint: disable=no-member
 
 
-    assert help_text == mysqlsh.globals.gui.db_connections.help() # pylint: disable=no-member
-
-
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_mds():
-    help_text = '''NAME
+    help_text = """NAME
       mds - The MySQL Database Service MySQL Shell GUI backend module
 
 SYNTAX
@@ -252,17 +271,22 @@ FUNCTIONS
             Provides help about this object and it's members
 
       is_gui_module_backend()
-            Indicates whether this module is a GUI backend module'''
+            Indicates whether this module is a GUI backend module"""
 
-    assert help_text == mysqlsh.globals.gui.mds.help() # pylint: disable=no-member
-    info = mysqlsh.globals.gui.mds.get_gui_module_display_info() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.mds.help()  # pylint: disable=no-member
+    info = (
+        mysqlsh.globals.gui.mds.get_gui_module_display_info()
+    )  # pylint: disable=no-member
     assert info["name"] == "MySQL Database Service Manager"
     assert info["description"] == "A management frontend for MDS on OCI"
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_modeler():
-    help_text = '''NAME
+    help_text = """NAME
       modeler - The Modeler MySQL Shell GUI backend module
 
 SYNTAX
@@ -280,17 +304,22 @@ FUNCTIONS
             Provides help about this object and it's members
 
       is_gui_module_backend()
-            Indicates whether this module is a GUI backend module'''
+            Indicates whether this module is a GUI backend module"""
 
-    assert help_text == mysqlsh.globals.gui.modeler.help() # pylint: disable=no-member
-    info = mysqlsh.globals.gui.modeler.get_gui_module_display_info() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.modeler.help()  # pylint: disable=no-member
+    info = (
+        mysqlsh.globals.gui.modeler.get_gui_module_display_info()
+    )  # pylint: disable=no-member
     assert info["name"] == "EER Modeler"
     assert info["description"] == "An advanced designer for ERR Diagrams"
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_modules():
-    help_text = '''NAME
+    help_text = """NAME
       modules - The Modules MySQL Shell GUI backend module
 
 SYNTAX
@@ -302,14 +331,17 @@ DESCRIPTION
 
 FUNCTIONS
       help([member])
-            Provides help about this object and it's members'''
+            Provides help about this object and it's members"""
 
-    assert help_text == mysqlsh.globals.gui.modules.help() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.modules.help()  # pylint: disable=no-member
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_shell():
-    help_text = '''NAME
+    help_text = """NAME
       shell - The Shell MySQL Shell GUI backend module
 
 SYNTAX
@@ -327,17 +359,22 @@ FUNCTIONS
             Provides help about this object and it's members
 
       is_gui_module_backend()
-            Indicates whether this module is a GUI backend module'''
+            Indicates whether this module is a GUI backend module"""
 
-    assert help_text == mysqlsh.globals.gui.shell.help() # pylint: disable=no-member
-    info = mysqlsh.globals.gui.shell.get_gui_module_display_info() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.shell.help()  # pylint: disable=no-member
+    info = (
+        mysqlsh.globals.gui.shell.get_gui_module_display_info()
+    )  # pylint: disable=no-member
     assert info["name"] == "MySQL Shell Console"
     assert info["description"] == "A graphical MySQL Shell Console"
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_sql_editor():
-    help_text = '''NAME
+    help_text = """NAME
       sql_editor - The SQL Editor MySQL Shell GUI backend module
 
 SYNTAX
@@ -370,17 +407,24 @@ FUNCTIONS
             Requests to change the auto-commit status for this module.
 
       set_current_schema(session, schema_name)
-            Requests to change the current schema for this module.'''
+            Requests to change the current schema for this module."""
 
-    assert help_text == mysqlsh.globals.gui.sql_editor.help() # pylint: disable=no-member
-    info = mysqlsh.globals.gui.sql_editor.get_gui_module_display_info() # pylint: disable=no-member
+    assert (
+        help_text == mysqlsh.globals.gui.sql_editor.help()
+    )  # pylint: disable=no-member
+    info = (
+        mysqlsh.globals.gui.sql_editor.get_gui_module_display_info()
+    )  # pylint: disable=no-member
     assert info["name"] == "SQL Editor"
     assert info["description"] == "A graphical SQL Editor"
 
 
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_users():
-    help_text = '''NAME
+    help_text = """NAME
       users - The Users MySQL Shell GUI backend module
 
 SYNTAX
@@ -465,14 +509,18 @@ FUNCTIONS
             Updates a user profile.
 
       update_user_group(group_id[, name][, description][, be_session])
-            Updates user group.'''
+            Updates user group."""
 
-    assert help_text == mysqlsh.globals.gui.users.help() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.users.help()  # pylint: disable=no-member
+
 
 # cSpell:ignore webrootpath
-@pytest.mark.skipif(not has_gui_plugin, reason="This test should be run with the gui plugin installed on the real shell.")
+@pytest.mark.skipif(
+    not has_gui_plugin,
+    reason="This test should be run with the gui plugin installed on the real shell.",
+)
 def test_gui_start():
-    help_text = '''NAME
+    help_text = """NAME
       start - Used to start the MySQL Shell GUI
 
 SYNTAX
@@ -490,6 +538,6 @@ FUNCTIONS
             Starts the native Shell GUI client
 
       web_server([port][, secure][, webrootpath][, single_instance_token][, read_token_on_stdin][, accept_remote_connections][, single_server])
-            Starts a web server that will serve the MySQL Shell GUI'''
+            Starts a web server that will serve the MySQL Shell GUI"""
 
-    assert help_text == mysqlsh.globals.gui.start.help() # pylint: disable=no-member
+    assert help_text == mysqlsh.globals.gui.start.help()  # pylint: disable=no-member

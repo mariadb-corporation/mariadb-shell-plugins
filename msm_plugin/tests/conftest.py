@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -45,10 +45,10 @@ def sandbox_session() -> mysqlsh.globals.session:
 
     deployment_dir = tempfile.TemporaryDirectory()
 
-    mysqlsh.globals.dba.deploy_sandbox_instance(connection_data["port"], {
-        "password": connection_data["password"],
-        "sandboxDir": deployment_dir.name
-    })
+    mysqlsh.globals.dba.deploy_sandbox_instance(
+        connection_data["port"],
+        {"password": connection_data["password"], "sandboxDir": deployment_dir.name},
+    )
 
     session: mysqlsh.globals.session = helpers.create_shell_session()
     assert session is not None
@@ -58,9 +58,9 @@ def sandbox_session() -> mysqlsh.globals.session:
 
     session.close()
 
-    mysqlsh.globals.dba.kill_sandbox_instance(connection_data["port"], {
-        "sandboxDir": deployment_dir.name
-    })
+    mysqlsh.globals.dba.kill_sandbox_instance(
+        connection_data["port"], {"sandboxDir": deployment_dir.name}
+    )
 
 
 @pytest.fixture(scope="session")

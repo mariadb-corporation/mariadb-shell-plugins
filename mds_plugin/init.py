@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@ from mysqlsh.plugin_manager import plugin
 # Create a class representing the structure of the plugin and use the
 # @register_plugin decorator to register it
 @plugin
-class mds():
+class mds:
     """Plugin to manage the MySQL Database Service on OCI.
 
     This global object exposes a list of shell extensions
@@ -53,83 +53,83 @@ class mds():
         from mds_plugin import configuration, mysql_database_service, network
         from mds_plugin import object_store, user, bastion, util, genai
 
-    class create():
+    class create:
         """Used to create OCI objects.
 
         A collection of create functions to create objects like
         compartments, users, groups, policies and network sources
         """
 
-    class delete():
+    class delete:
         """Used to delete OCI objects.
 
         A collection of delete functions to list objects like
         compartments, users, groups, policies and network sources.
         """
 
-    class execute():
+    class execute:
         """Allows execution of commands on various objects.
 
         A collection of execute functions to run commands on OCI objects.
         """
 
-    class get():
+    class get:
         """Various getters.
 
         Module to access getters for OCI objects and configs.
         """
 
-    class list():
+    class list:
         """Used to list OCI objects.
 
         A collection of list functions to list objects like
         compartments, users, groups, policies and network sources.
         """
 
-    class util():
+    class util:
         """Various utility functions to work with MySQL DB Systems.
 
         A collection of utility functions to work with MySQL DB Systems.
         """
 
-    class set():
+    class set:
         """Various setters.
 
         Module to access setters for OCI objects and configs.
         """
 
-    class update():
+    class update:
         """Various functions to update OCI objects.
 
         Module that holds various update functions for OCI objects
         and configs.
         """
 
-    class stop():
+    class stop:
         """Various stop functions.
 
         Module to stop various OCI objects.
         """
 
-    class start():
+    class start:
         """Various start functions.
 
         Module to start various OCI objects.
         """
 
-    class restart():
+    class restart:
         """Various restart functions.
 
         Module to restart various OCI objects.
         """
 
-    class genai():
+    class genai:
         """Various machine learning functions.
 
         Module to cover machine learning functionality.
         """
 
-    class migration():
+    class migration:
         """Implements support for migration.
 
         Module that implements the migration functionality to OCI.

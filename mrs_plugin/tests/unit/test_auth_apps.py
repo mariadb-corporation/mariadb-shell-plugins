@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,58 +21,61 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from ... auth_apps import *
+from ...auth_apps import *
 from ... import lib
-from . helpers import AuthAppCT, UserCT, get_default_auth_app_init, get_default_user_init
+from .helpers import AuthAppCT, UserCT, get_default_auth_app_init, get_default_user_init
 
 import os
 
 InitialAuthAppIds = []
 
+
 def test_verify_auth_vendors(phone_book, table_contents):
     auth_vendor_table = table_contents("auth_vendor")
 
     assert auth_vendor_table.count == 5
-    assert auth_vendor_table.items == [{
-        "comments": "Built-in user management of MRS",
-        "enabled": 1,
-        "id": lib.core.id_to_binary("0x30000000000000000000000000000000", ""),
-        "name": "MRS",
-        "validation_url": None,
-        "options": None,
-    },
-    {
-        "comments": "Provides basic authentication via MySQL Server accounts",
-        "enabled": 1,
-        "id": lib.core.id_to_binary("0x31000000000000000000000000000000", ""),
-        "name": "MySQL Internal",
-        "validation_url": None,
-        "options": None,
-    },
-    {
-        "comments": "Uses the Facebook Login OAuth2 service",
-        "enabled": 1,
-        "id": lib.core.id_to_binary("0x32000000000000000000000000000000", ""),
-        "name": "Facebook",
-        "validation_url": None,
-        "options": None,
-    },
-    {
-        "comments": "Uses the Google OAuth2 service",
-        "enabled": 1,
-        "id": lib.core.id_to_binary("0x34000000000000000000000000000000", ""),
-        "name": "Google",
-        "validation_url": None,
-        "options": None,
-    },
-    {
-        "id": lib.core.id_to_binary("0x35000000000000000000000000000000", ""),
-        "name": "OCI OAuth2",
-        "validation_url": None,
-        "enabled": 1,
-        "comments": "Uses the OCI OAuth2 service",
-        "options": None,
-    }]
+    assert auth_vendor_table.items == [
+        {
+            "comments": "Built-in user management of MRS",
+            "enabled": 1,
+            "id": lib.core.id_to_binary("0x30000000000000000000000000000000", ""),
+            "name": "MRS",
+            "validation_url": None,
+            "options": None,
+        },
+        {
+            "comments": "Provides basic authentication via MySQL Server accounts",
+            "enabled": 1,
+            "id": lib.core.id_to_binary("0x31000000000000000000000000000000", ""),
+            "name": "MySQL Internal",
+            "validation_url": None,
+            "options": None,
+        },
+        {
+            "comments": "Uses the Facebook Login OAuth2 service",
+            "enabled": 1,
+            "id": lib.core.id_to_binary("0x32000000000000000000000000000000", ""),
+            "name": "Facebook",
+            "validation_url": None,
+            "options": None,
+        },
+        {
+            "comments": "Uses the Google OAuth2 service",
+            "enabled": 1,
+            "id": lib.core.id_to_binary("0x34000000000000000000000000000000", ""),
+            "name": "Google",
+            "validation_url": None,
+            "options": None,
+        },
+        {
+            "id": lib.core.id_to_binary("0x35000000000000000000000000000000", ""),
+            "name": "OCI OAuth2",
+            "validation_url": None,
+            "enabled": 1,
+            "comments": "Uses the OCI OAuth2 service",
+            "options": None,
+        },
+    ]
 
 
 def test_add_auth_apps(phone_book, table_contents):
@@ -87,10 +90,12 @@ def test_add_auth_apps(phone_book, table_contents):
         "limit_to_registered_users": False,
         "registered_users": None,
         "app_id": "some app id",
-        "session": session
+        "session": session,
     }
 
-    result1 = add_auth_app(app_name="Test Auth App", service_id=phone_book["service_id"], **args)
+    result1 = add_auth_app(
+        app_name="Test Auth App", service_id=phone_book["service_id"], **args
+    )
     assert result1 is not None
     InitialAuthAppIds.append(result1["auth_app_id"])
     assert auth_apps_table.count == auth_apps_table.snapshot.count + 1
@@ -117,10 +122,12 @@ def test_add_auth_apps(phone_book, table_contents):
         "limit_to_registered_users": False,
         "registered_users": None,
         "app_id": "some app id",
-        "session": phone_book["session"]
+        "session": phone_book["session"],
     }
 
-    result2 = add_auth_app(app_name="Test Auth App 2", service_id=phone_book["service_id"], **args)
+    result2 = add_auth_app(
+        app_name="Test Auth App 2", service_id=phone_book["service_id"], **args
+    )
     assert result2 is not None
     InitialAuthAppIds.append(result2["auth_app_id"])
     assert auth_apps_table.count == auth_apps_table.snapshot.count + 2
@@ -159,33 +166,35 @@ def test_get_auth_apps(phone_book):
     apps = get_auth_apps(**args)
     assert apps == []
 
-
     args1 = {
         "name": "Test Auth App",
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary("0x31000000000000000000000000000000", "auth_vendor_id"),
+        "auth_vendor_id": lib.core.id_to_binary(
+            "0x31000000000000000000000000000000", "auth_vendor_id"
+        ),
         "description": "Authentication via MySQL accounts",
         "url": "/test_auth",
         "access_token": "test_token",
         "limit_to_registered_users": False,
         "registered_users": None,
         "app_id": "some app id",
-        "session": session
+        "session": session,
     }
 
     args2 = {
         "name": "Test Auth App 2",
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary("0x31000000000000000000000000000000", "auth_vendor_id"),
+        "auth_vendor_id": lib.core.id_to_binary(
+            "0x31000000000000000000000000000000", "auth_vendor_id"
+        ),
         "description": "Authentication via MySQL accounts 2",
         "url": "/test_auth2",
         "access_token": "test_token",
         "limit_to_registered_users": False,
         "registered_users": None,
         "app_id": "some app id",
-        "session": session
+        "session": session,
     }
-
 
     with AuthAppCT(**args1) as auth_app_id1:
         with AuthAppCT(**args2) as auth_app_id2:
@@ -204,7 +213,6 @@ def test_get_auth_apps(phone_book):
             assert apps[3]["name"] == "Test Auth App 2"
             assert apps[3]["id"] == auth_app_id2
 
-
     args = {
         "include_enable_state": True,
         "session": session,
@@ -220,7 +228,9 @@ def test_update_auth_apps(phone_book, table_contents):
     args = {
         "name": "Test Auth App",
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary("0x31000000000000000000000000000000", "auth_vendor_id"),
+        "auth_vendor_id": lib.core.id_to_binary(
+            "0x31000000000000000000000000000000", "auth_vendor_id"
+        ),
         "description": "Authentication via MySQL accounts",
         "url": "/test_auth",
         "access_token": "test_token",
@@ -239,13 +249,9 @@ def test_update_auth_apps(phone_book, table_contents):
             "app_id": "some app id",
             "enabled": False,
             "limit_to_registered_users": False,
-            "default_role_id": None
+            "default_role_id": None,
         }
-        args = {
-            "app_id": auth_app_id,
-            "session": session,
-            "value": value
-        }
+        args = {"app_id": auth_app_id, "session": session, "value": value}
         update_auth_app(**args)
 
         assert auth_apps_table.count == auth_apps_table.snapshot.count
@@ -253,7 +259,9 @@ def test_update_auth_apps(phone_book, table_contents):
         assert auth_apps_table.get("id", args["app_id"]) == {
             "access_token": value["access_token"],
             "app_id": value["app_id"],
-            "auth_vendor_id": lib.core.id_to_binary("0x31000000000000000000000000000000", ""),
+            "auth_vendor_id": lib.core.id_to_binary(
+                "0x31000000000000000000000000000000", ""
+            ),
             "default_role_id": value["default_role_id"],
             "description": value["description"],
             "enabled": int(value["enabled"]),
@@ -286,10 +294,14 @@ GRANT REST ROLE `Full Access` ON ANY SERVICE TO `user1`@`MyAuthApp`
 
     session = phone_book["session"]
     schema_id = phone_book["schema_id"]
-    auth_app = get_default_auth_app_init(name="MyAuthApp",
-                                         url="/myAuthApp",
-                                         default_role_id=lib.core.id_to_binary("0x31000000000000000000000000000000", "default_role_id"),
-                                         description="This is a comment")
+    auth_app = get_default_auth_app_init(
+        name="MyAuthApp",
+        url="/myAuthApp",
+        default_role_id=lib.core.id_to_binary(
+            "0x31000000000000000000000000000000", "default_role_id"
+        ),
+        description="This is a comment",
+    )
     script = ""
 
     auth_apps = lib.auth_apps.get_auth_apps(session, None)
@@ -299,24 +311,36 @@ GRANT REST ROLE `Full Access` ON ANY SERVICE TO `user1`@`MyAuthApp`
         auth_apps = lib.auth_apps.get_auth_apps(session, None)
         assert len(auth_apps) == 3
 
-        user_init = get_default_user_init(auth_app_id, name="user1", email=None, auth_string=None, options={"key1": "value1"}, app_options={"key2": "value2"})
+        user_init = get_default_user_init(
+            auth_app_id,
+            name="user1",
+            email=None,
+            auth_string=None,
+            options={"key1": "value1"},
+            app_options={"key2": "value2"},
+        )
 
         with UserCT(session, **user_init) as user_id:
 
-            lib.users.add_user_role(session,
-                                    user_id,
-                                    lib.core.id_to_binary("0x31000000000000000000000000000000", "role_id"),
-                                    comments="Comment for user role")
+            lib.users.add_user_role(
+                session,
+                user_id,
+                lib.core.id_to_binary("0x31000000000000000000000000000000", "role_id"),
+                comments="Comment for user role",
+            )
 
             full_path_file = os.path.expanduser("~/auth_app2.dump.sql")
 
             # Test home path
-            create_function = lambda file_path, overwrite: \
-                store_auth_app_create_statement(file_path=file_path,
-                                                overwrite=overwrite,
-                                                auth_app_id=auth_app_id,
-                                                include_all_objects=True,
-                                                session=phone_book["session"])
+            create_function = (
+                lambda file_path, overwrite: store_auth_app_create_statement(
+                    file_path=file_path,
+                    overwrite=overwrite,
+                    auth_app_id=auth_app_id,
+                    include_all_objects=True,
+                    session=phone_book["session"],
+                )
+            )
 
             result = create_function(file_path=full_path_file, overwrite=True)
 
@@ -325,7 +349,6 @@ GRANT REST ROLE `Full Access` ON ANY SERVICE TO `user1`@`MyAuthApp`
             with open(os.path.expanduser(full_path_file), "r+") as f:
                 script = f.read()
                 assert script == auth_app_create_statement2
-
 
     auth_apps = lib.auth_apps.get_auth_apps(session, None)
     assert len(auth_apps) == 2
@@ -341,4 +364,3 @@ GRANT REST ROLE `Full Access` ON ANY SERVICE TO `user1`@`MyAuthApp`
 
     auth_apps = lib.auth_apps.get_auth_apps(session, None)
     assert len(auth_apps) == 2
-

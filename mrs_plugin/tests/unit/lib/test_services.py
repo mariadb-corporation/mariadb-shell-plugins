@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -210,8 +210,11 @@ def test_change_service(phone_book, table_contents):
     assert service_table.same_as_snapshot
     assert auth_app_table.same_as_snapshot
 
-@pytest.mark.skipif(os.getcwd() == "/environment/shell-plugins/mrs_plugin",
-                    reason="Test skipped when running on jenkins")
+
+@pytest.mark.skipif(
+    os.getcwd() == "/environment/shell-plugins/mrs_plugin",
+    reason="Test skipped when running on jenkins",
+)
 def test_service_as_project(phone_book, table_contents):
     session = phone_book["session"]
 
@@ -530,7 +533,6 @@ def test_service_as_project(phone_book, table_contents):
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
         lib.services.delete_service(session, service["id"])
 
-
     # test loading from GitHub
     lib.services.load_project(session, "github/migueltadeu/tests-mrs-project")
 
@@ -582,4 +584,3 @@ def test_service_as_project(phone_book, table_contents):
     for service_name in ["myService1", "myService2"]:
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
         lib.services.delete_service(session, service["id"])
-

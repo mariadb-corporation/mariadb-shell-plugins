@@ -52,7 +52,8 @@ class ProjectContext:
             path=str(self.project.path),
             source=f"{self.project.source_connection_options['host']}:{self.project.source_connection_options['port']}",
             modifyTime=self.project.modifyTime,
-            dataMigrationDidFinish=self.project._data_migration_did_finish)
+            dataMigrationDidFinish=self.project._data_migration_did_finish,
+        )
 
 
 g_open_projects: dict[str, ProjectContext] = {}
@@ -189,14 +190,15 @@ def list_projects() -> list[model.ProjectData]:
                         id=data["id"],
                         name=data["name"],
                         path=os.path.join(proj_dir, proj),
-                        modifyTime=data["modifyTime"])
+                        modifyTime=data["modifyTime"],
+                    )
                     projects.append(p)
                 except Exception as e:
                     logging.warning(
-                        f"Error parsing presumed migration project data from {path}: {e}")
+                        f"Error parsing presumed migration project data from {path}: {e}"
+                    )
         projects.sort(key=lambda p: p["path"], reverse=True)
     except Exception as e:
-        logging.warning(
-            f"Error looking for migration projects in {proj_dir}: {e}")
+        logging.warning(f"Error looking for migration projects in {proj_dir}: {e}")
 
     return projects

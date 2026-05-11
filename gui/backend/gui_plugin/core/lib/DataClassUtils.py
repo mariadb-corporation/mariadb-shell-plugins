@@ -25,23 +25,22 @@ import dataclasses
 import re
 from typing import Any, get_origin, get_args, get_type_hints, Mapping, Union
 
-
-_camel_pat = re.compile(r'(?<!^)(?=[A-Z])')          # “myField” → “my_Field”
+_camel_pat = re.compile(r"(?<!^)(?=[A-Z])")  # “myField” → “my_Field”
 # “my_field” → “myField” (internal use)
-_snake_pat = re.compile(r'_[a-z]')
+_snake_pat = re.compile(r"_[a-z]")
 
 NoneType = type(None)
 
 
 def snake_to_camel(name: str) -> str:
     """my_field → myField"""
-    parts = name.split('_')
-    return parts[0] + ''.join(p.title() for p in parts[1:])
+    parts = name.split("_")
+    return parts[0] + "".join(p.title() for p in parts[1:])
 
 
 def camel_to_snake(name: str) -> str:
     """myField → my_field"""
-    return _camel_pat.sub('_', name).lower()
+    return _camel_pat.sub("_", name).lower()
 
 
 def unwrap_optional(tp):
@@ -50,8 +49,8 @@ def unwrap_optional(tp):
     if origin is Union:
         args = tuple(a for a in get_args(tp) if a is not NoneType)
         if len(args) == 1:
-            return args[0]          # Optional[T] -> T
-    return tp                       # not an Optional
+            return args[0]  # Optional[T] -> T
+    return tp  # not an Optional
 
 
 def _field_lookup(cls: type) -> Mapping[str, str]:
@@ -72,8 +71,11 @@ def _field_lookup(cls: type) -> Mapping[str, str]:
         lookup[real_name] = real_name
 
         # add the alternative spelling if it is different
-        alt = camel_to_snake(
-            real_name) if '_' not in real_name else snake_to_camel(real_name)
+        alt = (
+            camel_to_snake(real_name)
+            if "_" not in real_name
+            else snake_to_camel(real_name)
+        )
         if alt != real_name:
             lookup[alt] = real_name
     return lookup
@@ -87,12 +89,11 @@ def _instantiate_dataclass(cls: type, data: Mapping[str, Any]) -> Any:
     Nested dataclasses (or lists thereof) are handled recursively.
     """
     if not isinstance(data, Mapping):
-        raise TypeError(
-            f'Expected a mapping for {cls.__name__}, got {type(data)}')
+        raise TypeError(f"Expected a mapping for {cls.__name__}, got {type(data)}")
 
     # e.g. {"default_roles": "defaultRoles", ...}
     lookup = _field_lookup(cls)
-    hints = get_type_hints(cls)                # field → type
+    hints = get_type_hints(cls)  # field → type
 
     prepared: dict[str, Any] = {}
     for incoming_key, incoming_val in data.items():
@@ -120,7 +121,7 @@ def convert_value(expected_type: Any, value: Any) -> Any:
         • primitives – returned unchanged
     """
     if value is None:
-        return value # no need to waste cycles, return early
+        return value  # no need to waste cycles, return early
 
     unwrapped_type = unwrap_optional(expected_type)
     origin = get_origin(unwrapped_type)
@@ -130,7 +131,9 @@ def convert_value(expected_type: Any, value: Any) -> Any:
         inner_type = get_args(unwrapped_type)[0]
         unwrapped_inner_type = unwrap_optional(inner_type)
         if dataclasses.is_dataclass(unwrapped_inner_type):
-            return [_instantiate_dataclass(unwrapped_inner_type, item) for item in value]
+            return [
+                _instantiate_dataclass(unwrapped_inner_type, item) for item in value
+            ]
         # not a dataclass → just return the list (maybe primitives)
         return list(value)
 
@@ -139,7 +142,10 @@ def convert_value(expected_type: Any, value: Any) -> Any:
         _, _v_type = get_args(unwrapped_type)
         unwrapped__v_type = unwrap_optional(_v_type)
         if dataclasses.is_dataclass(unwrapped__v_type):
-            return {_k: _instantiate_dataclass(unwrapped__v_type, _v) for _k, _v in value.items()}
+            return {
+                _k: _instantiate_dataclass(unwrapped__v_type, _v)
+                for _k, _v in value.items()
+            }
         return dict(value)
 
     # Plain dataclass
@@ -151,8 +157,14 @@ def convert_value(expected_type: Any, value: Any) -> Any:
 
 
 def is_dataclass_convertible(expected_type: Any):
-    return dataclasses.is_dataclass(expected_type) \
-        or (get_origin(expected_type) is list and
-            dataclasses.is_dataclass(get_args(expected_type)[0])) \
-        or (get_origin(expected_type) in (dict, Mapping) and
-            dataclasses.is_dataclass(get_args(expected_type)[1]))
+    return (
+        dataclasses.is_dataclass(expected_type)
+        or (
+            get_origin(expected_type) is list
+            and dataclasses.is_dataclass(get_args(expected_type)[0])
+        )
+        or (
+            get_origin(expected_type) in (dict, Mapping)
+            and dataclasses.is_dataclass(get_args(expected_type)[1])
+        )
+    )

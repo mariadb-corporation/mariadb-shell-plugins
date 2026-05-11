@@ -39,6 +39,7 @@ class Sample:
     camelCaseListParam: list[int]
     nestedListParam: list[Nested]
 
+
 @dataclass
 class OptSample:
     optionalParam: Optional[Nested]
@@ -68,8 +69,7 @@ def test_convert_simple_value():
 
 
 def test_convert_simple_value_list():
-    result: list[Nested] = convert_value(
-        list[Nested], [{"int_id": 5}, {"intId": 8}])
+    result: list[Nested] = convert_value(list[Nested], [{"int_id": 5}, {"intId": 8}])
     assert len(result) == 2
     assert isinstance(result[0], Nested)
     assert result[0].intId == 5
@@ -79,7 +79,8 @@ def test_convert_simple_value_list():
 
 def test_convert_simple_value_dict():
     result: dict[str, Nested] = convert_value(
-        dict[str, Nested], {"one": {"int_id": 5}, "two": {"intId": 8}})
+        dict[str, Nested], {"one": {"int_id": 5}, "two": {"intId": 8}}
+    )
     assert len(result) == 2
     assert isinstance(result["one"], Nested)
     assert result["one"].intId == 5
@@ -88,8 +89,16 @@ def test_convert_simple_value_dict():
 
 
 def test_convert_complex_value():
-    result: Sample = convert_value(Sample, {"int_param": 1, "string_param": "param1", "list_param": [
-                                   1, 2, 3], "camelCaseListParam": [4, 5, 6], "nestedListParam": [{"intId": 8}]})
+    result: Sample = convert_value(
+        Sample,
+        {
+            "int_param": 1,
+            "string_param": "param1",
+            "list_param": [1, 2, 3],
+            "camelCaseListParam": [4, 5, 6],
+            "nestedListParam": [{"intId": 8}],
+        },
+    )
 
     assert isinstance(result, Sample)
     assert result.int_param == 1
@@ -101,8 +110,16 @@ def test_convert_complex_value():
     assert result.nestedListParam[0].intId == 8
 
     # Tests all with wrong casing
-    result: Sample = convert_value(Sample, {"intParam": 1, "stringParam": "param1", "listParam": [
-                                   1, 2, 3], "camel_case_list_param": [4, 5, 6], "nested_list_param": [{"int_id": 8}]})
+    result: Sample = convert_value(
+        Sample,
+        {
+            "intParam": 1,
+            "stringParam": "param1",
+            "listParam": [1, 2, 3],
+            "camel_case_list_param": [4, 5, 6],
+            "nested_list_param": [{"int_id": 8}],
+        },
+    )
     assert isinstance(result, Sample)
     assert result.int_param == 1
     assert result.string_param == "param1"
@@ -114,7 +131,7 @@ def test_convert_complex_value():
 
 
 def test_convert_optional_dataclass_value():
-    result = convert_value(OptSample, {"optional_param": {"int_id":42}})
+    result = convert_value(OptSample, {"optional_param": {"int_id": 42}})
     assert isinstance(result, OptSample)
     assert isinstance(result.optionalParam, Nested)
     assert result.optionalParam.intId == 42

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,13 +38,12 @@ class Word0Bits(ctypes.BigEndianStructure):
         ("reserved", ctypes.c_uint16, 3),
         ("opcode", ctypes.c_uint16, 4),
         ("masked", ctypes.c_uint16, 1),
-        ("payload", ctypes.c_uint16, 7)
+        ("payload", ctypes.c_uint16, 7),
     ]
 
 
 class Word0(ctypes.Union):
-    _fields_ = [("bits", Word0Bits),
-                ("bytes", ctypes.c_uint16)]
+    _fields_ = [("bits", Word0Bits), ("bytes", ctypes.c_uint16)]
 
 
 class Operation(IntEnum):
@@ -53,7 +52,7 @@ class Operation(IntEnum):
     BinaryFrame = 0x2
     Close = 0x8
     Ping = 0x9
-    Pong = 0xa
+    Pong = 0xA
 
 
 class Frame:
@@ -125,14 +124,14 @@ class FrameReceiver(Frame):
 
         if self.is_control_message:
             for index in range(self.length):
-                self.message += chr(self.encoded_message[index]
-                                    ^ self.mask_key[index % 4])
+                self.message += chr(
+                    self.encoded_message[index] ^ self.mask_key[index % 4]
+                )
         else:
             # Unmasks the received buffer
-            unmasked = bytearray(b'')
+            unmasked = bytearray(b"")
             for index in range(self.length):
-                unmasked.append(
-                    self.encoded_message[index] ^ self.mask_key[index % 4])
+                unmasked.append(self.encoded_message[index] ^ self.mask_key[index % 4])
 
             self.message = unmasked.decode("utf-8")
 
@@ -142,7 +141,8 @@ class FrameReceiver(Frame):
                 self.message = self.message[2:]
                 if self.error != WEBSOCKET_CLOSED_BY_CLIENT:
                     logger.error(
-                        f"WebSocket closed by peer: Error[{self.error}]: {self.message}")
+                        f"WebSocket closed by peer: Error[{self.error}]: {self.message}"
+                    )
 
 
 class FrameSender(Frame):
@@ -217,8 +217,7 @@ class Packet:
             self.frames.append(FrameSender(Operation.TextFrame, message))
         else:
             self.frames[len(self.frames) - 1].word0.bits.final_fragment = False
-            self.frames.append(FrameSender(
-                Operation.ContinuationFrame, message))
+            self.frames.append(FrameSender(Operation.ContinuationFrame, message))
 
     @property
     def message(self):

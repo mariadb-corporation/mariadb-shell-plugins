@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -42,14 +42,21 @@ from gui_plugin.core.Protocols import Response
 def check_service_database_session(func):
     def wrapper(self, *args, **kwargs):
         if self._db_service_session is None:
-            raise MSGException(Error.DB_NOT_OPEN,
-                               'The database session needs to be opened before SQL can be executed.')
+            raise MSGException(
+                Error.DB_NOT_OPEN,
+                "The database session needs to be opened before SQL can be executed.",
+            )
         return func(self, *args, **kwargs)
+
     return wrapper
 
 
 class DbModuleSession(ModuleSession):
-    def __init__(self, reconnection_mode=ReconnectionMode.STANDARD, single_server_mode_authentication=False):
+    def __init__(
+        self,
+        reconnection_mode=ReconnectionMode.STANDARD,
+        single_server_mode_authentication=False,
+    ):
         super().__init__()
         self._db_type = None
         self._connection_options = None
@@ -61,7 +68,9 @@ class DbModuleSession(ModuleSession):
         self._connect_again = False
 
         context = get_context()
-        self._single_server_mode = context.web_handler.single_server is not None if context else False
+        self._single_server_mode = (
+            context.web_handler.single_server is not None if context else False
+        )
 
     def __del__(self):
         self.close()
@@ -87,34 +96,46 @@ class DbModuleSession(ModuleSession):
         self._current_request_id = context.request_id if context else None
 
         if self._db_service_session is None:
-            raise MSGException(Error.DB_NOT_OPEN,
-                               'A database session is required to reconnect.')
+            raise MSGException(
+                Error.DB_NOT_OPEN, "A database session is required to reconnect."
+            )
         else:
             self._db_service_session.reconnect()
 
     # This is the former path validation in DbSqliteSession
     def _validate_connection_config(self, config):
-        path = config['db_file']
+        path = config["db_file"]
         database_name = find_schema_name(config)
 
         # Only allow absolute paths when running a local session.
         if os.path.isabs(path):
             if self._web_session and not self._web_session.is_local_session:
-                raise MSGException(Error.CORE_ABSPATH_NOT_ALLOWED,
-                                   f"Absolute paths are not allowed when running a remote session for '{database_name}' database.")
+                raise MSGException(
+                    Error.CORE_ABSPATH_NOT_ALLOWED,
+                    f"Absolute paths are not allowed when running a remote session for '{database_name}' database.",
+                )
         else:
-            user_dir = os.path.abspath(mysqlsh.plugin_manager.general.get_shell_user_dir(
-                'plugin_data', 'gui_plugin', f'user_{self._web_session.session_user_id}'))
+            user_dir = os.path.abspath(
+                mysqlsh.plugin_manager.general.get_shell_user_dir(
+                    "plugin_data",
+                    "gui_plugin",
+                    f"user_{self._web_session.session_user_id}",
+                )
+            )
 
             path = os.path.join(user_dir, path)
 
             if not os.path.abspath(path).startswith(user_dir):
-                raise MSGException(Error.CORE_ACCESS_OUTSIDE_USERSPACE,
-                                   f"Trying to access outside the user space on '{database_name}' database.")
+                raise MSGException(
+                    Error.CORE_ACCESS_OUTSIDE_USERSPACE,
+                    f"Trying to access outside the user space on '{database_name}' database.",
+                )
 
         if not os.path.isfile(path):
-            raise MSGException(Error.CORE_PATH_NOT_EXIST,
-                               f"The database file: {path} does not exist for '{database_name}' database.")
+            raise MSGException(
+                Error.CORE_PATH_NOT_EXIST,
+                f"The database file: {path} does not exist for '{database_name}' database.",
+            )
 
         return path
 
@@ -123,12 +144,14 @@ class DbModuleSession(ModuleSession):
             msg_type=type,
             msg=message,
             request_id=self._current_request_id if request_id is None else request_id,
-            values=result, api=False)
+            values=result,
+            api=False,
+        )
 
     # Note that this function is executed in the DBSession thread
     # def _handle_db_response(self, request_id, values):
     def _handle_db_response(self, state, message, request_id, data=None):
-        if state == 'ERROR':
+        if state == "ERROR":
             self._web_session.send_command_response(request_id, data)
         elif state == "OK":
             msg = ""
@@ -136,33 +159,26 @@ class DbModuleSession(ModuleSession):
                 msg = message
             elif "total_row_count" in data.keys():
                 row_count = data["total_row_count"]
-                plural = '' if row_count == 1 else 's'
-                msg = f'Full result set consisting of {row_count} row{plural}' \
-                    f' transferred.'
+                plural = "" if row_count == 1 else "s"
+                msg = (
+                    f"Full result set consisting of {row_count} row{plural}"
+                    f" transferred."
+                )
 
-            self._web_session.send_response_message('OK',
-                                                    msg,
-                                                    request_id,
-                                                    data)
+            self._web_session.send_response_message("OK", msg, request_id, data)
         elif state == "CANCELLED":
             msg = ""
             if not message is None:
                 msg = message
 
-            self._web_session.send_response_message('CANCELLED',
-                                                    msg,
-                                                    request_id,
-                                                    data)
+            self._web_session.send_response_message("CANCELLED", msg, request_id, data)
         else:
             msg = ""
             if not message is None:
                 msg = message
             else:
                 msg = "Executing..."
-            self._web_session.send_response_message('PENDING',
-                                                    msg,
-                                                    request_id,
-                                                    data)
+            self._web_session.send_response_message("PENDING", msg, request_id, data)
 
     def open_connection(self, connection, password):
         self.completion_event = ctx.set_completion_event()
@@ -174,18 +190,19 @@ class DbModuleSession(ModuleSession):
 
         if isinstance(connection, int):
             self._db_type, options, _ = self._web_session.db.get_connection_details(
-                connection)
+                connection
+            )
         elif isinstance(connection, dict):
-            self._db_type = connection['db_type']
-            options = connection['options']
+            self._db_type = connection["db_type"]
+            options = connection["options"]
 
         if password is not None:
             # Override the password
-            options['password'] = password
+            options["password"] = password
 
         # In SQLIte connections we validate the configuration is valid
         if self._db_type == "Sqlite":
-            options['db_file'] = self._validate_connection_config(options)
+            options["db_file"] = self._validate_connection_config(options)
 
         self._connection_options = options
 
@@ -208,7 +225,9 @@ class DbModuleSession(ModuleSession):
     def connect(self):
         session_id = "ServiceSession-" + self.web_session.session_uuid
         self._db_service_session = DbSessionFactory.create(
-            self._db_type, session_id, True,
+            self._db_type,
+            session_id,
+            True,
             self._connection_options,
             None,
             self._reconnection_mode,
@@ -216,7 +235,8 @@ class DbModuleSession(ModuleSession):
             self.on_connected,
             lambda x: self.on_fail_connecting(x),
             lambda x, o: self.on_shell_prompt(x, o),
-            self.on_session_message)
+            self.on_session_message,
+        )
 
     # Temporary hack, right thing would be that the shell unparse_uri
     # supports passing the needed tokens
@@ -243,7 +263,8 @@ class DbModuleSession(ModuleSession):
             options["type"] = "text"
 
         self.send_prompt_response(
-            self._current_request_id, options, lambda: prompt_event.set())
+            self._current_request_id, options, lambda: prompt_event.set()
+        )
 
         prompt_event.wait()
 
@@ -256,17 +277,25 @@ class DbModuleSession(ModuleSession):
 
     def on_connected(self, db_session):
         if not self._single_server_mode_authentication:
-            data = Response.pending("Connection was successfully opened.", {"result": {
-                "module_session_id": self._module_session_id,
-                "info": db_session.info(),
-                "default_schema": db_session.get_default_schema()
-            }})
+            data = Response.pending(
+                "Connection was successfully opened.",
+                {
+                    "result": {
+                        "module_session_id": self._module_session_id,
+                        "info": db_session.info(),
+                        "default_schema": db_session.get_default_schema(),
+                    }
+                },
+            )
             self.send_command_response(self._current_request_id, data)
         self.completion_event.set()
 
     def on_fail_connecting(self, exc):
-        if self._single_server_mode and "Access denied for user" in str(exc) \
-            and not self._single_server_mode_authentication:
+        if (
+            self._single_server_mode
+            and "Access denied for user" in str(exc)
+            and not self._single_server_mode_authentication
+        ):
             self._connect_again = True
         else:
             logger.exception(exc)

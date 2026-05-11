@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -53,7 +53,7 @@ def get_status(session=None):
         return {
             "heatwave_support": False,
             "local_model_support": False,
-            "language_support": False
+            "language_support": False,
         }
 
     heatwave_support = False
@@ -81,7 +81,7 @@ def get_status(session=None):
     return {
         "heatwave_support": heatwave_support,
         "local_model_support": local_model_support,
-        "language_support": language_support
+        "language_support": language_support,
     }
 
 
@@ -126,7 +126,11 @@ def configure_local_model_support(cohere_api_key: str = "", **kwargs):
         if check_dependencies():
             if not cohere_api_key:
                 api_key_path = os.path.join(
-                    get_shell_user_dir(), "plugin_data", "mds_plugin", "cohere_api_key.txt")
+                    get_shell_user_dir(),
+                    "plugin_data",
+                    "mds_plugin",
+                    "cohere_api_key.txt",
+                )
                 if os.path.exists(api_key_path):
                     cohere_api_key = open(api_key_path).read().strip()
 
@@ -148,33 +152,39 @@ def configure_local_model_support(cohere_api_key: str = "", **kwargs):
                 if error:
                     if send_gui_message is not None:
                         send_gui_message(
-                            "error", f"Error while installing dependencies. {error}")
+                            "error", f"Error while installing dependencies. {error}"
+                        )
                     return {"success": False, "error": error}
 
 
-def translate_string(session, text, target_language, model_id=None, source_language="English"):
+def translate_string(
+    session, text, target_language, model_id=None, source_language="English"
+):
     if target_language == source_language:
         return text
 
     if model_id is None:
         model_id = "mistral-7b-instruct-v1"
     # Load the mistral language model
-    session.run_sql('CALL sys.ml_model_load(?, NULL);', [model_id])
+    session.run_sql("CALL sys.ml_model_load(?, NULL);", [model_id])
 
-    res = session.run_sql(f"""
+    res = session.run_sql(
+        f"""
         SELECT sys.ml_generate(CONCAT(
             'translate the following text from ', ?, ' to ', ?, ': ', ?),
             JSON_OBJECT("model_id", ?));
-    """, [source_language, target_language, text, model_id])
+    """,
+        [source_language, target_language, text, model_id],
+    )
     rows = res.fetch_all()
     if len(rows) > 0:
         translation = json.loads(rows[0][0]).get("text")
         if '"' in translation:
             return translation.split('"')[1].strip()
-        elif 'The answer' in translation and ':' in translation:
-            return translation.split(':', 1)[1].strip()
-        elif 'The translation of' in translation and ':' in translation:
-            return translation.split(':', 1)[1].strip()
+        elif "The answer" in translation and ":" in translation:
+            return translation.split(":", 1)[1].strip()
+        elif "The translation of" in translation and ":" in translation:
+            return translation.split(":", 1)[1].strip()
         else:
             return translation.strip()
 
@@ -237,9 +247,13 @@ def chat(prompt, **kwargs):
         send_gui_message("data", {"info": "Checking chat engine status ..."})
 
     status = get_status(session=session)
-    if status.get("heatwave_support") is False and status.get("local_model_support") is False:
+    if (
+        status.get("heatwave_support") is False
+        and status.get("local_model_support") is False
+    ):
         raise Exception(
-            "GenAI support is not available. Please connect to a HeatWave 9.0 instance or higher.")
+            "GenAI support is not available. Please connect to a HeatWave 9.0 instance or higher."
+        )
 
     # Remove language if not supported
     if status.get("language_support") is False and "language" in model_options:
@@ -251,17 +265,26 @@ def chat(prompt, **kwargs):
         language = lang_opts.get("language")
 
         # If a language has been selected for translation, do the translation
-        if language is not None and lang_opts.get("translate_user_prompt") is not False and \
-                language != model_language_name:
+        if (
+            language is not None
+            and lang_opts.get("translate_user_prompt") is not False
+            and language != model_language_name
+        ):
             send_gui_message(
-                "data", {"info": f"Translating prompt from {language} to {model_language_name} ..."})
+                "data",
+                {
+                    "info": f"Translating prompt from {language} to {model_language_name} ..."
+                },
+            )
 
             # Translate the prompt
             prompt = translate_string(
-                session, prompt,
+                session,
+                prompt,
                 target_language=model_language_name,
                 model_id=lang_opts.get("model_id"),
-                source_language=language)
+                source_language=language,
+            )
 
         send_gui_message("data", {"info": "Generating answer ..."})
 
@@ -297,17 +320,26 @@ def chat(prompt, **kwargs):
         if len(rows) > 0:
             options = json.loads(rows[0][0])
 
-            if language is not None and lang_opts.get("translate_response") is not False and \
-                    language != model_language_name:
+            if (
+                language is not None
+                and lang_opts.get("translate_response") is not False
+                and language != model_language_name
+            ):
                 send_gui_message(
-                    "data", {"info": f"Translating response from {model_language_name} to {language} ..."})
+                    "data",
+                    {
+                        "info": f"Translating response from {model_language_name} to {language} ..."
+                    },
+                )
 
                 # Translate the response
                 response = translate_string(
-                    session, options.get("response"),
+                    session,
+                    options.get("response"),
                     target_language=language,
                     model_id=lang_opts.get("model_id"),
-                    source_language=model_language_name)
+                    source_language=model_language_name,
+                )
                 options["response"] = response
 
             send_gui_message("data", options)
@@ -316,7 +348,8 @@ def chat(prompt, **kwargs):
         from . import mockchat
 
         api_key_path = os.path.join(
-            get_shell_user_dir(), "plugin_data", "mds_plugin", "cohere_api_key.txt")
+            get_shell_user_dir(), "plugin_data", "mds_plugin", "cohere_api_key.txt"
+        )
         if os.path.exists(api_key_path):
             cohere_api_key = open(api_key_path).read().strip()
             mockchat.set_api_key(cohere_api_key)
@@ -368,16 +401,19 @@ def lakehouse_status(**kwargs):
         try:
             new_memory_used = int(rows[0][0])
             new_memory_total = int(rows[0][1])
-            if not (memory_used == new_memory_used) or not (memory_total == new_memory_total):
+            if not (memory_used == new_memory_used) or not (
+                memory_total == new_memory_total
+            ):
                 status["memory_status"] = {
                     "memory_used": new_memory_used,
-                    "memory_total": new_memory_total
+                    "memory_total": new_memory_total,
                 }
         except:
             pass
 
     if schema_name is not None:
-        res = session.run_sql("""
+        res = session.run_sql(
+            """
             SELECT JSON_OBJECT(
                 'id', CONCAT(TABLE_SCHEMA, '.', TABLE_NAME),
                 'table_name', TABLE_NAME,
@@ -394,7 +430,8 @@ def lakehouse_status(**kwargs):
             FROM sys.vector_store_load_tables
             WHERE TABLE_SCHEMA = ?
             ORDER BY CREATE_TIME DESC, TABLE_NAME""",
-                              [schema_name])
+            [schema_name],
+        )
         rows = res.fetch_all()
         tables = []
         table_hash = 0
@@ -403,15 +440,9 @@ def lakehouse_status(**kwargs):
             table_hash = hash(row[1] + str(table_hash))
 
         if not (lakehouse_tables_hash == str(table_hash)):
-            status["table_status"] = {
-                "hash": str(table_hash),
-                "tables": tables
-            }
+            status["table_status"] = {"hash": str(table_hash), "tables": tables}
     else:
-        status["table_status"] = {
-            "hash": "emptyList",
-            "tables": []
-        }
+        status["table_status"] = {"hash": "emptyList", "tables": []}
 
     # res = session.run_sql("""
     #     SELECT
@@ -436,7 +467,8 @@ def lakehouse_status(**kwargs):
     #     ORDER BY id DESC
     #     LIMIT 20""")
     res = session.run_sql(
-        "SELECT `mysql_tasks`.`task_status_list`('GenAI_Load', 0, 20);")
+        "SELECT `mysql_tasks`.`task_status_list`('GenAI_Load', 0, 20);"
+    )
     rows = res.fetch_all()
     tasks = []
     task_hash = 0
@@ -444,13 +476,10 @@ def lakehouse_status(**kwargs):
         tasks = json.loads(rows[0][0])
 
     for task in tasks:
-        task_hash = hash(task.get('row_hash', 0) + str(task_hash))
+        task_hash = hash(task.get("row_hash", 0) + str(task_hash))
 
     if not (lakehouse_tasks_hash == str(task_hash)):
-        status["task_status"] = {
-            "hash": str(task_hash),
-            "tasks": tasks
-        }
+        status["task_status"] = {"hash": str(task_hash), "tasks": tasks}
 
     return status
 
@@ -473,7 +502,7 @@ def save_chat_options(file_path, **kwargs):
     options = kwargs.get("options")
     options["heat_wave_chat_version"] = 1
 
-    with open(file_path, 'w') as file:
+    with open(file_path, "w") as file:
         file.write(json.dumps(options, indent=4))
 
 
@@ -491,22 +520,23 @@ def load_chat_options(file_path):
     if not os.path.isfile(file_path):
         raise Exception(f"The file {file_path} does not exist.")
 
-    with open(file_path, 'r') as file:
+    with open(file_path, "r") as file:
         options_content = file.read()
 
         try:
             options = json.loads(options_content)
         except:
             raise Exception(
-                "Failed to parse the selected file. Please select a JSON file.")
+                "Failed to parse the selected file. Please select a JSON file."
+            )
 
         version = options.pop("heat_wave_chat_version", None)
         if version is None:
-            raise Exception(
-                "The selected file is not a HeatWave Chat options file.")
+            raise Exception("The selected file is not a HeatWave Chat options file.")
 
         if version != 1:
             raise Exception(
-                "The version of the selected HeatWave Chat options file is not supported.")
+                "The version of the selected HeatWave Chat options file is not supported."
+            )
 
         return options

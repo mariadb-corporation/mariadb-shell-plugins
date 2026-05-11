@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,7 @@
 import os
 import pytest
 import migration_plugin.lib.core as core
+
 
 class TestPathFunctions:
 
@@ -70,7 +71,6 @@ class TestPathFunctions:
         assert os.path.isdir(result_create_true)
 
 
-
 class TestInteractiveFunctions:
 
     def test_get_interactive_default(self):
@@ -84,8 +84,6 @@ class TestInteractiveFunctions:
 
         assert isinstance(result, bool)
         assert result in [True, False]
-
-
 
 
 class TestScriptPath:
@@ -103,8 +101,6 @@ class TestScriptPath:
         assert "subfolder" in result_with_suffixes
 
 
-
-
 class TestMakeStringValidForFilesystem:
 
     def test_make_string_valid_for_filesystem(self):
@@ -114,7 +110,7 @@ class TestMakeStringValidForFilesystem:
             ("", ""),
             ('<>:"/\\|?*', ""),
             ("my<>file:name/with\\invalid|chars?*", "myfilenamewithinvalidchars"),
-            ("test_文件_файл_파일", "test_文件_файл_파일")
+            ("test_文件_файл_파일", "test_文件_файл_파일"),
         ]
 
         for input_string, expected in test_cases:
@@ -122,19 +118,22 @@ class TestMakeStringValidForFilesystem:
             assert result == expected
 
             if input_string != expected:
-                invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
+                invalid_chars = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"]
                 for char in invalid_chars:
                     assert char not in result
 
 
-
-
 class TestUtilityFunctions:
 
-
     def test_string_escape_and_quote_functions(self):
-        assert core.escape_str("test'quote\"double\\backslash") == "test\\'quote\\\"double\\\\backslash"
-        assert core.unescape_str("test\\'quote\\\"double\\\\backslash") == "test'quote\"double\\backslash"
+        assert (
+            core.escape_str("test'quote\"double\\backslash")
+            == "test\\'quote\\\"double\\\\backslash"
+        )
+        assert (
+            core.unescape_str("test\\'quote\\\"double\\\\backslash")
+            == "test'quote\"double\\backslash"
+        )
 
         assert core.quote_str("test") == '"test"'
         assert core.quote_str("test'quote") == '"test\\\'quote"'
@@ -151,14 +150,6 @@ class TestUtilityFunctions:
         assert len(result_quote) > 0
         assert isinstance(result_unquote, str)
         assert len(result_unquote) > 0
-
-
-
-
-
-
-
-
 
 
 class TestEdgeCases:

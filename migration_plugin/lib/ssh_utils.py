@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -45,12 +45,10 @@ ALLOWED_CIPHERS = [
     "aes128-gcm@openssh.com",
     "aes256-ctr",
     "aes192-ctr",
-    "aes128-ctr"]
+    "aes128-ctr",
+]
 
-DEPRECATED_CIPHERS = [
-    "aes256-cbc",
-    "aes192-cbc",
-    "aes128-cbc"]
+DEPRECATED_CIPHERS = ["aes256-cbc", "aes192-cbc", "aes128-cbc"]
 
 
 def get_preferred_cipher_list():
@@ -68,8 +66,9 @@ def get_preferred_cipher_list():
     return ciphers
 
 
-def create_ssh_key_pair(private_key_path: str, public_key_path: str = "",
-                        passphrase: str = "") -> str:
+def create_ssh_key_pair(
+    private_key_path: str, public_key_path: str = "", passphrase: str = ""
+) -> str:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.asymmetric import rsa
@@ -82,9 +81,11 @@ def create_ssh_key_pair(private_key_path: str, public_key_path: str = "",
     private_key = key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.BestAvailableEncryption(
-            passphrase.encode())
-        if passphrase else serialization.NoEncryption(),
+        encryption_algorithm=(
+            serialization.BestAvailableEncryption(passphrase.encode())
+            if passphrase
+            else serialization.NoEncryption()
+        ),
     )
 
     public_key = key.public_key().public_bytes(
@@ -114,28 +115,34 @@ def create_ssh_key_pair(private_key_path: str, public_key_path: str = "",
     return public_key_pem
 
 
-def connect_ssh(user: str, host: str,
-                private_key_file_path: str,
-                private_key_passphrase: Optional[str] = None) -> compute.SshConnection:
+def connect_ssh(
+    user: str,
+    host: str,
+    private_key_file_path: str,
+    private_key_passphrase: Optional[str] = None,
+) -> compute.SshConnection:
     assert private_key_file_path
 
     try:
         logging.info(f"Establishing SSH connection to {user}@{host}...")
-        return compute.SshConnection(username=user, host=host,
-                                     private_key_file_path=private_key_file_path,
-                                     private_key_passphrase=private_key_passphrase)
+        return compute.SshConnection(
+            username=user,
+            host=host,
+            private_key_file_path=private_key_file_path,
+            private_key_passphrase=private_key_passphrase,
+        )
     except paramiko.ssh_exception.NoValidConnectionsError as e:
-        raise errors.SSHError(
-            f"Could not open SSH connection to {user}@{host}") from e
+        raise errors.SSHError(f"Could not open SSH connection to {user}@{host}") from e
     except paramiko.AuthenticationException as e:
         raise errors.SSHError(
-            f"Could not authenticate SSH connection to {user}@{host}") from e
+            f"Could not authenticate SSH connection to {user}@{host}"
+        ) from e
     except paramiko.BadHostKeyException as e:
         raise errors.SSHError(
-            f"Bad host key error opening SSH connection to {user}@{host}") from e
+            f"Bad host key error opening SSH connection to {user}@{host}"
+        ) from e
     except paramiko.SSHException as e:
-        raise errors.SSHError(
-            f"SSH error connecting to {user}@{host}") from e
+        raise errors.SSHError(f"SSH error connecting to {user}@{host}") from e
     # TODO what can these be?
     #    except socket.error as e:
     #        raise errors.SSHError(
@@ -195,7 +202,8 @@ class RemoteSSHTunnel:
 
         client.set_missing_host_key_policy(self.missing_host_key_policy)
         logging.info(
-            f"Connecting to {self.user}@{self.from_host} ({self.key_filename})")
+            f"Connecting to {self.user}@{self.from_host} ({self.key_filename})"
+        )
 
         # Create a socket and transport object manually to set ciphers
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -209,7 +217,8 @@ class RemoteSSHTunnel:
 
         # TODO: enable using agent and automatic key lookup
         private_key = paramiko.RSAKey.from_private_key_file(
-            self.key_filename, password=self.passphrase)
+            self.key_filename, password=self.passphrase
+        )
 
         # Start the client and authenticate
         transport.start_client()
@@ -217,8 +226,7 @@ class RemoteSSHTunnel:
 
         if not transport.is_active():
             transport.close()
-            raise RuntimeError(
-                "Failed to establish transport for SSH tunnel")
+            raise RuntimeError("Failed to establish transport for SSH tunnel")
 
         # Keepalive to maintain connection across idle periods
         transport.set_keepalive(self.keepalive)
@@ -245,11 +253,13 @@ class RemoteSSHTunnel:
         self._client = self._connect()
 
         self._thread = threading.Thread(
-            target=self._accept_loop, name="RemoteSSHTunnel", daemon=True)
+            target=self._accept_loop, name="RemoteSSHTunnel", daemon=True
+        )
         self._thread.start()
         self._started = True
         logging.info(
-            f"sshtunnel: Started remote SSH tunnel: {self.from_host}:{self.from_port} -> {self.to_host}:{self.to_port} (listening on {self.bind_address} on Host B)")
+            f"sshtunnel: Started remote SSH tunnel: {self.from_host}:{self.from_port} -> {self.to_host}:{self.to_port} (listening on {self.bind_address} on Host B)"
+        )
 
     def stop(self, wait: bool = True, join_timeout: Optional[float] = 5.0):
         if not self._started:
@@ -292,7 +302,8 @@ class RemoteSSHTunnel:
                 break
             # Handle each incoming connection in its own thread
             t = threading.Thread(
-                target=self._handle_connection, args=(chan,), daemon=True)
+                target=self._handle_connection, args=(chan,), daemon=True
+            )
             t.start()
 
     def _handle_connection(self, chan: paramiko.Channel):
@@ -300,11 +311,11 @@ class RemoteSSHTunnel:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.connect(dst)
-            logging.debug(
-                f"sshtunnel: Forwarding established to {dst[0]}:{dst[1]}")
+            logging.debug(f"sshtunnel: Forwarding established to {dst[0]}:{dst[1]}")
         except Exception as e:
             logging.error(
-                f"sshtunnel: Failed to connect to destination {self.to_host}:{self.to_port}: {e}")
+                f"sshtunnel: Failed to connect to destination {self.to_host}:{self.to_port}: {e}"
+            )
             try:
                 chan.close()
             finally:

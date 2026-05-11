@@ -33,7 +33,6 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 
-
 VERSION_RE = re.compile(r"^\d{4}\.\d+\.\d+\+\d+\.\d+\.\d+$")
 CHANGELOG_HEADER_RE = re.compile(r"^## Changes in ([^\s]+)\s*$")
 TOKEN_RE = re.compile(r"^(WL#\d+|BUG#\d+)\b[: -]*", re.IGNORECASE)
@@ -65,9 +64,7 @@ COMMON_FILENAMES = {
     "README.md",
 }
 MAX_COMMIT_LINE_LENGTH = 72
-REMOTE_HELPER_RELATIVE_PATH = Path(
-    "migration_plugin/lib/backend/remote_helper.py"
-)
+REMOTE_HELPER_RELATIVE_PATH = Path("migration_plugin/lib/backend/remote_helper.py")
 
 
 def repo_root() -> Path:
@@ -92,9 +89,7 @@ def parse_versions(path: Path) -> Tuple[str, str]:
             break
 
     if len(versions) < 2:
-        raise ValueError(
-            f"Expected at least two changelog version headings in {path}"
-        )
+        raise ValueError(f"Expected at least two changelog version headings in {path}")
 
     return versions[0], versions[1]
 
@@ -110,13 +105,14 @@ def shell_version(full_version: str) -> str:
 def validate_target(target: str) -> None:
     if not VERSION_RE.match(target):
         raise ValueError(
-            "Target version must match YYYY.M.P+X.Y.Z, "
-            f"got: {target!r}"
+            "Target version must match YYYY.M.P+X.Y.Z, " f"got: {target!r}"
         )
 
 
 def is_docs_html(path: Path) -> bool:
-    return path.suffix == ".html" and any(parent.name == "docs" for parent in path.parents)
+    return path.suffix == ".html" and any(
+        parent.name == "docs" for parent in path.parents
+    )
 
 
 def matches_layout(path: Path) -> bool:
@@ -138,8 +134,13 @@ def iter_candidate_files() -> Iterable[Path]:
             yield path
 
 
-def replacement_mode(path: Path, current_full: str, previous_full: str,
-                     current_ext: str, previous_ext: str) -> Optional[Dict[str, str]]:
+def replacement_mode(
+    path: Path,
+    current_full: str,
+    previous_full: str,
+    current_ext: str,
+    previous_ext: str,
+) -> Optional[Dict[str, str]]:
     text = path.read_text(encoding="utf-8")
     if current_full in text:
         return {"mode": "full", "replace": current_full, "source": "current"}
@@ -161,7 +162,8 @@ def discover_files(target: str) -> List[Dict[str, str]]:
 
     for path in sorted(iter_candidate_files()):
         match = replacement_mode(
-            path, current_full, previous_full, current_ext, previous_ext)
+            path, current_full, previous_full, current_ext, previous_ext
+        )
         if not match:
             continue
         matches.append(
@@ -188,18 +190,11 @@ def parse_remote_helper_urls(path: Path) -> Dict[str, str]:
                 urls = ast.literal_eval(node.value)
                 if not isinstance(urls, dict):
                     raise ValueError(
-                        "Expected k_repo_mysqlsh_url to be a dict in "
-                        f"{path}"
+                        "Expected k_repo_mysqlsh_url to be a dict in " f"{path}"
                     )
-                return {
-                    str(arch): str(url)
-                    for arch, url in urls.items()
-                }
+                return {str(arch): str(url) for arch, url in urls.items()}
 
-    raise ValueError(
-        "Could not find k_repo_mysqlsh_url in "
-        f"{path}"
-    )
+    raise ValueError("Could not find k_repo_mysqlsh_url in " f"{path}")
 
 
 def summarized_version() -> str:
@@ -221,9 +216,7 @@ def validate_remote_helper_urls() -> Dict[str, object]:
                 "arch": arch,
                 "url": url,
                 "rpm_name": rpm_name,
-                "matches_expected_prefix": rpm_name.startswith(
-                    expected_prefix
-                ),
+                "matches_expected_prefix": rpm_name.startswith(expected_prefix),
             }
         )
 
@@ -232,10 +225,7 @@ def validate_remote_helper_urls() -> Dict[str, object]:
         "expected_shell_prefix": expected_prefix,
         "path": helper_path.relative_to(repo_root()).as_posix(),
         "entries": entries,
-        "all_match": all(
-            entry["matches_expected_prefix"]
-            for entry in entries
-        ),
+        "all_match": all(entry["matches_expected_prefix"] for entry in entries),
     }
 
 
@@ -280,8 +270,7 @@ def find_changelog_heading_commit(version: str) -> str:
             return commit_hash
 
     raise ValueError(
-        "Could not find the commit that introduced changelog heading "
-        f"{heading!r}"
+        "Could not find the commit that introduced changelog heading " f"{heading!r}"
     )
 
 
@@ -296,7 +285,7 @@ def clean_summary(subject: str) -> Tuple[Optional[str], str]:
     summary = subject.strip()
     if token_match:
         token = token_match.group(1).upper()
-        summary = summary[token_match.end():].strip()
+        summary = summary[token_match.end() :].strip()
     summary = summary.rstrip(".")
     summary = re.sub(r"\s+", " ", summary)
     return token, summary
@@ -386,17 +375,19 @@ def head_commit_overlong_lines() -> List[Dict[str, object]]:
 
 def cmd_versions(_: argparse.Namespace) -> int:
     current, previous = parse_versions(changelog_path())
-    print(json.dumps(
-        {
-            "current": current,
-            "previous": previous,
-            "current_extension": extension_version(current),
-            "current_shell": shell_version(current),
-            "previous_extension": extension_version(previous),
-            "previous_shell": shell_version(previous),
-        },
-        indent=2,
-    ))
+    print(
+        json.dumps(
+            {
+                "current": current,
+                "previous": previous,
+                "current_extension": extension_version(current),
+                "current_shell": shell_version(current),
+                "previous_extension": extension_version(previous),
+                "previous_shell": shell_version(previous),
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

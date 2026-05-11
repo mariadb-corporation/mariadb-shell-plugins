@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,16 +26,22 @@ from gui_plugin.core.dbms import DbSessionFactory
 from gui_plugin.core.dbms.DbSession import ReconnectionMode
 from gui_plugin.core.Error import MSGException
 from gui_plugin.core.modules.DbModuleSession import (
-    DbModuleSession, check_service_database_session)
+    DbModuleSession,
+    check_service_database_session,
+)
 from gui_plugin.core.Protocols import Response
 
 
 def check_user_database_session(func):
     def wrapper(self, *args, **kwargs):
         if not self._db_user_session:
-            raise MSGException(Error.DB_NOT_OPEN, 'The database session needs to be opened before '
-                               'SQL can be executed.')
+            raise MSGException(
+                Error.DB_NOT_OPEN,
+                "The database session needs to be opened before "
+                "SQL can be executed.",
+            )
         return func(self, *args, **kwargs)
+
     return wrapper
 
 
@@ -65,7 +71,9 @@ class SqlEditorModuleSession(DbModuleSession):
         if self._db_user_session is None:
             session_id = "UserSession-" + self._web_session.session_uuid
             self._db_user_session = DbSessionFactory.create(
-                self._db_type, session_id, True,
+                self._db_type,
+                session_id,
+                True,
                 self._connection_options,
                 None,
                 ReconnectionMode.STANDARD,
@@ -73,16 +81,22 @@ class SqlEditorModuleSession(DbModuleSession):
                 self.on_user_session_connected,
                 lambda x: self.on_fail_connecting(x),
                 lambda x, o: self.on_shell_prompt(x, o),
-                self.on_session_message)
+                self.on_session_message,
+            )
         else:
             self._db_user_session.reconnect(db_session.connection_options)
 
     def on_user_session_connected(self, db_session):
-        data = Response.pending("Connection was successfully opened.", {"result": {
-            "module_session_id": self._module_session_id,
-            "info": db_session.info(),
-            "default_schema": db_session.get_default_schema()
-        }})
+        data = Response.pending(
+            "Connection was successfully opened.",
+            {
+                "result": {
+                    "module_session_id": self._module_session_id,
+                    "info": db_session.info(),
+                    "default_schema": db_session.get_default_schema(),
+                }
+            },
+        )
         self.send_command_response(self._current_request_id, data)
         self.completion_event.set()
 

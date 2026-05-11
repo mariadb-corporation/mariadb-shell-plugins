@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -86,8 +86,7 @@ class DbPingHandler(threading.Thread):
             self.condition.notify()
 
     def dispatch_result(self, state, message=None, id=None, data=None):
-        logger.debug3(
-            f"{self.native_id}  DBPingHandler State: {state}")
+        logger.debug3(f"{self.native_id}  DBPingHandler State: {state}")
 
     def run(self):
         done = False
@@ -110,5 +109,4 @@ class DbPingHandler(threading.Thread):
 
             # Handles case a, we ping the target server
             if not done:
-                self.session.execute(
-                    "SELECT 1", callback=self.dispatch_result)
+                self.session.execute("SELECT 1", callback=self.dispatch_result)

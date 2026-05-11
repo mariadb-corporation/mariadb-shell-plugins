@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@ from gui_plugin.core.Db import BackendDatabase
 from gui_plugin.core import Error
 
 
-@plugin_function('gui.shell.isGuiModuleBackend', web=True)
+@plugin_function("gui.shell.isGuiModuleBackend", web=True)
 def is_gui_module_backend():
     """Indicates whether this module is a GUI backend module
     Returns:
@@ -36,7 +36,7 @@ def is_gui_module_backend():
     return True
 
 
-@plugin_function('gui.shell.getGuiModuleDisplayInfo', web=True)
+@plugin_function("gui.shell.getGuiModuleDisplayInfo", web=True)
 def get_gui_module_display_info():
     """Returns display information about the module
     Returns:
@@ -45,11 +45,11 @@ def get_gui_module_display_info():
     return {
         "name": "MySQL Shell Console",
         "description": "A graphical MySQL Shell Console",
-        "icon_path": "/images/icons/modules/gui.shell.svg"
+        "icon_path": "/images/icons/modules/gui.shell.svg",
     }
 
 
-@plugin_function('gui.shell.startSession', shell=False, web=True)
+@plugin_function("gui.shell.startSession", shell=False, web=True)
 def start_session(db_connection_id=None, shell_args=None, be_session=None):
     """Starts a new Shell Interactive Session
     Args:
@@ -68,13 +68,15 @@ def start_session(db_connection_id=None, shell_args=None, be_session=None):
             db_type, options, settings = db.get_connection_details(db_connection_id)
 
         if db_type != "MySQL":
-            raise Error.MSGException(Error.DB_INVALID_DB_TYPE,
-                                     f'Shell operations only work with MySQL database connections.')
+            raise Error.MSGException(
+                Error.DB_INVALID_DB_TYPE,
+                f"Shell operations only work with MySQL database connections.",
+            )
 
     ShellModuleSession(options=options, settings=settings, shell_args=shell_args)
 
 
-@plugin_function('gui.shell.closeSession', shell=False, web=True)
+@plugin_function("gui.shell.closeSession", shell=False, web=True)
 def close_session(module_session):
     """Closes the Shell Interactive Session
     Args:
@@ -85,7 +87,7 @@ def close_session(module_session):
     module_session.close()
 
 
-@plugin_function('gui.shell.execute', shell=False, web=True)
+@plugin_function("gui.shell.execute", shell=False, web=True)
 def execute(command, module_session):
     """Execute a shell command
     Args:
@@ -97,7 +99,7 @@ def execute(command, module_session):
     module_session.execute(command=command)
 
 
-@plugin_function('gui.shell.complete', shell=False, web=True)
+@plugin_function("gui.shell.complete", shell=False, web=True)
 def complete(data, offset, module_session):
     """Retrieve options to complete the given text on the shell context
     Args:
@@ -110,7 +112,7 @@ def complete(data, offset, module_session):
     module_session.complete(data=data, offset=offset)
 
 
-@plugin_function('gui.shell.killTask', shell=False, web=True)
+@plugin_function("gui.shell.killTask", shell=False, web=True)
 def kill_task(module_session):
     """Kill a shell task
     Args:

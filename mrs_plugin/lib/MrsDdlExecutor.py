@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,10 +25,11 @@ import mrs_plugin.lib as lib
 from mrs_plugin.lib.MrsDdlExecutorInterface import MrsDdlExecutorInterface
 import json
 import re
-from mysqlsh import globals, DBError # type: ignore
+from mysqlsh import globals, DBError  # type: ignore
 from datetime import datetime
 import base64
 import os
+
 
 class Timer(object):
     def __init__(self) -> None:
@@ -51,7 +52,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         current_in_development=None,
         current_schema_id=None,
         current_schema=None,
-        state_data=None
+        state_data=None,
     ):
         self.session = session
         # state_data will contain shared state data that must persist across calls
@@ -162,8 +163,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
     # Check if the current mrs_object includes a services request_path or if a
     # current service has been set via USE REST SERVICE
     def get_given_or_current_service_id(self, mrs_object, allow_not_set=False):
-        service_id, _ = self.get_given_or_current_service_id_and_path(
-            mrs_object)
+        service_id, _ = self.get_given_or_current_service_id_and_path(mrs_object)
         if service_id is None and not allow_not_set:
             raise Exception("No REST SERVICE specified.")
         return service_id
@@ -234,8 +234,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
             sorted_developers = (
                 ",".join(
                     (
-                        quote(re.sub(r"(['\\])", "\\\\\\1",
-                              dev, 0, re.MULTILINE))
+                        quote(re.sub(r"(['\\])", "\\\\\\1", dev, 0, re.MULTILINE))
                         if not re.match(r"^\w+$", dev)
                         else dev
                     )
@@ -314,14 +313,24 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
             )
 
         return (
-            developers +
-            mrs_object.get("url_host_name",
-                           self.current_service_host if self.current_service_host is not None else "") +
-            mrs_object.get("url_context_root",
-                           self.current_service if self.current_service is not None else "") +
-            mrs_object.get("schema_request_path",
-                           self.current_schema if self.current_schema is not None else "") +
-            request_path
+            developers
+            + mrs_object.get(
+                "url_host_name",
+                (
+                    self.current_service_host
+                    if self.current_service_host is not None
+                    else ""
+                ),
+            )
+            + mrs_object.get(
+                "url_context_root",
+                self.current_service if self.current_service is not None else "",
+            )
+            + mrs_object.get(
+                "schema_request_path",
+                self.current_schema if self.current_schema is not None else "",
+            )
+            + request_path
         )
 
     def createRestMetadata(self, mrs_object: dict):
@@ -394,8 +403,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         url_host_name=url_host_name,
                         get_default=False,
                         developer_list=(
-                            mrs_object.get("in_development").get(
-                                "developers", [])
+                            mrs_object.get("in_development").get("developers", [])
                             if "in_development" in mrs_object.keys()
                             else None
                         ),
@@ -410,7 +418,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                                     "type": "success",
                                     "message": f"REST SERVICE `{full_path}` created successfully.",
                                     "operation": self.current_operation,
-                                    "id": lib.core.convert_id_to_string(service.get("id")),
+                                    "id": lib.core.convert_id_to_string(
+                                        service.get("id")
+                                    ),
                                     "executionTime": timer.elapsed(),
                                 }
                             )
@@ -439,15 +449,18 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     auth_app_name = entry.get("auth_app", None)
                     if_exists = entry.get("if_exists", None)
                     auth_app = lib.auth_apps.get_auth_app(
-                        session=self.session, name=auth_app_name)
+                        session=self.session, name=auth_app_name
+                    )
                     if auth_app is None and not if_exists:
                         raise ValueError(
-                            f"The given REST authentication app `{auth_app_name}` was not found.")
+                            f"The given REST authentication app `{auth_app_name}` was not found."
+                        )
                     if auth_app:
                         lib.auth_apps.link_auth_app(
                             session=self.session,
                             auth_app_id=auth_app["id"],
-                            service_id=service_id)
+                            service_id=service_id,
+                        )
                 self.results.append(
                     {
                         "statementIndex": len(self.results) + 1,
@@ -508,7 +521,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                                     "type": "success",
                                     "message": f"REST SCHEMA `{full_path}` created successfully.",
                                     "operation": self.current_operation,
-                                    "id": lib.core.convert_id_to_string(schema.get("id")),
+                                    "id": lib.core.convert_id_to_string(
+                                        schema.get("id")
+                                    ),
                                     "executionTime": timer.elapsed(),
                                 }
                             )
@@ -652,7 +667,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                                     "message": f"REST {type_caption} `{full_path}` created successfully.",
                                     "operation": self.current_operation,
                                     "id": db_object.get("id"),
-                                    "executionTime": timer.elapsed()
+                                    "executionTime": timer.elapsed(),
                                 }
                             )
                             return
@@ -675,8 +690,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     auto_detect_media_type=mrs_object.get(
                         "media_type_autodetect", False
                     ),
-                    auth_stored_procedure=mrs_object.get(
-                        "auth_stored_procedure"),
+                    auth_stored_procedure=mrs_object.get("auth_stored_procedure"),
                     options=mrs_object.get("options"),
                     db_object_id=lib.core.id_to_binary(
                         mrs_object.get("id"), "db_object_id"
@@ -691,10 +705,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         lib.core.MrsDbExec(grant).exec(self.session)
                     except DBError as e:
                         if mrs_object.get("force_create", False):
-                            warnings.append({
-                                "level": "warning",
-                                "message": e.msg,
-                                "code": e.code})
+                            warnings.append(
+                                {"level": "warning", "message": e.msg, "code": e.code}
+                            )
                         else:
                             raise
 
@@ -707,7 +720,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "operation": self.current_operation,
                         "id": db_object_id,
                         "executionTime": timer.elapsed(),
-                        "warnings": warnings
+                        "warnings": warnings,
                     }
                 )
             except Exception as e:
@@ -947,7 +960,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                                     "type": "success",
                                     "message": f"REST AUTH APP `{full_path}` created successfully.",
                                     "operation": self.current_operation,
-                                    "id": lib.core.convert_id_to_string(auth_app.get("id")),
+                                    "id": lib.core.convert_id_to_string(
+                                        auth_app.get("id")
+                                    ),
                                     "executionTime": timer.elapsed(),
                                 }
                             )
@@ -963,7 +978,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     role = lib.roles.get_role(
                         session=self.session,
                         caption=mrs_object.get("default_role"),
-                        specific_to_service_id=None
+                        specific_to_service_id=None,
                     )
                     if role is None:
                         raise Exception(
@@ -983,22 +998,25 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         f'The vendor `{mrs_object.get("vendor")}` was not found.'
                     )
                 # Check constraints for OAuth2 vender apps
-                if (auth_vendor["id"] != lib.core.id_to_binary("0x30000000000000000000000000000000", "") and
-                        auth_vendor["id"] != lib.core.id_to_binary("0x31000000000000000000000000000000", "")):
+                if auth_vendor["id"] != lib.core.id_to_binary(
+                    "0x30000000000000000000000000000000", ""
+                ) and auth_vendor["id"] != lib.core.id_to_binary(
+                    "0x31000000000000000000000000000000", ""
+                ):
                     if mrs_object.get("url") is None:
                         raise Exception(
                             f'The OAuth2 vendor `{mrs_object.get("vendor")}` requires '
-                            'the URL option to be specified.'
+                            "the URL option to be specified."
                         )
                     if mrs_object.get("app_id") is None:
                         raise Exception(
                             f'The OAuth2 vendor `{mrs_object.get("vendor")}` requires '
-                            'the APP/CLIENT ID option to be specified.'
+                            "the APP/CLIENT ID option to be specified."
                         )
                     if mrs_object.get("app_secret") is None:
                         raise Exception(
                             f'The OAuth2 vendor `{mrs_object.get("vendor")}` requires '
-                            'the APP/CLIENT SECRET option to be specified.'
+                            "the APP/CLIENT SECRET option to be specified."
                         )
 
                 auth_app_id = lib.auth_apps.add_auth_app(
@@ -1011,8 +1029,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     url_direct_auth=mrs_object.get("url_direct_auth"),
                     access_token=mrs_object.get("app_secret"),
                     app_id=mrs_object.get("app_id"),
-                    limit_to_reg_users=mrs_object.get(
-                        "limit_to_registered_users", 1),
+                    limit_to_reg_users=mrs_object.get("limit_to_registered_users", 1),
                     default_role_id=default_role_id,
                     enabled=mrs_object.get("enabled", 1),
                 )
@@ -1057,10 +1074,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         options = mrs_object.get("options", None)
 
         email = options.pop("email", None) if options else None
-        vendor_user_id = options.pop(
-            "vendor_user_id", None) if options else None
-        mapped_user_id = options.pop(
-            "mapped_user_id", None) if options else None
+        vendor_user_id = options.pop("vendor_user_id", None) if options else None
+        mapped_user_id = options.pop("mapped_user_id", None) if options else None
         login_permitted = mrs_object.get("login_permitted", True)
 
         with lib.core.MrsDbTransaction(self.session):
@@ -1093,7 +1108,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                                     "type": "success",
                                     "message": f"REST USER `{full_path}` created successfully.",
                                     "operation": self.current_operation,
-                                    "id": lib.core.convert_id_to_string(users[0].get("id")),
+                                    "id": lib.core.convert_id_to_string(
+                                        users[0].get("id")
+                                    ),
                                     "executionTime": timer.elapsed(),
                                 }
                             )
@@ -1152,7 +1169,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         any_service = mrs_object.get("any_service", False)
         if not any_service:
             specific_to_service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=False)
+                mrs_object, allow_not_set=False
+            )
         else:
             specific_to_service_id = None
         with lib.core.MrsDbTransaction(self.session):
@@ -1160,7 +1178,10 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 extends = mrs_object.get("extends")
                 if extends:
                     parent_role = lib.roles.get_role(
-                        self.session, caption=extends, specific_to_service_id=specific_to_service_id)
+                        self.session,
+                        caption=extends,
+                        specific_to_service_id=specific_to_service_id,
+                    )
                     if not parent_role:
                         raise Exception(f"Invalid parent role '{extends}'")
                     extends_role_id = parent_role.get("id")
@@ -1173,7 +1194,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     role = lib.roles.get_role(
                         specific_to_service_id=specific_to_service_id,
                         caption=caption,
-                        session=self.session
+                        session=self.session,
                     )
                     if role:
                         if if_not_exists:
@@ -1236,12 +1257,19 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         try:
             service_id = self.get_given_or_current_service_id(mrs_object)
 
-            service = lib.services.get_service(self.session, url_context_root=url_context_root)
+            service = lib.services.get_service(
+                self.session, url_context_root=url_context_root
+            )
 
             if service is None:
                 raise Exception("The given REST SERVICE was not found.")
 
-            lib.services.clone_service(self.session, service, new_url_context_root, mrs_object.get("new_developer_list", []))
+            lib.services.clone_service(
+                self.session,
+                service,
+                new_url_context_root,
+                mrs_object.get("new_developer_list", []),
+            )
 
             self.results.append(
                 {
@@ -1299,38 +1327,45 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 mrs_object["url_host_name"] = new_url_host_name
 
             lib.services.update_services(
-                session=self.session, service_ids=[
-                    service_id], value=mrs_object,
-                    merge_options=merge_options,
+                session=self.session,
+                service_ids=[service_id],
+                value=mrs_object,
+                merge_options=merge_options,
             )
 
             for entry in add_auth_apps:
                 auth_app_name = entry.get("auth_app", None)
                 if_exists = entry.get("if_exists", None)
                 auth_app = lib.auth_apps.get_auth_app(
-                    session=self.session, name=auth_app_name)
+                    session=self.session, name=auth_app_name
+                )
                 if auth_app is None and not if_exists:
                     raise ValueError(
-                        f"The given REST authentication app `{auth_app_name}` was not found.")
+                        f"The given REST authentication app `{auth_app_name}` was not found."
+                    )
                 if auth_app:
                     lib.auth_apps.link_auth_app(
                         session=self.session,
                         auth_app_id=auth_app["id"],
-                        service_id=service_id)
+                        service_id=service_id,
+                    )
 
             for entry in remove_auth_apps:
                 auth_app_name = entry.get("auth_app", None)
                 if_exists = entry.get("if_exists", None)
                 auth_app = lib.auth_apps.get_auth_app(
-                    session=self.session, name=auth_app_name)
+                    session=self.session, name=auth_app_name
+                )
                 if auth_app is None and not if_exists:
                     raise ValueError(
-                        f"The given REST authentication app `{auth_app_name}` was not found.")
+                        f"The given REST authentication app `{auth_app_name}` was not found."
+                    )
                 if auth_app:
                     lib.auth_apps.unlink_auth_app(
                         session=self.session,
                         auth_app_id=auth_app["id"],
-                        service_id=service_id)
+                        service_id=service_id,
+                    )
 
             self.results.append(
                 {
@@ -1384,9 +1419,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     "request_path": mrs_object.get(
                         "new_request_path", schema["request_path"]
                     ),
-                    "requires_auth": int(mrs_object.get(
-                        "requires_auth", schema["requires_auth"]
-                    )),
+                    "requires_auth": int(
+                        mrs_object.get("requires_auth", schema["requires_auth"])
+                    ),
                     "enabled": mrs_object.get("enabled", schema["enabled"]),
                     "items_per_page": mrs_object.get(
                         "items_per_page", schema["items_per_page"]
@@ -1544,8 +1579,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         options = {}
                     options["contains_mrs_scripts"] = True
                     if mrs_object.get("language", None) is not None:
-                        options["mrs_scripting_language"] = mrs_object.pop(
-                            "language")
+                        options["mrs_scripting_language"] = mrs_object.pop("language")
                     mrs_object["options"] = options
 
                 if "url_context_root" in mrs_object:
@@ -1596,10 +1630,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         options = mrs_object.get("options", None)
 
         email = options.pop("email", None) if options else None
-        vendor_user_id = options.pop(
-            "vendor_user_id", None) if options else None
-        mapped_user_id = options.pop(
-            "mapped_user_id", None) if options else None
+        vendor_user_id = options.pop("vendor_user_id", None) if options else None
+        mapped_user_id = options.pop("mapped_user_id", None) if options else None
         login_permitted = mrs_object.get("login_permitted", None)
 
         with lib.core.MrsDbTransaction(self.session):
@@ -1616,14 +1648,11 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     )
 
                 user = lib.users.get_user(
-                    self.session,
-                    user_name=name,
-                    auth_app_id=auth_app["id"]
+                    self.session, user_name=name, auth_app_id=auth_app["id"]
                 )
                 if not user:
-                    raise Exception(
-                        f'Invalid REST user "{name}"@"{authAppName}"')
-                user_id = user['id']
+                    raise Exception(f'Invalid REST user "{name}"@"{authAppName}"')
+                user_id = user["id"]
 
                 changes = {}
                 if login_permitted is not None:
@@ -1643,9 +1672,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     changes["vendor_user_id"] = vendor_user_id
 
                 lib.users.update_user(
-                    session=self.session,
-                    user_id=user_id,
-                    value=changes
+                    session=self.session, user_id=user_id, value=changes
                 )
 
                 self.results.append(
@@ -1693,8 +1720,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 )
                 if service is None and not if_exists:
                     raise Exception(
-                            f"The given REST SERVICE `{full_path}` could not be found."
-                        )
+                        f"The given REST SERVICE `{full_path}` could not be found."
+                    )
 
                 if service:
                     lib.services.delete_service(
@@ -1708,7 +1735,11 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "type": "success",
                         "message": f"REST SERVICE `{full_path}` dropped successfully.",
                         "operation": self.current_operation,
-                        "id": lib.core.convert_id_to_string(service["id"]) if service else None,
+                        "id": (
+                            lib.core.convert_id_to_string(service["id"])
+                            if service
+                            else None
+                        ),
                         "executionTime": timer.elapsed(),
                     }
                 )
@@ -1730,8 +1761,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         if_exists = mrs_object.pop("if_exists")
 
         full_path = self.getFullServicePath(
-            mrs_object=mrs_object, request_path=mrs_object.get(
-                "request_path", "")
+            mrs_object=mrs_object, request_path=mrs_object.get("request_path", "")
         )
 
         with lib.core.MrsDbTransaction(self.session):
@@ -1750,7 +1780,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
 
                 if schema:
                     lib.schemas.delete_schema(
-                        schema_id=schema["id"], session=self.session)
+                        schema_id=schema["id"], session=self.session
+                    )
 
                 self.results.append(
                     {
@@ -1759,7 +1790,11 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "type": "success",
                         "message": f"REST SCHEMA `{full_path}` dropped successfully.",
                         "operation": self.current_operation,
-                        "id": lib.core.convert_id_to_string(schema["id"]) if schema else None,
+                        "id": (
+                            lib.core.convert_id_to_string(schema["id"])
+                            if schema
+                            else None
+                        ),
                         "executionTime": timer.elapsed(),
                     }
                 )
@@ -1810,7 +1845,11 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "type": "success",
                         "message": f"REST {rest_object_type} `{full_path}` dropped successfully.",
                         "operation": self.current_operation,
-                        "id": lib.core.convert_id_to_string(db_object["id"]) if db_object else None,
+                        "id": (
+                            lib.core.convert_id_to_string(db_object["id"])
+                            if db_object
+                            else None
+                        ),
                         "executionTime": timer.elapsed(),
                     }
                 )
@@ -1862,7 +1901,11 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "type": "success",
                         "message": f"REST CONTENT SET `{full_path}` dropped successfully.",
                         "operation": self.current_operation,
-                        "id": lib.core.convert_id_to_string(content_set["id"]) if content_set else None,
+                        "id": (
+                            lib.core.convert_id_to_string(content_set["id"])
+                            if content_set
+                            else None
+                        ),
                         "executionTime": timer.elapsed(),
                     }
                 )
@@ -1915,7 +1958,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     )
                     if content_file is None and not if_exists:
                         raise Exception(
-                            f"The REST content file {full_path} was not found.")
+                            f"The REST content file {full_path} was not found."
+                        )
                 else:
                     content_file = None
 
@@ -1955,9 +1999,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
 
         with lib.core.MrsDbTransaction(self.session):
             try:
-                auth_app = lib.auth_apps.get_auth_app(
-                    name=name, session=self.session
-                )
+                auth_app = lib.auth_apps.get_auth_app(name=name, session=self.session)
                 if auth_app is None and not if_exists:
                     raise Exception(
                         f"The given REST AUTH APP `{name}` could not be found."
@@ -1976,7 +2018,11 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "type": "success",
                         "message": f"REST AUTH APP `{name}` dropped successfully.",
                         "operation": self.current_operation,
-                        "id": lib.core.convert_id_to_string(auth_app["id"]) if auth_app else None,
+                        "id": (
+                            lib.core.convert_id_to_string(auth_app["id"])
+                            if auth_app
+                            else None
+                        ),
                         "executionTime": timer.elapsed(),
                     }
                 )
@@ -2013,7 +2059,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
 
                 if auth_app:
                     users = lib.users.get_users(
-                        auth_app_id=auth_app.get("id"), user_name=name, session=self.session
+                        auth_app_id=auth_app.get("id"),
+                        user_name=name,
+                        session=self.session,
                     )
                     if len(users) > 0:
                         lib.users.delete_user_by_id(
@@ -2032,7 +2080,11 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "type": "success",
                         "message": f"REST USER `{full_path}` dropped successfully.",
                         "operation": self.current_operation,
-                        "id": lib.core.convert_id_to_string(users[0].get("id")) if users else None,
+                        "id": (
+                            lib.core.convert_id_to_string(users[0].get("id"))
+                            if users
+                            else None
+                        ),
                         "executionTime": timer.elapsed(),
                     }
                 )
@@ -2053,24 +2105,26 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         self.current_operation = mrs_object.pop("current_operation")
         if_exists = mrs_object.pop("if_exists")
 
-
         caption = mrs_object.get("name")
         any_service = mrs_object.get("any_service", False)
         if not any_service:
             specific_to_service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=False)
+                mrs_object, allow_not_set=False
+            )
         else:
             specific_to_service_id = None
         with lib.core.MrsDbTransaction(self.session):
             try:
                 role = lib.roles.get_role(
-                    caption=caption, session=self.session, specific_to_service_id=specific_to_service_id)
+                    caption=caption,
+                    session=self.session,
+                    specific_to_service_id=specific_to_service_id,
+                )
                 if not role and not if_exists:
                     raise Exception(f"Role `{caption}` was not found.")
 
                 if role:
-                    lib.roles.delete_role(
-                        role_id=role.get("id"), session=self.session)
+                    lib.roles.delete_role(role_id=role.get("id"), session=self.session)
 
                 self.results.append(
                     {
@@ -2079,7 +2133,11 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "type": "success",
                         "message": f"REST ROLE `{caption}` dropped successfully.",
                         "operation": self.current_operation,
-                        "id": lib.core.convert_id_to_string(role.get("id")) if role else None,
+                        "id": (
+                            lib.core.convert_id_to_string(role.get("id"))
+                            if role
+                            else None
+                        ),
                         "executionTime": timer.elapsed(),
                     }
                 )
@@ -2104,7 +2162,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         any_service = mrs_object.get("any_service", False)
         if not any_service:
             specific_to_service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=False)
+                mrs_object, allow_not_set=False
+            )
         else:
             specific_to_service_id = None
 
@@ -2120,15 +2179,22 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
 
         if url_context_root not in ("*", "") and not url_context_root.startswith("/"):
             raise ValueError('service_path must be "", "*" or start with a /')
-        if schema_request_path not in ("*", "") and not schema_request_path.startswith("/"):
+        if schema_request_path not in ("*", "") and not schema_request_path.startswith(
+            "/"
+        ):
             raise ValueError('schema_path must be "", "*" or start with a /')
-        if object_request_path not in ("*", "") and not object_request_path.startswith("/"):
+        if object_request_path not in ("*", "") and not object_request_path.startswith(
+            "/"
+        ):
             raise ValueError('object_path must be "", "*" or start with a /')
 
         with lib.core.MrsDbTransaction(self.session):
             try:
                 role = lib.roles.get_role(
-                    caption=role_name, session=self.session, specific_to_service_id=specific_to_service_id)
+                    caption=role_name,
+                    session=self.session,
+                    specific_to_service_id=specific_to_service_id,
+                )
                 if not role:
                     raise Exception(f"Role `{role_name}` was not found.")
 
@@ -2138,7 +2204,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     privileges=privileges,
                     service_path=url_context_root,
                     schema_path=schema_request_path,
-                    object_path=object_request_path
+                    object_path=object_request_path,
                 )
 
                 self.results.append(
@@ -2175,7 +2241,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         any_service = mrs_object.get("any_service", False)
         if not any_service:
             specific_to_service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=False)
+                mrs_object, allow_not_set=False
+            )
         else:
             specific_to_service_id = None
 
@@ -2186,7 +2253,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 role = lib.roles.get_role(
                     caption=role_name,
                     session=self.session,
-                    specific_to_service_id=specific_to_service_id
+                    specific_to_service_id=specific_to_service_id,
                 )
                 if not role:
                     raise Exception(f"Role `{role_name}` was not found.")
@@ -2240,7 +2307,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         any_service = mrs_object.get("any_service", False)
         if not any_service:
             specific_to_service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=False)
+                mrs_object, allow_not_set=False
+            )
         else:
             specific_to_service_id = None
 
@@ -2249,7 +2317,10 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         with lib.core.MrsDbTransaction(self.session):
             try:
                 role = lib.roles.get_role(
-                    caption=role_name, session=self.session, specific_to_service_id=specific_to_service_id)
+                    caption=role_name,
+                    session=self.session,
+                    specific_to_service_id=specific_to_service_id,
+                )
                 if not role:
                     raise Exception(f"Role `{role_name}` was not found.")
 
@@ -2260,8 +2331,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 )
 
                 if user is None:
-                    raise Exception(
-                        f"The given user `{user_name}` was not found.")
+                    raise Exception(f"The given user `{user_name}` was not found.")
 
                 lib.users.delete_user_roles(
                     session=self.session,
@@ -2300,7 +2370,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         any_service = mrs_object.get("any_service", False)
         if not any_service:
             specific_to_service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=False)
+                mrs_object, allow_not_set=False
+            )
         else:
             specific_to_service_id = None
 
@@ -2317,7 +2388,10 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         with lib.core.MrsDbTransaction(self.session):
             try:
                 role = lib.roles.get_role(
-                    caption=role_name, session=self.session, specific_to_service_id=specific_to_service_id)
+                    caption=role_name,
+                    session=self.session,
+                    specific_to_service_id=specific_to_service_id,
+                )
                 if not role:
                     raise Exception(f"Role `{role_name}` was not found.")
 
@@ -2330,8 +2404,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     object_path=object_request_path,
                 )
                 if not result:
-                    raise Exception(
-                        f"There is no such grant for role {role_name}")
+                    raise Exception(f"There is no such grant for role {role_name}")
 
                 self.results.append(
                     {
@@ -2375,8 +2448,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 if service is not None:
                     self.current_service_id = service.get("id")
                     self.current_service = service.get("url_context_root")
-                    self.current_service_host = mrs_object.get(
-                        "url_host_name", "")
+                    self.current_service_host = mrs_object.get("url_host_name", "")
                     self.current_in_development = service.get("in_development")
                 else:
                     raise Exception(
@@ -2487,9 +2559,15 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 result.append(
                     {
                         "REST SERVICE Path": service.get("full_service_path"),
-                        "enabled": lib.core.get_enabled_status_caption(service.get("enabled")),
-                        "current": "YES" if (service.get("id") == self.current_service_id) else "NO",
-                        "auth_apps": service.get("auth_apps", "")
+                        "enabled": lib.core.get_enabled_status_caption(
+                            service.get("enabled")
+                        ),
+                        "current": (
+                            "YES"
+                            if (service.get("id") == self.current_service_id)
+                            else "NO"
+                        ),
+                        "auth_apps": service.get("auth_apps", ""),
                     }
                 )
 
@@ -2530,7 +2608,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 result.append(
                     {
                         "REST schema path": schema.get("request_path"),
-                        "enabled": lib.core.get_enabled_status_caption(schema.get("enabled")),
+                        "enabled": lib.core.get_enabled_status_caption(
+                            schema.get("enabled")
+                        ),
                     }
                 )
 
@@ -2572,7 +2652,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 result.append(
                     {
                         "REST DB Object": item.get("request_path"),
-                        "enabled": lib.core.get_enabled_status_caption(item.get("enabled")),
+                        "enabled": lib.core.get_enabled_status_caption(
+                            item.get("enabled")
+                        ),
                     }
                 )
 
@@ -2613,7 +2695,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 result.append(
                     {
                         "REST CONTENT SET path": content_set.get("request_path"),
-                        "enabled": lib.core.get_enabled_status_caption(content_set.get("enabled")),
+                        "enabled": lib.core.get_enabled_status_caption(
+                            content_set.get("enabled")
+                        ),
                     }
                 )
 
@@ -2648,7 +2732,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         self.current_operation = mrs_object.pop("current_operation")
 
         try:
-            service_id = self.get_given_or_current_service_id(mrs_object, allow_not_set=True)
+            service_id = self.get_given_or_current_service_id(
+                mrs_object, allow_not_set=True
+            )
 
             auth_apps = lib.auth_apps.get_auth_apps(
                 session=self.session, service_id=service_id
@@ -2660,7 +2746,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         "REST AUTH APP name": auth_app.get("name"),
                         "vendor": auth_app.get("auth_vendor"),
                         "comments": auth_app.get("description"),
-                        "enabled": lib.core.get_enabled_status_caption(auth_app.get("enabled")),
+                        "enabled": lib.core.get_enabled_status_caption(
+                            auth_app.get("enabled")
+                        ),
                     }
                 )
 
@@ -2698,7 +2786,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         show_services = False
         try:
             service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=True)
+                mrs_object, allow_not_set=True
+            )
             if not service_id:
                 any_service = True
 
@@ -2710,7 +2799,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     service_id=service_id,
                 )
                 if not user:
-                    raise Exception(f"User {lib.core.quote_user(user_name)}@{lib.core.quote_auth_app(auth_app_name)} not found")
+                    raise Exception(
+                        f"User {lib.core.quote_user(user_name)}@{lib.core.quote_auth_app(auth_app_name)} not found"
+                    )
                 roles = lib.users.get_user_roles(
                     session=self.session, user_id=user.get("id")
                 )
@@ -2729,12 +2820,16 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 roles = lib.roles.get_roles(
                     session=self.session,
                     specific_to_service_id=service_id if not any_service else None,
-                    include_global=True
+                    include_global=True,
                 )
 
             result = []
             if user_name is not None and auth_app_name is not None:
-                target = lib.core.quote_user(user_name) + "@" + lib.core.quote_auth_app(auth_app_name)
+                target = (
+                    lib.core.quote_user(user_name)
+                    + "@"
+                    + lib.core.quote_auth_app(auth_app_name)
+                )
 
                 column_names = [f"REST roles for {target}"]
                 for role in roles:
@@ -2742,7 +2837,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         {
                             column_names[0]: role.get("caption"),
                             "comments": role.get("comments") or "",
-                            "derived_from_role": role.get("derived_from_role_caption") or "",
+                            "derived_from_role": role.get("derived_from_role_caption")
+                            or "",
                             "description": role.get("description") or "",
                             "options": role.get("options"),
                         }
@@ -2820,12 +2916,17 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
 
         if not any_service:
             specific_to_service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=False)
+                mrs_object, allow_not_set=False
+            )
         else:
             specific_to_service_id = None
 
         try:
-            role = lib.roles.get_role(session=self.session, caption=role_name, specific_to_service_id=specific_to_service_id)
+            role = lib.roles.get_role(
+                session=self.session,
+                caption=role_name,
+                specific_to_service_id=specific_to_service_id,
+            )
             if not role:
                 raise Exception(f"No such role {role_name}")
 
@@ -2892,10 +2993,17 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 session=self.session, service_id=service_id
             )
 
-            result = [{"CREATE REST SERVICE": lib.services.get_service_create_statement(self.session, service,
-                    include_database_endpoints=include_database_endpoints,
-                    include_static_endpoints=False,
-                    include_dynamic_endpoints=False)}]
+            result = [
+                {
+                    "CREATE REST SERVICE": lib.services.get_service_create_statement(
+                        self.session,
+                        service,
+                        include_database_endpoints=include_database_endpoints,
+                        include_static_endpoints=False,
+                        include_dynamic_endpoints=False,
+                    )
+                }
+            ]
 
             self.results.append(
                 {
@@ -2950,7 +3058,13 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
             if schema is None:
                 raise Exception("The REST schema was not found.")
 
-            result = [{"CREATE REST SCHEMA ": lib.schemas.get_schema_create_statement(self.session, schema, include_all_objects)}]
+            result = [
+                {
+                    "CREATE REST SCHEMA ": lib.schemas.get_schema_create_statement(
+                        self.session, schema, include_all_objects
+                    )
+                }
+            ]
 
             self.results.append(
                 {
@@ -3030,7 +3144,13 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     f"The given REST object `{full_path}` is not a REST VIEW."
                 )
 
-            result = [{f"CREATE REST {rest_object_type}": lib.db_objects.get_db_object_create_statement(self.session, db_object, objects)}]
+            result = [
+                {
+                    f"CREATE REST {rest_object_type}": lib.db_objects.get_db_object_create_statement(
+                        self.session, db_object, objects
+                    )
+                }
+            ]
 
             self.results.append(
                 {
@@ -3058,7 +3178,13 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
     def showCreateRestContentSet(self, mrs_object: dict):
         timer = Timer()
         try:
-            result = [{"CREATE REST CONTENT SET": lib.content_sets.get_content_set_create_statement(self.session, mrs_object, False)}]
+            result = [
+                {
+                    "CREATE REST CONTENT SET": lib.content_sets.get_content_set_create_statement(
+                        self.session, mrs_object, False
+                    )
+                }
+            ]
 
             self.results.append(
                 {
@@ -3093,7 +3219,13 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 include_file_content=True,
             )
 
-            result = [{"CREATE REST CONTENT FILE": lib.content_files.get_content_file_create_statement(self.session, content_file)}]
+            result = [
+                {
+                    "CREATE REST CONTENT FILE": lib.content_files.get_content_file_create_statement(
+                        self.session, content_file
+                    )
+                }
+            ]
 
             self.results.append(
                 {
@@ -3107,13 +3239,15 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 }
             )
         except Exception as e:
-            self.results.append({
-                "statementIndex": len(self.results) + 1,
-                "line": mrs_object.get("line"),
-                "type": "error",
-                "message": f'Failed to get the REST CONTENT SET `{mrs_object.get("request_path")}`. {e}',
-                "operation": self.current_operation,
-            })
+            self.results.append(
+                {
+                    "statementIndex": len(self.results) + 1,
+                    "line": mrs_object.get("line"),
+                    "type": "error",
+                    "message": f'Failed to get the REST CONTENT SET `{mrs_object.get("request_path")}`. {e}',
+                    "operation": self.current_operation,
+                }
+            )
             raise
 
     def showCreateRestAuthApp(self, mrs_object: dict):
@@ -3124,15 +3258,17 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         include_all_objects = mrs_object.pop("include_all_objects", None)
 
         try:
-            auth_app = lib.auth_apps.get_auth_app(
-                name=name, session=self.session
-            )
+            auth_app = lib.auth_apps.get_auth_app(name=name, session=self.session)
             if auth_app is None:
-                raise Exception(
-                    f"The given REST AUTH APP `{name}` could not be found."
-                )
+                raise Exception(f"The given REST AUTH APP `{name}` could not be found.")
 
-            result = [{"CREATE REST AUTH APP ": lib.auth_apps.get_auth_app_create_statement(self.session, auth_app, include_all_objects)}]
+            result = [
+                {
+                    "CREATE REST AUTH APP ": lib.auth_apps.get_auth_app_create_statement(
+                        self.session, auth_app, include_all_objects
+                    )
+                }
+            ]
 
             self.results.append(
                 {
@@ -3163,7 +3299,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
 
         user_name = mrs_object.get("name")
         auth_app_name = mrs_object.get("auth_app_name")
-        full_user_name = f'{lib.core.quote_user(user_name)}@{lib.core.quote_auth_app(auth_app_name)}'
+        full_user_name = (
+            f"{lib.core.quote_user(user_name)}@{lib.core.quote_auth_app(auth_app_name)}"
+        )
 
         try:
             user = lib.users.get_user(
@@ -3174,7 +3312,13 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
             if not user:
                 raise Exception(f"User `{full_user_name}` was not found.")
 
-            result = [{"CREATE REST USER ": lib.users.get_user_create_statement(self.session, user, False)}]
+            result = [
+                {
+                    "CREATE REST USER ": lib.users.get_user_create_statement(
+                        self.session, user, False
+                    )
+                }
+            ]
 
             self.results.append(
                 {
@@ -3208,7 +3352,8 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         any_service = mrs_object.get("any_service", False)
         if not any_service:
             specific_to_service_id = self.get_given_or_current_service_id(
-                mrs_object, allow_not_set=False)
+                mrs_object, allow_not_set=False
+            )
         else:
             specific_to_service_id = None
 
@@ -3217,12 +3362,18 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 role = lib.roles.get_role(
                     caption=role_name,
                     session=self.session,
-                    specific_to_service_id=specific_to_service_id
+                    specific_to_service_id=specific_to_service_id,
                 )
                 if not role:
                     raise Exception(f"Role `{role_name}` was not found.")
 
-            result = [{"CREATE REST ROLE ": lib.roles.get_role_create_statement(self.session, role)}]
+            result = [
+                {
+                    "CREATE REST ROLE ": lib.roles.get_role_create_statement(
+                        self.session, role
+                    )
+                }
+            ]
 
             self.results.append(
                 {
@@ -3255,15 +3406,26 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         include_static_endpoints = mrs_object["include_static_endpoints"]
         include_dynamic_endpoints = mrs_object["include_dynamic_endpoints"]
 
-
         try:
-            service = lib.services.get_service(self.session, url_context_root=mrs_object["url_context_root"])
+            service = lib.services.get_service(
+                self.session, url_context_root=mrs_object["url_context_root"]
+            )
 
-            lib.services.store_service_create_statement(self.session, service,
-                                                        mrs_object.get("directory_file_path"), mrs_object.get("zip", False),
-                                                        include_database_endpoints, include_static_endpoints, include_dynamic_endpoints)
+            lib.services.store_service_create_statement(
+                self.session,
+                service,
+                mrs_object.get("directory_file_path"),
+                mrs_object.get("zip", False),
+                include_database_endpoints,
+                include_static_endpoints,
+                include_dynamic_endpoints,
+            )
 
-            result = [{"DUMP REST SERVICE ": f"Result stored in '{mrs_object["directory_file_path"]}'"}]
+            result = [
+                {
+                    "DUMP REST SERVICE ": f"Result stored in '{mrs_object["directory_file_path"]}'"
+                }
+            ]
 
             self.results.append(
                 {
@@ -3311,23 +3473,31 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 "icon_path": icon_path,
                 "description": description,
                 "publisher": publisher,
-                "version": version
+                "version": version,
             }
             lib.core.validate_path_for_filesystem(destination)
-            lib.services.store_project_validations(self.session,
-                                       destination=destination,
-                                       services=services,
-                                       schemas=schemas,
-                                       project_settings=project_settings,
-                                       create_zip=create_zip)
-            lib.services.store_project(self.session,
-                                       destination=destination,
-                                       services=services,
-                                       schemas=schemas,
-                                       project_settings=project_settings,
-                                       create_zip=create_zip)
+            lib.services.store_project_validations(
+                self.session,
+                destination=destination,
+                services=services,
+                schemas=schemas,
+                project_settings=project_settings,
+                create_zip=create_zip,
+            )
+            lib.services.store_project(
+                self.session,
+                destination=destination,
+                services=services,
+                schemas=schemas,
+                project_settings=project_settings,
+                create_zip=create_zip,
+            )
 
-            result = [{"DUMP REST PROJECT ": f"Result stored in '{mrs_object["directory_file_path"]}'"}]
+            result = [
+                {
+                    "DUMP REST PROJECT ": f"Result stored in '{mrs_object["directory_file_path"]}'"
+                }
+            ]
 
             self.results.append(
                 {
@@ -3352,7 +3522,6 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                 }
             )
             raise
-
 
     def loadRestService(self, mrs_object: dict):
         timer = Timer()

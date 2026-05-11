@@ -1,4 +1,4 @@
-# Copyright (c) 2024, Oracle and/or its affiliates.
+# Copyright (c) 2024, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,7 @@ def interactive_mode_set():
     """
     if mysqlsh.globals.shell.options.useWizards:
         ct = threading.current_thread()
-        if ct.__class__.__name__ == '_MainThread':
+        if ct.__class__.__name__ == "_MainThread":
             return True
     return False
 
@@ -136,7 +136,10 @@ class GenericDocumentTableTemplate(Template):
     def make_select(self, text: str, params: dict) -> Tuple[str, list, str]:
         columns = ", ".join(self.table_columns)
         query = " UNION ".join(
-            [f"""SELECT {columns} FROM `{table.schema_name}`.`{table.table_name}`""" for table in self.source_tables]
+            [
+                f"""SELECT {columns} FROM `{table.schema_name}`.`{table.table_name}`"""
+                for table in self.source_tables
+            ]
         )
         return (
             query,
@@ -175,9 +178,13 @@ class CohereTemplate(GenericDocumentTableTemplate):
     def make_generator(self, query: str):
         def generate(session, hint: str, context: list, options: dict):
             return self.co.chat(
-                message=query, model="command", documents=context,
-                preamble_override=options.get("preamble") if options is not None else "",
-                stream=True
+                message=query,
+                model="command",
+                documents=context,
+                preamble_override=(
+                    options.get("preamble") if options is not None else ""
+                ),
+                stream=True,
             )
 
         return generate
@@ -213,8 +220,7 @@ class ContextManager:
         pass
 
     def reset(self):
-        self.session.run_sql(
-            f"drop table if exists {self.template.context_table}")
+        self.session.run_sql(f"drop table if exists {self.template.context_table}")
         self.session.run_sql(
             f'create schema if not exists {self.template.context_table.split(".")[0]}',
         )
@@ -294,14 +300,21 @@ class Chat:
         if self.debug:
             print("* context:")
             for row in context:
-                print("\t", row[0], row[1], row[2]
-                      [:80].replace("\n", "\n\t") + "...")
+                print("\t", row[0], row[1], row[2][:80].replace("\n", "\n\t") + "...")
         options["documents"] = [
-            {"id": row[0], "title": row[0], "snippet": row[2][:80], "pinned": False} for row in context]
+            {"id": row[0], "title": row[0], "snippet": row[2][:80], "pinned": False}
+            for row in context
+        ]
         # Send the documents as soon as available, when streaming is enabled
         if self.streaming:
             if self.debug or self.report_status:
-                self.send_data({"documents": options["documents"], "info": "Generating answer ..."}, DATA_TYPE_OPTIONS)
+                self.send_data(
+                    {
+                        "documents": options["documents"],
+                        "info": "Generating answer ...",
+                    },
+                    DATA_TYPE_OPTIONS,
+                )
             else:
                 self.send_data({"documents": options["documents"]}, DATA_TYPE_OPTIONS)
 
@@ -320,20 +333,22 @@ class Chat:
 
         options["request_completed"] = True
 
-        return { "data": self._make_response(response, options) }
+        return {"data": self._make_response(response, options)}
 
     def _apply_options(self, options: dict):
-        self.templ.default_limit = options.get(
-            "maximum_document_segment_count", 3)
+        self.templ.default_limit = options.get("maximum_document_segment_count", 3)
         self.templ.maximum_distance = options.get("maximum_distance", 0.3)
         options["tables"] = options.get("tables", None) or self._scan_tables()
         self.templ.source_tables = options["tables"]
         # Send the tables as soon as available, when streaming is used
         if self.streaming:
-            self.send_data({
-                "tables": options["tables"],
-                "info": f'{"No " if len(options["tables"]) == 0 else ""}Vector tables found.'
-                }, DATA_TYPE_OPTIONS)
+            self.send_data(
+                {
+                    "tables": options["tables"],
+                    "info": f'{"No " if len(options["tables"]) == 0 else ""}Vector tables found.',
+                },
+                DATA_TYPE_OPTIONS,
+            )
 
         self.debug = options.get("debug", False)
         self.report_status = options.get("report_status", False)
@@ -354,22 +369,18 @@ class Chat:
         return options
 
     def _scan_tables(self):
-        rows = self.session.run_sql(
-            """
+        rows = self.session.run_sql("""
             SELECT concat(sys.quote_identifier(table_schema), '.', sys.quote_identifier(table_name)),
                 table_schema as schema_name,
                 table_name as table_name,
                 create_options
             FROM information_schema.tables WHERE CREATE_OPTIONS LIKE '%SECONDARY_ENGINE%'
-            """
-        ).fetch_all()
+            """).fetch_all()
         tables = []
         for row in rows:
-            tables.append({
-                "schema_name": row[1],
-                "table_name": row[2],
-                "vector_embeddings": True
-                })
+            tables.append(
+                {"schema_name": row[1], "table_name": row[2], "vector_embeddings": True}
+            )
         if not tables:
             raise Exception("No LakeHouse tables found")
         if self.debug:
@@ -398,8 +409,7 @@ def chat(prompt, options: dict = {}, session=None, send_gui_message=None):
             "sentence-transformers/all-MiniLM-L12-v2"
         )
     if not g_chat:
-        g_chat = Chat(session, CohereTemplate(
-            g_cohere_api_key), send_gui_message)
+        g_chat = Chat(session, CohereTemplate(g_cohere_api_key), send_gui_message)
     return g_chat.run(prompt, options or {})
 
 

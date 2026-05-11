@@ -51,17 +51,16 @@ class MySQLSourceCheck:
     ) -> tuple[model.ConnectionCheckResult, bool, dbsession.MigrationSession | None]:
         # ensure source supports SSL, as we'll require it by default for IBR
         # (older MySQL servers don't enable it by default)
-        error, session = cls._do_try_connect(
-            connection_options, ssl_required=True)
+        error, session = cls._do_try_connect(connection_options, ssl_required=True)
         if session:
             return error, True, session
         if error.connectErrno == mysql.ErrorCode.CR_SSL_CONNECTION_ERROR:
             # try again without SSL
-            error, session = cls._do_try_connect(
-                connection_options, ssl_required=False)
+            error, session = cls._do_try_connect(connection_options, ssl_required=False)
             if session:
                 logging.warning(
-                    f"Could not connect to source MySQL using SSL. Connections to source DB will not be encrypted and inbound replication will not be possible.")
+                    f"Could not connect to source MySQL using SSL. Connections to source DB will not be encrypted and inbound replication will not be possible."
+                )
                 return error, False, session
 
         return error, False, session
@@ -72,25 +71,25 @@ class MySQLSourceCheck:
     ) -> tuple[model.ConnectionCheckResult, dbsession.MigrationSession | None]:
         try:
             session = dbsession.MigrationSession(
-                connection_options | {"ssl-mode": "REQUIRED" if ssl_required else "PREFERRED"})
+                connection_options
+                | {"ssl-mode": "REQUIRED" if ssl_required else "PREFERRED"}
+            )
         except mysqlsh.DBError as e:
             logging.error(f"source_check: connection check: {e}")
 
             result = model.ConnectionCheckResult(
-                connectError=e.msg,
-                connectErrno=e.code)
+                connectError=e.msg, connectErrno=e.code
+            )
             if e.code and (e.code < 2000 or e.code >= 3000):
                 result.reachable = True
             else:
-                result.resolvable = checks.address_resolvable(
-                    connection_options)
+                result.resolvable = checks.address_resolvable(connection_options)
                 if checks.ping(connection_options):
                     result.reachable = True
             return result, None
         except Exception as e:
             logging.exception(f"source_check: connection check")
-            return model.ConnectionCheckResult(
-                connectError=str(e)), None
+            return model.ConnectionCheckResult(connectError=str(e)), None
 
         return model.ConnectionCheckResult(), session
 
@@ -118,11 +117,12 @@ class MySQLSourceCheck:
 
         return check_result
 
-    def check_source(self) -> tuple[list[model.MigrationError], model.SourceCheckResult]:
+    def check_source(
+        self,
+    ) -> tuple[list[model.MigrationError], model.SourceCheckResult]:
         assert self.session
         logging.debug(f"source_check: running basic source checks")
-        errors, check_results = checks.validate_source(
-            self.session, self.options)
+        errors, check_results = checks.validate_source(self.session, self.options)
 
         if errors:
             for error in errors:
@@ -134,11 +134,12 @@ class MySQLSourceCheck:
 
         return errors, check_results
 
-    def check_replication(self, server_info: model.ServerInfo) -> Optional[model.MigrationError]:
+    def check_replication(
+        self, server_info: model.ServerInfo
+    ) -> Optional[model.MigrationError]:
         assert self.session
         logging.debug(f"source_check: running source replication checks")
-        error = checks.check_inbound_replication_requirements(
-            self.session, server_info)
+        error = checks.check_inbound_replication_requirements(self.session, server_info)
         if error:
             logging.error(
                 f"source_check: source replication checks failed: error={error}"
@@ -149,7 +150,9 @@ class MySQLSourceCheck:
         return error
 
     def check_compatibility(
-        self, compatibility_flags: list[model.CompatibilityFlags], schema_selection: model.SchemaSelectionOptions
+        self,
+        compatibility_flags: list[model.CompatibilityFlags],
+        schema_selection: model.SchemaSelectionOptions,
     ) -> model.MigrationCheckResults:
         assert self.session
         assert self.options.sourceConnectionOptions
@@ -157,7 +160,9 @@ class MySQLSourceCheck:
 
         logging.debug(f"source_check: running compatibility checks")
         check_results = checks.check_service_compatibility(
-            self.session, compatibility_flags, schema_selection,
+            self.session,
+            compatibility_flags,
+            schema_selection,
             self.options.targetMySQLOptions.mysqlVersion,
         )
         logging.debug(
@@ -174,10 +179,10 @@ class MySQLSourceCheck:
 
         logging.debug(f"source_check: running schema checks")
         check_results = checks.check_upgrade(
-            self.session, schema_selection,
-            target_version=self.options.targetMySQLOptions.mysqlVersion
+            self.session,
+            schema_selection,
+            target_version=self.options.targetMySQLOptions.mysqlVersion,
         )
-        logging.debug(
-            f"source_check: upgrade checks done: results={check_results}")
+        logging.debug(f"source_check: upgrade checks done: results={check_results}")
 
         return check_results

@@ -36,33 +36,46 @@ from gui_plugin.core.Error import MSGException
 def resolve_path(path: str, _user_id: Optional[int]) -> Tuple[str, str]:
     "This function returns a tuple (full path, relative path) with the resolved paths"
     if PurePath(Path(path).name.split(",")[0]).is_reserved():
-        raise MSGException(Error.CORE_RESERVED_NOT_ALLOWED,
-                           "Reserved paths are not allowed.")
+        raise MSGException(
+            Error.CORE_RESERVED_NOT_ALLOWED, "Reserved paths are not allowed."
+        )
 
     if _user_id is None:
         # This is a local connection
         if os.path.isabs(path):
-            return Path(os.path.abspath(path)).as_posix(), Path(os.path.abspath(path)).as_posix()
-        return Path(os.path.abspath(os.path.join(str(Path.home()), path))).as_posix(), Path(str(Path.home())).as_posix()
+            return (
+                Path(os.path.abspath(path)).as_posix(),
+                Path(os.path.abspath(path)).as_posix(),
+            )
+        return (
+            Path(os.path.abspath(os.path.join(str(Path.home()), path))).as_posix(),
+            Path(str(Path.home())).as_posix(),
+        )
 
     # This is a remote (non-local) connection
     if os.path.isabs(path):
-        raise MSGException(Error.CORE_ABSPATH_NOT_ALLOWED,
-                           "Absolute paths are not allowed.")
+        raise MSGException(
+            Error.CORE_ABSPATH_NOT_ALLOWED, "Absolute paths are not allowed."
+        )
 
-    user_space = os.path.abspath(mysqlsh.plugin_manager.general.get_shell_user_dir(
-        'plugin_data', 'gui_plugin', f"user_{_user_id}"))
+    user_space = os.path.abspath(
+        mysqlsh.plugin_manager.general.get_shell_user_dir(
+            "plugin_data", "gui_plugin", f"user_{_user_id}"
+        )
+    )
     full_path = os.path.abspath(os.path.join(user_space, path))
 
     if not full_path.startswith(user_space):
-        raise MSGException(Error.CORE_ACCESS_OUTSIDE_USERSPACE,
-                           "Trying to access outside the user directory.")
+        raise MSGException(
+            Error.CORE_ACCESS_OUTSIDE_USERSPACE,
+            "Trying to access outside the user directory.",
+        )
 
     # +1 to remove the leading / since it's a relative path
-    return Path(full_path).as_posix(), Path(full_path[len(user_space) + 1:]).as_posix()
+    return Path(full_path).as_posix(), Path(full_path[len(user_space) + 1 :]).as_posix()
 
 
-@plugin_function('gui.core.listFiles', shell=False, web=True)
+@plugin_function("gui.core.listFiles", shell=False, web=True)
 def list_files(path: str = "", _user_id: Optional[int] = None) -> list[str]:
     """Returns the contents of a directory.
 
@@ -86,16 +99,19 @@ def list_files(path: str = "", _user_id: Optional[int] = None) -> list[str]:
     full_path, rel_path = resolve_path(path, _user_id)
 
     if not os.path.exists(full_path):
-        raise MSGException(Error.CORE_PATH_NOT_EXIST,
-                           "The supplied path does not exist.")
+        raise MSGException(
+            Error.CORE_PATH_NOT_EXIST, "The supplied path does not exist."
+        )
 
     if not os.path.isdir(full_path):
-        raise MSGException(Error.CORE_NOT_DIRECTORY,
-                           "The supplied path is not a directory.")
+        raise MSGException(
+            Error.CORE_NOT_DIRECTORY, "The supplied path is not a directory."
+        )
 
     if not os.access(full_path, os.R_OK):
-        raise MSGException(Error.CORE_PERMISSION_DENIED,
-                           "No permissions to access the directory.")
+        raise MSGException(
+            Error.CORE_PERMISSION_DENIED, "No permissions to access the directory."
+        )
 
     list_of_files = []
     for item in os.listdir(full_path):
@@ -105,7 +121,7 @@ def list_files(path: str = "", _user_id: Optional[int] = None) -> list[str]:
     return list_of_files
 
 
-@plugin_function('gui.core.createFile', shell=False, web=True)
+@plugin_function("gui.core.createFile", shell=False, web=True)
 def create_file(path: str, _user_id: Optional[int] = None) -> str:
     """Creates a new file specified by the path.
 
@@ -129,35 +145,36 @@ def create_file(path: str, _user_id: Optional[int] = None) -> str:
     """
 
     if path == "":
-        raise MSGException(Error.CORE_PATH_NOT_SUPPLIED,
-                           "The supplied path is empty.")
+        raise MSGException(Error.CORE_PATH_NOT_SUPPLIED, "The supplied path is empty.")
 
     # the rel_path is the full_path on local sessions
     full_path, rel_path = resolve_path(path, _user_id)
 
     if os.path.isdir(full_path):
-        raise MSGException(Error.CORE_NOT_FILE,
-                           "The supplied path is not a file.")
+        raise MSGException(Error.CORE_NOT_FILE, "The supplied path is not a file.")
 
     if not os.access(os.path.dirname(full_path), os.W_OK):
-        raise MSGException(Error.CORE_PERMISSION_DENIED,
-                           "No permissions to access the directory.")
+        raise MSGException(
+            Error.CORE_PERMISSION_DENIED, "No permissions to access the directory."
+        )
 
     if os.path.exists(full_path):
-        raise MSGException(Error.CORE_PATH_ALREADY_EXISTS,
-                           "The supplied file already exists.")
+        raise MSGException(
+            Error.CORE_PATH_ALREADY_EXISTS, "The supplied file already exists."
+        )
 
     if full_path.endswith(".sqlite") or full_path.endswith(".sqlite3"):
         conn = sqlite3.connect(full_path)
         conn.close()
     else:
-        raise MSGException(Error.CORE_INVALID_EXTENSION,
-                           "The file does not have a valid extension.")
+        raise MSGException(
+            Error.CORE_INVALID_EXTENSION, "The file does not have a valid extension."
+        )
 
     return rel_path
 
 
-@plugin_function('gui.core.validatePath', shell=False, web=True)
+@plugin_function("gui.core.validatePath", shell=False, web=True)
 def validate_path(path: str, _user_id: Optional[int] = None) -> str:
     """Validates the specified path.
 
@@ -181,21 +198,26 @@ def validate_path(path: str, _user_id: Optional[int] = None) -> str:
     return_path = full_path if _user_id is None else rel_path
 
     if not os.path.exists(full_path):
-        raise MSGException(Error.CORE_PATH_NOT_EXIST,
-                           "The supplied path does not exist.")
+        raise MSGException(
+            Error.CORE_PATH_NOT_EXIST, "The supplied path does not exist."
+        )
 
     if not os.access(full_path, os.R_OK):
-        raise MSGException(Error.CORE_PERMISSION_DENIED,
-                           "No permissions to read from the supplied path.")
+        raise MSGException(
+            Error.CORE_PERMISSION_DENIED,
+            "No permissions to read from the supplied path.",
+        )
 
     if not os.access(full_path, os.W_OK):
-        raise MSGException(Error.CORE_PERMISSION_DENIED,
-                           "No permissions to write in the supplied path.")
+        raise MSGException(
+            Error.CORE_PERMISSION_DENIED,
+            "No permissions to write in the supplied path.",
+        )
 
     return return_path
 
 
-@plugin_function('gui.core.deleteFile', shell=False, web=True)
+@plugin_function("gui.core.deleteFile", shell=False, web=True)
 def delete_file(path: str, _user_id: Optional[int] = None) -> None:
     """Deletes a file specified by the path.
 
@@ -208,19 +230,18 @@ def delete_file(path: str, _user_id: Optional[int] = None) -> None:
     """
 
     if path == "":
-        raise MSGException(Error.CORE_PATH_NOT_SUPPLIED,
-                           "The supplied path is empty.")
+        raise MSGException(Error.CORE_PATH_NOT_SUPPLIED, "The supplied path is empty.")
 
     # the rel_path is the full_path on local sessions
     full_path, _ = resolve_path(path, _user_id)
 
     if os.path.isdir(full_path):
-        raise MSGException(Error.CORE_NOT_FILE,
-                           "The supplied path is not a file.")
+        raise MSGException(Error.CORE_NOT_FILE, "The supplied path is not a file.")
 
     if not os.access(os.path.dirname(full_path), os.W_OK):
-        raise MSGException(Error.CORE_PERMISSION_DENIED,
-                           "No permissions to access the directory.")
+        raise MSGException(
+            Error.CORE_PERMISSION_DENIED, "No permissions to access the directory."
+        )
 
     if os.path.exists(full_path):
         os.remove(full_path)

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,8 +21,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from mysqlsh.plugin_manager import \
-    plugin_function  # pylint: disable=no-name-in-module
+from mysqlsh.plugin_manager import plugin_function  # pylint: disable=no-name-in-module
 
 import gui_plugin.core.Context as context
 import gui_plugin.core.Error as Error
@@ -31,7 +30,7 @@ from gui_plugin.core.modules.DbModuleSession import DbModuleSession
 from gui_plugin.db import backend
 
 
-@plugin_function('gui.db.getObjectsTypes', shell=True, web=True)
+@plugin_function("gui.db.getObjectsTypes", shell=True, web=True)
 def get_objects_types(session):
     """Returns the database objects supported by a DBMS
 
@@ -46,8 +45,8 @@ def get_objects_types(session):
     return session.get_objects_types()
 
 
-@plugin_function('gui.db.getCatalogObjectNames', shell=True, web=True)
-def get_catalog_object_names(session, type, filter='%'):
+@plugin_function("gui.db.getCatalogObjectNames", shell=True, web=True)
+def get_catalog_object_names(session, type, filter="%"):
     """Returns the names of the existing objects of the given
         type. If a filter is provided, only the names matching the given filter will be returned.
 
@@ -64,8 +63,8 @@ def get_catalog_object_names(session, type, filter='%'):
     return session.get_catalog_object_names(type=type, filter=filter)
 
 
-@plugin_function('gui.db.getSchemaObjectNames', shell=True, web=True)
-def get_schema_object_names(session, type, schema_name, filter='%', routine_type=None):
+@plugin_function("gui.db.getSchemaObjectNames", shell=True, web=True)
+def get_schema_object_names(session, type, schema_name, filter="%", routine_type=None):
     """Returns the names of the existing objects of the given type in the given
         schema that match the provided filter.
 
@@ -81,20 +80,21 @@ def get_schema_object_names(session, type, schema_name, filter='%', routine_type
     """
     if isinstance(routine_type, str) and routine_type.strip() == "":
         routine_type = None
-    if routine_type is not None and routine_type not in ['procedure', 'function']:
-        raise MSGException(Error.CORE_INVALID_PARAMETER,
-                           "The routine_type could be only 'procedure' or 'function'.")
+    if routine_type is not None and routine_type not in ["procedure", "function"]:
+        raise MSGException(
+            Error.CORE_INVALID_PARAMETER,
+            "The routine_type could be only 'procedure' or 'function'.",
+        )
 
     session = backend.get_db_session(session)
 
-    return session.get_schema_object_names(type=type,
-                                           schema_name=schema_name,
-                                           routine_type=routine_type,
-                                           filter=filter)
+    return session.get_schema_object_names(
+        type=type, schema_name=schema_name, routine_type=routine_type, filter=filter
+    )
 
 
-@plugin_function('gui.db.getTableObjectNames', shell=True, web=True)
-def get_table_object_names(session, type, schema_name, table_name, filter='%'):
+@plugin_function("gui.db.getTableObjectNames", shell=True, web=True)
+def get_table_object_names(session, type, schema_name, table_name, filter="%"):
     """Returns the names of the existing objects of the given type in the given
         table that match the provided filter.
 
@@ -110,13 +110,12 @@ def get_table_object_names(session, type, schema_name, table_name, filter='%'):
     """
     session = backend.get_db_session(session)
 
-    return session.get_table_object_names(type=type,
-                                          schema_name=schema_name,
-                                          table_name=table_name,
-                                          filter=filter)
+    return session.get_table_object_names(
+        type=type, schema_name=schema_name, table_name=table_name, filter=filter
+    )
 
 
-@plugin_function('gui.db.getCatalogObject', shell=True, web=True)
+@plugin_function("gui.db.getCatalogObject", shell=True, web=True)
 def get_catalog_object(session, type, name):
     """Returns a JSON representation of the object matching the given type and name.
 
@@ -133,7 +132,7 @@ def get_catalog_object(session, type, name):
     return session.get_catalog_object(type=type, name=name)
 
 
-@plugin_function('gui.db.getSchemaObject', shell=True, web=True)
+@plugin_function("gui.db.getSchemaObject", shell=True, web=True)
 def get_schema_object(session, type, schema_name, name):
     """Returns a JSON representation of the schema object matching the given type, schema and name.
 
@@ -148,12 +147,10 @@ def get_schema_object(session, type, schema_name, name):
     """
     session = backend.get_db_session(session)
 
-    return session.get_schema_object(type=type,
-                                     schema_name=schema_name,
-                                     name=name)
+    return session.get_schema_object(type=type, schema_name=schema_name, name=name)
 
 
-@plugin_function('gui.db.getTableObject', shell=True, web=True)
+@plugin_function("gui.db.getTableObject", shell=True, web=True)
 def get_table_object(session, type, schema_name, table_name, name):
     """Returns a JSON representation of the table object matching the given type, schema, table and name.
 
@@ -169,13 +166,12 @@ def get_table_object(session, type, schema_name, table_name, name):
     """
     session = backend.get_db_session(session)
 
-    return session.get_table_object(type=type,
-                                    schema_name=schema_name,
-                                    table_name=table_name,
-                                    name=name)
+    return session.get_table_object(
+        type=type, schema_name=schema_name, table_name=table_name, name=name
+    )
 
 
-@plugin_function('gui.db.getColumnsMetadata', shell=True, web=True)
+@plugin_function("gui.db.getColumnsMetadata", shell=True, web=True)
 def get_columns_metadata(session, names):
     """Returns a JSON representation of the columns metadata.
 
@@ -191,7 +187,7 @@ def get_columns_metadata(session, names):
     return session.get_columns_metadata(names)
 
 
-@plugin_function('gui.db.startSession', shell=False, web=True)
+@plugin_function("gui.db.startSession", shell=False, web=True)
 def start_session(connection, password=None):
     """Starts a DB Session
     Args:
@@ -206,7 +202,7 @@ def start_session(connection, password=None):
     new_session.open_connection(connection, password)
 
 
-@plugin_function('gui.db.closeSession', shell=False, web=True)
+@plugin_function("gui.db.closeSession", shell=False, web=True)
 def close_session(module_session):
     """Closes the DB Session
 
@@ -219,7 +215,7 @@ def close_session(module_session):
     module_session.close()
 
 
-@plugin_function('gui.db.reconnect', shell=False, web=True)
+@plugin_function("gui.db.reconnect", shell=False, web=True)
 def reconnect(module_session):
     """Reconnects the DB Session
 
@@ -231,7 +227,8 @@ def reconnect(module_session):
     """
     module_session.reconnect()
 
-@plugin_function('gui.db.getRoutinesMetadata', shell=True, web=True)
+
+@plugin_function("gui.db.getRoutinesMetadata", shell=True, web=True)
 def get_routines_metadata(session, schema_name):
     """Returns the schema objects of the given type in the given schema.
 
@@ -246,7 +243,8 @@ def get_routines_metadata(session, schema_name):
 
     return session.get_routines_metadata(schema_name=schema_name)
 
-@plugin_function('gui.db.getLibrariesMetadata', shell=True, web=True)
+
+@plugin_function("gui.db.getLibrariesMetadata", shell=True, web=True)
 def get_libraries_metadata(session, schema_name):
     """Returns the schema objects of the given type in the given schema.
 
@@ -262,7 +260,7 @@ def get_libraries_metadata(session, schema_name):
     return session.get_libraries_metadata(schema_name=schema_name)
 
 
-@plugin_function('gui.db.getJdvTableColumnsWithReferences', shell=True, web=True)
+@plugin_function("gui.db.getJdvTableColumnsWithReferences", shell=True, web=True)
 def get_jdv_table_columns_with_references(session, schema_name, table_name):
     """Returns a JSON representation of table columns and its references which are needed to build a JDV
 
@@ -279,7 +277,7 @@ def get_jdv_table_columns_with_references(session, schema_name, table_name):
     return session.get_jdv_table_columns_with_references(schema_name, table_name)
 
 
-@plugin_function('gui.db.getJdvViewInfo', shell=True, web=True)
+@plugin_function("gui.db.getJdvViewInfo", shell=True, web=True)
 def get_jdv_view_info(session, jdv_schema_name, jdv_name):
     """Returns a JSON representation of the metadata of the JDV for a given schema and name.
 
@@ -296,8 +294,10 @@ def get_jdv_view_info(session, jdv_schema_name, jdv_name):
     return session.get_jdv_view_info(jdv_schema_name, jdv_name)
 
 
-@plugin_function('gui.db.getJdvObjectFieldsWithReferences', shell=True, web=True)
-def get_jdv_object_fields_with_references(session, jdv_schema_name, jdv_name, jdv_object_id):
+@plugin_function("gui.db.getJdvObjectFieldsWithReferences", shell=True, web=True)
+def get_jdv_object_fields_with_references(
+    session, jdv_schema_name, jdv_name, jdv_object_id
+):
     """Returns a JSON representation of jdv object fields and its references for a given jdv_object_id
 
     Args:
@@ -311,4 +311,6 @@ def get_jdv_object_fields_with_references(session, jdv_schema_name, jdv_name, jd
     """
     session = backend.get_db_session(session)
 
-    return session.get_jdv_object_fields_with_references(jdv_schema_name, jdv_name, jdv_object_id)
+    return session.get_jdv_object_fields_with_references(
+        jdv_schema_name, jdv_name, jdv_object_id
+    )

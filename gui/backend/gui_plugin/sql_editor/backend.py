@@ -1,4 +1,4 @@
-# Copyright (c) 2024, Oracle and/or its affiliates.
+# Copyright (c) 2024, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@ from gui_plugin.core import Error
 from gui_plugin.core.Error import MSGException
 from ..modules import backend as modules_backend
 
+
 def get_folder_id(db, connection_id, group_id, profile_id=None):
     """Returns the folder ID for the given connection ID
 
@@ -42,13 +43,14 @@ def get_folder_id(db, connection_id, group_id, profile_id=None):
     folder_name = f"db_notebook_code_history_{connection_id}"
     if profile_id is None:
         root_folder_id = modules_backend.get_root_folder_id(
-                                        db, tree_identifier, 'group', group_id)
+            db, tree_identifier, "group", group_id
+        )
     else:
         root_folder_id = modules_backend.get_root_folder_id(
-                                        db, tree_identifier, 'profile', profile_id)
+            db, tree_identifier, "profile", profile_id
+        )
 
-    return modules_backend.get_folder_id(
-                            db, root_folder_id, folder_name)
+    return modules_backend.get_folder_id(db, root_folder_id, folder_name)
 
 
 def get_entry(db, entry_id):
@@ -61,18 +63,23 @@ def get_entry(db, entry_id):
     Returns:
         dict: The entry info
     """
-    rows = db.select("""SELECT caption, content, last_update FROM data
+    rows = db.select(
+        """SELECT caption, content, last_update FROM data
                              WHERE id = ?""",
-                             (entry_id,))
+        (entry_id,),
+    )
     if rows:
         row = rows[0]
         try:
-            content = json.loads(row['content'])
+            content = json.loads(row["content"])
         except Exception as e:
-            raise MSGException(Error.CORE_INVALID_DATA_FORMAT,
-                                f'Error decoding data content: {str(e)}') from e
-        return {"code": content,
-                "language_id": row['caption'],
-                "current_timestamp": row['last_update']}
+            raise MSGException(
+                Error.CORE_INVALID_DATA_FORMAT, f"Error decoding data content: {str(e)}"
+            ) from e
+        return {
+            "code": content,
+            "language_id": row["caption"],
+            "current_timestamp": row["last_update"],
+        }
 
     return {}

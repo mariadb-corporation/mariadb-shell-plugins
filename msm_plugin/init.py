@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ from mysqlsh.plugin_manager import plugin
 
 
 @plugin
-class msm():
+class msm:
     """Plugin to manage database schemas.
 
     This global object is used to manage database schemas.
@@ -53,14 +53,14 @@ class msm():
         # Import all sub-modules to register the decorated functions there
         from msm_plugin import general, management, modeling
 
-    class get():
+    class get:
         """Used to get detailed information about the database schema project.
 
         A collection of functions to get information about the database schema
         project.
         """
 
-    class set():
+    class set:
         """Used to set database schemas project values.
 
         A collection of functions to set database schemas project values.

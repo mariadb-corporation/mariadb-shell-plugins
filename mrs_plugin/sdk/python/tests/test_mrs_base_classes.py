@@ -1,4 +1,4 @@
-# Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2024, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -3934,9 +3934,9 @@ def test_auth_app_not_found_exception():
         ),
         # dataclass
         (
-            [{"actor_id":1, "first_name":"FOO", "last_name": "BAR"}],
+            [{"actor_id": 1, "first_name": "FOO", "last_name": "BAR"}],
             list[Actor],
-            [Actor(schema=None,data={"actor_id":1, "first_name":"FOO", "last_name": "BAR"})], # type: ignore
+            [Actor(schema=None, data={"actor_id": 1, "first_name": "FOO", "last_name": "BAR"})],  # type: ignore
         ),
         # lossy fixed point
         (
@@ -3949,7 +3949,7 @@ def test_auth_app_not_found_exception():
             "1.234",
             Decimal,
             1.234,
-        )
+        ),
     ],
 )
 def test_downstream_converter(value: int | str, type_hint: TypeAlias, exp_output: Any):
@@ -4026,8 +4026,7 @@ def test_downstream_converter(value: int | str, type_hint: TypeAlias, exp_output
         (
             1.234,
             1.234,
-        )
-
+        ),
     ],
 )
 def test_upstream_converter(value: Any, exp_output: Any):

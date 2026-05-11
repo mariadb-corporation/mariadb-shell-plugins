@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -45,10 +45,10 @@ import zipfile
 
 
 def signal_handler(sig, frame):
-    print(f'1) Ctrl+C! captured: {sig}')
+    print(f"1) Ctrl+C! captured: {sig}")
 
 
-if os.name == 'nt':
+if os.name == "nt":
     signal.signal(signal.SIGINT, signal_handler)
 
 
@@ -61,7 +61,7 @@ def pushd(new_path):
 
 
 def create_symlink(target: Path, link_name: Path, is_dir):
-    if os.name == 'nt':
+    if os.name == "nt":
         p = subprocess.run(f'mklink /J "{link_name}" "{target}"', shell=True)
         print(p.stdout)
         p.check_returncode()
@@ -71,45 +71,61 @@ def create_symlink(target: Path, link_name: Path, is_dir):
 
 arg_parser = argparse.ArgumentParser()
 
-arg_parser.add_argument('-d', '--debug',
-                        required=False,
-                        choices=['TESTS', 'BACKEND'],
-                        default=os.environ.get('ATTACH_DEBUGGER', None),
-                        help='Attach debugger to TESTS and/or BACKEND')
-arg_parser.add_argument('-p', '--portable',
-                        required=False,
-                        type=Path,
-                        help='The path to the portable code')
-arg_parser.add_argument('-s', '--shell',
-                        required=False,
-                        type=Path,
-                        default=os.environ.get('MYSQLSH', shutil.which(
-                            'mysqlsh.exe') if os.name == 'nt' else shutil.which('mysqlsh')),
-                        help='Path to MySQL Shell binary')
-arg_parser.add_argument('-v', '--verbose',
-                        required=False,
-                        help='Enable verbose mode')
-arg_parser.add_argument('-u', '--userhome',
-                        required=False,
-                        type=Path,
-                        default=os.environ.get(
-                            'MYSQLSH_USER_CONFIG_HOME', None),
-                        help='Path to the user config home')
-arg_parser.add_argument('-k', '--only',
-                        required=False,
-                        type=str,
-                        default=None,
-                        help='Run only the tests that apply to the pattern')
-arg_parser.add_argument('-P', '--pytest',
-                        required=False,
-                        type=str,
-                        default=None,
-                        help='Pass additional options to pytest')
-arg_parser.add_argument('-M', '--mysqlsh',
-                        required=False,
-                        type=str,
-                        default=None,
-                        help='Pass additional options to mysqlsh')
+arg_parser.add_argument(
+    "-d",
+    "--debug",
+    required=False,
+    choices=["TESTS", "BACKEND"],
+    default=os.environ.get("ATTACH_DEBUGGER", None),
+    help="Attach debugger to TESTS and/or BACKEND",
+)
+arg_parser.add_argument(
+    "-p", "--portable", required=False, type=Path, help="The path to the portable code"
+)
+arg_parser.add_argument(
+    "-s",
+    "--shell",
+    required=False,
+    type=Path,
+    default=os.environ.get(
+        "MYSQLSH",
+        shutil.which("mysqlsh.exe") if os.name == "nt" else shutil.which("mysqlsh"),
+    ),
+    help="Path to MySQL Shell binary",
+)
+arg_parser.add_argument("-v", "--verbose", required=False, help="Enable verbose mode")
+arg_parser.add_argument(
+    "-u",
+    "--userhome",
+    required=False,
+    type=Path,
+    default=os.environ.get("MYSQLSH_USER_CONFIG_HOME", None),
+    help="Path to the user config home",
+)
+arg_parser.add_argument(
+    "-k",
+    "--only",
+    required=False,
+    type=str,
+    default=None,
+    help="Run only the tests that apply to the pattern",
+)
+arg_parser.add_argument(
+    "-P",
+    "--pytest",
+    required=False,
+    type=str,
+    default=None,
+    help="Pass additional options to pytest",
+)
+arg_parser.add_argument(
+    "-M",
+    "--mysqlsh",
+    required=False,
+    type=str,
+    default=None,
+    help="Pass additional options to mysqlsh",
+)
 
 try:
     args, other_arguments = arg_parser.parse_known_args()
@@ -119,14 +135,18 @@ except argparse.ArgumentError as e:
 print(args)
 
 # check if we're running in the backend directory
-assert Path(os.path.join(os.getcwd(), 'run_tests.py')).exists(
-), "Please run this script inside the backend directory."
+assert Path(
+    os.path.join(os.getcwd(), "run_tests.py")
+).exists(), "Please run this script inside the backend directory."
 
-assert args.shell is not None, "Could not find the MySQL Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
+assert (
+    args.shell is not None
+), "Could not find the MySQL Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
+
 
 class MyPaths:
     def __init__(self, debug_mode, portable_path, shell_path, userhome_path: Path):
-        class MyPathsBase():
+        class MyPathsBase:
             pass
 
         self.source = MyPathsBase()
@@ -137,40 +157,52 @@ class MyPaths:
         self.shell = shell_path
 
         if debug_mode:
-            self.runtime.root = Path(os.path.join(
-                tempfile.gettempdir(), "backend_debug"))
+            self.runtime.root = Path(
+                os.path.join(tempfile.gettempdir(), "backend_debug")
+            )
             shutil.rmtree(self.runtime.root, ignore_errors=True)
         elif userhome_path is None:
-            self.runtime.root = Path(os.path.join(
-                tempfile.TemporaryDirectory().name, 'dot_mysqlsh'))
+            self.runtime.root = Path(
+                os.path.join(tempfile.TemporaryDirectory().name, "dot_mysqlsh")
+            )
         else:
             self.runtime.root = Path(userhome_path)
 
-        self.runtime.plugins.root = Path(
-            os.path.join(self.runtime.root, 'plugins'))
+        self.runtime.plugins.root = Path(os.path.join(self.runtime.root, "plugins"))
         self.runtime.plugins.gui_plugin = Path(
-            os.path.join(self.runtime.plugins.root, 'gui_plugin'))
+            os.path.join(self.runtime.plugins.root, "gui_plugin")
+        )
         self.runtime.plugins.test_plugin = Path(
-            os.path.join(self.runtime.plugins.root, 'test_plugin'))
-        self.runtime.plugins.mrs_plugin = Path(os.path.join(
-            self.runtime.plugins.root, 'mrs_plugin'))
-        self.runtime.plugins.msm_plugin = Path(os.path.join(
-            self.runtime.plugins.root, 'msm_plugin'))
+            os.path.join(self.runtime.plugins.root, "test_plugin")
+        )
+        self.runtime.plugins.mrs_plugin = Path(
+            os.path.join(self.runtime.plugins.root, "mrs_plugin")
+        )
+        self.runtime.plugins.msm_plugin = Path(
+            os.path.join(self.runtime.plugins.root, "msm_plugin")
+        )
 
         self.runtime.plugin_data.root = Path(
-            os.path.join(self.runtime.root, 'plugin_data'))
+            os.path.join(self.runtime.root, "plugin_data")
+        )
         self.runtime.plugin_data.gui_plugin = Path(
-            os.path.join(self.runtime.plugin_data.root, 'gui_plugin'))
+            os.path.join(self.runtime.plugin_data.root, "gui_plugin")
+        )
 
-        self.source.root = Path(os.path.abspath(
-            os.path.join(Path().cwd(), '..')))
-        self.source.plugin = Path(os.path.join(
-            self.source.root, 'mrs_plugin'))
-        self.source.msm_plugin = Path(os.path.join(
-            self.source.root, 'msm_plugin'))
+        self.source.root = Path(os.path.abspath(os.path.join(Path().cwd(), "..")))
+        self.source.plugin = Path(os.path.join(self.source.root, "mrs_plugin"))
+        self.source.msm_plugin = Path(os.path.join(self.source.root, "msm_plugin"))
 
-        self.source.pytest_config = Path(os.path.join(
-            self.source.plugin, "pytest-coverage.ini" if debug_mode is None else self.source.plugin / "pytest.ini"))
+        self.source.pytest_config = Path(
+            os.path.join(
+                self.source.plugin,
+                (
+                    "pytest-coverage.ini"
+                    if debug_mode is None
+                    else self.source.plugin / "pytest.ini"
+                ),
+            )
+        )
 
         if portable_path is None:
             self.source.code = self.source.plugin
@@ -184,10 +216,11 @@ class MyPaths:
         assert self.source.webroot.is_dir()
         assert self.source.pytest_config.is_file()
 
+
 if args.portable is not None and zipfile.is_zipfile(args.portable):
     # Unzip the portable zip
     unzip_path = os.path.dirname(args.portable)
-    with zipfile.ZipFile(args.portable, 'r') as zip_ref:
+    with zipfile.ZipFile(args.portable, "r") as zip_ref:
         zip_ref.extractall(unzip_path)
 
     # Update the portable argument with the final path
@@ -216,11 +249,9 @@ if paths.runtime.plugins.msm_plugin.exists():
     paths.runtime.plugins.msm_plugin.unlink()
 
 # Create source code symlink into the runtime plugin dir (.mysqlsh/plugins/mrs_plugin)
-create_symlink(paths.source.code,
-               paths.runtime.plugins.mrs_plugin, is_dir=True)
+create_symlink(paths.source.code, paths.runtime.plugins.mrs_plugin, is_dir=True)
 
-create_symlink(paths.source.msm_plugin,
-               paths.runtime.plugins.msm_plugin, is_dir=True)
+create_symlink(paths.source.msm_plugin, paths.runtime.plugins.msm_plugin, is_dir=True)
 LOGS = ""
 PATTERN = ""
 MYSQLSH_FLAGS = args.mysqlsh or ""
@@ -235,21 +266,21 @@ if args.only is not None:
 
 with pushd(paths.source.plugin):
     env = os.environ.copy()
-    env['MYSQLSH_USER_CONFIG_HOME'] = paths.runtime.root.as_posix()
-    env['MYSQLSH_TERM_COLOR_MODE'] = 'nocolor'
-    env['COV_CORE_DATAFILE'] = '.coverage.eager'
+    env["MYSQLSH_USER_CONFIG_HOME"] = paths.runtime.root.as_posix()
+    env["MYSQLSH_TERM_COLOR_MODE"] = "nocolor"
+    env["COV_CORE_DATAFILE"] = ".coverage.eager"
 
     if args.debug is not None:
-        env['ATTACH_DEBUGGER'] = args.debug
+        env["ATTACH_DEBUGGER"] = args.debug
 
     command = f"{paths.shell} {MYSQLSH_FLAGS} --pym pytest {args.pytest or ''} --cov={paths.source.code} --cov-append -vv -c {paths.source.pytest_config} {LOGS} {paths.source.plugin} {PATTERN} {" ".join(other_arguments)}"
     print(f"Test run command: {command}")
     shell = subprocess.run(command, shell=True, env=env)
 
 if not shell.returncode == 0:
-    print('----------------------------------------')
-    print('MYSQLSH log')
-    print('----------------------------------------')
+    print("----------------------------------------")
+    print("MYSQLSH log")
+    print("----------------------------------------")
     with open(os.path.join(paths.runtime.root / "mysqlsh.log")) as f:
         for line in f.readlines():
             print(line.strip())

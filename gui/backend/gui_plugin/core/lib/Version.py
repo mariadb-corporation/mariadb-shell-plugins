@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,10 +23,11 @@
 
 import operator
 
+
 class Version:
     def __init__(self, version=(0, 0, 0)):
         if isinstance(version, str):
-            self._version = tuple(map(int, version.split('.')))
+            self._version = tuple(map(int, version.split(".")))
         else:
             self._version = tuple(map(int, version))
 
@@ -37,20 +38,23 @@ class Version:
         if isinstance(version, Version):
             version = version._version
 
-        return 1 if self._version > version \
-                 else -1 if self._version < version \
-                     else 0
+        return 1 if self._version > version else -1 if self._version < version else 0
 
     def __lt__(self, other):
         return self.compare(other) == -1
+
     def __le__(self, other):
         return self.compare(other) <= 0
+
     def __eq__(self, other):
         return self.compare(other) == 0
+
     def __ne__(self, other):
         return not self.compare(other) == 0
+
     def __gt__(self, other):
         return self.compare(other) == 1
+
     def __ge__(self, other):
         return self.compare(other) >= 0
 

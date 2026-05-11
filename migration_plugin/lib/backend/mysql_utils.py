@@ -54,18 +54,28 @@ def fetch_instance_contents(session: Session) -> InstanceContents:
 
     try:
         accounts = _fetch(
-            session, "SELECT CONCAT(QUOTE(User), '@', QUOTE(Host)), user FROM mysql.user",
-            field_fn= lambda row: (row[0], row[1]))
+            session,
+            "SELECT CONCAT(QUOTE(User), '@', QUOTE(Host)), user FROM mysql.user",
+            field_fn=lambda row: (row[0], row[1]),
+        )
     except:
         accounts = _fetch(
-            session, "SELECT DISTINCT grantee FROM information_schema.user_privileges",
-            field_fn= lambda row: (row[0], unquote_str(row[0].rsplit('@', 1)[0])))  # grantee is in form 'user'@'host'
+            session,
+            "SELECT DISTINCT grantee FROM information_schema.user_privileges",
+            field_fn=lambda row: (row[0], unquote_str(row[0].rsplit("@", 1)[0])),
+        )  # grantee is in form 'user'@'host'
 
     return InstanceContents(
-        schemas=[schema for schema in schemas
-                 if schema not in checks.k_excluded_schemas + checks.k_mhs_excluded_schemas],
-        accounts=[account for account, user in accounts
-                  if user not in checks.k_excluded_users + checks.k_mhs_excluded_users]
+        schemas=[
+            schema
+            for schema in schemas
+            if schema not in checks.k_excluded_schemas + checks.k_mhs_excluded_schemas
+        ],
+        accounts=[
+            account
+            for account, user in accounts
+            if user not in checks.k_excluded_users + checks.k_mhs_excluded_users
+        ],
     )
 
 
@@ -108,10 +118,17 @@ class InstanceCache:
 
     def get_routines(self, session: Session, schema: str) -> SchemaObjects:
         try:
-            res = (_fetch(session, "SHOW PROCEDURE STATUS WHERE Db=?", [
-                schema], field_fn=lambda row: quote_ident(row[1])) +
-                _fetch(session, "SHOW FUNCTION STATUS WHERE Db=?", [
-                    schema], field_fn=lambda row: quote_ident(row[1])))
+            res = _fetch(
+                session,
+                "SHOW PROCEDURE STATUS WHERE Db=?",
+                [schema],
+                field_fn=lambda row: quote_ident(row[1]),
+            ) + _fetch(
+                session,
+                "SHOW FUNCTION STATUS WHERE Db=?",
+                [schema],
+                field_fn=lambda row: quote_ident(row[1]),
+            )
         except Exception:
             res = []
 
@@ -119,20 +136,36 @@ class InstanceCache:
 
     def get_events(self, session: Session, schema: str) -> SchemaObjects:
         return self._do_fetch(
-            lambda:  _fetch(session, "SHOW EVENTS FROM !", [schema],
-                            field_fn=lambda row: quote_ident(row[1])),
-            schema, "events")
+            lambda: _fetch(
+                session,
+                "SHOW EVENTS FROM !",
+                [schema],
+                field_fn=lambda row: quote_ident(row[1]),
+            ),
+            schema,
+            "events",
+        )
 
     def get_triggers(self, session: Session, schema: str) -> SchemaObjects:
         return self._do_fetch(
             lambda: _fetch(
-                session, "SHOW TRIGGERS FROM !", [schema],
-                field_fn=lambda row: f"{quote_ident(row[2])}.{quote_ident(row[0])}"),
-            schema, "triggers")
+                session,
+                "SHOW TRIGGERS FROM !",
+                [schema],
+                field_fn=lambda row: f"{quote_ident(row[2])}.{quote_ident(row[0])}",
+            ),
+            schema,
+            "triggers",
+        )
 
     def get_libraries(self, session: Session, schema: str) -> SchemaObjects:
         return self._do_fetch(
             lambda: _fetch(
-                session, "SHOW LIBRARY STATUS WHERE Db=?", [schema],
-                field_fn=lambda row: quote_ident(row[1])),
-            schema, "libraries")
+                session,
+                "SHOW LIBRARY STATUS WHERE Db=?",
+                [schema],
+                field_fn=lambda row: quote_ident(row[1]),
+            ),
+            schema,
+            "libraries",
+        )

@@ -83,9 +83,9 @@ class RequestHandler(Thread):
         Callback to pass messages to the GUI from plugin functions
         through the send_gui_message callback.
         """
-        self.web_handler.send_response_message("PENDING", "", request_id=self.request_id,
-                                               values={type: text},
-                                               api=True)
+        self.web_handler.send_response_message(
+            "PENDING", "", request_id=self.request_id, values={type: text}, api=True
+        )
 
     def handle_print(self, type, text):
         """
@@ -95,10 +95,13 @@ class RequestHandler(Thread):
         if self._text_cache is None:
             self._text_cache = text
         else:
-            self.web_handler.send_response_message("PENDING", "", request_id=self.request_id,
-                                                   values={
-                                                       type: self._text_cache + text},
-                                                   api=True)
+            self.web_handler.send_response_message(
+                "PENDING",
+                "",
+                request_id=self.request_id,
+                values={type: self._text_cache + text},
+                api=True,
+            )
             self._text_cache = None
 
     def on_shell_prompt(self, text, options):
@@ -108,8 +111,7 @@ class RequestHandler(Thread):
         if not "type" in options:
             options["type"] = "text"
 
-        self.web_handler.send_prompt_response(
-            self.request_id, options, self)
+        self.web_handler.send_prompt_response(self.request_id, options, self)
 
         self._prompt_event.wait()
         self._prompt_event.clear()
@@ -126,12 +128,11 @@ class RequestHandler(Thread):
         self.handle_print("error", text)
 
     def process_prompt_reply(self, reply):
-        request_id = reply['request_id']
+        request_id = reply["request_id"]
         if not self._request_id == request_id:
-            raise Exception(
-                f"Unexpected request_id in prompt reply: {request_id}")
-        self._prompt_replied = reply['type'] == "OK"
-        self._prompt_reply = reply['reply']
+            raise Exception(f"Unexpected request_id in prompt reply: {request_id}")
+        self._prompt_replied = reply["type"] == "OK"
+        self._prompt_reply = reply["reply"]
         self._prompt_event.set()
 
     def run(self):
@@ -146,10 +147,14 @@ class RequestHandler(Thread):
 
         shell = mysqlsh.globals.shell
 
-        self._shell_ctx = shell.create_context({"printDelegate": lambda x: self.on_shell_print(x),
-                                                "diagDelegate": lambda x: self.on_shell_print_diag(x),
-                                                "errorDelegate": lambda x: self.on_shell_print_error(x),
-                                                "promptDelegate": lambda x, y: self.on_shell_prompt(x, y), })
+        self._shell_ctx = shell.create_context(
+            {
+                "printDelegate": lambda x: self.on_shell_print(x),
+                "diagDelegate": lambda x: self.on_shell_print_diag(x),
+                "errorDelegate": lambda x: self.on_shell_print_error(x),
+                "promptDelegate": lambda x, y: self.on_shell_prompt(x, y),
+            }
+        )
         self._shell = self._shell_ctx.get_shell()
 
         self._do_execute()
@@ -170,8 +175,7 @@ class RequestHandler(Thread):
                 # the session needs to be locked and it needs to notify a task
                 # will begin execution
                 self._kwargs["session"].lock()
-                self._kwargs["session"].notify_task_execution_state(
-                    None, "started")
+                self._kwargs["session"].notify_task_execution_state(None, "started")
             result = self._func(**self._kwargs)
             if hasattr(self._thread_context, "completion_event"):
                 self._thread_context.completion_event.wait()
@@ -179,21 +183,24 @@ class RequestHandler(Thread):
             # dump stack trace to raw stderr
             import traceback
             import sys
+
             shell = mysqlsh.globals.shell
-            shell.log("error",
-                      f"Unhandled exception while handling request: {self._func.__name__}(): {traceback.format_exc()}")
+            shell.log(
+                "error",
+                f"Unhandled exception while handling request: {self._func.__name__}(): {traceback.format_exc()}",
+            )
             result = Response.exception(e)
         finally:
             if self._lock_session:
-                self._kwargs["session"].notify_task_execution_state(
-                    None, "finished")
+                self._kwargs["session"].notify_task_execution_state(None, "finished")
                 self._kwargs["session"].release()
 
         if result is not None:
             if isinstance(result, dict) and "request_state" in result:
                 self._confirm_complete = result["request_state"]["type"] != "ERROR"
                 self.web_handler.send_command_response(
-                    self.request_id, result, completed=True)
+                    self.request_id, result, completed=True
+                )
             else:
                 if self._is_response_serializable(result):
                     if isinstance(result, list):
@@ -202,17 +209,20 @@ class RequestHandler(Thread):
                         result = asdict(result)
 
                 self.web_handler.send_command_response(
-                    self.request_id, Response.pending(msg="", args={"result": result}))
+                    self.request_id, Response.pending(msg="", args={"result": result})
+                )
         elif hasattr(self._thread_context, "completion_event"):
             if self._thread_context.completion_event.has_errors:
                 self._confirm_complete = False
                 for error in self._thread_context.completion_event.get_errors():
                     self.web_handler.send_command_response(
-                        self.request_id, Response.exception(error), completed=True)
+                        self.request_id, Response.exception(error), completed=True
+                    )
             elif self._thread_context.completion_event.is_cancelled:
                 self._confirm_complete = False
                 self.web_handler.send_command_response(
-                    self.request_id, Response.cancelled(""), completed=True)
+                    self.request_id, Response.cancelled(""), completed=True
+                )
 
         # This is the case of any plugin function that does not fail but
         # does not return anything, we should return an OK response anyway

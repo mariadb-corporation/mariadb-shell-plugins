@@ -52,7 +52,9 @@ class preprocess_script:
         self.defines = defines
         self.tmp_path = None
 
-    def handle_ifdef(self, line: str, lines: list[str], index: int) -> tuple[Optional[bool], int]:
+    def handle_ifdef(
+        self, line: str, lines: list[str], index: int
+    ) -> tuple[Optional[bool], int]:
         stripped = line.strip()
         if not stripped.startswith("--#"):
             return None, index
@@ -109,8 +111,9 @@ class preprocess_script:
 
         content = self.handle_ifdefs(lines)
 
-        tmp_path = pathlib.Path(self.path).parent / \
-            f".tmp_{pathlib.Path(self.path).name}"
+        tmp_path = (
+            pathlib.Path(self.path).parent / f".tmp_{pathlib.Path(self.path).name}"
+        )
         with open(tmp_path, "w") as f:
             f.write(content)
         self.tmp_path = str(tmp_path)
@@ -136,23 +139,30 @@ def execute_script(session, path, defines=None):
     uri = f"{connection_data['user']}:{connection_data['password']}@{connection_data['host']}:{connection_data['port']}"
 
     with preprocess_script(path, defines) as tmp_path:
-        subprocess.check_call(
-            ["mysqlsh", uri, "--quiet-start=2", "-f", tmp_path])
+        subprocess.check_call(["mysqlsh", uri, "--quiet-start=2", "-f", tmp_path])
 
 
 def load_sakila(session):
     if session.run_sql("show schemas like 'sakila'").fetch_one():
         return
 
-    prefix = pathlib.Path(os.path.realpath(__file__)).parent.parent.parent.parent / \
-        "gui/frontend/src/tests/unit-tests/data/sakila-db"
+    prefix = (
+        pathlib.Path(os.path.realpath(__file__)).parent.parent.parent.parent
+        / "gui/frontend/src/tests/unit-tests/data/sakila-db"
+    )
 
     for fname in ["sakila-schema.sql", "sakila-data.sql"]:
         execute_script(session, prefix / fname)
 
 
 def server_version(session) -> tuple[int, ...]:
-    return tuple(int(ver) for ver in session.run_sql("SELECT @@VERSION").fetch_one()[0].split("-")[0].split("."))
+    return tuple(
+        int(ver)
+        for ver in session.run_sql("SELECT @@VERSION")
+        .fetch_one()[0]
+        .split("-")[0]
+        .split(".")
+    )
 
 
 def resolve_vcn(oci_config, ocid: str):
@@ -181,11 +191,14 @@ def resolve_vcn(oci_config, ocid: str):
     elif not private and other and len(subnets) == 2:
         private = other
 
-    print(f"VCN {ocid} is {vcn.display_name}, public={public.display_name if public else ''} private={private.display_name if private else ''}")
+    print(
+        f"VCN {ocid} is {vcn.display_name}, public={public.display_name if public else ''} private={private.display_name if private else ''}"
+    )
 
     if not public or not private:
         raise Exception(
-            f"Could not detect public and/or private subnets for VCN {vcn.display_name}")
+            f"Could not detect public and/or private subnets for VCN {vcn.display_name}"
+        )
 
     return {
         "vcn_id": vcn.id,

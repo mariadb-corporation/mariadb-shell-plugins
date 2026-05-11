@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -275,8 +275,7 @@ def get_mrs_schema_version(session):
         )
 
     if not row:
-        raise Exception(
-            "Unable to fetch MRS metadata database schema version.")
+        raise Exception("Unable to fetch MRS metadata database schema version.")
 
     return [row["major"], row["minor"], row["patch"]]
 
@@ -287,17 +286,11 @@ def get_mrs_schema_version_int(session):
 
 
 def mrs_metadata_schema_exists(session):
-    row = (
-        MrsDbExec(
-            """
+    row = MrsDbExec("""
         SELECT COUNT(*) AS schema_exists
         FROM INFORMATION_SCHEMA.SCHEMATA
         WHERE SCHEMA_NAME = 'mysql_rest_service_metadata'
-    """
-        )
-        .exec(session)
-        .first
-    )
+    """).exec(session).first
     return row["schema_exists"]
 
 
@@ -512,8 +505,7 @@ def get_sql_result_as_dict_list(res, binary_formatter=None):
                 item[col_name] = (
                     json.loads(
                         field_val,
-                        object_hook=create_json_binary_decoder(
-                            binary_formatter),
+                        object_hook=create_json_binary_decoder(binary_formatter),
                     )
                     if field_val
                     else None
@@ -633,8 +625,7 @@ def check_request_path(session, request_path):
     row = res.fetch_one()
 
     if row and row.get_field("full_request_path") != "":
-        raise Exception(
-            f"The request_path {request_path} is already " "in use.")
+        raise Exception(f"The request_path {request_path} is already " "in use.")
 
 
 def check_mrs_object_name(session, db_schema_id, obj_id, obj_name):
@@ -743,8 +734,7 @@ def id_to_binary(id: str, context: str, allowNone=False):
             try:
                 result = base64.b64decode(id, validate=True)
             except Exception:
-                raise RuntimeError(
-                    f"Invalid base64 string '{id}' for '{context}'.")
+                raise RuntimeError(f"Invalid base64 string '{id}' for '{context}'.")
         else:
             raise RuntimeError(f"Invalid id format '{id}' for '{context}'.")
 
@@ -850,8 +840,7 @@ class MrsDbExec:
         self._params = self._params + params
         try:
             # convert lists and dicts to store in the database
-            self._params = [self._convert_to_database(
-                param) for param in self._params]
+            self._params = [self._convert_to_database(param) for param in self._params]
 
             self._result = session.run_sql(self._sql, self._params)
         except Exception as e:
@@ -870,8 +859,7 @@ class MrsDbExec:
 
     @property
     def first(self):
-        result = get_sql_result_as_dict_list(
-            self._result, self._binary_formatter)
+        result = get_sql_result_as_dict_list(self._result, self._binary_formatter)
         if not result:
             return None
         return result[0]
@@ -953,8 +941,7 @@ def insert(table, values={}):
 
 def get_sequence_id(session):
     return (
-        MrsDbExec(
-            f"SELECT {_generate_qualified_name('get_sequence_id()')} as id")
+        MrsDbExec(f"SELECT {_generate_qualified_name('get_sequence_id()')} as id")
         .exec(session)
         .first["id"]
     )
@@ -980,9 +967,8 @@ class MrsDbSession:
             self.__used_sessions.append(self._session.connection_id)
             # Ensures MRS usage is reported, once per session
             # But is only available in classic mysql sessions
-            if hasattr(self._session, 'set_option_tracker_feature_id'):
-                self._session.set_option_tracker_feature_id(
-                    "mysql_ot_msh<ctx>.mrs")
+            if hasattr(self._session, "set_option_tracker_feature_id"):
+                self._session.set_option_tracker_feature_id("mysql_ot_msh<ctx>.mrs")
 
     def __enter__(self):
         return self._session
@@ -1020,18 +1006,19 @@ class MrsDbTransaction:
 class ServerLocalInFile:
     def __init__(self, session, on: bool):
         self._session = session
-        self._local_infile = MrsDbExec(
-            "SHOW GLOBAL VARIABLES LIKE 'local_infile'").exec(session).first["Value"]
+        self._local_infile = (
+            MrsDbExec("SHOW GLOBAL VARIABLES LIKE 'local_infile'")
+            .exec(session)
+            .first["Value"]
+        )
 
-        self._session.run_sql(
-            f"SET GLOBAL local_infile = '{'ON' if on else 'OFF'}'")
+        self._session.run_sql(f"SET GLOBAL local_infile = '{'ON' if on else 'OFF'}'")
 
     def __enter__(self):
         return self._session
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        self._session.run_sql(
-            f"SET GLOBAL local_infile = '{self._local_infile}'")
+        self._session.run_sql(f"SET GLOBAL local_infile = '{self._local_infile}'")
 
 
 def create_identification_conditions(id, name, id_context, name_col):
@@ -1187,8 +1174,7 @@ def has_any(str, group):
 
 def validate_path_for_filesystem(path):
     if path and has_any(path, '<>:"|?*'):
-        raise Exception(
-            f"The supplied path '{path}' contains invalid characters.")
+        raise Exception(f"The supplied path '{path}' contains invalid characters.")
 
 
 def make_string_valid_for_filesystem(str, invalid_characters='<>:"/\\|?*'):
@@ -1244,8 +1230,11 @@ quote_text = squote_str
 quote_user = quote_ident
 quote_auth_app = quote_ident
 quote_role = quote_ident
+
+
 # full_service_path
-def quote_fsp(s): return s  # TODO review
+def quote_fsp(s):
+    return s  # TODO review
 
 
 # request_path
@@ -1356,8 +1345,7 @@ def is_text(data: bytes) -> bool:
     if isinstance(data, str):
         data = data.encode()
 
-    valid_text__chars = "".join(
-        list(map(chr, range(32, 127))) + list("\n\r\t\b"))
+    valid_text__chars = "".join(list(map(chr, range(32, 127))) + list("\n\r\t\b"))
 
     data_without_text = data.translate(None, valid_text__chars.encode())
 

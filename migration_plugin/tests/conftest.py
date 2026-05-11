@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -48,11 +48,11 @@ def pytest_addoption(parser):
     parser.addoption(
         "--reset-project",
         action="store_true",
-        help="reset migration project state before running migration test"
+        help="reset migration project state before running migration test",
     )
     parser.addoption(
         "--site-to-site-vcn",
-        help="Specify the ocid of the VCN supporting site-to-site VPN. Enables tests that require them."
+        help="Specify the ocid of the VCN supporting site-to-site VPN. Enables tests that require them.",
     )
 
 
@@ -75,8 +75,7 @@ def setup_sandbox(request, connection_data, enable_repl: bool):
     shell.options.set("useWizards", False)
 
     sandbox_dir = pathlib.Path(
-        os.path.join(tempfile.gettempdir(),
-                     "migration-test-sandboxes")
+        os.path.join(tempfile.gettempdir(), "migration-test-sandboxes")
     )
     os.makedirs(sandbox_dir, exist_ok=True)
 
@@ -89,8 +88,7 @@ def setup_sandbox(request, connection_data, enable_repl: bool):
             do_deploy = True
             sandbox_path = str(sandbox_dir)
         else:
-            print(
-                f"Reusing sandbox {connection_data["port"]} at {sandbox_dir}")
+            print(f"Reusing sandbox {connection_data["port"]} at {sandbox_dir}")
     else:
         deployment_dir = tempfile.TemporaryDirectory()
         do_deploy = True
@@ -117,11 +115,11 @@ def setup_sandbox(request, connection_data, enable_repl: bool):
 
     if do_deploy:
         session.run_sql("set sql_log_bin=0")
-        session.run_sql(
-            "create user if not exists admin@'%' identified by 'Sakila1!'")
+        session.run_sql("create user if not exists admin@'%' identified by 'Sakila1!'")
         session.run_sql("grant all on *.* to admin@'%' with grant option")
         session.run_sql(
-            f"INSTALL PLUGIN mysql_no_login SONAME 'mysql_no_login.{'dll' if 'nt' == os.name else 'so'}'")
+            f"INSTALL PLUGIN mysql_no_login SONAME 'mysql_no_login.{'dll' if 'nt' == os.name else 'so'}'"
+        )
         session.run_sql("set sql_log_bin=1")
 
     def cleanup():
@@ -138,8 +136,7 @@ def setup_sandbox(request, connection_data, enable_repl: bool):
 @pytest.fixture(scope="session")
 def sandbox_session(request):
     connection_data = helpers.get_connection_data()
-    session, cleanup = setup_sandbox(
-        request, connection_data, enable_repl=False)
+    session, cleanup = setup_sandbox(request, connection_data, enable_repl=False)
     yield session
     cleanup()
 
@@ -147,8 +144,7 @@ def sandbox_session(request):
 @pytest.fixture(scope="session")
 def sandbox_repl_session(request):
     connection_data = helpers.get_connection_data(1)
-    session, cleanup = setup_sandbox(
-        request, connection_data, enable_repl=True)
+    session, cleanup = setup_sandbox(request, connection_data, enable_repl=True)
     yield session
     cleanup()
 
@@ -175,15 +171,25 @@ def reset_project(request):
 
 def pytest_configure(config):
     config.addinivalue_line(
-        "markers", "requires_oci_tests_enabled: mark tests that would be skipped if MIGRATION_TEST_SKIP_OCI_TESTS is defined")
+        "markers",
+        "requires_oci_tests_enabled: mark tests that would be skipped if MIGRATION_TEST_SKIP_OCI_TESTS is defined",
+    )
     config.addinivalue_line(
-        "markers", "requires_root_compartment_id: mark tests that require MIGRATION_TEST_ROOT_COMPARTMENT_ID")
+        "markers",
+        "requires_root_compartment_id: mark tests that require MIGRATION_TEST_ROOT_COMPARTMENT_ID",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
     marker_conditions = {
-        "requires_oci_tests_enabled": (os.environ.get('MIGRATION_TEST_SKIP_OCI_TESTS') is not None, "Requires MIGRATION_TEST_SKIP_OCI_TESTS to NOT be defined"),
-        "requires_root_compartment_id": (os.environ.get('MIGRATION_TEST_ROOT_COMPARTMENT_ID') is None, "Requires MIGRATION_TEST_ROOT_COMPARTMENT_ID"),
+        "requires_oci_tests_enabled": (
+            os.environ.get("MIGRATION_TEST_SKIP_OCI_TESTS") is not None,
+            "Requires MIGRATION_TEST_SKIP_OCI_TESTS to NOT be defined",
+        ),
+        "requires_root_compartment_id": (
+            os.environ.get("MIGRATION_TEST_ROOT_COMPARTMENT_ID") is None,
+            "Requires MIGRATION_TEST_ROOT_COMPARTMENT_ID",
+        ),
     }
 
     for item in items:

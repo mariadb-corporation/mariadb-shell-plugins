@@ -29,17 +29,17 @@ It registers the plugin objects and then imports all sub-modules to
 register the plugin object member functions.
 """
 
-from mysqlsh.plugin_manager import plugin # pylint: disable=import-error
 from os import environ
 
+from mysqlsh.plugin_manager import plugin  # pylint: disable=import-error
 
-DEBUG_MODE = int(environ.get("MYSQL_SHELL_GUI_DEBUG_MODE", '0'))
+DEBUG_MODE = int(environ.get("MYSQL_SHELL_GUI_DEBUG_MODE", "0"))
 
 
 # Create a class representing the structure of the plugin and use the
 # @register_plugin decorator to register it
 @plugin
-class gui():
+class gui:
     """MySQL Shell GUI backend plugin.
 
     This plugin serves as the backend for the MySQL Shell GUI projects.
@@ -59,63 +59,63 @@ class gui():
         if DEBUG_MODE:
             from gui_plugin import debugger
 
-    class cluster():
+    class cluster:
         """The InnoDB Cluster MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
         InnoDB Cluster MySQL Shell GUI module
         """
 
-    class core():
+    class core:
         """The Core MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
         Core MySQL Shell GUI module
         """
 
-    class db_connections():
+    class db_connections:
         """The DB Connections MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
         DB Connections MySQL Shell GUI module
         """
 
-    class modeler():
+    class modeler:
         """The Modeler MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
         Modeler MySQL Shell GUI module
         """
 
-    class modules():
+    class modules:
         """The Modules MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
         Modules MySQL Shell GUI module
         """
 
-    class mds():
+    class mds:
         """The MySQL Database Service MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
         MySQL Database Service MySQL Shell GUI module
         """
 
-    class shell():
+    class shell:
         """The Shell MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
         Shell MySQL Shell GUI module
         """
 
-    class sql_editor():
+    class sql_editor:
         """The SQL Editor MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
         SQL Editor MySQL Shell GUI module
         """
 
-    class users():
+    class users:
         """The Users MySQL Shell GUI backend module
 
         This extension object holds the backend implementation of the
@@ -123,21 +123,22 @@ class gui():
         """
 
     if DEBUG_MODE:
-        class debugger():
+
+        class debugger:
             """The websocket debugger module
 
             This extension object holds the backend implementation of the
             Websocket debugger module
             """
 
-    class start():
+    class start:
         """Used to start the MySQL Shell GUI
 
         The MySQL Shell GUI can be started as a native application
         or as a web application served by a web server.
         """
 
-    class db():
+    class db:
         """Used to retrieve metadata from database
 
         This extension allow user to retrieve metadata form databases.

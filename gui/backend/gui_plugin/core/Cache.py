@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -37,8 +37,7 @@ class AutoTTLConnectionCache:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
 
-        self._cleaner_thread = threading.Thread(
-            target=self._cleaner, daemon=True)
+        self._cleaner_thread = threading.Thread(target=self._cleaner, daemon=True)
         self._cleaner_thread.start()
 
     def _cleaner(self):
@@ -50,18 +49,19 @@ class AutoTTLConnectionCache:
         now = time.time()
         with self._lock:
             keys_to_delete = [
-                key for key, (_, ts) in self._cache.items() if now - ts > self.ttl]
+                key for key, (_, ts) in self._cache.items() if now - ts > self.ttl
+            ]
             for key in keys_to_delete:
                 profile_id, connection_id = self._cache[key]
                 gui.db_connections.remove_db_connection(  # type: ignore
-                    profile_id, connection_id)
+                    profile_id, connection_id
+                )
                 del self._cache[key]
 
     def __setitem__(self, key, value):
         with self._lock:
             if len(self._cache) >= self.max_size:
-                oldest_key = min(self._cache.items(),
-                                 key=lambda item: item[1][1])[0]
+                oldest_key = min(self._cache.items(), key=lambda item: item[1][1])[0]
                 del self._cache[oldest_key]
             self._cache[key] = (value, time.time())
 

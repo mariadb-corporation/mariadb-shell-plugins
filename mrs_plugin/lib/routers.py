@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,9 @@ def get_router_ids(session, seen_within=None):
     """
 
     if seen_within:
-        sql += f"WHERE last_check_in > CURRENT_TIMESTAMP - INTERVAL {seen_within} SECOND"
+        sql += (
+            f"WHERE last_check_in > CURRENT_TIMESTAMP - INTERVAL {seen_within} SECOND"
+        )
 
     return core.MrsDbExec(sql).exec(session).items
 

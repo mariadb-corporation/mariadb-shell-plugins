@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,37 +30,43 @@ ws: TWebSocket
 
 execute_request_id = ws.generateRequestId()
 
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": execute_request_id,
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "SELECT SLEEP(3);",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-}, [
+ws.sendAndValidate(
     {
-        "request_state": {"type": "PENDING", "msg": "Execution started..."},
-        "request_id": execute_request_id
-    }
-])
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": ws.generateRequestId(),
-    "command": "gui.sql_editor.kill_query",
-    "args": {
-        "module_session_id": ws.tokens["module_session_id"],
-    }
-}, [
-    {
-        "request_id": ws.lastGeneratedRequestId,
-        "request_state": {"type": "OK", "msg": ""},
-        "done": True
-    },
-    {
+        "request": "execute",
         "request_id": execute_request_id,
-        "request_state": {"type": "ERROR", "msg": "Error[MSG-1201]: Query killed"},
-    }
-])
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "SELECT SLEEP(3);",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
+        },
+    },
+    [
+        {
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+            "request_id": execute_request_id,
+        }
+    ],
+)
+
+ws.sendAndValidate(
+    {
+        "request": "execute",
+        "request_id": ws.generateRequestId(),
+        "command": "gui.sql_editor.kill_query",
+        "args": {
+            "module_session_id": ws.tokens["module_session_id"],
+        },
+    },
+    [
+        {
+            "request_id": ws.lastGeneratedRequestId,
+            "request_state": {"type": "OK", "msg": ""},
+            "done": True,
+        },
+        {
+            "request_id": execute_request_id,
+            "request_state": {"type": "ERROR", "msg": "Error[MSG-1201]: Query killed"},
+        },
+    ],
+)

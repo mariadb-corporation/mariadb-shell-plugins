@@ -1,28 +1,28 @@
- #!/usr/bin/env python
- #
- # Copyright (c) 2025, Oracle and/or its affiliates.
- #
- # This program is free software; you can redistribute it and/or modify
- # it under the terms of the GNU General Public License, version 2.0,
- # as published by the Free Software Foundation.
- #
- # This program is designed to work with certain software (including
- # but not limited to OpenSSL) that is licensed under separate terms,
- # as designated in a particular file or component or in included license
- # documentation.  The authors of MySQL hereby grant you an additional
- # permission to link the program and your derivative works with the
- # separately licensed software that they have either included with
- # the program or referenced in the documentation.
- #
- # This program is distributed in the hope that it will be useful,  but
- # WITHOUT ANY WARRANTY; without even the implied warranty of
- # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
- # the GNU General Public License, version 2.0, for more details.
- #
- # You should have received a copy of the GNU General Public License
- # along with this program; if not, write to the Free Software Foundation, Inc.,
- # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
- #
+#!/usr/bin/env python
+#
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is designed to work with certain software (including
+# but not limited to OpenSSL) that is licensed under separate terms,
+# as designated in a particular file or component or in included license
+# documentation.  The authors of MySQL hereby grant you an additional
+# permission to link the program and your derivative works with the
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
+#
+# This program is distributed in the hope that it will be useful,  but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+# the GNU General Public License, version 2.0, for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+#
 
 import argparse
 import hashlib
@@ -37,13 +37,19 @@ import sys
 import uuid
 import xml.etree.ElementTree as ET
 
+
 def log(msg):
     sys.stderr.write(f"WIX4: {msg}\n")
     sys.stderr.flush()
 
+
 def run_process(*args, cwd=None, ignore_exit_code=False):
     try:
-        return subprocess.check_output([*args], stderr=subprocess.STDOUT, cwd=cwd).decode("ascii").strip()
+        return (
+            subprocess.check_output([*args], stderr=subprocess.STDOUT, cwd=cwd)
+            .decode("ascii")
+            .strip()
+        )
     except subprocess.CalledProcessError as e:
         if ignore_exit_code:
             return ""
@@ -51,19 +57,23 @@ def run_process(*args, cwd=None, ignore_exit_code=False):
         log(f"Failed to execute [{' '.join(args)}]: {e.output.decode('ascii').strip()}")
         raise
 
+
 def check_preconditions():
-    for exe in [ "dotnet", "cmake", "cpack" ]:
+    for exe in ["dotnet", "cmake", "cpack"]:
         try:
             log(f"{exe}: {run_process(exe, '--version')}")
         except:
             log(f"Could not execute '{exe}'")
             raise
 
+
 def safe_path(path):
-     return path.replace("\\", "/")
+    return path.replace("\\", "/")
+
 
 def guid():
     return str(uuid.uuid4()).upper()
+
 
 def execute(l, status, failure, *args):
     try:
@@ -73,10 +83,12 @@ def execute(l, status, failure, *args):
         log(failure)
         raise
 
+
 def split_path(path):
     return safe_path(path).split("/")
 
-class Rtf_file():
+
+class Rtf_file:
     def __init__(self, path):
         self.__fh = open(path, "wb")
         self.__start_group()
@@ -144,7 +156,7 @@ class Rtf_file():
         self.__control_word(b"fs14")
 
     def append(self, text):
-        t = text.encode('utf-8')
+        t = text.encode("utf-8")
         i = 0
         l = len(t)
 
@@ -163,22 +175,33 @@ class Rtf_file():
                 pass
             else:
                 if c <= 0x7F:
-                    self.__fh.write(c.to_bytes(1, 'big'))
+                    self.__fh.write(c.to_bytes(1, "big"))
                 else:
                     if c <= 0xC0:
                         # continuation bytes
                         self.__write_invalid_codepoint()
                     elif c < 0xE0 and i + 1 < l:
                         # two byte sequence: 110xxxxx 10xxxxxx
-                        self.__write_unicode_codepoint(((c & 0x1F) << 6) | (t[i + 1] & 0x3F))
+                        self.__write_unicode_codepoint(
+                            ((c & 0x1F) << 6) | (t[i + 1] & 0x3F)
+                        )
                         i += 1
                     elif c < 0xF0 and i + 2 < l:
                         # three byte sequence: 1110xxxx 10xxxxxx 10xxxxxx
-                        self.__write_unicode_codepoint(((c & 0x0F) << 12) | ((t[i + 1] & 0x3F) << 6) | (t[i + 2] & 0x3F))
+                        self.__write_unicode_codepoint(
+                            ((c & 0x0F) << 12)
+                            | ((t[i + 1] & 0x3F) << 6)
+                            | (t[i + 2] & 0x3F)
+                        )
                         i += 2
                     elif c < 0xF8 and i + 3 < l:
                         # four byte sequence: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
-                        self.__write_unicode_codepoint(((c & 0x07) << 18) | ((t[i + 1] & 0x3F) << 12) | ((t[i + 2] & 0x3F) << 6) | (t[i + 3] & 0x3F))
+                        self.__write_unicode_codepoint(
+                            ((c & 0x07) << 18)
+                            | ((t[i + 1] & 0x3F) << 12)
+                            | ((t[i + 2] & 0x3F) << 6)
+                            | (t[i + 3] & 0x3F)
+                        )
                         i += 3
                     else:
                         self.__write_invalid_codepoint()
@@ -208,11 +231,12 @@ class Rtf_file():
         if c > 32767:
             c -= 65536
 
-        self.__fh.write(str(c).encode('ascii'))
+        self.__fh.write(str(c).encode("ascii"))
         # character displayed if reader doesn't support \uN sequence
         self.__fh.write(b"?")
 
-class Wix4():
+
+class Wix4:
     extensions = ["WixToolset.UI.wixext", "WixToolset.Util.wixext"]
     version = "4.0.5"
 
@@ -237,36 +261,61 @@ class Wix4():
         self.__vars["UPGRADE_GUID"] = "A25BD1F4-342B-46E3-B459-5B72E319E133"
         self.__vars["PACKAGE_VENDOR"] = "Oracle and/or its affiliates"
         self.__vars["PACKAGE_NAME"] = "MySQL Shell Workbench"
-        self.__vars["PRODUCT_ICON"] = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mysql-shell-workbench", "Properties", "MySQLWorkbench.ico")
+        self.__vars["PRODUCT_ICON"] = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "mysql-shell-workbench",
+            "Properties",
+            "MySQLWorkbench.ico",
+        )
         self.__vars["PROGRAM_MENU_FOLDER"] = "MySQL"
         self.__vars["MAIN_EXECUTABLE_NAME"] = "MySQLShellWorkbench"
         self.__vars["MAIN_EXECUTABLE_FILE_ID"] = ""
 
         if self.__folder is None:
             self.__vars["PACKAGE_VERSION"] = self.__version
-            self.__vars["INSTALL_DIRECTORY"] = f"MySQL/MySQL Shell Workbench {self.__version}"
+            self.__vars["INSTALL_DIRECTORY"] = (
+                f"MySQL/MySQL Shell Workbench {self.__version}"
+            )
             self.__vars["PACKAGE_FILE_NAME"] = f"{self.__name}-{self.__version}"
-            self.msi = os.path.join(self.__dst_dir, self.__vars["PACKAGE_FILE_NAME"] + ".msi")
+            self.msi = os.path.join(
+                self.__dst_dir, self.__vars["PACKAGE_FILE_NAME"] + ".msi"
+            )
 
         self.__components = []
-        self.__executables = [self.__vars["MAIN_EXECUTABLE_NAME"],self.__vars["PACKAGE_NAME"]]
+        self.__executables = [
+            self.__vars["MAIN_EXECUTABLE_NAME"],
+            self.__vars["PACKAGE_NAME"],
+        ]
         self.__shortcuts = []
         # convert list into list of pairs (name, label)
-        self.__executables = list(zip(self.__executables[::2], self.__executables[1::2]))
+        self.__executables = list(
+            zip(self.__executables[::2], self.__executables[1::2])
+        )
         self.__ids = {}
         self.__id_count = {}
         self.__wix_dir = os.path.join(os.path.normpath(self.__dst_dir), "WIX4")
 
-        self.exclude_dirs = ['__pycache__']
-        self.exclude_extensions = ['.pyc']
-
+        self.exclude_dirs = ["__pycache__"]
+        self.exclude_extensions = [".pyc"]
 
     def generate(self):
-        execute(self.__create_output_dir, "Creating output directory", "Failed to create output directory")
+        execute(
+            self.__create_output_dir,
+            "Creating output directory",
+            "Failed to create output directory",
+        )
 
         if self.__folder is None:
-            execute(self.__handle_main_file, "Copying the 'main.wxs' file", "Failed to copy the 'main.wxs' file")
-            execute(self.__handle_license_file, "Converting license file", "Failed to convert licence file")
+            execute(
+                self.__handle_main_file,
+                "Copying the 'main.wxs' file",
+                "Failed to copy the 'main.wxs' file",
+            )
+            execute(
+                self.__handle_license_file,
+                "Converting license file",
+                "Failed to convert licence file",
+            )
 
         self.__directories, directories = self.__init_xml()
         self.__features, features = self.__init_xml()
@@ -281,11 +330,21 @@ class Wix4():
         if self.__components:
             for component in self.__components:
                 component_id = self.__component_id(component)
-                self.__add_files_and_directories(os.path.join(self.__package_dir, component), "INSTALL_ROOT", self.__add_feature_ref(features, component_id), directories, files)
+                self.__add_files_and_directories(
+                    os.path.join(self.__package_dir, component),
+                    "INSTALL_ROOT",
+                    self.__add_feature_ref(features, component_id),
+                    directories,
+                    files,
+                )
         else:
             # NO Support for shortcuts in this case (yet)
-            target_folder = self.__install_root if self.__folder is None else self.__folder
-            self.__add_files_and_directories(self.__src_dir, target_folder, main_feature, directories, files)
+            target_folder = (
+                self.__install_root if self.__folder is None else self.__folder
+            )
+            self.__add_files_and_directories(
+                self.__src_dir, target_folder, main_feature, directories, files
+            )
 
         if self.__shortcuts:
             self.__add_start_menu_shortcuts(main_feature, files)
@@ -294,8 +353,11 @@ class Wix4():
         self.__write_wxs("features", self.__features)
         self.__write_wxs("files", self.__files)
 
-        execute(self.__create_wix_vars_file, "Creating the 'variables.wxi' file", "Failed to create the 'variables.wxi' file")
-
+        execute(
+            self.__create_wix_vars_file,
+            "Creating the 'variables.wxi' file",
+            "Failed to create the 'variables.wxi' file",
+        )
 
     def __create_output_dir(self):
         os.makedirs(self.__dst_dir, exist_ok=True)
@@ -314,8 +376,10 @@ class Wix4():
 
         if not os.path.exists(license_file):
             raise Exception(f"Missing License File At: {license_file}")
-        
-        rtf_license = os.path.join(self.__wix_dir, os.path.splitext(os.path.basename(license_file))[0] + ".rtf")
+
+        rtf_license = os.path.join(
+            self.__wix_dir, os.path.splitext(os.path.basename(license_file))[0] + ".rtf"
+        )
 
         with open(license_file, "r", encoding="utf-8") as input:
             rtf = Rtf_file(rtf_license)
@@ -326,7 +390,9 @@ class Wix4():
         self.__vars["LICENSE_RTF"] = safe_path(rtf_license)
 
     def __create_wix_vars_file(self):
-        with open(os.path.join(self.__wix_dir, "variables.wxi"), "w", encoding="utf-8") as f:
+        with open(
+            os.path.join(self.__wix_dir, "variables.wxi"), "w", encoding="utf-8"
+        ) as f:
             f.write('<Include xmlns="http://wixtoolset.org/schemas/v4/wxs">\n')
 
             for var, value in self.__vars.items():
@@ -334,12 +400,13 @@ class Wix4():
 
             f.write("</Include>\n")
 
-
     def create_msi(self):
         if self.__folder is not None:
-            raise Exception("The MSI can not be created when everything will be a subcomponent.")
+            raise Exception(
+                "The MSI can not be created when everything will be a subcomponent."
+            )
 
-        args = [ "wix", "build", "-arch", "x64" ]
+        args = ["wix", "build", "-arch", "x64"]
 
         for extension in self.extensions:
             args.append("-ext")
@@ -353,14 +420,16 @@ class Wix4():
         log(f"output:\n{run_process(*args)}")
 
     def __init_xml(self):
-        root = ET.Element("Wix", attrib={"xmlns": "http://wixtoolset.org/schemas/v4/wxs"})
+        root = ET.Element(
+            "Wix", attrib={"xmlns": "http://wixtoolset.org/schemas/v4/wxs"}
+        )
         fragment = ET.SubElement(root, "Fragment")
         return (root, fragment)
 
     def __write_wxs(self, name, xml):
         tree = ET.ElementTree(xml)
         ET.indent(tree, " ")
-        tree.write(os.path.join(self.__wix_dir, name + ".wxs"), encoding='utf-8')
+        tree.write(os.path.join(self.__wix_dir, name + ".wxs"), encoding="utf-8")
 
     def __add_standard_directory(self, parent, id):
         return ET.SubElement(parent, "StandardDirectory", attrib={"Id": id})
@@ -373,7 +442,9 @@ class Wix4():
 
     def __add_start_menu(self, parent):
         sd = self.__add_standard_directory(parent, "ProgramMenuFolder")
-        self.__add_directory(sd, "PROGRAM_MENU_FOLDER", self.__vars["PROGRAM_MENU_FOLDER"])
+        self.__add_directory(
+            sd, "PROGRAM_MENU_FOLDER", self.__vars["PROGRAM_MENU_FOLDER"]
+        )
 
     def __init_directories(self, parent):
         if self.__folder is None:
@@ -392,18 +463,30 @@ class Wix4():
         return "CM_C_" + name
 
     def __init_features(self, parent):
-        feature_name = "ProductFeature" if self.__folder is None else "MySQLShellWorkbenchFeature"
-        main_feature = ET.SubElement(parent, "Feature", attrib={"Id": feature_name,
-                                                     "Display": "hidden",
-                                                     "ConfigurableDirectory": self.__install_root,
-                                                     "Title": self.__vars["PACKAGE_NAME"],
-                                                     "Level": "1",
-                                                     "AllowAbsent": "no"})
+        feature_name = (
+            "ProductFeature" if self.__folder is None else "MySQLShellWorkbenchFeature"
+        )
+        main_feature = ET.SubElement(
+            parent,
+            "Feature",
+            attrib={
+                "Id": feature_name,
+                "Display": "hidden",
+                "ConfigurableDirectory": self.__install_root,
+                "Title": self.__vars["PACKAGE_NAME"],
+                "Level": "1",
+                "AllowAbsent": "no",
+            },
+        )
 
         # If there are components defined, creates a feature for each of them
         if self.__components:
             for component in self.__components:
-                ET.SubElement(main_feature, "Feature", attrib={"Id": self.__component_id(component), "Title": component})
+                ET.SubElement(
+                    main_feature,
+                    "Feature",
+                    attrib={"Id": self.__component_id(component), "Title": component},
+                )
         return main_feature
 
     def __add_feature_ref(self, parent, id):
@@ -460,7 +543,11 @@ class Wix4():
     def __hash_id(self, path, filename):
         max = 52
 
-        id = hashlib.sha1(safe_path(path).encode("utf8")).hexdigest()[0:7] + "_" + filename[0:max]
+        id = (
+            hashlib.sha1(safe_path(path).encode("utf8")).hexdigest()[0:7]
+            + "_"
+            + filename[0:max]
+        )
 
         if len(filename) > max:
             id += "..."
@@ -476,12 +563,22 @@ class Wix4():
                     if entry.name in self.exclude_dirs:
                         continue
                     id = "CM_D" + id
-                    self.__add_files_and_directories(entry.path, id, feature, self.__add_directory(directory, id, entry.name), files)
+                    self.__add_files_and_directories(
+                        entry.path,
+                        id,
+                        feature,
+                        self.__add_directory(directory, id, entry.name),
+                        files,
+                    )
                 else:
-                    is_excluded = any(entry.name.endswith(ext) for ext in self.exclude_extensions)
+                    is_excluded = any(
+                        entry.name.endswith(ext) for ext in self.exclude_extensions
+                    )
                     if is_excluded:
                         continue
-                    component_id, file_id = self.__add_file(files, parent_id, entry.path, id)
+                    component_id, file_id = self.__add_file(
+                        files, parent_id, entry.path, id
+                    )
                     if entry.name == f"{self.__vars['MAIN_EXECUTABLE_NAME']}.exe":
                         self.__vars["MAIN_EXECUTABLE_FILE_ID"] = file_id
                     self.__add_component_ref(feature, component_id)
@@ -496,7 +593,11 @@ class Wix4():
         component_id = "CM_C" + file_id
         c = self.__add_component(parent, dir_id, component_id)
         file_id = "CM_F" + file_id
-        ET.SubElement(c, "File", attrib={"Id": file_id, "Source": safe_path(file_path), "KeyPath": "yes"})
+        ET.SubElement(
+            c,
+            "File",
+            attrib={"Id": file_id, "Source": safe_path(file_path), "KeyPath": "yes"},
+        )
         return component_id, file_id
 
     def __add_component(self, parent, dir_id, component_id):
@@ -513,19 +614,44 @@ class Wix4():
         self.__add_component_ref(feature, component_id)
 
         for shortcut in self.__shortcuts:
-            ET.SubElement(c, "Shortcut", attrib={"Id": "CM_S" + shortcut[0],
-                                                 "Name": shortcut[1],
-                                                 "Target": f"[#CM_F{shortcut[0]}]",
-                                                 "WorkingDirectory": shortcut[2]})
+            ET.SubElement(
+                c,
+                "Shortcut",
+                attrib={
+                    "Id": "CM_S" + shortcut[0],
+                    "Name": shortcut[1],
+                    "Target": f"[#CM_F{shortcut[0]}]",
+                    "WorkingDirectory": shortcut[2],
+                },
+            )
 
-        ET.SubElement(c, "RegistryValue", attrib={"Root": "HKCU",
-                                                  "Key": "\\".join(["Software", self.__vars["PACKAGE_VENDOR"], self.__vars["PACKAGE_NAME"]]),
-                                                  "Name": component + "_installed",
-                                                  "Type": "integer",
-                                                  "Value": "1",
-                                                  "KeyPath": "yes"})
+        ET.SubElement(
+            c,
+            "RegistryValue",
+            attrib={
+                "Root": "HKCU",
+                "Key": "\\".join(
+                    [
+                        "Software",
+                        self.__vars["PACKAGE_VENDOR"],
+                        self.__vars["PACKAGE_NAME"],
+                    ]
+                ),
+                "Name": component + "_installed",
+                "Type": "integer",
+                "Value": "1",
+                "KeyPath": "yes",
+            },
+        )
 
-        ET.SubElement(c, "RemoveFolder", attrib={"Id": "CM_REMOVE_PROGRAM_MENU_FOLDER_" + component, "On": "uninstall"})
+        ET.SubElement(
+            c,
+            "RemoveFolder",
+            attrib={
+                "Id": "CM_REMOVE_PROGRAM_MENU_FOLDER_" + component,
+                "On": "uninstall",
+            },
+        )
 
     @staticmethod
     def install():
@@ -534,22 +660,35 @@ class Wix4():
         # output is: wix             x.y.z        wix
         if "wix " not in tools and " wix" not in tools:
             log("wix not installed, installing...")
-            run_process("dotnet", "tool", "install", "--global", "wix", "--version", Wix4.version)
+            run_process(
+                "dotnet",
+                "tool",
+                "install",
+                "--global",
+                "wix",
+                "--version",
+                Wix4.version,
+            )
 
         log(f"wix version: {run_process('wix', '--version')}")
 
         def wix_extensions():
             # this returns non-zero exit code if list is empty
-            return run_process("wix", "extension", "list", "--global", ignore_exit_code=True)
+            return run_process(
+                "wix", "extension", "list", "--global", ignore_exit_code=True
+            )
 
-        extensions =  wix_extensions()
+        extensions = wix_extensions()
 
         for ext in Wix4.extensions:
             if ext not in extensions:
                 log(f"Installing wix extension '{ext}'...")
-                run_process("wix", "extension", "add", "--global", f"{ext}/{Wix4.version}")
+                run_process(
+                    "wix", "extension", "add", "--global", f"{ext}/{Wix4.version}"
+                )
 
         log(f"Installed wix extensions:\n{wix_extensions()}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Create MSI usin WIX4")
@@ -557,7 +696,12 @@ def main():
     parser.add_argument("-d", "--dst", help="Destination directory", required=True)
     parser.add_argument("-n", "--name", help="Package File Name", default=None)
     parser.add_argument("-v", "--version", help="Version", default=None)
-    parser.add_argument("-r", "--root", default=None, help="The install root, only when generating bundle configuration")
+    parser.add_argument(
+        "-r",
+        "--root",
+        default=None,
+        help="The install root, only when generating bundle configuration",
+    )
     args = parser.parse_args()
 
     # disable telemetry
@@ -571,6 +715,7 @@ def main():
     execute(wix.generate, "Creating WXS files...", "Failed to create WXS files")
     if args.root is None:
         execute(wix.create_msi, "Creating MSI...", "Failed to create MSI")
+
 
 if __name__ == "__main__":
     main()

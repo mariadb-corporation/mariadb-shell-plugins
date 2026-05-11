@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ class FilterExpire(IntEnum):
     OnUse = 2
 
 
-class LogFilter():
+class LogFilter:
     def __init__(self, expire_method):
         self._expired_method = expire_method
         self._expired = False
@@ -99,7 +99,7 @@ class SubstringFilter(LogFilter):
     def apply(self, data):
         if isinstance(data, str):
             if self._start in data and self._end in data:
-                start = data.find(self._start)+len(self._start)
+                start = data.find(self._start) + len(self._start)
                 end = data.find(self._end)
                 data = data[:start] + SENSITIVE_DATA_REPLACEMENT + data[end:]
                 self._on_apply()

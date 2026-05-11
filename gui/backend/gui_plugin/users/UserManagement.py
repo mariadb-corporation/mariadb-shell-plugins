@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ from gui_plugin.core.Error import MSGException
 from gui_plugin.core.Context import get_context
 
 
-@plugin_function('gui.users.createUser', cli=True, web=True)
+@plugin_function("gui.users.createUser", cli=True, web=True)
 def create_user(username, password, role=None, allowed_hosts=None, be_session=None):
     """Creates a new user account
 
@@ -49,13 +49,12 @@ def create_user(username, password, role=None, allowed_hosts=None, be_session=No
     """
     with BackendDatabase(be_session) as db:
         with BackendTransaction(db):
-            user_id = backend.create_user(
-                db, username, password, role, allowed_hosts)
+            user_id = backend.create_user(db, username, password, role, allowed_hosts)
 
     return user_id
 
 
-@plugin_function('gui.users.setAllowedHosts', web=True)
+@plugin_function("gui.users.setAllowedHosts", web=True)
 def set_allowed_hosts(user_id, allowed_hosts, be_session=None):
     """Sets the allowed hosts for the given user.
 
@@ -70,12 +69,17 @@ def set_allowed_hosts(user_id, allowed_hosts, be_session=None):
     """
     with BackendDatabase(be_session) as db:
         with BackendTransaction(db):
-            db.execute('''UPDATE user SET allowed_hosts = ?
-                WHERE id = ?''',
-                       (allowed_hosts, user_id,))
+            db.execute(
+                """UPDATE user SET allowed_hosts = ?
+                WHERE id = ?""",
+                (
+                    allowed_hosts,
+                    user_id,
+                ),
+            )
 
 
-@plugin_function('gui.users.deleteUser', cli=True, web=True)
+@plugin_function("gui.users.deleteUser", cli=True, web=True)
 def delete_user(username, be_session=None):
     """Deletes a user account
 
@@ -92,14 +96,12 @@ def delete_user(username, be_session=None):
         default_group_id = backend.get_default_group_id(db, user_id)
         with BackendTransaction(db):
             db.execute("DELETE FROM user WHERE name = ?", (username,))
-            db.execute(
-                "DELETE FROM user_has_role WHERE user_id = ?", (user_id,))
-            db.execute(
-                "DELETE FROM user_group_has_user WHERE user_id = ?", (user_id,))
+            db.execute("DELETE FROM user_has_role WHERE user_id = ?", (user_id,))
+            db.execute("DELETE FROM user_group_has_user WHERE user_id = ?", (user_id,))
             backend.remove_user_group(db, default_group_id)
 
 
-@plugin_function('gui.users.grantRole', web=True)
+@plugin_function("gui.users.grantRole", web=True)
 def grant_role(username, role, be_session=None):
     """Grant the given roles to the user.
 
@@ -116,8 +118,9 @@ def grant_role(username, role, be_session=None):
     with BackendDatabase(be_session) as db:
         user_id = backend.get_user_id(db, username)
         if not user_id:
-            raise MSGException(Error.USER_INVALID_ROLE,
-                               f"There is no user with the name '{username}'.")
+            raise MSGException(
+                Error.USER_INVALID_ROLE, f"There is no user with the name '{username}'."
+            )
 
         # ensure roles is always a list
         roles = [role]
@@ -126,20 +129,24 @@ def grant_role(username, role, be_session=None):
         with BackendTransaction(db):
             for role in roles:
                 res = db.execute(
-                    "SELECT id FROM role WHERE name = ?", (role,)).fetch_one()
+                    "SELECT id FROM role WHERE name = ?", (role,)
+                ).fetch_one()
                 if not res:
-                    raise MSGException(Error.USER_INVALID_ROLE,
-                                       f"There is no role with the name '{role}'.")
+                    raise MSGException(
+                        Error.USER_INVALID_ROLE,
+                        f"There is no role with the name '{role}'.",
+                    )
                 else:
                     role_id = res[0]
 
                 # perform the many-to-many insert
-                db.execute("INSERT INTO user_has_role("
-                           "user_id, role_id) "
-                           "VALUES(?, ?)", (user_id, role_id))
+                db.execute(
+                    "INSERT INTO user_has_role(" "user_id, role_id) " "VALUES(?, ?)",
+                    (user_id, role_id),
+                )
 
 
-@plugin_function('gui.users.getUserId', web=True)
+@plugin_function("gui.users.getUserId", web=True)
 def get_user_id(username, be_session=None):
     """Gets the id for a given user.
 
@@ -157,7 +164,7 @@ def get_user_id(username, be_session=None):
     return user_id
 
 
-@plugin_function('gui.users.listUsers', cli=True, web=True)
+@plugin_function("gui.users.listUsers", cli=True, web=True)
 def list_users(be_session=None):
     """Lists all user accounts.
 
@@ -172,7 +179,7 @@ def list_users(be_session=None):
         return backend.list_users(db)
 
 
-@plugin_function('gui.users.listUserRoles', web=True)
+@plugin_function("gui.users.listUserRoles", web=True)
 def list_user_roles(username, be_session=None):
     """List the granted roles for a given user.
 
@@ -185,16 +192,19 @@ def list_user_roles(username, be_session=None):
         list: the list of roles.
     """
     with BackendDatabase(be_session) as db:
-        return db.select('''SELECT r.name, r.description
+        return db.select(
+            """SELECT r.name, r.description
             FROM user u
                 INNER JOIN user_has_role u_r
                     ON u.id = u_r.user_id
                 INNER JOIN role r
                     ON u_r.role_id=r.id
-            WHERE upper(u.name) = upper(?)''', (username,))
+            WHERE upper(u.name) = upper(?)""",
+            (username,),
+        )
 
 
-@plugin_function('gui.users.listRoles', web=True)
+@plugin_function("gui.users.listRoles", web=True)
 def list_roles(be_session=None):
     """Lists all roles that can be assigned to users.
 
@@ -206,11 +216,10 @@ def list_roles(be_session=None):
         list: the list of roles.
     """
     with BackendDatabase(be_session) as db:
-        return db.select("SELECT name, description "
-                         "FROM role")
+        return db.select("SELECT name, description " "FROM role")
 
 
-@plugin_function('gui.users.listRolePrivileges', web=True)
+@plugin_function("gui.users.listRolePrivileges", web=True)
 def list_role_privileges(role, be_session=None):
     """Lists all privileges of a role.
 
@@ -223,7 +232,8 @@ def list_role_privileges(role, be_session=None):
         list: the list of privileges.
     """
     with BackendDatabase(be_session) as db:
-        return db.select('''SELECT pt.name as type, p.name, p.access_pattern
+        return db.select(
+            """SELECT pt.name as type, p.name, p.access_pattern
             FROM privilege p
                 INNER JOIN role_has_privilege r_p
                     ON p.id = r_p.privilege_id
@@ -231,10 +241,12 @@ def list_role_privileges(role, be_session=None):
                     ON p.privilege_type_id=pt.id
                 INNER JOIN role r
                     ON r_p.role_id = r.id
-            WHERE r.name = ?''', (role,))
+            WHERE r.name = ?""",
+            (role,),
+        )
 
 
-@plugin_function('gui.users.listUserPrivileges', web=True)
+@plugin_function("gui.users.listUserPrivileges", web=True)
 def list_user_privileges(username, be_session=None):
     """Lists all privileges assigned to a user.
 
@@ -247,7 +259,8 @@ def list_user_privileges(username, be_session=None):
         list: the list of privileges.
     """
     with BackendDatabase(be_session) as db:
-        return db.select('''SELECT r.name, pt.name, p.name, p.access_pattern
+        return db.select(
+            """SELECT r.name, pt.name, p.name, p.access_pattern
             FROM privilege p
                 INNER JOIN role_has_privilege r_p
                     ON p.id = r_p.privilege_id
@@ -259,10 +272,12 @@ def list_user_privileges(username, be_session=None):
                     ON u_r.user_id = u.id
                 INNER JOIN role r
                     ON u_r.role_id = r.id
-            WHERE upper(u.name) = upper(?)''', (username,))
+            WHERE upper(u.name) = upper(?)""",
+            (username,),
+        )
 
 
-@plugin_function('gui.users.getGuiModuleList', shell=False, web=True)
+@plugin_function("gui.users.getGuiModuleList", shell=False, web=True)
 def get_gui_module_list(user_id, be_session=None):
     """Returns the list of modules for the given user.
 
@@ -277,7 +292,8 @@ def get_gui_module_list(user_id, be_session=None):
     with BackendDatabase(be_session) as db:
         modules = []
 
-        res = db.execute('''SELECT p.access_pattern
+        res = db.execute(
+            """SELECT p.access_pattern
             FROM privilege p
                 INNER JOIN role_has_privilege r_p
                     ON p.id = r_p.privilege_id
@@ -285,8 +301,9 @@ def get_gui_module_list(user_id, be_session=None):
                     ON r_p.role_id=r.id
                 INNER JOIN user_has_role u_r
                     ON r.id = u_r.role_id
-            WHERE u_r.user_id = ? AND p.privilege_type_id=2''',
-                         (user_id,)).fetch_all()
+            WHERE u_r.user_id = ? AND p.privilege_type_id=2""",
+            (user_id,),
+        ).fetch_all()
         if res:
             patterns = []
             for pattern in res:
@@ -309,7 +326,7 @@ def get_gui_module_list(user_id, be_session=None):
     return modules
 
 
-@plugin_function('gui.users.listProfiles', cli=True, shell=True, web=True)
+@plugin_function("gui.users.listProfiles", cli=True, shell=True, web=True)
 def list_profiles(user_id, be_session=None):
     """Returns the list of profile for the given user
 
@@ -322,11 +339,14 @@ def list_profiles(user_id, be_session=None):
         list: the list of profiles.
     """
     with BackendDatabase(be_session) as db:
-        return db.select('''SELECT id, name FROM profile
-            WHERE user_id = ?''', (user_id,))
+        return db.select(
+            """SELECT id, name FROM profile
+            WHERE user_id = ?""",
+            (user_id,),
+        )
 
 
-@plugin_function('gui.users.getProfile', cli=True, shell=True, web=True)
+@plugin_function("gui.users.getProfile", cli=True, shell=True, web=True)
 def get_profile(profile_id, be_session=None):
     """Returns the specified profile.
 
@@ -344,7 +364,7 @@ def get_profile(profile_id, be_session=None):
     return profile
 
 
-@plugin_function('gui.users.updateProfile', cli=True, shell=True, web=True)
+@plugin_function("gui.users.updateProfile", cli=True, shell=True, web=True)
 def update_profile(profile, be_session=None):
     """Updates a user profile.
 
@@ -363,20 +383,24 @@ def update_profile(profile, be_session=None):
         None
     """
     with BackendDatabase(be_session) as db:
-        options = profile.get('options', {})
+        options = profile.get("options", {})
 
-        db.execute('''UPDATE profile SET
+        db.execute(
+            """UPDATE profile SET
             name = ?,
             description = ?,
             options = ?
-            WHERE id = ?''',
-                   (profile.get('name'),
-                    profile.get('description', ''),
-                    None if options is None else json.dumps(options),
-                    profile.get('id')))
+            WHERE id = ?""",
+            (
+                profile.get("name"),
+                profile.get("description", ""),
+                None if options is None else json.dumps(options),
+                profile.get("id"),
+            ),
+        )
 
 
-@plugin_function('gui.users.addProfile', cli=True, shell=True, web=True)
+@plugin_function("gui.users.addProfile", cli=True, shell=True, web=True)
 def add_profile(user_id, profile, be_session=None):
     """Returns the specified profile.
 
@@ -400,7 +424,7 @@ def add_profile(user_id, profile, be_session=None):
     return profile_id
 
 
-@plugin_function('gui.users.deleteProfile', cli=True, shell=True, web=True)
+@plugin_function("gui.users.deleteProfile", cli=True, shell=True, web=True)
 def delete_profile(user_id, profile_id, be_session=None):
     """Deletes a profile for the current user.
 
@@ -415,11 +439,13 @@ def delete_profile(user_id, profile_id, be_session=None):
     """
     with BackendDatabase(be_session) as db:
         if not backend.delete_profile(db, user_id, profile_id):
-            raise MSGException(Error.USER_DELETE_PROFILE,
-                               f"Could not delete any profile with the supplied criteria.")
+            raise MSGException(
+                Error.USER_DELETE_PROFILE,
+                f"Could not delete any profile with the supplied criteria.",
+            )
 
 
-@plugin_function('gui.users.getDefaultProfile', cli=True, shell=True, web=True)
+@plugin_function("gui.users.getDefaultProfile", cli=True, shell=True, web=True)
 def get_default_profile(user_id, be_session=None):
     """Returns the default profile for the given user.
 
@@ -437,7 +463,7 @@ def get_default_profile(user_id, be_session=None):
     return profile
 
 
-@plugin_function('gui.users.setDefaultProfile', cli=True, shell=True, web=True)
+@plugin_function("gui.users.setDefaultProfile", cli=True, shell=True, web=True)
 def set_default_profile(user_id, profile_id, be_session=None):
     """Sets the default profile for the given user.
 
@@ -455,7 +481,7 @@ def set_default_profile(user_id, profile_id, be_session=None):
             backend.set_default_profile(db, user_id, profile_id)
 
 
-@plugin_function('gui.users.setCurrentProfile', cli=True, shell=True, web=True)
+@plugin_function("gui.users.setCurrentProfile", cli=True, shell=True, web=True)
 def set_current_profile(profile_id):
     """Sets the profile of the user's current web session.
 
@@ -470,7 +496,7 @@ def set_current_profile(profile_id):
         context.web_handler.set_active_profile_id(profile_id)
 
 
-@plugin_function('gui.users.listUserGroups', cli=True, web=True)
+@plugin_function("gui.users.listUserGroups", cli=True, web=True)
 def list_user_groups(member_id=None, be_session=None):
     """Returns the list of all groups or list all groups that given user belongs.
 
@@ -486,7 +512,7 @@ def list_user_groups(member_id=None, be_session=None):
         return backend.get_user_groups(db, member_id)
 
 
-@plugin_function('gui.users.createUserGroup', cli=True, web=True)
+@plugin_function("gui.users.createUserGroup", cli=True, web=True)
 def create_user_group(name, description, be_session=None):
     """Creates user group.
 
@@ -506,7 +532,7 @@ def create_user_group(name, description, be_session=None):
     return group_id
 
 
-@plugin_function('gui.users.addUserToGroup', cli=True, web=True)
+@plugin_function("gui.users.addUserToGroup", cli=True, web=True)
 def add_user_to_group(member_id, group_id, owner=0, be_session=None):
     """Adds user to user group.
 
@@ -525,7 +551,7 @@ def add_user_to_group(member_id, group_id, owner=0, be_session=None):
         backend.add_user_to_group(db, member_id, group_id, owner)
 
 
-@plugin_function('gui.users.removeUserFromGroup', cli=True, web=True)
+@plugin_function("gui.users.removeUserFromGroup", cli=True, web=True)
 def remove_user_from_group(member_id, group_id, be_session=None):
     """Removes user from user group.
 
@@ -542,7 +568,7 @@ def remove_user_from_group(member_id, group_id, be_session=None):
         backend.remove_user_from_group(db, member_id, group_id)
 
 
-@plugin_function('gui.users.updateUserGroup', cli=True, web=True)
+@plugin_function("gui.users.updateUserGroup", cli=True, web=True)
 def update_user_group(group_id, name=None, description=None, be_session=None):
     """Updates user group.
 
@@ -560,7 +586,7 @@ def update_user_group(group_id, name=None, description=None, be_session=None):
         backend.update_user_group(db, group_id, name, description)
 
 
-@plugin_function('gui.users.removeUserGroup', cli=True, web=True)
+@plugin_function("gui.users.removeUserGroup", cli=True, web=True)
 def remove_user_group(group_id, be_session=None):
     """Removes given user group.
 

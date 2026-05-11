@@ -96,13 +96,15 @@ SAKILA_SQL_PATH = os.path.join(WORKING_DIR, "sql", "sakila_cst.sql")
 WORLD_SQL_PATH = os.path.join(WORKING_DIR, "sql", "world_x_cst.sql")
 USERS_PATH = os.path.join(WORKING_DIR, "sql", "users.sql")
 PROCEDURES_PATH = os.path.join(WORKING_DIR, "sql", "procedures.sql")
-TESTS_TIMEOUT = 30*60
+TESTS_TIMEOUT = 30 * 60
 
 
 class SetEnvironmentVariablesTask:
     """Task for setting environment variables"""
 
-    def __init__(self, environment: typing.Dict[str, str], dir_name: str, servers: typing.List) -> None:
+    def __init__(
+        self, environment: typing.Dict[str, str], dir_name: str, servers: typing.List
+    ) -> None:
         self.environment = environment
         self.dir_name = dir_name
         self.servers = servers
@@ -113,19 +115,19 @@ class SetEnvironmentVariablesTask:
         self.environment["DBUSERNAME"] = argv.db_root_user
         self.environment["DBPASSWORD"] = DB_ROOT_PASSWORD
 
-        if self.environment['EXECUTION_MODE'] in ['teardown', 'execute']:
+        if self.environment["EXECUTION_MODE"] in ["teardown", "execute"]:
             return
 
         data = task_utils.get_configuration()
 
-        data['PORT_POOL'] = []
+        data["PORT_POOL"] = []
         for server in self.servers:
             if server.multi_user:
-                data['SHELL_UI_MU_PORT'] = server.port
+                data["SHELL_UI_MU_PORT"] = server.port
             elif server.single_server:
-                data['SHELL_UI_SS_PORT'] = server.port
+                data["SHELL_UI_SS_PORT"] = server.port
             else:
-                data['PORT_POOL'].append(server.port)
+                data["PORT_POOL"].append(server.port)
 
         data["SQLITE_PATH_FILE"] = os.path.join(
             self.dir_name,
@@ -146,7 +148,9 @@ class SetEnvironmentVariablesTask:
 class NPMScript:
     """Runs e2e tests"""
 
-    def __init__(self, environment: typing.Dict[str, str], script_name: str, params: typing.List) -> None:
+    def __init__(
+        self, environment: typing.Dict[str, str], script_name: str, params: typing.List
+    ) -> None:
         self.environment = environment
         self.script_name = script_name
         self.params = params
@@ -189,8 +193,7 @@ class SetFrontendTask:
     def run(self) -> None:
         """Runs the task"""
 
-        node_modules_path = pathlib.Path(
-            WORKING_DIR, "..", "..", "..", "node_modules")
+        node_modules_path = pathlib.Path(WORKING_DIR, "..", "..", "..", "node_modules")
         build_path = pathlib.Path(WORKING_DIR, "..", "..", "..", "build")
         webroot_path = pathlib.Path(
             WORKING_DIR,
@@ -213,8 +216,7 @@ class SetFrontendTask:
             task_utils.Logger.success("Frontend built successfully")
 
         if not webroot_path.is_symlink():
-            task_utils.create_symlink(
-                build_path.resolve(), webroot_path.resolve())
+            task_utils.create_symlink(build_path.resolve(), webroot_path.resolve())
             task_utils.Logger.success("Webroot path created successfully")
 
     def install_npm_modules(self) -> None:
@@ -244,7 +246,7 @@ class SetFrontendTask:
 
 def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(('localhost', port)) == 0
+        return s.connect_ex(("localhost", port)) == 0
 
 
 def get_be_servers(environment):
@@ -255,14 +257,15 @@ def get_be_servers(environment):
         while len(be_servers) < 13:
             if not is_port_in_use(server_port):
                 if len(be_servers) < 11:
-                    be_servers.append(task_utils.BEServer(
-                        environment, server_port))
+                    be_servers.append(task_utils.BEServer(environment, server_port))
                 elif len(be_servers) < 12:
-                    be_servers.append(task_utils.BEServer(
-                        environment, server_port, True))
+                    be_servers.append(
+                        task_utils.BEServer(environment, server_port, True)
+                    )
                 else:
-                    be_servers.append(task_utils.BEServer(
-                        environment, server_port, False, True))
+                    be_servers.append(
+                        task_utils.BEServer(environment, server_port, False, True)
+                    )
 
             server_port += 1
     else:
@@ -276,8 +279,9 @@ def get_be_servers(environment):
         # No checks are needed, as these are used only to kill the processes
         for port in ports:
             try:
-                be_servers.append(task_utils.BEServer(
-                    environment, port, start_process=False))
+                be_servers.append(
+                    task_utils.BEServer(environment, port, start_process=False)
+                )
             except RuntimeError as err:
                 task_utils.Logger.warning(str(err))
 
@@ -304,45 +308,58 @@ def main() -> None:
 
         executor.add_prerequisite(task_utils.CheckVersionTask("MySQL Shell"))
         executor.add_prerequisite(task_utils.CheckVersionTask("MySQL Server"))
-        executor.add_prerequisite(
-            task_utils.CheckVersionTask("Chrome browser"))
+        executor.add_prerequisite(task_utils.CheckVersionTask("Chrome browser"))
         executor.add_prerequisite(task_utils.CheckVersionTask("npm"))
         executor.add_prerequisite(task_utils.CheckVersionTask("ChromeDriver"))
 
         be_servers = get_be_servers(executor.environment)
 
-        executor.add_task(SetEnvironmentVariablesTask(
-            executor.environment, tmp_dirname, be_servers))
+        executor.add_task(
+            SetEnvironmentVariablesTask(executor.environment, tmp_dirname, be_servers)
+        )
 
         if argv.execution_mode in ["setup", "full"]:
             executor.add_task(SetFrontendTask(executor.environment))
 
-            executor.add_task(task_utils.SetPluginsTask(
-                pathlib.Path(tmp_dirname, "mysqlsh", "plugins"), be_servers))
-
-            executor.add_task(task_utils.AddUserToBE(
-                executor.environment, tmp_dirname, be_servers))
+            executor.add_task(
+                task_utils.SetPluginsTask(
+                    pathlib.Path(tmp_dirname, "mysqlsh", "plugins"), be_servers
+                )
+            )
 
             executor.add_task(
-                task_utils.ClearCredentials(executor.environment))
+                task_utils.AddUserToBE(executor.environment, tmp_dirname, be_servers)
+            )
+
+            executor.add_task(task_utils.ClearCredentials(executor.environment))
 
         if argv.execution_mode != "execute":
-            executor.add_task(task_utils.StartBeServersTask(
-                executor.environment, be_servers))
+            executor.add_task(
+                task_utils.StartBeServersTask(executor.environment, be_servers)
+            )
 
-            executor.add_task(task_utils.SetMySQLServerTask(
-                executor.environment, tmp_dirname, argv.db_port, True))
+            executor.add_task(
+                task_utils.SetMySQLServerTask(
+                    executor.environment, tmp_dirname, argv.db_port, True
+                )
+            )
 
-            executor.add_task(task_utils.SetMySQLServerTask(
-                executor.environment, tmp_dirname, "2207"))
+            executor.add_task(
+                task_utils.SetMySQLServerTask(executor.environment, tmp_dirname, "2207")
+            )
 
         executor.add_task(task_utils.DisableTests)
 
         data = task_utils.get_configuration()
 
         if argv.execution_mode in ["full", "execute"]:
-            executor.add_task(NPMScript(
-                executor.environment, "e2e-tests-run", [f"--maxWorkers={data["MAX_WORKERS"]}"]))
+            executor.add_task(
+                NPMScript(
+                    executor.environment,
+                    "e2e-tests-run",
+                    [f"--maxWorkers={data["MAX_WORKERS"]}"],
+                )
+            )
 
         if executor.check_prerequisites():
             try:

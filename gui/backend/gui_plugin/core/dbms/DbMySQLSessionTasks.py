@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025 Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -98,8 +98,7 @@ class MySQLTableObjectTask(BaseObjectTask):
                 # Loop over all rows
                 for row in self.session.row_generator():
                     if self.session.is_killed():
-                        raise MSGException(
-                            Error.DB_QUERY_KILLED, "Query killed")
+                        raise MSGException(Error.DB_QUERY_KILLED, "Query killed")
 
                     # Return chunks of buffer_size a time, if buffer_size is 0
                     # or -1, do not return chunks but only the full result set
@@ -108,15 +107,16 @@ class MySQLTableObjectTask(BaseObjectTask):
                         self.dispatch_result("PENDING", data=values)
                         values = {"columns": []}
 
-                    values['columns'].append(row[0])
+                    values["columns"].append(row[0])
                     self._row_count += 1
             except Exception as e:
                 self.dispatch_result("ERROR", message=str(e))
                 return
 
             # Call the callback
-            if values['columns']:
+            if values["columns"]:
                 self.dispatch_result("PENDING", data=values)
+
 
 class MySQLColumnObjectTask(BaseObjectTask):
     def format(self, row):
@@ -152,7 +152,9 @@ class MySQLColumnObjectTask(BaseObjectTask):
         #       we would get an SQL error because the value of the column can not be NULL,
         #       and the default value is just NULL. To avoid this situation, the `default` key
         #       is omitted from the result and is treated as if the DEFAULT value had never been defined.
-        if not row.get_field("not_null") or (row.get_field("not_null") and row.get_field("default")):
+        if not row.get_field("not_null") or (
+            row.get_field("not_null") and row.get_field("default")
+        ):
             result["default"] = row.get_field("default")
 
         return result
@@ -174,6 +176,7 @@ class MySQLColumnObjectTask(BaseObjectTask):
         else:
             self.dispatch_result("ERROR", message=_err_msg)
 
+
 class MySQLColumnsMetadataTask(DbQueryTask):
     def format(self, row):
         result = {
@@ -187,7 +190,9 @@ class MySQLColumnsMetadataTask(DbQueryTask):
         }
 
         # See explanation on MySQLColumnObjectTask class
-        if not row.get_field("not_null") or (row.get_field("not_null") and row.get_field("default")):
+        if not row.get_field("not_null") or (
+            row.get_field("not_null") and row.get_field("default")
+        ):
             result["default"] = row.get_field("default")
 
         return result
@@ -216,6 +221,7 @@ class MySQLColumnsMetadataTask(DbQueryTask):
 
         if send_empty or len(columns_details) > 0:
             self.dispatch_result("PENDING", data=columns_details)
+
 
 class MySQLOneFieldListTask(DbQueryTask):
     def process_result(self):
@@ -255,10 +261,13 @@ class MySQLColumnsListTask(MySQLColumnsMetadataTask):
         }
 
         # See explanation on MySQLColumnObjectTask class
-        if not row.get_field("not_null") or (row.get_field("not_null") and row.get_field("default")):
+        if not row.get_field("not_null") or (
+            row.get_field("not_null") and row.get_field("default")
+        ):
             result["default"] = row.get_field("default")
 
         return result
+
 
 class MySQLRoutinesListTask(MySQLColumnsMetadataTask):
     def format(self, row):
@@ -270,6 +279,7 @@ class MySQLRoutinesListTask(MySQLColumnsMetadataTask):
 
         return result
 
+
 class MySQLLibrariesListTask(MySQLColumnsMetadataTask):
     def format(self, row):
         result = {
@@ -279,7 +289,7 @@ class MySQLLibrariesListTask(MySQLColumnsMetadataTask):
         }
 
         return result
-    
+
 
 class MySQLJdvTableColumnsWithReferencesTask(DbQueryTask):
     def format(self, row):
@@ -318,6 +328,7 @@ class MySQLJdvTableColumnsWithReferencesTask(DbQueryTask):
         if send_empty or len(columns_details) > 0:
             self.dispatch_result("PENDING", data=columns_details)
 
+
 class MySQLJdvViewInfoTask(DbQueryTask):
     def format(self, row):
         result = {
@@ -344,6 +355,7 @@ class MySQLJdvViewInfoTask(DbQueryTask):
                 self.dispatch_result("PENDING", data=self.format(row))
         else:
             self.dispatch_result("ERROR", message=_err_msg)
+
 
 class MySQLJdvObjectFieldsWithReferencesTask(DbQueryTask):
     def format(self, row):

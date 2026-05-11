@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,6 @@ import pytest
 from tests.lib.utils import *
 import signal
 
-
 port, nossl = config.Config.get_instance().get_server_params()
 server_params = [(port, nossl)]
 
@@ -36,8 +35,14 @@ def shell_start_server(request):
     yield p
 
     logger.info("sending sigint to the shell subprocess")
-    os.kill(p.pid,
-            signal.CTRL_BREAK_EVENT if hasattr(signal, 'CTRL_BREAK_EVENT') else signal.SIGINT)
+    os.kill(
+        p.pid,
+        (
+            signal.CTRL_BREAK_EVENT
+            if hasattr(signal, "CTRL_BREAK_EVENT")
+            else signal.SIGINT
+        ),
+    )
 
     logger.info(f"Waiting for server to shutdown")
     p.wait()

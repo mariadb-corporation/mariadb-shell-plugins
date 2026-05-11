@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,7 @@ class NotificationFinder(MetaPathFinder):  # pragma: no cover
         sys.meta_path.insert(0, self)
 
     def find_spec(self, fullname, _path, _target=None):
-        if 'pydevd' in fullname:
+        if "pydevd" in fullname:
             self.attached_event.set()
 
     def wait(self):
@@ -65,18 +65,20 @@ def wait_debugger():  # pragma: no cover
     logger.info("================================================")
 
 
-if 'ATTACH_DEBUGGER' in os.environ:  # pragma: no cover
+if "ATTACH_DEBUGGER" in os.environ:  # pragma: no cover
     if _TEST_PROCESS:
         from tests.tests_timeouts import response_timeout, server_timeout
+
         logger.info("Overriding default timeouts")
         response_timeout(600)
         server_timeout(600)
 
-        if 'TESTS' in os.environ['ATTACH_DEBUGGER']:
+        if "TESTS" in os.environ["ATTACH_DEBUGGER"]:
             wait_debugger()
-    elif 'BACKEND' in os.environ['ATTACH_DEBUGGER']:
+    elif "BACKEND" in os.environ["ATTACH_DEBUGGER"]:
         wait_debugger()
-    elif 'LOCK' in os.environ['ATTACH_DEBUGGER']:
+    elif "LOCK" in os.environ["ATTACH_DEBUGGER"]:
         import faulthandler
-        f = open("stack_output_on_SIGUSER1", 'w')
+
+        f = open("stack_output_on_SIGUSER1", "w")
         faulthandler.register(signal.SIGUSR1, all_threads=True, file=f)

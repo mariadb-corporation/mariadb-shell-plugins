@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -128,7 +128,9 @@ def test_metadata_upgrade(module_fixture):
 
     # create random stuff that reference the service and endpoints and should
     # be untouched in upgrades
-    orig_service = session.run_sql("show create rest service /HeatWave/v1").fetch_one()[0]
+    orig_service = session.run_sql("show create rest service /HeatWave/v1").fetch_one()[
+        0
+    ]
     assert "ADD AUTH APP `myapp`" not in orig_service
     assert "ADD AUTH APP `MySQL`" in orig_service
 
@@ -137,11 +139,18 @@ def test_metadata_upgrade(module_fixture):
 
     session.run_sql("alter rest service /HeatWave/v1 add auth app `myapp`")
 
-    new_service = session.run_sql("show create rest service /HeatWave/v1").fetch_one()[0]
+    new_service = session.run_sql("show create rest service /HeatWave/v1").fetch_one()[
+        0
+    ]
     assert "ADD AUTH APP `myapp`" in new_service
     assert "ADD AUTH APP `MySQL`" in new_service
 
-    new_roles = [row[0] for row in session.run_sql("show rest roles on service /HeatWave/v1").fetch_all()]
+    new_roles = [
+        row[0]
+        for row in session.run_sql(
+            "show rest roles on service /HeatWave/v1"
+        ).fetch_all()
+    ]
     assert {"myrole", "Full Access"} == set(new_roles)
 
     # upgrade to latest endpoints script
@@ -153,11 +162,18 @@ def test_metadata_upgrade(module_fixture):
     assert "/nlSql" in procedures
 
     # check if various things that reference the service are still there
-    upgraded_service = session.run_sql("show create rest service /HeatWave/v1").fetch_one()[0]
+    upgraded_service = session.run_sql(
+        "show create rest service /HeatWave/v1"
+    ).fetch_one()[0]
     assert "ADD AUTH APP `myapp`" in upgraded_service
     assert "ADD AUTH APP `MySQL`" in upgraded_service
 
-    upgraded_roles = [row[0] for row in session.run_sql("show rest roles on service /HeatWave/v1").fetch_all()]
+    upgraded_roles = [
+        row[0]
+        for row in session.run_sql(
+            "show rest roles on service /HeatWave/v1"
+        ).fetch_all()
+    ]
     assert {"myrole", "Full Access"} == set(upgraded_roles)
 
     session.run_sql("drop schema mysql_rest_service_metadata")

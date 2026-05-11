@@ -31,7 +31,9 @@ def _set_debugger_root(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     monkeypatch.setattr(debugger_module, "__file__", str(root / "Debugger.py"))
 
 
-def test_read_script_reads_file_inside_scripts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_script_reads_file_inside_scripts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
 
@@ -43,7 +45,9 @@ def test_read_script_reads_file_inside_scripts(tmp_path: Path, monkeypatch: pyte
     assert debugger_module.read_script("allowed.js") == "print('ok')"
 
 
-def test_read_script_rejects_path_traversal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_script_rejects_path_traversal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
 

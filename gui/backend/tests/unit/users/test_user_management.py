@@ -29,33 +29,32 @@ import os
 import re
 
 test_users_data = [
-    ("pytest_user1", "password1", 'User'),
-    ('pytest_user2', 'password2', None),
-    ('pytest_user3', 'password3', 'Administrator')
+    ("pytest_user1", "password1", "User"),
+    ("pytest_user2", "password2", None),
+    ("pytest_user3", "password3", "Administrator"),
 ]
 
 test_fake_users_data = [
-    ("pytest_fake_user1", "password1", 'FakeRole'),
-    ('pytest_fake_user2', 'password2', 'Administrator_'),
-    ('pytest_fake_user3', 'password3', 'Administrator ')
+    ("pytest_fake_user1", "password1", "FakeRole"),
+    ("pytest_fake_user2", "password2", "Administrator_"),
+    ("pytest_fake_user3", "password3", "Administrator "),
 ]
 
 test_roles_privileges_data = [
     ("User", "Access to all web gui modules except shell", "GUI Module Access"),
-    ("Administrator", "Full access to all web gui modules",
-     "GUI Module Access")
+    ("Administrator", "Full access to all web gui modules", "GUI Module Access"),
 ]
 
 test_user_privileges_data = [
     ("pytest_user2", "User", "\\\\b(?!shell\\\\b)\\\\w+"),
-    ("pytest_user3", "Administrator", ".*")
+    ("pytest_user3", "Administrator", ".*"),
 ]
 
 test_modules_data = [
     ("pytest_user2", []),
-    ("pytest_user3",
-     ['gui.debugger', 'gui.sql_editor', 'gui.shell'])
+    ("pytest_user3", ["gui.debugger", "gui.sql_editor", "gui.shell"]),
 ]
+
 
 def name_in_message(name, message):
     for row in message:
@@ -77,6 +76,7 @@ def access_pattern_in_message(access_pattern, message):
             return True
     return False
 
+
 def value_in_message(key, value, message):
     for row in message:
         if value == row[key]:
@@ -94,11 +94,17 @@ def test_create_user(user, password, role):
     if role != None:
         assert name_in_message(role, roles) == True
 
+
 @pytest.mark.parametrize("user, password, role", test_users_data)
 def test_grant_role(user, password, role):
     if role == None:
         fake_role = "FakeRole"
-        with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1300]: There is no role with the name '{fake_role}'.")):
+        with pytest.raises(
+            MSGException,
+            match=re.escape(
+                f"Error[MSG-1300]: There is no role with the name '{fake_role}'."
+            ),
+        ):
             msg = UserManagement.grant_role(user, fake_role)
 
         msg = UserManagement.grant_role(user, "User")
@@ -109,13 +115,19 @@ def test_grant_role(user, password, role):
 
 @pytest.mark.parametrize("user, password, role", test_fake_users_data)
 def test_grant_fake_role(user, password, role):
-    with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1300]: There is no role with the name '{role}'.")):
+    with pytest.raises(
+        MSGException,
+        match=re.escape(f"Error[MSG-1300]: There is no role with the name '{role}'."),
+    ):
         UserManagement.create_user(user, password, role=role)
 
     users = UserManagement.list_users()
     assert name_in_message(user, users) == False
 
-    with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1301]: There is no user with the name '{user}'.")):
+    with pytest.raises(
+        MSGException,
+        match=re.escape(f"Error[MSG-1301]: There is no user with the name '{user}'."),
+    ):
         UserManagement.grant_role(user, role)
 
 
@@ -138,10 +150,8 @@ def test_role_privileges(role, privilege, privilege_type):
 def test_single_server_role_privileges():
     privileges = UserManagement.list_role_privileges("Single Server User")
 
-    assert name_in_message(
-        "Access to selected gui.users functions", privileges) == True
-    assert name_in_message(
-        "Limited access for Single Server Mode", privileges) == True
+    assert name_in_message("Access to selected gui.users functions", privileges) == True
+    assert name_in_message("Limited access for Single Server Mode", privileges) == True
 
 
 @pytest.mark.parametrize("user, role, privilege", test_user_privileges_data)
@@ -153,7 +163,10 @@ def test_user_privileges(user, role, privilege):
 
 @pytest.mark.parametrize("user, password, role", test_fake_users_data)
 def test_get_fake_user_id(user, password, role):
-    with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1301]: There is no user with the name '{user}'.")):
+    with pytest.raises(
+        MSGException,
+        match=re.escape(f"Error[MSG-1301]: There is no user with the name '{user}'."),
+    ):
         UserManagement.get_user_id(user)
 
 
@@ -169,9 +182,12 @@ def test_gui_module_list(user, modules):
 
 @pytest.mark.parametrize("user, password, role", test_users_data)
 def test_profile(user, password, role):
-    profile_name = f'{user}_profile'
-    profile = {'name': profile_name,
-               'description': 'Profile description.', 'options': {}}
+    profile_name = f"{user}_profile"
+    profile = {
+        "name": profile_name,
+        "description": "Profile description.",
+        "options": {},
+    }
     msg = UserManagement.get_user_id(user)
     assert isinstance(msg, int)
     user_id = msg
@@ -189,12 +205,15 @@ def test_profile(user, password, role):
     assert profile_name == default_profile["name"]
 
     fake_user_id = 999
-    with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1301]: There is no user with the given id.")):
+    with pytest.raises(
+        MSGException,
+        match=re.escape(f"Error[MSG-1301]: There is no user with the given id."),
+    ):
         msg = UserManagement.get_default_profile(fake_user_id)
 
-    profile['id'] = profile_id
-    profile['description'] = 'Updated description'
-    profile['options'] = {'test': 'test_value'}
+    profile["id"] = profile_id
+    profile["description"] = "Updated description"
+    profile["options"] = {"test": "test_value"}
     UserManagement.update_profile(profile)
     msg = UserManagement.get_profile(profile_id)
     assert isinstance(msg, dict)
@@ -210,11 +229,22 @@ def test_profile(user, password, role):
     logger.debug(profiles)
     assert not name_in_message(profile_name, profiles)
 
-    with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1302]: Could not delete any profile with the supplied criteria.")):
+    with pytest.raises(
+        MSGException,
+        match=re.escape(
+            f"Error[MSG-1302]: Could not delete any profile with the supplied criteria."
+        ),
+    ):
         result = UserManagement.delete_profile(user_id + 1, profile_id)
 
-    with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1302]: Could not delete any profile with the supplied criteria.")):
+    with pytest.raises(
+        MSGException,
+        match=re.escape(
+            f"Error[MSG-1302]: Could not delete any profile with the supplied criteria."
+        ),
+    ):
         result = UserManagement.delete_profile(user_id + 1, profile_id + 1)
+
 
 def test_user_group():
     # Test create user group
@@ -238,7 +268,7 @@ def test_user_group():
     assert value_in_message("name", "user_group_2", msg)
 
     # Test list user group
-    msg = UserManagement.get_user_id('pytest_user1')
+    msg = UserManagement.get_user_id("pytest_user1")
     assert isinstance(msg, int)
     user_id = msg
 
@@ -255,7 +285,9 @@ def test_user_group():
     assert value_in_message("name", "all", msg)
     assert value_in_message("name", "user_group_1", msg)
 
-    msg = UserManagement.update_user_group(user_group_id_1, "user_group_1.1", "First user group updated")
+    msg = UserManagement.update_user_group(
+        user_group_id_1, "user_group_1.1", "First user group updated"
+    )
     assert msg is None
 
     msg = UserManagement.list_user_groups(user_id)
@@ -273,7 +305,6 @@ def test_user_group():
     assert value_in_message("name", "all", msg)
     assert not value_in_message("name", "user_group_1", msg)
     assert not value_in_message("name", "user_group_1.1", msg)
-
 
     # Test remove user group
     msg = UserManagement.list_user_groups()
@@ -294,7 +325,12 @@ def test_user_group():
     msg = UserManagement.add_user_to_group(user_id, user_group_id_1, 1)
     assert msg is None
 
-    with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1307]: Can't delete user group that contains users.")) as e:
+    with pytest.raises(
+        MSGException,
+        match=re.escape(
+            f"Error[MSG-1307]: Can't delete user group that contains users."
+        ),
+    ) as e:
         UserManagement.remove_user_group(user_group_id_1)
 
     msg = UserManagement.remove_user_from_group(user_id, user_group_id_1)
@@ -330,5 +366,8 @@ def test_delete_user(user, password, role):
 
 @pytest.mark.parametrize("user, password, role", test_users_data)
 def test_delete_user_not_exists(user, password, role):
-    with pytest.raises(MSGException, match=re.escape(f"Error[MSG-1301]: There is no user with the name '{user}'.")):
+    with pytest.raises(
+        MSGException,
+        match=re.escape(f"Error[MSG-1301]: There is no user with the name '{user}'."),
+    ):
         UserManagement.delete_user(user)

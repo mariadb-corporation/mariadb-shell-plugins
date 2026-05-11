@@ -38,10 +38,12 @@ def build_dump_exclude_list(selection: model.SchemaSelectionOptions) -> list:
         else:
             filters = [filter]
 
-        excludes = ','.join([q(n) for n in itertools.chain(
-            *[f.exclude for f in filters if f.exclude])])
-        includes = ','.join([q(n) for n in itertools.chain(
-            *[f.include for f in filters if f.include])])
+        excludes = ",".join(
+            [q(n) for n in itertools.chain(*[f.exclude for f in filters if f.exclude])]
+        )
+        includes = ",".join(
+            [q(n) for n in itertools.chain(*[f.include for f in filters if f.include])]
+        )
 
         if excludes:
             args.append(f"--exclude-{what}={excludes}")

@@ -29,9 +29,16 @@ from .lib.backend.stage import WorkStatusEvent
 from .lib.backend import orchestration
 from . import plan_step
 from .lib import logging
-from .lib.backend.model import SubStepId, WorkStatusInfo, WorkStatus, LogInfo, MigrationStep
+from .lib.backend.model import (
+    SubStepId,
+    WorkStatusInfo,
+    WorkStatus,
+    LogInfo,
+    MigrationStep,
+)
 from .lib.backend.orchestration import Orchestrator
 from .lib.logging import plugin_log
+
 k_stage_info = {
     SubStepId.PROVISION_COMPARTMENT: {
         "caption": "Compartment",
@@ -44,7 +51,6 @@ k_stage_info = {
         "help": "Create a bucket in OCI Object Storage for temporary storage of exported data used for migration.",
     },
     SubStepId.PROVISION_VCN: {
-
         "caption": "Virtual Cloud Network",
         "type": "",
         "help": "Provision or verify virtual cloud network (VCN) with a private and public subnets.",
@@ -231,15 +237,15 @@ class MigrationWorkStep(orchestration.MigrationFrontend):
         #     return
 
         logging.info(
-            f"🟢 starting work from state {self.status()}. options={self.project.options}")
+            f"🟢 starting work from state {self.status()}. options={self.project.options}"
+        )
 
         self.migrator.start()
 
     def abort(self):
         status = self.project.work_status.status
         if status != WorkStatus.IN_PROGRESS:
-            logging.info(
-                f"{self}: ignoring abort() while status={status}")
+            logging.info(f"{self}: ignoring abort() while status={status}")
             return
         logging.info(f"✋ aborting work")
         if self.migrator:
@@ -249,7 +255,13 @@ class MigrationWorkStep(orchestration.MigrationFrontend):
         logging.debug(f"⚙️ progress {source.name} {message} {data}")
         self.project.log_work_progress(source, message, data)
 
-    def on_status(self, source: SubStepId, status: WorkStatusEvent, data: dict = {}, message: str = ""):
+    def on_status(
+        self,
+        source: SubStepId,
+        status: WorkStatusEvent,
+        data: dict = {},
+        message: str = "",
+    ):
         logging.debug(f"🚦 status {source.name} {status} {message} {data}")
         self.project.log_work(source, status, data=data, message=message)
 
@@ -277,16 +289,14 @@ class MigrationWorkStep(orchestration.MigrationFrontend):
     def cleanup(self, delete_bucket: bool, delete_jump_host: bool):
         assert self.migrator
 
-        logging.info(
-            f"Clean up: bucket={delete_bucket}, jump-host={delete_jump_host}")
+        logging.info(f"Clean up: bucket={delete_bucket}, jump-host={delete_jump_host}")
         compartment = self.migrator.get_compartment()
         if delete_bucket and self.project.resources.bucketCreated:
             logging.info(
-                f"Deleting bucket {self.project.resources.bucketName} and all its contents")
-            compartment.wipe_bucket(
-                bucket_name=self.project.resources.bucketName)
-            logging.info(
-                f"Bucket {self.project.resources.bucketName} deleted")
+                f"Deleting bucket {self.project.resources.bucketName} and all its contents"
+            )
+            compartment.wipe_bucket(bucket_name=self.project.resources.bucketName)
+            logging.info(f"Bucket {self.project.resources.bucketName} deleted")
             self.project.resources.bucketCreated = False
             self.project.resources.bucketName = ""
             self.project.resources.bucketNamespace = ""
@@ -294,10 +304,10 @@ class MigrationWorkStep(orchestration.MigrationFrontend):
 
         if delete_jump_host and self.project.resources.computeCreated:
             logging.info(
-                f"Deleting compute instance {self.project.resources.computeId} ({self.project.resources.computeName})")
+                f"Deleting compute instance {self.project.resources.computeId} ({self.project.resources.computeName})"
+            )
             compartment.delete_instance(self.project.resources.computeId)
-            logging.info(
-                f"Deleted instance {self.project.resources.computeId}")
+            logging.info(f"Deleted instance {self.project.resources.computeId}")
             self.project.delete_ssh_key_pair()
 
             self.project.resources.computeCreated = False
@@ -309,6 +319,7 @@ class MigrationWorkStep(orchestration.MigrationFrontend):
 
 def get_step() -> MigrationWorkStep:
     from migration_plugin.lib.migration import get_project
+
     return get_project().work_step
 
 
@@ -321,8 +332,7 @@ def work_start() -> WorkStatusInfo:
     work = get_step()
     match work.status():
         case [WorkStatus.IN_PROGRESS, WorkStatus.FINISHED]:
-            logging.info(
-                f"work_start: ignoring call while in {work.status()} status")
+            logging.info(f"work_start: ignoring call while in {work.status()} status")
             return
 
         case [WorkStatus.ERROR, WorkStatus.ABORTED]:
@@ -360,8 +370,10 @@ def work_cleanup(options: dict) -> None:
     """
     work = get_step()
 
-    work.cleanup(delete_bucket=options.get("delete_bucket", False),
-                 delete_jump_host=options.get("delete_jump_host", False))
+    work.cleanup(
+        delete_bucket=options.get("delete_bucket", False),
+        delete_jump_host=options.get("delete_jump_host", False),
+    )
 
 
 # Note: too spammy to log all calls @plugin_log
@@ -419,7 +431,8 @@ def fetch_logs(sub_step_id: Optional[SubStepId] = None, offset: int = 0) -> LogI
             data, last_offset = read_logs(offset)
         except:
             logging.exception(
-                f"Could not read log file {mysqlsh.globals.shell.options.logFile}")
+                f"Could not read log file {mysqlsh.globals.shell.options.logFile}"
+            )
             data, last_offset = "", 0
     else:
         data, last_offset = work.fetch_logs(SubStepId(sub_step_id), offset)

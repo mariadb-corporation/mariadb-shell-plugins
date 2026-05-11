@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,9 +27,7 @@ from ...lib.sdk import *
 def test_get_interface_datatype():
     args = {
         "class_name": "MyEntity",
-        "field": {
-            "name": "field"
-        },
+        "field": {"name": "field"},
         "sdk_language": "typescript",
         "nullable": True,
     }
@@ -37,10 +35,7 @@ def test_get_interface_datatype():
     type = get_interface_datatype(**args)
     assert type == "IMyEntityField"
 
-    args["field"]["db_column"] = {
-        "datatype": "varchar",
-        "not_null": True
-    }
+    args["field"]["db_column"] = {"datatype": "varchar", "not_null": True}
 
     type = get_interface_datatype(**args)
     assert type == "string"
@@ -49,10 +44,7 @@ def test_get_interface_datatype():
     type = get_interface_datatype(**args)
     assert type == "str"
 
-    args["field"]["db_column"] = {
-        "datatype": "int",
-        "not_null": False
-    }
+    args["field"]["db_column"] = {"datatype": "int", "not_null": False}
     args["sdk_language"] = "typescript"
 
     type = get_interface_datatype(**args)
@@ -102,7 +94,10 @@ def test_get_datatype_mapping():
             ("MULTIPOLYGON",): "MultiPolygon",
             ("varchar",): "string",
             ("bigint",): "BigInteger",
-            ("numeric", "decimal",): "Decimal",
+            (
+                "numeric",
+                "decimal",
+            ): "Decimal",
             ("VECTOR",): "Vector",
         },
         "python": {
@@ -139,11 +134,14 @@ def test_get_datatype_mapping():
         },
         "Unknown": {
             ("varchar",): "unknown",
-        }
+        },
     }
 
     for sdk_language, db_to_sdk_language_datatype_map in datatype_map.items():
-        for db_datatypes, expected_sdk_language_datatype in db_to_sdk_language_datatype_map.items():
+        for (
+            db_datatypes,
+            expected_sdk_language_datatype,
+        ) in db_to_sdk_language_datatype_map.items():
             for db_datatype in db_datatypes:
                 assert expected_sdk_language_datatype == get_datatype_mapping(
                     db_datatype, sdk_language
@@ -151,10 +149,7 @@ def test_get_datatype_mapping():
 
 
 def test_datatype_is_primitive():
-    args = {
-        "client_datatype": "boolean",
-        "sdk_language": "typescript"
-    }
+    args = {"client_datatype": "boolean", "sdk_language": "typescript"}
     is_native = datatype_is_primitive(**args)
     assert is_native is True
 
@@ -225,9 +220,7 @@ def test_field_can_be_cursor():
     can_be_cursor = field_can_be_cursor(field)
     assert can_be_cursor is False
 
-    field["db_column"] = {
-        "id_generation": "auto_inc"
-    }
+    field["db_column"] = {"id_generation": "auto_inc"}
 
     can_be_cursor = field_can_be_cursor(field)
     assert can_be_cursor is True
@@ -399,7 +392,15 @@ def test_generate_interfaces():
         "id_generation": "auto_inc",
         "is_primary": True,
     }
-    fields = [{"lev": 1, "enabled": True, "db_column": db_column, "name": "bar", "allow_sorting": True}]
+    fields = [
+        {
+            "lev": 1,
+            "enabled": True,
+            "db_column": db_column,
+            "name": "bar",
+            "allow_sorting": True,
+        }
+    ]
 
     want = """export interface IFoo {
     readonly bar?: string,
@@ -462,11 +463,13 @@ export interface IFooCursors {
 
     mixins = []
     if obj_primary_key:
-        mixins.extend([
-            f'\n\t_MrsDocumentUpdateMixin["I{class_name}Data", "I{class_name}", "I{class_name}Details"],',
-            f'\n\t_MrsDocumentDeleteMixin["I{class_name}Data", "I{class_name}Filterable"],',
-            "\n\t"
-        ])
+        mixins.extend(
+            [
+                f'\n\t_MrsDocumentUpdateMixin["I{class_name}Data", "I{class_name}", "I{class_name}Details"],',
+                f'\n\t_MrsDocumentDeleteMixin["I{class_name}Data", "I{class_name}Filterable"],',
+                "\n\t",
+            ]
+        )
 
     want = """class I{name}Details(IMrsResourceDetails, total=False):
     bar: str
@@ -545,8 +548,8 @@ class I{name}Cursors(TypedDict, total=False):
 
     # PROCEDUREs
     got, _ = generate_interfaces(
-        db_obj={"object_type":"PROCEDURE"},
-        obj={"kind":"RESULT"},
+        db_obj={"object_type": "PROCEDURE"},
+        obj={"kind": "RESULT"},
         fields=fields,
         class_name="Foo",
         db_object_crud_ops=["PROCEDURECALL"],
@@ -620,7 +623,7 @@ public struct IFooCursors {
 
     assert got == want
 
-    fields[0]["db_column"] = { "datatype": "varchar(3)", "not_null": True }
+    fields[0]["db_column"] = {"datatype": "varchar(3)", "not_null": True}
     db_object_crud_ops = ["READ"]
     got, _ = generate_interfaces(
         db_obj, obj, fields, class_name, "typescript", db_object_crud_ops
@@ -691,35 +694,55 @@ def test_generate_field_enum():
 
 
 def test_generate_type_declaration_field():
-    type_declaration_field = generate_type_declaration_field(name="foo", value="bar", sdk_language="typescript")
+    type_declaration_field = generate_type_declaration_field(
+        name="foo", value="bar", sdk_language="typescript"
+    )
     assert type_declaration_field == "    foo: bar,\n"
 
-    type_declaration_field = generate_type_declaration_field(name="foo", value="bar", sdk_language="typescript", non_mandatory=True)
+    type_declaration_field = generate_type_declaration_field(
+        name="foo", value="bar", sdk_language="typescript", non_mandatory=True
+    )
     assert type_declaration_field == "    foo?: bar,\n"
 
-    type_declaration_field = generate_type_declaration_field(name="foo", value="bar", sdk_language="python")
+    type_declaration_field = generate_type_declaration_field(
+        name="foo", value="bar", sdk_language="python"
+    )
     assert type_declaration_field == "    foo: bar\n"
 
-    type_declaration_field = generate_type_declaration_field(name="foo", value="bar", sdk_language="python", non_mandatory=True)
+    type_declaration_field = generate_type_declaration_field(
+        name="foo", value="bar", sdk_language="python", non_mandatory=True
+    )
     assert type_declaration_field == "    foo: NotRequired[bar]\n"
 
-    type_declaration_field = generate_type_declaration_field(name="foo", value=["bar"], sdk_language="typescript")
+    type_declaration_field = generate_type_declaration_field(
+        name="foo", value=["bar"], sdk_language="typescript"
+    )
     assert type_declaration_field == "    foo: bar[],\n"
 
-    type_declaration_field = generate_type_declaration_field(name="foo", value=["bar"], sdk_language="typescript", non_mandatory=True)
+    type_declaration_field = generate_type_declaration_field(
+        name="foo", value=["bar"], sdk_language="typescript", non_mandatory=True
+    )
     assert type_declaration_field == "    foo?: bar[],\n"
 
-    type_declaration_field = generate_type_declaration_field(name="foo", value=["bar"], sdk_language="python")
+    type_declaration_field = generate_type_declaration_field(
+        name="foo", value=["bar"], sdk_language="python"
+    )
     assert type_declaration_field == "    foo: list[bar]\n"
 
-    type_declaration_field = generate_type_declaration_field(name="foo", value=["bar"], sdk_language="python", non_mandatory=True)
+    type_declaration_field = generate_type_declaration_field(
+        name="foo", value=["bar"], sdk_language="python", non_mandatory=True
+    )
     assert type_declaration_field == "    foo: NotRequired[list[bar]]\n"
 
     # test that the language convention is being applied
-    type_declaration_field = generate_type_declaration_field(name="fooBar", value="baz", sdk_language="python")
+    type_declaration_field = generate_type_declaration_field(
+        name="fooBar", value="baz", sdk_language="python"
+    )
     assert type_declaration_field == "    foo_bar: baz\n"
 
-    type_declaration_field = generate_type_declaration_field(name="fooBar", value="baz", sdk_language="python", non_mandatory=True)
+    type_declaration_field = generate_type_declaration_field(
+        name="fooBar", value="baz", sdk_language="python", non_mandatory=True
+    )
     assert type_declaration_field == "    foo_bar: NotRequired[baz]\n"
 
 
@@ -753,24 +776,20 @@ def test_generate_type_declaration():
     assert type_declaration == ""
 
     type_declaration = generate_type_declaration("Foo", ["Bar", "Baz"], {"qux": "quux"})
-    assert type_declaration == (
-        """export type IFoo = {
+    assert type_declaration == ("""export type IFoo = {
     qux: quux,
 } & Bar & Baz;
 
-"""
-    )
+""")
 
     type_declaration = generate_type_declaration(
         "Foo", ["Bar", "Baz"], {"qux": "quux"}, "python"
     )
-    assert type_declaration == (
-        """class IFoo(TypedDict, Bar, Baz):
+    assert type_declaration == ("""class IFoo(TypedDict, Bar, Baz):
     qux: quux
 
 
-"""
-    )
+""")
 
     type_declaration = generate_type_declaration(
         name="Foo",
@@ -778,14 +797,12 @@ def test_generate_type_declaration():
         sdk_language="python",
         non_mandatory_fields={"qux"},
     )
-    assert type_declaration == (
-        """class IFoo(TypedDict):
+    assert type_declaration == ("""class IFoo(TypedDict):
     bar: baz
     qux: NotRequired[quux]
 
 
-"""
-    )
+""")
 
     type_declaration = generate_type_declaration(
         name="Foo",
@@ -794,37 +811,31 @@ def test_generate_type_declaration():
         ignore_base_types=True,
         sdk_language="python",
     )
-    assert type_declaration == (
-        """class IFoo(Bar, Baz):
+    assert type_declaration == ("""class IFoo(Bar, Baz):
     qux: quux
 
 
-"""
-    )
+""")
 
     fields = {"qux": "quux"}
     type_declaration = generate_type_declaration(
         name="Foo", fields=fields, non_mandatory_fields=set(fields)
     )
-    assert type_declaration == (
-        """export interface IFoo {
+    assert type_declaration == ("""export interface IFoo {
     qux?: quux,
 }
 
-"""
-    )
+""")
 
     type_declaration = generate_type_declaration(
         name="Foo",
         fields=fields,
     )
-    assert type_declaration == (
-        """export interface IFoo {
+    assert type_declaration == ("""export interface IFoo {
     qux: quux,
 }
 
-"""
-    )
+""")
 
     type_declaration = generate_type_declaration(
         name="Foo",
@@ -832,13 +843,11 @@ def test_generate_type_declaration():
         non_mandatory_fields=set(fields),
         sdk_language="python",
     )
-    assert type_declaration == (
-        """class IFoo(TypedDict, total=False):
+    assert type_declaration == ("""class IFoo(TypedDict, total=False):
     qux: quux
 
 
-"""
-    )
+""")
 
     fields.update({"corge": "grault"})
     type_declaration = generate_type_declaration(
@@ -846,26 +855,22 @@ def test_generate_type_declaration():
         fields=fields,
         sdk_language="python",
     )
-    assert type_declaration == (
-        """class IFoo(TypedDict):
+    assert type_declaration == ("""class IFoo(TypedDict):
     qux: quux
     corge: grault
 
 
-"""
-    )
+""")
 
     type_declaration = generate_type_declaration(
         name="Foo", fields=fields, non_mandatory_fields={"qux"}, sdk_language="python"
     )
-    assert type_declaration == (
-        """class IFoo(TypedDict):
+    assert type_declaration == ("""class IFoo(TypedDict):
     qux: NotRequired[quux]
     corge: grault
 
 
-"""
-    )
+""")
 
     type_declaration = generate_type_declaration(name="Foo", fields=[])
     assert type_declaration == ""
@@ -950,7 +955,11 @@ def test_generate_data_class():
                     + f"\n{" "*12}"
                     + "}"
                 ),
-                primary_key_name=f'"{','.join(obj_output_prk_fields[idx])}"' if len(obj_prk_fields) > 0 else None,
+                primary_key_name=(
+                    f'"{','.join(obj_output_prk_fields[idx])}"'
+                    if len(obj_prk_fields) > 0
+                    else None
+                ),
                 mixins="".join(mixins),
             )
 
@@ -960,13 +969,10 @@ def test_generate_literal_type():
     assert literal == '"foo" | "bar"'
 
     literal = generate_literal_type(["foo", "bar"], "python")
-    assert (
-        literal
-        == """Literal[
+    assert literal == """Literal[
     "foo",
     "bar",
 ]"""
-    )
 
 
 def test_generate_selectable():
@@ -1098,10 +1104,14 @@ def test_generate_identifier():
     value = generate_identifier(value="foo", primitive="class", existing_identifiers=[])
     assert value == "Foo"
 
-    value = generate_identifier(value="fooBar", primitive="class", existing_identifiers=[])
+    value = generate_identifier(
+        value="fooBar", primitive="class", existing_identifiers=[]
+    )
     assert value == "FooBar"
 
-    value = generate_identifier(value="foo_bar", primitive="class", existing_identifiers=[])
+    value = generate_identifier(
+        value="foo_bar", primitive="class", existing_identifiers=[]
+    )
     assert value == "FooBar"
 
     value = generate_identifier(value="foo", existing_identifiers=[])
@@ -1113,10 +1123,14 @@ def test_generate_identifier():
     value = generate_identifier(value="Foo", existing_identifiers=[])
     assert value == "foo"
 
-    value = generate_identifier(value="fooBar", sdk_language="python", existing_identifiers=[])
+    value = generate_identifier(
+        value="fooBar", sdk_language="python", existing_identifiers=[]
+    )
     assert value == "foo_bar"
 
-    value = generate_identifier(value="FooBar", sdk_language="python", existing_identifiers=[])
+    value = generate_identifier(
+        value="FooBar", sdk_language="python", existing_identifiers=[]
+    )
     assert value == "foo_bar"
 
     value = generate_identifier(value="/1", existing_identifiers=[])
@@ -1161,7 +1175,12 @@ def test_get_top_level_keywords():
     assert keywords == ["getMetadata"]
 
     keywords = get_top_level_keywords(resource="service", sdk_language="python")
-    assert keywords == ["authenticate", "deauthenticate", "get_auth_apps", "get_metadata"]
+    assert keywords == [
+        "authenticate",
+        "deauthenticate",
+        "get_auth_apps",
+        "get_metadata",
+    ]
 
     keywords = get_top_level_keywords(resource="schema", sdk_language="python")
     assert keywords == ["get_metadata"]

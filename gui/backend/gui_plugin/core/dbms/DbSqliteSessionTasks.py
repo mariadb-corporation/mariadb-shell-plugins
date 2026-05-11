@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,7 @@ import sqlite3
 
 import gui_plugin.core.Error as Error
 import gui_plugin.core.Logger as logger
-from gui_plugin.core.dbms.DbSessionTasks import (BaseObjectTask, DbQueryTask,
-                                                 DbTask)
+from gui_plugin.core.dbms.DbSessionTasks import BaseObjectTask, DbQueryTask, DbTask
 from gui_plugin.core.Error import MSGException
 from gui_plugin.core.Protocols import Response
 
@@ -64,7 +63,8 @@ class SqliteBaseObjectTask(BaseObjectTask):
         row = self.resultset.fetchone()
         if row is None:
             self.dispatch_result(
-                "ERROR", message=f"The {self.type} '{self.name}' does not exist.")
+                "ERROR", message=f"The {self.type} '{self.name}' does not exist."
+            )
         else:
             self.dispatch_result("PENDING", data=self.format(row))
 
@@ -85,7 +85,8 @@ class SqliteTableObjectTask(BaseObjectTask):
             row = self.resultset.fetchone()
             if row is None:
                 self.dispatch_result(
-                    "ERROR", message=f"The table '{self.name}' does not exist.")
+                    "ERROR", message=f"The table '{self.name}' does not exist."
+                )
             else:
                 self.dispatch_result("PENDING", data=self.format(row))
         else:
@@ -98,8 +99,7 @@ class SqliteTableObjectTask(BaseObjectTask):
                 # Loop over all rows
                 for row in self.session.row_generator():
                     if self.session.is_killed():
-                        raise MSGException(
-                            Error.DB_QUERY_KILLED, "Query killed")
+                        raise MSGException(Error.DB_QUERY_KILLED, "Query killed")
 
                     # Return chunks of buffer_size a time, if buffer_size is 0
                     # or -1, do not return chunks but only the full result set
@@ -108,7 +108,7 @@ class SqliteTableObjectTask(BaseObjectTask):
                         self.dispatch_result("PENDING", data=values)
                         values = {"columns": []}
 
-                    values['columns'].append(row[0])
+                    values["columns"].append(row[0])
                     self._row_count += 1
             except Exception as e:
                 logger.exception(e)
@@ -116,20 +116,21 @@ class SqliteTableObjectTask(BaseObjectTask):
                 return
 
             # Call the callback
-            if values['columns']:
+            if values["columns"]:
                 self.dispatch_result("PENDING", data=values)
 
 
 class SqliteSetCurrentSchemaTask(DbTask):
     def do_execute(self):
         schema_name = self.params[0]
-        for (database_name, _) in self.session.databases.items():
+        for database_name, _ in self.session.databases.items():
             if database_name == schema_name:
                 self.session.set_active_schema(schema_name)
                 return
 
         self.dispatch_result(
-            "ERROR", message=f"The schema '{self.params[0]}' is invalid")
+            "ERROR", message=f"The schema '{self.params[0]}' is invalid"
+        )
 
 
 class SqliteGetAutoCommit(DbTask):
@@ -146,8 +147,7 @@ class SqliteGetAutoCommit(DbTask):
             self.dispatch_result("PENDING", data=0)
         except Exception as e:
             logger.exception(e)
-            self.dispatch_result("ERROR", message=str(e),
-                                 data=Response.exception(e))
+            self.dispatch_result("ERROR", message=str(e), data=Response.exception(e))
 
 
 class SqliteColumnObjectTask(BaseObjectTask):
@@ -165,21 +165,20 @@ class SqliteColumnObjectTask(BaseObjectTask):
         else:
             self.dispatch_result("PENDING", data=self.format(row))
 
-
     def format(self, row):
         result = {
-            "name": row['name'],
-            "type": row['type'],
-            "not_null": row['not_null'],
-            "is_pk": row['is_pk'],
-            "auto_increment": row['auto_increment'],
+            "name": row["name"],
+            "type": row["type"],
+            "not_null": row["not_null"],
+            "is_pk": row["is_pk"],
+            "auto_increment": row["auto_increment"],
         }
 
         # To maintain compatibility between MySQL and Sqlite,
         # only in certain situations the `default` key is included in the result.
         # See details at DbMySQLSessionTasks.py
-        if not row['not_null'] or (row['not_null'] and row['default']):
-            result["default"] = row['default']
+        if not row["not_null"] or (row["not_null"] and row["default"]):
+            result["default"] = row["default"]
 
         return result
 
@@ -207,23 +206,22 @@ class SqliteColumnsMetadataTask(DbQueryTask):
         if send_empty or len(columns_details) > 0:
             self.dispatch_result("PENDING", data=columns_details)
 
-
     def format(self, row):
         result = {
-            "schema": row['schema'],
-            "table": row['table'],
-            "name": row['name'],
-            "type": row['type'],
-            "not_null": row['not_null'],
-            "is_pk": row['is_pk'],
-            "auto_increment": row['auto_increment'],
+            "schema": row["schema"],
+            "table": row["table"],
+            "name": row["name"],
+            "type": row["type"],
+            "not_null": row["not_null"],
+            "is_pk": row["is_pk"],
+            "auto_increment": row["auto_increment"],
         }
 
         # To maintain compatibility between MySQL and Sqlite,
         # only in certain situations the `default` key is included in the result.
         # See details at DbMySQLSessionTasks.py
-        if not row['not_null'] or (row['not_null'] and row['default']):
-            result["default"] = row['default']
+        if not row["not_null"] or (row["not_null"] and row["default"]):
+            result["default"] = row["default"]
 
         return result
 
@@ -231,17 +229,17 @@ class SqliteColumnsMetadataTask(DbQueryTask):
 class SqliteColumnsListTask(SqliteColumnsMetadataTask):
     def format(self, row):
         result = {
-            "name": row['name'],
-            "type": row['type'],
-            "not_null": row['not_null'],
-            "is_pk": row['is_pk'],
-            "auto_increment": row['auto_increment'],
+            "name": row["name"],
+            "type": row["type"],
+            "not_null": row["not_null"],
+            "is_pk": row["is_pk"],
+            "auto_increment": row["auto_increment"],
         }
 
         # To maintain compatibility between MySQL and Sqlite,
         # only in certain situations the `default` key is included in the result.
         # See details at DbMySQLSessionTasks.py
-        if not row['not_null'] or (row['not_null'] and row['default']):
-            result["default"] = row['default']
+        if not row["not_null"] or (row["not_null"] and row["default"]):
+            result["default"] = row["default"]
 
         return result

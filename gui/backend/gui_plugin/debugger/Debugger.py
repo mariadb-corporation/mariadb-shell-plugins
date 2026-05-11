@@ -26,9 +26,9 @@ from pathlib import Path
 from mysqlsh.plugin_manager import plugin_function  # pylint: disable=no-name-in-module
 
 
-@plugin_function('gui.debugger.isGuiModuleBackend', web=True)
+@plugin_function("gui.debugger.isGuiModuleBackend", web=True)
 def is_gui_module_backend():
-    """ Indicates whether this module is a GUI backend module
+    """Indicates whether this module is a GUI backend module
 
     Returns:
         bool True
@@ -36,16 +36,18 @@ def is_gui_module_backend():
     return True
 
 
-@plugin_function('gui.debugger.getGuiModuleDisplayInfo', web=True)
+@plugin_function("gui.debugger.getGuiModuleDisplayInfo", web=True)
 def get_gui_module_display_info():
-    """ Returns display information about the module
+    """Returns display information about the module
 
     Returns:
         dict: display information for the module
     """
-    return {"name:": "Debugger",
-            "description": "Websocket Debugger",
-            "icon_path": "/images/icons/modules/gui.wsdebugger.svg"}
+    return {
+        "name:": "Debugger",
+        "description": "Websocket Debugger",
+        "icon_path": "/images/icons/modules/gui.wsdebugger.svg",
+    }
 
 
 def list_scripts() -> list[str]:
@@ -54,15 +56,15 @@ def list_scripts() -> list[str]:
     root = Path(os.path.join(this_file.parent, "scripts"))
     root_len = len(root.as_posix())
     for path in root.rglob("*"):
-        if path.as_posix().endswith('.pre') or path.as_posix().endswith('.post'):
+        if path.as_posix().endswith(".pre") or path.as_posix().endswith(".post"):
             continue
         if path.is_file():
-            user_stories.append(path.as_posix()[root_len + 1:])
+            user_stories.append(path.as_posix()[root_len + 1 :])
 
     return user_stories
 
 
-@plugin_function('gui.debugger.getScripts', shell=False, web=True)
+@plugin_function("gui.debugger.getScripts", shell=False, web=True)
 def get_scripts() -> list[str]:
     """Returns the list of available scripts
 
@@ -87,7 +89,7 @@ def read_script(path: str) -> str:
     raise Exception(f"The requested story does not exist: {path}")
 
 
-@plugin_function('gui.debugger.getScriptContent', shell=False, web=True)
+@plugin_function("gui.debugger.getScriptContent", shell=False, web=True)
 def get_script_content(path: str) -> str:
     """Returns the content of the given script
 

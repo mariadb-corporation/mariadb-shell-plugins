@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@ from mysqlsh.plugin_manager import plugin_function
 import mrs_plugin.lib as lib
 
 
-@plugin_function('mrs.list.routerIds', shell=True, cli=True, web=True)
+@plugin_function("mrs.list.routerIds", shell=True, cli=True, web=True)
 def get_router_ids(seen_within=None, session=None):
     """List all router ids
 
@@ -36,11 +36,13 @@ def get_router_ids(seen_within=None, session=None):
     Returns:
         The list of router ids that fit into the criteria
     """
-    with lib.core.MrsDbSession(exception_handler=lib.core.print_exception, session=session) as session:
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, session=session
+    ) as session:
         return lib.routers.get_router_ids(session, seen_within)
 
 
-@plugin_function('mrs.list.routers', shell=True, cli=True, web=True)
+@plugin_function("mrs.list.routers", shell=True, cli=True, web=True)
 def get_routers(active_when_seen_within=None, session=None):
     """List all configured routers
 
@@ -51,11 +53,15 @@ def get_routers(active_when_seen_within=None, session=None):
     Returns:
         The list of configured router
     """
-    with lib.core.MrsDbSession(exception_handler=lib.core.print_exception, session=session) as session:
-        return lib.routers.get_routers(session, active_when_seen_within=active_when_seen_within or 10)
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, session=session
+    ) as session:
+        return lib.routers.get_routers(
+            session, active_when_seen_within=active_when_seen_within or 10
+        )
 
 
-@plugin_function('mrs.delete.router', shell=True, cli=True, web=True)
+@plugin_function("mrs.delete.router", shell=True, cli=True, web=True)
 def delete_router(router_id=None, session=None):
     """Delete an existing router
 
@@ -69,12 +75,14 @@ def delete_router(router_id=None, session=None):
     if not router_id:
         raise ValueError("The router_id needs to be specified.")
 
-    with lib.core.MrsDbSession(exception_handler=lib.core.print_exception, session=session) as session:
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, session=session
+    ) as session:
         with lib.core.MrsDbTransaction(session):
             lib.routers.delete_router(session, router_id)
 
 
-@plugin_function('mrs.get.routerServices', shell=True, cli=True, web=True)
+@plugin_function("mrs.get.routerServices", shell=True, cli=True, web=True)
 def get_router_services(router_id=None, session=None):
     """List all services a router serves
 
@@ -86,6 +94,8 @@ def get_router_services(router_id=None, session=None):
         The list of services served by the router
     """
 
-    with lib.core.MrsDbSession(exception_handler=lib.core.print_exception, session=session) as session:
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, session=session
+    ) as session:
         with lib.core.MrsDbTransaction(session):
             return lib.routers.get_router_services(session, router_id)

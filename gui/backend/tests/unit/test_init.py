@@ -28,7 +28,6 @@ from types import ModuleType
 
 import pytest
 
-
 INIT_PATH = Path(__file__).parents[2] / "gui_plugin" / "init.py"
 GUI_SUBMODULES = {
     "cluster",
@@ -106,7 +105,9 @@ def test_debugger_is_loaded_in_debug_mode(monkeypatch: pytest.MonkeyPatch) -> No
     assert "debugger" in gui_plugin.loaded_submodules
 
 
-def test_debugger_is_not_loaded_without_debug_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_debugger_is_not_loaded_without_debug_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     module, gui_plugin = _load_init(monkeypatch, "0")
 
     assert module.DEBUG_MODE == 0

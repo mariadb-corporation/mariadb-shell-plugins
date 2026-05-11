@@ -27,9 +27,12 @@ import json
 from dataclasses import dataclass, asdict
 from migration_plugin.lib.backend.model import MigrationMessage
 
-
-k_sensitive_fields = ["password", "adminPassword",
-                      "adminPasswordConfirm", "pass_phrase"]
+k_sensitive_fields = [
+    "password",
+    "adminPassword",
+    "adminPasswordConfirm",
+    "pass_phrase",
+]
 
 
 @dataclass
@@ -42,11 +45,13 @@ class MyMessage(MigrationMessage):
 
 
 def test_message_serialization():
-    i = MyMessage(attribute="value",
-                  password="mypwd",
-                  adminPassword="myadminpwd",
-                  adminPasswordConfirm="myadminpwd",
-                  pass_phrase="mypassphrase")
+    i = MyMessage(
+        attribute="value",
+        password="mypwd",
+        adminPassword="myadminpwd",
+        adminPasswordConfirm="myadminpwd",
+        pass_phrase="mypassphrase",
+    )
 
     to_string = str(i)
     to_repr = repr(i)
@@ -54,7 +59,19 @@ def test_message_serialization():
     to_json_class = json.dumps(i._json(noclass=False))
 
     # Serializing with asdict honors the order of declaration of the fields
-    assert to_string == '{"attribute": "value", "password": "****", "adminPassword": "****", "adminPasswordConfirm": "****", "pass_phrase": "****"}'
-    assert to_repr == "MyMessage(attribute='value', password='mypwd', adminPassword='myadminpwd', adminPasswordConfirm='myadminpwd', pass_phrase='mypassphrase')"
-    assert to_json == '{"adminPassword": "myadminpwd", "adminPasswordConfirm": "myadminpwd", "attribute": "value", "pass_phrase": "mypassphrase", "password": "mypwd"}'
-    assert to_json_class == '{"_class": "MyMessage", "adminPassword": "myadminpwd", "adminPasswordConfirm": "myadminpwd", "attribute": "value", "pass_phrase": "mypassphrase", "password": "mypwd"}'
+    assert (
+        to_string
+        == '{"attribute": "value", "password": "****", "adminPassword": "****", "adminPasswordConfirm": "****", "pass_phrase": "****"}'
+    )
+    assert (
+        to_repr
+        == "MyMessage(attribute='value', password='mypwd', adminPassword='myadminpwd', adminPasswordConfirm='myadminpwd', pass_phrase='mypassphrase')"
+    )
+    assert (
+        to_json
+        == '{"adminPassword": "myadminpwd", "adminPasswordConfirm": "myadminpwd", "attribute": "value", "pass_phrase": "mypassphrase", "password": "mypwd"}'
+    )
+    assert (
+        to_json_class
+        == '{"_class": "MyMessage", "adminPassword": "myadminpwd", "adminPasswordConfirm": "myadminpwd", "attribute": "value", "pass_phrase": "mypassphrase", "password": "mypwd"}'
+    )

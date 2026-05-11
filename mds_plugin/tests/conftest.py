@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,7 @@ import tempfile
 import os
 
 
-class MyShellContext():
+class MyShellContext:
     """
     The purpose of this class is to create a shell context that can be used to run
     code that requires user interaction (prompts) in a separate thread.
@@ -47,23 +47,38 @@ class MyShellContext():
         self._prompt_count = 0
         self._stdout = []
         self._stderr = []
-        self._shell_ctx = mysqlsh.globals.shell.create_context({"printDelegate": lambda x: self.on_shell_print(x),
-                                                                "diagDelegate": lambda x: self.on_shell_print_diag(x),
-                                                                "errorDelegate": lambda x: self.on_shell_print_error(x),
-                                                                "promptDelegate": lambda x, y: self.on_shell_prompt(x, y), })
+        self._shell_ctx = mysqlsh.globals.shell.create_context(
+            {
+                "printDelegate": lambda x: self.on_shell_print(x),
+                "diagDelegate": lambda x: self.on_shell_print_diag(x),
+                "errorDelegate": lambda x: self.on_shell_print_error(x),
+                "promptDelegate": lambda x, y: self.on_shell_prompt(x, y),
+            }
+        )
 
     def on_shell_prompt(self, text, options):
         self._prompt_count += 1
-        assert self._expected_prompts, f"Unexpected prompt received (#{self._prompt_count}): {text}"
-        expected_message, expected_response, expected_options = self._expected_prompts.pop(
-            0)
-        assert expected_message == text, f"Unexpected prompt received (#{self._prompt_count})"
+        assert (
+            self._expected_prompts
+        ), f"Unexpected prompt received (#{self._prompt_count}): {text}"
+        expected_message, expected_response, expected_options = (
+            self._expected_prompts.pop(0)
+        )
+        assert (
+            expected_message == text
+        ), f"Unexpected prompt received (#{self._prompt_count})"
 
         if expected_options is not None:
-            assert expected_options == options, f"Unexpected prompt options received (#{self._prompt_count})"
+            assert (
+                expected_options == options
+            ), f"Unexpected prompt options received (#{self._prompt_count})"
 
         # Hack to mimic the standard shell behavior
-        if expected_response.strip() == "" and "defaultValue" in options and (not "type" in options or options["type"] == "text"):
+        if (
+            expected_response.strip() == ""
+            and "defaultValue" in options
+            and (not "type" in options or options["type"] == "text")
+        ):
             expected_response = options["defaultValue"]
 
         # return [self._prompt_replied, self._prompt_reply]
@@ -88,8 +103,9 @@ class MyShellContext():
         self._expected_prompts.append((text, response, options))
 
     def ensure_no_missing_prompts(self):
-        assert len(
-            self._expected_prompts) == 0, f"Missing expected prompts {self._expected_prompts}"
+        assert (
+            len(self._expected_prompts) == 0
+        ), f"Missing expected prompts {self._expected_prompts}"
 
     def finalize(self):
         self._shell_ctx.finalize()
@@ -104,18 +120,20 @@ def run_in_thread(func):
             shell_context = MyShellContext()
             wrapper.expect_prompt = shell_context.expect_prompt
             try:
-                result['value'] = func(*args, **kwargs)
+                result["value"] = func(*args, **kwargs)
                 shell_context.ensure_no_missing_prompts()
             except Exception as e:
-                result['exception'] = e
+                result["exception"] = e
             finally:
                 shell_context.finalize()
+
         t = threading.Thread(target=target)
         t.start()
         t.join()
-        if 'exception' in result:
-            raise result['exception']
-        return result.get('value')
+        if "exception" in result:
+            raise result["exception"]
+        return result.get("value")
+
     return wrapper
 
 
@@ -140,7 +158,7 @@ def testutil(request):
         assert result == "&Yes"
 
         result = shell.prompt("Enter your name:")
-        assert result == "John Doe"    
+        assert result == "John Doe"
     """
     request.node.obj = run_in_thread(request.node.obj)
     return request.node.obj
@@ -163,13 +181,13 @@ def temp_oci_config():
     """
     with tempfile.TemporaryDirectory() as temp_dir:
         backup = None
-        if 'OCI_CLI_CONFIG_FILE' in os.environ:
-            backup = os.environ['OCI_CLI_CONFIG_FILE']
+        if "OCI_CLI_CONFIG_FILE" in os.environ:
+            backup = os.environ["OCI_CLI_CONFIG_FILE"]
 
-        os.environ['OCI_CLI_CONFIG_FILE'] = os.path.join(temp_dir, 'config')
-        yield os.environ['OCI_CLI_CONFIG_FILE']
+        os.environ["OCI_CLI_CONFIG_FILE"] = os.path.join(temp_dir, "config")
+        yield os.environ["OCI_CLI_CONFIG_FILE"]
 
         if backup is not None:
-            os.environ['OCI_CLI_CONFIG_FILE'] = backup
+            os.environ["OCI_CLI_CONFIG_FILE"] = backup
         else:
-            del os.environ['OCI_CLI_CONFIG_FILE']
+            del os.environ["OCI_CLI_CONFIG_FILE"]

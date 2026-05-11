@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,11 +27,14 @@ import tempfile
 
 from msm_plugin.general import *
 
+
 def test_plugin_info():
     assert info().startswith("MySQL Schema Management Plugin")
 
+
 def test_plugin_version():
     assert version() == lib.general.VERSION
+
 
 def test_mysql_session(sandbox_session):
     assert sandbox_session is not None
@@ -40,6 +43,7 @@ def test_mysql_session(sandbox_session):
     row = result.fetch_one()
 
     assert row[0] == 1
+
 
 def test_folder_navigation():
     cd("~")

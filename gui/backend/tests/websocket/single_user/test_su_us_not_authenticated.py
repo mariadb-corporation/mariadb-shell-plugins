@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -52,16 +52,23 @@ def test_user_stories_for_single_user_mode(story, ws):
 
             # Attempt to logout, does not validate the successful logout as it may
             # succeed or fail depending if the test case successfully authenticated or not
-            if ws.lastResponse['request_state']['type'] == "OK" and ws.lastResponse['request_state']['msg'] != "User successfully logged out.":
-                ws.sendAndValidate({
-                    "request": "logout",
-                    "request_id": ws.generateRequestId()
-                }, [{
-                    "request_state": {
-                        "type": "OK",
-                        "msg": "User successfully logged out."
-                    },
-                    "request_id": ws.lastGeneratedRequestId}])
+            if (
+                ws.lastResponse["request_state"]["type"] == "OK"
+                and ws.lastResponse["request_state"]["msg"]
+                != "User successfully logged out."
+            ):
+                ws.sendAndValidate(
+                    {"request": "logout", "request_id": ws.generateRequestId()},
+                    [
+                        {
+                            "request_state": {
+                                "type": "OK",
+                                "msg": "User successfully logged out.",
+                            },
+                            "request_id": ws.lastGeneratedRequestId,
+                        }
+                    ],
+                )
 
         except Exception as e:
             print_user_story_stack_trace(ws, e)

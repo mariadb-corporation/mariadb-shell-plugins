@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@ import oci
 import configparser
 
 import mysqlsh
+
 shell_prompt = mysqlsh.globals.shell.prompt
 
 
@@ -47,33 +48,53 @@ def resolve_config_location(config_location: str = None) -> tuple:
     description = []
     while True:
         if config_location is None or not config_location.strip():
-            config_location = shell_prompt(f"Enter the config file path [{default_path}]: ", {
-                "title": 'Configuration Path', "defaultValue": default_path, "description": description}).strip()
+            config_location = shell_prompt(
+                f"Enter the config file path [{default_path}]: ",
+                {
+                    "title": "Configuration Path",
+                    "defaultValue": default_path,
+                    "description": description,
+                },
+            ).strip()
 
         # Check if the path exists
         path_exists = os.path.exists(config_location)
 
         if path_exists and not os.path.isfile(config_location):
             raise ValueError(
-                f"Target location {config_location} is a directory, should be a file")
+                f"Target location {config_location} is a directory, should be a file"
+            )
 
         # If the path exists, ask the user if they want to overwrite it
         overwrite = False
         if path_exists:
-            response = shell_prompt("Do you want to use it or overwrite it or specify a different path?", {
-                "type": "confirm", "yes": "&Use", "no": "&Overwrite", "alt": "&Different", "defaultValue": "&Use", "description": [f"The config file {config_location} already exists."]})
+            response = shell_prompt(
+                "Do you want to use it or overwrite it or specify a different path?",
+                {
+                    "type": "confirm",
+                    "yes": "&Use",
+                    "no": "&Overwrite",
+                    "alt": "&Different",
+                    "defaultValue": "&Use",
+                    "description": [
+                        f"The config file {config_location} already exists."
+                    ],
+                },
+            )
 
-            if response == '&Different':
+            if response == "&Different":
                 config_location = None  # Reset config_location to prompt again
                 description = []
                 continue
             else:
-                overwrite = response == '&Overwrite'
+                overwrite = response == "&Overwrite"
 
         return config_location, overwrite
 
 
-def resolve_profile_name(config_location: str, validate_config: bool, profile_name: str = None) -> tuple:
+def resolve_profile_name(
+    config_location: str, validate_config: bool, profile_name: str = None
+) -> tuple:
     """
     Validates a given config file path and profile name, checks if the profile exists, and asks the user if it should be overwritten.
 
@@ -103,8 +124,14 @@ def resolve_profile_name(config_location: str, validate_config: bool, profile_na
     description = []
     while True:
         if profile_name is None or not profile_name.strip():
-            profile_name = shell_prompt("Enter the profile name: ", {
-                "title": 'Profile Name', "defaultValue": cli_setup.DEFAULT_PROFILE_NAME, "description": description}).strip()
+            profile_name = shell_prompt(
+                "Enter the profile name: ",
+                {
+                    "title": "Profile Name",
+                    "defaultValue": cli_setup.DEFAULT_PROFILE_NAME,
+                    "description": description,
+                },
+            ).strip()
 
             if not profile_name:
                 description = ["Profile name cannot be empty."]
@@ -113,10 +140,16 @@ def resolve_profile_name(config_location: str, validate_config: bool, profile_na
         # Check if profile exists
         if config and profile_name in config.sections():
             while True:
-                response = shell_prompt("Do you want to overwrite it?", {
-                    "type": "confirm", "defaultValue": "&No", "description": [f"The profile {profile_name} already exists."]})
+                response = shell_prompt(
+                    "Do you want to overwrite it?",
+                    {
+                        "type": "confirm",
+                        "defaultValue": "&No",
+                        "description": [f"The profile {profile_name} already exists."],
+                    },
+                )
 
-                if response == '&No':
+                if response == "&No":
                     profile_name = None  # Reset profile_name to prompt again
                     break
 
@@ -127,16 +160,22 @@ def resolve_passphrase_usage(passphrase=None, persist_passphrase=None):
     "Returns a passphrase and whether it should be stored in the config file or not"
     if passphrase is None:
         response = shell_prompt(
-            "A new key file will be created, do you want to assign a passphrase to the key file?", {"type": "confirm"})
+            "A new key file will be created, do you want to assign a passphrase to the key file?",
+            {"type": "confirm"},
+        )
         if response == "&Yes":
             passphrase = cli_setup.prompt_for_passphrase()
 
     if passphrase and persist_passphrase is None:
         response = shell_prompt(
-            "Do you want to write your passphrase to the config file? (If not, you will need to enter it when prompted each time you run an oci command)", {"type": "confirm"})
+            "Do you want to write your passphrase to the config file? (If not, you will need to enter it when prompted each time you run an oci command)",
+            {"type": "confirm"},
+        )
         persist_passphrase = response == "&Yes"
 
-    return passphrase, persist_passphrase if persist_passphrase is not None else response == "&Yes"
+    return passphrase, (
+        persist_passphrase if persist_passphrase is not None else response == "&Yes"
+    )
 
 
 def resolve_region(region=None):
@@ -147,7 +186,10 @@ def resolve_region(region=None):
         region = oci.regions.REGIONS_SHORT_NAMES[region]
 
     if not oci.regions.is_region(region):
-        raise ValueError("'{}' is not a valid region. Valid regions are \n{}".format(region, oci.regions.REGIONS)
-                         )
+        raise ValueError(
+            "'{}' is not a valid region. Valid regions are \n{}".format(
+                region, oci.regions.REGIONS
+            )
+        )
 
     return region

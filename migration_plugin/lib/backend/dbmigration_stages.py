@@ -70,7 +70,7 @@ class LoadStatus(IntEnum):
 def fetch_par(par_url: str) -> str | None:
     try:
         with urllib.request.urlopen(par_url, context=util.g_ssl_context) as response:
-            return response.read().decode('utf-8')
+            return response.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
@@ -151,7 +151,8 @@ class RemoteDumper(Dumper):
                     return True
             except Exception as e:
                 logging.info(
-                    f"Failed to connect to the source instance from the jump host: {e}")
+                    f"Failed to connect to the source instance from the jump host: {e}"
+                )
                 return False
 
     def dump(self, listener: Callable[[dict], None]) -> int:
@@ -172,9 +173,7 @@ class RemoteDumper(Dumper):
                 self._args | {"max_threads": self._max_threads}
             )
 
-            logging.info(
-                f"remote dump started: {result['status']}, tracking status..."
-            )
+            logging.info(f"remote dump started: {result['status']}, tracking status...")
 
             helper.dump_status(on_output)
 
@@ -220,7 +219,8 @@ class DumpStage(stage.ThreadedStage):
                 stageCurrent=progress["current"],
                 stageTotal=progress["total"],
                 stageEta=progress["eta"],
-                stage=self._status.name)
+                stage=self._status.name,
+            )
 
             self.push_progress(data=status)
             return
@@ -273,7 +273,9 @@ class DumpStage(stage.ThreadedStage):
             self._set_done_status("Source database was exported")
         else:
             if rc < 0:  # exited because of signal: -6 = SIGABORT, -11 = SIGSEGV
-                message = f"mysqlsh dump process has exited unexpectedly (exit code={rc})"
+                message = (
+                    f"mysqlsh dump process has exited unexpectedly (exit code={rc})"
+                )
             else:
                 message = self._last_error or {}
             self._set_error_status(message)
@@ -339,7 +341,8 @@ class DumpStage(stage.ThreadedStage):
 
             dump_status = json.loads(data)
             logging.info(
-                f"Existing dump found in bucket={bucket} path={self._owner.project.dump_prefix}: server={dump_status.get("server")} gtidExecuted={dump_status.get("gtidExecuted")}")
+                f"Existing dump found in bucket={bucket} path={self._owner.project.dump_prefix}: server={dump_status.get("server")} gtidExecuted={dump_status.get("gtidExecuted")}"
+            )
 
             # TODO
             # compare GTID_EXECUTED of the dump with the current
@@ -348,12 +351,12 @@ class DumpStage(stage.ThreadedStage):
             data = fetch_par(self._owner.full_storage_path + "/@.done.json")
             if data:
                 dump_status = json.loads(data)
-                logging.info(
-                    f"Existing dump is complete: {dump_status['end']}")
+                logging.info(f"Existing dump is complete: {dump_status['end']}")
                 return True
             else:
                 logging.warning(
-                    f"Existing dump in bucket={bucket} at {self._owner.project.dump_prefix} is incomplete and thus unusable")
+                    f"Existing dump in bucket={bucket} at {self._owner.project.dump_prefix} is incomplete and thus unusable"
+                )
                 return False
 
         return None
@@ -365,13 +368,14 @@ class DumpStage(stage.ThreadedStage):
         bucket = self._owner.options.targetHostingOptions.bucketName
 
         logging.info(
-            f"Deleting existing dump in bucket={bucket} at {self._owner.project.dump_prefix}")
+            f"Deleting existing dump in bucket={bucket} at {self._owner.project.dump_prefix}"
+        )
 
         comp.delete_from_bucket(
-            bucket_name=bucket, prefix=self._owner.project.dump_prefix)
+            bucket_name=bucket, prefix=self._owner.project.dump_prefix
+        )
 
-        logging.info(
-            f"Existing dump at {self._owner.project.dump_prefix} was deleted")
+        logging.info(f"Existing dump at {self._owner.project.dump_prefix} was deleted")
 
     def _work_thread(self):
         self._start_time = time.time()
@@ -380,9 +384,7 @@ class DumpStage(stage.ThreadedStage):
             if not self._initialize_dump():
                 return
         except Exception as e:
-            logging.exception(
-                f"In {self._name} worker thread, during initialization"
-            )
+            logging.exception(f"In {self._name} worker thread, during initialization")
             self._set_error_status(f"Failed to initialize dump: {e}")
             raise errors.DumpError("Dump initialization failed")
 
@@ -427,7 +429,11 @@ class DumpStage(stage.ThreadedStage):
         while True:
             returncode = self._dumper.dump(self._on_stdout)
 
-            if 0 != returncode and checkers.should_retry(current_attempt=attempt) and self._should_retry():
+            if (
+                0 != returncode
+                and checkers.should_retry(current_attempt=attempt)
+                and self._should_retry()
+            ):
                 logging.warning("Preparing to retry a failed dump")
 
                 self._status = DumpStatus.STARTING
@@ -446,23 +452,25 @@ class DumpStage(stage.ThreadedStage):
 
     def _initialize_dump(self) -> bool:
         if self._check_usable_dump():
-            self._set_done_status("Short-circuiting completed dump which is usable", {
-                "detail": "Found already completed dump"
-            })
+            self._set_done_status(
+                "Short-circuiting completed dump which is usable",
+                {"detail": "Found already completed dump"},
+            )
             return False
 
         # If load hasn't started already (in a previous run of the tool),
         # we can recover by deleting the partial dump and dumping again
         # If the load has started previously, then we need to clean up the
         # DBSystem.
-        stage = self._owner.project.work_status._stage(
-            model.SubStepId.LOAD)
+        stage = self._owner.project.work_status._stage(model.SubStepId.LOAD)
         if stage.status == model.WorkStatus.NOT_STARTED:  # load not started
             logging.info(
-                f"Load was not yet started, so the DBSystem is presumed to be clean")
+                f"Load was not yet started, so the DBSystem is presumed to be clean"
+            )
         else:  # load already started
             logging.info(
-                f"Load had already started on a failed dump, so the DBSystem may have incomplete data. Will continue anyway...")
+                f"Load had already started on a failed dump, so the DBSystem may have incomplete data. Will continue anyway..."
+            )
             # The other alternative would be to re-create the DBSystem or tell the user to restart from scratch
             self._delete_partial_dump()
 
@@ -471,9 +479,7 @@ class DumpStage(stage.ThreadedStage):
     def _prepare_dumper_args(self) -> dict:
         assert self._owner.options
 
-        extra_args = build_dump_exclude_list(
-            self._owner.options.schemaSelection
-        )
+        extra_args = build_dump_exclude_list(self._owner.options.schemaSelection)
 
         if ncpu := os.cpu_count():
             # TODO pick a better number of threads (from user?)
@@ -487,7 +493,8 @@ class DumpStage(stage.ThreadedStage):
         ]
 
         logging.devdebug(
-            f"Dumping to {self._owner.full_storage_path}, compat_flags={compatibility_flags} filter={extra_args}")
+            f"Dumping to {self._owner.full_storage_path}, compat_flags={compatibility_flags} filter={extra_args}"
+        )
 
         return {
             "connection_params": self._owner.source_connection_options,
@@ -498,8 +505,7 @@ class DumpStage(stage.ThreadedStage):
             "target_version": self._owner.target_version,
             "threads": threads,
         }
-        self.push_output(
-            " ".join(util.sanitize_par_uri_in_list(self._process.argv)))
+        self.push_output(" ".join(util.sanitize_par_uri_in_list(self._process.argv)))
 
     def start(self, parents):
         if self._is_started:
@@ -514,8 +520,7 @@ class DumpStage(stage.ThreadedStage):
 
         self._start_time = time.time()
         self._status = DumpStatus.STARTING
-        self.push_status(WorkStatusEvent.BEGIN,
-                         message="Exporting source database")
+        self.push_status(WorkStatusEvent.BEGIN, message="Exporting source database")
 
         return True
 
@@ -565,8 +570,10 @@ class RemoteLoadStage(stage.ThreadedStage):
         if (status := data.get("status")) == "DONE":
             if data["returncode"] == 0:
                 self._status = LoadStatus.DONE
-                self.push_status(WorkStatusEvent.END,
-                                 message="Data load to target DB System completed")
+                self.push_status(
+                    WorkStatusEvent.END,
+                    message="Data load to target DB System completed",
+                )
             else:
                 logging.error(f"Remote load failed with an error {data}")
                 self._status = LoadStatus.ERROR
@@ -594,9 +601,7 @@ class RemoteLoadStage(stage.ThreadedStage):
                     self._status = LoadStatus.DDL_VIEWS
                 elif load_stage == "Data Import":
                     self._status = LoadStatus.LOADING_DATA
-                    progress["totalKnown"] = (
-                        self._dumper._status == DumpStatus.DONE
-                    )
+                    progress["totalKnown"] = self._dumper._status == DumpStatus.DONE
                 elif load_stage == "Building indexes":
                     self._status = LoadStatus.DDL_INDEXES
 
@@ -607,8 +612,11 @@ class RemoteLoadStage(stage.ThreadedStage):
                     current_progress += weight
 
             if progress["total"] > 0:
-                current_progress += self._progress_weights.get(self._status, 0) * \
-                    progress["current"] / progress["total"]
+                current_progress += (
+                    self._progress_weights.get(self._status, 0)
+                    * progress["current"]
+                    / progress["total"]
+                )
 
             if current_progress > self._current_progress:
                 self._current_progress = current_progress
@@ -618,7 +626,8 @@ class RemoteLoadStage(stage.ThreadedStage):
                 stageCurrent=self._current_progress,
                 stageTotal=self._total_progress,
                 # status.stageTotalExact = progress["totalKnown"]
-                stageEta=progress["eta"])
+                stageEta=progress["eta"],
+            )
 
             self.push_progress(message=status.stage, data=status)
             return
@@ -646,7 +655,9 @@ class RemoteLoadStage(stage.ThreadedStage):
 
         # when running dump from a jump host we wait for the operation to be
         # finished, in order to avoid overloading that compute
-        expected_state = DumpStatus.DONE if self._dumper._remote_dumper else DumpStatus.DUMPING_DATA
+        expected_state = (
+            DumpStatus.DONE if self._dumper._remote_dumper else DumpStatus.DUMPING_DATA
+        )
 
         self.push_progress(
             f"waiting for {self._dumper._name} to be in {expected_state.name} state"
@@ -660,14 +671,19 @@ class RemoteLoadStage(stage.ThreadedStage):
         if self._dumper._status == DumpStatus.ERROR:
             raise Exception("Dumper has failed")
 
-        self.push_status(WorkStatusEvent.BEGIN,
-                         message="Starting data load to DB System")
+        self.push_status(
+            WorkStatusEvent.BEGIN, message="Starting data load to DB System"
+        )
 
         # check if load was already performed before
-        if self._owner.project.work_status._stage(SubStepId.LOAD).status == model.WorkStatus.FINISHED:
+        if (
+            self._owner.project.work_status._stage(SubStepId.LOAD).status
+            == model.WorkStatus.FINISHED
+        ):
             self._status = LoadStatus.DONE
-            self.push_status(WorkStatusEvent.END,
-                             message="Data load has already finished before")
+            self.push_status(
+                WorkStatusEvent.END, message="Data load has already finished before"
+            )
             return
 
         extra_args = []
@@ -676,9 +692,7 @@ class RemoteLoadStage(stage.ThreadedStage):
         extra_args.append("--ignoreVersion=1")
         extra_args.append("--handleGrantErrors=ignore")
 
-        max_threads = compute_remote_threads(
-            self._owner.options.targetMySQLOptions
-        )
+        max_threads = compute_remote_threads(self._owner.options.targetMySQLOptions)
 
         logging.info(f"{self}: setting loader max_threads={max_threads}")
 
@@ -687,14 +701,13 @@ class RemoteLoadStage(stage.ThreadedStage):
             "storage_prefix": self._owner.full_storage_path,
             "storage_args": [],
             "extra_args": extra_args,
-            "max_threads": max_threads
+            "max_threads": max_threads,
         }
 
         with self._owner.connect_remote_helper() as helper:
             logging.info(f"{self}: starting remote load...")
             result = helper.load_dump(options)
-            logging.info(
-                f"remote load started: {result['status']}, tracking status...")
+            logging.info(f"remote load started: {result['status']}, tracking status...")
             helper.load_status(self.on_output)
             logging.info(f"{self}: remote load ended")
 
@@ -706,13 +719,13 @@ class RemoteLoadStage(stage.ThreadedStage):
         assert coords
 
         gtid_executed = coords["Executed_GTID_set"]
-        logging.info(
-            f"gtidExecuted in load is {gtid_executed}, updating target...")
+        logging.info(f"gtidExecuted in load is {gtid_executed}, updating target...")
         try:
             helper.target_run_sql(
-                "call sys.set_gtid_purged(concat('+', gtid_subtract(?, @@gtid_purged)))", [
-                    gtid_executed],
-                connect_options=self._owner.target_connection_options)
+                "call sys.set_gtid_purged(concat('+', gtid_subtract(?, @@gtid_purged)))",
+                [gtid_executed],
+                connect_options=self._owner.target_connection_options,
+            )
         except:
             logging.exception(f"Error calling set_gtid_purged")
             raise

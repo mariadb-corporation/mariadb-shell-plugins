@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -151,6 +151,7 @@ def scan_files(path):
         elif f.endswith(".md"):
             check_file(fpath)
 
+
 # chdir to where the script is located
 os.chdir(os.path.dirname(sys.argv[0]))
 
@@ -190,11 +191,9 @@ if undocumented_rules:
             continue
         print(format_rule(r, g_all_rules[r]))
         print()
-        print(
-            f"""{r} ::=
+        print(f"""{r} ::=
     ![{r}](../../images/sql/{r}.svg "{r}")
-    """
-        )
+    """)
         assert os.path.exists(f"../docs/images/sql/{r}.svg"), r
         print()
         print("-" * 80)

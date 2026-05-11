@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 from gui_plugin.core.Db import GuiBackendDb
 
 
-class MockWebSession():
+class MockWebSession:
     def __init__(self, user_id=3, local=False):
         "User id 3 is the first id for the test users"
         self.user_id = user_id
@@ -53,8 +53,9 @@ class MockWebSession():
         if module_session.module_session_id in self.module_sessions:
             del self.module_sessions[module_session.module_session_id]
 
-    def send_response_message(self, msg_type, msg, request_id=None,
-                              values=None, api=True):
+    def send_response_message(
+        self, msg_type, msg, request_id=None, values=None, api=True
+    ):
         if request_id is None:
             request_id = self.request_id
         if msg_type in ["OK", "ERROR", "CANCELLED"]:

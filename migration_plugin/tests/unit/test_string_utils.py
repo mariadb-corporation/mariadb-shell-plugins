@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -49,26 +49,91 @@ def test_unquote_db_object():
         expect_db_object(obj, ("obj",))
 
     expect_db_object("a", ("a",))
-    expect_db_object("a.b", ("a", "b", ))
-    expect_db_object("a.b.c", ("a", "b", "c", ))
+    expect_db_object(
+        "a.b",
+        (
+            "a",
+            "b",
+        ),
+    )
+    expect_db_object(
+        "a.b.c",
+        (
+            "a",
+            "b",
+            "c",
+        ),
+    )
 
     expect_db_object("aa", ("aa",))
-    expect_db_object("aa.bb", ("aa", "bb", ))
-    expect_db_object("aa.bb.cc", ("aa", "bb", "cc", ))
+    expect_db_object(
+        "aa.bb",
+        (
+            "aa",
+            "bb",
+        ),
+    )
+    expect_db_object(
+        "aa.bb.cc",
+        (
+            "aa",
+            "bb",
+            "cc",
+        ),
+    )
 
-    expect_db_object("`obj1`", ("obj1", ))
-    expect_db_object("`obj1`.`obj2`", ("obj1", "obj2", ))
-    expect_db_object("`obj1`.`obj2`.`obj3`", ("obj1", "obj2", "obj3", ))
+    expect_db_object("`obj1`", ("obj1",))
+    expect_db_object(
+        "`obj1`.`obj2`",
+        (
+            "obj1",
+            "obj2",
+        ),
+    )
+    expect_db_object(
+        "`obj1`.`obj2`.`obj3`",
+        (
+            "obj1",
+            "obj2",
+            "obj3",
+        ),
+    )
 
 
 def test_quote_db_object():
     def expect_db_object(obj: tuple[str, ...], quoted: str):
         assert quoted == quote_db_object(*obj), obj
 
-    expect_db_object(("a", ), "`a`")
-    expect_db_object(("a", "b", ), "`a`.`b`")
-    expect_db_object(("a", "b", "c", ), "`a`.`b`.`c`")
+    expect_db_object(("a",), "`a`")
+    expect_db_object(
+        (
+            "a",
+            "b",
+        ),
+        "`a`.`b`",
+    )
+    expect_db_object(
+        (
+            "a",
+            "b",
+            "c",
+        ),
+        "`a`.`b`.`c`",
+    )
 
-    expect_db_object(("a`b", ), "`a``b`")
-    expect_db_object(("a`b", "c`d", ), "`a``b`.`c``d`")
-    expect_db_object(("a`b", "c`d", "e`f", ), "`a``b`.`c``d`.`e``f`")
+    expect_db_object(("a`b",), "`a``b`")
+    expect_db_object(
+        (
+            "a`b",
+            "c`d",
+        ),
+        "`a``b`.`c``d`",
+    )
+    expect_db_object(
+        (
+            "a`b",
+            "c`d",
+            "e`f",
+        ),
+        "`a``b`.`c``d`.`e``f`",
+    )

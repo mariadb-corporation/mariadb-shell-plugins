@@ -38,12 +38,12 @@ from .backend.model import WorkStatusInfo, SubStepId, WorkStatus, WorkStatusEven
 
 class AttributeWatchProxy:
     def __init__(self, target, callback):
-        super().__setattr__('_target', target)
-        super().__setattr__('_callback', callback)
+        super().__setattr__("_target", target)
+        super().__setattr__("_callback", callback)
 
     def __setattr__(self, name, value):
         # Avoid recursing for our own internal attributes
-        if name in ('_target', '_callback'):
+        if name in ("_target", "_callback"):
             super().__setattr__(name, value)
         else:
             setattr(self._target, name, value)
@@ -52,6 +52,7 @@ class AttributeWatchProxy:
     def __getattr__(self, name):
         # Forward attribute access to the target
         return getattr(self._target, name)
+
 
 # TODO add a directory for saving common defaults, like contact emails list
 
@@ -105,12 +106,14 @@ class Project:
         self._options = model.MigrationOptions()
         self._resources = model.CloudResources()
         self._resources_proxy = AttributeWatchProxy(
-            self._resources, self._on_resources_change)
+            self._resources, self._on_resources_change
+        )
         self._options.targetHostingOptions = model.OCIHostingOptions()
         self._options.targetMySQLOptions = model.DBSystemOptions()
 
         self._shared_ssh_key_directory = core.default_shared_ssh_key_directory(
-            create=True)
+            create=True
+        )
 
         self._available_oci_profiles: list[str] = []
         self.oci_config_file = core.default_oci_config_file()
@@ -150,7 +153,10 @@ class Project:
     def _select_oci_profile(self) -> str:
         default_profile = core.default_oci_profile()
 
-        if not self.available_oci_profiles or default_profile in self.available_oci_profiles:
+        if (
+            not self.available_oci_profiles
+            or default_profile in self.available_oci_profiles
+        ):
             return default_profile
 
         return self.available_oci_profiles[0]
@@ -187,7 +193,6 @@ class Project:
         info = model.MigrationSummaryInfo(
             migrationType=self._options.migrationType,
             cloudConnectivity=self._options.cloudConnectivity,
-
             region=self._options.region,
             dbSystemId=self._resources.dbSystemId,
             dbSystemIP=self._resources.dbSystemIP,
@@ -196,13 +201,13 @@ class Project:
             bucketNamespace=self._resources.bucketNamespace,
             bucketName=self._resources.bucketName,
             createdBucket=self._resources.bucketCreated,
-
             compartmentName=self._resources.compartmentName,
             jumpHostName=self._resources.computeName,
             jumpHostId=self._resources.computeId,
             jumpHostPrivateIP=self._resources.computePrivateIP,
             jumpHostPublicIP=self._resources.computePublicIP,
-            createdJumpHost=self._resources.computeCreated)
+            createdJumpHost=self._resources.computeCreated,
+        )
 
         if self._options.targetMySQLOptions:
             info.adminUser = self._options.targetMySQLOptions.adminUsername
@@ -212,10 +217,8 @@ class Project:
             info.jumpHostKeyPath = self.ssh_key_private
 
         if self._options.sourceConnectionOptions:
-            info.sourceHost = self._options.sourceConnectionOptions.get(
-                "host", "")
-            info.sourcePort = self._options.sourceConnectionOptions.get(
-                "port", 3306)
+            info.sourceHost = self._options.sourceConnectionOptions.get("host", "")
+            info.sourcePort = self._options.sourceConnectionOptions.get("port", 3306)
         if self._source_info:
             info.sourceVersion = self._source_info.version
 
@@ -224,7 +227,8 @@ class Project:
     def save(self):
         self._last_modify_time = datetime.datetime.now().isoformat()
         clean_options = util.sanitize_dict_any_pass(
-            self.options._json(noclass=False), delete=True)
+            self.options._json(noclass=False), delete=True
+        )
         state = {
             "version": "1.0.0",
             "id": self.id,
@@ -240,7 +244,7 @@ class Project:
             "planStepData": self._plan_step_data,
             "createTime": self._create_time,
             "modifyTime": self._last_modify_time,
-            "dataMigrationDidFinish": self._data_migration_did_finish
+            "dataMigrationDidFinish": self._data_migration_did_finish,
         }
 
         data_path = self._basedir / "data.json"
@@ -269,7 +273,7 @@ class Project:
         progress_path = self._basedir / "progress.json"
 
         with open(progress_path, "w") as f:
-            f.write(progress_data+"\n")
+            f.write(progress_data + "\n")
 
         util.apply_user_only_access_permissions(progress_path)
 
@@ -282,7 +286,8 @@ class Project:
             self._resources._parse(data)
 
         self._resources_proxy = AttributeWatchProxy(
-            self._resources, self._on_resources_change)
+            self._resources, self._on_resources_change
+        )
 
         with open(self._basedir / "data.json") as f:
             state = json.loads(f.read())
@@ -299,14 +304,12 @@ class Project:
         self._last_modify_time = state["modifyTime"]
         self._replication_coordinates = state.get("replicationCoordinates")
         self._plan_step_data = state.get("planStepData", {})
-        self._data_migration_did_finish = state.get(
-            "dataMigrationDidFinish", False)
+        self._data_migration_did_finish = state.get("dataMigrationDidFinish", False)
 
         progress_file = self._basedir / "progress.json"
         if progress_file.exists():
             with open(progress_file) as f:
-                self._work_status = model.parse(
-                    json.loads(f.read()), [WorkStatusInfo])
+                self._work_status = model.parse(json.loads(f.read()), [WorkStatusInfo])
 
             self.reset_work_status()
 
@@ -440,7 +443,10 @@ class Project:
             unquoted = unquote_db_object(table)
             replicate_ignore_table.append(unquoted[0] + "." + unquoted[1])
 
-        if self.source_info.serverType in [model.ServerType.RDS, model.ServerType.Aurora]:
+        if self.source_info.serverType in [
+            model.ServerType.RDS,
+            model.ServerType.Aurora,
+        ]:
             replicate_wild_ignore_table.append("mysql.rds%")
 
         if model.ServerType.Aurora == self.source_info.serverType:
@@ -448,7 +454,9 @@ class Project:
 
         return replicate_ignore_db, replicate_ignore_table, replicate_wild_ignore_table
 
-    def log_work(self, stage: SubStepId, status: WorkStatusEvent, data: dict, message: str = ""):
+    def log_work(
+        self, stage: SubStepId, status: WorkStatusEvent, data: dict, message: str = ""
+    ):
         assert isinstance(data, dict), data
 
         with self._work_status_mutex:
@@ -480,7 +488,12 @@ class Project:
                     info.status = WorkStatus.FINISHED
                 elif status == WorkStatusEvent.ERROR:
                     info.status = WorkStatus.ERROR
-                    if not message and data and "error" in data and "message" in data["error"]:
+                    if (
+                        not message
+                        and data
+                        and "error" in data
+                        and "message" in data["error"]
+                    ):
                         info.message = data["error"]["message"]
 
                     if "error" in data:
@@ -492,7 +505,9 @@ class Project:
 
         self.save_progress()
 
-    def log_work_progress(self, stage: SubStepId, message: str, data: Optional[dict] = None):
+    def log_work_progress(
+        self, stage: SubStepId, message: str, data: Optional[dict] = None
+    ):
         assert isinstance(data, dict), data
 
         with self._work_status_mutex:
@@ -538,29 +553,28 @@ class Project:
         if not self._oci_config:
             return errors.OCIConfigError(f"{msg} (path={self._oci_config_file})")
         else:
-            return errors.OCIConfigError(f"{msg} (path={self._oci_config_file} profile={self._oci_config.get('profile')})")
+            return errors.OCIConfigError(
+                f"{msg} (path={self._oci_config_file} profile={self._oci_config.get('profile')})"
+            )
 
     def check_oci_config(self, retry_strategy=None):
         oci_utils = self._oci_utils()
 
         if not self._oci_config:
-            raise self._make_oci_config_error(
-                "No valid OCI API configuration found")
+            raise self._make_oci_config_error("No valid OCI API configuration found")
 
         logging.info(
-            f"Checking OCI profile API key of {self._oci_profile} from {self._oci_config_file}")
+            f"Checking OCI profile API key of {self._oci_profile} from {self._oci_config_file}"
+        )
 
         try:
-            tenancy = oci_utils.Compartment(
-                self._oci_config
-            )
+            tenancy = oci_utils.Compartment(self._oci_config)
             tenancy.validate_profile(retry_strategy=retry_strategy)
 
             logging.info(f"Tenancy for profile is {tenancy}")
         except Exception as e:
             logging.error(f"Loaded OCI profile didn't work: {e}")
-            raise self._make_oci_config_error(
-                f"OCI profile is not functional") from e
+            raise self._make_oci_config_error(f"OCI profile is not functional") from e
 
         try:
             # this is non-fatal
@@ -574,6 +588,7 @@ class Project:
 
     def open_oci_profile(self) -> bool:
         import oci.exceptions
+
         oci_utils = self._oci_utils()
 
         logging.debug(
@@ -585,15 +600,16 @@ class Project:
 
         try:
             self._oci_config = oci_utils.get_config(
-                path=self._oci_config_file,
-                profile=self._oci_profile)
+                path=self._oci_config_file, profile=self._oci_profile
+            )
             logging.info(
                 f"Loaded OCI profile from {self._oci_config_file} profile={self._oci_profile}: {util.sanitize_dict_any_pass(self._oci_config)}"
             )
         except oci.exceptions.ProfileNotFound as e:
             self._oci_config = {}
             logging.info(
-                f"{e}: config={self._oci_config_file} profile={self._oci_profile}")
+                f"{e}: config={self._oci_config_file} profile={self._oci_profile}"
+            )
             return False
 
         self.region = self.oci_config["region"]
@@ -608,17 +624,17 @@ class Project:
         private_key_path = str(self._basedir / key_name)
         public_key_path = private_key_path + ".pub"
 
-        ssh_utils.create_ssh_key_pair(private_key_path=private_key_path,
-                                      public_key_path=public_key_path)
+        ssh_utils.create_ssh_key_pair(
+            private_key_path=private_key_path, public_key_path=public_key_path
+        )
         self._ssh_private_key_path = private_key_path
         self._ssh_public_key_path = public_key_path
         logging.debug(f"SSH key pair written to {self.ssh_key_private}")
 
     def delete_ssh_key_pair(self):
-        logging.info(
-            f"Deleting SSH key pair from {self._ssh_private_key_path_shared}")
+        logging.info(f"Deleting SSH key pair from {self._ssh_private_key_path_shared}")
         os.remove(self._ssh_private_key_path_shared)
-        os.remove(self._ssh_private_key_path_shared+".pub")
+        os.remove(self._ssh_private_key_path_shared + ".pub")
 
     def save_shared_ssh_key_pair(self, compute_id: str):
         assert compute_id
@@ -630,14 +646,14 @@ class Project:
             return
 
         self._ssh_private_key_path_shared = os.path.join(
-            self._shared_ssh_key_directory, short_compute_id)
+            self._shared_ssh_key_directory, short_compute_id
+        )
         logging.info(
-            f"Moving SSH keys for {compute_id} to {self._ssh_private_key_path_shared}")
+            f"Moving SSH keys for {compute_id} to {self._ssh_private_key_path_shared}"
+        )
 
-        os.rename(self._ssh_private_key_path,
-                  self._ssh_private_key_path_shared)
-        os.rename(self._ssh_public_key_path,
-                  self._ssh_private_key_path_shared+".pub")
+        os.rename(self._ssh_private_key_path, self._ssh_private_key_path_shared)
+        os.rename(self._ssh_public_key_path, self._ssh_private_key_path_shared + ".pub")
 
     def find_shared_ssh_key(self, compute_id: str) -> str | None:
         compute_id = compute_id.split(".")[-1]
@@ -648,6 +664,5 @@ class Project:
             self._ssh_private_key_path_shared = path
             return path
         else:
-            logging.error(
-                f"Shared SSH key for {compute_id} not found at {path}")
+            logging.error(f"Shared SSH key for {compute_id} not found at {path}")
             return None

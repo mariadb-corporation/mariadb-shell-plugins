@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -80,7 +80,6 @@ def test_get_auth_vendor(phone_book, table_contents):
         auth_vendor = lib.auth_apps.get_auth_vendor(session, value["id"])
 
         assert auth_vendor == value
-
 
 
 def test_get_auth_vendors(phone_book, table_contents):

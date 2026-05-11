@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,6 @@
 
 from mysqlsh.plugin_manager import plugin_function
 import mysqlsh
-
 
 RETURN_STR = "STR"
 RETURN_DICT = "DICT"
@@ -206,7 +205,9 @@ def get_oci_retry_strategy(candidate_strategy=None):
 
     import oci.retry
 
-    if oci.retry.GLOBAL_RETRY_STRATEGY and not isinstance(oci.retry.GLOBAL_RETRY_STRATEGY, oci.retry.NoneRetryStrategy):
+    if oci.retry.GLOBAL_RETRY_STRATEGY and not isinstance(
+        oci.retry.GLOBAL_RETRY_STRATEGY, oci.retry.NoneRetryStrategy
+    ):
         return oci.retry.GLOBAL_RETRY_STRATEGY
 
     return oci.retry.DEFAULT_RETRY_STRATEGY

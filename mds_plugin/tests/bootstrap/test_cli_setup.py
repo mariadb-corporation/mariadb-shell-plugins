@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,48 +26,76 @@ import pytest
 
 
 def test_prompt_for_passphrase_match(testutil):
-    testutil.expect_prompt("Enter a passphrase for the private key: ",
-                           "test_passphrase", {"type": "password"}, )
-    testutil.expect_prompt("Please confirm the passphrase: ",
-                           "test_passphrase", {"type": "password"})
+    testutil.expect_prompt(
+        "Enter a passphrase for the private key: ",
+        "test_passphrase",
+        {"type": "password"},
+    )
+    testutil.expect_prompt(
+        "Please confirm the passphrase: ", "test_passphrase", {"type": "password"}
+    )
     result = prompt_for_passphrase()
     assert result == "test_passphrase"
 
 
 def test_prompt_for_passphrase_mismatch_once(testutil):
-    testutil.expect_prompt("Enter a passphrase for the private key: ",
-                           "test_passphrase", {"type": "password"})
-    testutil.expect_prompt("Please confirm the passphrase: ",
-                           "wrong_passphrase", {"type": "password"})
-    testutil.expect_prompt("Mismatched passphrase, enter a passphrase for the private key: ",
-                           "test_passphrase2", {"type": "password"})
-    testutil.expect_prompt("Please confirm the passphrase: ",
-                           "test_passphrase2", {"type": "password"})
+    testutil.expect_prompt(
+        "Enter a passphrase for the private key: ",
+        "test_passphrase",
+        {"type": "password"},
+    )
+    testutil.expect_prompt(
+        "Please confirm the passphrase: ", "wrong_passphrase", {"type": "password"}
+    )
+    testutil.expect_prompt(
+        "Mismatched passphrase, enter a passphrase for the private key: ",
+        "test_passphrase2",
+        {"type": "password"},
+    )
+    testutil.expect_prompt(
+        "Please confirm the passphrase: ", "test_passphrase2", {"type": "password"}
+    )
     result = prompt_for_passphrase()
     assert result == "test_passphrase2"
 
 
 def test_prompt_for_passphrase_mismatch_three_times(testutil):
-    testutil.expect_prompt("Enter a passphrase for the private key: ",
-                           "test_passphrase", {"type": "password"})
-    testutil.expect_prompt("Please confirm the passphrase: ",
-                           "wrong_passphrase", {"type": "password"})
-    testutil.expect_prompt("Mismatched passphrase, enter a passphrase for the private key: ",
-                           "test_passphrase2", {"type": "password"})
-    testutil.expect_prompt("Please confirm the passphrase: ",
-                           "wrong_passphrase2", {"type": "password"})
-    testutil.expect_prompt("Mismatched passphrase, enter a passphrase for the private key: ",
-                           "test_passphrase3", {"type": "password"})
-    testutil.expect_prompt("Please confirm the passphrase: ",
-                           "wrong_passphrase3", {"type": "password"})
+    testutil.expect_prompt(
+        "Enter a passphrase for the private key: ",
+        "test_passphrase",
+        {"type": "password"},
+    )
+    testutil.expect_prompt(
+        "Please confirm the passphrase: ", "wrong_passphrase", {"type": "password"}
+    )
+    testutil.expect_prompt(
+        "Mismatched passphrase, enter a passphrase for the private key: ",
+        "test_passphrase2",
+        {"type": "password"},
+    )
+    testutil.expect_prompt(
+        "Please confirm the passphrase: ", "wrong_passphrase2", {"type": "password"}
+    )
+    testutil.expect_prompt(
+        "Mismatched passphrase, enter a passphrase for the private key: ",
+        "test_passphrase3",
+        {"type": "password"},
+    )
+    testutil.expect_prompt(
+        "Please confirm the passphrase: ", "wrong_passphrase3", {"type": "password"}
+    )
     with pytest.raises(RuntimeError):
         prompt_for_passphrase()
 
 
 def test_prompt_for_passphrase_strip(testutil):
-    testutil.expect_prompt("Enter a passphrase for the private key: ",
-                           "test_passphrase", {"type": "password"})
-    testutil.expect_prompt("Please confirm the passphrase: ",
-                           "test_passphrase", {"type": "password"})
+    testutil.expect_prompt(
+        "Enter a passphrase for the private key: ",
+        "test_passphrase",
+        {"type": "password"},
+    )
+    testutil.expect_prompt(
+        "Please confirm the passphrase: ", "test_passphrase", {"type": "password"}
+    )
     result = prompt_for_passphrase()
     assert result == "test_passphrase"

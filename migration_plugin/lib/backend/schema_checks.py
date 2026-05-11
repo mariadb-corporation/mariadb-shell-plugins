@@ -28,10 +28,11 @@ from . import checks, filtering_utils, model, string_utils
 from .. import logging
 from .model import CompatibilityFlags, CheckStatus
 
-
 # Keys are in format:
 # check_id: [title, status, description, choices, link]
-k_ocimds_description: dict[str, Tuple[str, CheckStatus, str, list[CompatibilityFlags]]] = {
+k_ocimds_description: dict[
+    str, Tuple[str, CheckStatus, str, list[CompatibilityFlags]]
+] = {
     "user/unsupported_auth_plugin": (
         "Authentication Plugin Compatibility",
         CheckStatus.CONFIRMATION_REQUIRED,
@@ -500,7 +501,9 @@ class CompatibilityIssueObjectType(StrEnum):
     TRIGGER = "trigger"
 
 
-def compatibility_issue_to_message_level(status: CompatibilityIssueStatus) -> model.MessageLevel:
+def compatibility_issue_to_message_level(
+    status: CompatibilityIssueStatus,
+) -> model.MessageLevel:
     match status:
         case CompatibilityIssueStatus.FIXED | CompatibilityIssueStatus.NOTE:
             return model.MessageLevel.NOTICE
@@ -522,18 +525,14 @@ class CompatibilityIssue:
 
         if "compatibilityOptions" in args:
             for option in args["compatibilityOptions"]:
-                self.compatibility_options.append(
-                    model.CompatibilityFlags(option)
-                )
+                self.compatibility_options.append(model.CompatibilityFlags(option))
 
         self.description: str = args["description"]
         self.object_name: str = args["objectName"]
         self.object_type: CompatibilityIssueObjectType = CompatibilityIssueObjectType(
             args["objectType"]
         )
-        self.status: CompatibilityIssueStatus = CompatibilityIssueStatus(
-            args["status"]
-        )
+        self.status: CompatibilityIssueStatus = CompatibilityIssueStatus(args["status"])
 
         # map return value to a function
         if CompatibilityIssueObjectType.RETURN_VALUE == self.object_type:
@@ -548,7 +547,8 @@ def compatibility_issue_to_check_result(issue: CompatibilityIssue) -> model.Chec
         result="",
         description=issue.description.strip(),
         objects=[],
-        choices=issue.compatibility_options)
+        choices=issue.compatibility_options,
+    )
 
     status = model.CheckStatus.CONFIRMATION_REQUIRED
 
@@ -601,8 +601,7 @@ def process_ocimds_issues(check_output: dict, result: model.MigrationCheckResult
         issue = CompatibilityIssue(check_item["compatibilityIssue"])
 
         if issue.check_id not in issues_by_check:
-            issues_by_check[issue.check_id] = compatibility_issue_to_check_result(
-                issue)
+            issues_by_check[issue.check_id] = compatibility_issue_to_check_result(issue)
 
         issues_by_check[issue.check_id].result += f"\n<li>{issue.description}"
 
@@ -614,8 +613,7 @@ def process_ocimds_issues(check_output: dict, result: model.MigrationCheckResult
     for check_result in issues_by_check.values():
         result._apply_status(check_result.status)
         # make sure we always get the same order of objects/results
-        check_result.result = "\n".join(
-            sorted(check_result.result.strip().split("\n")))
+        check_result.result = "\n".join(sorted(check_result.result.strip().split("\n")))
         check_result.objects = sorted(check_result.objects)
         result.checks.append(check_result)
 
@@ -695,7 +693,8 @@ def upgrade_issue_to_check_result(check: UpgradeCheck) -> model.CheckResult:
         checkId=check.check_id,
         level=upgrade_issue_to_message_level(check.issues[0].level),
         title=check.title,
-        result="")
+        result="",
+    )
 
     for issue in check.issues:
         if result.result:
@@ -705,7 +704,9 @@ def upgrade_issue_to_check_result(check: UpgradeCheck) -> model.CheckResult:
 
         # make sure the description contains both object name and type
         unquoted = string_utils.unquote_db_object(issue.object_name)
-        if not unquoted[0] in issue.description or (1 != len(unquoted) and not unquoted[1] in issue.description):
+        if not unquoted[0] in issue.description or (
+            1 != len(unquoted) and not unquoted[1] in issue.description
+        ):
             if not issue.object_type.value.lower() in issue.description.lower():
                 if DbObjectType.FOREIGN_KEY == issue.object_type:
                     result.result += "Foreign key"
@@ -746,7 +747,11 @@ def upgrade_issue_to_check_result(check: UpgradeCheck) -> model.CheckResult:
     return result
 
 
-def process_upgrade_issues(check_output: dict, results: model.MigrationCheckResults, schema_selection: model.SchemaSelectionOptions):
+def process_upgrade_issues(
+    check_output: dict,
+    results: model.MigrationCheckResults,
+    schema_selection: model.SchemaSelectionOptions,
+):
     assert schema_selection.filter
 
     filters = filtering_utils.DbFilters(schema_selection.filter)
@@ -795,7 +800,10 @@ def process_upgrade_issues(check_output: dict, results: model.MigrationCheckResu
         # we don't report plugin and sysvar issues, these are not migrated
         # we don't report tablespace issues, these are removed by the dumper
         check.issues = [
-            issue for issue in check.issues if issue.object_type not in (
+            issue
+            for issue in check.issues
+            if issue.object_type
+            not in (
                 DbObjectType.PLUGIN,
                 DbObjectType.SYSVAR,
                 DbObjectType.TABLESPACE,
@@ -804,9 +812,7 @@ def process_upgrade_issues(check_output: dict, results: model.MigrationCheckResu
 
         # we need to filter by include/exclude lists, as Upgrade Checker
         # currently doesn't have an option to filter DB objects
-        check.issues = [
-            issue for issue in check.issues if include_issue(issue)
-        ]
+        check.issues = [issue for issue in check.issues if include_issue(issue)]
 
         if check.issues:
             result = upgrade_issue_to_check_result(check)

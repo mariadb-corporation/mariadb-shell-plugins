@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,28 +36,45 @@ def check_supported_type(func):
     def wrapper(self, *args, **kwargs):
         def get_supported_type(name):
             for item in self._supported_types:
-                if item['name'] == name:
-                    return item['type']
+                if item["name"] == name:
+                    return item["type"]
             return None
 
         object_type = get_supported_type(kwargs["type"])
 
         if object_type is None:
-            raise MSGException(Error.DB_UNSUPPORTED_OBJECT_TYPE,
-                               f'Unsupported {object_type} object type ({kwargs["type"]})')
+            raise MSGException(
+                Error.DB_UNSUPPORTED_OBJECT_TYPE,
+                f'Unsupported {object_type} object type ({kwargs["type"]})',
+            )
 
-        if not object_type.split('_')[0].lower() in func.__name__:
-            raise MSGException(Error.DB_UNSUPPORTED_OBJECT_TYPE,
-                               f'Unsupported function for type {object_type} ({func.__name__})')
+        if not object_type.split("_")[0].lower() in func.__name__:
+            raise MSGException(
+                Error.DB_UNSUPPORTED_OBJECT_TYPE,
+                f"Unsupported function for type {object_type} ({func.__name__})",
+            )
 
         return func(self, *args, **kwargs)
+
     return wrapper
 
 
 class DBCloseTask(BaseTask):
-    def __init__(self, task_id=None, result_queue=None, params=None, result_callback=None, options=None):
-        super().__init__(task_id=task_id, result_queue=result_queue,
-                         result_callback=result_callback, options=options, skip_completion=True)
+    def __init__(
+        self,
+        task_id=None,
+        result_queue=None,
+        params=None,
+        result_callback=None,
+        options=None,
+    ):
+        super().__init__(
+            task_id=task_id,
+            result_queue=result_queue,
+            result_callback=result_callback,
+            options=options,
+            skip_completion=True,
+        )
 
 
 class DbTask(BaseTask):
@@ -67,9 +84,25 @@ class DbTask(BaseTask):
     - Tasks where multiple queries are executed
     """
 
-    def __init__(self, session, task_id=None, result_queue=None, params=None, result_callback=None, options=None):
-        super().__init__(task_id, result_queue=result_queue,
-                         result_callback=result_callback if result_callback is not None else session.task_state_cb, options=options)
+    def __init__(
+        self,
+        session,
+        task_id=None,
+        result_queue=None,
+        params=None,
+        result_callback=None,
+        options=None,
+    ):
+        super().__init__(
+            task_id,
+            result_queue=result_queue,
+            result_callback=(
+                result_callback
+                if result_callback is not None
+                else session.task_state_cb
+            ),
+            options=options,
+        )
         self.session = session
         self.params = params
 
@@ -119,9 +152,24 @@ class DbQueryTask(DbTask):
     - The processing of the result is specific for each child class
     """
 
-    def __init__(self, session, task_id=None, sql="", params=None, result_queue=None, result_callback=None, options=None):
-        super().__init__(session, task_id, params=params, result_queue=result_queue,
-                         result_callback=result_callback, options=options)
+    def __init__(
+        self,
+        session,
+        task_id=None,
+        sql="",
+        params=None,
+        result_queue=None,
+        result_callback=None,
+        options=None,
+    ):
+        super().__init__(
+            session,
+            task_id,
+            params=params,
+            result_queue=result_queue,
+            result_callback=result_callback,
+            options=options,
+        )
         if isinstance(sql, str):
             self.sql = [sql]
         else:
@@ -150,7 +198,8 @@ class DbQueryTask(DbTask):
                 try:
                     self._start_time = time.time()
                     self.resultset = self.session.execute_thread(
-                        sql, self.params, options=self.options)
+                        sql, self.params, options=self.options
+                    )
                     self._execution_time += time.time() - self._start_time
 
                     if self.session.is_killed():
@@ -161,24 +210,31 @@ class DbQueryTask(DbTask):
                     break
                 except mysqlsh.DBError as e:
                     if e.code == 2013:
-                        if self.session._auto_reconnect and self.session._reconnect(True):
+                        if self.session._auto_reconnect and self.session._reconnect(
+                            True
+                        ):
                             continue
                     logger.exception(e)
-                    self.dispatch_result("ERROR", message=str(e),
-                                         data=Response.exception(e))
+                    self.dispatch_result(
+                        "ERROR", message=str(e), data=Response.exception(e)
+                    )
                     break
                 except RuntimeError as e:
                     if "Not connected." in str(e):
-                        if self.session._auto_reconnect and self.session._reconnect(True):
+                        if self.session._auto_reconnect and self.session._reconnect(
+                            True
+                        ):
                             continue
                     logger.exception(e)
-                    self.dispatch_result("ERROR", message=str(e),
-                                         data=Response.exception(e))
+                    self.dispatch_result(
+                        "ERROR", message=str(e), data=Response.exception(e)
+                    )
                     break
                 except Exception as e:
                     logger.exception(e)
-                    self.dispatch_result("ERROR", message=str(e),
-                                         data=Response.exception(e))
+                    self.dispatch_result(
+                        "ERROR", message=str(e), data=Response.exception(e)
+                    )
                     break
 
     def process_result(self):
@@ -239,8 +295,7 @@ class DbSqlTask(DbQueryTask):
                 # Loop over all rows
                 for row in self.session.row_generator():
                     if self.session.is_killed():
-                        raise MSGException(
-                            Error.DB_QUERY_KILLED, "Query killed")
+                        raise MSGException(Error.DB_QUERY_KILLED, "Query killed")
 
                     # If this is the first response, add column names
                     if self._row_count == 0:
@@ -256,10 +311,9 @@ class DbSqlTask(DbQueryTask):
                         values = {"rows": []}
 
                     # Convert the current row to the proper container type
-                    row_to_append = self.session.row_to_container(
-                        row, columns)
+                    row_to_append = self.session.row_to_container(row, columns)
 
-                    values['rows'].append(row_to_append)
+                    values["rows"].append(row_to_append)
                     self._row_count += 1
 
                 has_result = self.session.next_result()
@@ -280,10 +334,27 @@ class DbSqlTask(DbQueryTask):
 
 
 class BaseObjectTask(DbQueryTask):
-    def __init__(self, session, task_id, sql, params=None, result_queue=None, result_callback=None,
-                 options=None, type=None, name=None):
-        super().__init__(session, task_id, sql=sql, params=params, result_queue=result_queue,
-                         result_callback=result_callback, options=options)
+    def __init__(
+        self,
+        session,
+        task_id,
+        sql,
+        params=None,
+        result_queue=None,
+        result_callback=None,
+        options=None,
+        type=None,
+        name=None,
+    ):
+        super().__init__(
+            session,
+            task_id,
+            sql=sql,
+            params=params,
+            result_queue=result_queue,
+            result_callback=result_callback,
+            options=options,
+        )
         self.type = type.lower() if type else ""
         self.name = name
 

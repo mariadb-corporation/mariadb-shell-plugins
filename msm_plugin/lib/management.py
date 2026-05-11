@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -34,34 +34,38 @@ from datetime import date
 from textwrap import indent
 import mysqlsh
 
-
 # Regex to match MSM sections, excluding the license and the last section
-MSM_SECTIONS_REGEX = r'--\s+#+\s+--\s+MSM\s+Section\s+(\d+):\s*(.*?)$\s+.*?--\s+#+'
+MSM_SECTIONS_REGEX = r"--\s+#+\s+--\s+MSM\s+Section\s+(\d+):\s*(.*?)$\s+.*?--\s+#+"
 
 # Regex to match the MSM LOOP UPDATABLE-VERSIONS
-MSM_LOOP_UPDATABLE_VERSIONS_REGEX = \
-    r'--\s+###\s+MSM-LOOP-START:UPDATABLE-VERSIONS(\(indent=(\d+)\))?.*?\n(.*?)' \
-    r'--\s+###\s+MSM-LOOP-END:UPDATABLE-VERSIONS.*?\n'
+MSM_LOOP_UPDATABLE_VERSIONS_REGEX = (
+    r"--\s+###\s+MSM-LOOP-START:UPDATABLE-VERSIONS(\(indent=(\d+)\))?.*?\n(.*?)"
+    r"--\s+###\s+MSM-LOOP-END:UPDATABLE-VERSIONS.*?\n"
+)
 
 # Reges to match the MSM section placeholder
-MSM_SECTION_PLACEHOLDER_REGEX = r'\$\{section_(\d+).*?\}\n'
+MSM_SECTION_PLACEHOLDER_REGEX = r"\$\{section_(\d+).*?\}\n"
 
 # Regex to match the leading comments and empty lines before SQL commands,
 # but ensure that comments before SQL commands are kept
-REMOVE_LEADING_COMMENTS_AND_EMPTY_LINES = r'((^--.*?\n)+(^\s*\n)*)'
+REMOVE_LEADING_COMMENTS_AND_EMPTY_LINES = r"((^--.*?\n)+(^\s*\n)*)"
 
 # Regex to match all empty lines, including whitespace, at the end of the file
-REMOVE_TRAILING_EMPTY_LINES = r'(\s*\Z)'
+REMOVE_TRAILING_EMPTY_LINES = r"(\s*\Z)"
 
-MSM_SCHEMA_VERSION_VIEW_VALUES = r'CREATE.*?VIEW.*?`msm_schema_version`.*?' \
-    r'\(.*?`major`.*?`minor`.*?`patch`.*?\).*?AS.*?SELECT.*?' \
-    r'((\d+).*?,.*?(\d+).*?,.*?(\d+))'
+MSM_SCHEMA_VERSION_VIEW_VALUES = (
+    r"CREATE.*?VIEW.*?`msm_schema_version`.*?"
+    r"\(.*?`major`.*?`minor`.*?`patch`.*?\).*?AS.*?SELECT.*?"
+    r"((\d+).*?,.*?(\d+).*?,.*?(\d+))"
+)
 
-MSM_SECTION_SOURCE_REGEX = \
+MSM_SECTION_SOURCE_REGEX = (
     r'^([ \t]*)SOURCE\s+[\'"](.*?)[\'"]\s*\[(\d*:-?\d*)\]\s*;.*?$\n'
+)
 
-MSM_SECTION_REMOVE_COMMENTS_AND_DELIMITERS = \
-    r'(^\s*--\s+.*?$)|(^DELIMITER\s+.*?$)|(\/\*.*?\*\/)'
+MSM_SECTION_REMOVE_COMMENTS_AND_DELIMITERS = (
+    r"(^\s*--\s+.*?$)|(^DELIMITER\s+.*?$)|(\/\*.*?\*\/)"
+)
 
 
 def remove_leading_comments_trailing_lines(section: str) -> str:
@@ -81,7 +85,7 @@ def remove_leading_comments_trailing_lines(section: str) -> str:
 
     # Remove trailing empty lines
     while len(lines) > 0 and lines[len(lines) - 1].strip() == "":
-        lines = lines[:len(lines) - 1]
+        lines = lines[: len(lines) - 1]
 
     return "\n".join(lines)
 
@@ -98,23 +102,26 @@ def get_sql_content(full_section_content: str) -> tuple[str, int, int]:
     # Search start position of sql content
     start_position = 0
     match = re.search(
-        REMOVE_LEADING_COMMENTS_AND_EMPTY_LINES, full_section_content,
-        re.MULTILINE | re.DOTALL)
+        REMOVE_LEADING_COMMENTS_AND_EMPTY_LINES,
+        full_section_content,
+        re.MULTILINE | re.DOTALL,
+    )
     if match is not None:
         start_position = match.end()
 
     # Search end position of sql content
     end_position = len(full_section_content)
     match = re.search(
-        REMOVE_TRAILING_EMPTY_LINES, full_section_content,
-        re.MULTILINE | re.DOTALL)
+        REMOVE_TRAILING_EMPTY_LINES, full_section_content, re.MULTILINE | re.DOTALL
+    )
     if match is not None:
         end_position = match.start()
 
     return (
         full_section_content[start_position:end_position],
         start_position,
-        end_position)
+        end_position,
+    )
 
 
 def set_sql_content(section: dict, sql_content: str) -> None:
@@ -126,12 +133,14 @@ def set_sql_content(section: dict, sql_content: str) -> None:
     Returns:
         None
     """
-    if not ("sql_content" in section and "sql_start" in section
-            and "sql_end" in section):
+    if not (
+        "sql_content" in section and "sql_start" in section and "sql_end" in section
+    ):
         raise ValueError("The given section does not contain SQL content.")
 
     section["full_content"] = (
-        section["full_content"][:section["sql_start"]] + "\n" + sql_content.strip("\n"))
+        section["full_content"][: section["sql_start"]] + "\n" + sql_content.strip("\n")
+    )
     section["sql_content"] = sql_content
     section["sql_end"] = len(section["full_content"])
 
@@ -147,8 +156,7 @@ def get_script_sections(script: str) -> dict[str, dict]:
     """
 
     # Search for MSM sections
-    matches = re.finditer(
-        MSM_SECTIONS_REGEX, script, re.MULTILINE | re.DOTALL)
+    matches = re.finditer(MSM_SECTIONS_REGEX, script, re.MULTILINE | re.DOTALL)
 
     # for match_id, match in enumerate(matches, start=1):
     #     print("Match {match_id} was found at {start}-{end}: {match}".format(
@@ -162,17 +170,21 @@ def get_script_sections(script: str) -> dict[str, dict]:
     for match_id, match in enumerate(matches, start=1):
         # Add license section if available
         if match_id == 1 and match.start() > 0:
-            section_headers.append({
-                "section_id": "license",
-                "start_position": 0,
-                "header_length": 0,
-            })
+            section_headers.append(
+                {
+                    "section_id": "license",
+                    "start_position": 0,
+                    "header_length": 0,
+                }
+            )
 
-        section_headers.append({
-            "section_id": match.group(1),
-            "start_position": match.start(),
-            "header_length": match.end() - match.start(),
-        })
+        section_headers.append(
+            {
+                "section_id": match.group(1),
+                "start_position": match.start(),
+                "header_length": match.end() - match.start(),
+            }
+        )
 
     sections = {}
 
@@ -185,8 +197,10 @@ def get_script_sections(script: str) -> dict[str, dict]:
             section_end = len(script)
 
         sections[header["section_id"]] = {
-            "full_content": script[header["start_position"]:section_end],
-            "sql_content": script[header["start_position"] + header["header_length"]:section_end],
+            "full_content": script[header["start_position"] : section_end],
+            "sql_content": script[
+                header["start_position"] + header["header_length"] : section_end
+            ],
             "sql_start": header["header_length"],
             "sql_end": section_end,
             "start_position": header["start_position"],
@@ -207,8 +221,7 @@ def get_file_sections(file_path: str) -> str:
         The SQL content as string
     """
     if not os.path.exists(file_path):
-        raise ValueError(
-            f"The file `{file_path}` could not be found.")
+        raise ValueError(f"The file `{file_path}` could not be found.")
 
     with open(file_path, "r") as f:
         script = f.read()
@@ -232,12 +245,16 @@ def get_file_section(file_path: str, section_id: str) -> str:
         return sections[section_id]
     else:
         raise ValueError(
-            f"The MSM section `{section_id}` could not be found in the file `{file_path}`.")
+            f"The MSM section `{section_id}` could not be found in the file `{file_path}`."
+        )
 
 
 def set_section_sql_content(
-        section_id: str, sql_content: str, file_path: str = None,
-        sections: dict[str, dict] = None) -> None:
+    section_id: str,
+    sql_content: str,
+    file_path: str = None,
+    sections: dict[str, dict] = None,
+) -> None:
     """Sets the SQL content of a MSM section of a file
 
     Args:
@@ -262,10 +279,13 @@ def set_section_sql_content(
 
     if file_path is not None:
         write_sections_to_file(
-            file_path=file_path, sections=sections, overwrite_existing=True)
+            file_path=file_path, sections=sections, overwrite_existing=True
+        )
 
 
-def write_sections_to_file(file_path: str, sections: dict[str, dict], overwrite_existing: bool = False):
+def write_sections_to_file(
+    file_path: str, sections: dict[str, dict], overwrite_existing: bool = False
+):
     """Writes all MSM sections to a file
 
     Args:
@@ -278,12 +298,15 @@ def write_sections_to_file(file_path: str, sections: dict[str, dict], overwrite_
     """
     if os.path.exists(file_path) and not overwrite_existing:
         raise ValueError(
-            f"The file {file_path} already exists. Please explicitly allow to replace existing files.")
+            f"The file {file_path} already exists. Please explicitly allow to replace existing files."
+        )
 
     with open(file_path, "w") as f:
-        f.write("\n".join(
-            sections[section_id].get("full_content")
-            for section_id in sections))
+        f.write(
+            "\n".join(
+                sections[section_id].get("full_content") for section_id in sections
+            )
+        )
 
 
 def convert_string_to_valid_filename(name: str) -> str:
@@ -322,14 +345,18 @@ def check_mysql_identifier(identifier: str, must_be_usable_when_unquoted: bool =
         if not re.match(r"^[A-Za-z0-9_]+[A-Za-z0-9_$]*$", identifier):
             raise ValueError(
                 "Only basic Latin letters, digits 0-9, dollar, underscore are allowed to be used as schema name. "
-                "Use the allow_special_chars option to overwrite this behavior.")
+                "Use the allow_special_chars option to overwrite this behavior."
+            )
         if re.match(r"^[0-9]+$", identifier):
             raise ValueError(
                 "A schema name must not consist solely of digits. "
-                "Use the allow_special_chars option to overwrite this behavior.")
+                "Use the allow_special_chars option to overwrite this behavior."
+            )
 
 
-def get_license_text(schema_project_path: str = None, project_settings: dict = None) -> str:
+def get_license_text(
+    schema_project_path: str = None, project_settings: dict = None
+) -> str:
     """Gets the correct license text for the given project
 
     The license text is fetch from the right license template and the variables are
@@ -345,8 +372,7 @@ def get_license_text(schema_project_path: str = None, project_settings: dict = N
     if project_settings is None and schema_project_path is not None:
         project_settings = get_project_settings(schema_project_path)
     elif project_settings is None and schema_project_path is None:
-        raise ValueError(
-            "No schema_project_path nor project_settings parameter given.")
+        raise ValueError("No schema_project_path nor project_settings parameter given.")
 
     try:
         copyright_holder = project_settings.get("copyrightHolder")
@@ -355,7 +381,8 @@ def get_license_text(schema_project_path: str = None, project_settings: dict = N
         year_of_creation = project_settings.get("yearOfCreation")
     except Exception as e:
         raise ValueError(
-            f"The project settings must include copyrightHolder, license, customLicense and yearOfCreation. {e}")
+            f"The project settings must include copyrightHolder, license, customLicense and yearOfCreation. {e}"
+        )
 
     license_template = None
     if license.upper() == "CUSTOM":
@@ -364,31 +391,38 @@ def get_license_text(schema_project_path: str = None, project_settings: dict = N
         else:
             raise ValueError("No custom license text specified.")
     else:
-        template_folder = os.path.join(
-            Path(__file__).parent.parent, "templates")
-        license_file_path = os.path.join(
-            template_folder, "license", f"{license}.txt")
+        template_folder = os.path.join(Path(__file__).parent.parent, "templates")
+        license_file_path = os.path.join(template_folder, "license", f"{license}.txt")
         if not os.path.exists(license_file_path):
             raise ValueError(
-                f"No license stored under the given license name `{license}`. Please use a custom license text.")
+                f"No license stored under the given license name `{license}`. Please use a custom license text."
+            )
         with open(license_file_path) as f:
             license_template = Template("".join(f.readlines()[1:]))
 
     current_year = date.today().strftime("%Y")
     try:
-        license_text = license_template.substitute({
-            "copyright_holder": copyright_holder,
-            "year": year_of_creation if year_of_creation == current_year else f"{year_of_creation}, {current_year}"
-        })
+        license_text = license_template.substitute(
+            {
+                "copyright_holder": copyright_holder,
+                "year": (
+                    year_of_creation
+                    if year_of_creation == current_year
+                    else f"{year_of_creation}, {current_year}"
+                ),
+            }
+        )
     except:
         raise ValueError(
-            "The license template is either missing the ${year} or ${copyright_holder} placeholders.")
+            "The license template is either missing the ${year} or ${copyright_holder} placeholders."
+        )
 
     return license_text
 
 
 def copy_template_file_and_substitute(
-        source_file_path: str, target_file_path: str, substitutions: dict):
+    source_file_path: str, target_file_path: str, substitutions: dict
+):
     """Copies a template file and substitutes the given variables
 
     Args:
@@ -410,9 +444,14 @@ def copy_template_file_and_substitute(
 
 
 def create_schema_project_folder(
-        schema_name: str, target_path: str, copyright_holder: str, license: str = None,
-        overwrite_existing: bool = False, allow_special_chars: bool = False,
-        enforce_target_path: bool = False) -> str:
+    schema_name: str,
+    target_path: str,
+    copyright_holder: str,
+    license: str = None,
+    overwrite_existing: bool = False,
+    allow_special_chars: bool = False,
+    enforce_target_path: bool = False,
+) -> str:
     """Creates a new schema project folder.
 
     Args:
@@ -430,8 +469,8 @@ def create_schema_project_folder(
     """
 
     check_mysql_identifier(
-        identifier=schema_name,
-        must_be_usable_when_unquoted=not allow_special_chars)
+        identifier=schema_name, must_be_usable_when_unquoted=not allow_special_chars
+    )
 
     target_path = os.path.abspath(os.path.expanduser(target_path))
     if not os.path.exists(target_path):
@@ -439,8 +478,9 @@ def create_schema_project_folder(
             Path(target_path).mkdir(parents=True, exist_ok=True)
         else:
             raise ValueError(
-                f'The project folder cannot be created inside the directory `{target_path}` as this path '
-                'does not exist.')
+                f"The project folder cannot be created inside the directory `{target_path}` as this path "
+                "does not exist."
+            )
 
     # When used in file names, critical characters need to be removed
     schema_file_name = convert_string_to_valid_filename(schema_name)
@@ -451,8 +491,7 @@ def create_schema_project_folder(
         if overwrite_existing:
             shutil.rmtree(project_path)
         else:
-            raise ValueError(
-                f'The project folder "{project_path}" already exists.')
+            raise ValueError(f'The project folder "{project_path}" already exists.')
 
     os.makedirs(os.path.join(project_path), exist_ok=True)
 
@@ -461,7 +500,8 @@ def create_schema_project_folder(
     shutil.copytree(
         Path(os.path.join(template_folder, "msm.project")),
         project_path,
-        dirs_exist_ok=True)
+        dirs_exist_ok=True,
+    )
 
     # Get current year
     year_of_creation = date.today().strftime("%Y")
@@ -485,52 +525,57 @@ def create_schema_project_folder(
     for file in files:
         with open(file, "r") as f:
             script = Template(f.read())
-            script = script.substitute({
-                "schema_name": schema_name,
-            })
+            script = script.substitute(
+                {
+                    "schema_name": schema_name,
+                }
+            )
 
         r = re.compile(r"Copyright.*$", re.MULTILINE)
-        script = r.sub(
-            f"Copyright (c) {year_of_creation}, {copyright_holder}.", script)
+        script = r.sub(f"Copyright (c) {year_of_creation}, {copyright_holder}.", script)
 
         with open(file, "w") as f:
             f.write(script)
 
     copy_template_file_and_substitute(
-        source_file_path=os.path.join(
-            template_folder, "scripts", "schema_next.sql"),
+        source_file_path=os.path.join(template_folder, "scripts", "schema_next.sql"),
         target_file_path=os.path.join(
-            project_path, "development", f"{schema_file_name}_next.sql"),
+            project_path, "development", f"{schema_file_name}_next.sql"
+        ),
         substitutions={
             "license": get_license_text(project_settings=project_settings),
             "schema_name": schema_name,
             "version_str": "0.0.1",
             "version_comma_str": "0, 0, 1",
-        })
+        },
+    )
 
     return project_path
 
 
 def get_schema_development_file_path(schema_project_path: str = None) -> str:
-    schema_file_name = get_project_settings(
-        schema_project_path).get("schemaFileName", None)
+    schema_file_name = get_project_settings(schema_project_path).get(
+        "schemaFileName", None
+    )
     if schema_file_name is None:
         raise ValueError(
             f"The settings files of the project `{schema_project_path}` does not contain "
-            "a schemaFileName value.")
+            "a schemaFileName value."
+        )
 
     schema_dev_file_path = os.path.join(
-        schema_project_path, "development", f"{schema_file_name}_next.sql")
+        schema_project_path, "development", f"{schema_file_name}_next.sql"
+    )
     if not os.path.exists(schema_dev_file_path):
         raise ValueError(
-            f"The MSM project folder does not contain a schema development file `{schema_dev_file_path}`.")
+            f"The MSM project folder does not contain a schema development file `{schema_dev_file_path}`."
+        )
 
     return schema_dev_file_path
 
 
 def get_schema_development_sections(schema_project_path: str = None) -> dict[str, dict]:
-    schema_dev_file_path = get_schema_development_file_path(
-        schema_project_path)
+    schema_dev_file_path = get_schema_development_file_path(schema_project_path)
 
     with open(schema_dev_file_path, "r") as f:
         script = f.read()
@@ -538,18 +583,21 @@ def get_schema_development_sections(schema_project_path: str = None) -> dict[str
     return get_script_sections(script)
 
 
-def write_schema_development_file(schema_project_path: str, sections: dict[str, dict]) -> None:
-    schema_dev_file_path = get_schema_development_file_path(
-        schema_project_path)
+def write_schema_development_file(
+    schema_project_path: str, sections: dict[str, dict]
+) -> None:
+    schema_dev_file_path = get_schema_development_file_path(schema_project_path)
     write_sections_to_file(
-        file_path=schema_dev_file_path,
-        sections=sections,
-        overwrite_existing=True)
+        file_path=schema_dev_file_path, sections=sections, overwrite_existing=True
+    )
 
 
 def schema_development_version(
-        schema_project_path: str = None, sections: dict[str, dict] = None, new_version: str = None,
-        write_to_file: bool = False) -> str:
+    schema_project_path: str = None,
+    sections: dict[str, dict] = None,
+    new_version: str = None,
+    write_to_file: bool = False,
+) -> str:
     """Returns the development version of the current schema
 
     Args:
@@ -562,12 +610,12 @@ def schema_development_version(
         A dict with information about the project
     """
     if sections is None and schema_project_path is None:
-        raise ValueError(
-            "No sections nor schema_project_path parameters given.")
+        raise ValueError("No sections nor schema_project_path parameters given.")
 
     if sections is None:
         sections = get_schema_development_sections(
-            schema_project_path=schema_project_path)
+            schema_project_path=schema_project_path
+        )
 
     # Process MSM Section 910: Database Schema Version
     version_section = sections.get("910", None)
@@ -575,17 +623,21 @@ def schema_development_version(
         for section_id in sections:
             section = sections[section_id]
             print(
-                f"{section_id=}\n{section['full_content']=}\n\n{section['sql_content']=}\n\n\n")
+                f"{section_id=}\n{section['full_content']=}\n\n{section['sql_content']=}\n\n\n"
+            )
         raise ValueError(
-            "The script section `MSM Section 910: Database Schema Version` could not be found.")
+            "The script section `MSM Section 910: Database Schema Version` could not be found."
+        )
 
     section_content = version_section.get("full_content")
     version_values = re.search(
-        MSM_SCHEMA_VERSION_VIEW_VALUES, section_content, re.MULTILINE | re.DOTALL)
+        MSM_SCHEMA_VERSION_VIEW_VALUES, section_content, re.MULTILINE | re.DOTALL
+    )
     if version_values is None:
         raise ValueError(
             "The script section `MSM Section 910: Database Schema Version` does not include the "
-            "CREATE VIEW statement to create the `msm_schema_version` VIEW.")
+            "CREATE VIEW statement to create the `msm_schema_version` VIEW."
+        )
 
     # If no new_version is given, return the current one
     if new_version is None:
@@ -595,9 +647,10 @@ def schema_development_version(
 
     # Update the version
     updated_content = (
-        section_content[:version_values.start(1)]
+        section_content[: version_values.start(1)]
         + ", ".join(str(number) for number in new_version_list)
-        + section_content[version_values.end(1):])
+        + section_content[version_values.end(1) :]
+    )
 
     version_section["full_content"] = updated_content
 
@@ -605,13 +658,15 @@ def schema_development_version(
 
     if write_to_file:
         write_schema_development_file(
-            schema_project_path=schema_project_path,
-            sections=sections)
+            schema_project_path=schema_project_path, sections=sections
+        )
 
     return new_version
 
 
-def get_schema_development_version(schema_project_path: str = None, sections: dict[str, dict] = None) -> str:
+def get_schema_development_version(
+    schema_project_path: str = None, sections: dict[str, dict] = None
+) -> str:
     """Returns the development version of the current schema
 
     Args:
@@ -622,11 +677,16 @@ def get_schema_development_version(schema_project_path: str = None, sections: di
         A dict with information about the project
     """
     return schema_development_version(
-        schema_project_path=schema_project_path, sections=sections)
+        schema_project_path=schema_project_path, sections=sections
+    )
 
 
 def set_development_version(
-        new_version: str, schema_project_path: str = None, sections: dict = None, write_to_file: bool = False) -> dict:
+    new_version: str,
+    schema_project_path: str = None,
+    sections: dict = None,
+    write_to_file: bool = False,
+) -> dict:
     """Sets the development version inside the development/schema_next.sql file
 
     Args:
@@ -639,8 +699,11 @@ def set_development_version(
         None
     """
     return schema_development_version(
-        schema_project_path=schema_project_path, sections=sections,
-        new_version=new_version, write_to_file=write_to_file)
+        schema_project_path=schema_project_path,
+        sections=sections,
+        new_version=new_version,
+        write_to_file=write_to_file,
+    )
 
 
 def get_project_settings(schema_project_path: str) -> dict:
@@ -655,18 +718,19 @@ def get_project_settings(schema_project_path: str) -> dict:
     if schema_project_path is None:
         raise ValueError("No schema_project_path given.")
 
-    project_settings_file = os.path.join(
-        schema_project_path, "msm.project.json")
+    project_settings_file = os.path.join(schema_project_path, "msm.project.json")
     if not os.path.exists(project_settings_file):
         raise ValueError(
-            f"The path {schema_project_path} does not contain a MSM project folder.")
+            f"The path {schema_project_path} does not contain a MSM project folder."
+        )
 
     with open(project_settings_file, "r") as f:
         try:
             project_settings = json.loads(f.read())
         except:
             raise ValueError(
-                f"The contents of the MSM project settings file `{project_settings_file}` is corrupted.")
+                f"The contents of the MSM project settings file `{project_settings_file}` is corrupted."
+            )
 
     return project_settings
 
@@ -685,15 +749,20 @@ def get_released_versions(schema_project_path: str) -> list[list[int, int, int]]
 
     # Look at all files and get the highest version
     files = []
-    for file in next(os.walk(os.path.join(schema_project_path, "releases", "versions")))[2]:
+    for file in next(
+        os.walk(os.path.join(schema_project_path, "releases", "versions"))
+    )[2]:
         files.append(file)
 
     versions = []
     for file in files:
         version_match = re.match(r".*?(\d+)\.(\d+)\.(\d+)\.sql", file)
         if version_match is not None:
-            file_version = [int(version_match.group(
-                1)), int(version_match.group(2)), int(version_match.group(3))]
+            file_version = [
+                int(version_match.group(1)),
+                int(version_match.group(2)),
+                int(version_match.group(3)),
+            ]
             versions.append(file_version)
 
     versions.sort()
@@ -715,20 +784,29 @@ def get_updatable_versions(schema_project_path: str) -> list[list[int, int, int]
 
     # Look at all files and get the highest version
     files = []
-    for file in next(os.walk(os.path.join(schema_project_path, "releases", "updates")))[2]:
+    for file in next(os.walk(os.path.join(schema_project_path, "releases", "updates")))[
+        2
+    ]:
         files.append(file)
 
     versions = []
     versions_to = []
     for file in files:
         version_match = re.match(
-            r".*?(\d+)\.(\d+)\.(\d+)_to_(\d+)\.(\d+)\.(\d+)\.sql", file)
+            r".*?(\d+)\.(\d+)\.(\d+)_to_(\d+)\.(\d+)\.(\d+)\.sql", file
+        )
         if version_match is not None:
-            file_version = [int(version_match.group(
-                1)), int(version_match.group(2)), int(version_match.group(3))]
+            file_version = [
+                int(version_match.group(1)),
+                int(version_match.group(2)),
+                int(version_match.group(3)),
+            ]
             versions.append(file_version)
-            to_version = [int(version_match.group(
-                4)), int(version_match.group(5)), int(version_match.group(6))]
+            to_version = [
+                int(version_match.group(4)),
+                int(version_match.group(5)),
+                int(version_match.group(6)),
+            ]
             versions_to.append(to_version)
 
     versions.sort()
@@ -753,7 +831,8 @@ def get_updatable_versions(schema_project_path: str) -> list[list[int, int, int]
             raise Exception(
                 "The list of upgrade scripts misses an upgrade step from "
                 f"version {missing_upgrade_from} to {missing_upgrade_to}. "
-                "Please create the required update script.")
+                "Please create the required update script."
+            )
 
     return versions
 
@@ -775,7 +854,9 @@ def get_last_released_version(schema_project_path: str) -> list[int, int, int] |
         return None
 
 
-def get_deployment_script_versions(schema_project_path: str) -> list[list[int, int, int]]:
+def get_deployment_script_versions(
+    schema_project_path: str,
+) -> list[list[int, int, int]]:
     """Returns the all deployed version of the database schema
 
     Args:
@@ -789,15 +870,20 @@ def get_deployment_script_versions(schema_project_path: str) -> list[list[int, i
 
     # Look at all files and get the highest version
     files = []
-    for file in next(os.walk(os.path.join(schema_project_path, "releases", "deployment")))[2]:
+    for file in next(
+        os.walk(os.path.join(schema_project_path, "releases", "deployment"))
+    )[2]:
         files.append(file)
 
     versions = []
     for file in files:
         version_match = re.match(r".*?(\d+)\.(\d+)\.(\d+)\.sql", file)
         if version_match is not None:
-            file_version = [int(version_match.group(
-                1)), int(version_match.group(2)), int(version_match.group(3))]
+            file_version = [
+                int(version_match.group(1)),
+                int(version_match.group(2)),
+                int(version_match.group(3)),
+            ]
             versions.append(file_version)
 
     versions.sort()
@@ -805,7 +891,9 @@ def get_deployment_script_versions(schema_project_path: str) -> list[list[int, i
     return versions
 
 
-def get_last_deployment_script_version(schema_project_path: str) -> list[int, int, int] | None:
+def get_last_deployment_script_version(
+    schema_project_path: str,
+) -> list[int, int, int] | None:
     """Returns the last deployment version of the database schema
 
     Args:
@@ -834,18 +922,24 @@ def get_project_info(schema_project_path: str) -> dict:
 
     project_info = get_project_settings(schema_project_path)
     project_info["currentDevelopmentVersion"] = get_schema_development_version(
-        schema_project_path=schema_project_path)
-    last_released_version = get_last_released_version(
-        schema_project_path)
+        schema_project_path=schema_project_path
+    )
+    last_released_version = get_last_released_version(schema_project_path)
     project_info["lastReleasedVersion"] = (
-        '%d.%d.%d' % tuple(last_released_version) if last_released_version is not None else None)
+        "%d.%d.%d" % tuple(last_released_version)
+        if last_released_version is not None
+        else None
+    )
     project_info["schemaDevelopmentFilePath"] = get_schema_development_file_path(
-        schema_project_path)
+        schema_project_path
+    )
 
     return project_info
 
 
-def sql_content_has_no_statement(sql_content: str, pattern: re.Pattern[str] = None) -> bool:
+def sql_content_has_no_statement(
+    sql_content: str, pattern: re.Pattern[str] = None
+) -> bool:
     """Removes all comments and delimiter statements
 
     Args:
@@ -857,7 +951,8 @@ def sql_content_has_no_statement(sql_content: str, pattern: re.Pattern[str] = No
 
     if pattern is None:
         pattern = re.compile(
-            MSM_SECTION_REMOVE_COMMENTS_AND_DELIMITERS, re.MULTILINE | re.DOTALL)
+            MSM_SECTION_REMOVE_COMMENTS_AND_DELIMITERS, re.MULTILINE | re.DOTALL
+        )
 
     return re.sub(pattern, "", sql_content, 0).strip() == ""
 
@@ -874,7 +969,8 @@ def remove_empty_sections(sections: dict, keep_even_if_empty=list[str]) -> None:
     """
 
     pattern = re.compile(
-        MSM_SECTION_REMOVE_COMMENTS_AND_DELIMITERS, re.MULTILINE | re.DOTALL)
+        MSM_SECTION_REMOVE_COMMENTS_AND_DELIMITERS, re.MULTILINE | re.DOTALL
+    )
 
     sections_to_remove = []
 
@@ -890,8 +986,12 @@ def remove_empty_sections(sections: dict, keep_even_if_empty=list[str]) -> None:
 
 
 def prepare_release(
-        schema_project_path: str, version: str, next_version: str, allow_to_stay_on_same_version: bool = False,
-        overwrite_existing: bool = False) -> list[str]:
+    schema_project_path: str,
+    version: str,
+    next_version: str,
+    allow_to_stay_on_same_version: bool = False,
+    overwrite_existing: bool = False,
+) -> list[str]:
     """Adds a new release to the schema project
 
     Args:
@@ -920,47 +1020,63 @@ def prepare_release(
         if last_released_version > version_as_ints:
             raise ValueError(
                 f"The given version {version} is lower than the last released "
-                f"version {'%d.%d.%d' % tuple(last_released_version)}.")
+                f"version {'%d.%d.%d' % tuple(last_released_version)}."
+            )
 
-    if not allow_to_stay_on_same_version and lib.core.convert_version_str_to_list(next_version) <= version_as_ints:
+    if (
+        not allow_to_stay_on_same_version
+        and lib.core.convert_version_str_to_list(next_version) <= version_as_ints
+    ):
         raise ValueError(
             "The next development version needs to be higher than the version for release "
-            f"{version}. Please explicitly pass the according flag to stay on the same version.")
-    elif allow_to_stay_on_same_version and lib.core.convert_version_str_to_list(next_version) < version_as_ints:
+            f"{version}. Please explicitly pass the according flag to stay on the same version."
+        )
+    elif (
+        allow_to_stay_on_same_version
+        and lib.core.convert_version_str_to_list(next_version) < version_as_ints
+    ):
         raise ValueError(
             "The next development version needs to be at least at the same version as the version for release "
-            f"{version}.")
+            f"{version}."
+        )
 
     # Get the current schema development file sections
     schema_dev_file_path = os.path.join(
-        schema_project_path, "development", f"{schema_file_name}_next.sql")
+        schema_project_path, "development", f"{schema_file_name}_next.sql"
+    )
     if not os.path.exists(schema_dev_file_path):
         raise ValueError(
-            f"The MSM project folder does not contain a schema development file `{schema_dev_file_path}`.")
+            f"The MSM project folder does not contain a schema development file `{schema_dev_file_path}`."
+        )
     with open(schema_dev_file_path, "r") as f:
         schema_dev_script = f.read()
     # Make sure to resolve SOURCE statements with actual content
     schema_dev_script = substitute_source_statements_with_content(
-        schema_dev_script, os.path.dirname(schema_dev_file_path))
+        schema_dev_script, os.path.dirname(schema_dev_file_path)
+    )
     schema_dev_expanded_sections = get_script_sections(schema_dev_script)
 
     # Prepare the schema version template file
     template_folder = os.path.join(Path(__file__).parent.parent, "templates")
     schema_version_template_file_path = os.path.join(
-        template_folder, "scripts", "schema_a.b.c.sql")
+        template_folder, "scripts", "schema_a.b.c.sql"
+    )
     if not os.path.exists(schema_version_template_file_path):
         raise ValueError(
-            f"The schema release version template file `{schema_version_template_file_path}` does not exist.")
+            f"The schema release version template file `{schema_version_template_file_path}` does not exist."
+        )
     with open(schema_version_template_file_path, "r") as f:
         # Remove copyright line and replace placeholders
         schema_version_script = Template("".join(f.readlines()[1:]))
-    schema_version_script = schema_version_script.substitute({
-        # get_license_text(project_settings=project_settings),
-        "license": "License Placeholder",
-        "schema_name": schema_name,
-        "version_str": version,
-        "version_comma_str": ", ".join(str(number) for number in version_as_ints),
-    })
+    schema_version_script = schema_version_script.substitute(
+        {
+            # get_license_text(project_settings=project_settings),
+            "license": "License Placeholder",
+            "schema_name": schema_name,
+            "version_str": version,
+            "version_comma_str": ", ".join(str(number) for number in version_as_ints),
+        }
+    )
     schema_version_sections = get_script_sections(schema_version_script)
 
     # Get the version section of the current schema development file
@@ -968,7 +1084,8 @@ def prepare_release(
     if schema_dev_version_section is None:
         raise ValueError(
             "The script section `MSM Section 910: Database Schema Version` could not be found in "
-            f"`{schema_dev_file_path}`.")
+            f"`{schema_dev_file_path}`."
+        )
 
     # Loop over all sections of the version file and replace the sections with the ones from the development file
     for section_id in schema_version_sections:
@@ -977,28 +1094,34 @@ def prepare_release(
             schema_version_sections[section_id] = section
 
     remove_empty_sections(
-        sections=schema_version_sections,
-        keep_even_if_empty=["license", "001"])
+        sections=schema_version_sections, keep_even_if_empty=["license", "001"]
+    )
 
     # Write the schema version file out
     schema_version_file_path = os.path.join(
-        schema_project_path, "releases", "versions", f"{schema_file_name}_{version}.sql")
+        schema_project_path, "releases", "versions", f"{schema_file_name}_{version}.sql"
+    )
     write_sections_to_file(
         file_path=schema_version_file_path,
         sections=schema_version_sections,
-        overwrite_existing=overwrite_existing)
+        overwrite_existing=overwrite_existing,
+    )
     files_for_release.append(schema_version_file_path)
 
     # Check if update script is needed and if so, write it out
     if last_released_version is not None:
-        last_released_version_str = '%d.%d.%d' % tuple(last_released_version)
+        last_released_version_str = "%d.%d.%d" % tuple(last_released_version)
         if last_released_version_str != version:
             schema_update_file_path = os.path.join(
-                schema_project_path, "releases", "updates",
-                f"{schema_file_name}_{last_released_version_str}_to_{version}.sql")
+                schema_project_path,
+                "releases",
+                "updates",
+                f"{schema_file_name}_{last_released_version_str}_to_{version}.sql",
+            )
             copy_template_file_and_substitute(
                 source_file_path=os.path.join(
-                    template_folder, "scripts", "schema_x.y.z_to_a.b.c.sql"),
+                    template_folder, "scripts", "schema_x.y.z_to_a.b.c.sql"
+                ),
                 target_file_path=schema_update_file_path,
                 substitutions={
                     "license": get_license_text(project_settings=project_settings),
@@ -1006,21 +1129,27 @@ def prepare_release(
                     "version_from": last_released_version_str,
                     "version_to": version,
                     "version_comma_str": ", ".join(
-                        str(number) for number in lib.core.convert_version_str_to_list(version)),
-                })
+                        str(number)
+                        for number in lib.core.convert_version_str_to_list(version)
+                    ),
+                },
+            )
             files_for_release.append(schema_update_file_path)
 
     # Update the version of the development schema file store in section
     # MSM Section 910: Database Schema Version
-    set_development_version(new_version=next_version,
-                            schema_project_path=schema_project_path,
-                            write_to_file=True)
+    set_development_version(
+        new_version=next_version,
+        schema_project_path=schema_project_path,
+        write_to_file=True,
+    )
 
     return files_for_release
 
 
 def generate_deployment_script(
-        schema_project_path: str, version: str, overwrite_existing: bool = False) -> str:
+    schema_project_path: str, version: str, overwrite_existing: bool = False
+) -> str:
     """Generate the deployment script for a release
 
     Args:
@@ -1037,21 +1166,26 @@ def generate_deployment_script(
 
     # Build deployment file path that will be used for output and check that it does not exist
     deployment_file_path = os.path.join(
-        schema_project_path, "releases", "deployment",
-        f"{schema_file_name}_deployment_{version}.sql")
+        schema_project_path,
+        "releases",
+        "deployment",
+        f"{schema_file_name}_deployment_{version}.sql",
+    )
     if os.path.exists(deployment_file_path) and not overwrite_existing:
         raise ValueError(
-            f"The file {deployment_file_path} already exists. Please explicitly allow to replace existing files.")
+            f"The file {deployment_file_path} already exists. Please explicitly allow to replace existing files."
+        )
 
     # Build the version file path that is used as a source and check that it does exist
     version_file_path = os.path.join(
-        schema_project_path, "releases", "versions",
-        f"{schema_file_name}_{version}.sql")
+        schema_project_path, "releases", "versions", f"{schema_file_name}_{version}.sql"
+    )
 
     if not os.path.exists(version_file_path):
         raise ValueError(
             f"The file {version_file_path} does not exist exists. Please make "
-            f"sure to prepare the release {version} first.")
+            f"sure to prepare the release {version} first."
+        )
 
     # Get the version script file section
     target_version_sections = get_file_sections(version_file_path)
@@ -1067,22 +1201,28 @@ def generate_deployment_script(
     updatable_versions = []
     updatable_versions_sections = {}
     while i + 1 < len(released_versions) and released_versions[i] < version_as_ints:
-        version_from = '%d.%d.%d' % tuple(released_versions[i])
-        version_to = '%d.%d.%d' % tuple(released_versions[i + 1])
+        version_from = "%d.%d.%d" % tuple(released_versions[i])
+        version_to = "%d.%d.%d" % tuple(released_versions[i + 1])
 
         updatable_versions.append(version_from)
         updatable_versions_sections[version_from] = {
             "version_from": released_versions[i],
             "version_to": released_versions[i + 1],
-            "sections": get_file_sections(os.path.join(
-                schema_project_path, "releases", "updates",
-                f"{schema_file_name}_{version_from}_to_{version_to}.sql")),
+            "sections": get_file_sections(
+                os.path.join(
+                    schema_project_path,
+                    "releases",
+                    "updates",
+                    f"{schema_file_name}_{version_from}_to_{version_to}.sql",
+                )
+            ),
         }
         i += 1
 
     if len(released_versions) == 0:
         raise ValueError(
-            "Please prepare a version for release before generating a deployment script.")
+            "Please prepare a version for release before generating a deployment script."
+        )
 
     # If there is exactly one released versions yet, use the version SQL script as deployment script
     if len(released_versions) == 1:
@@ -1092,33 +1232,53 @@ def generate_deployment_script(
     # Prepare the schema version template file
     template_folder = os.path.join(Path(__file__).parent.parent, "templates")
     schema_deployment_template_file_path = os.path.join(
-        template_folder, "scripts", "schema_deployment_a.b.c.sql")
+        template_folder, "scripts", "schema_deployment_a.b.c.sql"
+    )
     if not os.path.exists(schema_deployment_template_file_path):
         raise ValueError(
-            f"The schema release version template file `{schema_deployment_template_file_path}` does not exist.")
+            f"The schema release version template file `{schema_deployment_template_file_path}` does not exist."
+        )
     with open(schema_deployment_template_file_path, "r") as f:
         # Remove copyright line and replace placeholders
         schema_deployment_script = Template("".join(f.readlines()[1:]))
-    schema_deployment_script = schema_deployment_script.safe_substitute({
-        "license": get_license_text(project_settings=project_settings),
-        "schema_name": schema_name,
-        "version_target": version,
-        "version_comma_str": ", ".join(str(number) for number in version_as_ints),
-        "section_130_creation_of_helpers":
-            target_version_sections.get("130", {}).get("sql_content", "").strip("\n"),
-        "section_140_non_idempotent_schema_objects": indent(
-            target_version_sections.get("140", {}).get("sql_content", "").strip("\n"), "    "),
-        "section_150_idempotent_schema_objects":
-            target_version_sections.get("150", {}).get("sql_content", "").strip("\n"),
-        "section_170_authorization": indent(
-            target_version_sections.get("170", {}).get("sql_content", "").strip("\n"), "    "),
-        "section_190_removal_of_helpers":
-            target_version_sections.get("190", {}).get("sql_content", "").strip("\n"),
-        "updatable_versions": ", ".join(f'"{v}"' for v in updatable_versions),
-    })
+    schema_deployment_script = schema_deployment_script.safe_substitute(
+        {
+            "license": get_license_text(project_settings=project_settings),
+            "schema_name": schema_name,
+            "version_target": version,
+            "version_comma_str": ", ".join(str(number) for number in version_as_ints),
+            "section_130_creation_of_helpers": target_version_sections.get("130", {})
+            .get("sql_content", "")
+            .strip("\n"),
+            "section_140_non_idempotent_schema_objects": indent(
+                target_version_sections.get("140", {})
+                .get("sql_content", "")
+                .strip("\n"),
+                "    ",
+            ),
+            "section_150_idempotent_schema_objects": target_version_sections.get(
+                "150", {}
+            )
+            .get("sql_content", "")
+            .strip("\n"),
+            "section_170_authorization": indent(
+                target_version_sections.get("170", {})
+                .get("sql_content", "")
+                .strip("\n"),
+                "    ",
+            ),
+            "section_190_removal_of_helpers": target_version_sections.get("190", {})
+            .get("sql_content", "")
+            .strip("\n"),
+            "updatable_versions": ", ".join(f'"{v}"' for v in updatable_versions),
+        }
+    )
 
     matches = re.finditer(
-        MSM_LOOP_UPDATABLE_VERSIONS_REGEX, schema_deployment_script, re.MULTILINE | re.DOTALL)
+        MSM_LOOP_UPDATABLE_VERSIONS_REGEX,
+        schema_deployment_script,
+        re.MULTILINE | re.DOTALL,
+    )
     # for match_id, match in enumerate(matches, start=1):
     #     print("Match {match_id} was found at {start}-{end}: {match}".format(
     #         match_id=match_id, start=match.start(), end=match.end(), match=match.group()))
@@ -1138,14 +1298,22 @@ def generate_deployment_script(
 
         for version_from in updatable_versions_sections:
             loop_version_content = loop_content_template
-            sections_to_replace = reversed(list(
-                re.finditer(MSM_SECTION_PLACEHOLDER_REGEX, loop_content_template)))
+            sections_to_replace = reversed(
+                list(re.finditer(MSM_SECTION_PLACEHOLDER_REGEX, loop_content_template))
+            )
             for s in sections_to_replace:
                 section_id = s.group(1)
-                sql_content = updatable_versions_sections[version_from]["sections"].get(
-                    section_id, {}).get("sql_content", "").strip("\n")
-                sql_content_indent = indent(
-                    sql_content, " " * needs_indent) if needs_indent else sql_content
+                sql_content = (
+                    updatable_versions_sections[version_from]["sections"]
+                    .get(section_id, {})
+                    .get("sql_content", "")
+                    .strip("\n")
+                )
+                sql_content_indent = (
+                    indent(sql_content, " " * needs_indent)
+                    if needs_indent
+                    else sql_content
+                )
                 sql_content_indent += "\n"
 
                 # If the sql_content has no SQL statements, do not insert
@@ -1153,39 +1321,50 @@ def generate_deployment_script(
                     sql_content_indent = ""
 
                 loop_version_content = (
-                    loop_content_template[:s.start()]
+                    loop_content_template[: s.start()]
                     + sql_content_indent
-                    + loop_content_template[s.end():])
+                    + loop_content_template[s.end() :]
+                )
 
-            loop_content += Template(loop_version_content).safe_substitute({
-                "version_from": '%d.%d.%d' % tuple(updatable_versions_sections[version_from]["version_from"]),
-                "version_to": '%d.%d.%d' % tuple(updatable_versions_sections[version_from]["version_to"]),
-            })
+            loop_content += Template(loop_version_content).safe_substitute(
+                {
+                    "version_from": "%d.%d.%d"
+                    % tuple(updatable_versions_sections[version_from]["version_from"]),
+                    "version_to": "%d.%d.%d"
+                    % tuple(updatable_versions_sections[version_from]["version_to"]),
+                }
+            )
 
         # Check if the loop_content is empty (TODO: check if it contains no statements) and if so
         # insert a placeholder
-        if len(updatable_versions_sections) > 0 and loop_content == "" and needs_indent > 0:
+        if (
+            len(updatable_versions_sections) > 0
+            and loop_content == ""
+            and needs_indent > 0
+        ):
             loop_content = " " * needs_indent + "DO NONE;\n"
 
         if sql_content_has_no_statement(loop_content):
             loop_content = ""
 
         schema_deployment_script = (
-            schema_deployment_script[:match.start()]
+            schema_deployment_script[: match.start()]
             + loop_content
-            + schema_deployment_script[match.end():])
+            + schema_deployment_script[match.end() :]
+        )
 
     # Remove empty sections
-    schema_deployment_script_sections = get_script_sections(
-        schema_deployment_script)
+    schema_deployment_script_sections = get_script_sections(schema_deployment_script)
     remove_empty_sections(
         sections=schema_deployment_script_sections,
-        keep_even_if_empty=["license", "003"])
+        keep_even_if_empty=["license", "003"],
+    )
 
     write_sections_to_file(
         file_path=deployment_file_path,
         sections=schema_deployment_script_sections,
-        overwrite_existing=overwrite_existing)
+        overwrite_existing=overwrite_existing,
+    )
 
     # with open(deployment_file_path, "w") as f:
     #     f.write(schema_deployment_script)
@@ -1210,7 +1389,9 @@ def get_available_licenses() -> list[str]:
     return files
 
 
-def substitute_source_statements_with_content(script: str, source_absolute_file_path: str):
+def substitute_source_statements_with_content(
+    script: str, source_absolute_file_path: str
+):
     """Returns the script with substituted source statements
 
     Args:
@@ -1221,8 +1402,7 @@ def substitute_source_statements_with_content(script: str, source_absolute_file_
         The script with substituted source statements
     """
 
-    matches = re.finditer(
-        MSM_SECTION_SOURCE_REGEX, script, re.MULTILINE | re.DOTALL)
+    matches = re.finditer(MSM_SECTION_SOURCE_REGEX, script, re.MULTILINE | re.DOTALL)
     # for match_id, match in enumerate(matches, start=1):
     #     print("Match {match_id} was found at {start}-{end}: {match}".format(
     #         match_id=match_id, start=match.start(), end=match.end(), match=match.group()))
@@ -1238,12 +1418,14 @@ def substitute_source_statements_with_content(script: str, source_absolute_file_
 
         # If a relative file path is defined in the SOURCE statement, convert it to an absolute path
         if not source_file_path.startswith("/"):
-            source_file_path = os.path.normpath(os.path.join(
-                source_absolute_file_path, source_file_path))
+            source_file_path = os.path.normpath(
+                os.path.join(source_absolute_file_path, source_file_path)
+            )
 
         if not os.path.exists(source_file_path):
             raise ValueError(
-                f"The give SOURCE file path `{source_file_path}` could not be resolved.")
+                f"The give SOURCE file path `{source_file_path}` could not be resolved."
+            )
 
         with open(source_file_path, "r") as f:
             source_file_content = f.read()
@@ -1251,20 +1433,17 @@ def substitute_source_statements_with_content(script: str, source_absolute_file_
             # If slicing was defined for the source content, only get the relevant substring
             if source_slicing is not None:
                 if source_slicing.startswith(":"):
-                    source_file_content = source_file_content[:int(
-                        source_slicing[1:])]
+                    source_file_content = source_file_content[: int(source_slicing[1:])]
                 else:
                     slices = source_slicing.split(":")
-                    source_file_content = source_file_content[int(
-                        slices[0]):int(slices[1]) if slices[1] else None]
+                    source_file_content = source_file_content[
+                        int(slices[0]) : int(slices[1]) if slices[1] else None
+                    ]
 
         if source_indention > 0:
             source_file_content = indent(source_file_content, source_indention * " ")
 
-        script = (
-            script[:match.start()]
-            + source_file_content
-            + script[match.end():])
+        script = script[: match.start()] + source_file_content + script[match.end() :]
 
     return script
 
@@ -1281,15 +1460,14 @@ def get_schema_name(schema_project_path: str):
     project_settings = get_project_settings(schema_project_path)
     schema_name = project_settings.get("schemaName", None)
     if schema_name is None:
-        raise ValueError(
-            "The schema name could not be read from the project settings.")
+        raise ValueError("The schema name could not be read from the project settings.")
 
     return schema_name
 
 
 def get_schema_exists(
-        session: object, schema_project_path: str = None,
-        schema_name: str = None) -> bool:
+    session: object, schema_project_path: str = None, schema_name: str = None
+) -> bool:
     """Checks whether the given schema exists
 
     Either the schema_project_path or the schema_name can be given.
@@ -1305,14 +1483,20 @@ def get_schema_exists(
     if schema_name is None:
         schema_name = get_schema_name(schema_project_path)
 
-    return (lib.core.MsmDbExec(
-        'SELECT COUNT(*) as schema_count FROM information_schema.SCHEMATA '
-        'WHERE SCHEMA_NAME = ?'
-    ).exec(session, [schema_name]).first["schema_count"] == 1)
+    return (
+        lib.core.MsmDbExec(
+            "SELECT COUNT(*) as schema_count FROM information_schema.SCHEMATA "
+            "WHERE SCHEMA_NAME = ?"
+        )
+        .exec(session, [schema_name])
+        .first["schema_count"]
+        == 1
+    )
 
 
-def get_schema_is_managed(session: object, schema_project_path: str = None,
-                          schema_name: str = None) -> bool:
+def get_schema_is_managed(
+    session: object, schema_project_path: str = None, schema_name: str = None
+) -> bool:
     """Checks whether the given schema is managed
 
     Either the schema_project_path or the schema_name can be given.
@@ -1328,15 +1512,20 @@ def get_schema_is_managed(session: object, schema_project_path: str = None,
     if schema_name is None:
         schema_name = get_schema_name(schema_project_path)
 
-    return (lib.core.MsmDbExec(
-            'SELECT COUNT(*) as table_count FROM information_schema.TABLES '
+    return (
+        lib.core.MsmDbExec(
+            "SELECT COUNT(*) as table_count FROM information_schema.TABLES "
             'WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND TABLE_TYPE = "VIEW"'
-            ).exec(session, [schema_name, "msm_schema_version"])
-            .first["table_count"] == 1)
+        )
+        .exec(session, [schema_name, "msm_schema_version"])
+        .first["table_count"]
+        == 1
+    )
 
 
-def get_schema_version(session: object, schema_project_path: str = None,
-                       schema_name: str = None) -> str | None:
+def get_schema_version(
+    session: object, schema_project_path: str = None, schema_name: str = None
+) -> str | None:
     """Returns the current version of the schema
 
     Either the schema_project_path or the schema_name can be given.
@@ -1353,10 +1542,14 @@ def get_schema_version(session: object, schema_project_path: str = None,
         schema_name = get_schema_name(schema_project_path)
 
     if get_schema_exists(session=session, schema_name=schema_name):
-        schema_version = lib.core.MsmDbExec(
-            "SELECT CONCAT(major, '.', minor, '.', patch) AS version "
-            f"FROM {lib.core.quote_ident(schema_name)}.`msm_schema_version`"
-        ).exec(session).first["version"]
+        schema_version = (
+            lib.core.MsmDbExec(
+                "SELECT CONCAT(major, '.', minor, '.', patch) AS version "
+                f"FROM {lib.core.quote_ident(schema_name)}.`msm_schema_version`"
+            )
+            .exec(session)
+            .first["version"]
+        )
     else:
         schema_version = None
 
@@ -1364,8 +1557,11 @@ def get_schema_version(session: object, schema_project_path: str = None,
 
 
 def deploy_schema(
-        session: object, schema_project_path: str, version: str = None,
-        backup_directory: str = None) -> str:
+    session: object,
+    schema_project_path: str,
+    version: str = None,
+    backup_directory: str = None,
+) -> str:
     """Deploys the database schema
 
     Deploys the given version of the database schema. If no version is given,
@@ -1389,22 +1585,23 @@ def deploy_schema(
     schema_name = project_settings.get("schemaName", None)
     if schema_name is None:
         err_msg = (
-            f"The project settings of `{schema_project_path}` could not be "
-            "read.")
+            f"The project settings of `{schema_project_path}` could not be " "read."
+        )
         lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
         raise ValueError(err_msg)
     schema_file_name = project_settings.get("schemaFileName", None)
 
-    released_versions = get_released_versions(
-        schema_project_path=schema_project_path)
+    released_versions = get_released_versions(schema_project_path=schema_project_path)
     deployment_script_versions = get_deployment_script_versions(
-        schema_project_path=schema_project_path)
+        schema_project_path=schema_project_path
+    )
 
     # Check if there are actually any released versions of the schema
     if len(released_versions) == 0:
         err_msg = (
             f"There are no versions of the schema `{schema_name}` that have "
-            "been released yet.")
+            "been released yet."
+        )
         lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
         raise Exception(err_msg)
 
@@ -1412,19 +1609,23 @@ def deploy_schema(
     if released_versions != deployment_script_versions:
         err_msg = (
             "Deployment script(s) missing. Please generate deployment "
-            "scripts for all released versions first.")
+            "scripts for all released versions first."
+        )
         lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
         raise Exception(err_msg)
 
     # If a specific version is requested, ensure that there is a deployment
     # script for this version
     if version is None:
-        version = '%d.%d.%d' % tuple(deployment_script_versions[-1])
+        version = "%d.%d.%d" % tuple(deployment_script_versions[-1])
     elif version not in map(
-            lambda v: '%d.%d.%d' % tuple(v), deployment_script_versions):
-        err_msg = (f"Deployment or update of database schema `{schema_name}` using "
-                   f"version {version} requested but there is no deployment script "
-                   "available for this version.")
+        lambda v: "%d.%d.%d" % tuple(v), deployment_script_versions
+    ):
+        err_msg = (
+            f"Deployment or update of database schema `{schema_name}` using "
+            f"version {version} requested but there is no deployment script "
+            "available for this version."
+        )
         lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
         raise ValueError(err_msg)
 
@@ -1435,18 +1636,19 @@ def deploy_schema(
     schema_managed = False
     schema_version = None
     if schema_exists:
-        schema_managed = get_schema_is_managed(
-            session=session, schema_name=schema_name)
+        schema_managed = get_schema_is_managed(session=session, schema_name=schema_name)
 
         if schema_managed:
             schema_version = get_schema_version(
-                session=session, schema_name=schema_name)
+                session=session, schema_name=schema_name
+            )
 
     if schema_exists and not schema_managed:
         err_msg = (
             f"Deployment or update of database schema `{schema_name}` using "
             f"version {version} requested but the schema is not managed by "
-            "MSM.")
+            "MSM."
+        )
         lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
         raise Exception(err_msg)
 
@@ -1466,11 +1668,14 @@ def deploy_schema(
     if schema_version is not None:
         updatable_versions = get_updatable_versions(schema_project_path)
         updatable_versions_str = map(
-            lambda v: '%d.%d.%d' % tuple(v), updatable_versions)
+            lambda v: "%d.%d.%d" % tuple(v), updatable_versions
+        )
 
-        if (len(updatable_versions) > 0 and
-                lib.core.convert_version_str_to_list(schema_version) >
-                updatable_versions[-1]):
+        if (
+            len(updatable_versions) > 0
+            and lib.core.convert_version_str_to_list(schema_version)
+            > updatable_versions[-1]
+        ):
             info_msg = (
                 f"The database schema `{schema_name}` is on a newer version "
                 f"{schema_version} than shipped with this project (version "
@@ -1484,7 +1689,8 @@ def deploy_schema(
             err_msg = (
                 f"Update of database schema `{schema_name}` to version "
                 f"{version} requested but the version {schema_version} cannot "
-                "be updated.")
+                "be updated."
+            )
             lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
             raise Exception(err_msg)
 
@@ -1493,12 +1699,14 @@ def deploy_schema(
         lib.core.write_to_msm_schema_update_log(
             "INFO",
             f"Starting deployment of database schema `{schema_name}` using "
-            f"version {version} ...")
+            f"version {version} ...",
+        )
     else:
         lib.core.write_to_msm_schema_update_log(
             "INFO",
             f"Starting update of database schema `{schema_name}` version "
-            f"{schema_version} to version {version} ...")
+            f"{schema_version} to version {version} ...",
+        )
 
     # Perform dump if the schema exists
     backup_available = False
@@ -1506,12 +1714,15 @@ def deploy_schema(
         lib.core.write_to_msm_schema_update_log(
             "INFO",
             f"Preparing dump of `{schema_name}` version "
-            f"{schema_version} in order to be roll back in case of an error.")
+            f"{schema_version} in order to be roll back in case of an error.",
+        )
 
         if backup_directory is None:
             backup_directory = os.path.join(
                 lib.core.get_msm_plugin_data_path(),
-                "backups", f"{schema_file_name}_backup_{schema_version}")
+                "backups",
+                f"{schema_file_name}_backup_{schema_version}",
+            )
             # If that directory already exists, keep appending counter until
             # a new directory is found
             i = 2
@@ -1532,33 +1743,40 @@ def deploy_schema(
         # Ensure that the dump can be read back in case of a failure by setting
         # local_infile to 1
         # cSpell:ignore infile
-        row = lib.core.MsmDbExec("SELECT @@local_infile as local_infile").exec(session).first
-        original_local_infile = (row and int(row["local_infile"]) == 1)
+        row = (
+            lib.core.MsmDbExec("SELECT @@local_infile as local_infile")
+            .exec(session)
+            .first
+        )
+        original_local_infile = row and int(row["local_infile"]) == 1
         if not original_local_infile:
             try:
                 lib.core.write_to_msm_schema_update_log(
                     "INFO",
                     "Enabling local_infile option in order to be able to load "
-                    "back the schema dump in case of an update error...")
+                    "back the schema dump in case of an update error...",
+                )
                 lib.core.MsmDbExec("SET GLOBAL local_infile=1").exec(session)
             except:
                 err_msg = (
                     "Failed to enable the local_infile option. Please execute "
-                    "SET PERSIST GLOBAL local_infile=1; on the MySQL Server.")
+                    "SET PERSIST GLOBAL local_infile=1; on the MySQL Server."
+                )
                 lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
 
                 raise Exception(err_msg)
 
         lib.core.write_to_msm_schema_update_log(
-            "INFO",
-            f"Creating dump of `{schema_name}` version {schema_version} ...")
+            "INFO", f"Creating dump of `{schema_name}` version {schema_version} ..."
+        )
         mysqlsh.globals.util.dump_schemas(
             [schema_name],
             f"file://{backup_directory}",
             {
                 "skipUpgradeChecks": True,
                 "showProgress": False,
-            })
+            },
+        )
 
         backup_available = True
 
@@ -1567,23 +1785,29 @@ def deploy_schema(
         lib.core.execute_msm_sql_script(
             session=session,
             sql_file_path=os.path.join(
-                schema_project_path, "releases", "deployment",
-                f"{schema_file_name}_deployment_{version}.sql"))
+                schema_project_path,
+                "releases",
+                "deployment",
+                f"{schema_file_name}_deployment_{version}.sql",
+            ),
+        )
 
         if not schema_exists:
             info_msg = (
                 f"Deployment of `{schema_name}` version "
-                f"{version} completed successfully.")
+                f"{version} completed successfully."
+            )
         else:
             if not original_local_infile:
                 lib.core.MsmDbExec("SET GLOBAL local_infile=0").exec(session)
                 lib.core.write_to_msm_schema_update_log(
-                    "INFO",
-                    "Restored local_infile option.")
+                    "INFO", "Restored local_infile option."
+                )
 
             info_msg = (
                 f"Completed the update of `{schema_name}` version "
-                f"{schema_version} to {version} successfully.")
+                f"{schema_version} to {version} successfully."
+            )
 
         lib.core.write_to_msm_schema_update_log("INFO", info_msg)
 
@@ -1610,13 +1834,14 @@ def deploy_schema(
                         "showMetadata": False,
                         "showProgress": False,
                         "ignoreVersion": True,
-                    })
+                    },
+                )
 
                 if not original_local_infile:
                     lib.core.MsmDbExec("SET GLOBAL local_infile=0").exec(session)
                     lib.core.write_to_msm_schema_update_log(
-                        "INFO",
-                        "Restored local_infile option.")
+                        "INFO", "Restored local_infile option."
+                    )
 
                 # Remove the backup directory as it is no longer needed
                 shutil.rmtree(backup_directory)
@@ -1625,7 +1850,8 @@ def deploy_schema(
                     "An error occurred while updating the database schema "
                     f"`{schema_name}` to version {version}. The schema could "
                     f"not be restored back to version {schema_version}. {e} "
-                    f"{e_dump_load}")
+                    f"{e_dump_load}"
+                )
                 lib.core.write_to_msm_schema_update_log("ERROR", err_str)
 
                 raise Exception(err_str)
@@ -1640,9 +1866,7 @@ def deploy_schema(
             raise Exception(err_str)
         else:
             if not schema_exists:
-                err_str = (
-                    f"Deploying the database schema `{schema_name}` failed. {e}"
-                )
+                err_str = f"Deploying the database schema `{schema_name}` failed. {e}"
                 lib.core.write_to_msm_schema_update_log("ERROR", err_str)
 
                 raise Exception(err_str)
@@ -1656,8 +1880,9 @@ def deploy_schema(
                 raise Exception(err_str)
 
 
-def execute_msm_sql_script(session, sql_script: str = None,
-                           script_name: str = None, sql_file_path: str = None):
+def execute_msm_sql_script(
+    session, sql_script: str = None, script_name: str = None, sql_file_path: str = None
+):
     """
     Execute a SQL script on the MySQL Server and log the progress in the
     MSM log file.
@@ -1675,5 +1900,8 @@ def execute_msm_sql_script(session, sql_script: str = None,
     """
 
     lib.core.execute_msm_sql_script(
-        session, sql_script=sql_script,
-        script_name=script_name, sql_file_path=sql_file_path)
+        session,
+        sql_script=sql_script,
+        script_name=script_name,
+        sql_file_path=sql_file_path,
+    )

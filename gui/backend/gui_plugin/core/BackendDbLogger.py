@@ -33,7 +33,7 @@ class BackendDbLogger:
     lock = Lock()
 
     @staticmethod
-    def get_instance(log_rotation=False) -> 'BackendDbLogger':
+    def get_instance(log_rotation=False) -> "BackendDbLogger":
         if BackendDbLogger.__instance is None:
             BackendDbLogger(log_rotation)
 
@@ -42,14 +42,16 @@ class BackendDbLogger:
 
     @staticmethod
     def is_enabled():
-        return environ.get(DEBUG_MODE_ENV_VAR, '0') == '1'
+        return environ.get(DEBUG_MODE_ENV_VAR, "0") == "1"
 
     def __init__(self, log_rotation):
         if BackendDbLogger.__instance is not None:
             raise Exception(
-                "This class is a singleton, use get_instance function to get an instance.")
+                "This class is a singleton, use get_instance function to get an instance."
+            )
         else:
             from gui_plugin.core.Db import GuiBackendDb
+
             BackendDbLogger.__instance = self
             self.__gui_backend_db = GuiBackendDb(log_rotation=log_rotation)
 
@@ -72,7 +74,9 @@ class BackendDbLogger:
         with instance.lock:
             try:
                 instance.__gui_backend_db.start_transaction()
-                instance.__gui_backend_db.message(session_id, is_response, message, request_id)
+                instance.__gui_backend_db.message(
+                    session_id, is_response, message, request_id
+                )
                 instance.__gui_backend_db.commit()
             except Exception:
                 instance.__gui_backend_db.rollback()

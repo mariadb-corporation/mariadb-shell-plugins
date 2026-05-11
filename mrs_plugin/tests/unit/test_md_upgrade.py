@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -64,9 +64,9 @@ def save_server_state(session):
 def module_fixture(phone_book):
     conn = helpers.get_connection_data(instance=1)
     try:
-        mysqlsh.globals.dba.kill_sandbox_instance(conn["port"], {
-            "sandboxDir": phone_book["temp_dir"]
-        })
+        mysqlsh.globals.dba.kill_sandbox_instance(
+            conn["port"], {"sandboxDir": phone_book["temp_dir"]}
+        )
     except:
         pass
 
@@ -77,9 +77,9 @@ def module_fixture(phone_book):
     mysqlsh.globals.shell.connect(conn)
     yield conn
     mysqlsh.globals.shell.set_session(phone_book["session"])
-    mysqlsh.globals.dba.kill_sandbox_instance(conn["port"], {
-        "sandboxDir": phone_book["temp_dir"]
-    })
+    mysqlsh.globals.dba.kill_sandbox_instance(
+        conn["port"], {"sandboxDir": phone_book["temp_dir"]}
+    )
 
 
 def snapshot_server(session, orig_users, orig_schemas):
@@ -88,66 +88,110 @@ def snapshot_server(session, orig_users, orig_schemas):
             # filter out grant on schema_version, which was missed during 3.x to 4.0
             # upgrade but can't be easily revoked in a backwards compatible way
             def ignore(grant):
-                harmless = ["SELECT ON `mysql_rest_service_metadata`.`table_columns_with_references`",
-                            "SELECT ON `mysql_rest_service_metadata`.`schema_version`"]
+                harmless = [
+                    "SELECT ON `mysql_rest_service_metadata`.`table_columns_with_references`",
+                    "SELECT ON `mysql_rest_service_metadata`.`schema_version`",
+                ]
                 for g in harmless:
                     if g in grant:
                         return True
                 return False
 
-            grants = sorted([r[0] for r in session.run_sql(f"show grants for {user}").fetch_all() if not ignore(r[0])])
+            grants = sorted(
+                [
+                    r[0]
+                    for r in session.run_sql(f"show grants for {user}").fetch_all()
+                    if not ignore(r[0])
+                ]
+            )
             return grants
 
-        users = session.run_sql("select concat(user, '@', quote(host)) u from mysql.user order by u").fetch_all()
+        users = session.run_sql(
+            "select concat(user, '@', quote(host)) u from mysql.user order by u"
+        ).fetch_all()
         accounts = []
-        for user, in users:
+        for (user,) in users:
             if user in orig_users:
                 continue
-            accounts.append({
-                "account" : user,
-                "grants": fetch_grants(user)
-            })
+            accounts.append({"account": user, "grants": fetch_grants(user)})
         return accounts
 
     def fetch_schemas():
         def fetch_schema(schema):
             def fetch_tables():
-                table_names = [r[0] for r in session.run_sql("select table_name from information_schema.tables where table_schema = ? and TABLE_TYPE='BASE TABLE' order by table_name", [schema]).fetch_all()]
+                table_names = [
+                    r[0]
+                    for r in session.run_sql(
+                        "select table_name from information_schema.tables where table_schema = ? and TABLE_TYPE='BASE TABLE' order by table_name",
+                        [schema],
+                    ).fetch_all()
+                ]
                 tables = []
                 for table in table_names:
-                    ddl = session.run_sql("show create table !.!", [schema, table]).fetch_one()[0]
+                    ddl = session.run_sql(
+                        "show create table !.!", [schema, table]
+                    ).fetch_one()[0]
                     tables.append(ddl)
                 return tables
 
             def fetch_views():
-                table_names = [r[0] for r in session.run_sql("select table_name from information_schema.views where table_schema = ? order by table_name", [schema]).fetch_all()]
+                table_names = [
+                    r[0]
+                    for r in session.run_sql(
+                        "select table_name from information_schema.views where table_schema = ? order by table_name",
+                        [schema],
+                    ).fetch_all()
+                ]
                 tables = []
                 for table in table_names:
-                    ddl = session.run_sql("show create view !.!", [schema, table]).fetch_one()[0]
+                    ddl = session.run_sql(
+                        "show create view !.!", [schema, table]
+                    ).fetch_one()[0]
                     tables.append(ddl)
                 return tables
-            
+
             def fetch_triggers():
-                trigger_names = [r[0] for r in session.run_sql("select trigger_name from information_schema.triggers where trigger_schema = ? order by trigger_name", [schema]).fetch_all()]
+                trigger_names = [
+                    r[0]
+                    for r in session.run_sql(
+                        "select trigger_name from information_schema.triggers where trigger_schema = ? order by trigger_name",
+                        [schema],
+                    ).fetch_all()
+                ]
                 triggers = []
                 for trigger in trigger_names:
-                    ddl = session.run_sql("show create trigger !.!", [schema, trigger]).fetch_one()[0]
+                    ddl = session.run_sql(
+                        "show create trigger !.!", [schema, trigger]
+                    ).fetch_one()[0]
                     triggers.append(ddl)
                 return triggers
 
             def fetch_routines():
-                routine_names = session.run_sql("select routine_name, routine_type from information_schema.routines where routine_schema = ? order by routine_name", [schema]).fetch_all()
+                routine_names = session.run_sql(
+                    "select routine_name, routine_type from information_schema.routines where routine_schema = ? order by routine_name",
+                    [schema],
+                ).fetch_all()
                 routines = []
                 for rname, rtype in routine_names:
-                    ddl = session.run_sql(f"show create {rtype} !.!", [schema, rname]).fetch_one()[0]
+                    ddl = session.run_sql(
+                        f"show create {rtype} !.!", [schema, rname]
+                    ).fetch_one()[0]
                     routines.append(ddl)
                 return routines
 
             def fetch_events():
-                event_names = [r[0] for r in session.run_sql("select event_name from information_schema.events where event_schema = ? order by event_name", [schema]).fetch_all()]
+                event_names = [
+                    r[0]
+                    for r in session.run_sql(
+                        "select event_name from information_schema.events where event_schema = ? order by event_name",
+                        [schema],
+                    ).fetch_all()
+                ]
                 events = []
                 for event in event_names:
-                    ddl = session.run_sql("show create event !.!", [schema, event]).fetch_one()[0]
+                    ddl = session.run_sql(
+                        "show create event !.!", [schema, event]
+                    ).fetch_one()[0]
                     events.append(ddl)
                 return events
 
@@ -157,8 +201,9 @@ def snapshot_server(session, orig_users, orig_schemas):
                 "triggers": fetch_triggers(),
                 "views": fetch_views(),
                 "routines": fetch_routines(),
-                "events": fetch_events()
+                "events": fetch_events(),
             }
+
         schema_names = session.run_sql("show schemas").fetch_all()
         schemas = []
         for (schema,) in schema_names:
@@ -167,26 +212,32 @@ def snapshot_server(session, orig_users, orig_schemas):
             schemas.append(fetch_schema(schema))
         return schemas
 
-    return {
-        "accounts": fetch_accounts(),
-        "schemas": fetch_schemas()
-    }
+    return {"accounts": fetch_accounts(), "schemas": fetch_schemas()}
 
 
 def install_metadata(session, version):
     general.configure(session, version=version)
     try:
-        installed = session.run_sql("select concat(major, '.', minor, '.', patch) from mysql_rest_service_metadata.msm_schema_version").fetch_one()[0]
+        installed = session.run_sql(
+            "select concat(major, '.', minor, '.', patch) from mysql_rest_service_metadata.msm_schema_version"
+        ).fetch_one()[0]
     except:
-        installed = session.run_sql("select concat(major, '.', minor, '.', patch) from mysql_rest_service_metadata.schema_version").fetch_one()[0]
+        installed = session.run_sql(
+            "select concat(major, '.', minor, '.', patch) from mysql_rest_service_metadata.schema_version"
+        ).fetch_one()[0]
     assert installed == version
+
 
 def upgrade_metadata(session, version):
     general.configure(session, version=version, update_if_available=True)
     try:
-        installed = session.run_sql("select concat(major, '.', minor, '.', patch) from mysql_rest_service_metadata.msm_schema_version").fetch_one()[0]
+        installed = session.run_sql(
+            "select concat(major, '.', minor, '.', patch) from mysql_rest_service_metadata.msm_schema_version"
+        ).fetch_one()[0]
     except:
-        installed = session.run_sql("select concat(major, '.', minor, '.', patch) from mysql_rest_service_metadata.schema_version").fetch_one()[0]
+        installed = session.run_sql(
+            "select concat(major, '.', minor, '.', patch) from mysql_rest_service_metadata.schema_version"
+        ).fetch_one()[0]
     assert installed == version
 
 
@@ -211,7 +262,10 @@ def check_metadata_upgrade(session, from_version, to_version):
 
 def get_md_versions():
     repat = re.compile("mysql_rest_service_metadata_(.*?).sql")
-    path = os.path.dirname(lib.__file__)+"/../db_schema/mysql_rest_service_metadata.msm.project/releases/versions"
+    path = (
+        os.path.dirname(lib.__file__)
+        + "/../db_schema/mysql_rest_service_metadata.msm.project/releases/versions"
+    )
     versions = []
     for f in os.listdir(path):
         m = repat.findall(f)

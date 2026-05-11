@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,8 @@
 from mysqlsh.plugin_manager import plugin_function
 from msm_plugin import lib
 
-@plugin_function('msm.getSchemaDiagram', shell=True, cli=True, web=True)
+
+@plugin_function("msm.getSchemaDiagram", shell=True, cli=True, web=True)
 def get_schema_diagram(source_path: str = None, **kwargs) -> dict:
     """Fetches a diagram from the given source_path
 

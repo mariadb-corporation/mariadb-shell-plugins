@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -37,15 +37,15 @@ import gui_plugin.core.Logger as logger
 # - Exit Code Bubbled Up: the exit code of the executed script should be made
 #   available on the caller terminal/process
 linux_terminals = {
-    'gnome-terminal': ['--wait', '--'],
-    'xterm': ['-e'],
+    "gnome-terminal": ["--wait", "--"],
+    "xterm": ["-e"],
 }
 
 
 def get_terminal_command():
     command = None
     for terminal, options in linux_terminals.items():
-        exit_code, output = run_system_command(['which', terminal])
+        exit_code, output = run_system_command(["which", terminal])
         if exit_code == 0:
             command = [output] + options
             break
@@ -56,7 +56,8 @@ def get_terminal_command():
             terminals.append(terminal)
 
         raise Exception(
-            f"Unable to locate supported terminal, tried: {', '.join(terminals)}.")
+            f"Unable to locate supported terminal, tried: {', '.join(terminals)}."
+        )
 
     return command
 
@@ -64,8 +65,11 @@ def get_terminal_command():
 def run_system_command(command):
     try:
         logger.debug3(f"Executing System Command: {' '.join(command)}")
-        output = subprocess.check_output(
-            command, stderr=subprocess.STDOUT).decode("utf8").strip()
+        output = (
+            subprocess.check_output(command, stderr=subprocess.STDOUT)
+            .decode("utf8")
+            .strip()
+        )
         logger.debug3(f"---\n{output}\n---")
         return (0, output)
     except subprocess.CalledProcessError as e:
@@ -82,7 +86,7 @@ def get_os_release_key(key):
                     # NOTE: Returns the value unquoted, this is important as some
                     # platforms have the values quoted in /etc/os-release
                     # i.e. OpenSUSE
-                    return line[len(key) + 1:].strip().strip("'").strip('"')
+                    return line[len(key) + 1 :].strip().strip("'").strip('"')
     return None
 
 
@@ -109,7 +113,7 @@ def get_os_type():
     type = platform.system()
     if type == "Linux":
         # In case of Linux, attempts to identify the specific OS
-        type = get_os_release_key('ID_LIKE')
+        type = get_os_release_key("ID_LIKE")
         if type is None:
             type = get_os_release_key("ID")
 
@@ -182,23 +186,29 @@ def popen(cmd, mode="r", buffering=-1, cwd=None):
         raise ValueError("popen() does not support unbuffered streams")
     import subprocess
     import io
+
     # cSpell:ignore bufsize
     if mode == "r":
-        proc = subprocess.Popen(cmd,
-                                text=True,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT,
-                                bufsize=buffering,
-                                cwd=cwd)
+        proc = subprocess.Popen(
+            cmd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=buffering,
+            cwd=cwd,
+        )
         return _wrap_close(proc.stdout, proc)
     else:
-        proc = subprocess.Popen(cmd,
-                                text=True,
-                                stdin=subprocess.PIPE,
-                                stderr=subprocess.STDOUT,
-                                bufsize=buffering,
-                                cwd=cwd)
+        proc = subprocess.Popen(
+            cmd,
+            text=True,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=buffering,
+            cwd=cwd,
+        )
         return _wrap_close(proc.stdin, proc)
+
 
 # Helper for popen() -- a proxy for a file whose close waits for the process
 

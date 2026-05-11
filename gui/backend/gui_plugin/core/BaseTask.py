@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,15 +27,24 @@ import gui_plugin.core.Context as context
 import gui_plugin.core.Logger as logger
 
 
-class BaseTask():
-    def __init__(self, task_id=None, result_queue=None, result_callback=None, options=None, skip_completion=False):
+class BaseTask:
+    def __init__(
+        self,
+        task_id=None,
+        result_queue=None,
+        result_callback=None,
+        options=None,
+        skip_completion=False,
+    ):
         self.thread_id = threading.current_thread().native_id
         self.task_id = task_id
         self.result_queue = result_queue
         self.result_callback = result_callback
         self.options = options if options else {}
         self.cancelled = False
-        self.completion_event = None if skip_completion else context.set_completion_event()
+        self.completion_event = (
+            None if skip_completion else context.set_completion_event()
+        )
 
     def dispatch_result(self, state, message=None, data=None):
         if self.result_queue is not None:
@@ -56,7 +65,8 @@ class BaseTask():
             except Exception as e:
                 logger.debug(self.result_callback)
                 logger.exception(
-                    e, "There was an unhandled exception during the callback")
+                    e, "There was an unhandled exception during the callback"
+                )
                 raise
 
     def do_execute(self):
@@ -67,15 +77,33 @@ class BaseTask():
 
     def execute(self):
         try:
-            self.do_execute() if not self.cancelled else self.dispatch_result("CANCELLED")
+            (
+                self.do_execute()
+                if not self.cancelled
+                else self.dispatch_result("CANCELLED")
+            )
         finally:
             if self.completion_event:
                 self.completion_event.set()
 
 
 class CommandTask(BaseTask):
-    def __init__(self, task_id, command, params=None, result_queue=None, result_callback=None, options=None, skip_completion=False):
-        super().__init__(task_id, result_queue, result_callback,
-                         options, skip_completion=skip_completion)
+    def __init__(
+        self,
+        task_id,
+        command,
+        params=None,
+        result_queue=None,
+        result_callback=None,
+        options=None,
+        skip_completion=False,
+    ):
+        super().__init__(
+            task_id,
+            result_queue,
+            result_callback,
+            options,
+            skip_completion=skip_completion,
+        )
         self.command = command
         self.params = params

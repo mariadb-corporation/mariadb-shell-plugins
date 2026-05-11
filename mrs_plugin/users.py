@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,14 @@
 
 from mysqlsh.plugin_manager import plugin_function
 from mrs_plugin import lib
-from .interactive import service_query_selection, resolve_file_path, resolve_overwrite_file, user_query_selection, resolve_user
+from .interactive import (
+    service_query_selection,
+    resolve_file_path,
+    resolve_overwrite_file,
+    user_query_selection,
+    resolve_user,
+)
+
 
 def generate_create_statement(**kwargs) -> str:
     lib.core.convert_ids_to_binary(["user_id"], kwargs)
@@ -32,7 +39,9 @@ def generate_create_statement(**kwargs) -> str:
     include_all_objects = kwargs.get("include_all_objects", False)
     user_query = user_query_selection(**kwargs)
 
-    with lib.core.MrsDbSession(exception_handler=lib.core.print_exception, **kwargs) as session:
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, **kwargs
+    ) as session:
         user = resolve_user(session, user_query=user_query)
 
         return lib.users.get_user_create_statement(session, user, include_all_objects)
@@ -345,7 +354,7 @@ def delete_user_roles(user_id=None, role_id=None, session=None):
             lib.users.delete_user_roles(session, user_id, role_id)
 
 
-@plugin_function('mrs.get.userCreateStatement', shell=True, cli=True, web=True)
+@plugin_function("mrs.get.userCreateStatement", shell=True, cli=True, web=True)
 def get_create_statement(**kwargs):
     """Returns the corresponding CREATE REST SCHEMA SQL statement of the given MRS service object.
 
@@ -369,7 +378,7 @@ def get_create_statement(**kwargs):
     return generate_create_statement(**kwargs)
 
 
-@plugin_function('mrs.dump.userCreateStatement', shell=True, cli=True, web=True)
+@plugin_function("mrs.dump.userCreateStatement", shell=True, cli=True, web=True)
 def store_create_statement(**kwargs):
     """Stores the corresponding CREATE REST schema SQL statement of the given MRS schema
     object into a file.

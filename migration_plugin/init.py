@@ -48,7 +48,9 @@ def _load_impl(module: str, name: str):
     imported = __import__(module, fromlist=[name])
     return getattr(imported, name)
 
+
 # cSpell:ignore mrs, mysqlsh, InnoDB
+
 
 def _work_step_impl(name: str):
     return _load_impl("migration_plugin.work_step", name)

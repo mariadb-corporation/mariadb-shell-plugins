@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -98,7 +98,7 @@ class DbFilters:
     class ObjectFilters:
         type Filter = dict[str, DbFilters.SchemaFilters.Filter]
 
-        def __init__(self, schema_filters: 'DbFilters.SchemaFilters') -> None:
+        def __init__(self, schema_filters: "DbFilters.SchemaFilters") -> None:
             self._schema_filters: DbFilters.SchemaFilters = schema_filters
             self.included: DbFilters.ObjectFilters.Filter = {}
             self.excluded: DbFilters.ObjectFilters.Filter = {}
@@ -143,7 +143,7 @@ class DbFilters:
     class TriggerFilters:
         type Filter = dict[str, DbFilters.ObjectFilters.Filter]
 
-        def __init__(self, table_filters: 'DbFilters.ObjectFilters') -> None:
+        def __init__(self, table_filters: "DbFilters.ObjectFilters") -> None:
             self._table_filters: DbFilters.ObjectFilters = table_filters
             self.included: DbFilters.TriggerFilters.Filter = {}
             self.excluded: DbFilters.TriggerFilters.Filter = {}
@@ -154,15 +154,16 @@ class DbFilters:
         def exclude(self, qualified_object: str) -> None:
             self._add(qualified_object, self.excluded)
 
-        def is_included(self, qualified_object_or_schema: str, table: str = "", trigger: str = "") -> bool:
+        def is_included(
+            self, qualified_object_or_schema: str, table: str = "", trigger: str = ""
+        ) -> bool:
             assert qualified_object_or_schema
 
             if table:
                 schema = qualified_object_or_schema
             else:
                 assert not trigger
-                schema, table, trigger = self._unquote(
-                    qualified_object_or_schema)
+                schema, table, trigger = self._unquote(qualified_object_or_schema)
 
             assert schema
             assert table
@@ -214,7 +215,7 @@ class DbFilters:
         def _unquote(self, qualified_object: str) -> tuple[str, str, str]:
             o = string_utils.unquote_db_object(qualified_object)
             assert 2 == len(o) or 3 == len(o)
-            return o if 3 == len(o) else o + ("", )  # type: ignore
+            return o if 3 == len(o) else o + ("",)  # type: ignore
 
     def __init__(self, filters: model.MigrationFilters) -> None:
         self.users = DbFilters.UserFilters()

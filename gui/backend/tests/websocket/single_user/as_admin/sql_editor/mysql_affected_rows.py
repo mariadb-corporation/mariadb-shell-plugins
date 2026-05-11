@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -30,240 +30,236 @@ ws: TWebSocket
 
 execute_request_id = ws.generateRequestId()
 
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": execute_request_id,
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "DROP SCHEMA IF EXISTS `test_affected_rows` ;",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-}, [
+ws.sendAndValidate(
     {
-        "request_state": {"type": "PENDING", "msg": "Execution started..."},
-        "request_id": execute_request_id
-    },
-    {
+        "request": "execute",
         "request_id": execute_request_id,
-        "request_state": {"type": "PENDING", "msg": ""},
-        "result": {
-            "rows": [],
-            "total_row_count": 0,
-            "execution_time": ws.ignore,
-            "rows_affected": ws.ignore
-        }
-    },
-    {
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "DROP SCHEMA IF EXISTS `test_affected_rows` ;",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
         },
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": execute_request_id,
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "CREATE SCHEMA `test_affected_rows` ;",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-}, [
-    {
-        "request_state": {"type": "PENDING", "msg": "Execution started..."},
-        "request_id": execute_request_id
     },
+    [
+        {
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+            "request_id": execute_request_id,
+        },
+        {
+            "request_id": execute_request_id,
+            "request_state": {"type": "PENDING", "msg": ""},
+            "result": {
+                "rows": [],
+                "total_row_count": 0,
+                "execution_time": ws.ignore,
+                "rows_affected": ws.ignore,
+            },
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)
+
+ws.sendAndValidate(
     {
+        "request": "execute",
         "request_id": execute_request_id,
-        "request_state": {"type": "PENDING", "msg": ""},
-        "result": {
-            "rows": [],
-            "total_row_count": 0,
-            "execution_time": ws.ignore,
-            "rows_affected": 1
-        }
-    },
-    {
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "CREATE SCHEMA `test_affected_rows` ;",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
         },
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": execute_request_id,
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "CREATE TABLE `test_affected_rows`.`user` (`id` INT NOT NULL, `name` VARCHAR(45) NULL, PRIMARY KEY (`id`));",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-}, [
-    {
-        "request_state": {"type": "PENDING", "msg": "Execution started..."},
-        "request_id": execute_request_id
     },
+    [
+        {
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+            "request_id": execute_request_id,
+        },
+        {
+            "request_id": execute_request_id,
+            "request_state": {"type": "PENDING", "msg": ""},
+            "result": {
+                "rows": [],
+                "total_row_count": 0,
+                "execution_time": ws.ignore,
+                "rows_affected": 1,
+            },
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)
+
+ws.sendAndValidate(
     {
+        "request": "execute",
         "request_id": execute_request_id,
-        "request_state": {"type": "PENDING", "msg": ""},
-        "result": {
-            "rows": [],
-            "total_row_count": 0,
-            "execution_time": ws.ignore,
-            "rows_affected": 0
-        }
-    },
-    {
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "CREATE TABLE `test_affected_rows`.`user` (`id` INT NOT NULL, `name` VARCHAR(45) NULL, PRIMARY KEY (`id`));",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
         },
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": execute_request_id,
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "INSERT INTO `test_affected_rows`.`user` (`id`, `name`) VALUES ('1', 'peter');",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-}, [
-    {
-        "request_state": {"type": "PENDING", "msg": "Execution started..."},
-        "request_id": execute_request_id
     },
+    [
+        {
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+            "request_id": execute_request_id,
+        },
+        {
+            "request_id": execute_request_id,
+            "request_state": {"type": "PENDING", "msg": ""},
+            "result": {
+                "rows": [],
+                "total_row_count": 0,
+                "execution_time": ws.ignore,
+                "rows_affected": 0,
+            },
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)
+
+ws.sendAndValidate(
     {
+        "request": "execute",
         "request_id": execute_request_id,
-        "request_state": {"type": "PENDING", "msg": ""},
-        "result": {
-            "rows": [],
-            "total_row_count": 0,
-            "execution_time": ws.ignore,
-            "rows_affected": 1
-        }
-    },
-    {
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "INSERT INTO `test_affected_rows`.`user` (`id`, `name`) VALUES ('1', 'peter');",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
         },
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": execute_request_id,
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "UPDATE `test_affected_rows`.`user` SET `name` = 'parker' WHERE (`id` = '1');",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-}, [
-    {
-        "request_state": {"type": "PENDING", "msg": "Execution started..."},
-        "request_id": execute_request_id
     },
+    [
+        {
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+            "request_id": execute_request_id,
+        },
+        {
+            "request_id": execute_request_id,
+            "request_state": {"type": "PENDING", "msg": ""},
+            "result": {
+                "rows": [],
+                "total_row_count": 0,
+                "execution_time": ws.ignore,
+                "rows_affected": 1,
+            },
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)
+
+ws.sendAndValidate(
     {
+        "request": "execute",
         "request_id": execute_request_id,
-        "request_state": {"type": "PENDING", "msg": ""},
-        "result": {
-            "rows": [],
-            "total_row_count": 0,
-            "execution_time": ws.ignore,
-            "rows_affected": 1
-        }
-    },
-    {
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "UPDATE `test_affected_rows`.`user` SET `name` = 'parker' WHERE (`id` = '1');",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
         },
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": execute_request_id,
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "UPDATE `test_affected_rows`.`user` SET `name` = 'parker' WHERE (`id` = '1');",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-}, [
-    {
-        "request_state": {"type": "PENDING", "msg": "Execution started..."},
-        "request_id": execute_request_id
     },
+    [
+        {
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+            "request_id": execute_request_id,
+        },
+        {
+            "request_id": execute_request_id,
+            "request_state": {"type": "PENDING", "msg": ""},
+            "result": {
+                "rows": [],
+                "total_row_count": 0,
+                "execution_time": ws.ignore,
+                "rows_affected": 1,
+            },
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)
+
+ws.sendAndValidate(
     {
+        "request": "execute",
         "request_id": execute_request_id,
-        "request_state": {"type": "PENDING", "msg": ""},
-        "result": {
-            "rows": [],
-            "total_row_count": 0,
-            "execution_time": ws.ignore,
-            "rows_affected": 0
-        }
-    },
-    {
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "UPDATE `test_affected_rows`.`user` SET `name` = 'parker' WHERE (`id` = '1');",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
         },
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
-
-
-ws.sendAndValidate({
-    "request": "execute",
-    "request_id": execute_request_id,
-    "command": "gui.sql_editor.execute",
-    "args": {
-        "sql": "DROP SCHEMA `test_affected_rows` ;",
-        "module_session_id": ws.tokens["module_session_id"],
-        "params": []
-    }
-}, [
-    {
-        "request_state": {"type": "PENDING", "msg": "Execution started..."},
-        "request_id": execute_request_id
     },
+    [
+        {
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+            "request_id": execute_request_id,
+        },
+        {
+            "request_id": execute_request_id,
+            "request_state": {"type": "PENDING", "msg": ""},
+            "result": {
+                "rows": [],
+                "total_row_count": 0,
+                "execution_time": ws.ignore,
+                "rows_affected": 0,
+            },
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)
+
+
+ws.sendAndValidate(
     {
+        "request": "execute",
         "request_id": execute_request_id,
-        "request_state": {"type": "PENDING", "msg": ""},
-        "result": {
-            "rows": [],
-            "total_row_count": 0,
-            "execution_time": ws.ignore
-        }
-    },
-    {
-        "request_state": {
-            "type": "OK",
-            "msg": ""
+        "command": "gui.sql_editor.execute",
+        "args": {
+            "sql": "DROP SCHEMA `test_affected_rows` ;",
+            "module_session_id": ws.tokens["module_session_id"],
+            "params": [],
         },
-        "request_id": ws.lastGeneratedRequestId,
-        "done": true
-    }
-])
+    },
+    [
+        {
+            "request_state": {"type": "PENDING", "msg": "Execution started..."},
+            "request_id": execute_request_id,
+        },
+        {
+            "request_id": execute_request_id,
+            "request_state": {"type": "PENDING", "msg": ""},
+            "result": {"rows": [], "total_row_count": 0, "execution_time": ws.ignore},
+        },
+        {
+            "request_state": {"type": "OK", "msg": ""},
+            "request_id": ws.lastGeneratedRequestId,
+            "done": true,
+        },
+    ],
+)

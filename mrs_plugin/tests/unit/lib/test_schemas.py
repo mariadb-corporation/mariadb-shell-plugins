@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,7 @@
 import pytest
 from mrs_plugin import lib
 
+
 def test_add_schema(phone_book, table_contents):
     schema_table = table_contents("db_schema")
     args = {
@@ -32,18 +33,21 @@ def test_add_schema(phone_book, table_contents):
         "requires_auth": False,
         "request_path": "/test_schema_123",
         "enabled": True,
-        "session": phone_book["session"]
+        "session": phone_book["session"],
     }
 
-    args['schema_name'] = "test_schema_123"
+    args["schema_name"] = "test_schema_123"
     with pytest.raises(ValueError) as exc_info:
         lib.schemas.add_schema(**args)
-    assert str(exc_info.value) == "The given database schema name 'test_schema_123' does not exists."
+    assert (
+        str(exc_info.value)
+        == "The given database schema name 'test_schema_123' does not exists."
+    )
 
     schema_table.same_as_snapshot
 
-    args['schema_name'] = "PhoneBook"
-    args['request_path'] = "test_schema_3"
+    args["schema_name"] = "PhoneBook"
+    args["request_path"] = "test_schema_3"
     with pytest.raises(Exception) as exc_info:
         lib.schemas.add_schema(**args)
     assert str(exc_info.value) == "The request_path has to start with '/'."

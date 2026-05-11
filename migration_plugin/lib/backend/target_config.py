@@ -104,15 +104,12 @@ def get_default_buffer_pool_size_gb(memory_size_gb, ha: bool) -> int:
 
     memory_size = memory_size_gb * 1024 * 1024 * 1024
 
-    gr_message_cache_size = min(
-        max(419430400, (5 / 100) * memory_size), 2147483648)
-    gr_transaction_size_limit = min(
-        max(83886080, 0.01 * memory_size), 1073741824)
+    gr_message_cache_size = min(max(419430400, (5 / 100) * memory_size), 2147483648)
+    gr_transaction_size_limit = min(max(83886080, 0.01 * memory_size), 1073741824)
 
     with_ha_gb = (
         standalone_gb
-        - (gr_message_cache_size + 5 *
-           gr_transaction_size_limit) / 1024 * 1024 * 1024
+        - (gr_message_cache_size + 5 * gr_transaction_size_limit) / 1024 * 1024 * 1024
     )
 
     return with_ha_gb
@@ -236,16 +233,20 @@ def validate_password(pwd: str, username: str) -> str:
 
 
 def validate_email(s: str) -> bool:
-    EMAIL_REGEX = r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+    EMAIL_REGEX = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
     return re.match(EMAIL_REGEX, s) is not None
 
 
-def adjust_mysql_configuration(configuration: list[dict]) -> tuple[list[dict], list[model.MigrationError]]:
+def adjust_mysql_configuration(
+    configuration: list[dict],
+) -> tuple[list[dict], list[model.MigrationError]]:
     issues = []
     new_configuration: list[dict] = []
 
     def to_error(msg: str, var: dict):
-        return model.MigrationError._from_exception(BadUserInput(msg, f"database.variables.{var['variable']}"))
+        return model.MigrationError._from_exception(
+            BadUserInput(msg, f"database.variables.{var['variable']}")
+        )
 
     def add_error(msg: str, var: dict):
         issues.append(to_error(msg, var))
@@ -262,13 +263,10 @@ def adjust_mysql_configuration(configuration: list[dict]) -> tuple[list[dict], l
             var["value"] = int(var["value"])
 
             if var["value"] not in (0, 1, 2):
-                error_msg = \
-                    f"Invalid value for configuration variable {var['variable']}={var['value']}"
+                error_msg = f"Invalid value for configuration variable {var['variable']}={var['value']}"
         else:
             try:
-                fixed = oci_utils.fixup_sysvar_value(
-                    var["variable"], var["value"]
-                )
+                fixed = oci_utils.fixup_sysvar_value(var["variable"], var["value"])
 
                 if isinstance(fixed, bool):
                     fixed_str = "ON" if fixed else "OFF"
@@ -287,8 +285,7 @@ def adjust_mysql_configuration(configuration: list[dict]) -> tuple[list[dict], l
                 var["value"] = fixed
             except Exception as e:
                 logging.debug(f"{var['variable']}={var['value']}: {e}")
-                error_msg = \
-                    f"Invalid/unsupported configuration variable {var['variable']}={var['value']}"
+                error_msg = f"Invalid/unsupported configuration variable {var['variable']}={var['value']}"
 
         if error_msg:
             add_error(error_msg, var)
@@ -311,18 +308,25 @@ class ConfigureTargetDBSystem:
     _default_private_subnet = None
     _default_public_subnet = None
 
-    def __init__(self, oci_config: dict, find_shared_ssh_key_cb, server_info: model.ServerInfo,
-                 override_root_compartment_id: str = "",
-                 default_compartment_name: str = "",
-                 default_networks_compartment_name: str = "",
-                 default_vcn_name: str = "") -> None:
+    def __init__(
+        self,
+        oci_config: dict,
+        find_shared_ssh_key_cb,
+        server_info: model.ServerInfo,
+        override_root_compartment_id: str = "",
+        default_compartment_name: str = "",
+        default_networks_compartment_name: str = "",
+        default_vcn_name: str = "",
+    ) -> None:
         self.oci_config: dict = oci_config
 
         self._server_info = server_info
 
         self._override_root_compartment_id = override_root_compartment_id
         self._default_compartment_name = default_compartment_name or "MySQL"
-        self._default_networks_compartment_name = default_networks_compartment_name or "Networks"
+        self._default_networks_compartment_name = (
+            default_networks_compartment_name or "Networks"
+        )
         self._default_vcn_name = default_vcn_name or "MySQLVCN"
 
         logging.info(f"Retrieving tenancy information...")
@@ -332,7 +336,14 @@ class ConfigureTargetDBSystem:
         self.versions: list[VersionSummary] | None = None
         self.shapes: dict[str, list[ShapeSummary]] = {}
         self._capabilities_compartment_id: str | None = None
-        self._capabilities_by_compartment: dict[str, tuple[list[AvailabilityDomain], list[VersionSummary], dict[str, list[ShapeSummary]]]] = {}
+        self._capabilities_by_compartment: dict[
+            str,
+            tuple[
+                list[AvailabilityDomain],
+                list[VersionSummary],
+                dict[str, list[ShapeSummary]],
+            ],
+        ] = {}
         self._compartment_access_failed = False
         self.find_shared_ssh_key_cb = find_shared_ssh_key_cb
 
@@ -342,12 +353,18 @@ class ConfigureTargetDBSystem:
 
     @property
     def default_vcn_exists(self) -> bool:
-        if self._default_vcn and self._default_private_subnet and self._default_public_subnet:
+        if (
+            self._default_vcn
+            and self._default_private_subnet
+            and self._default_public_subnet
+        ):
             return True
         return False
 
     def _set_selected_compartment(self, id: str | oci_utils.Compartment):
-        if self.compartment and self.compartment.id == (id if isinstance(id, str) else id.id):
+        if self.compartment and self.compartment.id == (
+            id if isinstance(id, str) else id.id
+        ):
             logging.debug(
                 f"target_config: Compartment already set to {self.compartment.id}"
             )
@@ -355,8 +372,9 @@ class ConfigureTargetDBSystem:
         logging.debug(f"target_config: Compartment changed to '{id}'")
         if not id:
             return
-        self.compartment = oci_utils.Compartment(
-            self.oci_config, id) if isinstance(id, str) else id
+        self.compartment = (
+            oci_utils.Compartment(self.oci_config, id) if isinstance(id, str) else id
+        )
 
     def _clear_compartment_capabilities(self):
         self.availability_domains = None
@@ -410,7 +428,10 @@ class ConfigureTargetDBSystem:
         assert shapes
 
         self._capabilities_by_compartment[compartment_id] = (
-            availability_domains, versions, shapes)
+            availability_domains,
+            versions,
+            shapes,
+        )
 
     def _uses_root_discovery_message(
         self, discovery_compartment: str | oci_utils.Compartment
@@ -422,7 +443,9 @@ class ConfigureTargetDBSystem:
         )
         return discovery_compartment_id == self._root_compartment.id
 
-    def _resolve_discovery_compartment(self, options: OCIHostingOptions) -> str | oci_utils.Compartment:
+    def _resolve_discovery_compartment(
+        self, options: OCIHostingOptions
+    ) -> str | oci_utils.Compartment:
         if options.compartmentId:
             return options.compartmentId
         if options.parentCompartmentId:
@@ -439,7 +462,9 @@ class ConfigureTargetDBSystem:
             self._clear_compartment_capabilities()
             raise
 
-    def _select_target_compartment(self, options: OCIHostingOptions) -> list[model.MigrationError]:
+    def _select_target_compartment(
+        self, options: OCIHostingOptions
+    ) -> list[model.MigrationError]:
         discovery_compartment = self._resolve_discovery_compartment(options)
         try:
             self._select_target_compartment_helper(discovery_compartment)
@@ -453,12 +478,19 @@ class ConfigureTargetDBSystem:
             else:
                 msg = "Insufficient privileges on the selected compartment. Select a different compartment."
 
-            logging.info(f"Unable to load target capabilities for compartment discovery: {e}")
-            return [model.MigrationError._from_exception(
-                BadUserInput(msg, "hosting.compartmentId"))]
+            logging.info(
+                f"Unable to load target capabilities for compartment discovery: {e}"
+            )
+            return [
+                model.MigrationError._from_exception(
+                    BadUserInput(msg, "hosting.compartmentId")
+                )
+            ]
 
     def select_network_compartment(self, id: str | oci_utils.Compartment):
-        if self.network_compartment and self.network_compartment.id == (id if isinstance(id, str) else id.id):
+        if self.network_compartment and self.network_compartment.id == (
+            id if isinstance(id, str) else id.id
+        ):
             logging.debug(
                 f"target_config: Network compartment already set to {self.network_compartment.id}"
             )
@@ -466,8 +498,9 @@ class ConfigureTargetDBSystem:
         logging.debug(f"target_config: Network compartment changed to '{id}'")
         if not id:
             return
-        self.network_compartment = oci_utils.Compartment(
-            self.oci_config, id) if isinstance(id, str) else id
+        self.network_compartment = (
+            oci_utils.Compartment(self.oci_config, id) if isinstance(id, str) else id
+        )
         # TODO - check this
         # self._default_vcn = None
         # self._default_private_subnet = None
@@ -501,9 +534,11 @@ class ConfigureTargetDBSystem:
             return ""
         return self._get_compartment_display_path(
             self.compartment,
-            "Root compartment"
-            if self.compartment.id == self._root_compartment.id
-            else "Selected compartment",
+            (
+                "Root compartment"
+                if self.compartment.id == self._root_compartment.id
+                else "Selected compartment"
+            ),
         )
 
     def get_full_network_compartment_path(self) -> str:
@@ -511,9 +546,11 @@ class ConfigureTargetDBSystem:
             return ""
         return self._get_compartment_display_path(
             self.network_compartment,
-            "Root compartment"
-            if self.network_compartment.id == self._root_compartment.id
-            else "Selected network compartment",
+            (
+                "Root compartment"
+                if self.network_compartment.id == self._root_compartment.id
+                else "Selected network compartment"
+            ),
         )
 
     def validate_target_options(
@@ -524,8 +561,9 @@ class ConfigureTargetDBSystem:
         issues = []
 
         def add_error(msg, option):
-            issues.append(model.MigrationError._from_exception(
-                BadUserInput(msg, option)))
+            issues.append(
+                model.MigrationError._from_exception(BadUserInput(msg, option))
+            )
 
         def get_field(field):
             if "." in field:
@@ -570,13 +608,13 @@ class ConfigureTargetDBSystem:
                 name = "Name"
             if get_field(f"{prefix}{id}"):
                 if get_field(f"{prefix}{name}"):
-                    logging.info(
-                        f"{prefix}{name} will be ignored because id was given")
+                    logging.info(f"{prefix}{name} will be ignored because id was given")
             else:
                 if not get_field(f"{prefix}{name}"):
                     add_error(
                         f"Either an existing {prefix.rstrip('.')} or a new {prefix.rstrip('.')} name must be given",
-                        f"hosting.{prefix}{name}")
+                        f"hosting.{prefix}{name}",
+                    )
 
         def validate_vcn_selection():
             vcn = get_field("vcnId")
@@ -587,21 +625,29 @@ class ConfigureTargetDBSystem:
             if not get_field("createVcn"):
                 if vcn and private and public:
                     logging.info(
-                        f"Pre-existing VCN selected: vcn={vcn} privateSubnet={private} publicSubnet={public}")
+                        f"Pre-existing VCN selected: vcn={vcn} privateSubnet={private} publicSubnet={public}"
+                    )
                 else:
                     # if createVcn is selected, then all network options must be set
                     logging.info(
-                        f"createVcn is selected, but some options are not set: networkCompartment={compartment} vcn={vcn} privateSubnet={private} publicSubnet={public}")
+                        f"createVcn is selected, but some options are not set: networkCompartment={compartment} vcn={vcn} privateSubnet={private} publicSubnet={public}"
+                    )
                     if not vcn:
-                        add_error("Please select a VCN from the list or a pick different compartment",
-                                  "hosting.vcnId")
+                        add_error(
+                            "Please select a VCN from the list or a pick different compartment",
+                            "hosting.vcnId",
+                        )
                     else:
                         if not public:
-                            add_error("Please select a public Subnet from the list",
-                                      "hosting.publicSubnet.id")
+                            add_error(
+                                "Please select a public Subnet from the list",
+                                "hosting.publicSubnet.id",
+                            )
                         if not private:
-                            add_error("Please select a private Subnet from the list",
-                                      "hosting.privateSubnet.id")
+                            add_error(
+                                "Please select a private Subnet from the list",
+                                "hosting.privateSubnet.id",
+                            )
 
         validate_resource_reuse("compartment")
 
@@ -629,7 +675,7 @@ class ConfigureTargetDBSystem:
             "computeName",
             "shapeName",
             "bucketName",
-            "onPremisePublicCidrBlock"
+            "onPremisePublicCidrBlock",
         ]:
             if options.vcnId:  # pre-existing VCN
                 if field == "onPremisePublicCidrBlock":
@@ -647,7 +693,7 @@ class ConfigureTargetDBSystem:
                 "vcnCidrBlock",
                 "privateSubnet.cidrBlock",
                 "privateSubnet.cidrBlock",
-                "onPremisePublicCidrBlock"
+                "onPremisePublicCidrBlock",
             ]:
                 if field == "onPremisePublicCidrBlock":
                     is_vcn = False
@@ -668,10 +714,15 @@ class ConfigureTargetDBSystem:
         if not options.computeId:
             # TODO warn if compute with same name exists (but was not picked explicitly)
             if not options.shapeName:
-                add_error("A shape must be selected for the jump host compute instance",
-                          "hosting.shapeName")
+                add_error(
+                    "A shape must be selected for the jump host compute instance",
+                    "hosting.shapeName",
+                )
 
-        if options.privateSubnet.name and options.privateSubnet.name == options.publicSubnet.name:
+        if (
+            options.privateSubnet.name
+            and options.privateSubnet.name == options.publicSubnet.name
+        ):
             # If someone wants just a single subnet they can setup themselves
             # and pick ids
             add_error(
@@ -688,18 +739,17 @@ class ConfigureTargetDBSystem:
         issues = []
 
         def add_error(msg, option):
-            issues.append(model.MigrationError._from_exception(
-                BadUserInput(msg, option)))
+            issues.append(
+                model.MigrationError._from_exception(BadUserInput(msg, option))
+            )
 
         def add_warning(msg, option):
-            err = model.MigrationError._from_exception(
-                BadUserInput(msg, option))
+            err = model.MigrationError._from_exception(BadUserInput(msg, option))
             err.level = model.MessageLevel.WARNING
             issues.append(err)
 
         def add_notice(msg, option):
-            err = model.MigrationError._from_exception(
-                BadUserInput(msg, option))
+            err = model.MigrationError._from_exception(BadUserInput(msg, option))
             err.level = model.MessageLevel.NOTICE
             issues.append(err)
 
@@ -714,9 +764,14 @@ class ConfigureTargetDBSystem:
                 "database.adminUsername",
             )
 
-        if changed_options is None or "database.adminPassword" in changed_options or "database.adminPasswordConfirm" in changed_options:
+        if (
+            changed_options is None
+            or "database.adminPassword" in changed_options
+            or "database.adminPasswordConfirm" in changed_options
+        ):
             pwd_issues = validate_password(
-                options.adminPassword, username=options.adminUsername)
+                options.adminPassword, username=options.adminUsername
+            )
             if not options.adminPassword:
                 add_error(
                     f"Please provide a password to be set for the administrator account of the new DBSystem.",
@@ -728,30 +783,38 @@ class ConfigureTargetDBSystem:
                     "database.adminPassword",
                 )
             elif options.adminPassword != options.adminPasswordConfirm:
-                add_error(f"Passwords must match.",
-                          "database.adminPasswordConfirm")
+                add_error(f"Passwords must match.", "database.adminPasswordConfirm")
 
         if changed_options is None or "database.name" in changed_options:
             if not options.name:
                 add_error(
-                    f"Display Name for the database must have a value", "database.name")
+                    f"Display Name for the database must have a value", "database.name"
+                )
             else:
-                if self.compartment and isinstance(self.compartment, oci_utils.Compartment) and not self._compartment_access_failed:
+                if (
+                    self.compartment
+                    and isinstance(self.compartment, oci_utils.Compartment)
+                    and not self._compartment_access_failed
+                ):
                     try:
-                        matches = self.compartment.find_db_system_by_name(
-                            options.name)
-                        full_path = self.get_full_compartment_path() or self.compartment.id
+                        matches = self.compartment.find_db_system_by_name(options.name)
+                        full_path = (
+                            self.get_full_compartment_path() or self.compartment.id
+                        )
                         if len(matches) == 1:
                             add_notice(
                                 f"A DB System named {options.name} already exists in compartment {full_path}. A new one will be created with the same name.",
-                                "database.name")
+                                "database.name",
+                            )
                         elif len(matches) > 1:
                             add_notice(
                                 f"{len(matches)} DB Systems named {options.name} already exist in compartment {full_path}. A new one will be created with the same name.",
-                                "database.name")
+                                "database.name",
+                            )
                     except ServiceError as e:
                         logging.info(
-                            f"Unable to inspect existing DB Systems in compartment {self.compartment.id}: {e}")
+                            f"Unable to inspect existing DB Systems in compartment {self.compartment.id}: {e}"
+                        )
 
             # TODO these checks should be put back once we move the OCI resource fetching from frontend to backend
         if False:
@@ -783,8 +846,9 @@ class ConfigureTargetDBSystem:
                 )
         if not options.dbSystemId:
             if not options.shapeName:
-                add_error("A shape must be selected for the DB System",
-                          "database.shapeName")
+                add_error(
+                    "A shape must be selected for the DB System", "database.shapeName"
+                )
 
         if self.availability_domains:
             ads = []
@@ -795,17 +859,19 @@ class ConfigureTargetDBSystem:
                     ads.append(ad)
 
             if ads:
-                options.availabilityDomain = self.recommend_availability_domain(
-                    ads
-                )
+                options.availabilityDomain = self.recommend_availability_domain(ads)
             else:
-                add_error(f"None of the availability domains provides '{options.shapeName}' MySQL shape",
-                          "database.shapeName")
+                add_error(
+                    f"None of the availability domains provides '{options.shapeName}' MySQL shape",
+                    "database.shapeName",
+                )
 
         if self.versions:
             if options.mysqlVersion:
                 for vf in self.versions:
-                    if options.mysqlVersion in [v.version for v in cast(list, vf.versions)]:
+                    if options.mysqlVersion in [
+                        v.version for v in cast(list, vf.versions)
+                    ]:
                         break
                 else:
                     add_error(
@@ -815,15 +881,18 @@ class ConfigureTargetDBSystem:
             else:
                 if "MySQL.Free" == options.shapeName:
                     # Always Free Tier DB Systems must use the latest active available version
-                    options.mysqlVersion = \
-                        self.versions[-1].versions[-1].version  # type: ignore
+                    options.mysqlVersion = (
+                        self.versions[-1].versions[-1].version
+                    )  # type: ignore
                 else:
                     options.mysqlVersion = self.recommend_version(
-                        self._server_info, self.versions)
+                        self._server_info, self.versions
+                    )
         elif not self._compartment_access_failed:
             if not options.mysqlVersion:
-                add_error("Target database version not selected",
-                          "database.mysqlVersion")
+                add_error(
+                    "Target database version not selected", "database.mysqlVersion"
+                )
 
         # storageSizeGB
         try:
@@ -897,9 +966,14 @@ class ConfigureTargetDBSystem:
                     "database.contactEmails",
                 )
 
-        if self._server_info.hasMRS or version_to_nversion(options.mysqlVersion) < 90301 or options.enableHA:
+        if (
+            self._server_info.hasMRS
+            or version_to_nversion(options.mysqlVersion) < 90301
+            or options.enableHA
+        ):
             logging.info(
-                f"Disabling REST service because hasMRS={self._server_info.hasMRS} and targetVersion={options.mysqlVersion} and enableHA={options.enableHA}")
+                f"Disabling REST service because hasMRS={self._server_info.hasMRS} and targetVersion={options.mysqlVersion} and enableHA={options.enableHA}"
+            )
             options.enableRestService = False
 
         # TODO disable backup for development templates (and Free shape)
@@ -913,11 +987,14 @@ class ConfigureTargetDBSystem:
     def resolve_existing_resources(self, options: OCIHostingOptions):
         # TODO see if the tenancy fetch in __init__ can be replaced with this
         matches = oci_utils.Compartment.find_by_name(
-            self.oci_config, parent_compartment_id=options.parentCompartmentId,
-            name=options.compartmentName)
+            self.oci_config,
+            parent_compartment_id=options.parentCompartmentId,
+            name=options.compartmentName,
+        )
         if matches:
             logging.info(
-                f"Found compartment named {options.compartmentName}: {matches}")
+                f"Found compartment named {options.compartmentName}: {matches}"
+            )
 
             compartment = matches[0]
             self._select_target_compartment_helper(compartment)
@@ -933,10 +1010,12 @@ class ConfigureTargetDBSystem:
         matches = oci_utils.Compartment.find_by_name(
             config=self.oci_config,
             parent_compartment_id=options.networkParentCompartmentId,
-            name=options.networkCompartmentName)
+            name=options.networkCompartmentName,
+        )
         if matches:
             logging.info(
-                f"Found compartment named {options.networkCompartmentName}: {matches}")
+                f"Found compartment named {options.networkCompartmentName}: {matches}"
+            )
             network_compartment = matches[0]
 
             self.select_network_compartment(network_compartment)
@@ -954,7 +1033,8 @@ class ConfigureTargetDBSystem:
         matches = vcn.find_subnet_by_name(options.publicSubnet.name)
         if matches:
             logging.info(
-                f"Found public subnets named {options.publicSubnet.name}: {matches}")
+                f"Found public subnets named {options.publicSubnet.name}: {matches}"
+            )
             public_subnet = matches[0]
         else:
             return
@@ -962,7 +1042,8 @@ class ConfigureTargetDBSystem:
         matches = vcn.find_subnet_by_name(options.privateSubnet.name)
         if matches:
             logging.info(
-                f"Found private subnets named {options.privateSubnet.name}: {matches}")
+                f"Found private subnets named {options.privateSubnet.name}: {matches}"
+            )
             private_subnet = matches[0]
         else:
             return
@@ -977,11 +1058,15 @@ class ConfigureTargetDBSystem:
         if self.compute_resolution_notice == "" or notice == "":
             self.compute_resolution_notice = notice
 
-    def _create_jump_host_resolution_notice(self, instance_count, key_count, connection_error_count, different_subnet_count) -> str:
+    def _create_jump_host_resolution_notice(
+        self, instance_count, key_count, connection_error_count, different_subnet_count
+    ) -> str:
         msg = ""
 
         if instance_count == 1:
-            base_message = "A new compute instance will be provisioned. An instance was found but"
+            base_message = (
+                "A new compute instance will be provisioned. An instance was found but"
+            )
             if key_count == 0:
                 msg = f"{base_message} it's private SSH key is not available"
             elif connection_error_count:
@@ -1024,14 +1109,17 @@ class ConfigureTargetDBSystem:
 
         matches = []
         try:
-            matches = [i for i in self.compartment.get_all_instances()
-                       if i.display_name.startswith(k_base_jump_host_name)]
+            matches = [
+                i
+                for i in self.compartment.get_all_instances()
+                if i.display_name.startswith(k_base_jump_host_name)
+            ]
         except ServiceError as e:
             options.computeName = k_base_jump_host_name
-            logging.info(
-                f"get_instances name={k_base_jump_host_name}%: {e}")
+            logging.info(f"get_instances name={k_base_jump_host_name}%: {e}")
             self.set_jump_host_resolution_notice(
-                f"Unable to verify existing instances named {k_base_jump_host_name}%")
+                f"Unable to verify existing instances named {k_base_jump_host_name}%"
+            )
 
         if not matches:
             options.computeName = k_base_jump_host_name
@@ -1067,7 +1155,7 @@ class ConfigureTargetDBSystem:
         ssh_connection_errors = 0
 
         instance_tags = {
-            'user_id': self.oci_config.get('user'),
+            "user_id": self.oci_config.get("user"),
         }
         for i in matches:
             if not oci_utils.match_freeform_tags(instance_tags, i):
@@ -1091,27 +1179,28 @@ class ConfigureTargetDBSystem:
                 assert self.compartment
                 if options.vcnId and options.publicSubnet:
                     for vnic in self.compartment.get_vnic_attachments(i.id):
-                        subnet = self.compartment.get_subnet(
-                            vnic.subnet_id)
+                        subnet = self.compartment.get_subnet(vnic.subnet_id)
                         if subnet.id == options.publicSubnet.id:
                             options.computeId = i.id
                             options.computeName = i.display_name
-                            logging.info(
-                                f"Reusing instance {i}")
+                            logging.info(f"Reusing instance {i}")
                             break
                         else:
                             is_different_subnet += 1
             except SSHError:
                 ssh_connection_errors += 1
                 logging.info(
-                    f"Unable to connect to the instance {i.display_name} with IP {ip} using SSH Key {ssh_key}")
+                    f"Unable to connect to the instance {i.display_name} with IP {ip} using SSH Key {ssh_key}"
+                )
             except Exception as e:
                 logging.error(
-                    f"Error verifying networking on instance {i.display_name}: {e}")
+                    f"Error verifying networking on instance {i.display_name}: {e}"
+                )
 
         if options.computeId == "" and options.computeName == "":
             msg = self._create_jump_host_resolution_notice(
-                len(matches), instance_keys, ssh_connection_errors, is_different_subnet)
+                len(matches), instance_keys, ssh_connection_errors, is_different_subnet
+            )
             self.set_jump_host_resolution_notice(msg)
 
     def get_recommended_oci_options(self) -> OCIHostingOptions:
@@ -1123,7 +1212,8 @@ class ConfigureTargetDBSystem:
             options.parentCompartmentId = self._override_root_compartment_id
             options.networkParentCompartmentId = self._override_root_compartment_id
             logging.info(
-                f"Root compartment overridden to {self._override_root_compartment_id}")
+                f"Root compartment overridden to {self._override_root_compartment_id}"
+            )
         else:
             tenancy = oci_utils.Compartment(config=self.oci_config)
             options.parentCompartmentId = tenancy.id
@@ -1177,7 +1267,10 @@ class ConfigureTargetDBSystem:
         # by default, use same user/pass as admin for source (assuming it's safe)
         options.adminUsername = source_connection_options["user"]
         logging.info(f"adminUsername={options.adminUsername}")
-        if not validate_password(source_connection_options["password"], username=source_connection_options["user"]):
+        if not validate_password(
+            source_connection_options["password"],
+            username=source_connection_options["user"],
+        ):
             options.adminPassword = source_connection_options["password"]
             options.adminPasswordConfirm = options.adminPassword
 
@@ -1186,9 +1279,7 @@ class ConfigureTargetDBSystem:
         # TODO this is only allowed if dns is enabled
         # options.hostnameLabel = "dbsystem-1"
 
-        options.storageSizeGB = (
-            self.recommend_storage_size()
-        )
+        options.storageSizeGB = self.recommend_storage_size()
         options.autoExpandStorage = False
         options.autoExpandMaximumSizeGB = 0
         options.enableRestService = False
@@ -1205,6 +1296,7 @@ class ConfigureTargetDBSystem:
         self, availability_domains: list[AvailabilityDomain]
     ) -> str:
         import random
+
         ad = cast(str, random.choice(availability_domains).name)
         logging.info(f"Recommended availability domain={ad}")
         return ad
@@ -1230,9 +1322,7 @@ class ConfigureTargetDBSystem:
             if nversion // 100 <= 804:
                 version_prefix = "8.4"
             else:
-                version_prefix = server_info.version[
-                    :server_info.version.find(".")
-                ]
+                version_prefix = server_info.version[: server_info.version.find(".")]
 
         vf = get_version_summary(version_prefix)
         assert vf and vf.versions, server_info.version
@@ -1243,9 +1333,7 @@ class ConfigureTargetDBSystem:
         )
         return version
 
-    def recommend_shape(
-        self, session, shapes: list[ShapeSummary]
-    ) -> str:
+    def recommend_shape(self, session, shapes: list[ShapeSummary]) -> str:
         assert shapes
 
         (source_buffer_pool_size,) = session.run_sql(
@@ -1256,17 +1344,17 @@ class ConfigureTargetDBSystem:
             f"Searching shapes large enough for innodb_buffer_pool_size={source_buffer_pool_size}"
         )
         for shape in sorted(shapes, key=lambda s: s.memory_size_in_gbs):  # type: ignore
-            if not shape.name.startswith("MySQL.") or shape.name.startswith("MySQL.VM."):
+            if not shape.name.startswith("MySQL.") or shape.name.startswith(
+                "MySQL.VM."
+            ):
                 continue
             if shape.is_supported_for and (
-                ShapeSummary.IS_SUPPORTED_FOR_DBSYSTEM
-                not in shape.is_supported_for
+                ShapeSummary.IS_SUPPORTED_FOR_DBSYSTEM not in shape.is_supported_for
             ):
                 continue
 
             default_bp = (
-                get_default_buffer_pool_size_gb(
-                    shape.memory_size_in_gbs, ha=False)
+                get_default_buffer_pool_size_gb(shape.memory_size_in_gbs, ha=False)
                 * 1024
                 * 1024
                 * 1024

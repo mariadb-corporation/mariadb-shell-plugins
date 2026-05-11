@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,9 @@ from gui_plugin.core.lib import certs
 import sys
 
 
-@plugin_function('gui.core.isShellWebCertificateInstalled', shell=True, cli=True, web=True)
+@plugin_function(
+    "gui.core.isShellWebCertificateInstalled", shell=True, cli=True, web=True
+)
 def is_shell_web_certificate_installed(**kwargs):
     """Checks if the MySQL Shell GUI webserver certificate is installed
 
@@ -54,14 +56,13 @@ def is_shell_web_certificate_installed(**kwargs):
             if not a.valid and not a.deprecated:
                 errors.append(a.error)
 
-        logger.info("The installed certificate has errors: " +
-                    '\n   '.join(errors))
+        logger.info("The installed certificate has errors: " + "\n   ".join(errors))
         availability = False
 
     return availability
 
 
-@plugin_function('gui.core.installShellWebCertificate', shell=True, cli=True, web=True)
+@plugin_function("gui.core.installShellWebCertificate", shell=True, cli=True, web=True)
 def install_shell_web_certificate(**kwargs):
     """Installs the MySQL Shell GUI webserver certificate
 
@@ -82,11 +83,15 @@ def install_shell_web_certificate(**kwargs):
     r_count = sum(not c.deprecated for c in locations)
     d_count = sum(c.deprecated and c.installed for c in locations)
     i_count = sum(not c.deprecated and c.installed for c in locations)
-    v_count = sum(
-        not c.deprecated and c.installed and c.valid for c in locations)
+    v_count = sum(not c.deprecated and c.installed and c.valid for c in locations)
 
     # If everything is in place and not requires replacing existing cert
-    if d_count == 0 and i_count == r_count and v_count == r_count and not replace_existing:
+    if (
+        d_count == 0
+        and i_count == r_count
+        and v_count == r_count
+        and not replace_existing
+    ):
         return True
 
     if replace_existing or not locations[0].installed or not locations[0].valid:
@@ -99,7 +104,7 @@ def install_shell_web_certificate(**kwargs):
     return certs.management.reset_deployment(locations, "install")
 
 
-@plugin_function('gui.core.removeShellWebCertificate', shell=True, cli=True, web=True)
+@plugin_function("gui.core.removeShellWebCertificate", shell=True, cli=True, web=True)
 def remove_shell_web_certificate():
     """Removes the MySQL Shell GUI webserver certificate
 

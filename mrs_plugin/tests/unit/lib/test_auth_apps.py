@@ -1,4 +1,4 @@
-# Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@ import pytest
 from .... import lib
 from ..helpers import AuthAppCT, TableContents
 
+
 def test_get_auth_app(phone_book, table_contents):
     session = phone_book["session"]
 
@@ -37,11 +38,13 @@ def test_get_auth_app(phone_book, table_contents):
     # auth_vendor is not part of the table, so remove to compare
     del auth_apps[0]["auth_vendor"]
 
-    #assert auth_apps_table.items == auth_apps
+    # assert auth_apps_table.items == auth_apps
 
     new_auth_app_data = {
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary("0x30000000000000000000000000000000", "auth_vendor_id"),
+        "auth_vendor_id": lib.core.id_to_binary(
+            "0x30000000000000000000000000000000", "auth_vendor_id"
+        ),
         "name": "New Auth App",
         "description": "This is the new test auth app description",
         "url": "http://someurl.com",
@@ -50,7 +53,7 @@ def test_get_auth_app(phone_book, table_contents):
         "app_id": "<some app id>",
         "enabled": True,
         "limit_to_registered_users": False,
-        "default_role_id": phone_book["roles"]["Full Access"]
+        "default_role_id": phone_book["roles"]["Full Access"],
     }
 
     with AuthAppCT(session, **new_auth_app_data) as auth_app_id:
@@ -82,7 +85,9 @@ def test_get_auth_apps(phone_book, table_contents):
 
     new_auth_app_data = {
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary("0x30000000000000000000000000000000", "auth_vendor_id"),
+        "auth_vendor_id": lib.core.id_to_binary(
+            "0x30000000000000000000000000000000", "auth_vendor_id"
+        ),
         "name": "New Auth App",
     }
 

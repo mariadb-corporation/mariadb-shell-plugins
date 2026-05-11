@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,7 @@
 
 import json
 
-from mysqlsh.plugin_manager import \
-    plugin_function  # pylint: disable=no-name-in-module
+from mysqlsh.plugin_manager import plugin_function  # pylint: disable=no-name-in-module
 
 import gui_plugin.core.Error as Error
 from gui_plugin.core.backend_db import db_connections
@@ -34,9 +33,8 @@ from gui_plugin.core.Error import MSGException
 from gui_plugin.core.modules.DbModuleSession import DbModuleSession
 
 
-@plugin_function('gui.dbConnections.addDbConnection', cli=True, shell=True, web=True)
-def add_db_connection(profile_id, connection, folder_path_id=None,
-                      be_session=None):
+@plugin_function("gui.dbConnections.addDbConnection", cli=True, shell=True, web=True)
+def add_db_connection(profile_id, connection, folder_path_id=None, be_session=None):
     """Add a new db_connection and associate the connection with a profile
 
     Args:
@@ -67,17 +65,24 @@ def add_db_connection(profile_id, connection, folder_path_id=None,
         tuple: A tuple containing (connection_id, folder_path_id, index)
     """
     # Verify connection parameters
-    if not 'caption' in connection \
-            or not isinstance(connection['caption'], str) \
-            or connection['caption'].strip() == "":
-        raise MSGException(Error.CORE_INVALID_PARAMETER,
-                           "The connection must contain valid caption.")
+    if (
+        not "caption" in connection
+        or not isinstance(connection["caption"], str)
+        or connection["caption"].strip() == ""
+    ):
+        raise MSGException(
+            Error.CORE_INVALID_PARAMETER, "The connection must contain valid caption."
+        )
 
-    if not 'db_type' in connection \
-            or not isinstance(connection['db_type'], str) \
-            or not connection['db_type'].upper() in ["MYSQL", "SQLITE"]:
-        raise MSGException(Error.CORE_INVALID_PARAMETER,
-                           "The connection must contain valid database type.")
+    if (
+        not "db_type" in connection
+        or not isinstance(connection["db_type"], str)
+        or not connection["db_type"].upper() in ["MYSQL", "SQLITE"]
+    ):
+        raise MSGException(
+            Error.CORE_INVALID_PARAMETER,
+            "The connection must contain valid database type.",
+        )
 
     with BackendDatabase(be_session) as db:
         # TODO: Encrypt stored password. The password will be inside "options", but we
@@ -86,35 +91,44 @@ def add_db_connection(profile_id, connection, folder_path_id=None,
 
         with BackendTransaction(db):
             # Insert new db_connection
-            db.execute('''INSERT INTO db_connection(
+            db.execute(
+                """INSERT INTO db_connection(
                 db_type, caption, description, options, settings)
-                VALUES(?, ?, ?, ?, ?)''',
-                       (connection.get('db_type', "MySQL"),
-                        connection.get('caption', 'New Connection'),
-                        connection.get('description', ''),
-                        json.dumps(connection.get('options', {})),
-                        json.dumps(connection.get('settings', {}))))
+                VALUES(?, ?, ?, ?, ?)""",
+                (
+                    connection.get("db_type", "MySQL"),
+                    connection.get("caption", "New Connection"),
+                    connection.get("description", ""),
+                    json.dumps(connection.get("options", {})),
+                    json.dumps(connection.get("settings", {})),
+                ),
+            )
 
             connection_id = db.get_last_row_id()
 
             if folder_path_id is None:
-                folder_path_id = 1 # Root folder
+                folder_path_id = 1  # Root folder
 
             index = db_connections.get_next_connection_index(
-                db, profile_id, folder_path_id)
+                db, profile_id, folder_path_id
+            )
 
             # Insert n:m profile_has_db_connection to associate the connection with
             # a profile
-            db.execute('''INSERT INTO profile_has_db_connection(
+            db.execute(
+                """INSERT INTO profile_has_db_connection(
                 profile_id, db_connection_id, folder_path_id, `index`)
-                VALUES(?, ?, ?, ?)''',
-                       (profile_id, connection_id, folder_path_id, index))
+                VALUES(?, ?, ?, ?)""",
+                (profile_id, connection_id, folder_path_id, index),
+            )
 
     return (connection_id, folder_path_id, index)
 
 
-@plugin_function('gui.dbConnections.updateDbConnection', shell=True, web=True)
-def update_db_connection(profile_id, connection_id, connection=None, folder_path_id=None, be_session=None):
+@plugin_function("gui.dbConnections.updateDbConnection", shell=True, web=True)
+def update_db_connection(
+    profile_id, connection_id, connection=None, folder_path_id=None, be_session=None
+):
     """Update the data for a database connection
 
     Args:
@@ -147,41 +161,58 @@ def update_db_connection(profile_id, connection_id, connection=None, folder_path
     """
 
     if connection is None and folder_path_id is None:
-        raise MSGException(Error.CORE_INVALID_PARAMETER,
-                           "At least one of connection or folder_path_id must be provided.")
+        raise MSGException(
+            Error.CORE_INVALID_PARAMETER,
+            "At least one of connection or folder_path_id must be provided.",
+        )
 
     with BackendDatabase(be_session) as db:
         with BackendTransaction(db):
             if connection is not None:
                 if "db_type" in connection:
-                    db.execute("UPDATE db_connection SET db_type=? WHERE id=?",
-                            (connection['db_type'], connection_id))
+                    db.execute(
+                        "UPDATE db_connection SET db_type=? WHERE id=?",
+                        (connection["db_type"], connection_id),
+                    )
                 if "caption" in connection:
-                    db.execute("UPDATE db_connection SET caption=? WHERE id=?",
-                            (connection['caption'], connection_id))
+                    db.execute(
+                        "UPDATE db_connection SET caption=? WHERE id=?",
+                        (connection["caption"], connection_id),
+                    )
                 if "description" in connection:
-                    db.execute("UPDATE db_connection SET description=? WHERE id=?",
-                            (connection['description'], connection_id))
+                    db.execute(
+                        "UPDATE db_connection SET description=? WHERE id=?",
+                        (connection["description"], connection_id),
+                    )
                 if "options" in connection:
-                    db.execute("UPDATE db_connection SET options=? WHERE id=?", (json.dumps(
-                        connection['options']), connection_id))
+                    db.execute(
+                        "UPDATE db_connection SET options=? WHERE id=?",
+                        (json.dumps(connection["options"]), connection_id),
+                    )
                 if "settings" in connection:
-                    db.execute("UPDATE db_connection SET settings=? WHERE id=?", (json.dumps(
-                        connection['settings']), connection_id))
+                    db.execute(
+                        "UPDATE db_connection SET settings=? WHERE id=?",
+                        (json.dumps(connection["settings"]), connection_id),
+                    )
             if folder_path_id is not None:
                 index = db_connections.get_next_connection_index(
-                    db, profile_id, folder_path_id)
-                db.execute("""UPDATE profile_has_db_connection
+                    db, profile_id, folder_path_id
+                )
+                db.execute(
+                    """UPDATE profile_has_db_connection
                               SET folder_path_id=?
                               WHERE profile_id=? AND db_connection_id=?""",
-                           (folder_path_id, profile_id, connection_id))
-                db.execute("""UPDATE profile_has_db_connection
+                    (folder_path_id, profile_id, connection_id),
+                )
+                db.execute(
+                    """UPDATE profile_has_db_connection
                               SET `index`=?
                               WHERE profile_id=? AND folder_path_id=? AND db_connection_id=?""",
-                           (index, profile_id, folder_path_id, connection_id))
+                    (index, profile_id, folder_path_id, connection_id),
+                )
 
 
-@plugin_function('gui.dbConnections.removeDbConnection', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.removeDbConnection", cli=True, shell=True, web=True)
 def remove_db_connection(profile_id, connection_id, be_session=None):
     """Remove a db_connection by disassociating the connection from a profile
 
@@ -199,20 +230,29 @@ def remove_db_connection(profile_id, connection_id, be_session=None):
         with BackendTransaction(db):
 
             # Remove the connection for this profile
-            db.execute('''DELETE FROM profile_has_db_connection WHERE
-                profile_id=? AND db_connection_id=?''', (profile_id, connection_id))
+            db.execute(
+                """DELETE FROM profile_has_db_connection WHERE
+                profile_id=? AND db_connection_id=?""",
+                (profile_id, connection_id),
+            )
 
             # Check if some other profile is still using the connection
-            result = db.select('''SELECT COUNT(*) as cnt FROM profile_has_db_connection
-                WHERE db_connection_id=?''', (connection_id, ))
+            result = db.select(
+                """SELECT COUNT(*) as cnt FROM profile_has_db_connection
+                WHERE db_connection_id=?""",
+                (connection_id,),
+            )
 
             # If no other profile is using this connection, remove it.
-            if result[0]['cnt'] == 0:
-                db.execute('''DELETE FROM db_connection
-                    WHERE id=?''', (connection_id,))
+            if result[0]["cnt"] == 0:
+                db.execute(
+                    """DELETE FROM db_connection
+                    WHERE id=?""",
+                    (connection_id,),
+                )
 
 
-@plugin_function('gui.dbConnections.listDbConnections', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.listDbConnections", cli=True, shell=True, web=True)
 def list_db_connections(profile_id, folder_path_id=None, be_session=None):
     """Lists the db_connections for the given profile
 
@@ -227,16 +267,18 @@ def list_db_connections(profile_id, folder_path_id=None, be_session=None):
         list: the list of connections
     """
     with BackendDatabase(be_session) as db:
-        return db.select('''SELECT dc.id, p_dc.folder_path_id, dc.caption,
+        return db.select(
+            """SELECT dc.id, p_dc.folder_path_id, dc.caption,
             dc.description, dc.db_type, dc.options, dc.settings, p_dc.`index`
             FROM profile_has_db_connection p_dc
                 LEFT JOIN db_connection dc ON
                     p_dc.db_connection_id = dc.id
-            WHERE p_dc.profile_id = ? AND p_dc.folder_path_id = ?''',
-                         (profile_id, '1' if folder_path_id is None else folder_path_id))
+            WHERE p_dc.profile_id = ? AND p_dc.folder_path_id = ?""",
+            (profile_id, "1" if folder_path_id is None else folder_path_id),
+        )
 
 
-@plugin_function('gui.dbConnections.getDbConnection', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.getDbConnection", cli=True, shell=True, web=True)
 def get_db_connection(db_connection_id, be_session=None):
     """Get the db_connection
 
@@ -249,11 +291,12 @@ def get_db_connection(db_connection_id, be_session=None):
         dict: The db connection
     """
     with BackendDatabase(be_session) as db:
-        return db.select('SELECT * FROM db_connection WHERE id = ?',
-                         (db_connection_id,))[0]
+        return db.select(
+            "SELECT * FROM db_connection WHERE id = ?", (db_connection_id,)
+        )[0]
 
 
-@plugin_function('gui.dbConnections.getDbTypes', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.getDbTypes", cli=True, shell=True, web=True)
 def get_db_types():
     """Get the list of db_types
 
@@ -264,7 +307,7 @@ def get_db_types():
     return DbSessionFactory.getSessionTypes()
 
 
-@plugin_function('gui.dbConnections.setCredential', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.setCredential", cli=True, shell=True, web=True)
 def set_credential(url, password):
     """Set the password of a db_connection url
 
@@ -282,7 +325,7 @@ def set_credential(url, password):
     mysqlsh.globals.shell.store_credential(url, password)
 
 
-@plugin_function('gui.dbConnections.deleteCredential', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.deleteCredential", cli=True, shell=True, web=True)
 def delete_credential(url):
     """Deletes the password of a db_connection url
 
@@ -299,7 +342,7 @@ def delete_credential(url):
     mysqlsh.globals.shell.delete_credential(url)
 
 
-@plugin_function('gui.dbConnections.listCredentials', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.listCredentials", cli=True, shell=True, web=True)
 def list_credentials():
     """Lists the db_connection urls that have a password stored
 
@@ -312,7 +355,7 @@ def list_credentials():
     return mysqlsh.globals.shell.list_credentials()
 
 
-@plugin_function('gui.dbConnections.testConnection', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.testConnection", cli=True, shell=True, web=True)
 def test_connection(connection, password=None):
     """Opens test connection
 
@@ -329,7 +372,11 @@ def test_connection(connection, password=None):
     """
     new_session = DbModuleSession()
     new_session.open_connection(connection, password)
-    if not new_session.completion_event.has_errors and password is None and not 'password' in connection['options']:
+    if (
+        not new_session.completion_event.has_errors
+        and password is None
+        and not "password" in connection["options"]
+    ):
         return {"module_session_id": new_session.module_session_id}
 
     new_session.completion_event.wait()
@@ -338,8 +385,15 @@ def test_connection(connection, password=None):
         new_session.close()
 
 
-@plugin_function('gui.dbConnections.moveConnection', cli=True, shell=True, web=True)
-def move_connection(profile_id, folder_id, connection_id_to_move, connection_id_offset, before=False, be_session=None):
+@plugin_function("gui.dbConnections.moveConnection", cli=True, shell=True, web=True)
+def move_connection(
+    profile_id,
+    folder_id,
+    connection_id_to_move,
+    connection_id_offset,
+    before=False,
+    be_session=None,
+):
     """Updates the connections sort order for the given profile
 
     Args:
@@ -359,39 +413,53 @@ def move_connection(profile_id, folder_id, connection_id_to_move, connection_id_
     with BackendDatabase(be_session) as db:
         with BackendTransaction(db):
             index_to_move = db_connections.get_connection_index(
-                db, profile_id, folder_id, connection_id_to_move)
+                db, profile_id, folder_id, connection_id_to_move
+            )
             index_offset = db_connections.get_connection_index(
-                db, profile_id, folder_id, connection_id_offset)
+                db, profile_id, folder_id, connection_id_offset
+            )
 
             if index_to_move > index_offset:
                 index = index_offset if before else index_offset + 1
-                db.execute("""UPDATE profile_has_db_connection
+                db.execute(
+                    """UPDATE profile_has_db_connection
                           SET `index`=`index`+1
                           WHERE profile_id=? AND folder_path_id=? AND `index`>=? AND `index`<?""",
-                           (profile_id, folder_id, index, index_to_move))
-                db.execute("""UPDATE folder_path
+                    (profile_id, folder_id, index, index_to_move),
+                )
+                db.execute(
+                    """UPDATE folder_path
                           SET `index`=`index`+1
                           WHERE `index`>=? AND `index`<?""",
-                           (index, index_to_move))
+                    (index, index_to_move),
+                )
             else:
                 index = index_offset - 1 if before else index_offset
-                db.execute("""UPDATE profile_has_db_connection
+                db.execute(
+                    """UPDATE profile_has_db_connection
                           SET `index`=`index`-1
                           WHERE profile_id=? AND folder_path_id=? AND `index`<=? AND `index`>?""",
-                           (profile_id, folder_id, index, index_to_move))
-                db.execute("""UPDATE folder_path
+                    (profile_id, folder_id, index, index_to_move),
+                )
+                db.execute(
+                    """UPDATE folder_path
                           SET `index`=`index`-1
                           WHERE `index`<=? AND `index`>?""",
-                           (index, index_to_move))
+                    (index, index_to_move),
+                )
 
-            db.execute("""UPDATE profile_has_db_connection
+            db.execute(
+                """UPDATE profile_has_db_connection
                           SET `index`=?
                           WHERE profile_id=? AND folder_path_id=? AND db_connection_id=?""",
-                       (index, profile_id, folder_id, connection_id_to_move))
+                (index, profile_id, folder_id, connection_id_to_move),
+            )
 
 
-@plugin_function('gui.dbConnections.addFolderPath', cli=True, shell=True, web=True)
-def add_folder_path(profile_id, caption, settings=None, parent_folder_id=None, be_session=None):
+@plugin_function("gui.dbConnections.addFolderPath", cli=True, shell=True, web=True)
+def add_folder_path(
+    profile_id, caption, settings=None, parent_folder_id=None, be_session=None
+):
     """Add a new folder path
 
     Args:
@@ -414,15 +482,18 @@ def add_folder_path(profile_id, caption, settings=None, parent_folder_id=None, b
             folder_path_id = db_connections.folder_exists(db, caption, parent_folder_id)
             if folder_path_id is None:
                 index = db_connections.get_next_connection_index(
-                    db, profile_id, parent_folder_id)
-                db.execute('''INSERT INTO folder_path (parent_folder_id, caption, `index`, settings)
-                            VALUES (?, ?, ?, ?)''',
-                        (parent_folder_id, caption, index, json.dumps(settings or {})))
+                    db, profile_id, parent_folder_id
+                )
+                db.execute(
+                    """INSERT INTO folder_path (parent_folder_id, caption, `index`, settings)
+                            VALUES (?, ?, ?, ?)""",
+                    (parent_folder_id, caption, index, json.dumps(settings or {})),
+                )
                 folder_path_id = db.get_last_row_id()
-    return db.select('''SELECT * FROM folder_path WHERE id=?''', (folder_path_id,))[0]
+    return db.select("""SELECT * FROM folder_path WHERE id=?""", (folder_path_id,))[0]
 
 
-@plugin_function('gui.dbConnections.removeFolderPath', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.removeFolderPath", cli=True, shell=True, web=True)
 def remove_folder_path(folder_path_id, be_session=None):
     """Remove a folder path
 
@@ -434,10 +505,10 @@ def remove_folder_path(folder_path_id, be_session=None):
         None
     """
     with BackendDatabase(be_session) as db:
-        db.execute('''DELETE FROM folder_path WHERE id=?''', (folder_path_id,))
+        db.execute("""DELETE FROM folder_path WHERE id=?""", (folder_path_id,))
 
 
-@plugin_function('gui.dbConnections.removeEmptyFolders', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.removeEmptyFolders", cli=True, shell=True, web=True)
 def remove_empty_folders(be_session=None):
     """Remove all empty folders
 
@@ -451,20 +522,22 @@ def remove_empty_folders(be_session=None):
         with BackendTransaction(db):
             no_more_empty_folders = False
             while not no_more_empty_folders:
-                db.execute('''DELETE FROM folder_path WHERE id != 1 AND id NOT IN (
+                db.execute("""DELETE FROM folder_path WHERE id != 1 AND id NOT IN (
                     SELECT parent_folder_id FROM folder_path WHERE parent_folder_id IS NOT NULL
                     UNION
-                    SELECT folder_path_id FROM profile_has_db_connection)''')
+                    SELECT folder_path_id FROM profile_has_db_connection)""")
 
-                result = db.select('''SELECT COUNT(*) as cnt FROM folder_path WHERE id != 1 AND id NOT IN (
+                result = db.select(
+                    """SELECT COUNT(*) as cnt FROM folder_path WHERE id != 1 AND id NOT IN (
                     SELECT parent_folder_id FROM folder_path WHERE parent_folder_id IS NOT NULL
                     UNION
-                    SELECT folder_path_id FROM profile_has_db_connection)''')
+                    SELECT folder_path_id FROM profile_has_db_connection)"""
+                )
 
-                no_more_empty_folders = result[0]['cnt'] == 0
+                no_more_empty_folders = result[0]["cnt"] == 0
 
 
-@plugin_function('gui.dbConnections.renameFolderPath', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.renameFolderPath", cli=True, shell=True, web=True)
 def rename_folder_path(folder_path_id, new_caption, be_session=None):
     """Rename a folder path
 
@@ -477,10 +550,13 @@ def rename_folder_path(folder_path_id, new_caption, be_session=None):
         None
     """
     with BackendDatabase(be_session) as db:
-        db.execute('''UPDATE folder_path SET caption=? WHERE id=?''', (new_caption, folder_path_id))
+        db.execute(
+            """UPDATE folder_path SET caption=? WHERE id=?""",
+            (new_caption, folder_path_id),
+        )
 
 
-@plugin_function('gui.dbConnections.moveFolder', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.moveFolder", cli=True, shell=True, web=True)
 def move_folder(folder_path_id, new_parent_folder_id, be_session=None):
     """Move a folder path to a new parent folder
 
@@ -493,10 +569,13 @@ def move_folder(folder_path_id, new_parent_folder_id, be_session=None):
         None
     """
     with BackendDatabase(be_session) as db:
-        db.execute('''UPDATE folder_path SET parent_folder_id=? WHERE id=?''', (new_parent_folder_id, folder_path_id))
+        db.execute(
+            """UPDATE folder_path SET parent_folder_id=? WHERE id=?""",
+            (new_parent_folder_id, folder_path_id),
+        )
 
 
-@plugin_function('gui.dbConnections.listFolderPaths', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.listFolderPaths", cli=True, shell=True, web=True)
 def list_folder_paths(parent_folder_id=None, recursive=False, be_session=None):
     """List folder paths
 
@@ -511,29 +590,39 @@ def list_folder_paths(parent_folder_id=None, recursive=False, be_session=None):
     with BackendDatabase(be_session) as db:
         if not recursive:
             if parent_folder_id is None:
-                return db.select('''SELECT * FROM folder_path WHERE parent_folder_id IS NULL ORDER BY `index` ASC''')
+                return db.select(
+                    """SELECT * FROM folder_path WHERE parent_folder_id IS NULL ORDER BY `index` ASC"""
+                )
             else:
-                return db.select('''SELECT * FROM folder_path WHERE parent_folder_id=? ORDER BY `index` ASC''', (parent_folder_id,))
+                return db.select(
+                    """SELECT * FROM folder_path WHERE parent_folder_id=? ORDER BY `index` ASC""",
+                    (parent_folder_id,),
+                )
         else:
             result = []
 
             def get_folders_recursive(parent_id):
                 if parent_id is None:
-                    folders = db.select('''SELECT * FROM folder_path WHERE parent_folder_id IS NULL ORDER BY `index` ASC''')
+                    folders = db.select(
+                        """SELECT * FROM folder_path WHERE parent_folder_id IS NULL ORDER BY `index` ASC"""
+                    )
                 else:
-                    folders = db.select('''SELECT * FROM folder_path WHERE parent_folder_id=? ORDER BY `index` ASC''', (parent_id,))
+                    folders = db.select(
+                        """SELECT * FROM folder_path WHERE parent_folder_id=? ORDER BY `index` ASC""",
+                        (parent_id,),
+                    )
 
                 result.extend(folders)
 
                 for folder in folders:
-                    get_folders_recursive(folder['id'])
+                    get_folders_recursive(folder["id"])
 
             get_folders_recursive(parent_folder_id)
 
             return result
 
 
-@plugin_function('gui.dbConnections.listAll', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.listAll", cli=True, shell=True, web=True)
 def list_all(profile_id, folder_id=None, be_session=None):
     """Lists all connections and folder paths for the given profile and folder
 
@@ -546,7 +635,8 @@ def list_all(profile_id, folder_id=None, be_session=None):
         list: A list of dictionaries containing connections and folders sorted by index
     """
     with BackendDatabase(be_session) as db:
-        combined_list = db.select('''
+        combined_list = db.select(
+            """
             SELECT dc.id, dc.caption, dc.description, dc.db_type, dc.options, dc.settings, p_dc.`index`, 'connection' AS type
                 FROM profile_has_db_connection p_dc
                 LEFT JOIN db_connection dc ON p_dc.db_connection_id = dc.id
@@ -556,12 +646,20 @@ def list_all(profile_id, folder_id=None, be_session=None):
                 FROM folder_path fp
                 WHERE fp.parent_folder_id = ?
                 ORDER BY `index` ASC
-        ''', (profile_id, folder_id if folder_id is not None else 1, folder_id if folder_id is not None else 1))
+        """,
+            (
+                profile_id,
+                folder_id if folder_id is not None else 1,
+                folder_id if folder_id is not None else 1,
+            ),
+        )
 
     return combined_list
 
 
-@plugin_function('gui.dbConnections.updateFolderSettings', cli=True, shell=True, web=True)
+@plugin_function(
+    "gui.dbConnections.updateFolderSettings", cli=True, shell=True, web=True
+)
 def update_folder_settings(folder_path_id, new_settings, be_session=None):
     """Rename a folder path
 
@@ -577,11 +675,13 @@ def update_folder_settings(folder_path_id, new_settings, be_session=None):
         None
     """
     with BackendDatabase(be_session) as db:
-        db.execute('''UPDATE folder_path SET settings=? WHERE id=?''',
-                   (new_settings, folder_path_id))
+        db.execute(
+            """UPDATE folder_path SET settings=? WHERE id=?""",
+            (new_settings, folder_path_id),
+        )
 
 
-@plugin_function('gui.dbConnections.getFolder', cli=True, shell=True, web=True)
+@plugin_function("gui.dbConnections.getFolder", cli=True, shell=True, web=True)
 def get_folder(folder_path_id, be_session=None):
     """Get folder
 
@@ -594,5 +694,4 @@ def get_folder(folder_path_id, be_session=None):
         dict: The folder
     """
     with BackendDatabase(be_session) as db:
-        return db.select('SELECT * FROM folder_path WHERE id = ?',
-                         (folder_path_id,))[0]
+        return db.select("SELECT * FROM folder_path WHERE id = ?", (folder_path_id,))[0]

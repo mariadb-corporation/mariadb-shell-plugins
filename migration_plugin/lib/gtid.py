@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -52,14 +52,18 @@ def serialize_gtid_set(gtid_dict: Dict[str, List[Tuple[int, int]]]) -> str:
     """Converts dict back to GTID set string."""
     parts: List[str] = []
     for uuid, intervals in gtid_dict.items():
-        pieces = [f"{start}-{end}" if start !=
-                  end else str(start) for start, end in sorted(intervals)]
+        pieces = [
+            f"{start}-{end}" if start != end else str(start)
+            for start, end in sorted(intervals)
+        ]
         if pieces:
             parts.append(f"{uuid}:{':'.join(pieces)}")
     return ",".join(parts)
 
 
-def interval_subtract(intervals1: List[Tuple[int, int]], intervals2: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+def interval_subtract(
+    intervals1: List[Tuple[int, int]], intervals2: List[Tuple[int, int]]
+) -> List[Tuple[int, int]]:
     """Subtract intervals2 from intervals1."""
     result: List[Tuple[int, int]] = intervals1.copy()
     for del_start, del_end in intervals2:

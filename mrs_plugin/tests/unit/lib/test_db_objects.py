@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,13 @@
 
 import pytest
 from mrs_plugin import lib
-from ..helpers import get_db_object_privileges, DbObjectCT, TableContents, get_default_db_object_init
+from ..helpers import (
+    get_db_object_privileges,
+    DbObjectCT,
+    TableContents,
+    get_default_db_object_init,
+)
+
 
 @pytest.mark.usefixtures("phone_book")
 def test_add_db_object(phone_book, table_contents):
@@ -47,10 +53,7 @@ def test_add_db_object(phone_book, table_contents):
             "media_type": "application/json",
             "name": "ContactBasicInfo",
             "object_type": "VIEW",
-            "options": {
-                "aaa": "val aaa",
-                "bbb": "val bbb"
-            },
+            "options": {"aaa": "val aaa", "bbb": "val bbb"},
             "metadata": None,
             "request_path": "/view_contact_basic_info",
             "requires_auth": 0,
@@ -58,6 +61,7 @@ def test_add_db_object(phone_book, table_contents):
         }
 
     assert db_object_table.same_as_snapshot
+
 
 def test_update_db_object(phone_book, table_contents):
     db_object_table: TableContents = table_contents("db_object")
@@ -81,7 +85,7 @@ def test_update_db_object(phone_book, table_contents):
                 "name": db_object["db_object_name"],
                 "object_type": db_object["db_object_type"],
                 "options": db_object["options"],
-                'metadata': None,
+                "metadata": None,
                 "qualified_name": f'PhoneBook.{db_object["db_object_name"]}',
                 "request_path": db_object["request_path"],
                 "requires_auth": int(db_object["requires_auth"]),
@@ -107,19 +111,15 @@ def test_update_db_object(phone_book, table_contents):
                 "media_type": "media type updated",
                 "name": "ContactBasicInfoUpdated",
                 "object_type": "TABLE",
-                "options": {
-                    "bbb": "val bbb updated",
-                    "ccc": "val ccc inserted"
-                },
+                "options": {"bbb": "val bbb updated", "ccc": "val ccc inserted"},
             }
 
-
             for key, value in final.items():
-                lib.db_objects.update_db_objects(session, [db_object_id], { key: value })
+                lib.db_objects.update_db_objects(session, [db_object_id], {key: value})
                 expected[key] = int(value) if isinstance(value, bool) else value
 
                 if key == "name":
-                    expected["qualified_name"] = f'PhoneBook.{final[key]}'
+                    expected["qualified_name"] = f"PhoneBook.{final[key]}"
 
                 result = lib.db_objects.get_db_object(session, db_object_id)
                 assert result is not None
@@ -128,87 +128,95 @@ def test_update_db_object(phone_book, table_contents):
                 assert result == expected
 
             expected_object = {
-                'comments': 'Comment for object',
-                'db_object_id': db_object_id,
-                'id': db_object["objects"][0]["id"],
-                'kind': 'RESULT',
-                'name': 'MyServicePhoneBookContactsWithEmail',
-                'position': 0,
-                'row_ownership_field_id': None,
-                'sdk_options': {
-                    'option1': 'value 1',
-                    'option2': 'value 2'
-                },
-                'options': {
-                    'dataMappingViewDelete': True,
-                    'dataMappingViewInsert': True,
-                    'dataMappingViewUpdate': True,
-                    'duality_view_delete': True,
-                    'duality_view_insert': True,
-                    'duality_view_update': True,
+                "comments": "Comment for object",
+                "db_object_id": db_object_id,
+                "id": db_object["objects"][0]["id"],
+                "kind": "RESULT",
+                "name": "MyServicePhoneBookContactsWithEmail",
+                "position": 0,
+                "row_ownership_field_id": None,
+                "sdk_options": {"option1": "value 1", "option2": "value 2"},
+                "options": {
+                    "dataMappingViewDelete": True,
+                    "dataMappingViewInsert": True,
+                    "dataMappingViewUpdate": True,
+                    "duality_view_delete": True,
+                    "duality_view_insert": True,
+                    "duality_view_update": True,
                 },
             }
             objects = lib.db_objects.get_objects(session, db_object_id)
             assert objects == [expected_object]
 
             for object in objects:
-                fields = lib.db_objects.get_object_fields_with_references(session, object["id"])
+                fields = lib.db_objects.get_object_fields_with_references(
+                    session, object["id"]
+                )
 
                 expected_field = {
-                    'allow_filtering': True,
-                    'allow_sorting': False,
-                    'caption': '- id',
-                    'comments': None,
-                    'db_column': {
-                        'comment': '',
-                        'datatype': 'int',
-                        'id_generation': None,
-                        'is_generated': False,
-                        'is_primary': db_object["objects"][0]["fields"][0]["db_column"]["is_primary"],
-                        'is_unique': False,
-                        'name': 'id',
-                        'not_null': True,
-                        'srid': None
+                    "allow_filtering": True,
+                    "allow_sorting": False,
+                    "caption": "- id",
+                    "comments": None,
+                    "db_column": {
+                        "comment": "",
+                        "datatype": "int",
+                        "id_generation": None,
+                        "is_generated": False,
+                        "is_primary": db_object["objects"][0]["fields"][0]["db_column"][
+                            "is_primary"
+                        ],
+                        "is_unique": False,
+                        "name": "id",
+                        "not_null": True,
+                        "srid": None,
                     },
-                    'enabled': True,
-                    'id': db_object["objects"][0]["fields"][0]["id"],
-                    'lev': 1,
-                    'name': 'id',
-                    'no_check': False,
-                    'no_update': False,
-                    'object_id': db_object["objects"][0]["id"],
-                    'object_reference': None,
-                    'parent_reference_id': None,
-                    'position': 1,
-                    'represents_reference_id': None,
-                    'sdk_options': None,
-                    'options': fields[0]["options"],
+                    "enabled": True,
+                    "id": db_object["objects"][0]["fields"][0]["id"],
+                    "lev": 1,
+                    "name": "id",
+                    "no_check": False,
+                    "no_update": False,
+                    "object_id": db_object["objects"][0]["id"],
+                    "object_reference": None,
+                    "parent_reference_id": None,
+                    "position": 1,
+                    "represents_reference_id": None,
+                    "sdk_options": None,
+                    "options": fields[0]["options"],
                 }
 
                 assert fields == [expected_field]
-
 
 
 def test_get_db_object(phone_book, mobile_phone_book):
 
     with lib.core.MrsDbSession(session=phone_book["session"]) as session:
 
-        db_object = lib.db_objects.get_db_object(session=session, schema_id=phone_book["schema_id"])
+        db_object = lib.db_objects.get_db_object(
+            session=session, schema_id=phone_book["schema_id"]
+        )
         assert db_object is None
 
-        db_object = lib.db_objects.get_db_object(session=session, schema_id=phone_book["schema_id"],
-            request_path="/test_abc", db_object_name="db1")
+        db_object = lib.db_objects.get_db_object(
+            session=session,
+            schema_id=phone_book["schema_id"],
+            request_path="/test_abc",
+            db_object_name="db1",
+        )
         assert db_object is None
 
-        db_object = lib.db_objects.get_db_object(session=session, db_object_id=phone_book["db_object_id"])
+        db_object = lib.db_objects.get_db_object(
+            session=session, db_object_id=phone_book["db_object_id"]
+        )
         assert db_object is not None
-        assert db_object['id'] == phone_book["db_object_id"]
-        assert db_object['name'] == 'Contacts'
-        assert db_object['object_type'] == 'TABLE'
+        assert db_object["id"] == phone_book["db_object_id"]
+        assert db_object["name"] == "Contacts"
+        assert db_object["object_type"] == "TABLE"
 
         # This might take one of these values depending on if the db_object tests already ran
-        assert db_object['request_path'] == '/Contacts'
-        assert db_object['db_schema_id'] == phone_book["schema_id"]
+        assert db_object["request_path"] == "/Contacts"
+        assert db_object["db_schema_id"] == phone_book["schema_id"]
 
 
 def test_db_object_update(phone_book, table_contents):
@@ -226,48 +234,56 @@ def test_db_object_update(phone_book, table_contents):
             assert db_object is not None
 
             value = {
-                'auth_stored_procedure': None,
-                'auto_detect_media_type': 1,
-                'comments': 'Test table',
-                'crud_operation_format': 'ITEM',
-                'crud_operations': ['CREATE', 'READ'],
-                'db_schema_id': phone_book["schema_id"],
-                'enabled': 1,
-                'items_per_page': 15,
-                'media_type': None,
-                'name': 'ContactsWithEmail',
-                'object_type': 'TABLE',
-                'options': None,
-                'request_path': '/view_contects_wit_email2',
-                'requires_auth': 0,
+                "auth_stored_procedure": None,
+                "auto_detect_media_type": 1,
+                "comments": "Test table",
+                "crud_operation_format": "ITEM",
+                "crud_operations": ["CREATE", "READ"],
+                "db_schema_id": phone_book["schema_id"],
+                "enabled": 1,
+                "items_per_page": 15,
+                "media_type": None,
+                "name": "ContactsWithEmail",
+                "object_type": "TABLE",
+                "options": None,
+                "request_path": "/view_contects_wit_email2",
+                "requires_auth": 0,
             }
 
-
-            lib.db_objects.update_db_objects(session=session, db_object_ids=[db_object_id], value=value)
+            lib.db_objects.update_db_objects(
+                session=session, db_object_ids=[db_object_id], value=value
+            )
             assert not db_object_table.same_as_snapshot
 
-            lib.db_objects.update_db_objects(session=session, db_object_ids=[db_object_id], value={
-                'auth_stored_procedure': db_object["auth_stored_procedure"],
-                'auto_detect_media_type': db_object["auto_detect_media_type"],
-                'comments': db_object["comments"],
-                'crud_operation_format': db_object["crud_operation_format"],
-                'crud_operations': db_object["crud_operations"],
-                'db_schema_id': db_object["db_schema_id"],
-                'enabled': db_object["enabled"],
-                'items_per_page': db_object["items_per_page"],
-                'media_type': db_object["media_type"],
-                'name': db_object["name"],
-                'object_type': db_object["object_type"],
-                'options': db_object["options"],
-                'metadata': None,
-                'request_path': db_object["request_path"],
-                'requires_auth': db_object["requires_auth"],
-            })
+            lib.db_objects.update_db_objects(
+                session=session,
+                db_object_ids=[db_object_id],
+                value={
+                    "auth_stored_procedure": db_object["auth_stored_procedure"],
+                    "auto_detect_media_type": db_object["auto_detect_media_type"],
+                    "comments": db_object["comments"],
+                    "crud_operation_format": db_object["crud_operation_format"],
+                    "crud_operations": db_object["crud_operations"],
+                    "db_schema_id": db_object["db_schema_id"],
+                    "enabled": db_object["enabled"],
+                    "items_per_page": db_object["items_per_page"],
+                    "media_type": db_object["media_type"],
+                    "name": db_object["name"],
+                    "object_type": db_object["object_type"],
+                    "options": db_object["options"],
+                    "metadata": None,
+                    "request_path": db_object["request_path"],
+                    "requires_auth": db_object["requires_auth"],
+                },
+            )
             assert db_object_table.same_as_snapshot
 
             result = lib.db_objects.get_db_object(session, db_object_id=db_object_id)
             assert result is not None
 
-            grants = get_db_object_privileges(session,
-                result['schema_name'], result['name'])
-            assert sorted(grants) == sorted(lib.db_objects.map_crud_operations(result["crud_operations"]))
+            grants = get_db_object_privileges(
+                session, result["schema_name"], result["name"]
+            )
+            assert sorted(grants) == sorted(
+                lib.db_objects.map_crud_operations(result["crud_operations"])
+            )

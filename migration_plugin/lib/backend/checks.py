@@ -34,7 +34,6 @@ import sys
 import socket
 import subprocess
 
-
 kMinBinlogExpirationHours = 24  # hours
 
 # from modules/util/common/dump/constants.h
@@ -84,6 +83,7 @@ k_mhs_excluded_schemas = [
 
 def mysqlsh_nversion():
     import mysqlsh  # type: ignore
+
     return version_to_nversion(mysqlsh.globals.shell.version.split()[1])
 
 
@@ -107,8 +107,7 @@ def validate_source(
     session: MigrationSession, options: model.MigrationOptions
 ) -> tuple[list[model.MigrationError], model.SourceCheckResult]:
 
-    result = model.SourceCheckResult(
-        serverInfo=collect_server_info(session))
+    result = model.SourceCheckResult(serverInfo=collect_server_info(session))
 
     errors = check_version_compatibility(session, options)
     errors.extend(check_ssl(session, result.serverInfo))
@@ -122,9 +121,10 @@ def validate_source(
     return errors, result
 
 
-def validate_target(session: MigrationSession) -> tuple[list[model.MigrationError], model.TargetCheckResult]:
-    result = model.TargetCheckResult(
-        targetInfo=collect_server_info(session))
+def validate_target(
+    session: MigrationSession,
+) -> tuple[list[model.MigrationError], model.TargetCheckResult]:
+    result = model.TargetCheckResult(targetInfo=collect_server_info(session))
 
     errors = check_ssl(session, result.targetInfo)
 
@@ -135,8 +135,7 @@ def validate_target(session: MigrationSession) -> tuple[list[model.MigrationErro
         f"select count(*) from information_schema.schemata where schema_name not in ({system_schemas})"
     ).fetch_one()[0]
 
-    system_users = ",".join(
-        [f"'{s}'" for s in k_excluded_users + k_mhs_excluded_users])
+    system_users = ",".join([f"'{s}'" for s in k_excluded_users + k_mhs_excluded_users])
     result.userAccountCount = session.run_sql(
         f"select count(*) from mysql.user where user not in ({system_users})"
     ).fetch_one()[0]
@@ -144,28 +143,33 @@ def validate_target(session: MigrationSession) -> tuple[list[model.MigrationErro
     return errors, result
 
 
-def check_version_compatibility(session: MigrationSession, options: model.MigrationOptions) -> list[model.MigrationError]:
+def check_version_compatibility(
+    session: MigrationSession, options: model.MigrationOptions
+) -> list[model.MigrationError]:
     errors: list[model.MigrationError] = []
 
     if session.nversion < 50600:
         err = model.MigrationError(
             model.MessageLevel.WARNING,
             title="Unsupported MySQL Server Version",
-            message=f"Source instance has MySQL version {session.version} which is currently not supported by this tool. You may proceed anyway, but results may vary.")
+            message=f"Source instance has MySQL version {session.version} which is currently not supported by this tool. You may proceed anyway, but results may vary.",
+        )
         errors.append(err)
 
     if session.nversion / 100 > mysqlsh_nversion() / 100:  # ignore patch level
         err = model.MigrationError(
             model.MessageLevel.WARNING,
             title="Unsupported MySQL Server Version",
-            message=f"Source instance has MySQL version {session.version} which is currently not supported by this tool. Please upgrade this Migration Assistant to the latest version. You may proceed anyway, but results may vary.")
+            message=f"Source instance has MySQL version {session.version} which is currently not supported by this tool. Please upgrade this Migration Assistant to the latest version. You may proceed anyway, but results may vary.",
+        )
         errors.append(err)
 
     if model.ServerType.MariaDB == session.server_type:
         err = model.MigrationError(
             model.MessageLevel.WARNING,
             title="Unsupported MySQL Server",
-            message=f"Source instance is a MariaDB server, migration of user accounts from MariaDB is currently not supported by this tool. Migration of user accounts has been disabled.")
+            message=f"Source instance is a MariaDB server, migration of user accounts from MariaDB is currently not supported by this tool. Migration of user accounts has been disabled.",
+        )
         errors.append(err)
 
         options.schemaSelection.migrateUsers = False
@@ -174,8 +178,7 @@ def check_version_compatibility(session: MigrationSession, options: model.Migrat
 
 
 def check_inbound_replication_requirements(
-    session: MigrationSession,
-    server_info: model.ServerInfo
+    session: MigrationSession, server_info: model.ServerInfo
 ) -> Optional[model.MigrationError]:
     format, gtid_mode, expiration = replication.get_binlog_info(session)
     logging.info(
@@ -186,9 +189,10 @@ def check_inbound_replication_requirements(
     # from newer ones will not work
 
     if not format:
-        return model.MigrationError(model.MessageLevel.ERROR,
-                                    title="Hot Migration not possible because Binary logging (<code>log_bin</code>) is disabled",
-                                    message="""Binary logging must be enabled in order to setup
+        return model.MigrationError(
+            model.MessageLevel.ERROR,
+            title="Hot Migration not possible because Binary logging (<code>log_bin</code>) is disabled",
+            message="""Binary logging must be enabled in order to setup
 inbound replication between your source MySQL instance and the new HeatWave
 instance.
 <br/>
@@ -197,12 +201,14 @@ You may:
 <li> enable Row Based Replication at the source MySQL instance and restart the Migration Assistant
 <li> switch to a Cold Migration, which will require some downtime when switching applications to the new MySQL server
 </ul>
-""")
+""",
+        )
 
     if format != "ROW":
-        return model.MigrationError(model.MessageLevel.ERROR,
-                                    title=f"Hot Migration not possible configured binary log format (<code>binlog_format</code>) is set to {format}",
-                                    message=f"""The <code>binlog_format</code> is currently set to {format},
+        return model.MigrationError(
+            model.MessageLevel.ERROR,
+            title=f"Hot Migration not possible configured binary log format (<code>binlog_format</code>) is set to {format}",
+            message=f"""The <code>binlog_format</code> is currently set to {format},
 but the HeatWave service requires it to be `ROW`.
 <br/>
 You may:
@@ -210,12 +216,14 @@ You may:
 <li> change <code>binlog_format</code> at the source MySQL instance to <code>ROW</code> format and restart the Migration Assistant
 <li> switch to a Cold Migration, which will require some downtime when switching applications to the new MySQL server
 </ul>
-""")
+""",
+        )
 
     if not server_info.sslSupported:
-        return model.MigrationError(model.MessageLevel.ERROR,
-                                    title=f"Source MySQL server does not support SSL connections",
-                                    message=f"""The source MySQL server does not support SSL connections, which are
+        return model.MigrationError(
+            model.MessageLevel.ERROR,
+            title=f"Source MySQL server does not support SSL connections",
+            message=f"""The source MySQL server does not support SSL connections, which are
 required by the MySQL HeatWave Service to create secure, encrypted replication channels. A Hot Migration will not be
 possible unless SSL is enabled at the source MySQL server.
 <br/>
@@ -224,7 +232,8 @@ You may:
 <li> enable SSL connections at the source MySQL server and restart the Migration Assistant
 <li> switch to a Cold Migration, which will require some downtime when switching applications to the new MySQL server
 </ul>
-""")
+""",
+        )
 
     if expiration is not None and expiration < kMinBinlogExpirationHours * 3600:
         if expiration // 60 < 30:
@@ -232,9 +241,10 @@ You may:
                 model.MessageLevel.ERROR,
                 title="Binary log expiration period is too short",
                 message=f"""The source MySQL binary log is configured to automatically
-expire and purge in less than 30 minutes.""")
+expire and purge in less than 30 minutes.""",
+            )
 
-        hours = expiration//3600
+        hours = expiration // 3600
         if hours < 1:
             expire = "less than one hour"
         elif hours == 1:
@@ -247,12 +257,15 @@ expire and purge in less than 30 minutes.""")
             message=f"""The source MySQL binary log is configured to automatically
 expire and purge in {expire}.
 If the migration process takes longer than that, the target instance may be
-unable to catch up to the source before transactions are purged from the binary log.""")
+unable to catch up to the source before transactions are purged from the binary log.""",
+        )
 
     return None
 
 
-def check_ssl(session: MigrationSession, info: model.ServerInfo) -> list[model.MigrationError]:
+def check_ssl(
+    session: MigrationSession, info: model.ServerInfo
+) -> list[model.MigrationError]:
     errors: list[model.MigrationError] = []
 
     # BUG#38879030 - fail early if source instance does not support SSL connections
@@ -261,7 +274,8 @@ def check_ssl(session: MigrationSession, info: model.ServerInfo) -> list[model.M
         err = model.MigrationError(
             model.MessageLevel.ERROR,
             title="Source does not support SSL",
-            message=f"The MySQL instance does not support SSL connections.")
+            message=f"The MySQL instance does not support SSL connections.",
+        )
         errors.append(err)
 
     ssl_cipher = ""
@@ -273,7 +287,8 @@ def check_ssl(session: MigrationSession, info: model.ServerInfo) -> list[model.M
         err = model.MigrationError(
             model.MessageLevel.ERROR,
             title="Session is not using SSL",
-            message=f"The MySQL instance supports SSL connections, however current session is not encrypted.")
+            message=f"The MySQL instance supports SSL connections, however current session is not encrypted.",
+        )
         errors.append(err)
 
     return errors
@@ -302,7 +317,8 @@ def check_rds(session: MigrationSession) -> list[model.MigrationError]:
             message="""Migration from an RDS instance requires binary logging to be enabled.
 
 To enable binary logging, automated backups must be turned on. For more
-information, please consult the AWS documentation.""")
+information, please consult the AWS documentation.""",
+        )
         errors.append(err)
 
     return errors
@@ -323,7 +339,8 @@ def check_aurora(session: MigrationSession) -> list[model.MigrationError]:
             message="""Migration from an Aurora cluster requires access to the binary logs.
 
 When binary logging is enabled in an Aurora cluster, only the writer endpoint or
-the writer instance provides access to the binary logs.""")
+the writer instance provides access to the binary logs.""",
+        )
         errors.append(err)
 
     # reader endpoints/instances always have the binlog disabled
@@ -335,7 +352,8 @@ the writer instance provides access to the binary logs.""")
 
 To enable binary logging, edit the DB cluster parameter group and set
 'binlog_format' parameter to 'ROW'. For more information, please consult the AWS
-documentation.""")
+documentation.""",
+        )
         errors.append(err)
 
     return errors
@@ -364,7 +382,9 @@ def make_default_schema_check_exclude_list():
 
 
 def check_upgrade(
-    session: MigrationSession, schema_selection: model.SchemaSelectionOptions, target_version: str
+    session: MigrationSession,
+    schema_selection: model.SchemaSelectionOptions,
+    target_version: str,
 ) -> model.MigrationCheckResults:
     if session.nversion >= version_to_nversion(target_version):
         logging.info(
@@ -400,7 +420,7 @@ def check_service_compatibility(
     session: MigrationSession,
     compatibility_flags: list[model.CompatibilityFlags],
     schema_selection: model.SchemaSelectionOptions,
-    target_version: str
+    target_version: str,
 ) -> model.MigrationCheckResults:
     args = model_utils.build_dump_exclude_list(schema_selection)
 
@@ -449,11 +469,13 @@ def estimate_database_size(session: MigrationSession) -> tuple[int, int]:
 def collect_server_info(session: MigrationSession) -> model.ServerInfo:
     data_size, index_size = estimate_database_size(session)
 
-    (hostname, serverUuid) = session.run_sql(
-        "select @@hostname, @@server_uuid").fetch_one()
+    hostname, serverUuid = session.run_sql(
+        "select @@hostname, @@server_uuid"
+    ).fetch_one()
 
     hasMRS = session.run_sql(
-        "select count(*) from information_schema.schemata where schema_name='mysql_rest_service_metadata'").fetch_one()[0]
+        "select count(*) from information_schema.schemata where schema_name='mysql_rest_service_metadata'"
+    ).fetch_one()[0]
 
     num_native, num_old = session.run_sql(
         "select cast(sum(if(plugin = 'mysql_native_password', 1, 0)) as signed), cast(sum(if(plugin = 'mysql_old_password', 1, 0)) as signed) from mysql.user"
@@ -466,22 +488,23 @@ def collect_server_info(session: MigrationSession) -> model.ServerInfo:
     else:
         row = session.run_sql("show variables like 'have_ssl'").fetch_one()
         if row:
-            sslSupported = (row[1] != "DISABLED")
+            sslSupported = row[1] != "DISABLED"
         else:
             logging.error(
-                f"have_ssl unexpectedly doesn't exist (version={session.nversion})")
+                f"have_ssl unexpectedly doesn't exist (version={session.nversion})"
+            )
 
     gtidMode = ""
     if session.server_type != model.ServerType.MariaDB:
         if session.nversion >= 50605:
             try:
-                gtidMode = session.run_sql(
-                    "select @@gtid_mode").fetch_one()[0]
+                gtidMode = session.run_sql("select @@gtid_mode").fetch_one()[0]
             except Exception as e:
                 logging.info(f"select @@gtid_mode: {e}")
 
     schemaCount = session.run_sql(
-        "select count(*) from information_schema.schemata").fetch_one()[0]
+        "select count(*) from information_schema.schemata"
+    ).fetch_one()[0]
 
     return model.ServerInfo(
         hostname=hostname,
@@ -496,7 +519,8 @@ def collect_server_info(session: MigrationSession) -> model.ServerInfo:
         versionComment=session.version_comment,
         license=session.license,
         serverType=session.server_type,
-        gtidMode=gtidMode)
+        gtidMode=gtidMode,
+    )
 
 
 def address_resolvable(connect_info: dict):

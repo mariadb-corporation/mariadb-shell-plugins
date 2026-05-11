@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@ from gui_plugin.core.Protocols import Response
 import re
 
 
-@plugin_function('gui.core.getBackendInformation', shell=False, web=True)
+@plugin_function("gui.core.getBackendInformation", shell=False, web=True)
 def get_backend_information():
     """Returns information about backend
 
@@ -46,14 +46,17 @@ def get_backend_information():
 
 def parse_shell_version(version):
     m = re.match(
-        r"Ver (\d+\.\d+\.\d+)(-.+)? for (.+) on (.+) - for MySQL (\d+\.\d+\.\d+)(-.+)? \((.+)\)", version)
+        r"Ver (\d+\.\d+\.\d+)(-.+)? for (.+) on (.+) - for MySQL (\d+\.\d+\.\d+)(-.+)? \((.+)\)",
+        version,
+    )
     if not m:
         raise Exception("Version does not match regexp pattern.")
     info = {}
     info["major"], info["minor"], info["patch"] = m.group(1).split(".")
     info["platform"] = m.group(3)
     info["architecture"] = m.group(4)
-    info["server_major"], info["server_minor"], info["server_patch"] = m.group(
-        5).split(".")
+    info["server_major"], info["server_minor"], info["server_patch"] = m.group(5).split(
+        "."
+    )
     info["server_distribution"] = m.group(7)
     return info

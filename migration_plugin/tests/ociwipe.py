@@ -1,5 +1,5 @@
 #!/usr/bin/env mysqlsh --py -f
-# Copyright (c) 2025 Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,6 @@ from migration_plugin.lib import oci_utils
 import threading
 import re
 import time
-
 
 k_nowipe_tag = "nowipe"
 k_oracle_tags = "Oracle-Tags"
@@ -103,7 +102,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument(
         "--created-by",
         type=str,
-        help="Only delete resources with a matching CreatedBy tag (regex)."
+        help="Only delete resources with a matching CreatedBy tag (regex).",
     )
 
     parser.add_argument(
@@ -162,25 +161,31 @@ def delete_compartments(compartments: list[oci_utils.Compartment], filter_fn):
         work_requests.append(comp.delete_compartment())
 
     oci_utils.wait_for_work_requests(
-        work_requests, "deleting compartments", show_fn=print)
+        work_requests, "deleting compartments", show_fn=print
+    )
 
 
 if __name__ == "__main__":
     args = arguments()
 
     if args.created_by:
+
         def filter_resource_(resource) -> bool:
-            if not args.force_wipe and resource.freeform_tags and k_nowipe_tag in resource.freeform_tags:
+            if (
+                not args.force_wipe
+                and resource.freeform_tags
+                and k_nowipe_tag in resource.freeform_tags
+            ):
                 return False
 
             created_by = None
             if resource.defined_tags and k_oracle_tags in resource.defined_tags:
-                created_by = resource.defined_tags[k_oracle_tags].get(
-                    "CreatedBy")
+                created_by = resource.defined_tags[k_oracle_tags].get("CreatedBy")
             if created_by and not re.match(args.created_by, created_by):
                 return False
 
             return True
+
         filter_resource = filter_resource_
     else:
         filter_resource = None
@@ -204,10 +209,12 @@ if __name__ == "__main__":
                     compartments.append(comp)
                 else:
                     print(
-                        f"Compartment {comp.name} ({comp.id}) is marked with '{k_nowipe_tag}' tag, skipping.")
+                        f"Compartment {comp.name} ({comp.id}) is marked with '{k_nowipe_tag}' tag, skipping."
+                    )
         else:
             print(
-                f"Main compartment {main_compartment.name} ({main_compartment.id}) is marked with '{k_nowipe_tag}' tag, nothing to do!")
+                f"Main compartment {main_compartment.name} ({main_compartment.id}) is marked with '{k_nowipe_tag}' tag, nothing to do!"
+            )
 
     if args.show_compartment:
         for comp in compartments:
@@ -236,7 +243,8 @@ if __name__ == "__main__":
 
     if what_to_wipe:
         print(
-            f"\033[91mWIPING {', '.join(what_to_wipe)} in compartment {main_compartment.name}!\033[0m")
+            f"\033[91mWIPING {', '.join(what_to_wipe)} in compartment {main_compartment.name}!\033[0m"
+        )
         time.sleep(3)
 
         threads: int = 0
@@ -250,34 +258,43 @@ if __name__ == "__main__":
         local_context = threading.local()
 
         def initializer(compartments: list[oci_utils.Compartment]):
-            local_context.compartments = [oci_utils.Compartment(
-                comp._config, comp.obj) for comp in compartments]
+            local_context.compartments = [
+                oci_utils.Compartment(comp._config, comp.obj) for comp in compartments
+            ]
 
-        def worker(task: Callable[[list[oci_utils.Compartment], Callable], None], descr: str, filter_fn):
+        def worker(
+            task: Callable[[list[oci_utils.Compartment], Callable], None],
+            descr: str,
+            filter_fn,
+        ):
             try:
                 task(local_context.compartments, filter_fn)
             except Exception as e:
                 import traceback
+
                 traceback.print_exc()
                 print(f"Exception while {descr}: {e}")
 
         with ThreadPoolExecutor(
-            max_workers=max(threads, 1), initializer=initializer, initargs=(compartments,)
+            max_workers=max(threads, 1),
+            initializer=initializer,
+            initargs=(compartments,),
         ) as executor:
             if args.wipe_buckets:
-                executor.submit(worker, wipe_buckets,
-                                "wiping buckets", filter_resource)
+                executor.submit(worker, wipe_buckets, "wiping buckets", filter_resource)
 
             db_systems_task = None
             computes_task = None
 
             if args.wipe_db_systems:
                 db_systems_task = executor.submit(
-                    worker, wipe_db_systems, "wiping DB systems", filter_resource)
+                    worker, wipe_db_systems, "wiping DB systems", filter_resource
+                )
 
             if args.wipe_computes:
                 computes_task = executor.submit(
-                    worker, wipe_computes, "wiping computes", filter_resource)
+                    worker, wipe_computes, "wiping computes", filter_resource
+                )
 
             if args.wipe_vcns or args.delete_vcn:
                 # before wiping the VCNs we need to wait until computes and DB systems are deleted
@@ -288,17 +305,20 @@ if __name__ == "__main__":
                     computes_task.result()
 
                 if args.wipe_vcns:
-                    executor.submit(worker, wipe_vcns,
-                                    "wiping VCNs", filter_resource)
+                    executor.submit(worker, wipe_vcns, "wiping VCNs", filter_resource)
                 elif args.delete_vcn:
+
                     def match_vcn(vcn):
                         return vcn.display_name == args.delete_vcn
-                    executor.submit(worker, wipe_vcns,
-                                    f"deleting {args.delete_vcn} VCN", match_vcn)
+
+                    executor.submit(
+                        worker, wipe_vcns, f"deleting {args.delete_vcn} VCN", match_vcn
+                    )
 
             executor.shutdown()
 
     if args.delete_subcompartments:
         # don't delete the main compartment
         delete_compartments(
-            [comp for comp in compartments if main_compartment != comp], filter_resource)
+            [comp for comp in compartments if main_compartment != comp], filter_resource
+        )

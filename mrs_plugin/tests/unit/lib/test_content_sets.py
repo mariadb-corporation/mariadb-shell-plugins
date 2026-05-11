@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,8 @@ import mysqlsh
 
 from lib.core import MrsDbSession
 from mrs_plugin import lib
-from .. helpers import ContentSetCT, get_default_content_set_init
+from ..helpers import ContentSetCT, get_default_content_set_init
+
 
 def test_add_content_set(phone_book, table_contents):
     with lib.core.MrsDbSession(session=phone_book["session"]) as session:
@@ -39,10 +40,12 @@ def test_add_content_set(phone_book, table_contents):
                 "request_path": "test_content_set2",
                 "requires_auth": False,
                 "comments": "Content Set",
-                "session": session
+                "session": session,
             }
 
-            with pytest.raises(Exception, match="The request_path has to start with '/'."):
+            with pytest.raises(
+                Exception, match="The request_path has to start with '/'."
+            ):
                 content_set_id = lib.content_sets.add_content_set(**content_set)
 
             content_set["request_path"] = "/test_content_set2"
@@ -59,11 +62,15 @@ def test_enable_disable(phone_book, table_contents):
     with lib.core.MrsDbSession(session=phone_book["session"]) as session:
         table_content_set = table_contents("content_set")
         args = {
-                "content_set_ids": [b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'],
-                "session": session
+            "content_set_ids": [
+                b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            ],
+            "session": session,
         }
 
-        args["content_set_ids"] = [b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00']
+        args["content_set_ids"] = [
+            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        ]
         lib.content_sets.enable_content_set(**args, value=False)
 
         assert table_content_set.same_as_snapshot
@@ -82,7 +89,6 @@ def test_enable_disable(phone_book, table_contents):
 
             assert table_content_set.same_as_snapshot
             assert table_content_set.get("id", content_set_id)["enabled"] == 1
-
 
 
 def test_get_content_set(phone_book, table_contents):
@@ -104,7 +110,6 @@ def test_get_content_set(phone_book, table_contents):
             "service_id": phone_book["service_id"],
             "session": session,
         }
-
 
         sets = lib.content_sets.get_content_set(**args)
         assert sets == content_set_1

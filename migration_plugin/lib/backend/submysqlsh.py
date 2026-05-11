@@ -50,8 +50,7 @@ class SubMysqlsh:
 
             argv.append("--passwords-from-stdin")
             argv.append(mysqlsh.globals.shell.unparse_uri(connection_params))
-        logging.info(
-            f"Popen {self.name}: {[sanitize_par_uri(s) for s in argv+args]}")
+        logging.info(f"Popen {self.name}: {[sanitize_par_uri(s) for s in argv+args]}")
         self.argv = argv + args
         self.p = subprocess.Popen(
             self.argv,
@@ -234,7 +233,7 @@ def dump_instance(
     compatibility_args: list,
     extra_args: list,
     target_version: str,
-    threads: int
+    threads: int,
 ):
     compat_args = []
     if compatibility_args:
@@ -252,7 +251,7 @@ def dump_instance(
             "--skipUpgradeChecks",
             f"--targetVersion={target_version}",
             "--showProgress",
-            f"--threads={threads}"
+            f"--threads={threads}",
         ]
         + storage_args
         + compat_args
@@ -286,7 +285,7 @@ def load_dump(
     storage_args: list,
     progress_path: str,
     extra_args: list,
-    threads: int = 4
+    threads: int = 4,
 ):
     sub = SubMysqlsh(
         "load-dump",
@@ -301,7 +300,7 @@ def load_dump(
             "--waitDumpTimeout=3600",
             "--showMetadata=1",
             "--loadUsers=1",
-            f"--threads={threads}"
+            f"--threads={threads}",
         ]
         + storage_args
         + extra_args,
@@ -343,8 +342,7 @@ def load_dump(
 
 
 if __name__ == "__main__":
-    res = check_for_server_upgrade(
-        {"user": "root", "host": "0", "password": ""}, [])
+    res = check_for_server_upgrade({"user": "root", "host": "0", "password": ""}, [])
     # res = dump_instance_dry_run(
     #     {"user": "root", "host": "0", "password": ""},
     #     # args=["--exclude-tables=test.au"],

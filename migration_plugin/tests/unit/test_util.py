@@ -27,8 +27,12 @@ from unittest.mock import patch
 
 import migration_plugin.lib.util as util
 from migration_plugin.lib.util import (
-    sanitize_par_uri, sanitize_dict, sanitize_connection_dict,
-    sanitize_dict_any_pass, k_san_dict_par, k_san_dict_connection
+    sanitize_par_uri,
+    sanitize_dict,
+    sanitize_connection_dict,
+    sanitize_dict_any_pass,
+    k_san_dict_par,
+    k_san_dict_connection,
 )
 
 
@@ -69,49 +73,32 @@ class TestSanitizeDict:
         data = {
             "access_uri": "https://objectstorage.us-ashburn-1.oraclecloud.com/p/abc123/n/namespace/b/bucket/o/object",
             "full_path": "https://objectstorage.us-ashburn-1.oraclecloud.com/p/def456/n/namespace/b/bucket/o/object",
-            "other_field": "should_remain_unchanged"
+            "other_field": "should_remain_unchanged",
         }
 
         result = sanitize_dict(data, k_san_dict_par)
         expected = {
             "access_uri": "https://objectstorage.us-ashburn-1.oraclecloud.com/p/<redacted>/n/namespace/b/bucket/o/object",
             "full_path": "https://objectstorage.us-ashburn-1.oraclecloud.com/p/<redacted>/n/namespace/b/bucket/o/object",
-            "other_field": "should_remain_unchanged"
+            "other_field": "should_remain_unchanged",
         }
         assert result == expected
 
-        data = {
-            "password": "secret123",
-            "username": "user",
-            "host": "localhost"
-        }
+        data = {"password": "secret123", "username": "user", "host": "localhost"}
 
         result = sanitize_dict(data, k_san_dict_connection)
-        expected = {
-            "password": "****",
-            "username": "user",
-            "host": "localhost"
-        }
+        expected = {"password": "****", "username": "user", "host": "localhost"}
         assert result == expected
 
         result = sanitize_dict({}, k_san_dict_connection)
         assert result == {}
 
-        custom_sanitizers = {
-            "sensitive": lambda s: "REDACTED",
-            "normal": lambda s: s
-        }
+        custom_sanitizers = {"sensitive": lambda s: "REDACTED", "normal": lambda s: s}
 
-        data = {
-            "sensitive": "secret_data",
-            "normal": "public_data"
-        }
+        data = {"sensitive": "secret_data", "normal": "public_data"}
 
         result = sanitize_dict(data, custom_sanitizers)
-        expected = {
-            "sensitive": "REDACTED",
-            "normal": "public_data"
-        }
+        expected = {"sensitive": "REDACTED", "normal": "public_data"}
         assert result == expected
 
 
@@ -122,7 +109,7 @@ class TestSanitizeConnectionDict:
             "password": "secret123",
             "username": "user",
             "host": "localhost",
-            "port": 3306
+            "port": 3306,
         }
 
         result = sanitize_connection_dict(connection_options)
@@ -130,15 +117,11 @@ class TestSanitizeConnectionDict:
             "password": "****",
             "username": "user",
             "host": "localhost",
-            "port": 3306
+            "port": 3306,
         }
         assert result == expected
 
-        connection_options = {
-            "username": "user",
-            "host": "localhost",
-            "port": 3306
-        }
+        connection_options = {"username": "user", "host": "localhost", "port": 3306}
 
         result = sanitize_connection_dict(connection_options)
         assert result == connection_options
@@ -152,7 +135,7 @@ class TestSanitizeConnectionDict:
             "host": "localhost",
             "port": 3306,
             "database": "testdb",
-            "ssl_mode": "REQUIRED"
+            "ssl_mode": "REQUIRED",
         }
 
         result = sanitize_connection_dict(connection_options)
@@ -162,7 +145,7 @@ class TestSanitizeConnectionDict:
             "host": "localhost",
             "port": 3306,
             "database": "testdb",
-            "ssl_mode": "REQUIRED"
+            "ssl_mode": "REQUIRED",
         }
         assert result == expected
 
@@ -170,25 +153,17 @@ class TestSanitizeConnectionDict:
 class TestSanitizeDictAnyPass:
 
     def test_sanitize_dict_any_pass(self):
-        data = {
-            "password": "secret123",
-            "username": "user",
-            "host": "localhost"
-        }
+        data = {"password": "secret123", "username": "user", "host": "localhost"}
 
         result = sanitize_dict_any_pass(data)
-        expected = {
-            "password": "****",
-            "username": "user",
-            "host": "localhost"
-        }
+        expected = {"password": "****", "username": "user", "host": "localhost"}
         assert result == expected
 
         data = {
             "PASSWORD": "secret123",
             "userPassword": "secret456",
             "admin_password": "secret789",
-            "username": "user"
+            "username": "user",
         }
 
         result = sanitize_dict_any_pass(data)
@@ -196,25 +171,19 @@ class TestSanitizeDictAnyPass:
             "PASSWORD": "****",
             "userPassword": "****",
             "admin_password": "****",
-            "username": "user"
+            "username": "user",
         }
         assert result == expected
 
         data = {
-            "connection": {
-                "password": "secret123",
-                "username": "user"
-            },
-            "other_field": "value"
+            "connection": {"password": "secret123", "username": "user"},
+            "other_field": "value",
         }
 
         result = sanitize_dict_any_pass(data)
         expected = {
-            "connection": {
-                "password": "****",
-                "username": "user"
-            },
-            "other_field": "value"
+            "connection": {"password": "****", "username": "user"},
+            "other_field": "value",
         }
         assert result == expected
 
@@ -222,9 +191,7 @@ class TestSanitizeDictAnyPass:
             "level1": {
                 "level2": {
                     "password": "secret123",
-                    "level3": {
-                        "admin_password": "secret456"
-                    }
+                    "level3": {"admin_password": "secret456"},
                 }
             }
         }
@@ -232,12 +199,7 @@ class TestSanitizeDictAnyPass:
         result = sanitize_dict_any_pass(data)
         expected = {
             "level1": {
-                "level2": {
-                    "password": "****",
-                    "level3": {
-                        "admin_password": "****"
-                    }
-                }
+                "level2": {"password": "****", "level3": {"admin_password": "****"}}
             }
         }
         assert result == expected
@@ -245,18 +207,18 @@ class TestSanitizeDictAnyPass:
         data = {
             "users": [
                 {"username": "user1", "password": "secret1"},
-                {"username": "user2", "password": "secret2"}
+                {"username": "user2", "password": "secret2"},
             ],
-            "admin_password": "admin_secret"
+            "admin_password": "admin_secret",
         }
 
         result = sanitize_dict_any_pass(data)
         expected = {
             "users": [
                 {"username": "user1", "password": "****"},
-                {"username": "user2", "password": "****"}
+                {"username": "user2", "password": "****"},
             ],
-            "admin_password": "****"
+            "admin_password": "****",
         }
         assert result == expected
 
@@ -264,7 +226,7 @@ class TestSanitizeDictAnyPass:
             "items": [
                 {"password": "secret1"},
                 "not_a_dict",
-                {"username": "user", "password": "secret2"}
+                {"username": "user", "password": "secret2"},
             ]
         }
 
@@ -273,7 +235,7 @@ class TestSanitizeDictAnyPass:
             "items": [
                 {"password": "****"},
                 "not_a_dict",
-                {"username": "user", "password": "****"}
+                {"username": "user", "password": "****"},
             ]
         }
         assert result == expected
@@ -285,49 +247,27 @@ class TestSanitizeDictAnyPass:
         result = sanitize_dict_any_pass({})
         assert result == {}
 
-        data = {
-            "username": "user",
-            "host": "localhost",
-            "port": 3306
-        }
+        data = {"username": "user", "host": "localhost", "port": 3306}
 
         result = sanitize_dict_any_pass(data)
         assert result == data
 
-        data = {
-            "password": "",
-            "username": "user"
-        }
+        data = {"password": "", "username": "user"}
 
         result = sanitize_dict_any_pass(data)
-        expected = {
-            "password": "****",
-            "username": "user"
-        }
+        expected = {"password": "****", "username": "user"}
         assert result == expected
 
-        data = {
-            "password": None,
-            "username": "user"
-        }
+        data = {"password": None, "username": "user"}
 
         result = sanitize_dict_any_pass(data)
-        expected = {
-            "password": "****",
-            "username": "user"
-        }
+        expected = {"password": "****", "username": "user"}
         assert result == expected
 
-        data = {
-            "password": 12345,
-            "username": "user"
-        }
+        data = {"password": 12345, "username": "user"}
 
         result = sanitize_dict_any_pass(data)
-        expected = {
-            "password": "****",
-            "username": "user"
-        }
+        expected = {"password": "****", "username": "user"}
         assert result == expected
 
 
@@ -360,16 +300,13 @@ class TestPublicIpLookup:
     def test_extract_ip_from_cloudflare_trace_response(self):
         result = util._extract_ip(
             "https://cloudflare.com/cdn-cgi/trace",
-            "fl=29f43\nip=203.0.113.7\nts=1234567890"
+            "fl=29f43\nip=203.0.113.7\nts=1234567890",
         )
 
         assert result == "203.0.113.7"
 
     def test_extract_ip_from_json_response(self):
-        result = util._extract_ip(
-            "https://ifconfig.co/json",
-            '{"ip":"198.51.100.12"}'
-        )
+        result = util._extract_ip("https://ifconfig.co/json", '{"ip":"198.51.100.12"}')
 
         assert result == "198.51.100.12"
 
@@ -401,7 +338,7 @@ class TestPublicIpLookup:
         with patch.object(
             util,
             "DEFAULT_PUBLIC_IP_URLS",
-            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json")
+            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json"),
         ), patch(
             "migration_plugin.lib.util.urllib.request.urlopen",
             side_effect=fake_urlopen,
@@ -436,7 +373,7 @@ class TestPublicIpLookup:
         with patch.object(
             util,
             "DEFAULT_PUBLIC_IP_URLS",
-            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json")
+            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json"),
         ), patch(
             "migration_plugin.lib.util.urllib.request.urlopen",
             side_effect=fake_urlopen,
@@ -483,7 +420,7 @@ class TestPublicIpLookup:
         with patch.object(
             util,
             "DEFAULT_PUBLIC_IP_URLS",
-            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json")
+            ("https://cloudflare.com/cdn-cgi/trace", "https://ifconfig.co/json"),
         ), patch(
             "migration_plugin.lib.util.urllib.request.urlopen",
             side_effect=fake_urlopen,
@@ -511,16 +448,15 @@ class TestEdgeCases:
         result = sanitize_par_uri("https://example.com/p/abc123/")
         assert result == "https://example.com/p/<redacted>/"
 
-        #result = sanitize_par_uri(
+        # result = sanitize_par_uri(
         #    "https://example.com/p/abc123/n/namespace/p/def456/")
-        #expected = "https://example.com/p/<redacted>/n/namespace/p/<redacted>/"
-        #assert result == expected
+        # expected = "https://example.com/p/<redacted>/n/namespace/p/<redacted>/"
+        # assert result == expected
 
         result = sanitize_par_uri("just a regular string")
         assert result == "just a regular string"
 
-        result = sanitize_par_uri(
-            "https://example.com/p/abc-123_def/n/namespace")
+        result = sanitize_par_uri("https://example.com/p/abc-123_def/n/namespace")
         expected = "https://example.com/p/<redacted>/n/namespace"
         assert result == expected
 
@@ -529,8 +465,7 @@ class TestEdgeCases:
         assert result == expected
 
         long_par_id = "a" * 100
-        result = sanitize_par_uri(
-            f"https://example.com/p/{long_par_id}/n/namespace")
+        result = sanitize_par_uri(f"https://example.com/p/{long_par_id}/n/namespace")
         expected = "https://example.com/p/<redacted>/n/namespace"
         assert result == expected
 
@@ -561,17 +496,17 @@ class TestEdgeCases:
                     "password": "db_secret",
                     "connections": [
                         {"host": "db1", "password": "conn1_secret"},
-                        {"host": "db2", "password": "conn2_secret"}
-                    ]
+                        {"host": "db2", "password": "conn2_secret"},
+                    ],
                 },
                 "api": {
                     "api_password": "api_secret",
                     "endpoints": [
                         {"url": "/users", "auth_password": "endpoint_secret"}
-                    ]
-                }
+                    ],
+                },
             },
-            "admin_password": "admin_secret"
+            "admin_password": "admin_secret",
         }
 
         result = sanitize_dict_any_pass(data)
@@ -581,17 +516,15 @@ class TestEdgeCases:
                     "password": "****",
                     "connections": [
                         {"host": "db1", "password": "****"},
-                        {"host": "db2", "password": "****"}
-                    ]
+                        {"host": "db2", "password": "****"},
+                    ],
                 },
                 "api": {
                     "api_password": "****",
-                    "endpoints": [
-                        {"url": "/users", "auth_password": "****"}
-                    ]
-                }
+                    "endpoints": [{"url": "/users", "auth_password": "****"}],
+                },
             },
-            "admin_password": "****"
+            "admin_password": "****",
         }
         assert result == expected
 
@@ -601,7 +534,7 @@ class TestEdgeCases:
                 {"password": "secret1"},
                 123,
                 {"username": "user", "password": "secret2"},
-                None
+                None,
             ]
         }
 
@@ -612,7 +545,7 @@ class TestEdgeCases:
                 {"password": "****"},
                 123,
                 {"username": "user", "password": "****"},
-                None
+                None,
             ]
         }
         assert result == expected

@@ -21,14 +21,22 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from migration_plugin.lib.backend.model import CheckStatus, CompatibilityFlags, DBSystemOptions, IncludeList, MessageLevel, MigrationCheckResults, MigrationOptions, CompatibilityFlags
+from migration_plugin.lib.backend.model import (
+    CheckStatus,
+    CompatibilityFlags,
+    DBSystemOptions,
+    IncludeList,
+    MessageLevel,
+    MigrationCheckResults,
+    MigrationOptions,
+    CompatibilityFlags,
+)
 from migration_plugin.lib.backend.source_check import MySQLSourceCheck
 import mysqlsh  # type: ignore
 import pathlib
 import pytest
 
 from .helpers import execute_script, server_version, shell_version
-
 
 g_server_version = (0, 0, 0)
 g_supports_mnp = False
@@ -40,13 +48,19 @@ def supports_libraries():
 
 
 def load_compatibility_issues(session):
-    execute_script(session, pathlib.Path(__file__).parent.parent /
-                   "sql" / "compatibility_issues.sql")
+    execute_script(
+        session,
+        pathlib.Path(__file__).parent.parent / "sql" / "compatibility_issues.sql",
+    )
 
 
 def cleanup_compatibility_issues(session):
-    execute_script(session, pathlib.Path(__file__).parent.parent /
-                   "sql" / "compatibility_issues_cleanup.sql")
+    execute_script(
+        session,
+        pathlib.Path(__file__).parent.parent
+        / "sql"
+        / "compatibility_issues_cleanup.sql",
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -55,9 +69,13 @@ def setup_test(sandbox_session):
     g_server_version = server_version(sandbox_session)
 
     global g_supports_mnp
-    g_supports_mnp = True if sandbox_session.run_sql(
-        "SELECT 1 FROM information_schema.plugins WHERE plugin_name='mysql_native_password' AND plugin_status='ACTIVE'"
-    ).fetch_one() else False
+    g_supports_mnp = (
+        True
+        if sandbox_session.run_sql(
+            "SELECT 1 FROM information_schema.plugins WHERE plugin_name='mysql_native_password' AND plugin_status='ACTIVE'"
+        ).fetch_one()
+        else False
+    )
 
     cleanup_compatibility_issues(session=sandbox_session)
     load_compatibility_issues(session=sandbox_session)
@@ -68,16 +86,17 @@ def setup_test(sandbox_session):
 def setup_migration_options(session) -> MigrationOptions:
     options = MigrationOptions()
 
-    options.sourceConnectionOptions = mysqlsh.globals.shell.parse_uri(
-        session.uri
-    )
+    options.sourceConnectionOptions = mysqlsh.globals.shell.parse_uri(session.uri)
 
     options.schemaSelection.filter.schemas = IncludeList()
     options.schemaSelection.filter.schemas.include = ["compatibility_issues"]
 
     options.schemaSelection.filter.users = IncludeList()
     options.schemaSelection.filter.users.exclude = [
-        "admin", "root", "skipped_role", "skipped_user",
+        "admin",
+        "root",
+        "skipped_role",
+        "skipped_user",
     ]
 
     options.schemaSelection.filter.routines = IncludeList()
@@ -95,10 +114,14 @@ def run_compatibility_checks(options: MigrationOptions) -> MigrationCheckResults
     source_check = MySQLSourceCheck(options)
     assert not source_check.check_connection().connectError
 
-    return source_check.check_compatibility(options.compatibilityFlags, options.schemaSelection)
+    return source_check.check_compatibility(
+        options.compatibilityFlags, options.schemaSelection
+    )
 
 
-def validate_checks(expected: MigrationCheckResults, actual: MigrationCheckResults) -> None:
+def validate_checks(
+    expected: MigrationCheckResults, actual: MigrationCheckResults
+) -> None:
     for expected_check in expected.checks:
         check = None
 
@@ -109,15 +132,23 @@ def validate_checks(expected: MigrationCheckResults, actual: MigrationCheckResul
 
         assert check, f"Check: {expected_check.checkId}, all checks: {actual.checks}"
 
-        for attribute in ["level", "title", "result", "description", "objects", "choices", "status"]:
+        for attribute in [
+            "level",
+            "title",
+            "result",
+            "description",
+            "objects",
+            "choices",
+            "status",
+        ]:
             if getattr(expected_check, attribute) is not None:
                 assert getattr(expected_check, attribute) == getattr(
-                    check, attribute), f"Check: {expected_check.checkId}, attribute: {attribute}"
+                    check, attribute
+                ), f"Check: {expected_check.checkId}, attribute: {attribute}"
 
 
 def test_check_compatibility(sandbox_session):
-    acutal_issues = run_compatibility_checks(
-        setup_migration_options(sandbox_session))
+    acutal_issues = run_compatibility_checks(setup_migration_options(sandbox_session))
 
     expected_issues = MigrationCheckResults()
 
@@ -145,7 +176,7 @@ before migrating and reset their password; or exclude them from being migrated."
             CompatibilityFlags.skip_invalid_accounts,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -171,7 +202,7 @@ migrating and reset their password; or exclude them from being migrated.""",
             CompatibilityFlags.IGNORE,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -195,7 +226,7 @@ migrated.""",
             CompatibilityFlags.skip_invalid_accounts,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -217,7 +248,7 @@ Read more</a>""",
             CompatibilityFlags.strip_restricted_grants,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -234,7 +265,7 @@ at the target database.""",
             CompatibilityFlags.strip_invalid_grants,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -251,13 +282,13 @@ partial_revokes</a> system variable enabled by
 default, which causes wildcard characters to be interpreted literally.""",
         [
             "user:'escaped_wildcard_grant'@'localhost'",
-            "user:'wildcard_grant'@'localhost'"
+            "user:'wildcard_grant'@'localhost'",
         ],
         [
             CompatibilityFlags.ignore_wildcard_grants,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -278,7 +309,7 @@ interpreted literally.""",
             CompatibilityFlags.IGNORE,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -293,7 +324,7 @@ Grants on objects that do not exist will fail to execute, so they must be remove
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -308,7 +339,7 @@ All such roles will not be granted to the migrated user accounts.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     # TODO: schema/encryption - requires keyring plugin/component
@@ -327,7 +358,7 @@ continuing.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     # TODO: view/mismatched_reference - requires MacOS/Windows
@@ -346,7 +377,7 @@ fixed or excluded before continuing.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -368,7 +399,7 @@ migrated database.""",
             CompatibilityFlags.force_innodb,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -388,7 +419,7 @@ excluded or manually repaired.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -420,7 +451,7 @@ MySQL HeatWave Service Pre-requisites</a>""",
             CompatibilityFlags.ignore_missing_pks,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     # TODO: table/data_or_index_directory - requires server to be started with
@@ -444,7 +475,7 @@ modified to be placed in the default tablespace in the migrated database.""",
             CompatibilityFlags.strip_tablespaces,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -461,7 +492,7 @@ this format will be modified and <code>ROW_FORMAT</code> option will be removed.
             CompatibilityFlags.force_innodb,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -477,7 +508,7 @@ The following tables have more columns than the limit for the InnoDB engine
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     expected_issues._add_check(
@@ -500,7 +531,7 @@ them or exclude them altogether.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     # TODO: object/invalid_definer - this is reported only if target server does not support SET_ANY_DEFINER
@@ -538,7 +569,7 @@ specified as their definer.""",
         [
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     # TODO: object/missing_sql_security - this is reported only if target server does not support SET_ANY_DEFINER
@@ -569,7 +600,7 @@ before continuing.""",
             [
                 CompatibilityFlags.EXCLUDE_OBJECT,
             ],
-            CheckStatus.ACTION_REQUIRED
+            CheckStatus.ACTION_REQUIRED,
         )
 
     validate_checks(expected_issues, acutal_issues)
@@ -596,7 +627,7 @@ accounts are not migrated. This needs to be fixed before continuing.""",
         [
             CompatibilityFlags.strip_definers,
         ],
-        CheckStatus.ACTION_REQUIRED
+        CheckStatus.ACTION_REQUIRED,
     )
 
     validate_checks(expected_issues, acutal_issues)
@@ -633,7 +664,7 @@ def test_check_compatibility_fixed(sandbox_session):
             "user:'unsupported_auth_plugin'@'localhost'",
         ],
         [CompatibilityFlags.lock_invalid_accounts],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -644,7 +675,7 @@ def test_check_compatibility_fixed(sandbox_session):
         None,  # type: ignore
         ["user:'no_password'@'localhost'"],
         [CompatibilityFlags.lock_invalid_accounts],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -655,7 +686,7 @@ def test_check_compatibility_fixed(sandbox_session):
         None,  # type: ignore
         ["user:'restricted_grants'@'localhost'"],
         [CompatibilityFlags.strip_restricted_grants],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -666,7 +697,7 @@ def test_check_compatibility_fixed(sandbox_session):
         None,  # type: ignore
         ["user:'invalid_grants'@'localhost'"],
         [CompatibilityFlags.strip_invalid_grants],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -678,10 +709,10 @@ def test_check_compatibility_fixed(sandbox_session):
         None,  # type: ignore
         [
             "user:'escaped_wildcard_grant'@'localhost'",
-            "user:'wildcard_grant'@'localhost'"
+            "user:'wildcard_grant'@'localhost'",
         ],
         [CompatibilityFlags.ignore_wildcard_grants],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -692,7 +723,7 @@ def test_check_compatibility_fixed(sandbox_session):
         None,  # type: ignore
         ["user:'escaped_wildcard_grant'@'localhost'"],
         [CompatibilityFlags.unescape_wildcard_grants],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -707,7 +738,7 @@ def test_check_compatibility_fixed(sandbox_session):
             "table:`compatibility_issues`.`unsupported_row_format`",
         ],
         [CompatibilityFlags.force_innodb],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -718,7 +749,7 @@ def test_check_compatibility_fixed(sandbox_session):
         None,  # type: ignore
         ["table:`compatibility_issues`.`missing_pk`"],
         [CompatibilityFlags.create_invisible_pks],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -749,7 +780,7 @@ MySQL HeatWave Service Pre-requisites</a>""",
         None,  # type: ignore
         ["table:`compatibility_issues`.`t_space`"],
         [CompatibilityFlags.strip_tablespaces],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -760,7 +791,7 @@ MySQL HeatWave Service Pre-requisites</a>""",
         None,  # type: ignore
         ["table:`compatibility_issues`.`unsupported_row_format`"],
         [CompatibilityFlags.force_innodb],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -780,8 +811,11 @@ MySQL HeatWave Service Pre-requisites</a>""",
         [
             "event:`compatibility_issues`.`invalid_definer_missing_user_e`",
             "function:`compatibility_issues`.`invalid_definer_missing_user_f`",
-            *(["function:`compatibility_issues`.`missing_dependency`"]
-              if supports_libraries() else []),
+            *(
+                ["function:`compatibility_issues`.`missing_dependency`"]
+                if supports_libraries()
+                else []
+            ),
             "procedure:`compatibility_issues`.`invalid_definer_missing_user_p`",
             "trigger:`compatibility_issues`.`invalid_definer_missing_user_t`.`invalid_definer_missing_user_tt`",
             "view:`compatibility_issues`.`invalid_definer_missing_user_v`",
@@ -790,7 +824,7 @@ MySQL HeatWave Service Pre-requisites</a>""",
             "view:`compatibility_issues`.`restricted_definer_v`",
         ],
         [CompatibilityFlags.strip_definers],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     expected_issues._add_check(
@@ -807,8 +841,11 @@ MySQL HeatWave Service Pre-requisites</a>""",
         None,  # type: ignore
         [
             "function:`compatibility_issues`.`invalid_definer_missing_user_f`",
-            *(["function:`compatibility_issues`.`missing_dependency`"]
-              if supports_libraries() else []),
+            *(
+                ["function:`compatibility_issues`.`missing_dependency`"]
+                if supports_libraries()
+                else []
+            ),
             "procedure:`compatibility_issues`.`invalid_definer_missing_user_p`",
             "view:`compatibility_issues`.`invalid_definer_missing_user_v`",
             "view:`compatibility_issues`.`invalid_definition_v`",
@@ -816,7 +853,7 @@ MySQL HeatWave Service Pre-requisites</a>""",
             "view:`compatibility_issues`.`restricted_definer_v`",
         ],
         [CompatibilityFlags.strip_definers],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     validate_checks(expected_issues, acutal_issues)
@@ -854,7 +891,7 @@ before migrating and reset their password; or exclude them from being migrated."
             CompatibilityFlags.target_has_mysql_native_password,
             CompatibilityFlags.EXCLUDE_OBJECT,
         ],
-        CheckStatus.CONFIRMATION_REQUIRED
+        CheckStatus.CONFIRMATION_REQUIRED,
     )
 
     validate_checks(expected_issues, acutal_issues)
@@ -884,7 +921,7 @@ def test_check_compatibility_mysql_native_password_8_4_fixed(sandbox_session):
         [
             CompatibilityFlags.target_has_mysql_native_password,
         ],
-        CheckStatus.OK
+        CheckStatus.OK,
     )
 
     validate_checks(expected_issues, acutal_issues)

@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,9 @@
 from mysqlsh.plugin_manager import plugin_function  # pylint: disable=no-name-in-module
 
 
-@plugin_function('gui.mds.isGuiModuleBackend', web=True)
+@plugin_function("gui.mds.isGuiModuleBackend", web=True)
 def is_gui_module_backend():
-    """ Indicates whether this module is a GUI backend module
+    """Indicates whether this module is a GUI backend module
 
     Returns:
         False
@@ -34,13 +34,15 @@ def is_gui_module_backend():
     return False
 
 
-@plugin_function('gui.mds.getGuiModuleDisplayInfo', web=True)
+@plugin_function("gui.mds.getGuiModuleDisplayInfo", web=True)
 def get_gui_module_display_info():
-    """ Returns display information about the module
+    """Returns display information about the module
 
     Returns:
         A dict with display information for the module
     """
-    return {"name": "MySQL Database Service Manager",
-            "description": "A management frontend for MDS on OCI",
-            "icon_path": "/images/icons/modules/gui.mds.svg"}
+    return {
+        "name": "MySQL Database Service Manager",
+        "description": "A management frontend for MDS on OCI",
+        "icon_path": "/images/icons/modules/gui.mds.svg",
+    }

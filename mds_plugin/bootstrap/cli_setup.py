@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,6 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 import oci
 
-
 NO_PASSPHRASE = "N/A"
 PUBLIC_KEY_FILENAME_SUFFIX = "_public.pem"
 PRIVATE_KEY_FILENAME_SUFFIX = ".pem"
@@ -61,10 +60,11 @@ def prompt_for_region():
     named_region_list = [{"name": f"{name}"} for name in sorted_region_list]
 
     region = core.prompt_for_list_item(
-        item_list=named_region_list, prompt_caption=(
-            "Select the region: "),
+        item_list=named_region_list,
+        prompt_caption=("Select the region: "),
         item_name_property="name",
-        print_list=True)
+        print_list=True,
+    )
 
     return region.get("name", None) if region else None
 
@@ -77,7 +77,8 @@ def prompt_for_passphrase():
     for _ in range(3):
         initial = core.prompt(message, {"type": "password"}).strip()
         confirmation = core.prompt(
-            "Please confirm the passphrase: ", {"type": "password"}).strip()
+            "Please confirm the passphrase: ", {"type": "password"}
+        ).strip()
 
         done = confirmation == initial
         if done:
@@ -98,39 +99,51 @@ def remove_profile_from_config(config_file, profile_name_to_terminate):
     config = configparser.ConfigParser(default_section="")
     config.read(config_file)
     config.remove_section(profile_name_to_terminate)
-    with open(config_file, 'w') as config_file_handle:
+    with open(config_file, "w") as config_file_handle:
         config.write(config_file_handle)
 
 
 def public_key_to_fingerprint(public_key):
     bytes = public_key.public_bytes(
         encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo)
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
 
-    header = b'-----BEGIN PUBLIC KEY-----'
-    footer = b'-----END PUBLIC KEY-----'
-    bytes = bytes.replace(header, b'').replace(footer, b'').replace(b'\n', b'')
+    header = b"-----BEGIN PUBLIC KEY-----"
+    footer = b"-----END PUBLIC KEY-----"
+    bytes = bytes.replace(header, b"").replace(footer, b"").replace(b"\n", b"")
 
     key = base64.b64decode(bytes)
     fp_plain = pymd5.md5(key).hexdigest()
-    return ':'.join(a + b for a, b in zip(fp_plain[::2], fp_plain[1::2]))
+    return ":".join(a + b for a, b in zip(fp_plain[::2], fp_plain[1::2]))
 
 
-def write_config(filename, user_id=None, fingerprint=None, key_file=None, tenancy=None, region=None, pass_phrase=None, profile_name=DEFAULT_PROFILE_NAME, security_token_file=None, **kwargs):
+def write_config(
+    filename,
+    user_id=None,
+    fingerprint=None,
+    key_file=None,
+    tenancy=None,
+    region=None,
+    pass_phrase=None,
+    profile_name=DEFAULT_PROFILE_NAME,
+    security_token_file=None,
+    **kwargs,
+):
     existing_file = os.path.exists(filename)
-    with open(filename, 'a') as f:
+    with open(filename, "a") as f:
         if existing_file:
-            f.write('\n\n')
+            f.write("\n\n")
 
-        f.write('[{}]\n'.format(profile_name))
+        f.write("[{}]\n".format(profile_name))
 
         if user_id:
-            f.write('user={}\n'.format(user_id))
+            f.write("user={}\n".format(user_id))
 
-        f.write('fingerprint={}\n'.format(fingerprint))
-        f.write('key_file={}\n'.format(key_file))
-        f.write('tenancy={}\n'.format(tenancy))
-        f.write('region={}\n'.format(region))
+        f.write("fingerprint={}\n".format(fingerprint))
+        f.write("key_file={}\n".format(key_file))
+        f.write("tenancy={}\n".format(tenancy))
+        f.write("region={}\n".format(region))
 
         if pass_phrase:
             f.write("pass_phrase={}\n".format(pass_phrase))
@@ -153,26 +166,38 @@ def write_public_key_to_file(filename, public_key, overwrite=False, silent=False
     cli_util.apply_user_only_access_permissions(filename)
 
     if not silent:
-        print('Public key written to: {}'.format(filename))
+        print("Public key written to: {}".format(filename))
 
     return True
 
 
-def write_private_key_to_file(filename, private_key, passphrase, overwrite=False, silent=False, add_private_key_label=True):
+def write_private_key_to_file(
+    filename,
+    private_key,
+    passphrase,
+    overwrite=False,
+    silent=False,
+    add_private_key_label=True,
+):
 
-    if not overwrite \
-            and os.path.isfile(filename) \
-            and "&No" == mysqlsh.globals.shell.prompt('File {} already exists, do you want to overwrite?'.format(filename), {'defaultValue': 'no', "type": "confirm"}):
+    if (
+        not overwrite
+        and os.path.isfile(filename)
+        and "&No"
+        == mysqlsh.globals.shell.prompt(
+            "File {} already exists, do you want to overwrite?".format(filename),
+            {"defaultValue": "no", "type": "confirm"},
+        )
+    ):
         return False
 
     with open(filename, "wb") as f:
-        f.write(cli_util.serialize_key(
-            private_key=private_key, passphrase=passphrase))
+        f.write(cli_util.serialize_key(private_key=private_key, passphrase=passphrase))
 
     # Add PRIVATE_KEY_LABEL only if flag is true
     if add_private_key_label:
         # Open a file in append mode
-        with open(filename, 'a') as file:
+        with open(filename, "a") as file:
             # add the static label
             file.write(PRIVATE_KEY_LABEL)
 
@@ -180,6 +205,6 @@ def write_private_key_to_file(filename, private_key, passphrase, overwrite=False
     cli_util.apply_user_only_access_permissions(filename)
 
     if not silent:
-        print('Private key written to: {}'.format(filename))
+        print("Private key written to: {}".format(filename))
 
     return True

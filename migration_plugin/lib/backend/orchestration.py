@@ -31,11 +31,25 @@ from ..project import Project
 from ..oci_utils import Compartment
 from .model import MigrationOptions, MigrationType, SubStepId, CloudResources
 from .stage import Stage, OrchestratorInterface, WorkStatusEvent
-from .oci_stages import (LaunchDBSystem, ProvisionVCN, ProvisionCompartment, ProvisionBucket,
-                         ProvisionCompute, ProvisionJumpHost, AddHeatWaveCluster, EnableCrashRecovery, EnableHA)
+from .oci_stages import (
+    LaunchDBSystem,
+    ProvisionVCN,
+    ProvisionCompartment,
+    ProvisionBucket,
+    ProvisionCompute,
+    ProvisionJumpHost,
+    AddHeatWaveCluster,
+    EnableCrashRecovery,
+    EnableHA,
+)
 from .dbmigration_stages import DumpStage, RemoteLoadStage
 from .db_stages import MySQLTargetReadiness
-from .sync_stages import CheckDirectConnectivity, CreateChannel, CreateSSHTunnel, MonitorChannel
+from .sync_stages import (
+    CheckDirectConnectivity,
+    CreateChannel,
+    CreateSSHTunnel,
+    MonitorChannel,
+)
 from .remote_helper import RemoteHelperClient
 
 
@@ -45,7 +59,13 @@ class MigrationFrontend:
     def on_progress(self, source: SubStepId, message: str, data: dict = {}):
         pass
 
-    def on_status(self, source: SubStepId, status: WorkStatusEvent, data: dict = {}, message: str = ""):
+    def on_status(
+        self,
+        source: SubStepId,
+        status: WorkStatusEvent,
+        data: dict = {},
+        message: str = "",
+    ):
         pass
 
     def on_message(self, source: SubStepId, data: dict):
@@ -107,8 +127,9 @@ class Orchestrator(OrchestratorInterface):
         self._provision_bucket = make(ProvisionBucket, self)
         self._provision_vcn = make(ProvisionVCN, self)
         self._provision_compute = make(ProvisionCompute, self)
-        self._provision_jumphost = make(ProvisionJumpHost,
-                                        self, self._provision_compute)
+        self._provision_jumphost = make(
+            ProvisionJumpHost, self, self._provision_compute
+        )
         self._wait_target = make(MySQLTargetReadiness, self)
         self._launch_dbsystem = make(LaunchDBSystem, self)
         self._add_heatwave = make(AddHeatWaveCluster, self)
@@ -126,7 +147,8 @@ class Orchestrator(OrchestratorInterface):
         self._done = make(Congratulations, self)
 
         logging.info(
-            f"Scheduling tasks, migration_type={project.options.migrationType}")
+            f"Scheduling tasks, migration_type={project.options.migrationType}"
+        )
 
         # Provisioning
         self._provision_bucket.add_dependency(self._provision_compartment)
@@ -246,15 +268,18 @@ class Orchestrator(OrchestratorInterface):
         # from the customer network.
         # A direct hot migration can mean site-to-site VPN or that the source DB
         # is in OCI too, although the migration tool is on-prem.
-        if self._project.options.migrationType == model.MigrationType.HOT and self._project.options.cloudConnectivity == model.CloudConnectivity.SITE_TO_SITE:
+        if (
+            self._project.options.migrationType == model.MigrationType.HOT
+            and self._project.options.cloudConnectivity
+            == model.CloudConnectivity.SITE_TO_SITE
+        ):
             assert self.cloud_resources.computePrivateIP
             compute_ip = self.cloud_resources.computePrivateIP
         else:
             assert self.cloud_resources.computePublicIP
             compute_ip = self.cloud_resources.computePublicIP
 
-        logging.info(
-            f"Opening ssh connection to opc@{compute_ip}")
+        logging.info(f"Opening ssh connection to opc@{compute_ip}")
         ssh = None
         try:
             i = 0
@@ -266,14 +291,17 @@ class Orchestrator(OrchestratorInterface):
                     ssh = ssh_utils.connect_ssh(
                         user="opc",
                         host=compute_ip,
-                        private_key_file_path=self.ssh_key_path)
+                        private_key_file_path=self.ssh_key_path,
+                    )
                     break
                 except (TimeoutError, errors.SSHError):
                     if i < 30 and wait_ready:
                         i += 1
                         import time
+
                         logging.info(
-                            f"Connect to helper instance {compute_ip} has timed out, retrying after 10s...")
+                            f"Connect to helper instance {compute_ip} has timed out, retrying after 10s..."
+                        )
                         time.sleep(10)
                     else:
                         raise
@@ -291,18 +319,25 @@ class Orchestrator(OrchestratorInterface):
     def get_compartment(self) -> Compartment:
         assert self.cloud_resources.compartmentId
 
-        if self._compartment and self._compartment.id == self.cloud_resources.compartmentId:
+        if (
+            self._compartment
+            and self._compartment.id == self.cloud_resources.compartmentId
+        ):
             return self._compartment
 
-        self._compartment = Compartment(config=self.oci_config,
-                                        ocid_or_compartment=self.cloud_resources.compartmentId,
-                                        name=self.cloud_resources.compartmentName)
+        self._compartment = Compartment(
+            config=self.oci_config,
+            ocid_or_compartment=self.cloud_resources.compartmentId,
+            name=self.cloud_resources.compartmentName,
+        )
         return self._compartment
 
     def on_push_progress(self, source: SubStepId, message: str, data: dict = {}):
         self._frontend.on_progress(source, message, data)
 
-    def on_push_status(self, source: SubStepId, status: WorkStatusEvent, data: dict = {}, message=""):
+    def on_push_status(
+        self, source: SubStepId, status: WorkStatusEvent, data: dict = {}, message=""
+    ):
         self._frontend.on_status(source, status, data, message)
 
     def on_push_message(self, source: SubStepId, data: dict):
@@ -320,8 +355,7 @@ class Orchestrator(OrchestratorInterface):
             seen.add(stage)
 
             if stage._id != SubStepId.ORCHESTRATION:
-                self._project.work_status._stage(
-                    stage._id).enabled = stage._enabled
+                self._project.work_status._stage(stage._id).enabled = stage._enabled
 
             for s in stage._dependencies:
                 traverse(s)
@@ -372,8 +406,11 @@ class Orchestrator(OrchestratorInterface):
                 self.push_status(SubStepId.ORCHESTRATION, WorkStatusEvent.END)
             except Exception as e:
                 logging.exception("orchestrator run")
-                self.push_status(SubStepId.ORCHESTRATION, WorkStatusEvent.ERROR,
-                                 model.MigrationError._from_exception(e))
+                self.push_status(
+                    SubStepId.ORCHESTRATION,
+                    WorkStatusEvent.ERROR,
+                    model.MigrationError._from_exception(e),
+                )
 
         self._thread = Thread(target=do_work)
         self._thread.start()

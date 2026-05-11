@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -51,49 +51,98 @@ Shoud give the same result as:
     >>> hashlib.md5(b"Hello World").hexdigest()
 
 """
+
 import struct
 import copy
 import sys
 
-__metaclass__ = type   # or genrpy won't work
+__metaclass__ = type  # or genrpy won't work
 
 hex_constant_strings = [
-    '0xD76AA478L', '0xE8C7B756L', '0x242070DBL', '0xC1BDCEEEL',
-    '0xF57C0FAFL', '0x4787C62AL', '0xA8304613L', '0xFD469501L',
-    '0x698098D8L', '0x8B44F7AFL', '0xFFFF5BB1L', '0x895CD7BEL',
-    '0x6B901122L', '0xFD987193L', '0xA679438EL', '0x49B40821L',
-    '0xF61E2562L', '0xC040B340L', '0x265E5A51L', '0xE9B6C7AAL',
-    '0xD62F105DL', '0x02441453L', '0xD8A1E681L', '0xE7D3FBC8L',
-    '0x21E1CDE6L', '0xC33707D6L', '0xF4D50D87L', '0x455A14EDL',
-    '0xA9E3E905L', '0xFCEFA3F8L', '0x676F02D9L', '0x8D2A4C8AL',
-    '0xFFFA3942L', '0x8771F681L', '0x6D9D6122L', '0xFDE5380CL',
-    '0xA4BEEA44L', '0x4BDECFA9L', '0xF6BB4B60L', '0xBEBFBC70L',
-    '0x289B7EC6L', '0xEAA127FAL', '0xD4EF3085L', '0x04881D05L',
-    '0xD9D4D039L', '0xE6DB99E5L', '0x1FA27CF8L', '0xC4AC5665L',
-    '0xF4292244L', '0x432AFF97L', '0xAB9423A7L', '0xFC93A039L',
-    '0x655B59C3L', '0x8F0CCC92L', '0xFFEFF47DL', '0x85845DD1L',
-    '0x6FA87E4FL', '0xFE2CE6E0L', '0xA3014314L', '0x4E0811A1L',
-    '0xF7537E82L', '0xBD3AF235L', '0x2AD7D2BBL', '0xEB86D391L'
+    "0xD76AA478L",
+    "0xE8C7B756L",
+    "0x242070DBL",
+    "0xC1BDCEEEL",
+    "0xF57C0FAFL",
+    "0x4787C62AL",
+    "0xA8304613L",
+    "0xFD469501L",
+    "0x698098D8L",
+    "0x8B44F7AFL",
+    "0xFFFF5BB1L",
+    "0x895CD7BEL",
+    "0x6B901122L",
+    "0xFD987193L",
+    "0xA679438EL",
+    "0x49B40821L",
+    "0xF61E2562L",
+    "0xC040B340L",
+    "0x265E5A51L",
+    "0xE9B6C7AAL",
+    "0xD62F105DL",
+    "0x02441453L",
+    "0xD8A1E681L",
+    "0xE7D3FBC8L",
+    "0x21E1CDE6L",
+    "0xC33707D6L",
+    "0xF4D50D87L",
+    "0x455A14EDL",
+    "0xA9E3E905L",
+    "0xFCEFA3F8L",
+    "0x676F02D9L",
+    "0x8D2A4C8AL",
+    "0xFFFA3942L",
+    "0x8771F681L",
+    "0x6D9D6122L",
+    "0xFDE5380CL",
+    "0xA4BEEA44L",
+    "0x4BDECFA9L",
+    "0xF6BB4B60L",
+    "0xBEBFBC70L",
+    "0x289B7EC6L",
+    "0xEAA127FAL",
+    "0xD4EF3085L",
+    "0x04881D05L",
+    "0xD9D4D039L",
+    "0xE6DB99E5L",
+    "0x1FA27CF8L",
+    "0xC4AC5665L",
+    "0xF4292244L",
+    "0x432AFF97L",
+    "0xAB9423A7L",
+    "0xFC93A039L",
+    "0x655B59C3L",
+    "0x8F0CCC92L",
+    "0xFFEFF47DL",
+    "0x85845DD1L",
+    "0x6FA87E4FL",
+    "0xFE2CE6E0L",
+    "0xA3014314L",
+    "0x4E0811A1L",
+    "0xF7537E82L",
+    "0xBD3AF235L",
+    "0x2AD7D2BBL",
+    "0xEB86D391L",
 ]
 
 hex_constants = []
 if sys.version_info[0] < 3:
-    long_zero = eval('0L')
-    ffffffffL = eval('0xffffffffL')
-    x3FL = eval('0x3FL')
-    constantA = eval('0x67452301L')
-    constantB = eval('0xefcdab89L')
-    constantC = eval('0x98badcfeL')
-    constantD = eval('0x10325476L')
+    long_zero = eval("0L")
+    ffffffffL = eval("0xffffffffL")
+    x3FL = eval("0x3FL")
+    constantA = eval("0x67452301L")
+    constantB = eval("0xefcdab89L")
+    constantC = eval("0x98badcfeL")
+    constantD = eval("0x10325476L")
     for hs in hex_constant_strings:
         hex_constants.append(eval(hs))
 else:
     long_zero = 0
-    ffffffffL = 0xffffffff
+    ffffffffL = 0xFFFFFFFF
     x3FL = 0x3F
     constantA = 0x67452301
-    constantB = 0xefcdab89
-    constantC = 0x98badcfe
+    constantB = 0xEFCDAB89
+    constantC = 0x98BADCFE
     constantD = 0x10325476
     for hs in hex_constant_strings:
         hex_constants.append(eval(hs.rstrip("L")))
@@ -113,10 +162,10 @@ def _bytelist2long(list):
     i = 0
     while i < imax:
         if sys.version_info[0] < 3:
-            b0 = long(ord(list[j]))                 # noqa: F821
-            b1 = (long(ord(list[j + 1]))) << 8      # noqa: F821
-            b2 = (long(ord(list[j + 2]))) << 16     # noqa: F821
-            b3 = (long(ord(list[j + 3]))) << 24     # noqa: F821
+            b0 = long(ord(list[j]))  # noqa: F821
+            b1 = (long(ord(list[j + 1]))) << 8  # noqa: F821
+            b2 = (long(ord(list[j + 2]))) << 16  # noqa: F821
+            b3 = (long(ord(list[j + 3]))) << 24  # noqa: F821
         else:
             b0 = list[j]
             if isinstance(b0, str):
@@ -154,6 +203,7 @@ def _rotateLeft(x, n):
 # ======================================================================
 
 # F, G, H and I are basic MD5 functions.
+
 
 def F(x, y, z):
     return (x & y) | ((~x) & z)
@@ -327,7 +377,7 @@ class MD5Type:
         """
 
         if sys.version_info[0] < 3:
-            leninBuf = long(len(inBuf))     # noqa: F821
+            leninBuf = long(len(inBuf))  # noqa: F821
         else:
             leninBuf = len(inBuf)
 
@@ -347,7 +397,7 @@ class MD5Type:
             self._transform(_bytelist2long(self.input))
             i = partLen
             while i + 63 < leninBuf:
-                self._transform(_bytelist2long(list(inBuf[i:i + 64])))
+                self._transform(_bytelist2long(list(inBuf[i : i + 64])))
                 i = i + 64
             else:
                 self.input = list(inBuf[i:leninBuf])
@@ -376,7 +426,7 @@ class MD5Type:
         else:
             padLen = 120 - index
 
-        padding = ['\200'] + ['\000'] * 63
+        padding = ["\200"] + ["\000"] * 63
         self.update(padding[:padLen])
 
         # Append length (before padding).
@@ -404,7 +454,7 @@ class MD5Type:
         binary environments.
         """
         if sys.version_info[0] < 3:
-            return ''.join(['%02x' % ord(c) for c in self.digest()])
+            return "".join(["%02x" % ord(c) for c in self.digest()])
         else:
             digest = []
             for c in self.digest():
@@ -413,7 +463,7 @@ class MD5Type:
                 else:
                     val = c
                 digest.append(val)
-            return ''.join(['%02x' % c for c in digest])
+            return "".join(["%02x" % c for c in digest])
 
     def copy(self):
         """Return a clone object.
@@ -421,7 +471,7 @@ class MD5Type:
         to efficiently compute the digests of strings that share
         a common initial substring.
         """
-        if 0:   # set this to 1 to make the flow space crash
+        if 0:  # set this to 1 to make the flow space crash
             return copy.deepcopy(self)
         clone = self.__class__()
         clone.length = self.length

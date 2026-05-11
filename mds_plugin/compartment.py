@@ -58,17 +58,16 @@ def get_compartment_by_id(compartment_id, config, interactive=True):
     except oci.exceptions.ServiceError as e:
         if not interactive:
             raise
-        print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+        print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
         return
     except (ValueError, oci.exceptions.ClientError) as e:
         if not interactive:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
         return
 
 
-def get_compartment_id_by_path(compartment_path, compartment_id=None,
-                               config=None):
+def get_compartment_id_by_path(compartment_path, compartment_id=None, config=None):
     """Gets a compartment by path
 
     Args:
@@ -81,14 +80,15 @@ def get_compartment_id_by_path(compartment_path, compartment_id=None,
         The OCID of the matching compartment
     """
     compartment = get_compartment_by_path(
-        compartment_path=compartment_path,
-        compartment_id=compartment_id, config=config)
+        compartment_path=compartment_path, compartment_id=compartment_id, config=config
+    )
 
     return None if compartment is None else compartment.id
 
 
-def get_compartment_by_path(compartment_path, compartment_id=None,
-                            config=None, interactive=True):
+def get_compartment_by_path(
+    compartment_path, compartment_id=None, config=None, interactive=True
+):
     """Gets a compartment by path
 
     Args:
@@ -105,39 +105,40 @@ def get_compartment_by_path(compartment_path, compartment_id=None,
     try:
         config = configuration.get_current_config(config=config)
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
 
         import oci.identity
         import mysqlsh
 
         # If / was given, return the OCID of the tenancy
-        if compartment_path == '/':
+        if compartment_path == "/":
             return get_compartment_by_id(
-                compartment_id=config.get('tenancy'), config=config)
+                compartment_id=config.get("tenancy"), config=config
+            )
 
         # If . was given, return the id of the current compartment
-        if compartment_path == '.':
-            return get_compartment_by_id(
-                compartment_id=compartment_id, config=config)
+        if compartment_path == ".":
+            return get_compartment_by_id(compartment_id=compartment_id, config=config)
 
         # Initialize the identity client
         identity = core.get_oci_identity_client(config=config)
 
         # If .. was given, return the parent compartment's or the tenancy itself
         # if the current compartment is the tenancy
-        if compartment_path == '..':
-            comp = get_compartment_by_id(
-                compartment_id=compartment_id, config=config)
+        if compartment_path == "..":
+            comp = get_compartment_by_id(compartment_id=compartment_id, config=config)
             if type(comp) == oci.identity.models.Tenancy:
                 return comp
             else:
                 return get_compartment_by_id(
-                    compartment_id=comp.compartment_id, config=config)
+                    compartment_id=comp.compartment_id, config=config
+                )
         elif compartment_path.startswith("/"):
             # Lookup full path in the full compartment tree list
             data = identity.list_compartments(
-                compartment_id=config.get("tenancy"),
-                compartment_id_in_subtree=True).data
+                compartment_id=config.get("tenancy"), compartment_id_in_subtree=True
+            ).data
 
             # Filter out all deleted compartments
             data = [c for c in data if c.lifecycle_state != "DELETED"]
@@ -149,8 +150,10 @@ def get_compartment_by_path(compartment_path, compartment_id=None,
             # Walk the given compartment_path and try to find matching path
             while i < len(path_items):
                 for c in data:
-                    if c.compartment_id == parent_id and \
-                            c.name.lower() == path_items[i]:
+                    if (
+                        c.compartment_id == parent_id
+                        and c.name.lower() == path_items[i]
+                    ):
                         full_path = f"{full_path}/{c.name.lower()}"
 
                         if full_path == compartment_path.lower():
@@ -166,8 +169,8 @@ def get_compartment_by_path(compartment_path, compartment_id=None,
             # List the compartments. If no compartment_id was given, take the id
             # from the tenancy and display full subtree of compartments
             data = identity.list_compartments(
-                compartment_id=compartment_id,
-                compartment_id_in_subtree=False).data
+                compartment_id=compartment_id, compartment_id_in_subtree=False
+            ).data
 
             # Filter out all deleted compartments
             data = [c for c in data if c.lifecycle_state != "DELETED"]
@@ -180,12 +183,12 @@ def get_compartment_by_path(compartment_path, compartment_id=None,
     except oci.exceptions.ServiceError as e:
         if not interactive:
             raise
-        print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+        print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
         return
     except Exception as e:
         if not interactive:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
         return
 
 
@@ -201,14 +204,13 @@ def get_parent_compartment(compartment, config):
     """
     import oci.identity
 
-    if compartment is None or compartment.id == config.get('tenancy'):
+    if compartment is None or compartment.id == config.get("tenancy"):
         return None
     else:
         # Initialize the identity client
         identity = core.get_oci_identity_client(config=config)
 
-        parent_comp = identity.get_compartment(
-            compartment.compartment_id).data
+        parent_comp = identity.get_compartment(compartment.compartment_id).data
 
         return parent_comp
 
@@ -230,7 +232,7 @@ def get_compartment_full_path(compartment_id, config, interactive=True):
     import re
 
     # If the given compartment_id is the OCID of the tenancy return /
-    if not compartment_id or compartment_id == config.get('tenancy'):
+    if not compartment_id or compartment_id == config.get("tenancy"):
         return "/"
     else:
         # Initialize the identity client
@@ -239,34 +241,37 @@ def get_compartment_full_path(compartment_id, config, interactive=True):
         # Get the full compartment tree item list of the tenancy
         try:
             comp_list = identity.list_compartments(
-                compartment_id=config.get('tenancy'),
-                compartment_id_in_subtree=True).data
+                compartment_id=config.get("tenancy"), compartment_id_in_subtree=True
+            ).data
         except oci.exceptions.ServiceError as e:
             if not interactive:
                 raise
-            print("Could not list all compartments.\n"
-                  f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(
+                "Could not list all compartments.\n"
+                f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})"
+            )
             return
         except Exception as e:
             if not interactive:
                 raise
-            print(f'ERROR: {e}')
+            print(f"ERROR: {e}")
             return
 
         full_path = ""
         comp_id = compartment_id
         # repeat until the tenancy is reached
-        while comp_id and comp_id != config.get('tenancy'):
+        while comp_id and comp_id != config.get("tenancy"):
             # look through complete tree item list
             id_not_found = True
             for c in comp_list:
                 # if comp_id is found, insert comp into full_path and set
                 # comp_id to parent
                 if c.id == comp_id:
-                    name = re.sub(r'[\n\r]', ' ',
-                                  c.name[:22] + '..'
-                                  if len(c.name) > 24
-                                  else c.name)
+                    name = re.sub(
+                        r"[\n\r]",
+                        " ",
+                        c.name[:22] + ".." if len(c.name) > 24 else c.name,
+                    )
                     full_path = f"/{name}{full_path}"
                     comp_id = c.compartment_id
                     id_not_found = False
@@ -274,8 +279,7 @@ def get_compartment_full_path(compartment_id, config, interactive=True):
 
             if id_not_found:
                 if not interactive:
-                    raise ValueError(
-                        f"Compartment with id {comp_id} not found.")
+                    raise ValueError(f"Compartment with id {comp_id} not found.")
                 print(f"ERROR: Compartment with id {comp_id} not found.")
                 break
 
@@ -302,15 +306,15 @@ def format_compartment_listing(data, current_compartment_id=None):
     i = 1
     for c in data:
         # Shorten to 24 chars max, remove linebreaks
-        name = re.sub(r'[\n\r]', ' ',
-                      c.name[:22] + '..'
-                      if len(c.name) > 24
-                      else c.name)
+        name = re.sub(
+            r"[\n\r]", " ", c.name[:22] + ".." if len(c.name) > 24 else c.name
+        )
         # Shorten to 54 chars max, remove linebreaks
-        description = re.sub(r'[\n\r]', ' ',
-                             c.description[:52] + '..'
-                             if len(c.description) > 54
-                             else c.description)
+        description = re.sub(
+            r"[\n\r]",
+            " ",
+            c.description[:52] + ".." if len(c.description) > 54 else c.description,
+        )
 
         index = f"*{i:>3}" if current_compartment_id == c.id else f"{i:>4}"
         out += f"{index} {name:24} {description:54} {c.lifecycle_state}\n"
@@ -335,10 +339,9 @@ def format_availability_domain_listing(data):
     i = 1
     for a in data:
         # Shorten to 24 chars max, remove linebreaks
-        name = re.sub(r'[\n\r]', ' ',
-                      a.name[:62] + '..'
-                      if len(a.name) > 64
-                      else a.name)
+        name = re.sub(
+            r"[\n\r]", " ", a.name[:62] + ".." if len(a.name) > 64 else a.name
+        )
 
         out += f"{i:>4} {name:64}\n"
         i += 1
@@ -363,12 +366,12 @@ def format_availability_domain(items) -> str:
     # return objects in READABLE text output
     out = ""
     for i in items:
-        out += core.fixed_len(i.name, 32, '\n', True)
+        out += core.fixed_len(i.name, 32, "\n", True)
 
     return out
 
 
-@plugin_function('mds.get.availabilityDomain', shell=True, cli=True, web=True)
+@plugin_function("mds.get.availabilityDomain", shell=True, cli=True, web=True)
 def get_availability_domain(**kwargs):
     """Returns the name of a randomly chosen availability_domain
 
@@ -408,10 +411,11 @@ def get_availability_domain(**kwargs):
     try:
         # Get the active config and compartment
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
 
         import oci.identity
         import oci.exceptions
@@ -423,7 +427,8 @@ def get_availability_domain(**kwargs):
 
             # Get availability domains
             availability_domains = identity.list_availability_domains(
-                compartment_id).data
+                compartment_id
+            ).data
 
             # Lookup id and proper name of availability_domain
             availability_domain_obj = None
@@ -432,11 +437,11 @@ def get_availability_domain(**kwargs):
                     if ad.name.lower() == availability_domain.lower():
                         availability_domain_obj = ad
                         break
-                if not availability_domain_obj or \
-                        availability_domain_obj.name == "":
+                if not availability_domain_obj or availability_domain_obj.name == "":
                     raise Exception(
                         f"The given availability domain {availability_domain} "
-                        "was not found.")
+                        "was not found."
+                    )
 
             # If the user did not specify a availability_domain use a random one
             if not availability_domain_obj:
@@ -449,11 +454,14 @@ def get_availability_domain(**kwargs):
                     availability_domain_obj = availability_domains[index]
                 elif interactive:
                     availability_domain_obj = core.prompt_for_list_item(
-                        item_list=availability_domains, prompt_caption=(
+                        item_list=availability_domains,
+                        prompt_caption=(
                             "Please enter the name or index of the "
-                            "availability domain: "),
+                            "availability domain: "
+                        ),
                         item_name_property="name",
-                        print_list=True)
+                        print_list=True,
+                    )
 
             if not availability_domain_obj:
                 raise Exception("No availability domain specified.")
@@ -462,26 +470,33 @@ def get_availability_domain(**kwargs):
                 oci_object=availability_domain_obj,
                 return_formatted=return_formatted,
                 return_python_object=return_python_object,
-                format_function=format_availability_domain)
+                format_function=format_availability_domain,
+            )
         except oci.exceptions.ServiceError as e:
             if e.code == "NotAuthorizedOrNotFound":
-                error = (f'You do not have privileges to list the  '
-                         f'availabilitydomains for this compartment.\n')
+                error = (
+                    f"You do not have privileges to list the  "
+                    f"availabilitydomains for this compartment.\n"
+                )
             else:
-                error = (f'Could not list the availability domains for this '
-                         f'compartment.\n')
-            error += f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})'
+                error = (
+                    f"Could not list the availability domains for this "
+                    f"compartment.\n"
+                )
+            error += f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})"
             if raise_exceptions:
                 raise Exception(error)
             print(error)
     except Exception as e:
         if raise_exceptions:
             raise
-        print(f'Could not list the availability domains for this '
-              f'compartment.\nERROR: {str(e)}')
+        print(
+            f"Could not list the availability domains for this "
+            f"compartment.\nERROR: {str(e)}"
+        )
 
 
-@plugin_function('mds.list.compartments', shell=True, cli=True, web=True)
+@plugin_function("mds.list.compartments", shell=True, cli=True, web=True)
 def list_compartments(**kwargs):
     """Lists compartments
 
@@ -521,8 +536,8 @@ def list_compartments(**kwargs):
 
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
 
         import oci.identity
         import oci.util
@@ -545,10 +560,12 @@ def list_compartments(**kwargs):
             compartment_id=compartment_id,
             access_level="ANY",
             compartment_id_in_subtree=full_subtree,
-            limit=1000).data
+            limit=1000,
+        ).data
 
         current_compartment_id = configuration.get_current_compartment_id(
-            profile_name=config_profile)
+            profile_name=config_profile
+        )
 
         # Filter out all deleted compartments
         data = [c for c in data if c.lifecycle_state != "DELETED"]
@@ -559,7 +576,7 @@ def list_compartments(**kwargs):
                 name="/ (Root Compartment)",
                 description="The tenancy is the root compartment.",
                 freeform_tags={},
-                time_created="2020-01-01T00:00:00.000000+00:00"
+                time_created="2020-01-01T00:00:00.000000+00:00",
             )
             tenancy.lifecycle_state = "ACTIVE"
             tenancy.defined_tags = {}
@@ -567,27 +584,26 @@ def list_compartments(**kwargs):
 
         if return_formatted:
             return format_compartment_listing(
-                data,
-                current_compartment_id=current_compartment_id)
+                data, current_compartment_id=current_compartment_id
+            )
         else:
             compartments = oci.util.to_dict(data)
             for compartment in compartments:
-                compartment['is_current'] = (
-                    compartment['id'] == current_compartment_id)
+                compartment["is_current"] = compartment["id"] == current_compartment_id
             return compartments
     except oci.exceptions.ServiceError as e:
         if raise_exceptions:
             raise
         else:
-            print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+            print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
     except Exception as e:
         if raise_exceptions:
             raise
         else:
-            print(f'ERROR: {e}')
+            print(f"ERROR: {e}")
 
 
-@plugin_function('mds.get.compartmentById', shell=True, cli=True, web=True)
+@plugin_function("mds.get.compartmentById", shell=True, cli=True, web=True)
 def get_compartment_by_id_func(compartment_id, **kwargs):
     """Gets a compartment by id
 
@@ -615,13 +631,14 @@ def get_compartment_by_id_func(compartment_id, **kwargs):
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
 
         import oci.util
 
         compartment = get_compartment_by_id(
-            compartment_id=compartment_id, config=config, interactive=interactive)
+            compartment_id=compartment_id, config=config, interactive=interactive
+        )
         if return_formatted:
             return format_compartment_listing(data=[compartment])
         else:
@@ -630,15 +647,15 @@ def get_compartment_by_id_func(compartment_id, **kwargs):
     except oci.exceptions.ServiceError as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+        print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
         return
     except (ValueError, oci.exceptions.ClientError) as e:
         if raise_exceptions:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.get.compartment', shell=True, cli=True, web=True)
+@plugin_function("mds.get.compartment", shell=True, cli=True, web=True)
 def get_compartment(compartment_path=None, **kwargs):
     """Gets a compartment by path
 
@@ -672,10 +689,11 @@ def get_compartment(compartment_path=None, **kwargs):
     # Get the active config and compartment
     try:
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile,
-            interactive=interactive)
+            config=config, config_profile=config_profile, interactive=interactive
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=parent_compartment_id, config=config)
+            compartment_id=parent_compartment_id, config=config
+        )
     except ValueError as e:
         if raise_exceptions:
             raise
@@ -690,13 +708,11 @@ def get_compartment(compartment_path=None, **kwargs):
 
     # If a compartment path was given, look it up
     if compartment_path is not None:
-        compartment = get_compartment_by_path(
-            compartment_path, compartment_id, config)
+        compartment = get_compartment_by_path(compartment_path, compartment_id, config)
         if compartment is not None:
             return compartment
         else:
-            print(
-                f"The compartment with the path {compartment_path} was not found.")
+            print(f"The compartment with the path {compartment_path} was not found.")
             if not interactive:
                 return
             print("Please select another compartment.\n")
@@ -707,21 +723,25 @@ def get_compartment(compartment_path=None, **kwargs):
     # List the compartments. If no compartment_id was given, take the id from
     # the tenancy and display full subtree of compartments
     data = identity.list_compartments(
-        compartment_id=compartment_id,
-        compartment_id_in_subtree=False).data
+        compartment_id=compartment_id, compartment_id_in_subtree=False
+    ).data
 
     # Filter out all deleted compartments
     data = [c for c in data if c.lifecycle_state != "DELETED"]
 
     # Print special path descriptions
     full_path = get_compartment_full_path(compartment_id, config)
-    is_tenancy = compartment_id == config.get('tenancy')
-    print(f"Directory of compartment {full_path}"
-          f"{' (the tenancy)' if is_tenancy else ''}\n")
+    is_tenancy = compartment_id == config.get("tenancy")
+    print(
+        f"Directory of compartment {full_path}"
+        f"{' (the tenancy)' if is_tenancy else ''}\n"
+    )
     if compartment_id != config.get("tenancy"):
-        print("   / Root compartment (the tenancy)\n"
-              "   . Current compartment\n"
-              "  .. Parent compartment\n")
+        print(
+            "   / Root compartment (the tenancy)\n"
+            "   . Current compartment\n"
+            "  .. Parent compartment\n"
+        )
 
     # If the compartment_name was not given or found, print out the list
     comp_list = format_compartment_listing(data)
@@ -732,39 +752,48 @@ def get_compartment(compartment_path=None, **kwargs):
     # Let the user choose from the list
     while compartment is None:
         # Prompt the user for specifying a compartment
-        prompt = mysqlsh.globals.shell.prompt(
-            "Please enter the name, index or path of the compartment: ",
-            {'defaultValue': ''}).strip().lower()
+        prompt = (
+            mysqlsh.globals.shell.prompt(
+                "Please enter the name, index or path of the compartment: ",
+                {"defaultValue": ""},
+            )
+            .strip()
+            .lower()
+        )
 
         if prompt == "":
             return
 
         try:
-            if prompt.startswith('/'):
-                if prompt == '/':
+            if prompt.startswith("/"):
+                if prompt == "/":
                     # The compartment will be the tenancy
                     compartment = get_compartment_by_id(
-                        compartment_id=config.get('tenancy'), config=config)
+                        compartment_id=config.get("tenancy"), config=config
+                    )
                     continue
                 else:
                     # Get the compartment by full path
                     compartment = get_compartment_by_path(
-                        compartment_path=prompt, compartment_id=compartment_id,
-                        config=config)
+                        compartment_path=prompt,
+                        compartment_id=compartment_id,
+                        config=config,
+                    )
                     if compartment is None:
                         raise ValueError
                     continue
-            elif prompt == '.':
+            elif prompt == ".":
                 # The compartment will be the current compartment
                 compartment = get_compartment_by_id(
-                    compartment_id=compartment_id, config=config)
+                    compartment_id=compartment_id, config=config
+                )
                 continue
-            elif prompt == '..':
+            elif prompt == "..":
                 # The compartment will be the parent compartment or none
                 compartment = get_parent_compartment(
-                    get_compartment_by_id(
-                        compartment_id=compartment_id, config=config),
-                    config=config)
+                    get_compartment_by_id(compartment_id=compartment_id, config=config),
+                    config=config,
+                )
                 if compartment is None:
                     raise ValueError
                 continue
@@ -786,16 +815,17 @@ def get_compartment(compartment_path=None, **kwargs):
                     raise ValueError
 
         except ValueError:
-            print(
-                f'The compartment {prompt} was not found. Please try again.\n')
+            print(f"The compartment {prompt} was not found. Please try again.\n")
         except IndexError:
-            print(f'A compartment with the index {prompt} was not found. '
-                  f'Please try again.\n')
+            print(
+                f"A compartment with the index {prompt} was not found. "
+                f"Please try again.\n"
+            )
 
     return compartment
 
 
-@plugin_function('mds.get.compartmentId')
+@plugin_function("mds.get.compartmentId")
 def get_compartment_id(compartment_path=None, **kwargs):
     """Gets a compartment OCID by path
 
@@ -818,12 +848,13 @@ def get_compartment_id(compartment_path=None, **kwargs):
     compartment = get_compartment(
         compartment_path=compartment_path,
         parent_compartment_id=kwargs.get("parent_compartment_id"),
-        config=kwargs.get("config"))
+        config=kwargs.get("config"),
+    )
 
     return None if compartment is None else compartment.id
 
 
-@plugin_function('mds.create.compartment')
+@plugin_function("mds.create.compartment")
 def create_compartment(**kwargs):
     """Creates a new compartment
 
@@ -857,7 +888,8 @@ def create_compartment(**kwargs):
     try:
         config = configuration.get_current_config(config=config)
         parent_compartment_id = configuration.get_current_compartment_id(
-            compartment_id=parent_compartment_id, config=config)
+            compartment_id=parent_compartment_id, config=config
+        )
 
         import oci.identity
         import mysqlsh
@@ -865,8 +897,8 @@ def create_compartment(**kwargs):
         # Get a name
         if name is None and interactive:
             name = mysqlsh.globals.shell.prompt(
-                "Please enter the name for the new compartment: ",
-                {'defaultValue': ''}).strip()
+                "Please enter the name for the new compartment: ", {"defaultValue": ""}
+            ).strip()
             if name == "":
                 print("Operation cancelled.")
                 return
@@ -875,7 +907,8 @@ def create_compartment(**kwargs):
         if description is None and interactive:
             description = mysqlsh.globals.shell.prompt(
                 "Please enter a description for the new compartment [-]: ",
-                {'defaultValue': '-'}).strip()
+                {"defaultValue": "-"},
+            ).strip()
             if description == "":
                 print("Operation cancelled.")
                 return
@@ -887,7 +920,7 @@ def create_compartment(**kwargs):
         compartment_details = oci.identity.models.CreateCompartmentDetails(
             compartment_id=parent_compartment_id,
             name=name,
-            description=description if description is not None else "-"
+            description=description if description is not None else "-",
         )
 
         # Create the compartment
@@ -900,15 +933,15 @@ def create_compartment(**kwargs):
     except oci.exceptions.ServiceError as e:
         if not interactive:
             raise
-        print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+        print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
         return
     except (ValueError, oci.exceptions.ClientError) as e:
         if not interactive:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.delete.compartment')
+@plugin_function("mds.delete.compartment")
 def delete_compartment(compartment_path=None, **kwargs):
     """Deletes the compartment with the given id
 
@@ -941,8 +974,11 @@ def delete_compartment(compartment_path=None, **kwargs):
         import mysqlsh
 
         compartment = get_compartment(
-            compartment_path=compartment_path, compartment_id=compartment_id,
-            config=config, interactive=interactive)
+            compartment_path=compartment_path,
+            compartment_id=compartment_id,
+            config=config,
+            interactive=interactive,
+        )
         if compartment is None:
             print("Operation cancelled.")
             return False
@@ -952,10 +988,15 @@ def delete_compartment(compartment_path=None, **kwargs):
 
         # Prompt the user for specifying a compartment
         if interactive:
-            prompt = mysqlsh.globals.shell.prompt(
-                f"Are you sure you want to delete the compartment {compartment.name} "
-                f"[yes/NO]: ",
-                {'defaultValue': 'no'}).strip().lower()
+            prompt = (
+                mysqlsh.globals.shell.prompt(
+                    f"Are you sure you want to delete the compartment {compartment.name} "
+                    f"[yes/NO]: ",
+                    {"defaultValue": "no"},
+                )
+                .strip()
+                .lower()
+            )
 
             if prompt != "yes":
                 print("Deletion aborted.\n")
@@ -969,16 +1010,16 @@ def delete_compartment(compartment_path=None, **kwargs):
     except oci.exceptions.ServiceError as e:
         if not interactive:
             raise
-        print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+        print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
         return False
     except (ValueError, oci.exceptions.ClientError) as e:
         if not interactive:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
         return False
 
 
-@plugin_function('mds.update.compartment')
+@plugin_function("mds.update.compartment")
 def update_compartment(compartment_path=None, **kwargs):
     """Updates the compartment with the given id
 
@@ -1023,8 +1064,8 @@ def update_compartment(compartment_path=None, **kwargs):
             print("Please specify the compartment that should be updated.\n")
             try:
                 compartment = get_compartment(
-                    compartment_id=compartment_id,
-                    config=config)
+                    compartment_id=compartment_id, config=config
+                )
             except Exception as e:
                 print(f"ERROR: Could not get compartment_id. {e}")
                 return
@@ -1040,15 +1081,16 @@ def update_compartment(compartment_path=None, **kwargs):
         if name is None:
             name = mysqlsh.globals.shell.prompt(
                 f"Please enter a new name for the compartment [{compartment.name}]: ",
-                {'defaultValue': compartment.name}).strip()
+                {"defaultValue": compartment.name},
+            ).strip()
         if description is None:
             description = mysqlsh.globals.shell.prompt(
                 f"Please enter a new description [current description]: ",
-                {'defaultValue': compartment.description}).strip()
+                {"defaultValue": compartment.description},
+            ).strip()
 
         update_details = oci.identity.models.UpdateCompartmentDetails(
-            name=name,
-            description=description
+            name=name, description=description
         )
         identity.update_compartment(compartment.id, update_details)
 
@@ -1056,15 +1098,15 @@ def update_compartment(compartment_path=None, **kwargs):
     except oci.exceptions.ServiceError as e:
         if not interactive:
             raise
-        print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+        print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
         return
     except (ValueError, oci.exceptions.ClientError) as e:
         if not interactive:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
 
 
-@plugin_function('mds.list.availabilityDomains', shell=True, cli=False, web=True)
+@plugin_function("mds.list.availabilityDomains", shell=True, cli=False, web=True)
 def list_availability_domains(**kwargs):
     """Lists Availability Domains
 
@@ -1095,29 +1137,31 @@ def list_availability_domains(**kwargs):
     try:
         # Get the active config and compartment
         config = configuration.get_current_config(
-            config=config, config_profile=config_profile)
+            config=config, config_profile=config_profile
+        )
         compartment_id = configuration.get_current_compartment_id(
-            compartment_id=compartment_id, config=config)
+            compartment_id=compartment_id, config=config
+        )
 
         # Initialize the identity client
         identity = core.get_oci_identity_client(config=config)
 
         # List availability domains
-        data = identity.list_availability_domains(
-            compartment_id).data
+        data = identity.list_availability_domains(compartment_id).data
 
         if return_formatted:
             return format_availability_domain_listing(data)
         else:
             import oci.util
+
             return oci.util.to_dict(data)
     except oci.exceptions.ServiceError as e:
         if not interactive:
             raise
-        print(f'ERROR: {e.message}. (Code: {e.code}; Status: {e.status})')
+        print(f"ERROR: {e.message}. (Code: {e.code}; Status: {e.status})")
         return
     except Exception as e:
         if not interactive:
             raise
-        print(f'ERROR: {e}')
+        print(f"ERROR: {e}")
         return

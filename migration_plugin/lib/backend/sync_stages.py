@@ -31,14 +31,21 @@ from ..util import sanitize_connection_dict
 from ..gtid import gtid_contains, gtid_count, gtid_subtract
 from .. import logging, oci_utils
 from . import model
-from .model import MigrationMessage, SubStepId, MigrationError, MigrationType, CloudConnectivity, ServerType
+from .model import (
+    MigrationMessage,
+    SubStepId,
+    MigrationError,
+    MigrationType,
+    CloudConnectivity,
+    ServerType,
+)
 from .stage import Stage, WorkStatusEvent, ThreadedStage, OrchestratorInterface
 from .remote_helper import RemoteHelperClient
 from ..ssh_utils import RemoteSSHTunnel
 from dataclasses import dataclass, field
 
-
 # TODO add a stage to check direct connectivity from jump host to source DB
+
 
 class CreateSSHTunnel(Stage):
     """
@@ -58,8 +65,14 @@ class CreateSSHTunnel(Stage):
     @property
     def _enabled(self) -> bool:
         options = self._owner.project.options
-        return (options.migrationType == model.MigrationType.HOT and
-                options.cloudConnectivity in (model.CloudConnectivity.LOCAL_SSH_TUNNEL, model.CloudConnectivity.SSH_TUNNEL))
+        return (
+            options.migrationType == model.MigrationType.HOT
+            and options.cloudConnectivity
+            in (
+                model.CloudConnectivity.LOCAL_SSH_TUNNEL,
+                model.CloudConnectivity.SSH_TUNNEL,
+            )
+        )
 
     def setup_tunnel(self):
         helper_host = self._owner.cloud_resources.computePublicIP
@@ -68,14 +81,17 @@ class CreateSSHTunnel(Stage):
         # TODO maybe run this as a separate process
         self._tunnel = RemoteSSHTunnel(
             user="opc",
-            from_host=helper_host, from_port=3306,
-            to_host=source["host"], to_port=source["port"],
+            from_host=helper_host,
+            from_port=3306,
+            to_host=source["host"],
+            to_port=source["port"],
             key_filename=self._owner.ssh_key_path,
             passphrase=None,
             allow_agent=False,
             look_for_keys=False,
             bind_address="0.0.0.0",
-            keepalive=24*3600)
+            keepalive=24 * 3600,
+        )
 
     def start(self, parents) -> bool:
         super().start(parents)
@@ -84,29 +100,37 @@ class CreateSSHTunnel(Stage):
             logging.info(f"Skipping disabled stage {self._name}")
             return True
 
-        if self._owner.project.options.cloudConnectivity == model.CloudConnectivity.LOCAL_SSH_TUNNEL:
-            self.push_status(WorkStatusEvent.BEGIN,
-                             message="Starting built-in ssh tunnel")
+        if (
+            self._owner.project.options.cloudConnectivity
+            == model.CloudConnectivity.LOCAL_SSH_TUNNEL
+        ):
+            self.push_status(
+                WorkStatusEvent.BEGIN, message="Starting built-in ssh tunnel"
+            )
             try:
                 self.start_local_tunnel()
 
                 self.push_progress("Waiting for ssh tunnel")
             except Exception as e:
                 logging.exception("tunnel start error")
-                self.push_status(WorkStatusEvent.ERROR, message="Could not start built-in SSH tunnel",
-                                 data=MigrationError._from_exception(e))
+                self.push_status(
+                    WorkStatusEvent.ERROR,
+                    message="Could not start built-in SSH tunnel",
+                    data=MigrationError._from_exception(e),
+                )
                 raise
         else:
             source_host = self._owner.project.source_connection_options["host"]
             source_port = self._owner.project.source_connection_options.get(
-                "port", 3306)
+                "port", 3306
+            )
             cmd = f"ssh -i{self._owner.project.ssh_key_private} -oIdentityAgent=none opc@{self._owner.cloud_resources.computePublicIP} -N -R 3306:{source_host}:{source_port}"
 
-            self.push_status(WorkStatusEvent.BEGIN,
-                             message="Waiting for ssh tunnel to be manually started",
-                             data={
-                                 "command": cmd
-                             })
+            self.push_status(
+                WorkStatusEvent.BEGIN,
+                message="Waiting for ssh tunnel to be manually started",
+                data={"command": cmd},
+            )
 
         return True
 
@@ -127,8 +151,9 @@ class CreateSSHTunnel(Stage):
 
         try:
             if self._helper.test_tunnel(
-                    user=self._owner.source_connection_options["user"],
-                    password=self._owner.source_connection_options["password"]):
+                user=self._owner.source_connection_options["user"],
+                password=self._owner.source_connection_options["password"],
+            ):
                 logging.info(f"{self._name}: tunnel seems to work")
                 return True
         # TODO dont close the helper if the error is not related to ssh
@@ -149,8 +174,9 @@ class CreateSSHTunnel(Stage):
     def finish(self):
         self._helper = None
 
-        self.push_status(WorkStatusEvent.END,
-                         message=f"SSH tunnel is ready and connectable")
+        self.push_status(
+            WorkStatusEvent.END, message=f"SSH tunnel is ready and connectable"
+        )
 
         return super().finish()
 
@@ -162,7 +188,10 @@ class CheckDirectConnectivity(Stage):
     @property
     def _enabled(self) -> bool:
         options = self._owner.project.options
-        return options.migrationType == model.MigrationType.HOT and options.cloudConnectivity == model.CloudConnectivity.SITE_TO_SITE
+        return (
+            options.migrationType == model.MigrationType.HOT
+            and options.cloudConnectivity == model.CloudConnectivity.SITE_TO_SITE
+        )
 
 
 class CreateChannel(ThreadedStage):
@@ -181,8 +210,7 @@ class CreateChannel(ThreadedStage):
             self.ensure_channel()
         except Exception as e:
             logging.exception("create channel")
-            self.push_status(WorkStatusEvent.ERROR,
-                             MigrationError._from_exception(e))
+            self.push_status(WorkStatusEvent.ERROR, MigrationError._from_exception(e))
             raise
 
         # try:
@@ -201,7 +229,8 @@ class CreateChannel(ThreadedStage):
 
         self.db_system = oci_utils.DBSystem(
             config=self._owner.oci_config,
-            ocid_or_db_system=self._owner.cloud_resources.dbSystemId)
+            ocid_or_db_system=self._owner.cloud_resources.dbSystemId,
+        )
 
         # check if channel exists
         self.channel = self.db_system.try_get_channel()
@@ -216,19 +245,22 @@ class CreateChannel(ThreadedStage):
             # right here we're not sure if the channel is usable
             if self.channel.lifecycle_state in ("FAILED", "NEEDS_ATTENTION"):
                 logging.info(
-                    f"Channel {self.channel.display_name} id={self.channel.id} state={self.channel.lifecycle_state} will be deleted and recreated")
+                    f"Channel {self.channel.display_name} id={self.channel.id} state={self.channel.lifecycle_state} will be deleted and recreated"
+                )
                 self.db_system.delete_channel(self.channel.id)
                 # wait for channel to be gone
                 while self.channel.lifecycle_state not in ("DELETING", "DELETED"):
                     logging.info(
-                        f"Waiting for channel {self.channel.display_name} to be deleted state={self.channel.lifecycle_state}")
+                        f"Waiting for channel {self.channel.display_name} to be deleted state={self.channel.lifecycle_state}"
+                    )
                     time.sleep(5)
                     self.channel.refresh()
                 # now wait for dbsystem to get out of UPDATING
                 self.db_system.refresh()
                 while self.db_system.lifecycle_state == "UPDATING":
                     logging.info(
-                        f"Waiting for DBSystem {self.db_system.display_name} to finish updating state={self.db_system.lifecycle_state}")
+                        f"Waiting for DBSystem {self.db_system.display_name} to finish updating state={self.db_system.lifecycle_state}"
+                    )
                     time.sleep(5)
                     self.db_system.refresh()
             else:
@@ -238,13 +270,17 @@ class CreateChannel(ThreadedStage):
         source = self._owner.source_connection_options.copy()
         if self._owner.options.cloudConnectivity == CloudConnectivity.SITE_TO_SITE:
             pass
-        elif self._owner.options.cloudConnectivity in (CloudConnectivity.LOCAL_SSH_TUNNEL, CloudConnectivity.SSH_TUNNEL):
+        elif self._owner.options.cloudConnectivity in (
+            CloudConnectivity.LOCAL_SSH_TUNNEL,
+            CloudConnectivity.SSH_TUNNEL,
+        ):
             # tunnel endpoint is jumphost:3306
             source["port"] = 3306
             source["host"] = self._owner.cloud_resources.computePrivateIP
 
         logging.info(
-            f"Creating new Channel type={self._owner.options.migrationType} connectivity={self._owner.options.cloudConnectivity} for DBSystem={self.db_system.id} to {sanitize_connection_dict(source)}")
+            f"Creating new Channel type={self._owner.options.migrationType} connectivity={self._owner.options.cloudConnectivity} for DBSystem={self.db_system.id} to {sanitize_connection_dict(source)}"
+        )
 
         # if source doesn't do GTID, the channel has to be configured to use
         # binlog_file and position based replication. we assign the UUID that
@@ -258,12 +294,15 @@ class CreateChannel(ThreadedStage):
             gtid_off_handling = {
                 "binlog_file": coords["Binlog_file"],
                 "binlog_pos": coords["Binlog_position"],
-                "uuid": self._owner.source_info.serverUuid
+                "uuid": self._owner.source_info.serverUuid,
             }
             logging.info(
-                f"Source has gtid_mode={self._owner.source_info.gtidMode}, channel will use file/pos: {gtid_off_handling}")
+                f"Source has gtid_mode={self._owner.source_info.gtidMode}, channel will use file/pos: {gtid_off_handling}"
+            )
 
-        replicate_ignore_db, replicate_ignore_table, replicate_wild_ignore_table = self._owner.project.compute_replication_filters()
+        replicate_ignore_db, replicate_ignore_table, replicate_wild_ignore_table = (
+            self._owner.project.compute_replication_filters()
+        )
 
         self.channel = self.db_system.create_channel(
             source_host=source["host"],
@@ -272,7 +311,8 @@ class CreateChannel(ThreadedStage):
             source_password=source["password"],
             gtid_off_handling=gtid_off_handling,
             freeform_tags=oci_utils.make_freeform_tags(
-                self._owner.migrator_instance_id),
+                self._owner.migrator_instance_id
+            ),
             replicate_ignore_db=replicate_ignore_db,
             replicate_ignore_table=replicate_ignore_table,
             replicate_wild_ignore_table=replicate_wild_ignore_table,
@@ -331,11 +371,12 @@ class MonitorChannel(ThreadedStage):
             if connection_status.get("LAST_ERROR_NUMBER"):
                 self._receiver_state = connection_status.get("SERVICE_STATE")
                 self._target_gtid_received = connection_status.get(
-                    "RECEIVED_TRANSACTION_SET")
+                    "RECEIVED_TRANSACTION_SET"
+                )
                 self._receiver_error = {
                     "errno": connection_status.get("LAST_ERROR_NUMBER"),
                     "error": connection_status.get("LAST_ERROR_MESSAGE"),
-                    "error_time": connection_status.get("LAST_ERROR_TIMESTAMP")
+                    "error_time": connection_status.get("LAST_ERROR_TIMESTAMP"),
                 }
                 # only one channel per dbsystem expected
                 break
@@ -346,7 +387,7 @@ class MonitorChannel(ThreadedStage):
                     "errno": applier_status.get("LAST_ERROR_NUMBER"),
                     "error": applier_status.get("LAST_ERROR_MESSAGE"),
                     "error_time": applier_status.get("LAST_ERROR_TIMESTAMP"),
-                    "transaction": applier_status.get("APPLYING_TRANSACTION")
+                    "transaction": applier_status.get("APPLYING_TRANSACTION"),
                 }
                 self._applier_errors.append(info)
 
@@ -366,7 +407,8 @@ class MonitorChannel(ThreadedStage):
                 return False
 
         logging.info(
-            f"All transactions breaking applier appear to have been applied. gtid_executed={status["gtid_executed"]} transactions={','.join(broken_gtids)}")
+            f"All transactions breaking applier appear to have been applied. gtid_executed={status["gtid_executed"]} transactions={','.join(broken_gtids)}"
+        )
         return True
 
     def _check_source_status(self) -> dict:
@@ -375,11 +417,14 @@ class MonitorChannel(ThreadedStage):
 
         with self._owner.connect_source() as session:
             gtid_executed, gtid_purged = session.run_sql(
-                "select @@gtid_executed, @@gtid_purged").fetch_one()
+                "select @@gtid_executed, @@gtid_purged"
+            ).fetch_one()
 
             return {"gtid_executed": gtid_executed, "gtid_purged": gtid_purged}
 
-    def _analyze_replication_progress(self, channel_status: dict, source_status: dict) -> dict:
+    def _analyze_replication_progress(
+        self, channel_status: dict, source_status: dict
+    ) -> dict:
         # check if things are converging:
         # - purged missing transactions
         # - backlog growth rate
@@ -387,10 +432,14 @@ class MonitorChannel(ThreadedStage):
         # - calc replication lag
         return {}
 
-    def _report_status(self, channel: Optional[oci_utils.Channel], channel_status: dict, source_status: dict):
+    def _report_status(
+        self,
+        channel: Optional[oci_utils.Channel],
+        channel_status: dict,
+        source_status: dict,
+    ):
         if source_status:
-            progress = self._analyze_replication_progress(
-                channel_status, source_status)
+            progress = self._analyze_replication_progress(channel_status, source_status)
             # TODO log/report progress
         else:
             progress = None
@@ -399,7 +448,8 @@ class MonitorChannel(ThreadedStage):
 
         if channel_status and source_status:
             status.gtidBacklog = gtid_subtract(
-                source_status["gtid_executed"], channel_status["gtid_executed"])
+                source_status["gtid_executed"], channel_status["gtid_executed"]
+            )
             status.gtidBacklogSize = gtid_count(status.gtidBacklog)
 
         if channel_status:
@@ -415,10 +465,13 @@ class MonitorChannel(ThreadedStage):
             receiver_status = channel_status["receiver_error"]
             if receiver_status:
                 status.status = model.ReplicationStatus.RECEIVER_ERROR
-                status.details = "Target DBSystem is unable to connect to the source database."
+                status.details = (
+                    "Target DBSystem is unable to connect to the source database."
+                )
                 errs = []
                 errs.append(
-                    f"{receiver_status['error']} (error={receiver_status['errno']})")
+                    f"{receiver_status['error']} (error={receiver_status['errno']})"
+                )
                 status.errors = errs
 
         self.push_progress(status.details, status)
@@ -435,8 +488,9 @@ class MonitorChannel(ThreadedStage):
             self._monitor_loop(helper)
         except Exception as e:
             self._failed = True
-            self.push_status(WorkStatusEvent.ERROR,
-                             model.MigrationError._from_exception(e))
+            self.push_status(
+                WorkStatusEvent.ERROR, model.MigrationError._from_exception(e)
+            )
             raise
 
     def _do_skip_gtids(self, helper):
@@ -463,30 +517,33 @@ class MonitorChannel(ThreadedStage):
             # note: the control plane will notice replication problems with a
             # delay compared to directly querying the server
             logging.info(
-                f"channel lifecycle_state={channel.lifecycle_state} details={channel.lifecycle_details}")
+                f"channel lifecycle_state={channel.lifecycle_state} details={channel.lifecycle_details}"
+            )
 
             self._do_skip_gtids(helper)
 
             self._target_check_time = time.time()
-            status = helper.channel_status(
-                self._owner.target_connection_options)
-            logging.devdebug(
-                f"{self._name}: raw channel status={status}", iftag="sync")
+            status = helper.channel_status(self._owner.target_connection_options)
+            logging.devdebug(f"{self._name}: raw channel status={status}", iftag="sync")
 
             channel_changed = False
             channel_status = self._analyze_channel_status(status)
-            if (channel_status | {"time": None}) != (old_channel_status | {"time": None}):
+            if (channel_status | {"time": None}) != (
+                old_channel_status | {"time": None}
+            ):
                 old_channel_status = channel_status
                 channel_changed = True
                 logging.info(f"channel status={channel_status}")
 
-            if channel.lifecycle_state == "NEEDS_ATTENTION" and channel_status["applier_errors"]:
+            if (
+                channel.lifecycle_state == "NEEDS_ATTENTION"
+                and channel_status["applier_errors"]
+            ):
                 if self._is_resolved(channel_status):
                     # if the GTID from an applier error is in GTID_EXECUTED, then it
                     # was probably resolved somehow, so we can try resuming the
                     # channel
-                    logging.info(
-                        f"Resuming auto-resolved broken channel...")
+                    logging.info(f"Resuming auto-resolved broken channel...")
                     self.resume()
                     continue
 
@@ -499,8 +556,7 @@ class MonitorChannel(ThreadedStage):
             if channel.lifecycle_state == "ACTIVE":
                 self._sleep_cancel_event.wait(timeout=self._update_interval)
             else:
-                self._sleep_cancel_event.wait(
-                    timeout=self._error_update_interval)
+                self._sleep_cancel_event.wait(timeout=self._error_update_interval)
 
         logging.info(f"{self._name}: stopped")
 
@@ -529,11 +585,13 @@ class MonitorChannel(ThreadedStage):
             channel.update(is_enabled=True)
         elif channel.lifecycle_state == "NEEDS_ATTENTION":
             logging.info(
-                f"Channel is in state {channel.lifecycle_state} and will be resumed")
+                f"Channel is in state {channel.lifecycle_state} and will be resumed"
+            )
             channel.resume()
 
     def skip_gtids(self, gtids: str):
         self._skip_gtid_queue.put(gtids)
+
 
 # TODO - scenario:
 #   - create user admin@% executed at source
