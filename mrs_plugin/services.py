@@ -253,7 +253,7 @@ def file_name_using_language_convention(
 def default_copyright_header(
     sdk_language: Literal["typescript", "python"] = "typescript",
 ):
-    header = "Copyright (c) 2023, 2026, Oracle and/or its affiliates.
+    header = "Copyright (c) 2023, 2026, Oracle and/or its affiliates."
     if sdk_language == "typescript":
         return f"// {header}"
     return f"# {header}"
