@@ -881,9 +881,9 @@ class ConfigureTargetDBSystem:
             else:
                 if "MySQL.Free" == options.shapeName:
                     # Always Free Tier DB Systems must use the latest active available version
-                    options.mysqlVersion = (
-                        self.versions[-1].versions[-1].version
-                    )  # type: ignore
+                    versions = self.versions[-1].versions
+                    assert versions
+                    options.mysqlVersion = versions[-1].version
                 else:
                     options.mysqlVersion = self.recommend_version(
                         self._server_info, self.versions
