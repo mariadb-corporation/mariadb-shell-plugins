@@ -34,8 +34,10 @@ UPDATE `privilege`
 SET `access_pattern` = 'gui\.users\.(get_gui_module_list|list_profiles|get_profile|add_profile|get_default_profile|set_default_profile|set_web_session_profile)'
 WHERE `id` = 5;
 
+-- Single Server WebUI does not expose OCI/MDS or MSM features.
+-- Keep privilege 6 limited to namespaces required by that mode.
 UPDATE `privilege`
-SET `access_pattern` = '^(?!(?:gui\.(?:shell|users)\b))(?:(gui|mrs|mds|msm))\.[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)?$'
+SET `access_pattern` = '^(?!(?:gui\.(?:shell|users)\b))(?:(gui|mrs))\.[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)?$'
 WHERE `id` = 6;
 
 INSERT INTO `role_has_privilege` (`role_id`, `privilege_id`) VALUES (4, 5);

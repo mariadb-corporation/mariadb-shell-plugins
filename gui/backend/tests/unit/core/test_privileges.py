@@ -39,7 +39,7 @@ SINGLE_SERVER_PRIVILEGES = [
     },
     {
         "access_pattern": (
-            r"^(?!(?:gui\.(?:shell|users)\b))(?:(gui|mrs|mds|msm))"
+            r"^(?!(?:gui\.(?:shell|users)\b))(?:(gui|mrs))"
             r"\.[a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)?$"
         ),
     },
@@ -98,6 +98,17 @@ def test_single_server_user_cannot_execute_gui_shell_commands():
     assert not command_matches_privileges("gui.shell.execute", SINGLE_SERVER_PRIVILEGES)
 
 
+def test_single_server_user_cannot_execute_mds_or_msm_commands():
+    denied_commands = [
+        "mds.execute.ssh",
+        "mds.get.bucketObject",
+        "msm.info",
+    ]
+
+    for cmd in denied_commands:
+        assert not command_matches_privileges(cmd, SINGLE_SERVER_PRIVILEGES)
+
+
 def test_fresh_sqlite_schema_single_server_privileges_match_commands(
     tmp_path, monkeypatch
 ):
@@ -117,6 +128,9 @@ def test_fresh_sqlite_schema_single_server_privileges_match_commands(
         assert command_matches_privileges("mrs.foo.bar", privileges)
         assert not command_matches_privileges("gui.users.list_users", privileges)
         assert not command_matches_privileges("gui.shell.execute", privileges)
+        assert not command_matches_privileges("mds.execute.ssh", privileges)
+        assert not command_matches_privileges("mds.get.bucketObject", privileges)
+        assert not command_matches_privileges("msm.info", privileges)
     finally:
         db.close()
 
@@ -138,8 +152,18 @@ def test_sqlite_migration_updates_single_server_privileges(tmp_path):
             CREATE VIEW schema_version (major, minor, patch)
             AS SELECT 0, 0, 23;
             INSERT INTO privilege VALUES
-                (5, 1, 'Access to selected gui.users functions', 'old'),
-                (6, 1, 'Limited access for Single Server Mode', 'old');
+                (
+                    5,
+                    1,
+                    'Access to selected gui.users functions',
+                    'old'
+                ),
+                (
+                    6,
+                    1,
+                    'Limited access for Single Server Mode',
+                    '^(?!(?:gui\\.(?:shell|users)\\b))(?:(gui|mrs|mds|msm))\\.[a-zA-Z_][\\w]*(?:\\.[a-zA-Z_][\\w]*)?$'
+                );
             INSERT INTO role_has_privilege VALUES (4, 6);
         """)
         db.executescript(
@@ -159,5 +183,8 @@ def test_sqlite_migration_updates_single_server_privileges(tmp_path):
         assert command_matches_privileges("gui.users.get_profile", privileges)
         assert command_matches_privileges("mrs.foo.bar", privileges)
         assert not command_matches_privileges("gui.users.list_users", privileges)
+        assert not command_matches_privileges("mds.execute.ssh", privileges)
+        assert not command_matches_privileges("mds.get.bucketObject", privileges)
+        assert not command_matches_privileges("msm.info", privileges)
     finally:
         db.close()
