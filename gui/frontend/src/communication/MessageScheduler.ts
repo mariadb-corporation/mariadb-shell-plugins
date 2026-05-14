@@ -182,8 +182,9 @@ export class MessageScheduler {
             target.protocol = options.url.protocol.replace("http", "ws"); // ws or wss
             target.pathname = "ws1.ws";
 
-            /* istanbul ignore next */
-            if (appParameters.inDevelopment) {
+            // Standalone Vite development runs the frontend on port 3001 and the shell backend on 8000.
+            // VS Code webviews receive the backend URL from the extension and must keep that port.
+            if (appParameters.inDevelopment && !appParameters.inExtension) {
                 target.port = "8000";
             }
 
