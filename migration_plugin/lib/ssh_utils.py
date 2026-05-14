@@ -27,6 +27,7 @@ import socket
 from pathlib import Path
 import select
 import threading
+import time
 from typing import Optional
 import paramiko
 import paramiko.client
@@ -160,6 +161,11 @@ class RemoteSSHTunnel:
       - For non-local bind (0.0.0.0), GatewayPorts yes
     """
 
+    _accept_timeout = 1.0
+    _probe_timeout = 5.0
+    _reconnect_initial_delay = 1.0
+    _reconnect_max_delay = 30.0
+
     def __init__(
         self,
         user: str,
@@ -199,51 +205,155 @@ class RemoteSSHTunnel:
 
     def _connect(self):
         client = paramiko.SSHClient()
+        sock = None
+        transport = None
 
-        client.set_missing_host_key_policy(self.missing_host_key_policy)
-        logging.info(
-            f"Connecting to {self.user}@{self.from_host} ({self.key_filename})"
-        )
-
-        # Create a socket and transport object manually to set ciphers
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(10)
-        sock.connect((self.from_host, 22))
-
-        # Create Transport with preferred ciphers using disabled_algorithms
-        transport = paramiko.Transport(sock)
-        transport.get_security_options().ciphers = get_preferred_cipher_list()
-        transport.use_compression(compress=True)
-
-        # TODO: enable using agent and automatic key lookup
-        private_key = paramiko.RSAKey.from_private_key_file(
-            self.key_filename, password=self.passphrase
-        )
-
-        # Start the client and authenticate
-        transport.start_client()
-        transport.auth_publickey(self.user, private_key)
-
-        if not transport.is_active():
-            transport.close()
-            raise RuntimeError("Failed to establish transport for SSH tunnel")
-
-        # Keepalive to maintain connection across idle periods
-        transport.set_keepalive(self.keepalive)
-
-        # Request remote port forwarding (server-side listen on Host B)
         try:
+            client.set_missing_host_key_policy(self.missing_host_key_policy)
+            logging.info(
+                f"sshtunnel: Connecting to SSH {self.user}@{self.from_host} ({self.key_filename})"
+            )
+
+            # Create a socket and transport object manually to set ciphers
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            sock.connect((self.from_host, 22))
+
+            # Create Transport with preferred ciphers using disabled_algorithms
+            transport = paramiko.Transport(sock)
+            transport.get_security_options().ciphers = get_preferred_cipher_list()
+            transport.use_compression(compress=True)
+
+            # TODO: enable using agent and automatic key lookup
+            private_key = paramiko.RSAKey.from_private_key_file(
+                self.key_filename, password=self.passphrase
+            )
+
+            # Start the client and authenticate
+            transport.start_client()
+            transport.auth_publickey(self.user, private_key)
+
+            if not transport.is_active():
+                raise RuntimeError("Failed to establish transport for SSH tunnel")
+
+            # Keepalive to maintain connection across idle periods
+            transport.set_keepalive(self.keepalive)
+            logging.debug(
+                f"sshtunnel: Paramiko transport keepalive configured interval={self.keepalive}s"
+            )
+
+            # Request remote port forwarding (server-side listen on Host B)
             transport.request_port_forward(self.bind_address, self.from_port)
+            logging.debug(
+                f"sshtunnel: Remote port forward requested on {self.bind_address}:{self.from_port}"
+            )
+
+            self._transport = transport
+
+            # Attach the transport to the SSHClient
+            client._transport = transport
+
+            return client
         except Exception:
-            transport.close()
+            try:
+                if transport is not None:
+                    transport.close()
+                elif sock is not None:
+                    sock.close()
+            except Exception as e:
+                logging.debug(f"sshtunnel: Partial connection close error: {e}")
+            try:
+                client.close()
+            except Exception as e:
+                logging.debug(f"sshtunnel: Partial client close error: {e}")
             raise
 
-        self._transport = transport
+    def _close_transport(self):
+        try:
+            if self._transport is not None:
+                self._transport.close()
+        except Exception as e:
+            logging.debug(f"sshtunnel: Transport close error: {e}")
 
-        # Attach the transport to the SSHClient
-        client._transport = transport
+        try:
+            if self._client is not None:
+                self._client.close()
+        except Exception as e:
+            logging.debug(f"sshtunnel: Client close error: {e}")
 
-        return client
+        self._client = None
+        self._transport = None
+
+    def _reconnect_transport(self) -> bool:
+        self._close_transport()
+
+        delay = self._reconnect_initial_delay
+        while not self._stop_evt.is_set():
+            try:
+                logging.warning("sshtunnel: SSH transport inactive, reconnecting")
+                self._client = self._connect()
+                logging.info(
+                    f"sshtunnel: Re-established remote SSH tunnel: {self.from_host}:{self.from_port} -> {self.to_host}:{self.to_port}"
+                )
+                return True
+            except Exception as e:
+                logging.warning(f"sshtunnel: Reconnect failed: {e}")
+                if self._stop_evt.wait(delay):
+                    return False
+                delay = min(delay * 2, self._reconnect_max_delay)
+
+        return False
+
+    def _probe_transport(self) -> bool:
+        transport = self._transport
+        if transport is None or not transport.is_active():
+            return False
+
+        try:
+            # Paramiko's Transport.set_keepalive() sends keepalive@lag.net
+            # only after this side has not sent data. During replication the
+            # source can still send heartbeat data to the DBSystem, so force
+            # a request/response probe to keep both SSH directions active.
+            logging.debug2("sshtunnel: Sending SSH keepalive request/response probe")
+            probe_done = threading.Event()
+            probe_response = None
+            probe_error = None
+            active = False
+
+            def run_probe():
+                nonlocal active, probe_error, probe_response
+                try:
+                    probe_response = transport.global_request(
+                        "keepalive@lag.net", wait=True
+                    )
+                    active = transport.is_active()
+                except Exception as e:
+                    probe_error = e
+                finally:
+                    probe_done.set()
+
+            threading.Thread(
+                target=run_probe, name="RemoteSSHTunnelProbe", daemon=True
+            ).start()
+
+            if not probe_done.wait(self._probe_timeout):
+                logging.warning("sshtunnel: SSH keepalive probe timed out")
+                try:
+                    transport.close()
+                except Exception as e:
+                    logging.debug(f"sshtunnel: Timed-out probe close error: {e}")
+                return False
+
+            if probe_error is not None:
+                raise probe_error
+
+            logging.debug2(
+                f"sshtunnel: SSH keepalive probe completed active={active} response={probe_response is not None}"
+            )
+            return active
+        except Exception as e:
+            logging.warning(f"sshtunnel: SSH keepalive probe failed: {e}")
+            return False
 
     def start(self):
         if self._started:
@@ -267,38 +377,61 @@ class RemoteSSHTunnel:
         self._stop_evt.set()
 
         # Closing the transport will unblock accept()
-        try:
-            if self._transport is not None:
-                self._transport.close()
-        except Exception as e:
-            logging.debug(f"sshtunnel: Transport close error: {e}")
-
-        try:
-            if self._client is not None:
-                self._client.close()
-        except Exception as e:
-            logging.debug(f"sshtunnel: Client close error: {e}")
+        self._close_transport()
 
         if wait and self._thread is not None and self._thread.is_alive():
             self._thread.join(join_timeout)
 
-        self._client = None
-        self._transport = None
         self._thread = None
         self._started = False
         logging.info("sshtunnel: Stopped remote SSH tunnel")
 
     def _accept_loop(self):
-        assert self._transport is not None
+        last_probe = 0.0
+
+        def reset_probe_time():
+            nonlocal last_probe
+            last_probe = time.monotonic()
+
+        reset_probe_time()
+
+        def reconnect_and_reset_probe() -> bool:
+            if not self._reconnect_transport():
+                return False
+            reset_probe_time()
+            return True
+
+        def probe_and_reset_time() -> bool:
+            if not self._probe_transport():
+                return False
+            reset_probe_time()
+            return True
+
         while not self._stop_evt.is_set():
+            transport = self._transport
+            if transport is None or not transport.is_active():
+                if not reconnect_and_reset_probe():
+                    break
+                continue
+
+            if self.keepalive > 0 and time.monotonic() - last_probe >= self.keepalive:
+                logging.debug2(
+                    f"sshtunnel: SSH keepalive probe due interval={self.keepalive}s"
+                )
+                if not probe_and_reset_time() and not reconnect_and_reset_probe():
+                    break
+                continue
+
             try:
-                # 1s timeout to check stop flag
-                chan = self._transport.accept(1000)
+                chan = transport.accept(self._accept_timeout)
                 if chan is None:
                     continue
             except Exception as e:
                 if not self._stop_evt.is_set():
                     logging.warning(f"sshtunnel: Accept loop error: {e}")
+                    if not reconnect_and_reset_probe():
+                        break
+                    continue
                 break
             # Handle each incoming connection in its own thread
             t = threading.Thread(
@@ -330,11 +463,13 @@ class RemoteSSHTunnel:
                 if chan in r:
                     data = chan.recv(32768)
                     if not data:
+                        logging.debug("sshtunnel: Remote channel closed")
                         break
                     sock.sendall(data)
                 if sock in r:
                     data = sock.recv(32768)
                     if not data:
+                        logging.debug("sshtunnel: Destination socket closed")
                         break
                     chan.sendall(data)
         except Exception as e:

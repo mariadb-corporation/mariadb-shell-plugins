@@ -79,6 +79,10 @@ class TestOrchestrator(OrchestratorInterface):
         return self._project.source_info
 
     @property
+    def ssh_key_path(self) -> str:
+        return self._project.ssh_key_private
+
+    @property
     def project(self) -> Project:
         return self._project
 

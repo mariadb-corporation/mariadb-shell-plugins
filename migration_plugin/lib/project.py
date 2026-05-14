@@ -512,7 +512,9 @@ class Project:
 
         with self._work_status_mutex:
             info = self._work_status._stage(stage)
-            if message:
+            # MonitorChannel renders status text from ChannelStatus.details;
+            # allow an empty stage message to clear stale or duplicate text.
+            if message or stage == SubStepId.MONITOR_CHANNEL:
                 info.message = message
             if data:
                 info.current = data.get("stageCurrent")

@@ -90,7 +90,6 @@ class CreateSSHTunnel(Stage):
             allow_agent=False,
             look_for_keys=False,
             bind_address="0.0.0.0",
-            keepalive=24 * 3600,
         )
 
     def start(self, parents) -> bool:
@@ -474,7 +473,10 @@ class MonitorChannel(ThreadedStage):
                 )
                 status.errors = errs
 
-        self.push_progress(status.details, status)
+        # The monitor panel renders ChannelStatus.details itself. Keep the
+        # stage message empty so the same receiver/applier text is not shown
+        # twice around the backlog/status summary.
+        self.push_progress("", status)
 
     def _do_work(self):
         self.push_status(WorkStatusEvent.BEGIN)
