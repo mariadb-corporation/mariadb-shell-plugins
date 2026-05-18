@@ -578,11 +578,11 @@ class ConfigureTargetDBSystem:
 
         def validate_cidr_block(cidr_block: str):
             try:
-                network = ipaddress.ip_network(cidr_block, strict=False)
+                network = ipaddress.ip_network(cidr_block, strict=True)
                 if not isinstance(network, ipaddress.IPv4Network):
-                    raise ValueError("Invalid IPv4 CIDR block.")
+                    raise ValueError(f"Invalid IPv4 CIDR block '{cidr_block}'.")
             except ValueError as e:
-                raise ValueError(f"Invalid CIDR block: {e}")
+                raise ValueError(f"Invalid CIDR block '{cidr_block}': {e}")
 
         def validate_vcn_cidr_block(cidr_block: str):
             try:
@@ -1236,7 +1236,10 @@ class ConfigureTargetDBSystem:
         options.publicSubnet.cidrBlock = "10.0.1.0/24"
 
         try:
-            options.onPremisePublicCidrBlock = util.get_my_public_ip() + "/32"
+            public_ipv4 = util.get_my_public_ip()
+            options.onPremisePublicCidrBlock = (
+                f"{public_ipv4}/32" if public_ipv4 else ""
+            )
         except:
             logging.exception("Could not determine public IP address")
             options.onPremisePublicCidrBlock = ""

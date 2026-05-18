@@ -21,6 +21,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+import errno
 import os
 from threading import Thread
 from typing import Optional
@@ -283,6 +284,22 @@ class Orchestrator(OrchestratorInterface):
         ssh = None
         try:
             i = 0
+
+            def wait_for_ssh_retry(e: Exception) -> bool:
+                nonlocal i
+                if i < 30 and wait_ready:
+                    i += 1
+                    import time
+
+                    logging.info(
+                        f"Connect to helper instance {compute_ip} failed while waiting "
+                        f"for SSH readiness ({e}), retrying after 10s..."
+                    )
+                    time.sleep(10)
+                    return True
+
+                return False
+
             while True:
                 if self.stopped:
                     logging.info(f"Aborting connect to helper instance")
@@ -294,16 +311,11 @@ class Orchestrator(OrchestratorInterface):
                         private_key_file_path=self.ssh_key_path,
                     )
                     break
-                except (TimeoutError, errors.SSHError):
-                    if i < 30 and wait_ready:
-                        i += 1
-                        import time
-
-                        logging.info(
-                            f"Connect to helper instance {compute_ip} has timed out, retrying after 10s..."
-                        )
-                        time.sleep(10)
-                    else:
+                except (TimeoutError, errors.SSHError) as e:
+                    if not wait_for_ssh_retry(e):
+                        raise
+                except OSError as e:
+                    if e.errno != errno.ECONNREFUSED or not wait_for_ssh_retry(e):
                         raise
             logging.debug(f"ssh connected to {compute_ip}")
             return RemoteHelperClient(ssh, token=self.migrator_instance_id)

@@ -38,6 +38,8 @@ import time
 from functools import cache
 from typing import Optional
 
+from . import logging
+
 
 def sanitize_par_uri(par: str) -> str:
     return re.sub(r"(https://[^/]*)/p/([^/]*)/", r"\1/p/<redacted>/", par)
@@ -222,9 +224,10 @@ DEFAULT_PUBLIC_IP_URLS = tuple(
     url
     for url in (
         os.getenv("PUBLIC_IP_URL"),
+        "https://api.ipify.org?format=json",
+        "https://4.ident.me/",
         "https://cloudflare.com/cdn-cgi/trace",
         "https://ifconfig.co/json",
-        "https://api64.ipify.org?format=json",
     )
     if url
 )
@@ -240,11 +243,7 @@ def _validate_public_ipv4(ip: str) -> str:
 
 
 def _extract_ip(url: str, body: str) -> str:
-    if url.endswith("/cdn-cgi/trace"):
-        for line in body.splitlines():
-            if line.startswith("ip="):
-                return _validate_public_ipv4(line[3:])
-        raise ValueError("trace response did not contain ip=")
+    body = body.strip()
 
     if body.startswith("{"):
         data = json.loads(body)
@@ -252,6 +251,10 @@ def _extract_ip(url: str, body: str) -> str:
         if isinstance(ip, str):
             return _validate_public_ipv4(ip)
         raise ValueError("JSON response did not contain an ip field")
+
+    for line in body.splitlines():
+        if line.startswith("ip="):
+            return _validate_public_ipv4(line[3:])
 
     return _validate_public_ipv4(body)
 
@@ -262,11 +265,17 @@ def _read_public_ip(url: str) -> str:
     return _extract_ip(url, body)
 
 
-@cache
-def get_my_public_ip() -> str:
+class _PublicIPv4LookupUnavailable(Exception):
+    pass
+
+
+def _lookup_my_public_ip() -> str:
     urls = DEFAULT_PUBLIC_IP_URLS
     if not urls:
-        raise RuntimeError("No public-IP endpoint configured")
+        logging.warning(
+            "Could not determine public IPv4 address: no public-IP endpoints configured"
+        )
+        raise _PublicIPv4LookupUnavailable
 
     result_queue = queue.Queue()
     stop_event = threading.Event()
@@ -297,10 +306,27 @@ def get_my_public_ip() -> str:
 
         errors[index] = f"{url}: {exc}"
 
-    raise RuntimeError(
-        "No public-IP endpoint reachable: "
+    logging.warning(
+        "Could not determine public IPv4 address from configured endpoints: "
         + "; ".join(errors[index] for index in range(len(urls)))
     )
+    raise _PublicIPv4LookupUnavailable
+
+
+@cache
+def _get_my_public_ip_cached() -> str:
+    return _lookup_my_public_ip()
+
+
+def get_my_public_ip() -> str:
+    try:
+        return _get_my_public_ip_cached()
+    except _PublicIPv4LookupUnavailable:
+        return ""
+
+
+def _clear_public_ip_cache() -> None:
+    _get_my_public_ip_cached.cache_clear()
 
 
 def interruptible_sleep(duration, interrupt_callback=None, poll_interval=0.1):

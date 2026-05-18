@@ -22,6 +22,7 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 import datetime
+import ipaddress
 import random
 import time
 from typing import cast, Optional, Callable
@@ -36,6 +37,24 @@ from . import model, stage
 from .. import oci_utils, logging, errors, dbsession
 
 k_par_ttl_hours = 7 * 24
+
+
+def _validate_ipv4_cidr_block(cidr_block: str) -> str:
+    try:
+        network = ipaddress.ip_network(cidr_block, strict=True)
+    except ValueError as exc:
+        raise errors.BadUserInput(
+            f"Invalid IPv4 CIDR block for jump-host SSH access: {exc}",
+            "hosting.onPremisePublicCidrBlock",
+        ) from exc
+
+    if not isinstance(network, ipaddress.IPv4Network):
+        raise errors.BadUserInput(
+            "Invalid IPv4 CIDR block for jump-host SSH access.",
+            "hosting.onPremisePublicCidrBlock",
+        )
+
+    return network.with_prefixlen
 
 
 """
@@ -450,13 +469,16 @@ class ProvisionVCN(OCIProvisioner):
         self.push_progress(
             f"Setting up security lists for SSH access through public subnet"
         )
+        on_premise_public_cidr_block = _validate_ipv4_cidr_block(
+            self.options.onPremisePublicCidrBlock
+        )
 
         slid = vcn.add_security_list(
             subnet_id=self.options.publicSubnet.id,
             security_list_name=security_list_name,
             freeform_tags=self._freeform_tags(),
             ingress=[
-                (self.options.onPremisePublicCidrBlock, 22, "SSH"),
+                (on_premise_public_cidr_block, 22, "SSH"),
                 (
                     "10.0.0.0/16",
                     3306,

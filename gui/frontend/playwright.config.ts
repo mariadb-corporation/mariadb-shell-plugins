@@ -45,6 +45,7 @@ export default defineConfig({
             env: {
                 ...process.env,
                 MYSQLSH_USER_CONFIG_HOME: String(process.env.CONFIG_DIR_DEFAULT),
+                MIGRATION_TEST_DEFAULT_VCN_NAME: "MySQLVCN-E2E-CreateNew",
                 LOG_LEVEL: "DEBUG3"
             },
         },

@@ -404,8 +404,9 @@ class DumpStage(stage.ThreadedStage):
             self._dumper = dumper
             self._remote_dumper = True
         else:
+            public_ip = util.get_my_public_ip() or "unknown"
             self.push_output(
-                f"Source database will be exported from local host at {util.get_my_public_ip()}"
+                f"Source database will be exported from local host at {public_ip}"
             )
             logging.info("Running local dump")
             self._dumper = LocalDumper(dumper_args)

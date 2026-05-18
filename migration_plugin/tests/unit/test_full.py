@@ -100,6 +100,11 @@ class EndTest(Exception):
     pass
 
 
+def full_migration_target_values() -> dict:
+    # Full OCI E2E must not depend on public-IP endpoint reachability.
+    return {"hosting": {"onPremisePublicCidrBlock": "0.0.0.0/0"}}
+
+
 def show_status(status):
     print()
 
@@ -304,6 +309,7 @@ def do_one_migration(
         connectivity,
     )
     set_target(
+        values=full_migration_target_values(),
         reuse_compartment=reuse_compute or reuse_db,
         reuse_compute=reuse_compute,
         reuse_db=reuse_db,

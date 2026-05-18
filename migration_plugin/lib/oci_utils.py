@@ -1007,6 +1007,7 @@ class VCN:
             return oci_models.IngressSecurityRule(
                 protocol="6",  # TCP
                 source=source_cidr,
+                source_type="CIDR_BLOCK",
                 tcp_options=oci_models.TcpOptions(
                     destination_port_range=oci_models.PortRange(min=port, max=port)
                 ),

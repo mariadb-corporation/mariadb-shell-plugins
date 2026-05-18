@@ -295,7 +295,7 @@ class TestConstants:
 class TestPublicIpLookup:
 
     def teardown_method(self, method=None):
-        util.get_my_public_ip.cache_clear()
+        util._clear_public_ip_cache()
 
     def test_extract_ip_from_cloudflare_trace_response(self):
         result = util._extract_ip(
@@ -310,8 +310,23 @@ class TestPublicIpLookup:
 
         assert result == "198.51.100.12"
 
+    def test_extract_ip_from_plain_text_response(self):
+        result = util._extract_ip("https://ifconfig.me/ip", "203.0.113.9\n")
+
+        assert result == "203.0.113.9"
+
+    def test_default_public_ip_urls_include_multiple_ipv4_sources(self):
+        expected_urls = {
+            "https://api.ipify.org?format=json",
+            "https://4.ident.me/",
+            "https://cloudflare.com/cdn-cgi/trace",
+            "https://ifconfig.co/json",
+        }
+
+        assert expected_urls.issubset(set(util.DEFAULT_PUBLIC_IP_URLS))
+
     def test_get_my_public_ip_retries_until_a_valid_endpoint_succeeds(self):
-        util.get_my_public_ip.cache_clear()
+        util._clear_public_ip_cache()
 
         class FakeResponse:
             def __init__(self, body: str):
@@ -346,7 +361,7 @@ class TestPublicIpLookup:
             assert util.get_my_public_ip() == "192.0.2.44"
 
     def test_get_my_public_ip_ignores_non_ipv4_endpoint_results(self):
-        util.get_my_public_ip.cache_clear()
+        util._clear_public_ip_cache()
 
         class FakeResponse:
             def __init__(self, body: str):
@@ -380,8 +395,226 @@ class TestPublicIpLookup:
         ):
             assert util.get_my_public_ip() == "192.0.2.44"
 
+    def test_get_my_public_ip_uses_any_valid_ipv4_from_all_configured_endpoints(self):
+        util._clear_public_ip_cache()
+
+        class FakeResponse:
+            def __init__(self, body: str):
+                self._body = body
+
+            def read(self):
+                return self._body.encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_urlopen(url, context=None, timeout=None):
+            responses = {
+                "https://api.ipify.org?format=json": OSError("blocked"),
+                "https://ipv4.icanhazip.com/": FakeResponse("2001:db8::1\n"),
+                "https://v4.ident.me/": FakeResponse("not an ip"),
+                "https://ifconfig.me/ip": FakeResponse("192.0.2.44"),
+                "https://cloudflare.com/cdn-cgi/trace": FakeResponse(
+                    "fl=29f43\nip=2001:db8::2\nts=1234567890"
+                ),
+                "https://ifconfig.co/json": FakeResponse('{"ip":"2001:db8::3"}'),
+                "https://api64.ipify.org?format=json": FakeResponse(
+                    '{"ip":"2001:db8::4"}'
+                ),
+            }
+            response = responses[url]
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+        with patch.object(
+            util,
+            "DEFAULT_PUBLIC_IP_URLS",
+            (
+                "https://api.ipify.org?format=json",
+                "https://ipv4.icanhazip.com/",
+                "https://v4.ident.me/",
+                "https://ifconfig.me/ip",
+                "https://cloudflare.com/cdn-cgi/trace",
+                "https://ifconfig.co/json",
+                "https://api64.ipify.org?format=json",
+            ),
+        ), patch(
+            "migration_plugin.lib.util.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            assert util.get_my_public_ip() == "192.0.2.44"
+
+    def test_public_ip_url_supports_all_response_formats(self):
+        util._clear_public_ip_cache()
+
+        class FakeResponse:
+            def __init__(self, body: str):
+                self._body = body
+
+            def read(self):
+                return self._body.encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        bodies = [
+            '{"ip":"192.0.2.45"}',
+            "fl=29f43\nip=192.0.2.45\nts=1234567890",
+            "192.0.2.45\n",
+        ]
+
+        for body in bodies:
+            util._clear_public_ip_cache()
+
+            with patch.object(
+                util,
+                "DEFAULT_PUBLIC_IP_URLS",
+                ("https://custom.example/public-ip",),
+            ), patch(
+                "migration_plugin.lib.util.urllib.request.urlopen",
+                return_value=FakeResponse(body),
+            ):
+                assert util.get_my_public_ip() == "192.0.2.45"
+
+    def test_get_my_public_ip_returns_empty_when_no_ipv4_is_detected(self):
+        util._clear_public_ip_cache()
+
+        class FakeResponse:
+            def __init__(self, body: str):
+                self._body = body
+
+            def read(self):
+                return self._body.encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_urlopen(url, context=None, timeout=None):
+            if url == "https://cloudflare.com/cdn-cgi/trace":
+                return FakeResponse("fl=29f43\nip=2001:db8::1\nts=1234567890")
+
+            if url == "https://ifconfig.co/json":
+                return FakeResponse('{"ip":"2001:db8::2"}')
+
+            raise OSError("blocked")
+
+        with patch.object(
+            util,
+            "DEFAULT_PUBLIC_IP_URLS",
+            (
+                "https://cloudflare.com/cdn-cgi/trace",
+                "https://ifconfig.co/json",
+                "https://api.ipify.org?format=json",
+            ),
+        ), patch(
+            "migration_plugin.lib.util.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            assert util.get_my_public_ip() == ""
+
+    def test_get_my_public_ip_retries_after_empty_result(self):
+        util._clear_public_ip_cache()
+
+        class FakeResponse:
+            def __init__(self, body: str):
+                self._body = body
+
+            def read(self):
+                return self._body.encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        calls = []
+
+        def fake_urlopen(url, context=None, timeout=None):
+            calls.append(url)
+            if len(calls) == 1:
+                return FakeResponse("ip=2001:db8::1")
+            return FakeResponse("ip=192.0.2.44")
+
+        with patch.object(
+            util,
+            "DEFAULT_PUBLIC_IP_URLS",
+            ("https://cloudflare.com/cdn-cgi/trace",),
+        ), patch(
+            "migration_plugin.lib.util.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            assert util.get_my_public_ip() == ""
+            assert util.get_my_public_ip() == "192.0.2.44"
+
+        assert calls == [
+            "https://cloudflare.com/cdn-cgi/trace",
+            "https://cloudflare.com/cdn-cgi/trace",
+        ]
+
+    def test_get_my_public_ip_logs_when_no_endpoint_is_configured(self):
+        util._clear_public_ip_cache()
+
+        with patch.object(util, "DEFAULT_PUBLIC_IP_URLS", ()), patch(
+            "migration_plugin.lib.util.logging.warning"
+        ) as warning:
+            assert util.get_my_public_ip() == ""
+
+        warning.assert_called_once_with(
+            "Could not determine public IPv4 address: no public-IP endpoints configured"
+        )
+
+    def test_get_my_public_ip_logs_endpoint_failures_before_returning_empty(self):
+        util._clear_public_ip_cache()
+
+        class FakeResponse:
+            def read(self):
+                return "2001:db8::1".encode("utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_urlopen(url, context=None, timeout=None):
+            if url == "https://cloudflare.com/cdn-cgi/trace":
+                return FakeResponse()
+            raise OSError("blocked")
+
+        with patch.object(
+            util,
+            "DEFAULT_PUBLIC_IP_URLS",
+            (
+                "https://cloudflare.com/cdn-cgi/trace",
+                "https://api.ipify.org?format=json",
+            ),
+        ), patch(
+            "migration_plugin.lib.util.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ), patch(
+            "migration_plugin.lib.util.logging.warning"
+        ) as warning:
+            assert util.get_my_public_ip() == ""
+
+        warning.assert_called_once()
+        message = warning.call_args.args[0]
+        assert "Could not determine public IPv4 address from configured endpoints" in message
+        assert "https://cloudflare.com/cdn-cgi/trace" in message
+        assert "https://api.ipify.org?format=json" in message
+
     def test_get_my_public_ip_queries_endpoints_in_parallel(self):
-        util.get_my_public_ip.cache_clear()
+        util._clear_public_ip_cache()
 
         first_started = threading.Event()
         first_release = threading.Event()

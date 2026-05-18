@@ -2273,13 +2273,13 @@ Migration Assistant.`}
                                     onChange={this.onGroupInputChange}
                                     id="hosting.onPremisePublicCidrBlock"
                                     // eslint-disable-next-line max-len
-                                    data-tooltip="SSH connections to the jump host will be limited to the given CIDR block (e.g. 0.0.0.0/0 to allow connections from anywhere). The default is the automatically detected IP address of connections from this host."
+                                    data-tooltip="SSH connections to the jump host will be limited to the given IPv4 CIDR block (e.g. 0.0.0.0/0 to allow connections from anywhere). The default is the automatically detected IPv4 egress address used by this host."
                                 />
                                 <p>
                                     For security, the only outside connections that will be initially allowed in this
                                     VCN are SSH connections to the jump host. You may change the IP block allowed to
-                                    connect to the jump host above. The default is the automatically detected source
-                                    IP address for connections from the host where this tool is running.
+                                    connect to the jump host above. The default is the automatically detected IPv4
+                                    egress address for connections from the host where this tool is running.
                                     You may change these settings in the VCN page in the OCI Console.
                                 </p>
                                 {this.renderBadUserInputErrorsFor("hosting.onPremisePublicCidrBlock")}

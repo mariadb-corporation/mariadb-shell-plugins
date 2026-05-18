@@ -302,6 +302,14 @@ export class MigrationPlan {
         await page.locator(locator.steps.targetSelection.heatWaveNodes).fill(value);
     };
 
+    public setOnPremisePublicCidrBlock = async (value: string): Promise<void> => {
+        await page.locator(locator.steps.targetSelection.onPremisePublicCidrBlock).fill(value);
+    };
+
+    public onPremisePublicCidrBlockErrors = (): Locator => {
+        return page.locator(locator.steps.targetSelection.onPremisePublicCidrBlockErrors);
+    };
+
     public setDisplayName = async (value: string): Promise<void> => {
         await page.locator(locator.steps.targetSelection.displayName).fill(value);
     };

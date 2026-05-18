@@ -167,6 +167,8 @@ export const steps = {
             }
         },
         heatWaveNodes: "#database\\.heatWaveClusterSize",
+        onPremisePublicCidrBlock: "#hosting\\.onPremisePublicCidrBlock",
+        onPremisePublicCidrBlockErrors: ".ssh-ingress-source .input-errors",
         displayName: "#database\\.name",
         contactEmails: "#database\\.contactEmails",
         adminUsername: "#database\\.adminUsername",
