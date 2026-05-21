@@ -21,6 +21,8 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+from ..errors import Aborted
+
 from ..dbsession import MigrationSession, version_to_nversion
 from . import schema_checks
 from .. import logging
@@ -29,7 +31,7 @@ from . import replication
 from . import model, model_utils
 from .model import ServerType
 
-from typing import Optional
+from typing import Callable, Optional
 import sys
 import socket
 import subprocess
@@ -385,6 +387,7 @@ def check_upgrade(
     session: MigrationSession,
     schema_selection: model.SchemaSelectionOptions,
     target_version: str,
+    on_progress: Callable[[model.MigrationCheckProgress], bool],
 ) -> model.MigrationCheckResults:
     if session.nversion >= version_to_nversion(target_version):
         logging.info(
@@ -402,12 +405,31 @@ def check_upgrade(
         f"running upgrade checks: source_mysql_version={session.nversion}, target_version={version_to_nversion(target_version)}"
     )
 
+    def on_output(j: dict) -> bool:
+        if "progress" in j:
+            progress = j["progress"]
+            return on_progress(
+                model.MigrationCheckProgress(
+                    detail=progress.get("detail", ""),
+                    completed=progress.get("completed", 0),
+                    total=progress.get("total", 0),
+                    currentCheckTitle=progress.get("check", ""),
+                    currentCheck=progress["currentCheck"],
+                    totalChecks=progress["totalChecks"],
+                )
+            )
+        return False
+
     output = submysqlsh.check_for_server_upgrade(
+        on_output,
         session.connection_options,
         [],
         targetVersion=target_version,
         exclude=exclude_checks,
     )
+
+    if output["aborted"]:
+        raise Aborted("Upgrade checks aborted by the user")
 
     result = model.MigrationCheckResults()
 
@@ -421,6 +443,7 @@ def check_service_compatibility(
     compatibility_flags: list[model.CompatibilityFlags],
     schema_selection: model.SchemaSelectionOptions,
     target_version: str,
+    on_progress: Callable[[model.MigrationCheckProgress], bool],
 ) -> model.MigrationCheckResults:
     args = model_utils.build_dump_exclude_list(schema_selection)
 
@@ -428,7 +451,24 @@ def check_service_compatibility(
     logging.info(
         f"running dump checks with compatibilityFlags={compat_flags}, selection={schema_selection}"
     )
+
+    def on_output(j: dict) -> bool:
+        if "numericProgressUpdate" in j:
+            progress = j["numericProgressUpdate"]
+            description = progress.get("description", "")
+
+            if description and "compatibility" in description:
+                return on_progress(
+                    model.MigrationCheckProgress(
+                        detail=description,
+                        completed=progress.get("current", 0),
+                        total=progress.get("total", 0),
+                    )
+                )
+        return False
+
     output = submysqlsh.dump_instance_dry_run(
+        on_output,
         session.connection_options,
         args=args,
         compatibility=compat_flags,
@@ -436,6 +476,9 @@ def check_service_compatibility(
     )
 
     logging.devdebug(f"dumpInstanceDryRun output={output}")
+
+    if output["aborted"]:
+        raise Aborted("Compatibility checks aborted by the user")
 
     if output["status"] and "MYSQLSH 52004" != output["errorCode"]:
         raise Exception(output["errors"][-1])

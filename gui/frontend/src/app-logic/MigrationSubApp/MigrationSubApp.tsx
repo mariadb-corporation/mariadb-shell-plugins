@@ -102,6 +102,13 @@ import {
 } from "./FormGroup.js";
 import { MigrationFilterInfo } from "./MigrationFilterInfo.js";
 import { MigrationOverview } from "./MigrationOverview.js";
+import {
+    IMigrationChecksRequestControls,
+    isMigrationChecksRunning,
+    seedMigrationChecksIssueResolution
+} from "./MigrationChecksRuntime.js";
+import { MigrationChecksController } from "./MigrationChecksController.js";
+import { MigrationChecksView } from "./MigrationChecksView.js";
 import { MigrationStatus } from "./MigrationStatus.js";
 import { MigrationSubAppLogger } from "./MigrationSubAppLogger.js";
 import { SchemaSelection } from "./SchemaSelection.js";
@@ -379,6 +386,27 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
     private sh = new ShapesHelper(shapesByTemplate);
     private beReq = new BackendRequestHelper();
     private aboutBoxRef = createRef<AboutBox>();
+    private readonly migrationChecks = new MigrationChecksController({
+        getState: () => {
+            return {
+                currentSubStepId: this.state.currentSubStepId as SubStepId | undefined,
+                backendRequestInProgress: this.state.backendRequestInProgress,
+                stepState: this.state.backendState[SubStepId.MIGRATION_CHECKS],
+            };
+        },
+        updateStep: async (controls) => {
+            await this.updateMigrationChecksSubStep(controls);
+        },
+        pollStep: async () => {
+            await this.pollMigrationChecksSubStep();
+        },
+        commitStep: async () => {
+            await this.commitMigrationChecksAndContinue();
+        },
+        onError: (error) => {
+            console.error("Failed to poll migration checks:", error);
+        },
+    });
 
     private shapesFetched = false;
 
@@ -756,6 +784,11 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         const { formGroupValues } = this.state;
 
         this.handleOverlay(prevState);
+        this.migrationChecks.sync({
+            currentSubStepId: prevState.currentSubStepId as SubStepId | undefined,
+            backendRequestInProgress: prevState.backendRequestInProgress,
+            stepState: prevState.backendState[SubStepId.MIGRATION_CHECKS],
+        });
 
         void watchFormChanges(prevState, formGroupValues, this.watchers);
     }
@@ -764,6 +797,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         requisitions.unregister("setCommandLineArguments", this.setCommandLineArguments);
         requisitions.unregister("setApplicationData", this.setApplicationData);
         requisitions.unregister("showAbout", this.showAbout);
+        this.migrationChecks.stop();
     }
 
     public override render() {
@@ -942,7 +976,8 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         let stepsState: IMigrationPlanState[] | undefined = await this.refreshFromBackend();
 
         if (this.passwordNeeded(stepsState)) {
-            stepsState = await this.requestForPassword();
+            const submittedState = await this.requestForPassword();
+            stepsState = Array.isArray(submittedState) ? submittedState : undefined;
         }
 
         this.expandNextUnfinishedSection(stepsState);
@@ -997,6 +1032,8 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
     private renderNavigation() {
         const { backendRequestInProgress, currentSubStepId } = this.state;
         const footerStatus = this.renderFooterStatus();
+        const disableChecksNext = currentSubStepId === SubStepId.MIGRATION_CHECKS
+            && !this.migrationChecks.canAdvance();
 
         // if (currentStep !== 1 || this.isStep1Finished) {
         //     return null;
@@ -1017,7 +1054,8 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
 
                 <Button
                     caption="Next"
-                    disabled={!this.getNextSubStep || backendRequestInProgress || this.getCurrentStep > 1}
+                    disabled={!this.getNextSubStep || backendRequestInProgress
+                        || this.getCurrentStep > 1 || disableChecksNext}
                     isDefault={true}
                     onClick={() => {
                         void this.onNext(currentSubStepId);
@@ -1070,6 +1108,9 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         if (commit && stepInfo.status !== MigrationStepStatus.FINISHED) {
             if (stepInfo.status == MigrationStepStatus.READY_TO_COMMIT) {
                 return this.commitSubStep(subStepId);
+            } else if (subStepId === SubStepId.MIGRATION_CHECKS
+                && stepInfo.status === MigrationStepStatus.IN_PROGRESS) {
+                return stepInfo;
             } else {
                 this.displayErrors(stepInfo.errors);
                 throw new Error(`Can't commit subStep ${subStepId} yet`);
@@ -1316,6 +1357,46 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         return stepsState;
     }
 
+    private async updateMigrationChecksSubStep(controls?: IMigrationChecksRequestControls) {
+        if (!controls) {
+            return this.doPlanUpdateSubStep(SubStepId.MIGRATION_CHECKS);
+        }
+
+        const json = this.beReq.generateBackendRequest(SubStepId.MIGRATION_CHECKS, this.state, controls);
+        const values = JSON.parse(json) as object;
+
+        return this.doPlanUpdateSubStep(SubStepId.MIGRATION_CHECKS, values);
+    }
+
+    private async pollMigrationChecksSubStep(): Promise<void> {
+        const stepsState = await this.migration.planUpdateSubStep(SubStepId.MIGRATION_CHECKS, {});
+        const currentChecksState = this.state.backendState[SubStepId.MIGRATION_CHECKS];
+
+        if (this.state.backendRequestInProgress || !isMigrationChecksRunning(currentChecksState)) {
+            return;
+        }
+
+        this.handleSubStepStates([stepsState]);
+    }
+
+    private navigateToNextSubStep() {
+        const nextSubStep = this.getNextSubStep;
+        const { stepId } = nextSubStep ?? {};
+        if (!stepId || stepId < 1100) {
+            this.navigateInto(nextSubStep, true);
+        }
+    }
+
+    private async commitMigrationChecksAndContinue() {
+        const stepsState = await this.commitSubStep(SubStepId.MIGRATION_CHECKS);
+        if (!stepsState) {
+            return;
+        }
+
+        this.collapseCurrentSection();
+        this.navigateToNextSubStep();
+    }
+
     private onNext = async (subStepId?: SubStepId) => {
         if (subStepId === SubStepId.OCI_PROFILE) {
             // the OCI_PROFILE sub-step updated on dropdown change, and TARGET_OPTIONS depend on it
@@ -1323,14 +1404,15 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         } else {
             if (subStepId) {
                 await this.submitSubStep(subStepId, true);
+                if (subStepId === SubStepId.MIGRATION_CHECKS
+                    && !this.migrationChecks.canAdvance()) {
+                    return;
+                }
             }
         }
 
         this.collapseCurrentSection();
-        const { stepId } = this.getNextSubStep ?? {};
-        if (!stepId || stepId < 1100) {
-            this.navigateInto(this.getNextSubStep, true);
-        }
+        this.navigateToNextSubStep();
 
         // try {
         //     await this.processSubStep(subStepId, true);
@@ -2727,19 +2809,18 @@ Migration Assistant.`}
     }
 
     private renderMigrationChecks(subStepId: SubStepId) {
-        return (
-            <div>
-                <p className="heading">
-                    Compatibility issues were detected in the schema of the source database.
-                </p>
+        const stepState = this.state.backendState[subStepId];
+        const data = this.migrationChecks.getDisplayData(stepState);
 
-                <p className="heading">
-                    Please review the issues detected below, and select the action to be applied
-                    automatically to resolve them:
-                </p>
-                {this.renderIssues(subStepId)}
-                {/** this.renderCommonForm(subStepId, formGroups) */}
-            </div>
+        return (
+            <MigrationChecksView
+                data={data}
+                busy={this.state.backendRequestInProgress}
+                onAbort={this.migrationChecks.abort}
+                onRetry={this.migrationChecks.run}
+                issues={data?.issues.length ? this.renderIssues(subStepId, data) : undefined}
+                errors={stepState?.errors.length ? this.renderErrors(subStepId) : undefined}
+            />
         );
     }
 
@@ -3639,8 +3720,7 @@ Migration Assistant.`}
                 />
             );
         } else {
-            json = this.beReq.generateBackendRequest(subStepId, this.state);
-            requestContent = <JsonView json={json} />;
+            requestContent = <JsonView json={this.getBackendRequestPreview(subStepId)} />;
         }
 
         return (
@@ -4159,12 +4239,20 @@ Migration Assistant.`}
             formGroupValues: { ...formGroupValues },
             subStepConfig: {
                 ...subStepConfig,
-                [subStepId]: this.beReq.generateBackendRequest(subStepId, this.state),
+                [subStepId]: this.getBackendRequestPreview(subStepId),
             }
         };
 
         this.setState(newState);
     };
+
+    private getBackendRequestPreview(subStepId: SubStepId) {
+        try {
+            return this.beReq.generateBackendRequest(subStepId, this.state);
+        } catch {
+            return `""`;
+        }
+    }
 
     private renderSignInInfo() {
         const { ociSignInInfo } = this.state;
@@ -4226,20 +4314,23 @@ Migration Assistant.`}
         }
     }
 
-    private renderIssues(subStepId: number) {
+    private renderIssues(subStepId: number, checkDataOverride?: Pick<IMigrationChecksData, "issues">) {
         const { backendState, issueResolution, expandedIssues } = this.state;
 
-        if (!backendState[subStepId]?.data) {
+        if (!checkDataOverride && !backendState[subStepId]?.data) {
             return;
         }
 
-        const checkData = backendState[subStepId].data as IMigrationChecksData;
+        const checkData = checkDataOverride ?? backendState[subStepId]?.data as IMigrationChecksData | undefined;
 
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        const issuesItems = checkData?.issues;
+        if (!checkData) {
+            return;
+        }
+
+        const issuesItems = checkData.issues;
 
         if (!issuesItems.length) {
-            return (<div>No compatibility or upgrade issues were detected.</div>);
+            return null;
         }
 
         const sanitizeLinks = (html: string): string => {
@@ -4673,20 +4764,17 @@ Migration Assistant.`}
     };
 
     private fillIssueResolution(data: IMigrationChecksData) {
-        if (!data.issues.length) {
-            return;
-        }
+        this.setState(({ issueResolution }) => {
+            const nextIssueResolution = seedMigrationChecksIssueResolution(issueResolution, data);
 
-        // TODO- workaround for compatflags/issue resolution being lost after checks are re-executed
-        const issueResolution: IMigrationAppState["issueResolution"] = this.state.issueResolution;
-        data.issues.forEach((i) => {
-            if (!i.choices.length) {
-                return;
+            if (!nextIssueResolution) {
+                return null;
             }
-            issueResolution[i.checkId!] = i.choices[0];
-        });
 
-        this.setState({ issueResolution });
+            return {
+                issueResolution: nextIssueResolution,
+            };
+        });
     }
 
     private renderIssueObjects(issue: ICheckResult) {

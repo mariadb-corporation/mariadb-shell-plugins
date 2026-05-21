@@ -159,6 +159,15 @@ export enum CheckStatus {
     EXTERNAL_ERROR = 4
 }
 
+export enum MigrationCheckStatus {
+    PENDING = 'PENDING',
+    RUNNING_UPGRADE_CHECKS = 'RUNNING_UPGRADE_CHECKS',
+    RUNNING_COMPATIBILITY_CHECKS = 'RUNNING_COMPATIBILITY_CHECKS',
+    DONE = 'DONE',
+    ABORTED = 'ABORTED',
+    ERROR = 'ERROR'
+}
+
 export enum MigrationType {
     COLD = 'cold',
     HOT = 'hot'
@@ -284,8 +293,20 @@ export interface ICheckResult {
     status: CheckStatus
 }
 
+export interface IMigrationCheckProgress {
+    completed: number,
+    total: number,
+    detail: string,
+    currentCheckTitle: string,
+    currentCheck: number,
+    completedChecks: number,
+    totalChecks: number
+}
+
 export interface IMigrationChecksData {
-    issues: ICheckResult[]
+    issues: ICheckResult[],
+    checkProgress: IMigrationCheckProgress,
+    checkStatus: MigrationCheckStatus
 }
 
 export interface ITargetOptionsData {
@@ -422,6 +443,8 @@ export interface IMigrationTypeOptions {
 }
 
 export interface IMigrationChecksOptions {
+    runChecks: boolean,
+    abortChecks: boolean,
     issueResolution: Record<string, CompatibilityFlags>
 }
 
@@ -483,7 +506,7 @@ export interface IProtocolMigrationParameters {
     [ShellAPIMigration.MigrationVersion]: {};
     [ShellAPIMigration.MigrationPlanUpdate]: { args: { configs: IShellDictionary[]; }; };
     [ShellAPIMigration.MigrationPlanGetDataItem]: { args: { what: PlanDataItemType; detail: string; }; };
-    [ShellAPIMigration.MigrationPlanUpdateSubStep]: { args: { subStepId: number; configs: { }; }; };
+    [ShellAPIMigration.MigrationPlanUpdateSubStep]: { args: { subStepId: SubStepId; configs: { }; }; };
     [ShellAPIMigration.MigrationPlanCommit]: { args: { subStepId: SubStepId; }; };
     [ShellAPIMigration.MigrationOciSignIn]: { args: { signUp?: boolean; }; };
     [ShellAPIMigration.MigrationGetSteps]: {};

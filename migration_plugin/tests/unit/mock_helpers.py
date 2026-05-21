@@ -59,11 +59,11 @@ class TestOrchestrator(OrchestratorInterface):
     @property
     def oci_config(self) -> dict:
         return {
-            "user": "ocid1.user.oc1..dummydummydummydummydummydummydummydummydummydummydummydummy",
+            "user": "ocid1.user.oc1..deadbeef",
             "region": "dummy",
             "key_file": "dummy",
             "fingerprint": "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa",
-            "tenancy": "ocid1.tenancy.oc1..dummydummydummydummydummydummydummydummydummydummydummydummy",
+            "tenancy": "ocid1.tenancy.oc1..deadbeef",
         }
 
     @property
@@ -113,8 +113,9 @@ def mock_mds_plugin(mocker):
 
 def mock_get_db_system(mocker):
     mock_db_system = mocker.MagicMock()
-    mock_db_system.id = "ocid1.dbsystem.oc1..dummydummydummydummydummydummydummydummydummydummydummydummy"
+    mock_db_system.id = "ocid1.dbsystem.oc1..deadbeef"
     mock_db_system.display_name = "test_db_system"
     mock_db_system.lifecycle_state = "ACTIVE"
+    mock_db_system.compartment_id = "ocid1.compartment.oc1..deadbeef"
 
     mocker.patch("oci.mysql.DbSystemClient.get_db_system", return_value=mock_db_system)

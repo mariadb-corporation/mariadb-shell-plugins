@@ -128,16 +128,27 @@ def list_upgrade_checks():
 
 
 def check_for_server_upgrade(
+    listener,
     connection_params: dict,
     args: list,
     targetVersion: str = "8.4.6",
     exclude: list = [],
 ):
     issues = []
+    aborted = False
 
     def handle_output(j: dict):
+        nonlocal sub, aborted
         if "prompt" in j:
             return
+        if listener:
+            abort = listener(j)
+            if abort and not aborted:
+                logging.info(f"Aborting upgrade-checker process...")
+                sub.terminate()
+                aborted = True
+                return
+
         if "checksPerformed" in j:
             for check in j["checksPerformed"]:
                 if "detectedProblems" in check and check["detectedProblems"]:
@@ -162,10 +173,11 @@ def check_for_server_upgrade(
     sub.on_output = handle_output
     rc = sub.process()
 
-    return {"status": rc, "issues": issues}
+    return {"status": rc, "issues": issues, "aborted": aborted}
 
 
 def dump_instance_dry_run(
+    listener,
     connection_params: dict,
     args: List[str] = [],
     compatibility: List[str] = [],
@@ -175,10 +187,19 @@ def dump_instance_dry_run(
     errors = []
     warnings = []
     notes = []
+    aborted = False
 
     def handle_output(j: dict):
+        nonlocal sub, aborted
         if "prompt" in j:
             return
+        if listener:
+            abort = listener(j)
+            if abort and not aborted:
+                logging.info(f"Aborting dump-instance-dryrun process...")
+                sub.terminate()
+                aborted = True
+                return
         if "compatibilityIssue" in j:
             issues.append(j)
         elif "error" in j:
@@ -204,6 +225,7 @@ def dump_instance_dry_run(
             "--ocimds",
             "--skipUpgradeChecks",
             f"--targetVersion={targetVersion}",
+            "--showProgress",
         ]
         + compat_args
         + args,
@@ -222,6 +244,7 @@ def dump_instance_dry_run(
         "errors": errors,
         "warnings": warnings,
         "notices": notes,
+        "aborted": aborted,
     }
 
 
@@ -342,8 +365,11 @@ def load_dump(
 
 
 if __name__ == "__main__":
-    res = check_for_server_upgrade({"user": "root", "host": "0", "password": ""}, [])
+    res = check_for_server_upgrade(
+        None, {"user": "root", "host": "0", "password": ""}, []
+    )
     # res = dump_instance_dry_run(
+    #     None,
     #     {"user": "root", "host": "0", "password": ""},
     #     # args=["--exclude-tables=test.au"],
     #     # compatibility=["create_invisible_pks", "skip_invalid_accounts"],

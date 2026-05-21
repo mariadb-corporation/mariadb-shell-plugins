@@ -26,12 +26,64 @@ import socket
 import pytest  # type: ignore
 import tempfile
 import os
+from unittest import mock
 
 import migration_plugin.tests.unit.helpers as helpers
+import migration_plugin.lib.migration as migration_lib
 
 from migration_plugin.migration import *
 
+try:
+    import pytest_mock  # type: ignore  # noqa: F401
+except ImportError:
+
+    class _PatchProxy:
+        def __init__(self):
+            self._patches = []
+
+        def __call__(self, *args, **kwargs):
+            patcher = mock.patch(*args, **kwargs)
+            patched = patcher.start()
+            self._patches.append(patcher)
+            return patched
+
+        def object(self, *args, **kwargs):
+            patcher = mock.patch.object(*args, **kwargs)
+            patched = patcher.start()
+            self._patches.append(patcher)
+            return patched
+
+        def stopall(self):
+            while self._patches:
+                self._patches.pop().stop()
+
+    class _Mocker:
+        MagicMock = mock.MagicMock
+        Mock = mock.Mock
+        call = mock.call
+
+        def __init__(self):
+            self.patch = _PatchProxy()
+
+        def stopall(self):
+            self.patch.stopall()
+
+    @pytest.fixture
+    def mocker():
+        fallback_mocker = _Mocker()
+        yield fallback_mocker
+        fallback_mocker.stopall()
+
+
 import mysqlsh
+
+
+@pytest.fixture(autouse=True)
+def cleanup_migration_projects():
+    try:
+        yield
+    finally:
+        migration_lib.close_all_projects()
 
 
 def pytest_addoption(parser):

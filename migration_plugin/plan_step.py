@@ -152,9 +152,22 @@ class SchemaSelectionData(MigrationMessage):
     contents: InstanceContents = field(default_factory=InstanceContents)
 
 
+class MigrationCheckStatus(enum.StrEnum):
+    PENDING = "PENDING"
+    RUNNING_UPGRADE_CHECKS = "RUNNING_UPGRADE_CHECKS"
+    RUNNING_COMPATIBILITY_CHECKS = "RUNNING_COMPATIBILITY_CHECKS"
+    DONE = "DONE"
+    ABORTED = "ABORTED"
+    ERROR = "ERROR"
+
+
 @dataclass
 class MigrationChecksData(MigrationMessage):
     issues: list[model.CheckResult] = field(default_factory=list)
+    checkProgress: model.MigrationCheckProgress = field(
+        default_factory=model.MigrationCheckProgress
+    )
+    checkStatus: MigrationCheckStatus = MigrationCheckStatus.PENDING
 
 
 @dataclass
@@ -192,6 +205,8 @@ class MigrationTypeOptions(MigrationMessage):
 
 @dataclass
 class MigrationChecksOptions(MigrationMessage):
+    runChecks: bool = False
+    abortChecks: bool = False
     issueResolution: dict[str, model.CompatibilityFlags] = field(default_factory=dict)
 
 
@@ -1000,7 +1015,6 @@ class MigrationChecksSubStep(PlanSubStep):
         self._upgrade_check_summary: MigrationChecksSubStep.CheckSummary = (
             MigrationChecksSubStep.CheckSummary()
         )
-        self._start_mutex = threading.Lock()
 
         self._current_selection: Optional[model.SchemaSelectionOptions] = None
         data = self._project.plan_step_data(self.id)
@@ -1008,7 +1022,16 @@ class MigrationChecksSubStep(PlanSubStep):
             "issueResolution", {}
         )
 
+        self._check_progress = model.MigrationCheckProgress()
+        self._check_status = MigrationCheckStatus.PENDING
+        self._check_thread = None
+        self._abort_checks = False
+
         self.__execution_errors: list[MigrationError] = []
+
+    @staticmethod
+    def _unique_preserving_order(values: list[str]) -> list[str]:
+        return list(dict.fromkeys(values))
 
     def _get_compatibility_flags(self) -> list[model.CompatibilityFlags]:
         result: list[model.CompatibilityFlags] = []
@@ -1103,66 +1126,90 @@ class MigrationChecksSubStep(PlanSubStep):
                             f"Couldn't match object to be excluded: {object}"
                         )
 
-        # make sure excludes we've added above are unique
-        for attr in [
-            "schemas",
-            "tables",
-            "routines",
-            "events",
-            "libraries",
-            "triggers",
-            "users",
-        ]:
-            il = getattr(filters, attr)
-
-            if il is not None:
-                il.exclude = list(set(il.exclude))
+        # Repeated refreshes re-apply EXCLUDE_OBJECT resolutions on top of the
+        # already-committed selection, so every include-list bucket must be
+        # normalized here to keep schema selection idempotent.
+        for include_list in vars(filters).values():
+            if isinstance(include_list, IncludeList):
+                include_list.exclude = self._unique_preserving_order(
+                    include_list.exclude
+                )
 
         return selection
 
-    def check_compatibility(self) -> Optional[MigrationError]:
-        # Return value is error with check itself, actual check issues in member var
-        try:
-            self._current_selection = self._get_schema_selection()
+    def start_checks(self):
+        logging.debug2(f"{self}: check thread status={self._check_status}")
 
-            compatibility_issues = self._source_check.check_compatibility(
-                self._get_compatibility_flags(), self._current_selection
-            )
+        if self._check_status in (
+            MigrationCheckStatus.ABORTED,
+            MigrationCheckStatus.DONE,
+            MigrationCheckStatus.ERROR,
+        ):
+            self._check_status = MigrationCheckStatus.PENDING
+        elif self._check_status != MigrationCheckStatus.PENDING:
+            return
 
-            errors = self._compatibility_check_summary.update(
-                compatibility_issues, self._issue_resolution
-            )
+        self.__execution_errors = []
+        self._errors = []
+        self._check_progress = model.MigrationCheckProgress()
 
-            logging.info(
-                f"{self}: compatibility status={self._compatibility_check_summary.status} errors={errors}"
-            )
-        except Exception as e:
-            logging.exception("while running compatibility checks")
-            return MigrationError._from_exception(e)
+        logging.info(
+            f"{self}: starting check thread (current status={self._check_status})..."
+        )
 
-        return None
+        ready = threading.Event()
+        self._check_thread = threading.Thread(target=self.run_checks, args=(ready,))
+        self._check_thread.start()
+        # wait for checks to actually start
+        ready.wait()
 
-    def check_upgrade(self) -> Optional[MigrationError]:
-        # Return value is error with check itself, actual check issues in member var
-        try:
-            logging.debug(f"{self}: 📋 running upgrade checks...")
+    def abort_checks(self):
+        self._abort_checks = True
+        if self._check_thread and self._check_status in (
+            MigrationCheckStatus.RUNNING_COMPATIBILITY_CHECKS,
+            MigrationCheckStatus.RUNNING_UPGRADE_CHECKS,
+        ):
+            logging.info(f"{self}: waiting for check thread to abort...")
+            self._check_thread.join()
+            logging.info(f"{self}: check thread aborted")
 
-            upgrade_issues = self._source_check.check_upgrade(
-                self._get_schema_selection()
-            )
+    def check_compatibility(self):
+        def on_progress(progress: model.MigrationCheckProgress) -> bool:
+            self._check_progress = progress
+            return self._abort_checks
 
-            errors = self._upgrade_check_summary.update(
-                upgrade_issues, self._issue_resolution
-            )
+        self._current_selection = self._get_schema_selection()
 
-            logging.info(
-                f"{self}: upgrade status={self._upgrade_check_summary.status} errors={errors}"
-            )
-        except Exception as e:
-            logging.exception("while running upgrade checks")
-            return MigrationError._from_exception(e)
+        compatibility_issues = self._source_check.check_compatibility(
+            self._get_compatibility_flags(),
+            self._current_selection,
+            on_progress=on_progress,
+        )
 
-        return None
+        errors = self._compatibility_check_summary.update(
+            compatibility_issues, self._issue_resolution
+        )
+
+        logging.info(
+            f"{self}: compatibility status={self._compatibility_check_summary.status} errors={errors}"
+        )
+
+    def check_upgrade(self):
+        def on_progress(progress: model.MigrationCheckProgress) -> bool:
+            self._check_progress = progress
+            return self._abort_checks
+
+        upgrade_issues = self._source_check.check_upgrade(
+            self._get_schema_selection(), on_progress=on_progress
+        )
+
+        errors = self._upgrade_check_summary.update(
+            upgrade_issues, self._issue_resolution
+        )
+
+        logging.info(
+            f"{self}: upgrade status={self._upgrade_check_summary.status} errors={errors}"
+        )
 
     def apply(self, config: dict) -> bool:
         def merge_issue_resolution(current: dict, update: dict) -> bool:
@@ -1209,10 +1256,12 @@ class MigrationChecksSubStep(PlanSubStep):
                     MigrationChecksSubStep.CheckSummary()
                 )
                 self._upgrade_check_summary = MigrationChecksSubStep.CheckSummary()
+            self._current_selection = updated_filters
 
-        if changed:
-            logging.debug("Issue resolution changed")
-            self.run_checks()
+        if options and options.abortChecks:
+            self.abort_checks()
+        elif options and options.runChecks:
+            self.start_checks()
 
         return changed
 
@@ -1224,6 +1273,7 @@ class MigrationChecksSubStep(PlanSubStep):
             and not self._has_fatal_errors
             and self._compatibility_check_summary.status == model.CheckStatus.OK
             and self._upgrade_check_summary.status == model.CheckStatus.OK
+            and self._check_status == MigrationCheckStatus.DONE
         ):
             ready = True
 
@@ -1231,40 +1281,58 @@ class MigrationChecksSubStep(PlanSubStep):
             f"{self}.is_ready={ready}: started={self._started} nerrors={len(self._errors)} "
             f"has_fatal={self._has_fatal_errors} "
             f"compat={self._compatibility_check_summary.status} "
-            f"upgrade={self._upgrade_check_summary.status}"
+            f"upgrade={self._upgrade_check_summary.status} "
+            f"check_status={self._check_status} "
         )
 
         return ready
 
     def start(self, blocking=True):
         logging.info(f"{self}.start")
-        if not self._owner.is_finished(
-            SubStepId.SOURCE_SELECTION
-        ) or not self._owner.is_finished(SubStepId.TARGET_OPTIONS):
+        if not self._owner.is_finished(SubStepId.SOURCE_SELECTION):
             logging.info(
                 f"{self}.start: {' '.join([s.name + '=' + str(self._owner.is_finished(s)) for s in [SubStepId.SOURCE_SELECTION, SubStepId.TARGET_OPTIONS]])}"
             )
             return
-        if not self._start_mutex.acquire(blocking=blocking):
-            logging.info(f"{self}.start (busy)")
-            return
-        try:
-            self.run_checks()
-            self._started = True
-        finally:
-            self._start_mutex.release()
+        self._started = True
 
-    def run_checks(self):
+    def run_checks(self, ready_event: threading.Event):
         self.__execution_errors = []
+        self._abort_checks = False
         try:
-            # TODO only re-run checks for which options changed
-            err = self.check_compatibility()
-            if not err:
-                err = self.check_upgrade()
-            if err:
-                self.__execution_errors.append(err)
+            logging.info(f"{self}: running compat checks...")
+            self._check_status = MigrationCheckStatus.RUNNING_COMPATIBILITY_CHECKS
+            ready_event.set()
+            if not self._abort_checks:
+                self.check_compatibility()
+
+            if not self._abort_checks:
+                logging.info(f"{self}: running upgrade checks...")
+                self._check_status = MigrationCheckStatus.RUNNING_UPGRADE_CHECKS
+                self.check_upgrade()
+
+            if self._abort_checks:
+                self._check_status = MigrationCheckStatus.ABORTED
+                logging.info(f"{self}: checks aborted")
+            else:
+                self._check_status = MigrationCheckStatus.DONE
+                logging.info(f"{self}: checks done")
+        except errors.Aborted as e:
+            self._check_status = MigrationCheckStatus.ABORTED
+            logging.info(f"{self}: checks aborted {e}")
         except Exception as e:
+            self._check_status = MigrationCheckStatus.ERROR
+            logging.info(f"{self}: checks failed {e}")
             self.__execution_errors.append(MigrationError._from_exception(e))
+        except:
+            self._check_status = MigrationCheckStatus.ERROR
+            logging.exception(f"{self}: checks failed with unknown error")
+            self.__execution_errors.append(
+                MigrationError(
+                    level=model.MessageLevel.ERROR,
+                    message="An unknown error occurred while running the checks.",
+                )
+            )
 
         # populate the errors
         self._errors = self.__execution_errors.copy()
@@ -1277,7 +1345,8 @@ class MigrationChecksSubStep(PlanSubStep):
 
     def commit(self) -> MigrationPlanState:
         self._owner.options.compatibilityFlags = self._get_compatibility_flags()
-        self._owner.options.schemaSelection = self._get_schema_selection()
+        self._current_selection = self._get_schema_selection()
+        self._owner.options.schemaSelection = copy.deepcopy(self._current_selection)
         self._done = True
         return self.info()
 
@@ -1296,7 +1365,11 @@ class MigrationChecksSubStep(PlanSubStep):
         order = [l.value for l in MessageLevel]
         issues.sort(key=lambda i: order.index(i.level))
 
-        return MigrationChecksData(issues=issues)
+        return MigrationChecksData(
+            issues=issues,
+            checkProgress=self._check_progress,
+            checkStatus=self._check_status,
+        )
 
 
 def sanitize_bucket_name(name: str) -> str:
@@ -1795,7 +1868,7 @@ class MigrationPlanStep:
             self._instance_cache = InstanceCache()
 
     def update(
-        self, sub_step_id: int, input: dict, nolock: bool = False
+        self, sub_step_id: SubStepId, input: dict, nolock: bool = False
     ) -> MigrationPlanState:
         _name = f"{self._name}.update"
 
@@ -1850,7 +1923,7 @@ class MigrationPlanStep:
             logging.debug(f"{_name}: lock acquired")
             res = []
             for step_id, data in steps:
-                res.append(self.update(step_id, data, nolock=True))
+                res.append(self.update(SubStepId(step_id), data, nolock=True))
 
         return res
 
@@ -2085,7 +2158,7 @@ def plan_get_data_item(what: PlanDataItemType, detail: str) -> PlanDataItem:
     "migration.planUpdateSubStep", shell=True, cli=False, web=k_log_filters
 )
 @plugin_log
-def plan_update_sub_step(sub_step_id: int, configs: dict) -> MigrationPlanState:
+def plan_update_sub_step(sub_step_id: SubStepId, configs: dict) -> MigrationPlanState:
     """
     Fetch and/or update migration plan sub-step with user input.
 

@@ -25,7 +25,7 @@
 from ..util import sanitize_dict, k_san_dict_connection
 from . import model, checks
 from .. import dbsession, logging
-from typing import Optional
+from typing import Optional, Callable
 import mysqlsh  # type: ignore
 from mysqlsh import mysql  # type: ignore
 
@@ -44,6 +44,10 @@ class MySQLSourceCheck:
     def __del__(self):
         if self.session:
             self.session.close()
+
+    @staticmethod
+    def _noop_progress(_progress: model.MigrationCheckProgress) -> bool:
+        return False
 
     @classmethod
     def try_connect(
@@ -153,10 +157,13 @@ class MySQLSourceCheck:
         self,
         compatibility_flags: list[model.CompatibilityFlags],
         schema_selection: model.SchemaSelectionOptions,
+        on_progress: Optional[Callable[[model.MigrationCheckProgress], bool]] = None,
     ) -> model.MigrationCheckResults:
         assert self.session
         assert self.options.sourceConnectionOptions
         assert self.options.targetMySQLOptions
+
+        progress_callback = on_progress or self._noop_progress
 
         logging.debug(f"source_check: running compatibility checks")
         check_results = checks.check_service_compatibility(
@@ -164,6 +171,7 @@ class MySQLSourceCheck:
             compatibility_flags,
             schema_selection,
             self.options.targetMySQLOptions.mysqlVersion,
+            on_progress=progress_callback,
         )
         logging.debug(
             f"source_check: compatibility checks done: results={check_results}"
@@ -172,16 +180,21 @@ class MySQLSourceCheck:
         return check_results
 
     def check_upgrade(
-        self, schema_selection: model.SchemaSelectionOptions
+        self,
+        schema_selection: model.SchemaSelectionOptions,
+        on_progress: Optional[Callable[[model.MigrationCheckProgress], bool]] = None,
     ) -> model.MigrationCheckResults:
         assert self.session
         assert self.options.targetMySQLOptions
 
-        logging.debug(f"source_check: running schema checks")
+        progress_callback = on_progress or self._noop_progress
+
+        logging.debug(f"source_check: running upgrade checks")
         check_results = checks.check_upgrade(
             self.session,
             schema_selection,
             target_version=self.options.targetMySQLOptions.mysqlVersion,
+            on_progress=progress_callback,
         )
         logging.debug(f"source_check: upgrade checks done: results={check_results}")
 

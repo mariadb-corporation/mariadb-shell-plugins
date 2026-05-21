@@ -536,6 +536,17 @@ class MigrationCheckResults(MigrationMessage):
 
 
 @dataclass
+class MigrationCheckProgress(MigrationMessage):
+    completed: int = 0
+    total: int = 0
+    detail: str = ""
+    currentCheckTitle: str = ""
+    currentCheck: int = -1
+    completedChecks: int = 0
+    totalChecks: int = 0
+
+
+@dataclass
 class ValidationIssue(MigrationMessage):
     level: MessageLevel = MessageLevel.ERROR
     option: str = ""

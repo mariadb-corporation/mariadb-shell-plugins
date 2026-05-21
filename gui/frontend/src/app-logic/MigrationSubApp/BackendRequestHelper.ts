@@ -24,14 +24,28 @@
  */
 
 import {
-    IMigrationChecksOptions,
     IMigrationChecksData,
+    MigrationStepStatus,
     SubStepId,
     CompatibilityFlags
 } from "../../communication/ProtocolMigration.js";
 import { IMigrationAppState } from "./MigrationSubApp.js";
+import { IMigrationChecksRequestControls } from "./MigrationChecksRuntime.js";
 
 type PostProcessValues = typeof postProcessValues;
+interface IMigrationChecksRequest {
+    issueResolution?: Record<string, CompatibilityFlags>;
+    runChecks?: boolean;
+    abortChecks?: boolean;
+}
+
+const isMigrationChecksData = (data: unknown): data is IMigrationChecksData => {
+    if (typeof data !== "object" || data === null || !("issues" in data)) {
+        return false;
+    }
+
+    return Array.isArray(data.issues);
+};
 
 export const toNumber = (value?: string): number => {
     if (!value) {
@@ -101,7 +115,9 @@ const postProcess = <K extends keyof PostProcessValues>(
 
 export class BackendRequestHelper {
 
-    public generateBackendRequest(subStepId: SubStepId, state: Partial<IMigrationAppState>) {
+    public generateBackendRequest(subStepId: SubStepId,
+        state: Partial<IMigrationAppState>,
+        migrationChecksControls?: IMigrationChecksRequestControls) {
         const { formGroupValues: formGroupValuesOriginal } = state;
         const formGroupValues: Record<string, string | boolean | number | string[] | undefined> = {
             ...formGroupValuesOriginal,
@@ -130,7 +146,7 @@ export class BackendRequestHelper {
             }
 
             case SubStepId.MIGRATION_CHECKS: {
-                request = this.generateMigrationChecksRequest(state);
+                request = this.generateMigrationChecksRequest(state, migrationChecksControls);
 
                 break;
             }
@@ -188,32 +204,80 @@ export class BackendRequestHelper {
         return result;
     }
 
-    private generateMigrationChecksRequest(state: Partial<IMigrationAppState>): IMigrationChecksOptions {
-        const { issueResolution, backendState } = state;
-        const compatibilityChecks = this.getDefaultCompatibilityChecks();
+    private generateMigrationChecksRequest(
+        state: Partial<IMigrationAppState>,
+        controls?: IMigrationChecksRequestControls
+    ): IMigrationChecksRequest {
+        const { issueResolution, backendState, requestEditorEnabled, subStepConfig } = state;
+        const migrationChecksState = backendState?.[SubStepId.MIGRATION_CHECKS];
+        const migrationChecksData = isMigrationChecksData(migrationChecksState?.data)
+            ? migrationChecksState.data
+            : undefined;
 
-        if (!backendState?.[SubStepId.MIGRATION_CHECKS]?.data || !issueResolution) {
-            return compatibilityChecks;
+        if (requestEditorEnabled?.[SubStepId.MIGRATION_CHECKS]) {
+            const editedRequest = subStepConfig?.[SubStepId.MIGRATION_CHECKS];
+
+            return editedRequest ? JSON.parse(editedRequest) as IMigrationChecksRequest : {};
+        }
+        if (controls?.abortChecks) {
+            return { abortChecks: true };
         }
 
-        const data: IMigrationChecksData = backendState[SubStepId.MIGRATION_CHECKS].data as IMigrationChecksData;
-
-        const issues = data.issues;
-        if (!issues.length) {
-            return compatibilityChecks;
+        if (controls?.runChecks) {
+            return this.addMigrationChecksIssueResolution({
+                runChecks: true,
+            }, issueResolution, migrationChecksData);
         }
 
-        issues.forEach((i) => {
-            if (i.checkId) {
-                compatibilityChecks.issueResolution[i.checkId] = issueResolution[i.checkId] as CompatibilityFlags;
-            }
-        });
+        // Keep runChecks in the default payload until the checks step has been
+        // committed. Once SubStepId.MIGRATION_CHECKS is finished, revisiting it should stay
+        // idempotent unless the user explicitly asks to run checks again.
+        const request = this.getDefaultCompatibilityChecks(
+            migrationChecksState?.status !== MigrationStepStatus.FINISHED
+        );
 
-        return compatibilityChecks;
+        return this.addMigrationChecksIssueResolution(request, issueResolution, migrationChecksData);
     }
 
-    private getDefaultCompatibilityChecks(): IMigrationChecksOptions {
+    private addMigrationChecksIssueResolution(
+        request: IMigrationChecksRequest,
+        issueResolution?: Partial<Record<string, string>>,
+        data?: IMigrationChecksData
+    ): IMigrationChecksRequest {
+        if (!data || !issueResolution) {
+            return request;
+        }
+
+        const nextIssueResolution: Record<string, CompatibilityFlags> = {
+            ...request.issueResolution,
+        };
+
+        for (const issue of data.issues) {
+            if (!issue.checkId) {
+                continue;
+            }
+
+            const resolution = issueResolution[issue.checkId];
+            if (resolution !== undefined) {
+                nextIssueResolution[issue.checkId] = resolution as CompatibilityFlags;
+            }
+        }
+
+        if (Object.keys(nextIssueResolution).length === 0) {
+            return request;
+        }
+
         return {
+            ...request,
+            issueResolution: nextIssueResolution,
+        };
+    }
+
+    private getDefaultCompatibilityChecks(
+        runChecks: boolean
+    ): IMigrationChecksRequest & { issueResolution: Record<string, CompatibilityFlags>; } {
+        return {
+            runChecks,
             issueResolution: {},
         };
     }
