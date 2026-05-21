@@ -6,7 +6,7 @@ The MySQL Shell Plugins Repository is a collection of plugins for the MySQL Shel
 - **MDS plugin**: implements [MySQL Database Services](mds_plugin/readme.md) and Oracle Cloud Infrastructure support
 - **MRS plugin**: implements [MySQL REST Service](mrs_plugin/readme.md) support
 - **MSM plugin**: implements [MySQL Schema Management operations](msm_plugin/readme.md)
-- **Migration plugin**: implements [MySQL Migration operations](migration_plugin/readme.md)
+- **Migration plugin**: implements [MySQL Migration operations](migration_plugin/README.md)
 
 ## Installation
 
