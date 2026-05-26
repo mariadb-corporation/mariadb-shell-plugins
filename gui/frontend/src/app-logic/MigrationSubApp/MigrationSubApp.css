@@ -301,26 +301,10 @@ form .accordion .content .suffix {
     margin-right: 0;
 }
 
-
-.oci-info {
-    /* margin-top: 20px; */
-}
-
-.oci-info-div {
-    /* gap: 30px; */
-}
-
 .form .accordion .content .input,
 .form .accordion .content .dropdown {
     height: 30px;
     /*max-width: 500px;*/
-}
-
-
-/* .oci-info .dropdown, */
-/* .heatwave-setup .dropdown, */
-.regions .dropdown {
-    width: 250px;
 }
 
 .form-element-detail {
@@ -340,16 +324,19 @@ form .accordion .content .suffix {
     margin-top: 20px;
 }
 
+
+.form-group.profile,
+.form-group.hosting\.networkCompartmentId,
+.form-group.hosting\.compartmentId,
+.form-group.hosting\.vcnId,
+.form-group.hosting\.publicSubnet\.id,
+.form-group.hosting\.privateSubnet\.id,
+.new-network-info,
 .ssh-ingress-source {
     width: 50%;
 }
 
-.form-group.hosting\.publicSubnet\.id,
-.form-group.hosting\.vcnId {
-    width: 50%;
-}
-
-.oci-networking {
+.oci-networking, .form-group.region {
     margin-left: 30px;
     width: 50%;
 }
@@ -357,10 +344,6 @@ form .accordion .content .suffix {
 .vcn-top-row,
 .vcn-bottom-row {
     gap: 20px;
-}
-
-.new-network-info {
-    width: 50%;
 }
 
 .target-selection .dbsystem-options {
@@ -376,12 +359,6 @@ form .accordion .content .suffix {
 .form-group.database\.heatWaveShapeName,
 .form-group.database\.enableHA {
     flex-grow: 2;
-}
-
-.form-group.hosting\.privateSubnet\.id,
-.form-group.hosting\.networkCompartmentId,
-.form-group.hosting\.compartmentId {
-    width: 50%;
 }
 
 .frame-title {

@@ -287,7 +287,8 @@ export class BackendRequestHelper {
             case SubStepId.OCI_PROFILE: {
                 return [
                     "profile",
-                    "configFile"
+                    "configFile",
+                    "region",
                 ];
             }
 

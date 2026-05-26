@@ -23,6 +23,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import type { FormGroupValues, ISelectOption, OciResource } from "./FormGroup.js";
+
 export interface Compartment {
     compartmentId: string | null;
     id: string;
@@ -41,6 +43,114 @@ export const generateWbCmdLineArgs = (databaseSourceJson: string) => {
     const base64 = btoa(databaseSourceJson);
 
     return `{"migrate": "${base64}"}`;
+};
+
+export const buildOciRegionOptions = (
+    currentRegion: string | undefined,
+    availableRegions: readonly string[],
+): ISelectOption[] => {
+    const ids = new Set<string>();
+
+    [currentRegion, ...availableRegions].forEach((region) => {
+        if (region) {
+            ids.add(region);
+        }
+    });
+
+    return [...ids].map((id) => {
+        return { id, label: id };
+    });
+};
+
+export const ociResourcesToOptions = (resources: readonly OciResource[]): ISelectOption[] => {
+    return resources.map(({ id, displayName }) => {
+        return { id, label: displayName };
+    });
+};
+
+export interface IOciNetworkingRefreshState {
+    vcns?: ISelectOption[];
+    subnets?: ISelectOption[];
+    formGroupValues?: FormGroupValues;
+}
+
+export interface IOciNetworkingRefreshParameters {
+    profile: string;
+    networkCompartment?: string;
+    selectedVcn?: string;
+    privateSubnet?: string;
+    publicSubnet?: string;
+    fetchVcns: (profile: string, compartmentId: string) => Promise<OciResource[]>;
+    fetchSubnets: (profile: string, vcn: string) => Promise<OciResource[]>;
+}
+
+const clearSubnetSelection = (formGroupValues: FormGroupValues) => {
+    formGroupValues["hosting.privateSubnet.id"] = "";
+    formGroupValues["hosting.publicSubnet.id"] = "";
+};
+
+export const buildOciNetworkingRefreshState = async ({
+    profile,
+    networkCompartment,
+    selectedVcn,
+    privateSubnet,
+    publicSubnet,
+    fetchVcns,
+    fetchSubnets,
+}: IOciNetworkingRefreshParameters): Promise<IOciNetworkingRefreshState> => {
+    const state: IOciNetworkingRefreshState = {};
+    const formGroupValues: FormGroupValues = {};
+    let vcn = selectedVcn;
+
+    if (networkCompartment) {
+        const vcns = await fetchVcns(profile, networkCompartment);
+        state.vcns = ociResourcesToOptions(vcns);
+
+        const validVcns = new Set(vcns.map(({ id }) => {
+            return id;
+        }));
+
+        if (vcn && !validVcns.has(vcn)) {
+            vcn = undefined;
+            formGroupValues["hosting.vcnId"] = "";
+            clearSubnetSelection(formGroupValues);
+            state.subnets = [];
+        }
+    } else {
+        vcn = undefined;
+        state.vcns = [];
+        state.subnets = [];
+        formGroupValues["hosting.vcnId"] = "";
+        clearSubnetSelection(formGroupValues);
+    }
+
+    if (vcn) {
+        const subnets = await fetchSubnets(profile, vcn);
+        state.subnets = ociResourcesToOptions(subnets);
+
+        const validSubnets = new Set(subnets.map(({ id }) => {
+            return id;
+        }));
+
+        if (privateSubnet && !validSubnets.has(privateSubnet)) {
+            formGroupValues["hosting.privateSubnet.id"] = "";
+        }
+
+        if (publicSubnet && !validSubnets.has(publicSubnet)) {
+            formGroupValues["hosting.publicSubnet.id"] = "";
+        }
+    } else {
+        state.subnets ??= [];
+        if (privateSubnet || publicSubnet) {
+            clearSubnetSelection(formGroupValues);
+        }
+    }
+
+    if (Object.keys(formGroupValues).length) {
+        state.formGroupValues = formGroupValues;
+    }
+
+    return state;
 };
 
 export const waitForPromise = <T>(promise: () => Promise<T>, label: string,

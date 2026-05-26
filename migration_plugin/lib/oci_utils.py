@@ -1703,6 +1703,7 @@ class Compartment:
         ocid_or_compartment: None | str | oci.identity.models.Compartment = None,
         client: None | oci.identity.IdentityClient = None,
         retry_strategy=None,
+        lazy_refresh: bool = False,
         name: None | str = None,
     ) -> None:
         self._config = configuration.get_current_config(config=config)
@@ -1727,7 +1728,7 @@ class Compartment:
 
         self._is_tenancy = self.id == self._config["tenancy"]
 
-        if not self._obj and retry_strategy:
+        if not self._obj and (retry_strategy or not lazy_refresh):
             self.refresh(retry_strategy)
 
     def __repr__(self) -> str:
@@ -2090,7 +2091,8 @@ class Compartment:
         iam_client = core.get_oci_identity_client(config=self._config)
 
         return oci.pagination.list_call_get_all_results(
-            iam_client.list_region_subscriptions
+            iam_client.list_region_subscriptions,
+            self._config["tenancy"],
         ).data
 
     def list_availability_domains(self) -> list[oci.identity.models.AvailabilityDomain]:

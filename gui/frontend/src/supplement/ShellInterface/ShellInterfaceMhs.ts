@@ -28,9 +28,7 @@ import {
     IBastionSession, IBastionSummary, ICompartment, IComputeInstance, IComputeShape, IMySQLDbSystem,
     IMySQLDbSystemShapeSummary, ISubnet, IVcn, LoadBalancer, type IBucketListObjects, type IBucketSummary,
 } from "../../communication/index.js";
-import {
-    DataCallback, MessageScheduler
-} from "../../communication/MessageScheduler.js";
+import { DataCallback, MessageScheduler } from "../../communication/MessageScheduler.js";
 import { type IShellDictionary } from "../../communication/Protocol.js";
 import {
     IRegion, IMdsChatData, IMdsChatResult, IMdsLakehouseStatus, IMdsProfileData, IShellMdsSetCurrentBastionKwargs,
@@ -56,10 +54,12 @@ export class ShellInterfaceMhs {
         return response.result;
     }
 
-    public async setCurrentConfigProfile(profile: string, configPath?: string): Promise<void> {
+    public async setCurrentConfigProfile(profile: string, configPath?: string, region?: string): Promise<void> {
         await this.backend.sendInteractiveRequest({
             requestType: ShellAPIMds.MdsSetCurrentConfigProfile,
-            parameters: { args: { profileName: profile, configFilePath: configPath, interactive: false } },
+            parameters: {
+                args: { profileName: profile, configFilePath: configPath, region, interactive: false }
+            },
         });
     }
 
@@ -189,13 +189,20 @@ export class ShellInterfaceMhs {
     }
 
     public async listAvailabilityDomains(configProfile: string, compartmentId?: string): Promise<string[]> {
-        const response = await this.backend.sendInteractiveRequest({
+        const response = await this.backend.sendInteractiveRequest<ShellAPIMds.MdsListAvailabilityDomains>({
             requestType: ShellAPIMds.MdsListAvailabilityDomains,
-            parameters: { kwargs: { configProfile, compartmentId, interactive: false, returnFormatted: false } },
+            parameters: {
+                kwargs: { configProfile, compartmentId, interactive: false, returnFormatted: false }
+            },
         });
+        const availabilityDomains: unknown[] = response.result;
 
-        return response.result.map((i) => {
-            return i.name!;
+        return availabilityDomains.flatMap((item) => {
+            const name = typeof item === "object" && item !== null && "name" in item
+                ? item.name
+                : undefined;
+
+            return typeof name === "string" && name ? [name] : [];
         });
     }
 
@@ -203,7 +210,9 @@ export class ShellInterfaceMhs {
         compartmentId: string, availabilityDomain?: string): Promise<IMySQLDbSystemShapeSummary[]> {
         const response = await this.backend.sendInteractiveRequest({
             requestType: ShellAPIMds.MdsListDbSystemShapes,
-            parameters: { kwargs: { configProfile, isSupportedFor, compartmentId, availabilityDomain, interactive: false } },
+            parameters: {
+                kwargs: { configProfile, isSupportedFor, compartmentId, availabilityDomain, interactive: false }
+            },
         });
 
         // return response.result;

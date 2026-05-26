@@ -114,7 +114,10 @@ import { MigrationSubAppLogger } from "./MigrationSubAppLogger.js";
 import { SchemaSelection } from "./SchemaSelection.js";
 import { NotFoundShapesFor, ShapesHelper } from "./ShapesHelper.js";
 import { WorkProgressView } from "./WorkProgressView.js";
-import { Compartment, generateWbCmdLineArgs, IDatabaseSource, waitForPromise } from "./helpers.js";
+import {
+    buildOciNetworkingRefreshState, buildOciRegionOptions, Compartment, generateWbCmdLineArgs, IDatabaseSource,
+    ociResourcesToOptions, waitForPromise
+} from "./helpers.js";
 import {
     ComputeShapeInfo, ConfigTemplate, configTemplates, customTemplateId, getClusterSizeBoundaries, Shapes,
     shapesByTemplate, standardTemplateId
@@ -589,6 +592,22 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
 
     private get configProfiles(): string[] {
         return this.toStringArray(this.state.formGroupValues.availableProfiles);
+    }
+
+    private get ociRegion(): string | undefined {
+        return this.state.formGroupValues.region;
+    }
+
+    private get availableRegions(): string[] {
+        return this.toStringArray(this.state.formGroupValues.availableRegions);
+    }
+
+    private get regionOptions(): ISelectOption[] {
+        return buildOciRegionOptions(this.ociRegion, this.availableRegions);
+    }
+
+    private get shouldShowRegionSelector(): boolean {
+        return this.regionOptions.length > 1;
     }
 
     private get vcns() {
@@ -1099,7 +1118,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         }
     }
 
-    private async submitSubStep(subStepId: SubStepId, commit?: boolean) {
+    private async submitSubStep(subStepId: SubStepId, commit?: boolean): Promise<IMigrationPlanState[] | undefined> {
         const stepInfo = await this.updateOne(subStepId);
 
         const targetOptionErrors = this.filterBadUserInputErrors(stepInfo.errors);
@@ -1110,13 +1129,12 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
                 return this.commitSubStep(subStepId);
             } else if (subStepId === SubStepId.MIGRATION_CHECKS
                 && stepInfo.status === MigrationStepStatus.IN_PROGRESS) {
-                return stepInfo;
+                return [stepInfo];
             } else {
                 this.displayErrors(stepInfo.errors);
                 throw new Error(`Can't commit subStep ${subStepId} yet`);
             }
         }
-
     }
 
     private handleError(stepInfo: IMigrationPlanState, type: "Update" | "Commit") {
@@ -1310,7 +1328,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
                 backendRequestStatusMessage: "Refreshing migration plan...",
             });
             stepsState = await this.migration.planUpdate([]);
-            this.handleSubStepStates(stepsState);
+            await this.handleSubStepStates(stepsState);
         } finally {
             this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
@@ -1329,7 +1347,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
                 backendRequestStatusMessage: "Updating migration plan...",
             });
             stepsState = await this.migration.planUpdate(configs);
-            this.handleSubStepStates(stepsState);
+            await this.handleSubStepStates(stepsState);
         } finally {
             this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
@@ -1349,7 +1367,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
                 backendRequestStatusMessage: "Validating migration plan settings...",
             });
             stepsState = await this.migration.planUpdateSubStep(id, data);
-            this.handleSubStepStates([stepsState]);
+            await this.handleSubStepStates([stepsState]);
         } finally {
             this.setState({ backendRequestInProgress: false, backendRequestStatusMessage: undefined });
         }
@@ -1993,15 +2011,29 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
 
         const { migrationInProgress } = this.state;
 
+        const regions = this.shouldShowRegionSelector ? this.renderFormGroupDropdown(this.regionOptions,
+            "region", "OCI Region",
+            undefined, migrationInProgress, false,
+            "Choose the OCI region to use for resource discovery and provisioning.",
+            this.onOciRegionChange, this.ociRegion
+        ) : (
+            <div className="form-group region"></div>
+        );
+
         return (
             <div>
                 <p className="comment">Specify the properties of the target MySQL instance.
                     Select a configuration template or specify each setting individually in the following sections.</p>
 
-                {this.renderFormGroupDropdown(this.stringToOptions(this.configProfiles),
-                    "profile", "OCI Configuration Profile",
-                    undefined, migrationInProgress, true,
-                    "Choose the OCI configuration profile to use.")}
+                <Container orientation={Orientation.LeftToRight}
+                    mainAlignment={ContentAlignment.Start}>
+                    {this.renderFormGroupDropdown(this.stringToOptions(this.configProfiles),
+                        "profile", "OCI Configuration Profile",
+                        undefined, migrationInProgress, true,
+                        "Choose the OCI configuration profile to use.")}
+
+                    {regions}
+                </Container>
 
                 <div className="target-selection">
 
@@ -2027,7 +2059,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             <div className={`form-group ${name}`}>
                 {isFetching ? <Spinner size={48} /> : (
                     <>
-                        {tooltip ? <Label caption={caption} /> : <Label caption={caption} />}
+                        {<Label caption={caption} />}
                         <Dropdown
                             selection={selection}
                             optional={optional}
@@ -2649,7 +2681,7 @@ Migration Assistant.`}
     }
 
     private getExistingShapes() {
-        if (!this.profile) {
+        if (!this.profile || !this.ociRegion) {
             return undefined;
         }
 
@@ -2661,7 +2693,7 @@ Migration Assistant.`}
 
         const { shapes } = this.state;
 
-        return shapes[this.getShapesKey(this.profile, compartmentId)];
+        return shapes[this.getShapesKey(this.profile, compartmentId, this.ociRegion)];
     }
 
     private onHeatwaveShapeChange = (_accept: boolean, _selectedIds: Set<string>,
@@ -3420,6 +3452,80 @@ Migration Assistant.`}
         this.setFormGroupValues({ [name]: payload as string | undefined });
     };
 
+    private onOciRegionChange = async (_accept: boolean, _selection: Set<string>, payload: unknown) => {
+        const region = payload as string;
+        const previousRegion = this.ociRegion;
+
+        if (!region || region === this.ociRegion) {
+            return;
+        }
+
+        this.shapesFetched = false;
+
+        await this.updateState({
+            formGroupValues: {
+                region,
+            },
+            vcns: [],
+            subnets: [],
+        });
+
+        if (!this.profile) {
+            return;
+        }
+
+        try {
+            await this.submitSubStep(SubStepId.OCI_PROFILE, true);
+        } catch (e) {
+            await this.updateState({ formGroupValues: { region: previousRegion } });
+            console.error(e);
+            const message = convertErrorToString(e);
+            ui.showErrorMessage(`Failed to switch OCI region to '${region}': ${message}`, {});
+
+            return;
+        }
+
+        try {
+            await this.openProfile(this.profile, this.configFile, 1);
+        } catch (e) {
+            try {
+                await this.refreshFromBackend();
+            } catch (refreshError) {
+                console.error(refreshError);
+            }
+            console.error(e);
+            const message = convertErrorToString(e);
+            ui.showErrorMessage(`Failed to switch OCI region to '${region}': ${message}`, {});
+        }
+    };
+
+    private async refreshCurrentOciResources(): Promise<void> {
+        const profile = this.profile;
+        if (!this.hasOciAccess || !profile) {
+            return;
+        }
+
+        const state = await buildOciNetworkingRefreshState({
+            profile,
+            networkCompartment: this.networkCompartment,
+            selectedVcn: this.vcn,
+            privateSubnet: this.privateSubnet,
+            publicSubnet: this.publicSubnet,
+            fetchVcns: (profile, compartmentId) => {
+                return this.fetchVcns(profile, compartmentId);
+            },
+            fetchSubnets: (profile, vcn) => {
+                return this.fetchSubnets(profile, vcn);
+            },
+        });
+
+        if (Object.keys(state).length) {
+            await this.updateState(state);
+        }
+
+        await this.updateShapes(undefined, this.compartment);
+    }
+
     private clearConfigTemplateError() {
         this.setState(({ targetOptionErrors }) => {
             return {
@@ -3660,7 +3766,8 @@ Migration Assistant.`}
         return subnets;
     }
 
-    private openProfile = async (profile: string, configFile: string | undefined, maxAttempts: number) => {
+    private openProfile = async (profile: string, configFile: string | undefined, maxAttempts: number,
+        region = this.ociRegion) => {
         if (!profile) {
             return;
         }
@@ -3670,7 +3777,7 @@ Migration Assistant.`}
             return;
         }
 
-        await this.mhs.setCurrentConfigProfile(profile, configFile);
+        await this.mhs.setCurrentConfigProfile(profile, configFile, region);
 
         // execute an API call to validate CLI configuration
         const promise = async () => {
@@ -3693,6 +3800,12 @@ Migration Assistant.`}
             this.setState({ ociSignInStatusMessage: "Refreshing migration plan..." });
         }
         await this.refreshFromBackend();
+        await this.refreshCurrentOciResources();
+
+        const targetOptionsState = this.state.backendState[SubStepId.TARGET_OPTIONS];
+        if (targetOptionsState && targetOptionsState.status !== MigrationStepStatus.NOT_STARTED) {
+            await this.submitSubStep(SubStepId.TARGET_OPTIONS);
+        }
     };
 
     private renderUpdateSubStep(subStepId: SubStepId) {
@@ -3983,7 +4096,7 @@ Migration Assistant.`}
             };
         });
 
-        this.handleSubStepStates(result);
+        void this.handleSubStepStates(result);
     };
 
     private renderActionTextareaInPopup(
@@ -4133,7 +4246,7 @@ Migration Assistant.`}
         );
     }
 
-    private handleSubStepStates = (stepsState: IMigrationPlanState[]): void => {
+    private handleSubStepStates = async (stepsState: IMigrationPlanState[]): Promise<void> => {
         const { backendState, formGroupValues, planStepData, filterInfo } = this.state;
 
         const updatedFormGroupValues = { ...formGroupValues };
@@ -4210,7 +4323,7 @@ Migration Assistant.`}
             targetOptionErrors,
         };
 
-        this.setState(state);
+        await this.updateState(state);
     };
 
     private handleSubStepState = (subStepId: number, subStepState: IMigrationPlanState): void => {
@@ -4464,12 +4577,18 @@ Migration Assistant.`}
 
     private watchProfile = async (changes?: WatcherChanges, profile?: string) => {
         if (!profile) {
+            this.shapesFetched = false;
+
             this.setState(({ formGroupValues }) => {
                 return {
                     compartments: [],
+                    vcns: [],
+                    subnets: [],
                     formGroupValues: {
                         ...formGroupValues,
                         profile,
+                        region: "",
+                        availableRegions: "",
 
                         // the rest may be taken from backend response after planUpdate?
                         "hosting.compartmentId": "create_new", // or a value from backendState?
@@ -4486,18 +4605,19 @@ Migration Assistant.`}
         }
 
         // OCI profile changed, reset cached values
+        this.shapesFetched = false;
+
         await this.updateState({
             formGroupValues: {
                 profile,
+                region: "",
+                availableRegions: "",
                 "hosting.configTemplate": standardTemplateId,
             },
             compartments: [],
             vcns: [],
             subnets: [],
         });
-
-        // TODO - NEW
-        await this.updateConfigTemplate(this.configTemplate);
 
         if (!this.hasOciConfig) {
             return;
@@ -4607,7 +4727,7 @@ Migration Assistant.`}
         }
 
         const state: Partial<IMigrationAppState> = {
-            vcns: this.resourceToOptions(vcns),
+            vcns: ociResourcesToOptions(vcns),
             subnets: []
         };
 
@@ -4639,7 +4759,7 @@ Migration Assistant.`}
 
         const subnets = await this.fetchSubnets(this.profile!, vcn);
 
-        this.setState({ subnets: this.resourceToOptions(subnets) });
+        this.setState({ subnets: ociResourcesToOptions(subnets) });
     };
 
     private resetNetworking = async (_changes?: WatcherChanges,
@@ -4977,13 +5097,14 @@ Migration Assistant.`}
         return namesCount.get(project.name) === 1 ? project.name : project.id;
     }
 
-    private getShapesKey(profile: string, compartmentId: string) {
-        return `${profile}_${compartmentId}`;
+    private getShapesKey(profile: string, compartmentId: string, region = this.ociRegion ?? "") {
+        return `${profile}_${region}_${compartmentId}`;
     }
 
-    private setShapes = async (updatedShapes: Shapes, profile: string, compartmentId: string): Promise<void> => {
+    private setShapes = async (updatedShapes: Shapes, profile: string, compartmentId: string,
+        region = this.ociRegion ?? ""): Promise<void> => {
         return new Promise((resolve) => {
-            const key = this.getShapesKey(profile, compartmentId);
+            const key = this.getShapesKey(profile, compartmentId, region);
 
             this.setState(({ shapes }) => {
                 return {
@@ -5018,8 +5139,9 @@ Migration Assistant.`}
     }
 
     private async fetchShapes(profile: string, compartmentOcid: string): Promise<Shapes> {
+        const region = this.ociRegion ?? "";
         const { shapes } = this.state;
-        const existingShapes = shapes[this.getShapesKey(profile, compartmentOcid)];
+        const existingShapes = shapes[this.getShapesKey(profile, compartmentOcid, region)];
 
         if (existingShapes?.computeShapes && existingShapes.dbSystemShapes) {
             this.clearCompartmentShapesAccessError();
@@ -5113,15 +5235,9 @@ Migration Assistant.`}
             this.shapesFetched = fetchSucceeded;
         }
 
-        await this.setShapes(updatedShapes, profile, compartmentOcid);
+        await this.setShapes(updatedShapes, profile, compartmentOcid, region);
 
         return updatedShapes;
-    }
-
-    private resourceToOptions(resources: OciResource[]): ISelectOption[] {
-        return resources.map(({ id, displayName }) => {
-            return { id, label: displayName };
-        });
     }
 
     private stringToOptions(options: readonly string[]): ISelectOption[] {
@@ -5130,7 +5246,7 @@ Migration Assistant.`}
         });
     }
 
-    private async requestForPassword() {
+    private async requestForPassword(): Promise<IMigrationPlanState[] | undefined> {
         const { databaseSource } = this.state;
         const sourceUri = this.getSourceUri(databaseSource);
 

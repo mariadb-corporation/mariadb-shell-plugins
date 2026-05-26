@@ -429,7 +429,9 @@ export interface IPreviewPlanData {
 export interface IOCIProfileOptions {
     configFile: string,
     profile: string,
-    availableProfiles: string[]
+    availableProfiles: string[],
+    region: string,
+    availableRegions: string[]
 }
 
 export interface ISourceSelectionOptions {

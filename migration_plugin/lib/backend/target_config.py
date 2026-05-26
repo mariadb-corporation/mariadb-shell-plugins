@@ -303,11 +303,6 @@ def adjust_mysql_configuration(
 
 
 class ConfigureTargetDBSystem:
-    oci_config = {}
-    _default_vcn = None
-    _default_private_subnet = None
-    _default_public_subnet = None
-
     def __init__(
         self,
         oci_config: dict,
@@ -319,6 +314,22 @@ class ConfigureTargetDBSystem:
         default_vcn_name: str = "",
     ) -> None:
         self.oci_config: dict = oci_config
+        self.availability_domains: list[AvailabilityDomain] | None = None
+        self.versions: list[VersionSummary] | None = None
+        self.shapes: dict[str, list[ShapeSummary]] = {}
+        self._default_vcn = None
+        self._default_private_subnet = None
+        self._default_public_subnet = None
+        self._capabilities_compartment_id: str | None = None
+        self._capabilities_by_compartment: dict[
+            str,
+            tuple[
+                list[AvailabilityDomain],
+                list[VersionSummary],
+                dict[str, list[ShapeSummary]],
+            ],
+        ] = {}
+        self._compartment_access_failed = False
 
         self._server_info = server_info
 
@@ -330,21 +341,10 @@ class ConfigureTargetDBSystem:
         self._default_vcn_name = default_vcn_name or "MySQLVCN"
 
         logging.info(f"Retrieving tenancy information...")
-        self._root_compartment = oci_utils.Compartment(self.oci_config)
+        self._root_compartment = oci_utils.Compartment(
+            self.oci_config, lazy_refresh=True
+        )
         self.compartment = self._root_compartment
-        self.availability_domains: list[AvailabilityDomain] | None = None
-        self.versions: list[VersionSummary] | None = None
-        self.shapes: dict[str, list[ShapeSummary]] = {}
-        self._capabilities_compartment_id: str | None = None
-        self._capabilities_by_compartment: dict[
-            str,
-            tuple[
-                list[AvailabilityDomain],
-                list[VersionSummary],
-                dict[str, list[ShapeSummary]],
-            ],
-        ] = {}
-        self._compartment_access_failed = False
         self.find_shared_ssh_key_cb = find_shared_ssh_key_cb
 
         self.network_compartment = None

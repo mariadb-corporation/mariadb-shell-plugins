@@ -1182,7 +1182,9 @@ def list_current_objects(config=None, profile_name=None, cli_rc_file_path=None):
 
 
 @plugin_function("mds.set.currentConfigProfile", shell=True, cli=False, web=True)
-def set_current_profile(profile_name=None, config_file_path=None, interactive=True):
+def set_current_profile(
+    profile_name=None, config_file_path=None, region=None, interactive=True
+):
     """Sets the current OCI config Profile
 
     If the config_file_path is omitted, the MYSQLSH_OCI_CONFIG_FILE env_var is used when set,
@@ -1192,6 +1194,7 @@ def set_current_profile(profile_name=None, config_file_path=None, interactive=Tr
         profile_name (str): The name of the OCI profile or InstancePrincipal
             when running on a compute instance that is part of a dynamic group.
         config_file_path (str): The file path of the OCI config file
+        region (str): Optional region override for the active session config
         interactive (bool): Whether information should be printed
 
     Returns:
@@ -1230,6 +1233,11 @@ def set_current_profile(profile_name=None, config_file_path=None, interactive=Tr
         interactive=interactive,
     )
 
+    if region:
+        import mysqlsh
+
+        if "mds_config" in dir(mysqlsh.globals):
+            getattr(mysqlsh.globals, "mds_config")["region"] = region
 
 @plugin_function("mds.set.defaultConfigProfile", cli=True, web=True)
 def set_default_profile(

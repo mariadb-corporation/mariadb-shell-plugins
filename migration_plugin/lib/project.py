@@ -26,6 +26,7 @@ import os
 import os.path
 import pathlib
 import threading
+from collections.abc import Mapping
 from typing import Optional, cast
 import datetime
 
@@ -52,6 +53,17 @@ class AttributeWatchProxy:
     def __getattr__(self, name):
         # Forward attribute access to the target
         return getattr(self._target, name)
+
+
+def _oci_region_subscription_name(subscription: object) -> str:
+    if isinstance(subscription, Mapping):
+        value = subscription.get("region_name") or subscription.get("regionName")
+    else:
+        value = getattr(subscription, "region_name", "") or getattr(
+            subscription, "regionName", ""
+        )
+
+    return value if isinstance(value, str) else ""
 
 
 # TODO add a directory for saving common defaults, like contact emails list
@@ -323,6 +335,8 @@ class Project:
     @region.setter
     def region(self, value: str):
         self._options.region = value
+        if value and self._oci_config:
+            self._oci_config["region"] = value
 
     @property
     def options(self) -> model.MigrationOptions:
@@ -588,6 +602,28 @@ class Project:
         except Exception as e:
             logging.warning(f"get_user did not work: {e}")
 
+    def get_available_oci_regions(self) -> list[str]:
+        if not self._oci_config:
+            return [self.region] if self.region else []
+
+        oci_utils = self._oci_utils()
+        tenancy = oci_utils.Compartment(self._oci_config, lazy_refresh=True)
+        seen: set[str] = set()
+        regions: list[str] = []
+
+        for subscription in tenancy.list_region_subscriptions():
+            region_name = _oci_region_subscription_name(subscription)
+            if not region_name or region_name in seen:
+                continue
+
+            seen.add(region_name)
+            regions.append(region_name)
+
+        if self.region and self.region not in seen:
+            regions.insert(0, self.region)
+
+        return regions
+
     def open_oci_profile(self) -> bool:
         import oci.exceptions
 
@@ -601,6 +637,7 @@ class Project:
             return False
 
         try:
+            selected_region = self.region
             self._oci_config = oci_utils.get_config(
                 path=self._oci_config_file, profile=self._oci_profile
             )
@@ -614,7 +651,7 @@ class Project:
             )
             return False
 
-        self.region = self.oci_config["region"]
+        self.region = selected_region or self.oci_config["region"]
 
         if not self.available_oci_profiles:
             self._refresh_available_oci_profiles()

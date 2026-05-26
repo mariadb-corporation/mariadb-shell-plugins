@@ -189,6 +189,8 @@ class OCIProfileOptions(MigrationMessage):
     configFile: str = ""
     profile: str = "DEFAULT"
     availableProfiles: list[str] = field(default_factory=list)
+    region: str = ""
+    availableRegions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -373,12 +375,40 @@ class OCIProfileSubStep(PlanSubStep):
         self._start_mutex = threading.Lock()
         self._config_exists = False
         self._compartments = []
+        self._available_regions: list[str] = []
+
+    def refresh_available_regions(self):
+        try:
+            self._available_regions = self._project.get_available_oci_regions()
+        except Exception as e:
+            logging.warning(f"{self}: failed to fetch OCI regions: {e}")
+            self._available_regions = (
+                [self._project.region] if self._project.region else []
+            )
+
+    def validate_region(self, region: str):
+        if not self._project.oci_config:
+            return
+
+        try:
+            available_regions = self._project.get_available_oci_regions()
+        except Exception as e:
+            logging.warning(f"{self}: failed to validate OCI region '{region}': {e}")
+            return
+
+        self._available_regions = available_regions
+
+        if available_regions and region not in available_regions:
+            raise errors.BadRequest(
+                f"OCI region '{region}' is not subscribed for the current tenancy"
+            )
 
     def refresh_oci_config(self):
         if self._project.open_oci_profile():
             try:
                 self._config_exists = True
                 self._project.check_oci_config()
+                self.refresh_available_regions()
                 logging.info(
                     f"OCI config profile {self._project.oci_profile} at {self._project.oci_config_file} works"
                 )
@@ -410,17 +440,24 @@ class OCIProfileSubStep(PlanSubStep):
         options = self.parse_values(config, OCIProfileOptions)
 
         changed = False
+        profile_settings_changed = False
 
         if not self._project.oci_config:
             if options.configFile:
                 logging.debug(f"{self}: config file set to {options.configFile}")
                 self._project.oci_config_file = options.configFile
+                self._project.region = ""
+                self._available_regions = []
                 changed = True
+                profile_settings_changed = True
 
             if options.profile:
                 logging.debug(f"{self}: profile set to {options.profile}")
                 self._project.oci_profile = options.profile
+                self._project.region = ""
+                self._available_regions = []
                 changed = True
+                profile_settings_changed = True
         else:
             if (
                 options.configFile
@@ -431,10 +468,32 @@ class OCIProfileSubStep(PlanSubStep):
             if options.profile and self._project.oci_profile != options.profile:
                 logging.debug(f"{self}: profile changed to {options.profile}")
                 self._project.oci_profile = options.profile
+                self._project.region = ""
+                self._available_regions = []
                 changed = True
+                profile_settings_changed = True
+
+        if profile_settings_changed:
+            self.refresh_oci_config()
+
+        region_changed = False
+        if options.region and self._project.region != options.region:
+            if self._project.oci_profile and not self._project.oci_config:
+                self._project.open_oci_profile()
+
+            self.validate_region(options.region)
+            logging.debug(f"{self}: region changed to {options.region}")
+            self._project.region = options.region
+            changed = True
+            region_changed = True
 
         if changed:
-            self.refresh_oci_config()
+            if (
+                region_changed
+                and not profile_settings_changed
+                and self._project.oci_config
+            ):
+                self.refresh_available_regions()
             self._owner.notify(PlanEvent.OCI_PROFILE_CHANGED)
 
         return changed
@@ -455,10 +514,22 @@ class OCIProfileSubStep(PlanSubStep):
         return self.info()
 
     def info_values(self) -> OCIProfileOptions:
+        if not self._available_regions and (
+            self._project.oci_config or self._project.available_oci_profiles
+        ):
+            if self._project.oci_config or self._project.open_oci_profile():
+                self.refresh_available_regions()
+
+        available_regions = list(self._available_regions)
+        if self._project.region and self._project.region not in available_regions:
+            available_regions.insert(0, self._project.region)
+
         return OCIProfileOptions(
             configFile=self._project.oci_config_file,
             profile=self._project.oci_profile,
             availableProfiles=self._project.available_oci_profiles,
+            region=self._project.region,
+            availableRegions=available_regions,
         )
 
 

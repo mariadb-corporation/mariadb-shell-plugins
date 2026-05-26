@@ -61,6 +61,7 @@ except ImportError:
         MagicMock = mock.MagicMock
         Mock = mock.Mock
         call = mock.call
+        ANY = mock.ANY
 
         def __init__(self):
             self.patch = _PatchProxy()

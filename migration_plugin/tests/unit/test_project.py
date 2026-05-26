@@ -27,11 +27,12 @@ import pathlib
 import shutil
 import tempfile
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import pytest
 from migration_plugin import migration
 from migration_plugin.lib.project import Project
-from migration_plugin.lib import core, errors
+from migration_plugin.lib import core, errors, oci_utils
 
 
 class TestProjectCreation:
@@ -94,6 +95,17 @@ class TestProjectProperties:
 
         project.region = "us-ashburn-1"
         assert project.region == "us-ashburn-1"
+
+    def test_region_property_updates_loaded_oci_config(self, temp_dir):
+        project_path = pathlib.Path(temp_dir) / "test-project"
+        project_path.mkdir()
+        project = Project(id="test-project", path=project_path)
+
+        project.oci_config = {"region": "us-ashburn-1", "profile": "DEFAULT"}
+        project.region = "eu-frankfurt-1"
+
+        assert project.region == "eu-frankfurt-1"
+        assert project.oci_config["region"] == "eu-frankfurt-1"
 
     def test_options_property(self, temp_dir):
         project_path = pathlib.Path(temp_dir) / "test-project"
@@ -310,6 +322,165 @@ class TestOCIConfiguration:
                 "profile": "DEFAULT",
             }
             assert project.region == "us-ashburn-1"
+
+    def test_open_oci_profile_preserves_selected_region(self, temp_dir):
+        project_path = pathlib.Path(temp_dir) / "test-project"
+        project_path.mkdir()
+        project = Project(id="test-project", path=project_path)
+
+        config_file = project_path / "oci_config"
+        config_file.write_text("[DEFAULT]\nregion=us-ashburn-1\n")
+        project.region = "eu-frankfurt-1"
+
+        def mock_get_config(path, profile):
+            return {"region": "us-ashburn-1", "profile": "DEFAULT"}
+
+        with patch(
+            "migration_plugin.lib.oci_utils.get_config", side_effect=mock_get_config
+        ):
+            project.oci_config_file = str(config_file)
+            result = project.open_oci_profile()
+
+            assert result is True
+            assert project.region == "eu-frankfurt-1"
+            assert project.oci_config == {
+                "region": "eu-frankfurt-1",
+                "profile": "DEFAULT",
+            }
+
+    def test_get_available_oci_regions_deduplicates_sdk_subscriptions(self, temp_dir):
+        project_path = pathlib.Path(temp_dir) / "test-project"
+        project_path.mkdir()
+        project = Project(id="test-project", path=project_path)
+        project.oci_config = {"region": "us-ashburn-1", "profile": "DEFAULT"}
+
+        subscriptions = [
+            SimpleNamespace(region_name="us-ashburn-1", status="READY"),
+            SimpleNamespace(region_name="eu-frankfurt-1", status="IN_PROGRESS"),
+            SimpleNamespace(region_name="us-ashburn-1", status="READY"),
+        ]
+
+        with patch("migration_plugin.lib.oci_utils.Compartment") as mock_compartment:
+            mock_compartment.return_value.list_region_subscriptions.return_value = (
+                subscriptions
+            )
+
+            assert project.get_available_oci_regions() == [
+                "us-ashburn-1",
+                "eu-frankfurt-1",
+            ]
+
+    def test_get_available_oci_regions_includes_dict_region_names(self, temp_dir):
+        project_path = pathlib.Path(temp_dir) / "test-project"
+        project_path.mkdir()
+        project = Project(id="test-project", path=project_path)
+        project.oci_config = {"region": "us-ashburn-1", "profile": "DEFAULT"}
+
+        subscriptions = [
+            {"regionName": "eu-frankfurt-1"},
+            {"region_name": "us-ashburn-1"},
+            {"regionName": "eu-frankfurt-1"},
+        ]
+
+        with patch("migration_plugin.lib.oci_utils.Compartment") as mock_compartment:
+            mock_compartment.return_value.list_region_subscriptions.return_value = (
+                subscriptions
+            )
+
+            assert project.get_available_oci_regions() == [
+                "eu-frankfurt-1",
+                "us-ashburn-1",
+            ]
+
+    def test_get_available_oci_regions_does_not_duplicate_selected_region(
+        self, temp_dir
+    ):
+        project_path = pathlib.Path(temp_dir) / "test-project"
+        project_path.mkdir()
+        project = Project(id="test-project", path=project_path)
+        project.oci_config = {"region": "us-ashburn-1", "profile": "DEFAULT"}
+        project.region = "eu-frankfurt-1"
+
+        subscriptions = [
+            SimpleNamespace(region_name="us-ashburn-1"),
+            SimpleNamespace(region_name="eu-frankfurt-1"),
+        ]
+
+        with patch("migration_plugin.lib.oci_utils.Compartment") as mock_compartment:
+            mock_compartment.return_value.list_region_subscriptions.return_value = (
+                subscriptions
+            )
+
+            assert project.get_available_oci_regions() == [
+                "us-ashburn-1",
+                "eu-frankfurt-1",
+            ]
+
+    def test_get_available_oci_regions_prepends_selected_region_when_missing(
+        self, temp_dir
+    ):
+        project_path = pathlib.Path(temp_dir) / "test-project"
+        project_path.mkdir()
+        project = Project(id="test-project", path=project_path)
+        project.oci_config = {"region": "us-ashburn-1", "profile": "DEFAULT"}
+        project.region = "uk-london-1"
+
+        subscriptions = [
+            SimpleNamespace(region_name="us-ashburn-1"),
+            SimpleNamespace(region_name="eu-frankfurt-1"),
+        ]
+
+        with patch("migration_plugin.lib.oci_utils.Compartment") as mock_compartment:
+            mock_compartment.return_value.list_region_subscriptions.return_value = (
+                subscriptions
+            )
+
+            assert project.get_available_oci_regions() == [
+                "uk-london-1",
+                "us-ashburn-1",
+                "eu-frankfurt-1",
+            ]
+
+    def test_available_oci_regions_region_subscriptions_use_tenancy_id(self):
+        config = {
+            "tenancy": "ocid1.tenancy.oc1..exampleuniqueID",
+            "region": "us-ashburn-1",
+        }
+        identity_client = MagicMock()
+        pagination_result = MagicMock(data=["subscription"])
+
+        def list_all_results(fn, *args, **kwargs):
+            fn(*args, **kwargs)
+            return pagination_result
+
+        with patch(
+            "migration_plugin.lib.oci_utils.configuration.get_current_config",
+            return_value=config,
+        ), patch(
+            "migration_plugin.lib.oci_utils.core.get_oci_identity_client",
+            return_value=identity_client,
+        ), patch(
+            "migration_plugin.lib.oci_utils.core.get_oci_virtual_network_client"
+        ), patch(
+            "migration_plugin.lib.oci_utils.core.get_oci_compute_client"
+        ), patch(
+            "migration_plugin.lib.oci_utils.core.get_oci_db_system_client"
+        ), patch(
+            "migration_plugin.lib.oci_utils.core.get_oci_mds_client"
+        ), patch(
+            "migration_plugin.lib.oci_utils.core.get_oci_object_storage_client"
+        ), patch(
+            "migration_plugin.lib.oci_utils.oci.pagination.list_call_get_all_results",
+            side_effect=list_all_results,
+        ):
+            compartment = oci_utils.Compartment(config, lazy_refresh=True)
+
+            result = compartment.list_region_subscriptions()
+
+        identity_client.list_region_subscriptions.assert_called_once_with(
+            config["tenancy"]
+        )
+        assert result == pagination_result.data
 
 
 class TestSSHKeyManagement:

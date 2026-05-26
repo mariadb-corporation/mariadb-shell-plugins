@@ -1189,7 +1189,7 @@ export interface IShellMdsGenaiSaveChatOptionsKwargs {
 export interface IProtocolMdsParameters {
     [ShellAPIMds.MdsGetRegions]: {};
     [ShellAPIMds.MdsListConfigProfiles]: { kwargs?: IShellMdsListConfigProfilesKwargs; };
-    [ShellAPIMds.MdsSetCurrentConfigProfile]: { args: { profileName?: string; configFilePath?: string; interactive?: boolean; }; };
+    [ShellAPIMds.MdsSetCurrentConfigProfile]: { args: { profileName?: string; configFilePath?: string; region?: string; interactive?: boolean; }; };
     [ShellAPIMds.MdsSetDefaultConfigProfile]: { args: { profileName?: string; configFilePath?: string; cliRcFilePath?: string; }; };
     [ShellAPIMds.MdsGetDefaultConfigProfile]: { args: { cliRcFilePath?: string; }; };
     [ShellAPIMds.MdsSetCurrentCompartment]: { kwargs?: IShellMdsSetCurrentCompartmentKwargs; };
