@@ -45,6 +45,52 @@ export const generateWbCmdLineArgs = (databaseSourceJson: string) => {
     return `{"migrate": "${base64}"}`;
 };
 
+export const htmlToPlainTextLines = (html: string): string[] => {
+    const renderNode = (node: ChildNode): string => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            return node.textContent ?? "";
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return "";
+        }
+
+        const element = node as HTMLElement;
+        const children = Array.from(element.childNodes).map(renderNode).join("");
+        switch (element.tagName.toLowerCase()) {
+            case "br":
+                return "\n";
+
+            case "li":
+                return `\n- ${children.trim()}\n`;
+
+            case "p":
+            case "div":
+            case "ul":
+            case "ol":
+                return `\n${children.trim()}\n`;
+
+            case "script":
+            case "style":
+                return "";
+
+            default:
+                return children;
+        }
+    };
+
+    const template = document.createElement("template");
+    template.innerHTML = html;
+
+    const rendered = Array.from(template.content.childNodes).map(renderNode).join("");
+
+    return rendered.split("\n").map((line) => {
+        return line.replace(/[ \t\f\v]+/g, " ").trim();
+    }).filter((line) => {
+        return line.length > 0;
+    });
+};
+
 export const buildOciRegionOptions = (
     currentRegion: string | undefined,
     availableRegions: readonly string[],

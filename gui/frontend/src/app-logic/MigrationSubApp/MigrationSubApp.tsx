@@ -87,9 +87,10 @@ import {
 } from "../../supplement/ShellInterface/ShellInterfaceMigration.js";
 import { convertErrorToString, sleep, uuid } from "../../utilities/helpers.js";
 import { formatBytes } from "../../utilities/string-helpers.js";
+import { DialogHost } from "../DialogHost.js";
 import { LoadingIndicator } from "../LazyAppRouter.js";
 import { ui } from "../UILayer.js";
-import { JsonObject, ValueType } from "../general-types.js";
+import { DialogType, JsonObject, ValueType } from "../general-types.js";
 import { Accordion, ISection } from "./Accordion.js";
 import { BackendRequestHelper, toBoolean, toFloat, toNumber } from "./BackendRequestHelper.js";
 import {
@@ -116,7 +117,7 @@ import { NotFoundShapesFor, ShapesHelper } from "./ShapesHelper.js";
 import { WorkProgressView } from "./WorkProgressView.js";
 import {
     buildOciNetworkingRefreshState, buildOciRegionOptions, Compartment, generateWbCmdLineArgs, IDatabaseSource,
-    ociResourcesToOptions, waitForPromise
+    htmlToPlainTextLines, ociResourcesToOptions, waitForPromise
 } from "./helpers.js";
 import {
     ComputeShapeInfo, ConfigTemplate, configTemplates, customTemplateId, getClusterSizeBoundaries, Shapes,
@@ -289,6 +290,42 @@ export const getMigrationSetupStatusMessage = ({
     }
 
     return statusMessage ? appendNewOciApiKeyStatusHint(statusMessage, ociNewApiKeyUploadedThisSession) : undefined;
+};
+
+export type SourceSelectionCommitErrorAction = "retry-password" | "close-assistant";
+
+const isSourceSelectionPasswordError = (error: IMigrationError): boolean => {
+    return error.type === "BadUserInput" && error.info?.input === "password";
+};
+
+export const getSourceSelectionCommitErrorAction = (
+    errors: IMigrationError[]
+): SourceSelectionCommitErrorAction => {
+    return errors.length > 0 && errors.every(isSourceSelectionPasswordError)
+        ? "retry-password"
+        : "close-assistant";
+};
+
+export interface ISourceSelectionCommitErrorDialogContent {
+    prompt: string;
+    description?: string[];
+}
+
+export const getSourceSelectionCommitErrorDialogContent = (
+    errors: IMigrationError[]
+): ISourceSelectionCommitErrorDialogContent => {
+    const messages = errors.flatMap(({ title, message }) => {
+        return title
+            ? [...htmlToPlainTextLines(title), ...htmlToPlainTextLines(message)]
+            : htmlToPlainTextLines(message);
+    });
+
+    const [prompt = "", ...description] = messages;
+
+    return {
+        prompt,
+        description: description.length > 0 ? description : undefined,
+    };
 };
 
 type MockStateText = keyof Pick<IMigrationAppState, "fakeWebMessage" | "workStatus" | "mockBackendState">;
@@ -1142,14 +1179,21 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
         switch (stepInfo.id) {
             case SubStepId.SOURCE_SELECTION: {
                 if (type === "Commit") {
-                    for (const [index, error] of stepInfo.errors.entries()) {
-                        const displayedMessage = this.getDisplayedMessage(error);
-                        ui.showErrorMessage(displayedMessage, { modal: true });
+                    if (getSourceSelectionCommitErrorAction(stepInfo.errors) === "retry-password") {
+                        for (const [index, error] of stepInfo.errors.entries()) {
+                            const displayedMessage = this.getDisplayedMessage(error);
+                            ui.showErrorMessage(displayedMessage, { modal: true });
 
-                        processedErrors.add(index);
+                            processedErrors.add(index);
+                        }
+
+                        void this.requestForPassword();
+                    } else {
+                        void this.showSourceSelectionCommitErrorDialog(stepInfo.errors);
+                        stepInfo.errors.forEach((_error, index) => {
+                            processedErrors.add(index);
+                        });
                     }
-
-                    void this.requestForPassword();
                 }
                 break;
             }
@@ -1210,6 +1254,25 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
 
     private getDisplayedMessage({ level, message, title }: IMigrationError, prefix?: string) {
         return `${prefix ? `${prefix} | ` : ""}${level}: ${message}. ${title}`;
+    }
+
+    private async showSourceSelectionCommitErrorDialog(errors: IMigrationError[]): Promise<void> {
+        const { prompt, description } = getSourceSelectionCommitErrorDialogContent(errors);
+        await DialogHost.showDialog({
+            id: "msg.migration.sourceSelectionCommitError",
+            type: DialogType.Confirm,
+            description,
+            parameters: {
+                title: "Source Database Check Failed",
+                prompt,
+                accept: "OK",
+                default: "OK",
+            },
+        });
+        requisitions.executeRemote("closeInstance", undefined);
+        this.setState({
+            aborted: true,
+        });
     }
 
     private async commitSubStep(subStepId: SubStepId) {

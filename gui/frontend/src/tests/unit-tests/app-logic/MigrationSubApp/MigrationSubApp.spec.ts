@@ -27,8 +27,11 @@ import { describe, expect, it } from "vitest";
 
 import {
     getMigrationSetupStatusMessage,
+    getSourceSelectionCommitErrorAction,
+    getSourceSelectionCommitErrorDialogContent,
     parseOciSignInInfo
 } from "../../../../app-logic/MigrationSubApp/MigrationSubApp.js";
+import { MessageLevel } from "../../../../communication/ProtocolMigration.js";
 
 describe("MigrationSubApp status helpers", () => {
     it("extracts OCI sign-in progress messages from JSON data", () => {
@@ -93,5 +96,60 @@ describe("MigrationSubApp status helpers", () => {
         expect(getMigrationSetupStatusMessage({
             isFetchingShapes: true,
         })).toBe("Loading available shapes...");
+    });
+});
+
+describe("MigrationSubApp source selection commit errors", () => {
+    it("requests the password again for source authentication errors", () => {
+        expect(getSourceSelectionCommitErrorAction([{
+            level: MessageLevel.ERROR,
+            type: "BadUserInput",
+            message: "Access denied for user 'root'@'localhost'",
+            title: "Please enter the password for user 'root' at the source database.",
+            info: { input: "password" },
+        }])).toBe("retry-password");
+    });
+
+    it("closes the assistant for source pre-check errors", () => {
+        expect(getSourceSelectionCommitErrorAction([{
+            level: MessageLevel.ERROR,
+            type: null,
+            message: "Migration from an RDS instance requires binary logging to be enabled.",
+            title: "Binary logging is disabled in the RDS instance",
+            info: null,
+        }])).toBe("close-assistant");
+    });
+
+    it("separates the dialog prompt and description for source pre-check errors", () => {
+        expect(getSourceSelectionCommitErrorDialogContent([{
+            level: MessageLevel.ERROR,
+            type: null,
+            message: "Enable <code>log_bin</code> and restart.",
+            title: "Binary logging (<code>log_bin</code>) is disabled",
+            info: null,
+        }])).toEqual({
+            prompt: "Binary logging (log_bin) is disabled",
+            description: ["Enable log_bin and restart."],
+        });
+    });
+
+    it("formats simple backend HTML tags as readable dialog text", () => {
+        const message = "You may:<br/><ul><li>enable <code>log_bin</code></li>" +
+            "<li>restart the source</li></ul>";
+
+        expect(getSourceSelectionCommitErrorDialogContent([{
+            level: MessageLevel.ERROR,
+            type: null,
+            message,
+            title: "Source pre-check failed",
+            info: null,
+        }])).toEqual({
+            prompt: "Source pre-check failed",
+            description: [
+                "You may:",
+                "- enable log_bin",
+                "- restart the source",
+            ],
+        });
     });
 });

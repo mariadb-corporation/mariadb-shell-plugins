@@ -28,6 +28,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
     buildOciNetworkingRefreshState,
     buildOciRegionOptions,
+    htmlToPlainTextLines,
     ociResourcesToOptions,
 } from "../../../../app-logic/MigrationSubApp/helpers.js";
 
@@ -52,6 +53,17 @@ describe("MigrationSubApp helpers", () => {
         ])).toEqual([
             { id: "vcn-1", label: "Application VCN" },
             { id: "subnet-1", label: "Private Subnet" },
+        ]);
+    });
+
+    it("converts simple HTML fragments to readable text lines", () => {
+        const html = "You may:<br/><ul><li>enable <code>log_bin</code></li>" +
+            "<li>restart the source</li></ul>";
+
+        expect(htmlToPlainTextLines(html)).toEqual([
+            "You may:",
+            "- enable log_bin",
+            "- restart the source",
         ]);
     });
 
