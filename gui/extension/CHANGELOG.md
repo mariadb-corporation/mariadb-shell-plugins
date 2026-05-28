@@ -4,11 +4,57 @@
 
 ### Additions
 
-- TBD
+- Upgraded MySQL Shell and Router to version 9.7.0.
+- WL#17284 BUG#38948054 Migration checks now run as an async,
+  abortable workflow with progress reporting, retry support, and issue
+  resolution preservation.
+- BUG#38953626 Migration Assistant supports OCI region selection and
+  refreshes OCI-dependent choices when the profile or region changes.
 
 ### Fixes
 
-- TBD
+- BUG#38874451 Password prompt filtering now also covers OCI API key
+  passphrases.
+- BUG#38930658 Migration Assistant can use an OCI config that does not
+  contain a DEFAULT profile.
+- BUG#39103281 OCI API key bootstrapping errors are now reported to the
+  frontend.
+- BUG#39192259 MySQL Shell startup is faster because plugin
+  implementation modules are loaded lazily.
+- BUG#39252609 MySQL Shell download links now point to the 9.7.0
+  release.
+- BUG#39252615 Migration Assistant public IP detection now uses multiple
+  endpoints and supports plain text, JSON, and Cloudflare trace
+  responses.
+- BUG#39128471 Migration Assistant now reports missing OCI root or
+  tenancy privileges more clearly and can continue when compartment
+  details are unavailable.
+- BUG#39291755 BUG#38899155 Migration Assistant setup spinners now show
+  status text, and OCI sign-in progress renders the user-facing message
+  from the backend payload.
+- BUG#39274242 Single server users no longer receive broad gui.users
+  privileges.
+- BUG#39253274 GUI debugger script loading is constrained to the scripts
+  directory and is excluded from packaged extensions.
+- BUG#38879077 Hot migration SSH tunnels now use active keepalives and
+  recover remote forwarding when the transport becomes inactive.
+- BUG#38927265 Jump host access now requires a valid IPv4 source CIDR,
+  and public IP lookup failures no longer prefill unusable CIDRs.
+- BUG#38879842 Migration Assistant now stops on source pre-check failures
+  instead of treating them as password retry failures.
+- Notebook save handling now distinguishes save and save-as operations
+  for extension and embedded hosts.
+- Backend dataclass parameter and message handling now converts optional
+  and nested dataclass values consistently.
+- TreeGrid rows now respond consistently to mouse-wheel scrolling.
+- Result grid editing now keeps cell values, discard, apply, and keyboard
+  selection state synchronized.
+- SQL history now honors the Shell history.sql.ignorePattern option.
+- GUI backend database logging is now opt-in through
+  MYSQL_SHELL_GUI_DEBUG_MODE.
+- Extension source-map builds now keep the backend port supplied by the
+  VS Code extension.
+- Frontend dependencies were updated to Preact 10.29.1 and Vite 6.4.2.
 
 ## Changes in 2026.2.0+9.6.1
 
