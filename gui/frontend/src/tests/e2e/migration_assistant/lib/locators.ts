@@ -188,8 +188,12 @@ export const steps = {
         }
     },
     schemaCompatibilityChecks: {
+        doneWithIssues: "[data-testid='migration-checks-done-with-issues']",
         issue: {
-            exists: ".issues > li",
+            exists: "[data-testid='migration-compatibility-issue']",
+            getByName: (name: string) => {
+                return `[data-testid='migration-compatibility-issue']:has(.title:has-text("${name}"))`;
+            },
             title: ".title",
             icon: ".icon",
             showDetails: `[data-tooltip="Show details"]`,

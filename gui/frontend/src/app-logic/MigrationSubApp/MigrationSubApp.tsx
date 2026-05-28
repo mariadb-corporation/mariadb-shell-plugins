@@ -1457,7 +1457,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             return;
         }
 
-        this.handleSubStepStates([stepsState]);
+        await this.handleSubStepStates([stepsState]);
     }
 
     private navigateToNextSubStep() {
@@ -4533,10 +4533,15 @@ Migration Assistant.`}
                     // console.log(expandedIssues, checkId, expandedIssues[checkId]);
                     if (!expandedIssues[checkId]) {
                         return (
-                            <li className="issue-collapsed" key={checkId} onClick={() => {
-                                expandedIssues[checkId] = true;
-                                this.setState({ expandedIssues });
-                            }}>
+                            <li
+                                className="issue-collapsed"
+                                data-testid="migration-compatibility-issue"
+                                data-check-id={checkId}
+                                key={checkId}
+                                onClick={() => {
+                                    expandedIssues[checkId] = true;
+                                    this.setState({ expandedIssues });
+                                }}>
                                 <Container orientation={Orientation.LeftToRight}
                                     mainAlignment={ContentAlignment.SpaceBetween}>
                                     <div className="title">
@@ -4567,7 +4572,11 @@ Migration Assistant.`}
                         );
                     } else {
                         return (
-                            <li className="issue" key={checkId}>
+                            <li
+                                className="issue"
+                                data-testid="migration-compatibility-issue"
+                                data-check-id={checkId}
+                                key={checkId}>
                                 <Container orientation={Orientation.LeftToRight}
                                     mainAlignment={ContentAlignment.SpaceBetween}>
                                     <div className="title">

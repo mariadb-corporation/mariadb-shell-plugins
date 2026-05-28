@@ -362,7 +362,7 @@ describe("MigrationChecksView", () => {
     });
 
     it("renders detected issues after checks complete", () => {
-        render(
+        const { container } = render(
             <MigrationChecksView
                 busy={false}
                 onAbort={onAbort}
@@ -395,6 +395,7 @@ describe("MigrationChecksView", () => {
 
         expect(screen.getByText("Compatibility issues were detected in the source database.")).toBeTruthy();
         expect(screen.getByText("Issue list")).toBeTruthy();
+        expect(container.querySelector("[data-testid='migration-checks-done-with-issues']")).toBeTruthy();
     });
 
     it("renders a retry action after checks fail", () => {

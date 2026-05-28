@@ -357,8 +357,9 @@ export class MigrationPlan {
     // Schema Compatibility Checks
 
     public getCompatibilityIssues = async (): Promise<interfaces.ICompatibilityIssue[]> => {
-        const issuesLocator = await page.locator(locator.steps.schemaCompatibilityChecks.issue.exists)
-            .all();
+        await this.waitForCompatibilityChecksDoneWithIssues();
+
+        const issuesLocator = await this.compatibilityIssues().all();
 
         const issues: interfaces.ICompatibilityIssue[] = [];
 
@@ -397,26 +398,26 @@ export class MigrationPlan {
     };
 
     public changeCompatibilityIssueResolution = async (issueName: string, resolution: string): Promise<void> => {
-        const issuesLocator = await page.locator(locator.steps.schemaCompatibilityChecks.issue.exists)
-            .all();
+        await this.waitForCompatibilityChecksDoneWithIssues();
 
-        for (const issue of issuesLocator) {
-            const title = issue.locator(locator.steps.schemaCompatibilityChecks.issue.title);
+        const issue = this.compatibilityIssue(issueName);
+        await expect(issue).toBeVisible({
+            timeout: constants.wait1second * 30,
+        });
 
-            if ((await title.textContent())!.includes(issueName)) {
-                const box = issue.locator(locator.steps.schemaCompatibilityChecks.issue.resolution.box);
-                await box.click();
+        const showDetails = issue.locator(locator.steps.schemaCompatibilityChecks.issue.showDetails);
 
-                const selectList = page.locator(locator.steps.schemaCompatibilityChecks.issue.resolution
-                    .selectList.exists);
-                await selectList.locator(locator.steps.schemaCompatibilityChecks.issue.resolution.selectList
-                    .getItem(resolution)).click();
-
-                return;
-            }
+        if (await showDetails.count() > 0) {
+            await showDetails.click();
         }
 
-        throw new Error(`Could not find Compatibility Issue '${issueName}'`);
+        const box = issue.locator(locator.steps.schemaCompatibilityChecks.issue.resolution.box);
+        await box.click();
+
+        const selectList = page.locator(locator.steps.schemaCompatibilityChecks.issue.resolution
+            .selectList.exists);
+        await selectList.locator(locator.steps.schemaCompatibilityChecks.issue.resolution.selectList
+            .getItem(resolution)).click();
     };
 
     // Preview Migration Plan
@@ -431,6 +432,24 @@ export class MigrationPlan {
         const explanationLocator = page.locator(locator.steps.previewMigrationPlan.explanation);
 
         return (await explanationLocator.count()) > 0;
+    };
+
+    private waitForCompatibilityChecksDoneWithIssues = async (): Promise<void> => {
+        await expect(page.locator(locator.steps.schemaCompatibilityChecks.doneWithIssues)).toBeVisible({
+            timeout: constants.wait1second * 30,
+        });
+
+        await expect(this.compatibilityIssues().first()).toBeVisible({
+            timeout: constants.wait1second * 30,
+        });
+    };
+
+    private compatibilityIssues = (): Locator => {
+        return page.locator(locator.steps.schemaCompatibilityChecks.issue.exists);
+    };
+
+    private compatibilityIssue = (issueName: string): Locator => {
+        return page.locator(locator.steps.schemaCompatibilityChecks.issue.getByName(issueName)).first();
     };
 
     private normalizeTreeDropdownValue(value: string | null): string {

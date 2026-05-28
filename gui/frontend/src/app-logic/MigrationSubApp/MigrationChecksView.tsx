@@ -117,7 +117,7 @@ export const MigrationChecksView: FunctionalComponent<IMigrationChecksViewProps>
             )}
 
             {status === MigrationChecksStatus.DONE && issuesCount > 0 && (
-                <div className="migration-checks-state">
+                <div className="migration-checks-state" data-testid="migration-checks-done-with-issues">
                     <p className="heading">
                         Compatibility issues were detected in the source database.
                     </p>

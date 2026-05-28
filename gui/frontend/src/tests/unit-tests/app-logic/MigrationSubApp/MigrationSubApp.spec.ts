@@ -23,15 +23,22 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { render, screen } from "@testing-library/preact";
+import { h, type ComponentChild } from "preact";
 import { describe, expect, it } from "vitest";
 
-import {
+import MigrationSubApp, {
     getMigrationSetupStatusMessage,
     getSourceSelectionCommitErrorAction,
     getSourceSelectionCommitErrorDialogContent,
     parseOciSignInInfo
 } from "../../../../app-logic/MigrationSubApp/MigrationSubApp.js";
-import { MessageLevel } from "../../../../communication/ProtocolMigration.js";
+import {
+    CheckStatus,
+    type IMigrationChecksData,
+    MessageLevel,
+    SubStepId
+} from "../../../../communication/ProtocolMigration.js";
 
 describe("MigrationSubApp status helpers", () => {
     it("extracts OCI sign-in progress messages from JSON data", () => {
@@ -151,5 +158,34 @@ describe("MigrationSubApp source selection commit errors", () => {
                 "- restart the source",
             ],
         });
+    });
+});
+
+describe("MigrationSubApp compatibility issues", () => {
+    it("marks compatibility issue rows for E2E synchronization", () => {
+        const migrationSubApp = new MigrationSubApp({});
+        const renderIssues = (migrationSubApp as unknown as {
+            renderIssues: (subStepId: number,
+                checkDataOverride?: Pick<IMigrationChecksData, "issues">) => ComponentChild;
+        }).renderIssues.bind(migrationSubApp);
+
+        const issues = renderIssues(SubStepId.MIGRATION_CHECKS, {
+            issues: [{
+                checkId: "check-1",
+                level: MessageLevel.ERROR,
+                title: "Unsupported feature",
+                result: "",
+                description: "The source uses an unsupported feature.",
+                objects: [],
+                choices: [],
+                status: CheckStatus.ACTION_REQUIRED,
+            }],
+        });
+
+        render(h("div", null, issues));
+
+        const issue = screen.getByTestId("migration-compatibility-issue");
+        expect(issue.getAttribute("data-check-id")).toBe("check-1");
+        expect(screen.getByText(/Unsupported feature/u)).toBeTruthy();
     });
 });
