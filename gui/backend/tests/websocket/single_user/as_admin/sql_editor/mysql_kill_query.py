@@ -58,15 +58,23 @@ ws.sendAndValidate(
             "module_session_id": ws.tokens["module_session_id"],
         },
     },
-    [
-        {
-            "request_id": ws.lastGeneratedRequestId,
-            "request_state": {"type": "OK", "msg": ""},
-            "done": True,
-        },
-        {
-            "request_id": execute_request_id,
-            "request_state": {"type": "ERROR", "msg": "Error[MSG-1201]: Query killed"},
-        },
-    ],
+    # The kill request and the interrupted SQL task report from separate threads,
+    # so their responses can arrive in either order.
+    ws.matchList(
+        [
+            {
+                "request_id": ws.lastGeneratedRequestId,
+                "request_state": {"type": "OK", "msg": ""},
+                "done": True,
+            },
+            {
+                "request_id": execute_request_id,
+                "request_state": {
+                    "type": "ERROR",
+                    "msg": "Error[MSG-1201]: Query killed",
+                },
+            },
+        ],
+        exact_match=False,
+    ),
 )
