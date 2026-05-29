@@ -34,7 +34,15 @@ import functools
 import threading
 
 import oci.util
+import oci.exceptions
+import oci.identity
 import oci.mysql
+import oci.object_storage
+import oci.pagination
+import oci.regions
+import oci.response
+import oci.retry
+import oci.work_requests
 
 from . import logging, ssh_utils, util
 from .backend.api_metadata import k_configuration_variables_metadata
