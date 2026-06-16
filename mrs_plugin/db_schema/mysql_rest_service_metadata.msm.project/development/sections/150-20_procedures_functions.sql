@@ -48,26 +48,26 @@ CREATE FUNCTION `valid_request_path`(path VARCHAR(255))
 RETURNS TINYINT(1) NOT DETERMINISTIC READS SQL DATA
 BEGIN
     SET @valid := (SELECT COUNT(*) = 0 AS valid FROM
-        (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name,
+        (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name,
             se.url_context_root) as full_request_path
         FROM `mysql_rest_service_metadata`.service se
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
-        WHERE CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) = path
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) = path
             AND se.enabled = TRUE
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.db_schema sc
             LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
                 ON se.id = sc.service_id
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
-        WHERE CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
                 sc.request_path) = path
             AND se.enabled = TRUE
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path, o.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.db_object o
             LEFT OUTER JOIN `mysql_rest_service_metadata`.db_schema sc
@@ -76,18 +76,18 @@ BEGIN
                 ON se.id = sc.service_id
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
-        WHERE CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
                 sc.request_path, o.request_path) = path
             AND se.enabled = TRUE
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             co.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.content_set co
             LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
                 ON se.id = co.service_id
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
-        WHERE CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
                 co.request_path) = path
             AND se.enabled = TRUE) AS p);
 
@@ -355,14 +355,14 @@ here:BEGIN
                 SET direct_query = CONCAT(direct_query, 'MAX(', attr_column, ') as ', attr_column, ', ');
                 SET direct_columns = CONCAT(direct_columns, attr_column, ',');
             ELSE
-                SET details_query = CONCAT(details_query, quote(attr_name), ',MAX(details->''$.', attr_name, '''), ');
+                SET details_query = CONCAT(details_query, quote(attr_name), ',MAX(JSON_EXTRACT(details, ''$.', attr_name, ''')), ');
             END IF;
         ELSE
             IF attr_column IS NOT NULL THEN
                 SET direct_query = CONCAT(direct_query, 'SUM(', attr_column, ') as ', attr_column, ', ');
                 SET direct_columns = CONCAT(direct_columns, attr_column, ',');
             ELSE
-                SET details_query = CONCAT(details_query, quote(attr_name), ',SUM(details->''$.', attr_name, '''), ');
+                SET details_query = CONCAT(details_query, quote(attr_name), ',SUM(JSON_EXTRACT(details, ''$.', attr_name, ''')), ');
              END IF;
         END IF;
     END LOOP;

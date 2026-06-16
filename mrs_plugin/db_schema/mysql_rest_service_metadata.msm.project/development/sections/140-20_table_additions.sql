@@ -28,10 +28,10 @@ ALTER TABLE `mrs_user`
 -- Ensure that for STORED PROCEDURE parameters at least one of the 'in' and 'out' flag is set to true
 ALTER TABLE `object_field`
   ADD CONSTRAINT param_mode_not_false CHECK (
-    (db_column->"$.in" IS NULL AND db_column->"$.out" IS NULL) OR
-    (db_column->"$.in" + db_column->"$.out" >= 1));
+    (JSON_EXTRACT(db_column, "$.in") IS NULL AND JSON_EXTRACT(db_column, "$.out") IS NULL) OR
+    (JSON_EXTRACT(db_column, "$.in") + JSON_EXTRACT(db_column, "$.out") >= 1));
 
--- Ensure the service.in_development->>$.developers is a list that only holds unique strings
+-- Ensure the JSON_UNQUOTE(JSON_EXTRACT(service.in_development, '$.developers')) is a list that only holds unique strings
 ALTER TABLE `service`
   ADD CONSTRAINT in_development_developers_check CHECK(
     JSON_SCHEMA_VALID('{
@@ -48,7 +48,7 @@ ALTER TABLE `service`
         }
     },
     "required": [ "developers" ]
-    }', s.in_development)
+    }', in_development)
 );
 
 -- Ensure roles associated to a service are deleted in order when that service is deleted.
