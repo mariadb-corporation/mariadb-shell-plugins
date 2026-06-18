@@ -42,7 +42,7 @@ def get_routers(session, router_id=None, active_when_seen_within=10):
     SELECT
         *,
         last_check_in > CURRENT_TIMESTAMP - INTERVAL {active_when_seen_within} SECOND as active,
-        options->>'$.developer' AS developer
+        JSON_UNQUOTE(JSON_EXTRACT(options, '$.developer')) AS developer
     FROM `mysql_rest_service_metadata`.`router`
     """
     params = []
