@@ -39,9 +39,45 @@ END%%
 -- CREATE FUNCTIONs
 -- -----------------------------------------------------------------------------
 
+DROP FUNCTION IF EXISTS `UUID_TO_BIN_SWAP`%%
+CREATE FUNCTION UUID_TO_BIN_SWAP(u CHAR(36))
+RETURNS BINARY(16)
+DETERMINISTIC
+BEGIN
+    DECLARE h CHAR(32);
+
+    SET h = REPLACE(u, '-', '');
+
+    RETURN UNHEX(CONCAT(
+        SUBSTR(h, 13, 4),  -- time_hi_and_version
+        SUBSTR(h,  9, 4),  -- time_mid
+        SUBSTR(h,  1, 8),  -- time_low
+        SUBSTR(h, 17, 4),  -- clock_seq
+        SUBSTR(h, 21, 12)  -- node
+    ));
+END%%
+
+DROP FUNCTION IF EXISTS `BIN_TO_UUID_SWAP`%%
+CREATE FUNCTION BIN_TO_UUID_SWAP(b BINARY(16))
+RETURNS CHAR(36)
+DETERMINISTIC
+BEGIN
+    DECLARE h CHAR(32);
+
+    SET h = HEX(b);
+
+    RETURN LOWER(CONCAT(
+        SUBSTR(h,  9, 8), '-', -- time_low
+        SUBSTR(h,  5, 4), '-', -- time_mid
+        SUBSTR(h,  1, 4), '-', -- time_hi_and_version
+        SUBSTR(h, 17, 4), '-', -- clock_seq
+        SUBSTR(h, 21, 12)      -- node
+    ));
+END%%
+
 DROP FUNCTION IF EXISTS `get_sequence_id`%%
 CREATE FUNCTION `get_sequence_id`() RETURNS BINARY(16) SQL SECURITY INVOKER NOT DETERMINISTIC NO SQL
-RETURN UUID_TO_BIN(UUID(), 1)%%
+RETURN UUID_TO_BIN_SWAP(UUID())%%
 
 DROP FUNCTION IF EXISTS `valid_request_path`%%
 CREATE FUNCTION `valid_request_path`(path VARCHAR(255))

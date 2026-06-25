@@ -26,9 +26,9 @@ import msm_plugin.lib.management as schema_management
 import mysqlsh
 
 # Define plugin version
-VERSION = "2026.5.0"
+VERSION = "2026.6.0"
 
-DB_VERSION = [4, 1, 5]
+DB_VERSION = [4, 1, 6]
 REQUIRED_ROUTER_VERSION = [8, 1, 0]
 SUPPORTED_MAJOR_VERSION = 3
 
@@ -206,7 +206,8 @@ def configure(
             else mysqlsh.globals.shell.open_session(session.connection_options)
         )
 
-        if edition is None or edition.lower() != "heatwave":
+        if not lib.core.is_mariadb(session) and (edition is None or edition.lower() != "heatwave"):
+
             # For now, let's remove any previous version of the mysql_tasks schema
             session.run_sql("DROP SCHEMA IF EXISTS mysql_tasks")
 

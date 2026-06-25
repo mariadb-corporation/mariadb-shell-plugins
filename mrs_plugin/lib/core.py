@@ -1378,3 +1378,8 @@ class _NotSet:  # used to differentiate None (NULL) vs argument not set
 
 
 NotSet = _NotSet()
+
+def is_mariadb(session) -> bool:
+    return session.run_sql(
+        "SELECT IF(VERSION() LIKE '%MariaDB%', 'MariaDB', 'MySQL') AS db_type;"
+        ).fetch_one()[0] == "MariaDB"
