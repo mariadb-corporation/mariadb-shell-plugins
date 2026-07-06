@@ -788,7 +788,11 @@ def convert_id_to_string(id) -> str:
 def convert_dict_to_json_string(dic) -> str:
     if dic is None:
         return None
-    return json.dumps(dict(dic))
+    if isinstance(dic, str):
+        return dic
+    else:
+        return json.dumps(dict(dic))
+
 
 
 def _generate_where(where):

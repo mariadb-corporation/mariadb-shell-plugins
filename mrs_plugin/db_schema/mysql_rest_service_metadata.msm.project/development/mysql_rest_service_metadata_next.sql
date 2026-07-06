@@ -117,7 +117,7 @@ SOURCE './sections/150-20_procedures_functions.sql'[53:]; -- Remove copyright
 
 SOURCE './sections/150-30_triggers.sql'[53:]; -- Remove copyright
 
-SOURCE './sections/150-40_audit_log_triggers.sql'[53:]; -- Remove copyright
+SOURCE './sections/150-40_audit_log_triggers.sql'[58:]; -- Remove copyright
 
 SOURCE './sections/150-50_events.sql'[53:]; -- Remove copyright
 

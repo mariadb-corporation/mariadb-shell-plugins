@@ -39,12 +39,12 @@ from mysqlsh.plugin_manager import plugin
 
 @plugin
 class mrs:
-    """Plugin to manage the MySQL REST Data Service (MRS).
+    """Plugin to manage the MariaDB REST Data Service (MRS).
 
-    This global object is used to manage the MySQL REST Data Service (MRS).
+    This global object is used to manage the MariaDB REST Data Service (MRS).
 
-    The MRS can be used to offer MySQL schema objects via the REST interface
-    from MySQL Routers in an InnoDB Cluster.
+    The MRS can be used to serve MariaDB schema objects via the MariaDB REST
+    Daemon.
     """
 
     def __init__(self):

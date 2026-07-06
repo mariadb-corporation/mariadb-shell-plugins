@@ -435,7 +435,7 @@ def get_grant_statements_for_explicit_grants(grants):
         grant_statements.append(
             f"GRANT {privileges} ON {object_type}"
             f"{quote_identifier(grant['schema'])}.{quote_identifier(grant['object'])} "
-            + "TO 'mysql_rest_service_data_provider'@'%'"
+            + "TO 'mysql_rest_service_data_provider'"
         )
 
     return grant_statements
@@ -483,7 +483,7 @@ def get_grant_statements(
             f"""GRANT {','.join(obj_grants)}
             ON {obj_type if obj_type == "PROCEDURE" or obj_type == "FUNCTION" else ''}
             {quote_identifier(schema_name)}.{quote_identifier(obj_name)}
-            TO 'mysql_rest_service_data_provider'@'%'"""
+            TO 'mysql_rest_service_data_provider'"""
             for obj_name, obj_type, obj_grants in db_objects
         ]
 
@@ -504,7 +504,7 @@ def get_grant_statements(
                         )
                         grants.append(f"""GRANT {','.join(grant_privileges)}
                             ON {ref_table}
-                            TO 'mysql_rest_service_data_provider'@'%'""")
+                            TO 'mysql_rest_service_data_provider'""")
     else:
         grants = []
 
@@ -548,7 +548,7 @@ def revoke_all_from_db_object(session, schema_name, db_object_name, db_object_ty
         sql = f"""
             REVOKE IF EXISTS SELECT ON
             {quote_identifier(schema_name)}.{quote_identifier(db_object_name)}
-            FROM 'mysql_rest_service_data_provider'@'%'
+            FROM 'mysql_rest_service_data_provider'
         """
     else:
         if db_object_type == "PROCEDURE":
@@ -560,7 +560,7 @@ def revoke_all_from_db_object(session, schema_name, db_object_name, db_object_ty
         sql = f"""
             REVOKE IF EXISTS
             {revoke} {quote_identifier(schema_name)}.{quote_identifier(db_object_name)}
-            FROM 'mysql_rest_service_data_provider'@'%'
+            FROM 'mysql_rest_service_data_provider'
         """
     session.run_sql(sql)
 

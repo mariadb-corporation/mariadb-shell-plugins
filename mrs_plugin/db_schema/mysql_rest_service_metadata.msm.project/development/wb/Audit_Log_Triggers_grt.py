@@ -366,12 +366,15 @@ END%%"""
         for column in table.columns:
             data_type = column.formattedRawType.upper()
             if not ("BLOB" in data_type or "TEXT" in data_type):
-                if not "BINARY" in data_type:
-                    old_rows += f'{" ":12}"{column.name}", OLD.{column.name},\n'
-                    new_rows += f'{" ":12}"{column.name}", NEW.{column.name},\n'
-                else:
+                if "BIT(1)" in data_type:
+                    old_rows += f'{" ":12}"{column.name}", IF(OLD.{column.name}, 1, 0),\n'
+                    new_rows += f'{" ":12}"{column.name}", IF(NEW.{column.name}, 1, 0),\n'
+                elif "BINARY" in data_type:
                     old_rows += f'{" ":12}"{column.name}", CONCAT("0x", HEX(OLD.{column.name})),\n'
                     new_rows += f'{" ":12}"{column.name}", CONCAT("0x", HEX(NEW.{column.name})),\n'
+                else:
+                    old_rows += f'{" ":12}"{column.name}", OLD.{column.name},\n'
+                    new_rows += f'{" ":12}"{column.name}", NEW.{column.name},\n'
 
         old_rows = old_rows[:-2] + "),"
         new_rows = new_rows[:-2] + "),"
