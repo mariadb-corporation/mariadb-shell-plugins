@@ -1918,6 +1918,17 @@ BEGIN
     SELECT service_res;
 END%%
 
+-- Off an implementation of the JSON_STORAGE_SIZE function if it is not available as system function
+DROP FUNCTION IF EXISTS `JSON_STORAGE_SIZE`%%
+CREATE FUNCTION `JSON_STORAGE_SIZE`(doc JSON)  RETURNS INT SQL SECURITY INVOKER DETERMINISTIC NO SQL
+BEGIN
+    IF NOT @@version LIKE '%MariaDB%' THEN
+        RETURN JSON_STORAGE_SIZE(doc);
+    ELSE
+        RETURN OCTET_LENGTH(doc);
+    END IF;
+END%%
+
 DELIMITER ;
 
 -- -----------------------------------------------------

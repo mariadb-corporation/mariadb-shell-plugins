@@ -788,10 +788,7 @@ def convert_id_to_string(id) -> str:
 def convert_dict_to_json_string(dic) -> str:
     if dic is None:
         return None
-    if isinstance(dic, str):
-        return dic
-    else:
-        return json.dumps(dict(dic))
+    return json.dumps(dict(dic))
 
 
 
@@ -1387,3 +1384,12 @@ def is_mariadb(session) -> bool:
     return session.run_sql(
         "SELECT IF(VERSION() LIKE '%MariaDB%', 'MariaDB', 'MySQL') AS db_type;"
         ).fetch_one()[0] == "MariaDB"
+
+def get_result_field_as_dict_safe(result: dict | str | None, column_name: str) -> dict:
+    val = result.get(column_name, {})
+    if val is None:
+        val = {}
+    elif isinstance(val, str):
+        val = json.loads(val)
+
+    return val

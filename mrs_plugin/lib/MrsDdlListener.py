@@ -358,10 +358,9 @@ class MrsDdlListener(MRSListener):
             parent_reference_id = None
 
         # Convert to object_fields and disable all to begin with
-
         fields = []
         for column in columns:
-            db_column = json.loads(column.get("db_column")) if column.get("db_column") is not None else None
+            db_column = column.get("db_column")
             ref_mapping = column.get("reference_mapping")
             fields.append(
                 {
