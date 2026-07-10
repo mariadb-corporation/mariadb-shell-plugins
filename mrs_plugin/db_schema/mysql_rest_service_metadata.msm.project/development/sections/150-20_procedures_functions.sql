@@ -813,7 +813,7 @@ BEGIN
     SELECT service_res;
 END%%
 
--- Off an implementation of the JSON_STORAGE_SIZE function if it is not available as system function
+-- This is an implementation of the JSON_STORAGE_SIZE function in case it is not available as a system function
 DROP FUNCTION IF EXISTS `JSON_STORAGE_SIZE`%%
 CREATE FUNCTION `JSON_STORAGE_SIZE`(doc JSON)  RETURNS INT SQL SECURITY INVOKER DETERMINISTIC NO SQL
 BEGIN
