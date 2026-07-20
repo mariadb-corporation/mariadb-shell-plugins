@@ -35,20 +35,43 @@ def non_interactive_shell():
 
 @pytest.fixture
 def stored_connections():
-    """Stores the two test connections and removes them afterwards.
+    """Stores the two test connections, restoring prior state afterwards.
+
+    Any connections that existed before the test are backed up (URI and
+    password) and restored exactly on teardown, so the test leaves the secret
+    store as it found it.
 
     Yields:
-        The list of stored connection URIs.
+        The list of test connection URIs.
     """
+    # Back up the connections that existed prior to the test, then remove them
+    # so the test starts from a clean, known set.
+    original_connections = {
+        uri: config.get_connection_password(uri)
+        for uri in config.list_connection_uris()
+    }
+    for uri in original_connections:
+        try:
+            config.delete_connection(uri)
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            pass
+
     for uri in helpers.TEST_CONNECTION_URIS:
         config.store_connection(uri, helpers.TEST_CONNECTION_PASSWORD)
 
     yield list(helpers.TEST_CONNECTION_URIS)
 
-    for uri in helpers.TEST_CONNECTION_URIS:
+    # Restore the original set of connections exactly: drop everything that is
+    # currently stored, then re-store the backed-up connections.
+    for uri in config.list_connection_uris():
         try:
             config.delete_connection(uri)
         except Exception:  # noqa: BLE001 - best-effort cleanup
+            pass
+    for uri, password in original_connections.items():
+        try:
+            config.store_connection(uri, password)
+        except Exception:  # noqa: BLE001 - best-effort restore
             pass
 
 

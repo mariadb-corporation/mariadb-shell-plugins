@@ -36,8 +36,8 @@ def _resolve_shell(explicit):
     shell = (
         explicit
         or os.environ.get("MYSQLSH")
-        or shutil.which("mysqlsh")
         or shutil.which("mariadb-shell")
+        or shutil.which("mysqlsh")
     )
     assert shell is not None, (
         "Could not find the MySQL/MariaDB Shell binary. Set MYSQLSH or pass "
@@ -101,6 +101,12 @@ def main() -> int:
     env["MYSQLSH"] = shell
 
     pattern = f"-k {args.only}" if args.only else ""
+    command = (
+        f"{shell} --pym pip install pytest pytest-cov mcp"
+    )
+    print(command)
+    completed = subprocess.run(command, shell=True, env=env)
+
     command = (
         f"{shell} --pym pytest -c {plugin_dir / 'pytest-coverage.ini'} "
         f"--cov={plugin_dir} --cov-append -vv {plugin_dir} {pattern} "

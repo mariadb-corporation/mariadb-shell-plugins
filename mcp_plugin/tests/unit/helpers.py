@@ -112,18 +112,29 @@ def call_tool(function_groups, tool_name, arguments=None):
 
 
 def tool_payload(result):
-    """Extracts the Python payload returned by a tool from a CallToolResult."""
+    """Extracts the Python payload returned by a tool from a CallToolResult.
+
+    Prefers the structured content when present. Otherwise falls back to the
+    text content blocks: FastMCP emits one content block per element when a
+    tool returns a list, so multiple blocks are aggregated back into a list
+    while a single block is returned as a scalar.
+    """
     structured = getattr(result, "structuredContent", None)
     if isinstance(structured, dict) and "result" in structured:
         return structured["result"]
 
-    content = getattr(result, "content", None)
-    if content:
-        text = getattr(content[0], "text", None)
-        if text is not None:
-            try:
-                return json.loads(text)
-            except (ValueError, TypeError):
-                return text
+    values = []
+    for block in getattr(result, "content", None) or []:
+        text = getattr(block, "text", None)
+        if text is None:
+            continue
+        try:
+            values.append(json.loads(text))
+        except (ValueError, TypeError):
+            values.append(text)
 
-    return None
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    return values
