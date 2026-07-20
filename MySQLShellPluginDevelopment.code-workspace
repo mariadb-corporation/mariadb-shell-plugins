@@ -52,6 +52,10 @@
         {
             "name": "Shell Utility Plugin Additions",
             "path": "util_plugin"
+        },
+        {
+            "name": "MCP Plugin",
+            "path": "mcp_plugin"
         }
     ],
     "settings": {
@@ -161,7 +165,7 @@
                 "command": "ln",
                 "args": [
                     "-s",
-                    "${workspaceFolder}/../tools/enable_python_debugger",
+                    "${workspaceFolder}/gui/tools/enable_python_debugger",
                     "~/.mysqlsh/init.d"
                 ],
             },
@@ -187,7 +191,7 @@
             {
                 "label": "Execute Shell in Python Mode",
                 "type": "shell",
-                "command": "mysqlsh",
+                "command": "mariadb-shell",
                 "args": [
                     "--log-file",
                     "${workspaceFolder}/mysqlsh.log",
@@ -334,8 +338,7 @@
             "streetsidesoftware.code-spell-checker",
             "dbaeumer.vscode-eslint",
             "ms-python.python",
-            "ms-python.vscode-pylance",
-            "orta.vscode-jest"
+            "ms-python.vscode-pylance"
         ]
     }
 }
