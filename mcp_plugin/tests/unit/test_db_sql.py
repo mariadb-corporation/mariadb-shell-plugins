@@ -25,6 +25,7 @@ sandbox itself is torn down by ``test_sandbox_shutdown``.
 # cSpell:ignore mysqlsh MariaDB fastmcp mariadbd
 
 import asyncio
+import os
 import uuid
 
 import pytest
@@ -35,8 +36,12 @@ pytest.importorskip("mcp")
 import mcp_plugin.tests.unit.helpers as helpers
 
 
-async def _db_flow(uri):
-    """Drives connect -> execute_sql -> execute_sql_script -> close."""
+async def _db_flow(uri, script_dir):
+    """Drives connect -> execute_sql -> execute_sql_script -> close.
+
+    ``script_dir`` is an allowed directory used to exercise
+    db.execute_sql_script with a script read from a file on disk.
+    """
     async with helpers.mcp_session(["db"]) as call:
         # Open the connection and cache it in the server process.
         connect_result = await call("db.connect", {"uri": uri})
@@ -75,6 +80,31 @@ async def _db_flow(uri):
         # The INSERT (third statement) affected three rows.
         assert statements[2]["affected_items_count"] == 3
 
+        # The same script read from a file on disk (within an allowed path)
+        # adds two more rows, exercising the file_path parameter.
+        script_path = os.path.join(script_dir, f"{schema}.sql")
+        with open(script_path, "w", encoding="utf-8") as script_file:
+            script_file.write(
+                f"INSERT INTO `{schema}`.`items` (id, name) VALUES (4, 'd');"
+                f"INSERT INTO `{schema}`.`items` (id, name) VALUES (5, 'e');"
+            )
+        file_result = await call(
+            "db.execute_sql_script",
+            {"connection_id": connection_id, "file_path": script_path},
+        )
+        assert file_result.isError is False
+        file_statements = helpers.tool_payload(file_result)
+        assert isinstance(file_statements, list) and len(file_statements) == 2
+        assert file_statements[0]["affected_items_count"] == 1
+        assert file_statements[1]["affected_items_count"] == 1
+
+        # A file outside the allowed paths is rejected.
+        denied_result = await call(
+            "db.execute_sql_script",
+            {"connection_id": connection_id, "file_path": "/etc/hosts"},
+        )
+        assert denied_result.isError is True
+
         try:
             # Aggregate SELECT.
             count_result = await call(
@@ -85,7 +115,7 @@ async def _db_flow(uri):
                 },
             )
             assert count_result.isError is False
-            assert helpers.tool_payload(count_result)["rows"][0]["cnt"] == 3
+            assert helpers.tool_payload(count_result)["rows"][0]["cnt"] == 5
 
             # Ordered SELECT returns the rows in insertion order.
             rows_result = await call(
@@ -96,7 +126,7 @@ async def _db_flow(uri):
                 },
             )
             rows = helpers.tool_payload(rows_result)["rows"]
-            assert [row["name"] for row in rows] == ["a", "b", "c"]
+            assert [row["name"] for row in rows] == ["a", "b", "c", "d", "e"]
 
             # Parameterized SELECT binds the ? placeholder.
             one_result = await call(
@@ -138,4 +168,4 @@ def test_db_connect_execute_and_close(sandbox):
     if not sandbox.deployed:
         pytest.skip("sandbox was not deployed")
 
-    asyncio.run(_db_flow(sandbox.uri))
+    asyncio.run(_db_flow(sandbox.uri, sandbox.sandbox_dir))
