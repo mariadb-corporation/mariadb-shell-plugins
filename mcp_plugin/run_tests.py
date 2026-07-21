@@ -100,6 +100,20 @@ def main() -> int:
     env["MYSQLSH_TERM_COLOR_MODE"] = "nocolor"
     env["MYSQLSH"] = shell
 
+    # Enable coverage of the MCP server stdio subprocess: put the coverage
+    # bootstrap (a sitecustomize) on the subprocess PYTHONPATH and tell the
+    # test harness (via MCP_COVERAGE_RC) which coverage config the subprocess
+    # should start with. COVERAGE_PROCESS_START itself is only set on the
+    # subprocess (in helpers), so the pytest process' pytest-cov is unaffected.
+    cov_bootstrap = plugin_dir / "tests" / "_cov"
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{cov_bootstrap}{os.pathsep}{existing_pythonpath}"
+        if existing_pythonpath
+        else str(cov_bootstrap)
+    )
+    env["MCP_COVERAGE_RC"] = str(plugin_dir / ".coveragerc")
+
     pattern = f"-k {args.only}" if args.only else ""
     command = (
         f"{shell} --pym pip install pytest pytest-cov mcp"

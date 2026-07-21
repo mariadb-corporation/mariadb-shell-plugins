@@ -2,6 +2,8 @@
 .DS_Store
 *.bak
 .coverage
+.coverage.*
+htmlcov/
 .vscode/launch.json
 package-lock.json
 plugin-test-coverage.xml

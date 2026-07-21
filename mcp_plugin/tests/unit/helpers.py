@@ -26,6 +26,8 @@ import asyncio
 import json
 import os
 import shutil
+import socket
+from contextlib import asynccontextmanager
 
 # Two connections used by the connection round-trip test. The URIs only need to
 # be unique keys for the secret store; the round-trip test does not open them.
@@ -42,13 +44,29 @@ _MCP_TIMEOUT = 90
 
 
 def mysqlsh_binary() -> str:
-    """Returns the path to the mysqlsh/mariadb-shell binary to use."""
+    """Returns the path to the mariadb-shell/mysqlsh binary to use."""
     return (
         os.environ.get("MYSQLSH")
-        or shutil.which("mysqlsh")
         or shutil.which("mariadb-shell")
+        or shutil.which("mysqlsh")
         or "mysqlsh"
     )
+
+
+def find_free_port() -> int:
+    """Returns a currently-free TCP port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def server_binary_available() -> bool:
+    """Returns whether a MariaDB/MySQL server binary is on the PATH.
+
+    The stdio server subprocess inherits this process's PATH, so this is a
+    reliable proxy for whether a sandbox can be deployed.
+    """
+    return bool(shutil.which("mariadbd") or shutil.which("mysqld"))
 
 
 def _stdio_server_params(function_groups):
@@ -61,6 +79,13 @@ def _stdio_server_params(function_groups):
         A StdioServerParameters instance.
     """
     from mcp import StdioServerParameters
+
+    env = os.environ.copy()
+    # When the test runner enables subprocess coverage, point the subprocess at
+    # the coverage config so its sitecustomize (on PYTHONPATH) starts coverage.
+    coverage_rc = env.get("MCP_COVERAGE_RC")
+    if coverage_rc:
+        env["COVERAGE_PROCESS_START"] = coverage_rc
 
     return StdioServerParameters(
         command=mysqlsh_binary(),
@@ -75,11 +100,11 @@ def _stdio_server_params(function_groups):
             "--transport=stdio",
             f"--function-groups={','.join(function_groups)}",
         ],
-        env=os.environ.copy(),
+        env=env,
     )
 
 
-async def _acall_tool(function_groups, tool_name, arguments):
+async def _acall_tool(function_groups, tool_name, arguments, timeout):
     """Opens a stdio MCP session, calls one tool and returns the result."""
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
@@ -92,23 +117,66 @@ async def _acall_tool(function_groups, tool_name, arguments):
                 await session.initialize()
                 return await session.call_tool(tool_name, arguments)
 
-    return await asyncio.wait_for(_run(), timeout=_MCP_TIMEOUT)
+    return await asyncio.wait_for(_run(), timeout=timeout)
 
 
-def call_tool(function_groups, tool_name, arguments=None):
+def call_tool(function_groups, tool_name, arguments=None, timeout=None):
     """Calls an MCP tool over stdio and returns the CallToolResult.
 
     Args:
         function_groups (list): The function groups the server should expose.
         tool_name (str): The MCP tool to call.
         arguments (dict): The tool arguments.
+        timeout (float): Round-trip timeout in seconds. Defaults to the module
+            default; pass a larger value for slow operations like a deploy.
 
     Returns:
         The CallToolResult returned by the MCP client.
     """
     return asyncio.run(
-        _acall_tool(function_groups, tool_name, arguments or {})
+        _acall_tool(
+            function_groups,
+            tool_name,
+            arguments or {},
+            timeout if timeout is not None else _MCP_TIMEOUT,
+        )
     )
+
+
+@asynccontextmanager
+async def mcp_session(function_groups, timeout=None):
+    """Opens a persistent stdio MCP session against a single server subprocess.
+
+    Multiple tool calls made through the yielded ``call`` coroutine share the
+    same server process, which is required for stateful tools such as
+    db.connect / db.execute_sql / db.close (the open session is cached in the
+    server process).
+
+    Args:
+        function_groups (list): The function groups the server should expose.
+        timeout (float): Per-call timeout in seconds.
+
+    Yields:
+        An async ``call(tool_name, arguments=None)`` coroutine returning the
+        CallToolResult.
+    """
+    from mcp import ClientSession
+    from mcp.client.stdio import stdio_client
+
+    call_timeout = timeout if timeout is not None else _MCP_TIMEOUT
+    params = _stdio_server_params(function_groups)
+
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            async def call(tool_name, arguments=None):
+                return await asyncio.wait_for(
+                    session.call_tool(tool_name, arguments or {}),
+                    timeout=call_timeout,
+                )
+
+            yield call
 
 
 def tool_payload(result):
