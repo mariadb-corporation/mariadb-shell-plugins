@@ -11,6 +11,7 @@
     ],
     "ignoreWords": [
         "mysqlsh",
+        "mysqld",
         "streamable",
         "pytest"
     ]

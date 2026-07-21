@@ -1,5 +1,21 @@
 [run]
+# parallel + sigterm let the MCP server stdio subprocess record its own
+# coverage data file (combined by pytest-cov), so tools that run there are
+# measured too. relative_files + [paths] unify the source path with the
+# plugins/mcp_plugin symlink path the subprocess loads the plugin through.
+parallel = True
+sigterm = True
+relative_files = True
 omit = run_tests.py
-       *__init__*
-       init.py
-       tests/*
+       */__init__.py
+       */init.py
+       */tests/*
+       # Dependencies exercised by the tools but out of scope for this plugin.
+       */msm_plugin/*
+       */mariadb-shell/*
+       */site-packages/*
+
+[paths]
+source =
+    mcp_plugin/
+    */plugins/mcp_plugin/

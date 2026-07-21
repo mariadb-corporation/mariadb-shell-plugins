@@ -13,7 +13,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Tests for the MariaDB MCP server, driven over the stdio transport."""
+"""Tests for the msm.* MCP tools, driven over the stdio transport."""
 
 # cSpell:ignore mysqlsh MariaDB
 
@@ -21,34 +21,16 @@ import os
 
 import pytest
 
-# The MCP client SDK is required to talk to the stdio server.
-pytest.importorskip("mcp")
-
 import mcp_plugin.tests.unit.helpers as helpers
 
 SCHEMA_NAME = "mcp_pytest_schema"
 COPYRIGHT_HOLDER = "MariaDB plc and/or its affiliates."
 
 
-def test_stdio_lists_stored_connections(stored_connections):
-    """Storing two connections and reading them back over the stdio server."""
-    result = helpers.call_tool(
-        function_groups=["db"],
-        tool_name="db.list_connections",
-    )
-
-    assert result.isError is False
-
-    listed = helpers.tool_payload(result)
-    assert isinstance(listed, list)
-
-    # The two stored connections must be reported by the server.
-    for uri in stored_connections:
-        assert uri in listed
-
-
 def test_stdio_creates_msm_project(allowed_temp_dir):
     """Creating an MSM project through the server and verifying the result."""
+    pytest.importorskip("mcp")
+
     result = helpers.call_tool(
         function_groups=["msm"],
         tool_name="msm.create_project",
@@ -69,4 +51,3 @@ def test_stdio_creates_msm_project(allowed_temp_dir):
     assert os.path.isdir(project_path)
     assert os.path.abspath(project_path).startswith(os.path.abspath(allowed_temp_dir))
     assert os.listdir(project_path)
-    # The temporary directory (and this project) is removed by the fixture.

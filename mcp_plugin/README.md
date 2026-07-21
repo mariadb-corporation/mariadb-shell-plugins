@@ -49,7 +49,8 @@ subsequent runs it presents a menu to add or delete connections and paths.
 ## Exposed MCP tools
 
 The tools are grouped into function groups that can be loaded independently via the
-`function_groups` option of `mcp.start_server` (`db`, `msm`; defaults to all):
+`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`; defaults to
+all):
 
 ```bash
 # expose only the database tools
@@ -65,7 +66,8 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 | --- | --- |
 | `db.list_connections` | Lists the configured connection URIs. |
 | `db.connect` | Opens a configured connection (`shell.open_session()`) and returns a connection UUID. |
-| `db.execute_sql` | Runs a SQL statement (with optional parameters) on a connection UUID. |
+| `db.execute_sql` | Runs a single SQL statement (with optional parameters) on a connection UUID. |
+| `db.execute_sql_script` | Runs a multi-statement SQL script on a connection UUID. |
 | `db.close` | Closes the connection for a UUID (`session.close()`). |
 
 ### Schema management tools (`msm`)
@@ -90,6 +92,21 @@ Management (`msm`) plugin:
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of
 prompting for input.
+
+### Sandbox tools (`sandbox`)
+
+Tools for deploying and managing local MariaDB/MySQL sandbox instances, wrapping the
+shell's `sandbox` global object. Sandbox instances are only meant for local testing.
+
+| MCP tool | Wraps |
+| --- | --- |
+| `sandbox.deploy` | `sandbox.deploy` |
+| `sandbox.start` | `sandbox.start` |
+| `sandbox.stop` | `sandbox.stop` |
+| `sandbox.kill` | `sandbox.kill` |
+| `sandbox.delete` | `sandbox.delete` |
+| `sandbox.vendor` | `sandbox.vendor` |
+| `sandbox.version` | `sandbox.version` |
 
 ## Installation
 

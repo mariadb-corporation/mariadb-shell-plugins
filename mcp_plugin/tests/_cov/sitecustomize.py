@@ -13,12 +13,19 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from mcp_plugin.lib import (
-    general,
-    config,
-    db_functions,
-    msm_functions,
-    sandbox_functions,
-    setup,
-    server,
-)
+"""Coverage bootstrap for subprocesses spawned during the test run.
+
+The MCP tools execute in a separate ``mariadb-shell`` stdio subprocess, not in
+the pytest process, so their coverage would otherwise be missed. The test
+runner puts this directory on the subprocess PYTHONPATH and sets
+COVERAGE_PROCESS_START for it; ``coverage.process_startup()`` then starts
+coverage in the subprocess. It is a harmless no-op when COVERAGE_PROCESS_START
+is not set (e.g. in the pytest process itself).
+"""
+
+try:
+    import coverage
+
+    coverage.process_startup()
+except Exception:
+    pass

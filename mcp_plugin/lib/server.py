@@ -27,23 +27,28 @@ transports:
 
 * ``streamable-http`` (default): served over HTTP on the configured host/port.
 * ``stdio``: communicates over stdin/stdout; its lifetime is driven by the
-  client.
+  client. The real stdout is reserved for the JSON-RPC protocol and all other
+  output is redirected to stderr (see :func:`_serve_stdio`).
 
 The shell's interactive mode is disabled before serving, so the wrapped ``msm``
 plugin functions return their results instead of prompting for input.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp streamable
+# cSpell:ignore mysqlsh MariaDB fastmcp streamable fdopen dup2
+
+import os
+import sys
 
 import mysqlsh
 
-from mcp_plugin.lib import db_functions, general, msm_functions
+from mcp_plugin.lib import db_functions, general, msm_functions, sandbox_functions
 
 
 # Maps a function group name to the callback that registers its tools.
 _FUNCTION_GROUP_REGISTRARS = {
     general.FUNCTION_GROUP_DB: db_functions.register_db_tools,
     general.FUNCTION_GROUP_MSM: msm_functions.register_msm_tools,
+    general.FUNCTION_GROUP_SANDBOX: sandbox_functions.register_sandbox_tools,
 }
 
 
@@ -116,4 +121,63 @@ def start(host: str, port: int, transport: str, function_groups) -> None:
         host=host, port=port, function_groups=function_groups
     )
 
-    mcp_server.run(transport=transport)
+    if transport == general.TRANSPORT_STDIO:
+        _serve_stdio(mcp_server)
+    else:
+        mcp_server.run(transport=transport)
+
+
+def _serve_stdio(mcp_server) -> None:
+    """Serves the MCP server over stdio, protecting the JSON-RPC stream.
+
+    In stdio mode the JSON-RPC messages are exchanged over the process stdout.
+    Any other output produced while a tool runs (shell progress messages,
+    Python prints, or C-level writes to file descriptor 1) would corrupt that
+    stream. To prevent this, the real stdout is duplicated and handed to the
+    MCP transport, then file descriptor 1 and Python's ``sys.stdout`` are
+    redirected to stderr for the lifetime of the server so stray output can
+    never reach the client.
+
+    Args:
+        mcp_server: The FastMCP server instance to serve.
+
+    Returns:
+        None
+    """
+    import io
+
+    import anyio
+    from mcp.server.stdio import stdio_server
+
+    # Reserve the real stdout (fd 1) for the protocol.
+    protocol_fd = os.dup(1)
+    protocol_stream = io.TextIOWrapper(
+        os.fdopen(protocol_fd, "wb"), encoding="utf-8"
+    )
+
+    # Redirect fd 1 (C-level writes) and Python's sys.stdout to stderr so that
+    # any output produced while serving cannot corrupt the protocol stream.
+    saved_sys_stdout = sys.stdout
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+
+    async def _run():
+        # stdio_server does not close the stream we pass in.
+        async with stdio_server(stdout=anyio.wrap_file(protocol_stream)) as (
+            read_stream,
+            write_stream,
+        ):
+            await mcp_server._mcp_server.run(
+                read_stream,
+                write_stream,
+                mcp_server._mcp_server.create_initialization_options(),
+            )
+
+    try:
+        anyio.run(_run)
+    finally:
+        # Restore fd 1 from the reserved copy, then restore sys.stdout and
+        # release the reserved stream (which closes protocol_fd).
+        os.dup2(protocol_fd, 1)
+        sys.stdout = saved_sys_stdout
+        protocol_stream.close()

@@ -162,6 +162,32 @@ def register_db_tools(server) -> None:
 
         return _serialize_result(result)
 
+    @server.tool(name="db.execute_sql_script")
+    def execute_sql_script(connection_id: str, sql_script: str) -> list:
+        """Executes a multi-statement SQL script on an open connection.
+
+        The script is split into individual statements which are executed in
+        order, so several semicolon-separated statements can be run in a single
+        call. Use db.execute_sql for a single parameterized statement.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            sql_script: One or more semicolon-separated SQL statements.
+
+        Returns:
+            A list with one entry per executed statement, each a dict with the
+            result set (columns and rows) and execution metadata.
+        """
+        session = _get_session(connection_id)
+
+        results = []
+        for statement in mysqlsh.mysql.split_script(sql_script):
+            if statement.strip() == "":
+                continue
+            results.append(_serialize_result(session.run_sql(statement, [])))
+
+        return results
+
     @server.tool(name="db.close")
     def close(connection_id: str) -> None:
         """Closes an open database connection.
