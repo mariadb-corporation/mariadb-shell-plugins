@@ -60,6 +60,10 @@ def register_sandbox_tools(server) -> None:
                 "directory) to the allowed paths with mcp.setup."
             )
 
+    def _sandbox_connection_uri(port: int) -> str:
+        """Returns the connection URI for the root account of a sandbox."""
+        return f"root@127.0.0.1:{port}"
+
     @server.tool(name="sandbox.deploy")
     def deploy(
         port: int,
@@ -115,6 +119,15 @@ def register_sandbox_tools(server) -> None:
                 timeout=timeout,
             ),
         )
+
+        # Register the instance as a configured connection so it shows up in
+        # db.list_connections and can be opened with db.connect. The root
+        # password provided to deploy is stored (empty string when none was
+        # given).
+        config.store_connection(
+            _sandbox_connection_uri(port), password if password is not None else ""
+        )
+
         return f"Sandbox instance deployed and started on port {port}."
 
     @server.tool(name="sandbox.start")
@@ -208,6 +221,12 @@ def register_sandbox_tools(server) -> None:
         """
         _require_allowed_path(sandbox_dir)
         sandbox.delete(port, _options(sandboxDir=sandbox_dir))
+
+        # Remove the connection registered for this instance by deploy, if any.
+        uri = _sandbox_connection_uri(port)
+        if uri in config.list_connection_uris():
+            config.delete_connection(uri)
+
         return f"Sandbox instance on port {port} deleted."
 
     @server.tool(name="sandbox.vendor")

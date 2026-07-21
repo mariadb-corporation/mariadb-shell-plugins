@@ -163,21 +163,45 @@ def register_db_tools(server) -> None:
         return _serialize_result(result)
 
     @server.tool(name="db.execute_sql_script")
-    def execute_sql_script(connection_id: str, sql_script: str) -> list:
+    def execute_sql_script(
+        connection_id: str,
+        sql_script: Optional[str] = None,
+        file_path: Optional[str] = None,
+    ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
         The script is split into individual statements which are executed in
         order, so several semicolon-separated statements can be run in a single
         call. Use db.execute_sql for a single parameterized statement.
 
+        The script can be provided either inline via sql_script or read from a
+        file on disk via file_path. Exactly one of the two must be given. A
+        file_path must be within one of the directories allowed via mcp.setup.
+
         Args:
             connection_id: The UUID returned by db.connect.
             sql_script: One or more semicolon-separated SQL statements.
+            file_path: Path to a .sql file on disk to read the script from,
+                as an alternative to sql_script.
 
         Returns:
             A list with one entry per executed statement, each a dict with the
             result set (columns and rows) and execution metadata.
         """
+        if (sql_script is None) == (file_path is None):
+            raise mysqlsh.Error(
+                "Provide exactly one of 'sql_script' or 'file_path'."
+            )
+
+        if file_path is not None:
+            if not config.is_path_allowed(file_path):
+                raise mysqlsh.Error(
+                    f"Access to path '{file_path}' is not allowed. Add it (or a "
+                    "parent directory) to the allowed paths with mcp.setup."
+                )
+            with open(file_path, "r", encoding="utf-8") as script_file:
+                sql_script = script_file.read()
+
         session = _get_session(connection_id)
 
         results = []

@@ -164,8 +164,9 @@ def sandbox():
     """Provides a shared sandbox context for the whole test session.
 
     The context (port, directory, connection URI and password) is created once;
-    the sandbox directory is registered as an allowed path and the connection
-    is stored in the secret store so the sandbox and db tools accept them.
+    the sandbox directory is registered as an allowed path so the sandbox and db
+    tools accept it. The connection is registered in the secret store by
+    sandbox.deploy (via test_sandbox_deploy), not by this fixture.
 
     The sandbox itself is deployed by ``test_sandbox_deploy`` (which runs first)
     and torn down by ``test_sandbox_shutdown`` (which runs last). This fixture's
@@ -192,12 +193,12 @@ def sandbox():
         deployed=False,
     )
 
-    # Register the sandbox directory as an allowed path and store the
-    # connection so the sandbox and db tools accept them.
+    # Register the sandbox directory as an allowed path so the sandbox and db
+    # tools accept it. The connection itself is registered by sandbox.deploy
+    # (see test_sandbox_deploy) and removed again by sandbox.delete.
     had_settings = config.settings_file_exists()
     original_paths = config.get_allowed_paths()
     config.set_allowed_paths(original_paths + [sandbox_dir])
-    config.store_connection(ctx.uri, ctx.password)
 
     try:
         yield ctx

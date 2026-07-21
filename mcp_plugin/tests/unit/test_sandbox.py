@@ -74,6 +74,13 @@ def test_sandbox_deploy(sandbox):
     sandbox.deployed = True
     assert os.path.isdir(sandbox.instance_dir)
 
+    # Deploy registers the instance as a configured connection, so it now shows
+    # up in db.list_connections.
+    listed = helpers.tool_payload(
+        helpers.call_tool(function_groups=["db"], tool_name="db.list_connections")
+    )
+    assert sandbox.uri in listed
+
     # The deployed instance reports a vendor and a version.
     vendor = helpers.tool_payload(
         _sandbox_call(
@@ -115,6 +122,12 @@ def test_sandbox_shutdown(sandbox):
 
     # After a successful delete the instance directory is gone.
     assert not os.path.isdir(sandbox.instance_dir)
+
+    # Delete also removes the connection that deploy registered.
+    listed = helpers.tool_payload(
+        helpers.call_tool(function_groups=["db"], tool_name="db.list_connections")
+    )
+    assert sandbox.uri not in listed
 
 
 def test_sandbox_dir_outside_allowed_paths_is_rejected(allowed_temp_dir, tmp_path):
