@@ -1,4 +1,5 @@
 # Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,9 +27,9 @@ import msm_plugin.lib.management as schema_management
 import mysqlsh
 
 # Define plugin version
-VERSION = "2026.6.0"
+VERSION = "2026.5.0"
 
-DB_VERSION = [4, 1, 6]
+DB_VERSION = [4, 1, 5]
 REQUIRED_ROUTER_VERSION = [8, 1, 0]
 SUPPORTED_MAJOR_VERSION = 3
 
@@ -206,7 +207,7 @@ def configure(
             else mysqlsh.globals.shell.open_session(session.connection_options)
         )
 
-        if not lib.core.is_mariadb(session) and (edition is None or edition.lower() != "heatwave"):
+        if session.server_vendor != "MariaDB" and (edition is None or edition.lower() != "heatwave"):
 
             # For now, let's remove any previous version of the mysql_tasks schema
             session.run_sql("DROP SCHEMA IF EXISTS mysql_tasks")

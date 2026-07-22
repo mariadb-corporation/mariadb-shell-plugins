@@ -1,4 +1,5 @@
 # Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -791,7 +792,6 @@ def convert_dict_to_json_string(dic) -> str:
     return json.dumps(dict(dic))
 
 
-
 def _generate_where(where):
     if where:
         if isinstance(where, list):
@@ -1379,17 +1379,3 @@ class _NotSet:  # used to differentiate None (NULL) vs argument not set
 
 
 NotSet = _NotSet()
-
-def is_mariadb(session) -> bool:
-    return session.run_sql(
-        "SELECT IF(VERSION() LIKE '%MariaDB%', 'MariaDB', 'MySQL') AS db_type;"
-        ).fetch_one()[0] == "MariaDB"
-
-def get_result_field_as_dict_safe(result: dict | str | None, column_name: str) -> dict:
-    val = result.get(column_name, {})
-    if val is None:
-        val = {}
-    elif isinstance(val, str):
-        val = json.loads(val)
-
-    return val

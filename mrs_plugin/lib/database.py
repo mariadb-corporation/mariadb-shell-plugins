@@ -280,7 +280,7 @@ def stored_object_executes_as_invoker(session, schema_name, db_object_name):
 def get_tables_used_in_view_including_required_grants(
     session, schema_name, db_object_name
 ):
-    if core.is_mariadb(session):
+    if session.server_vendor == "MariaDB":
         return []
 
     sql = """
@@ -299,7 +299,7 @@ def get_tables_used_in_view_including_required_grants(
 def get_routines_used_in_view_including_required_grants(
     session, schema_name, db_object_name
 ):
-    if core.is_mariadb(session):
+    if session.server_vendor == "MariaDB":
         return []
 
     sql = """
@@ -550,7 +550,7 @@ def revoke_all_from_db_object(session, schema_name, db_object_name, db_object_ty
         return
 
     # MariaDB does not support IF EXISTS when using the REVOKE statement
-    if not core.is_mariadb(session):
+    if session.server_vendor != "MariaDB":
         if_exists = "IF EXISTS "
     else:
         if_exists = ""
