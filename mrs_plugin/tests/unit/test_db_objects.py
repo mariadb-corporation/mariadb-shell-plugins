@@ -1,4 +1,5 @@
 # Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -601,7 +602,7 @@ def test_special_schemas(phone_book, mobile_phone_book, table_contents):
 
             row = filtered[0]
             assert row["TABLE_NAME"] == "accounts"
-            assert row["GRANTEE"] == "'mysql_rest_service_data_provider'@'%'"
+            assert row["GRANTEE"] == "'mysql_rest_service_data_provider'"
             assert row["PRIVILEGE_TYPE"] == "SELECT"
 
     assert information_schema_grants.same_as_snapshot

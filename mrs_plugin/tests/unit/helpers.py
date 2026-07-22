@@ -1,4 +1,5 @@
 # Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -585,13 +586,13 @@ def reset_mrs_database(session):
 
 def reset_privileges(session):
     session.run_sql(
-        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_data_provider'@'%' IGNORE UNKNOWN USER"
+        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_data_provider' IGNORE UNKNOWN USER"
     )
     session.run_sql(
-        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_admin'@'%' IGNORE UNKNOWN USER"
+        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_admin' IGNORE UNKNOWN USER"
     )
     session.run_sql(
-        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_schema_admin'@'%' IGNORE UNKNOWN USER"
+        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_schema_admin' IGNORE UNKNOWN USER"
     )
 
     entries = lib.core.MrsDbExec(f"""

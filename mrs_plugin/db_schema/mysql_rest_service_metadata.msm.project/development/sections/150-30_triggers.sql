@@ -58,16 +58,16 @@ BEGIN
     # Check if the full service request_path (including the optional developer setting) already exists
     IF NEW.enabled = TRUE THEN
         SET @host_name := (SELECT h.name FROM `mysql_rest_service_metadata`.url_host h WHERE h.id = NEW.url_host_id);
-        SET @request_path := CONCAT(COALESCE(NEW.in_development->>'$.developers', ''), @host_name, NEW.url_context_root);
+        SET @request_path := CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers')), ''), @host_name, NEW.url_context_root);
         SET @validPath := (SELECT `mysql_rest_service_metadata`.`valid_request_path`(@request_path));
 
         IF @validPath = 0 THEN
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
         END IF;
 
-        # Check if the same developer is already registered in the in_development->>'$.developers' of a service with the very same host_ctx
+        # Check if the same developer is already registered in the JSON_UNQUOTE(JSON_EXTRACT(in_development, '$.developers')) of a service with the very same host_ctx
         SET @validDeveloperList := (SELECT MAX(COALESCE(
-                JSON_OVERLAPS(s.in_development->>'$.developers', NEW.in_development->>'$.developers'), FALSE)) AS overlap
+                JSON_OVERLAPS(JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers'))), FALSE)) AS overlap
             FROM `mysql_rest_service_metadata`.`service` AS s JOIN
                 `mysql_rest_service_metadata`.`url_host` AS h ON s.url_host_id = h.id JOIN
                 `mysql_rest_service_metadata`.`url_host` AS h2 ON h2.id = NEW.url_host_id
@@ -93,16 +93,16 @@ BEGIN
 		OR NEW.url_host_id <> OLD.url_host_id OR NEW.url_context_root <> OLD.url_context_root) THEN
 
         SET @host_name := (SELECT h.name FROM `mysql_rest_service_metadata`.url_host h WHERE h.id = NEW.url_host_id);
-        SET @request_path := CONCAT(COALESCE(NEW.in_development->>'$.developers', ''), @host_name, NEW.url_context_root);
+        SET @request_path := CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers')), ''), @host_name, NEW.url_context_root);
         SET @validPath := (SELECT `mysql_rest_service_metadata`.`valid_request_path`(@request_path));
 
         IF @validPath = 0 THEN
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
         END IF;
 
-        # Check if the same developer is already registered in the in_development->>'$.developers' of a service with the very same host_ctx
+        # Check if the same developer is already registered in the JSON_UNQUOTE(JSON_EXTRACT(in_development, '$.developers')) of a service with the very same host_ctx
         SET @validDeveloperList := (SELECT MAX(COALESCE(
-                JSON_OVERLAPS(s.in_development->>'$.developers', NEW.in_development->>'$.developers'), FALSE)) AS overlap
+                JSON_OVERLAPS(JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers'))), FALSE)) AS overlap
             FROM `mysql_rest_service_metadata`.`service` AS s JOIN
                 `mysql_rest_service_metadata`.`url_host` AS h ON s.url_host_id = h.id JOIN
                 `mysql_rest_service_metadata`.`url_host` AS h2 ON h2.id = NEW.url_host_id
@@ -135,7 +135,7 @@ END%%
 DROP TRIGGER IF EXISTS `db_schema_BEFORE_INSERT`%%
 CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_INSERT` BEFORE INSERT ON `db_schema` FOR EACH ROW
 BEGIN
-	SET @service_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) AS path
+	SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 		FROM `mysql_rest_service_metadata`.service se
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
@@ -151,7 +151,7 @@ DROP TRIGGER IF EXISTS `db_schema_BEFORE_UPDATE`%%
 CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_UPDATE` BEFORE UPDATE ON `db_schema` FOR EACH ROW
 BEGIN
 	IF (NEW.request_path <> OLD.request_path OR NEW.service_id <> OLD.service_id) THEN
-		SET @service_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) AS path
+		SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 			FROM `mysql_rest_service_metadata`.service se
 				LEFT JOIN `mysql_rest_service_metadata`.url_host h
 					ON se.url_host_id = h.id
@@ -173,7 +173,7 @@ END%%
 DROP TRIGGER IF EXISTS `db_object_BEFORE_INSERT`%%
 CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_INSERT` BEFORE INSERT ON `db_object` FOR EACH ROW
 BEGIN
-    SET @schema_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root, sc.request_path) AS path
+    SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
         FROM `mysql_rest_service_metadata`.db_schema sc
             LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
                 ON se.id = sc.service_id
@@ -191,7 +191,7 @@ DROP TRIGGER IF EXISTS `db_object_BEFORE_UPDATE`%%
 CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_UPDATE` BEFORE UPDATE ON `db_object` FOR EACH ROW
 BEGIN
     IF (NEW.request_path <> OLD.request_path OR NEW.db_schema_id <> OLD.db_schema_id) THEN
-        SET @schema_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root, sc.request_path) AS path
+        SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
             FROM `mysql_rest_service_metadata`.db_schema sc
                 LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
                     ON se.id = sc.service_id
@@ -282,7 +282,7 @@ END%%
 DROP TRIGGER IF EXISTS `content_set_BEFORE_INSERT`%%
 CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_INSERT` BEFORE INSERT ON `content_set` FOR EACH ROW
 BEGIN
-	SET @service_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) AS path
+	SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 		FROM `mysql_rest_service_metadata`.service se
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
@@ -298,7 +298,7 @@ DROP TRIGGER IF EXISTS `content_set_BEFORE_UPDATE`%%
 CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_UPDATE` BEFORE UPDATE ON `content_set` FOR EACH ROW
 BEGIN
 	IF (NEW.request_path <> OLD.request_path OR NEW.service_id <> OLD.service_id) THEN
-		SET @service_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) AS path
+		SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 			FROM `mysql_rest_service_metadata`.service se
 				LEFT JOIN `mysql_rest_service_metadata`.url_host h
 					ON se.url_host_id = h.id

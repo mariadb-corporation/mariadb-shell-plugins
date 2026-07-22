@@ -1,4 +1,5 @@
 # Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -424,7 +425,7 @@ def query_services(
                 se.url_context_root, se.comments, se.options, se.url_host_id,
                 CONCAT(h.name, se.url_context_root) AS host_ctx,
                 (SELECT CONCAT(COALESCE(CONCAT(GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item), '@'), ''), h.name, se.url_context_root) FROM JSON_TABLE(
-                    se.in_development->>'$.developers', '$[*]' COLUMNS (item text path '$')
+                    JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
                     ) AS jt) AS full_service_path,
                 se.auth_path, se.auth_completed_url,
                 se.auth_completed_url_validation,
@@ -434,7 +435,7 @@ def query_services(
                 se.in_development,
                 (SELECT GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item)
                     FROM JSON_TABLE(
-                    se.in_development->>'$.developers', '$[*]' COLUMNS (item text path '$')
+                    JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
                     ) AS jt) AS sorted_developers,
                 se.name,
                 (SELECT JSON_ARRAYAGG(aa.name) FROM `mysql_rest_service_metadata`.`service_has_auth_app` sa2
@@ -454,7 +455,7 @@ def query_services(
             params.append(auth_app_id)
         # Make sure that each user only sees the services that are either public or the user is a developer of
         # wheres.append("(in_development IS NULL OR "
-        #               "SUBSTRING_INDEX(CURRENT_USER(),'@',1) MEMBER OF(in_development->>'$.developers'))")
+        #               "SUBSTRING_INDEX(CURRENT_USER(),'@',1) MEMBER OF(JSON_UNQUOTE(JSON_EXTRACT(in_development, '$.developers'))))")
 
     if service_id:
         wheres.append("se.id = ?")

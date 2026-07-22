@@ -1,4 +1,5 @@
 # Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -580,14 +581,14 @@ def check_request_path(session, request_path):
     # schema
     res = session.run_sql(
         """
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name,
             se.url_context_root) as full_request_path
         FROM `mysql_rest_service_metadata`.service se
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
         WHERE CONCAT(h.name, se.url_context_root) = ?
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.db_schema sc
             LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
@@ -597,7 +598,7 @@ def check_request_path(session, request_path):
         WHERE CONCAT(h.name, se.url_context_root,
                 sc.request_path) = ?
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path, o.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.db_object o
             LEFT OUTER JOIN `mysql_rest_service_metadata`.db_schema sc
@@ -609,7 +610,7 @@ def check_request_path(session, request_path):
         WHERE CONCAT(h.name, se.url_context_root,
                 sc.request_path, o.request_path) = ?
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             co.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.content_set co
             LEFT OUTER JOIN `mysql_rest_service_metadata`.service se

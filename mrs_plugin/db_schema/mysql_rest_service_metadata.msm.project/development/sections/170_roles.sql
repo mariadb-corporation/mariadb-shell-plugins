@@ -8,9 +8,10 @@
 -- The mysql_rest_service_user ROLE can be assigned to MySQL users that are granted access via MySQL Internal authentication.
 -- The mysql_rest_service_meta_provider ROLE is used by the MySQL Router to read the mrs metadata and make inserts into the auth_user table
 -- The mysql_rest_service_data_provider ROLE is used by the MySQL Router to read the actual schema data that is exposed via REST
+-- The mysql_task_user ROLE is defined as part of the mysql_tasks project. For compatibility reasons, a placeholder role is created here as well.
 
 CREATE ROLE IF NOT EXISTS 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_user',
-    'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';
+    'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider', 'mysql_task_user';
 
 -- Allow the 'mysql_rest_service_user' role to access the same data as 'mysql_rest_service_data_provider'
 GRANT 'mysql_rest_service_data_provider' TO 'mysql_rest_service_user';
@@ -324,8 +325,8 @@ GRANT EXECUTE ON PROCEDURE `mysql_rest_service_metadata`.`restore_roles`
 
 -- `mysql_rest_service_metadata`.`mrs_user_schema_version`
 GRANT SELECT
-  ON `mysql_rest_service_metadata`.`mrs_user_schema_version`
-  TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+    ON `mysql_rest_service_metadata`.`mrs_user_schema_version`
+    TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
 
 -- `mysql_rest_service_metadata`.`object_fields_with_references`
 GRANT SELECT
@@ -335,4 +336,4 @@ GRANT SELECT
 -- -----------------------------------------------------
 -- Grant the necessary mysql_tasks privileges to the MySQL REST Service roles
 GRANT 'mysql_task_user' TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_user',
-	'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';
+    'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';

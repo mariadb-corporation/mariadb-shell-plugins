@@ -1,4 +1,5 @@
 # Copyright (c) 2023, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +43,7 @@ def get_routers(session, router_id=None, active_when_seen_within=10):
     SELECT
         *,
         last_check_in > CURRENT_TIMESTAMP - INTERVAL {active_when_seen_within} SECOND as active,
-        options->>'$.developer' AS developer
+        JSON_UNQUOTE(JSON_EXTRACT(options, '$.developer')) AS developer
     FROM `mysql_rest_service_metadata`.`router`
     """
     params = []

@@ -280,6 +280,9 @@ def stored_object_executes_as_invoker(session, schema_name, db_object_name):
 def get_tables_used_in_view_including_required_grants(
     session, schema_name, db_object_name
 ):
+    if session.server_vendor == "MariaDB":
+        return []
+
     sql = """
         SELECT TABLE_NAME AS OBJ_NAME FROM INFORMATION_SCHEMA.VIEW_TABLE_USAGE
         WHERE VIEW_SCHEMA = ? AND VIEW_NAME = ?
@@ -296,6 +299,9 @@ def get_tables_used_in_view_including_required_grants(
 def get_routines_used_in_view_including_required_grants(
     session, schema_name, db_object_name
 ):
+    if session.server_vendor == "MariaDB":
+        return []
+
     sql = """
         SELECT DISTINCT t1.SPECIFIC_NAME AS OBJ_NAME, t2.ROUTINE_TYPE OBJ_TYPE
         FROM INFORMATION_SCHEMA.VIEW_ROUTINE_USAGE t1
@@ -435,7 +441,7 @@ def get_grant_statements_for_explicit_grants(grants):
         grant_statements.append(
             f"GRANT {privileges} ON {object_type}"
             f"{quote_identifier(grant['schema'])}.{quote_identifier(grant['object'])} "
-            + "TO 'mysql_rest_service_data_provider'@'%'"
+            + "TO 'mysql_rest_service_data_provider'"
         )
 
     return grant_statements
@@ -483,7 +489,7 @@ def get_grant_statements(
             f"""GRANT {','.join(obj_grants)}
             ON {obj_type if obj_type == "PROCEDURE" or obj_type == "FUNCTION" else ''}
             {quote_identifier(schema_name)}.{quote_identifier(obj_name)}
-            TO 'mysql_rest_service_data_provider'@'%'"""
+            TO 'mysql_rest_service_data_provider'"""
             for obj_name, obj_type, obj_grants in db_objects
         ]
 
@@ -504,7 +510,7 @@ def get_grant_statements(
                         )
                         grants.append(f"""GRANT {','.join(grant_privileges)}
                             ON {ref_table}
-                            TO 'mysql_rest_service_data_provider'@'%'""")
+                            TO 'mysql_rest_service_data_provider'""")
     else:
         grants = []
 
@@ -543,12 +549,18 @@ def revoke_all_from_db_object(session, schema_name, db_object_name, db_object_ty
     if schema_name.lower() == "information_schema":
         return
 
+    # MariaDB does not support IF EXISTS when using the REVOKE statement
+    if session.server_vendor != "MariaDB":
+        if_exists = "IF EXISTS "
+    else:
+        if_exists = ""
+
     # We can not REVOKE ALL when dealing with the performance_schema
     if schema_name.lower() in ["performance_schema"]:
         sql = f"""
-            REVOKE IF EXISTS SELECT ON
+            REVOKE {if_exists} SELECT ON
             {quote_identifier(schema_name)}.{quote_identifier(db_object_name)}
-            FROM 'mysql_rest_service_data_provider'@'%'
+            FROM 'mysql_rest_service_data_provider'
         """
     else:
         if db_object_type == "PROCEDURE":
@@ -558,11 +570,16 @@ def revoke_all_from_db_object(session, schema_name, db_object_name, db_object_ty
         else:
             revoke = "ALL PRIVILEGES ON"
         sql = f"""
-            REVOKE IF EXISTS
+            REVOKE {if_exists}
             {revoke} {quote_identifier(schema_name)}.{quote_identifier(db_object_name)}
-            FROM 'mysql_rest_service_data_provider'@'%'
+            FROM 'mysql_rest_service_data_provider'
         """
-    session.run_sql(sql)
+
+    try:
+        session.run_sql(sql)
+    except:
+        # Ignore error in case a privilege has been revoked before
+        pass
 
 
 def get_table_columns_with_references(

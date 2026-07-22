@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS `service` (
   `name` VARCHAR(255) NOT NULL,
   `enabled` TINYINT NOT NULL DEFAULT 1,
   `published` TINYINT NOT NULL DEFAULT 0,
-  `in_development` JSON NULL COMMENT 'If not NULL, this column indicates that the REST service is currently \"in development\" and holds the name(s) of the developer(s) who is(/are) allowed to work with the service in the \"$.developers\" string array. REST services with this column not being NULL may use the same url_host+url_context_root context path as existing services. Routers only serve REST services with this column being NULL, unless they are bootstrapped with --mrs-development <user> which sets `router`.`option`->>\"$.developer\". When bootstrapped with the --mrs-development <user> option the Router also serves REST services marked \"in development\" with this column\'s \"$.developers\" including the same name as the <user> specified during bootstrap, while these REST services marked \"in development\" take priority over services with the same url_host+url_context_root context path and this column being NULL.',
+  `in_development` JSON NULL COMMENT 'If not NULL, this column indicates that the REST service is currently \"in development\" and holds the name(s) of the developer(s) who is(/are) allowed to work with the service in the \"$.developers\" string array. REST services with this column not being NULL may use the same url_host+url_context_root context path as existing services. Routers only serve REST services with this column being NULL, unless they are bootstrapped with --mrs-development <user> which sets JSON_UNQUOTE(JSON_EXTRACT(router.option, \"$.developer\")). When bootstrapped with the --mrs-development <user> option the Router also serves REST services marked \"in development\" with this column\'s \"$.developers\" including the same name as the <user> specified during bootstrap, while these REST services marked \"in development\" take priority over services with the same url_host+url_context_root context path and this column being NULL.',
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
   `auth_path` VARCHAR(255) NOT NULL DEFAULT '/authentication' COMMENT 'The path used for authentication. The following sub-paths will be made available for <service_path>/<auth_path>:  /login /status /logout /completed',
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS `db_object` (
   `comments` VARCHAR(512) NULL,
   `metadata` JSON NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_db_objects_db_schema1_idx` (`db_schema_id` ASC) INVISIBLE,
+  INDEX `fk_db_objects_db_schema1_idx` (`db_schema_id` ASC),
   CONSTRAINT `fk_db_objects_db_schema1`
     FOREIGN KEY (`db_schema_id`)
     REFERENCES `db_schema` (`id`)

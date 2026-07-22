@@ -166,7 +166,7 @@ def create_audit_log_table():
         # Column ---------
         c_o_r_i = grt.classes.db_mysql_Column()
         c_o_r_i.autoIncrement = 0
-        c_o_r_i.expression = 'old_row_data->"$.id"'
+        c_o_r_i.expression = 'JSON_EXTRACT(old_row_data, "$.id")'
         c_o_r_i.formattedType = "INT"
         c_o_r_i.generated = 1
         c_o_r_i.isNotNull = 0
@@ -183,7 +183,7 @@ def create_audit_log_table():
         # Column ---------
         c_n_r_i = grt.classes.db_mysql_Column()
         c_n_r_i.autoIncrement = 0
-        c_n_r_i.expression = 'new_row_data->"$.id"'
+        c_n_r_i.expression = 'JSON_EXTRACT(new_row_data, "$.id")'
         c_n_r_i.formattedType = "INT"
         c_n_r_i.generated = 1
         c_n_r_i.isNotNull = 0
@@ -366,8 +366,15 @@ END%%"""
         for column in table.columns:
             data_type = column.formattedRawType.upper()
             if not ("BLOB" in data_type or "TEXT" in data_type):
-                old_rows += f'{" ":12}"{column.name}", OLD.{column.name},\n'
-                new_rows += f'{" ":12}"{column.name}", NEW.{column.name},\n'
+                if "BIT(1)" in data_type:
+                    old_rows += f'{" ":12}"{column.name}", IF(OLD.{column.name}, 1, 0),\n'
+                    new_rows += f'{" ":12}"{column.name}", IF(NEW.{column.name}, 1, 0),\n'
+                elif "BINARY" in data_type:
+                    old_rows += f'{" ":12}"{column.name}", CONCAT("0x", HEX(OLD.{column.name})),\n'
+                    new_rows += f'{" ":12}"{column.name}", CONCAT("0x", HEX(NEW.{column.name})),\n'
+                else:
+                    old_rows += f'{" ":12}"{column.name}", OLD.{column.name},\n'
+                    new_rows += f'{" ":12}"{column.name}", NEW.{column.name},\n'
 
         old_rows = old_rows[:-2] + "),"
         new_rows = new_rows[:-2] + "),"
