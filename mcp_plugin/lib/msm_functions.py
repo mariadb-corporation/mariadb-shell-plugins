@@ -21,15 +21,16 @@ in :mod:`mcp_plugin.lib.server`.
 
 The tools run while the shell is in non-interactive mode, so the wrapped
 ``msm`` plugin functions return their results instead of prompting for input.
+Path arguments are authorized through
+:func:`mcp_plugin.lib.general.require_allowed_path`, which may ask the user - via
+MCP elicitation - to trust a path that is not yet allowed.
 """
 
 # cSpell:ignore mysqlsh MariaDB fastmcp
 
 from typing import Optional
 
-import mysqlsh
-
-from mcp_plugin.lib import config
+from mcp_plugin.lib import general
 
 
 def register_msm_tools(server) -> None:
@@ -41,27 +42,16 @@ def register_msm_tools(server) -> None:
     Returns:
         None
     """
+    from mcp.server.fastmcp import Context
     from msm_plugin import management as msm
 
     def _kwargs(**pairs) -> dict:
         """Builds a kwargs dict, dropping keys whose value is None."""
         return {key: value for key, value in pairs.items() if value is not None}
 
-    def _require_allowed_path(path) -> None:
-        """Raises unless the given path is within an allowed directory.
-
-        A value of None is left to the msm plugin's own default handling.
-        """
-        if path is None:
-            return
-        if not config.is_path_allowed(path):
-            raise mysqlsh.Error(
-                f"Access to path '{path}' is not allowed. Add it (or a parent "
-                "directory) to the allowed paths with mcp.setup."
-            )
-
     @server.tool(name="msm.create_project")
-    def create_project(
+    async def create_project(
+        ctx: Context,
         schema_name: str,
         target_path: str,
         copyright_holder: Optional[str] = None,
@@ -84,7 +74,7 @@ def register_msm_tools(server) -> None:
         Returns:
             The path of the created project folder.
         """
-        _require_allowed_path(target_path)
+        await general.require_allowed_path(ctx, target_path)
         return msm.create_new_project_folder(
             schema_name=schema_name,
             target_path=target_path,
@@ -98,7 +88,8 @@ def register_msm_tools(server) -> None:
         )
 
     @server.tool(name="msm.get_project_information")
-    def get_project_information(
+    async def get_project_information(
+        ctx: Context,
         schema_project_path: Optional[str] = None,
     ) -> Optional[dict]:
         """Returns information about a database schema project.
@@ -110,11 +101,12 @@ def register_msm_tools(server) -> None:
         Returns:
             A dict with information about the schema project.
         """
-        _require_allowed_path(schema_project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         return msm.get_project_information(**_kwargs(schema_project_path=schema_project_path))
 
     @server.tool(name="msm.set_development_version")
-    def set_development_version(
+    async def set_development_version(
+        ctx: Context,
         version: str,
         schema_project_path: Optional[str] = None,
     ) -> None:
@@ -128,13 +120,14 @@ def register_msm_tools(server) -> None:
         Returns:
             None
         """
-        _require_allowed_path(schema_project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         return msm.set_development_version(
             **_kwargs(version=version, schema_project_path=schema_project_path)
         )
 
     @server.tool(name="msm.get_released_versions")
-    def get_released_versions(
+    async def get_released_versions(
+        ctx: Context,
         schema_project_path: Optional[str] = None,
     ) -> Optional[list]:
         """Returns all released versions of a database schema.
@@ -146,11 +139,12 @@ def register_msm_tools(server) -> None:
         Returns:
             The list of released versions.
         """
-        _require_allowed_path(schema_project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         return msm.get_released_versions(**_kwargs(schema_project_path=schema_project_path))
 
     @server.tool(name="msm.get_last_released_version")
-    def get_last_released_version(
+    async def get_last_released_version(
+        ctx: Context,
         schema_project_path: Optional[str] = None,
     ) -> Optional[list]:
         """Returns the last released version of a database schema.
@@ -162,11 +156,12 @@ def register_msm_tools(server) -> None:
         Returns:
             The last released version.
         """
-        _require_allowed_path(schema_project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         return msm.get_last_released_version(**_kwargs(schema_project_path=schema_project_path))
 
     @server.tool(name="msm.get_last_deployment_version")
-    def get_last_deployment_version(
+    async def get_last_deployment_version(
+        ctx: Context,
         schema_project_path: Optional[str] = None,
     ) -> Optional[list]:
         """Returns the last deployment version of a database schema.
@@ -178,13 +173,14 @@ def register_msm_tools(server) -> None:
         Returns:
             The last deployment version.
         """
-        _require_allowed_path(schema_project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         return msm.get_last_deployment_version(
             **_kwargs(schema_project_path=schema_project_path)
         )
 
     @server.tool(name="msm.prepare_release")
-    def prepare_release(
+    async def prepare_release(
+        ctx: Context,
         version: str,
         next_version: Optional[str] = None,
         schema_project_path: Optional[str] = None,
@@ -205,7 +201,7 @@ def register_msm_tools(server) -> None:
         Returns:
             The list of generated files.
         """
-        _require_allowed_path(schema_project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         return msm.prepare_release(
             **_kwargs(
                 version=version,
@@ -217,7 +213,9 @@ def register_msm_tools(server) -> None:
         )
 
     @server.tool(name="msm.get_sql_content_from_section")
-    def get_sql_content_from_section(file_path: str, section_id: str) -> Optional[str]:
+    async def get_sql_content_from_section(
+        ctx: Context, file_path: str, section_id: str
+    ) -> Optional[str]:
         """Returns the SQL content of an MSM section of a file.
 
         Args:
@@ -227,12 +225,12 @@ def register_msm_tools(server) -> None:
         Returns:
             The SQL content as a string.
         """
-        _require_allowed_path(file_path)
+        await general.require_allowed_path(ctx, file_path)
         return msm.get_sql_content_from_section(file_path=file_path, section_id=section_id)
 
     @server.tool(name="msm.set_section_sql_content")
-    def set_section_sql_content(
-        file_path: str, section_id: str, sql_content: str
+    async def set_section_sql_content(
+        ctx: Context, file_path: str, section_id: str, sql_content: str
     ) -> None:
         """Sets the SQL content of an MSM section of a file.
 
@@ -244,13 +242,14 @@ def register_msm_tools(server) -> None:
         Returns:
             None
         """
-        _require_allowed_path(file_path)
+        await general.require_allowed_path(ctx, file_path)
         return msm.set_section_sql_content(
             file_path=file_path, section_id=section_id, sql_content=sql_content
         )
 
     @server.tool(name="msm.generate_deployment_script")
-    def generate_deployment_script(
+    async def generate_deployment_script(
+        ctx: Context,
         version: str,
         schema_project_path: Optional[str] = None,
         overwrite_existing: bool = False,
@@ -266,7 +265,7 @@ def register_msm_tools(server) -> None:
         Returns:
             The file name of the deployment script.
         """
-        _require_allowed_path(schema_project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         return msm.generate_deployment_script(
             **_kwargs(
                 version=version,
@@ -276,7 +275,8 @@ def register_msm_tools(server) -> None:
         )
 
     @server.tool(name="msm.get_deployment_script_versions")
-    def get_deployment_script_versions(
+    async def get_deployment_script_versions(
+        ctx: Context,
         schema_project_path: Optional[str] = None,
     ) -> Optional[list]:
         """Returns the list of deployment script versions.
@@ -288,7 +288,7 @@ def register_msm_tools(server) -> None:
         Returns:
             The list of deployed versions.
         """
-        _require_allowed_path(schema_project_path)
+        await general.require_allowed_path(ctx, schema_project_path)
         return msm.get_deployment_script_versions(
             **_kwargs(schema_project_path=schema_project_path)
         )

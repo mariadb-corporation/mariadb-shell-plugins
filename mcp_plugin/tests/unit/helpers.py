@@ -104,7 +104,9 @@ def _stdio_server_params(function_groups):
     )
 
 
-async def _acall_tool(function_groups, tool_name, arguments, timeout):
+async def _acall_tool(
+    function_groups, tool_name, arguments, timeout, elicitation_callback
+):
     """Opens a stdio MCP session, calls one tool and returns the result."""
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
@@ -113,14 +115,21 @@ async def _acall_tool(function_groups, tool_name, arguments, timeout):
 
     async def _run():
         async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
+            # Passing an elicitation_callback also makes the client advertise
+            # the elicitation capability, so the server will actually send
+            # elicitation/create requests instead of failing them.
+            async with ClientSession(
+                read, write, elicitation_callback=elicitation_callback
+            ) as session:
                 await session.initialize()
                 return await session.call_tool(tool_name, arguments)
 
     return await asyncio.wait_for(_run(), timeout=timeout)
 
 
-def call_tool(function_groups, tool_name, arguments=None, timeout=None):
+def call_tool(
+    function_groups, tool_name, arguments=None, timeout=None, elicitation_callback=None
+):
     """Calls an MCP tool over stdio and returns the CallToolResult.
 
     Args:
@@ -129,6 +138,9 @@ def call_tool(function_groups, tool_name, arguments=None, timeout=None):
         arguments (dict): The tool arguments.
         timeout (float): Round-trip timeout in seconds. Defaults to the module
             default; pass a larger value for slow operations like a deploy.
+        elicitation_callback: Optional async ``(context, params)`` callback used
+            to answer elicitation/create requests from the server. When omitted
+            the client does not advertise the elicitation capability.
 
     Returns:
         The CallToolResult returned by the MCP client.
@@ -139,6 +151,7 @@ def call_tool(function_groups, tool_name, arguments=None, timeout=None):
             tool_name,
             arguments or {},
             timeout if timeout is not None else _MCP_TIMEOUT,
+            elicitation_callback,
         )
     )
 

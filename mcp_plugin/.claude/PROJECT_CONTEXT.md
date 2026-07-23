@@ -32,8 +32,17 @@ suite: **11 tests pass (~14s), 85% coverage**.
   configured URIs; reads password back, opens via `parse_uri`+password -> open_session.
 - **Allowed paths**: `settings.json` under `lib.general.get_mcp_plugin_data_path()`.
   `config.is_path_allowed()` via `os.path.commonpath`; empty list => deny all.
-- **Path enforcement** (`_require_allowed_path`, skips when arg is None): msm.* on
-  target/file/schema_project paths; sandbox.* on sandbox_dir (all 7).
+- **Path enforcement** (`general.require_allowed_path(ctx, path)`, ASYNC, skips when
+  arg is None): msm.* on target/file/schema_project paths; sandbox.* on sandbox_dir
+  (all 7). Shared guard lives in lib/general.py (was duplicated `_require_allowed_path`
+  in msm_functions/sandbox_functions). When a path is NOT allowed it does NOT just
+  error: it MCP-elicits (`ctx.elicit`, schema=one-bool `ConfirmTrustPath`) asking the
+  user to trust the path; on accept+trust it `config.add_allowed_path()` (persists to
+  settings.json, abspath+expanduser, dedup) and proceeds; on decline/cancel/elicit-
+  failure it raises the "not allowed" mysqlsh.Error. Because elicit is async, ALL msm
+  (11) + sandbox (7) tools are now `async def` with a leading `ctx: Context` param
+  (`from mcp.server.fastmcp import Context`, imported inside the registrar). FastMCP
+  strips the Context-typed param from the client-facing schema.
 - **`mcp.setup`** interactive: configure connections (verified via open_session before
   storing) + allowed paths; first-run guided, later runs a menu.
 - **Sandbox tools**: `port` REQUIRED int on all 7 (shell rejects non-int in port pos).

@@ -13,7 +13,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""MCP tools for working with local MariaDB/MySQL sandbox instances.
+"""MCP tools for working with local MariaDB sandbox instances.
 
 These tools wrap the shell's ``sandbox`` global object, which deploys and
 manages self-contained server instances under ``<sandboxDir>/<port>`` for local
@@ -21,15 +21,17 @@ testing and development.
 
 Sandbox instances are only meant to run on the local machine and are not
 accessible from external networks.
+
+Path arguments are authorized through
+:func:`mcp_plugin.lib.general.require_allowed_path`, which may ask the user - via
+MCP elicitation - to trust a path that is not yet allowed.
 """
 
 # cSpell:ignore mysqlsh MariaDB fastmcp sandboxlib mariadbd openssl
 
 from typing import Optional
 
-import mysqlsh
-
-from mcp_plugin.lib import config
+from mcp_plugin.lib import config, general
 
 
 def register_sandbox_tools(server) -> None:
@@ -41,31 +43,20 @@ def register_sandbox_tools(server) -> None:
     Returns:
         None
     """
+    from mcp.server.fastmcp import Context
     from mysqlsh.globals import sandbox
 
     def _options(**pairs) -> dict:
         """Builds an options dict, dropping keys whose value is None."""
         return {key: value for key, value in pairs.items() if value is not None}
 
-    def _require_allowed_path(path) -> None:
-        """Raises unless the given path is within an allowed directory.
-
-        A value of None is left to the sandbox's own default directory handling.
-        """
-        if path is None:
-            return
-        if not config.is_path_allowed(path):
-            raise mysqlsh.Error(
-                f"Access to path '{path}' is not allowed. Add it (or a parent "
-                "directory) to the allowed paths with mcp.setup."
-            )
-
     def _sandbox_connection_uri(port: int) -> str:
         """Returns the connection URI for the root account of a sandbox."""
         return f"root@127.0.0.1:{port}"
 
     @server.tool(name="sandbox.deploy")
-    def deploy(
+    async def deploy(
+        ctx: Context,
         port: int,
         password: Optional[str] = None,
         sandbox_dir: Optional[str] = None,
@@ -77,7 +68,7 @@ def register_sandbox_tools(server) -> None:
         mariadbd_options: Optional[list] = None,
         timeout: Optional[int] = None,
     ) -> str:
-        """Deploys a new MariaDB or MySQL sandbox instance on localhost.
+        """Deploys a new MariaDB sandbox instance on localhost.
 
         Deploys a plain standalone instance using the server found on the PATH
         (or at mariadbd_path). The server is started, the root password is set
@@ -95,7 +86,7 @@ def register_sandbox_tools(server) -> None:
                 to False (unlike the shell's sandbox default of True) to avoid
                 depending on openssl for local test instances.
             openssl_path: Path to the openssl executable or its directory.
-            mariadbd_path: Path to the mariadbd/mysqld binary or its
+            mariadbd_path: Path to the mariadbd binary or its
                 installation directory.
             mariadbd_options: Additional server options for the [mysqld]
                 section, as 'option=value' strings.
@@ -104,7 +95,7 @@ def register_sandbox_tools(server) -> None:
         Returns:
             A message confirming the deployment.
         """
-        _require_allowed_path(sandbox_dir)
+        await general.require_allowed_path(ctx, sandbox_dir)
         sandbox.deploy(
             port,
             _options(
@@ -131,25 +122,26 @@ def register_sandbox_tools(server) -> None:
         return f"Sandbox instance deployed and started on port {port}."
 
     @server.tool(name="sandbox.start")
-    def start(
+    async def start(
+        ctx: Context,
         port: int,
         sandbox_dir: Optional[str] = None,
         mariadbd_path: Optional[str] = None,
         timeout: Optional[int] = None,
     ) -> str:
-        """Starts an existing MariaDB/MySQL sandbox instance on localhost.
+        """Starts an existing MariaDB sandbox instance on localhost.
 
         Args:
             port: The port of the instance to start.
             sandbox_dir: Path where the instance is located.
-            mariadbd_path: Path to the mariadbd/mysqld binary or its
+            mariadbd_path: Path to the mariadbd binary or its
                 installation directory.
             timeout: Seconds to wait for the instance to start. Defaults to 60.
 
         Returns:
             A message confirming the instance was started.
         """
-        _require_allowed_path(sandbox_dir)
+        await general.require_allowed_path(ctx, sandbox_dir)
         sandbox.start(
             port,
             _options(
@@ -161,7 +153,8 @@ def register_sandbox_tools(server) -> None:
         return f"Sandbox instance on port {port} started."
 
     @server.tool(name="sandbox.stop")
-    def stop(
+    async def stop(
+        ctx: Context,
         port: int,
         sandbox_dir: Optional[str] = None,
         password: Optional[str] = None,
@@ -178,7 +171,7 @@ def register_sandbox_tools(server) -> None:
         Returns:
             A message confirming the instance was stopped.
         """
-        _require_allowed_path(sandbox_dir)
+        await general.require_allowed_path(ctx, sandbox_dir)
         sandbox.stop(
             port,
             _options(
@@ -190,7 +183,7 @@ def register_sandbox_tools(server) -> None:
         return f"Sandbox instance on port {port} stopped."
 
     @server.tool(name="sandbox.kill")
-    def kill(port: int, sandbox_dir: Optional[str] = None) -> str:
+    async def kill(ctx: Context, port: int, sandbox_dir: Optional[str] = None) -> str:
         """Forcefully kills the process of a running sandbox instance.
 
         Use sandbox.stop for a graceful shutdown.
@@ -202,12 +195,12 @@ def register_sandbox_tools(server) -> None:
         Returns:
             A message confirming the instance was killed.
         """
-        _require_allowed_path(sandbox_dir)
+        await general.require_allowed_path(ctx, sandbox_dir)
         sandbox.kill(port, _options(sandboxDir=sandbox_dir))
         return f"Sandbox instance on port {port} killed."
 
     @server.tool(name="sandbox.delete")
-    def delete(port: int, sandbox_dir: Optional[str] = None) -> str:
+    async def delete(ctx: Context, port: int, sandbox_dir: Optional[str] = None) -> str:
         """Deletes an existing sandbox instance on localhost.
 
         The instance must be stopped before it can be deleted.
@@ -219,7 +212,7 @@ def register_sandbox_tools(server) -> None:
         Returns:
             A message confirming the instance was deleted.
         """
-        _require_allowed_path(sandbox_dir)
+        await general.require_allowed_path(ctx, sandbox_dir)
         sandbox.delete(port, _options(sandboxDir=sandbox_dir))
 
         # Remove the connection registered for this instance by deploy, if any.
@@ -230,7 +223,8 @@ def register_sandbox_tools(server) -> None:
         return f"Sandbox instance on port {port} deleted."
 
     @server.tool(name="sandbox.vendor")
-    def vendor(
+    async def vendor(
+        ctx: Context,
         port: int,
         sandbox_dir: Optional[str] = None,
         mariadbd_path: Optional[str] = None,
@@ -246,14 +240,15 @@ def register_sandbox_tools(server) -> None:
         Returns:
             "MariaDB", "MySQL", or None if the vendor cannot be determined.
         """
-        _require_allowed_path(sandbox_dir)
+        await general.require_allowed_path(ctx, sandbox_dir)
         return sandbox.vendor(
             port,
             _options(sandboxDir=sandbox_dir, mariadbdPath=mariadbd_path),
         )
 
     @server.tool(name="sandbox.version")
-    def version(
+    async def version(
+        ctx: Context,
         port: int,
         sandbox_dir: Optional[str] = None,
         mariadbd_path: Optional[str] = None,
@@ -263,14 +258,14 @@ def register_sandbox_tools(server) -> None:
         Args:
             port: The port of the existing sandbox to report the version of.
             sandbox_dir: Path where the instance is located.
-            mariadbd_path: Path to the mariadbd/mysqld binary or its
+            mariadbd_path: Path to the mariadbd binary or its
                 installation directory.
 
         Returns:
             The version as major.minor.patch, or None if it cannot be
             determined.
         """
-        _require_allowed_path(sandbox_dir)
+        await general.require_allowed_path(ctx, sandbox_dir)
         return sandbox.version(
             port,
             _options(sandboxDir=sandbox_dir, mariadbdPath=mariadbd_path),
