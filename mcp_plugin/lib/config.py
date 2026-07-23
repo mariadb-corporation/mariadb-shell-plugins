@@ -158,6 +158,26 @@ def set_allowed_paths(paths: list) -> None:
     save_settings(settings)
 
 
+def add_allowed_path(path: str) -> None:
+    """Adds a directory to the allowed paths and persists it to settings.json.
+
+    The path is normalized to an absolute, user-expanded path (matching the
+    format used by ``mcp.setup``). Adding a path that is already present is a
+    no-op.
+
+    Args:
+        path (str): The directory to allow.
+
+    Returns:
+        None
+    """
+    normalized = os.path.abspath(os.path.expanduser(path))
+    paths = get_allowed_paths()
+    if normalized not in paths:
+        paths.append(normalized)
+        set_allowed_paths(paths)
+
+
 def is_path_allowed(path: str) -> bool:
     """Returns whether the given path is within an allowed directory.
 

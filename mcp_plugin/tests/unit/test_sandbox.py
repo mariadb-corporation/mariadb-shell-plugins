@@ -123,10 +123,11 @@ def test_sandbox_shutdown(sandbox):
     # After a successful delete the instance directory is gone.
     assert not os.path.isdir(sandbox.instance_dir)
 
-    # Delete also removes the connection that deploy registered.
+    # Delete also removes the connection that deploy registered. An empty
+    # connection list yields no content blocks, i.e. a None payload.
     listed = helpers.tool_payload(
         helpers.call_tool(function_groups=["db"], tool_name="db.list_connections")
-    )
+    ) or []
     assert sandbox.uri not in listed
 
 
