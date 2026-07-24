@@ -202,62 +202,68 @@ def configure(
         management_session = (
             # On vanilla Shell, we can just duplicate the existing global session.
             mysqlsh.globals.shell.open_session()
-            if "shell.Object" in str(type(session))
+            if session is None
             # On Shell GUI, there is no global shell session, so we can create one using the same connection options.
-            else mysqlsh.globals.shell.open_session(session.connection_options)
+            else session
+            ## TODO: Add session.clone() function in order to properly work on a separate management session
         )
 
-        if session.server_vendor != "MariaDB" and (edition is None or edition.lower() != "heatwave"):
+        try:
+            if session.server_vendor != "MariaDB" and (edition is None or edition.lower() != "heatwave"):
 
-            # For now, let's remove any previous version of the mysql_tasks schema
-            session.run_sql("DROP SCHEMA IF EXISTS mysql_tasks")
+                # For now, let's remove any previous version of the mysql_tasks schema
+                session.run_sql("DROP SCHEMA IF EXISTS mysql_tasks")
 
-            # For all editions except heatwave, also deploy the mysql_tasks
-            # database schema
+                # For all editions except heatwave, also deploy the mysql_tasks
+                # database schema
+                if not skip_update:
+                    schema_management.deploy_schema(
+                        session=management_session,
+                        schema_project_path=lib.core.script_path(
+                            "db_schema", "mysql_tasks.msm.project"
+                        ),
+                    )
+
+            # Start the MRS metadata schema deployment which will either create
+            # or update an existing schema to the given version
             if not skip_update:
-                schema_management.deploy_schema(
+                info_msg = schema_management.deploy_schema(
                     session=management_session,
                     schema_project_path=lib.core.script_path(
-                        "db_schema", "mysql_tasks.msm.project"
+                        "db_schema", "mysql_rest_service_metadata.msm.project"
                     ),
+                    version=version,
                 )
 
-        # Start the MRS metadata schema deployment which will either create
-        # or update an existing schema to the given version
-        if not skip_update:
-            info_msg = schema_management.deploy_schema(
-                session=management_session,
-                schema_project_path=lib.core.script_path(
-                    "db_schema", "mysql_rest_service_metadata.msm.project"
-                ),
-                version=version,
-            )
+                schema_changed = not ("No changes" in info_msg)
 
-            schema_changed = not ("No changes" in info_msg)
+                # Check if the HeatWave default endpoints have already been deployed
+                if edition is not None and (
+                    edition.lower() == "heatwave" or edition.lower() == "mysqlai"
+                ):
+                    # Script 1.0.0 used CREATE OR REPLACE REST SERVICE
+                    # which must not be re-executed or any service references
+                    # (like auth apps) will be lost. Newer scripts use
+                    # CREATE REST SERVICE IF NOT EXISTS which we can re-execute to
+                    # handle upgrades.
+                    assert "1.0.0" not in HEATWAVE_DEFAULT_ENDPOINTS_SCRIPT_VERSION
 
-            # Check if the HeatWave default endpoints have already been deployed
-            if edition is not None and (
-                edition.lower() == "heatwave" or edition.lower() == "mysqlai"
-            ):
-                # Script 1.0.0 used CREATE OR REPLACE REST SERVICE
-                # which must not be re-executed or any service references
-                # (like auth apps) will be lost. Newer scripts use
-                # CREATE REST SERVICE IF NOT EXISTS which we can re-execute to
-                # handle upgrades.
-                assert "1.0.0" not in HEATWAVE_DEFAULT_ENDPOINTS_SCRIPT_VERSION
+                    schema_management.execute_msm_sql_script(
+                        session=management_session,
+                        script_name="HeatWave Default Endpoints",
+                        sql_file_path=lib.core.script_path(
+                            "scripts",
+                            "default_heatwave_endpoints",
+                            f"heatwave_rest_service_{HEATWAVE_DEFAULT_ENDPOINTS_SCRIPT_VERSION}.sql",
+                        ),
+                    )
+            else:
+                schema_changed = False
+                info_msg = "MRS metadata version update available, but update skipped."
 
-                schema_management.execute_msm_sql_script(
-                    session=management_session,
-                    script_name="HeatWave Default Endpoints",
-                    sql_file_path=lib.core.script_path(
-                        "scripts",
-                        "default_heatwave_endpoints",
-                        f"heatwave_rest_service_{HEATWAVE_DEFAULT_ENDPOINTS_SCRIPT_VERSION}.sql",
-                    ),
-                )
-        else:
-            schema_changed = False
-            info_msg = "MRS metadata version update available, but update skipped."
+        finally:
+            if session != management_session:
+                management_session.close()
 
         if enable_mrs is not None:
             lib.core.update(
@@ -294,6 +300,7 @@ def configure(
             "info_msg": info_msg,
             "mrs_enabled": True if enable_mrs else False,
         }
+
 
 
 def ignore_version_upgrade(session):
