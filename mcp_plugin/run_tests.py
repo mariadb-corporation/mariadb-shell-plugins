@@ -88,12 +88,14 @@ def main() -> int:
     plugins_dir.mkdir(parents=True, exist_ok=True)
 
     # The server subprocess launched by the tests loads the plugins from the
-    # user config home, so both this plugin and the msm plugin it wraps must be
-    # available there.
+    # user config home, so this plugin and the sibling plugins it relies on must
+    # be available there: msm_plugin (wrapped by the msm.* tools) and mrs_plugin
+    # (registers the REST SQL handler exercised by test_rest_sql.py).
     _create_symlink(plugin_dir, plugins_dir / "mcp_plugin")
-    msm_source = source_root / "msm_plugin"
-    if msm_source.is_dir():
-        _create_symlink(msm_source, plugins_dir / "msm_plugin")
+    for sibling in ("msm_plugin", "mrs_plugin"):
+        sibling_source = source_root / sibling
+        if sibling_source.is_dir():
+            _create_symlink(sibling_source, plugins_dir / sibling)
 
     env = os.environ.copy()
     env["MYSQLSH_USER_CONFIG_HOME"] = user_home.as_posix()
