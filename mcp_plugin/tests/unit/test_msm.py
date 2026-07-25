@@ -17,6 +17,7 @@
 
 # cSpell:ignore mysqlsh MariaDB
 
+import asyncio
 import os
 
 import pytest
@@ -26,6 +27,14 @@ import mcp_plugin.tests.unit.helpers as helpers
 
 SCHEMA_NAME = "mcp_pytest_schema"
 COPYRIGHT_HOLDER = "MariaDB plc and/or its affiliates."
+
+# A CREATE TABLE statement written into MSM section 140 (non-idempotent schema
+# objects) of the development script so the prepared release has real content.
+SECTION_140_SQL = """
+CREATE TABLE `mcp_pytest_schema`.`mcp_pytest_table`(
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(255)
+);"""
 
 
 def _accept_trust_path_callback():
@@ -151,3 +160,163 @@ def test_stdio_elicits_and_declines_new_path(clean_config, tmp_path):
     # The path was not persisted and no project folder was created.
     assert config.is_path_allowed(target_path) is False
     assert os.listdir(target_path) == []
+
+
+def test_stdio_msm_project_lifecycle(allowed_temp_dir):
+    """Drives a project through every remaining msm.* tool over one session.
+
+    A single persistent stdio session (one server subprocess) is used so the
+    whole create -> edit -> release -> deploy-script lifecycle runs against the
+    same project. All paths live under the pre-allowed temp directory, so no
+    elicitation is involved. This exercises the msm tools that the create/elicit
+    tests do not touch (get/set version, sections, release, deployment script).
+    """
+    pytest.importorskip("mcp")
+
+    async def _run():
+        async with helpers.mcp_session(function_groups=["msm"]) as call:
+            def payload(result):
+                assert result.isError is False, helpers.tool_payload(result)
+                return helpers.tool_payload(result)
+
+            # Create the project inside the allowed directory.
+            project_path = payload(
+                await call(
+                    "msm.create_project",
+                    {
+                        "schema_name": SCHEMA_NAME,
+                        "target_path": allowed_temp_dir,
+                        "copyright_holder": COPYRIGHT_HOLDER,
+                    },
+                )
+            )
+            assert isinstance(project_path, str) and os.path.isdir(project_path)
+
+            # A freshly created project starts at development version 0.0.1 with
+            # nothing released or deployed yet.
+            info = payload(
+                await call(
+                    "msm.get_project_information",
+                    {"schema_project_path": project_path},
+                )
+            )
+            assert info["currentDevelopmentVersion"] == "0.0.1"
+
+            assert payload(
+                await call(
+                    "msm.get_released_versions",
+                    {"schema_project_path": project_path},
+                )
+            ) in ([], None)
+            assert payload(
+                await call(
+                    "msm.get_last_released_version",
+                    {"schema_project_path": project_path},
+                )
+            ) is None
+            assert payload(
+                await call(
+                    "msm.get_last_deployment_version",
+                    {"schema_project_path": project_path},
+                )
+            ) is None
+            assert payload(
+                await call(
+                    "msm.get_deployment_script_versions",
+                    {"schema_project_path": project_path},
+                )
+            ) in ([], None)
+
+            # Bump the development version and confirm it round-trips, then set
+            # it back so the release below is created as 0.0.1.
+            payload(
+                await call(
+                    "msm.set_development_version",
+                    {"schema_project_path": project_path, "version": "0.0.2"},
+                )
+            )
+            info = payload(
+                await call(
+                    "msm.get_project_information",
+                    {"schema_project_path": project_path},
+                )
+            )
+            assert info["currentDevelopmentVersion"] == "0.0.2"
+            payload(
+                await call(
+                    "msm.set_development_version",
+                    {"schema_project_path": project_path, "version": "0.0.1"},
+                )
+            )
+
+            # Write SQL into section 140 of the development script and read it
+            # back through the section tools.
+            dev_file = os.path.join(
+                project_path, "development", f"{SCHEMA_NAME}_next.sql"
+            )
+            assert os.path.isfile(dev_file)
+            payload(
+                await call(
+                    "msm.set_section_sql_content",
+                    {
+                        "file_path": dev_file,
+                        "section_id": "140",
+                        "sql_content": SECTION_140_SQL,
+                    },
+                )
+            )
+            section_sql = payload(
+                await call(
+                    "msm.get_sql_content_from_section",
+                    {"file_path": dev_file, "section_id": "140"},
+                )
+            )
+            assert section_sql == SECTION_140_SQL.strip()
+
+            # Prepare the first release (0.0.1 -> next 0.0.2). The first release
+            # produces exactly the versions/<schema>_0.0.1.sql file.
+            generated = payload(
+                await call(
+                    "msm.prepare_release",
+                    {
+                        "schema_project_path": project_path,
+                        "version": "0.0.1",
+                        "next_version": "0.0.2",
+                    },
+                )
+            )
+            assert isinstance(generated, list) and len(generated) == 1
+
+            # The release now shows up as the last released version.
+            assert payload(
+                await call(
+                    "msm.get_released_versions",
+                    {"schema_project_path": project_path},
+                )
+            ) == [[0, 0, 1]]
+            assert payload(
+                await call(
+                    "msm.get_last_released_version",
+                    {"schema_project_path": project_path},
+                )
+            ) == [0, 0, 1]
+
+            # Generate the deployment script for the release; it must be created
+            # as a real file and then be listed among the deployment versions.
+            deployment_script = payload(
+                await call(
+                    "msm.generate_deployment_script",
+                    {"schema_project_path": project_path, "version": "0.0.1"},
+                )
+            )
+            assert isinstance(deployment_script, str) and os.path.isfile(
+                deployment_script
+            )
+            assert payload(
+                await call(
+                    "msm.get_deployment_script_versions",
+                    {"schema_project_path": project_path},
+                )
+            ) == [[0, 0, 1]]
+
+    asyncio.run(_run())
