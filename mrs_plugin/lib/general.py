@@ -200,12 +200,13 @@ def configure(
         # changes in the global user session. As an example, "USE x" statements modify the current schema associated to
         # the underlying connection.
         management_session = (
-            # On vanilla Shell, we can just duplicate the existing global session.
-            mysqlsh.globals.shell.open_session()
-            if session is None
-            # On Shell GUI, there is no global shell session, so we can create one using the same connection options.
-            else session
+            # On vanilla Shell, we can just duplicate the existing session.
             ## TODO: Add session.clone() function in order to properly work on a separate management session
+            session
+            # The Shell GUI plugin wraps the regular Shell session and adds new properties like session.connection_options
+            if "shell.Object" in str(type(session))
+            # On Shell GUI, there is no global shell session, so we can create one using the same connection options.
+            else mysqlsh.globals.shell.open_session(session.connection_options)
         )
 
         try:
