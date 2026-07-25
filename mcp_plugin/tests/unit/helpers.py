@@ -27,6 +27,8 @@ import json
 import os
 import shutil
 import socket
+import subprocess
+import time
 from contextlib import asynccontextmanager
 
 # Two connections used by the connection round-trip test. The URIs only need to
@@ -190,6 +192,101 @@ async def mcp_session(function_groups, timeout=None):
                 )
 
             yield call
+
+
+def _wait_for_port(host, port, timeout):
+    """Blocks until a TCP port accepts connections or the timeout elapses.
+
+    Args:
+        host (str): The host to connect to.
+        port (int): The port to probe.
+        timeout (float): Maximum time to wait, in seconds.
+
+    Returns:
+        None
+
+    Raises:
+        TimeoutError: If the port does not accept a connection in time.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            if sock.connect_ex((host, port)) == 0:
+                return
+        time.sleep(0.1)
+    raise TimeoutError(f"Server did not start listening on {host}:{port}")
+
+
+@asynccontextmanager
+async def http_session(function_groups, timeout=None):
+    """Runs the server over streamable-http and yields a per-call coroutine.
+
+    A ``mysqlsh`` subprocess is launched with ``--transport=streamable-http`` on
+    a free port; once it is listening, an MCP streamable-http client connects to
+    ``http://127.0.0.1:<port>/mcp`` and initializes a session. Multiple tool
+    calls made through the yielded ``call`` coroutine share the same server
+    process. The subprocess is terminated on exit.
+
+    Args:
+        function_groups (list): The function groups the server should expose.
+        timeout (float): Per-call and startup timeout in seconds.
+
+    Yields:
+        An async ``call(tool_name, arguments=None)`` coroutine returning the
+        CallToolResult.
+    """
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    call_timeout = timeout if timeout is not None else _MCP_TIMEOUT
+    host = "127.0.0.1"
+    port = find_free_port()
+
+    env = os.environ.copy()
+    coverage_rc = env.get("MCP_COVERAGE_RC")
+    if coverage_rc:
+        env["COVERAGE_PROCESS_START"] = coverage_rc
+
+    proc = subprocess.Popen(
+        [
+            mysqlsh_binary(),
+            "--quiet-start=2",
+            "--",
+            "mcp",
+            "start-server",
+            "--transport=streamable-http",
+            f"--host={host}",
+            f"--port={port}",
+            f"--function-groups={','.join(function_groups)}",
+        ],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    try:
+        _wait_for_port(host, port, call_timeout)
+
+        url = f"http://{host}:{port}/mcp"
+        async with streamablehttp_client(url) as (read, write, _get_session_id):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                async def call(tool_name, arguments=None):
+                    return await asyncio.wait_for(
+                        session.call_tool(tool_name, arguments or {}),
+                        timeout=call_timeout,
+                    )
+
+                yield call
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
 def tool_payload(result):
