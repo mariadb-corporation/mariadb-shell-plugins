@@ -1,0 +1,18 @@
+# In Repo B: .github/workflows/notify-repo-a.yml
+name: Notify mariadb-shell on release/candidate update
+
+on:
+  push:
+    branches: [ "release/candidate" ]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify shell-plugins Update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DEVTOOLS_TOKEN }}
+          repository: mariadb-corporation/mariadb-shell
+          event-type: updated-shell-plugins-rc
+          client-payload: '{"branch": "release/candidate", "commit_sha": "${{ github.sha }}"}'
