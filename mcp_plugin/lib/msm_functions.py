@@ -30,14 +30,20 @@ MCP elicitation - to trust a path that is not yet allowed.
 
 from typing import Optional
 
-from mcp_plugin.lib import general
+from mcp_plugin.lib import db_functions, general
 
 
-def register_msm_tools(server) -> None:
+def register_msm_tools(server, function_groups=()) -> None:
     """Registers the MariaDB Schema Management tools on the given server.
+
+    All tools but msm.deploy_schema work on a schema project on disk and are
+    always registered. msm.deploy_schema needs a database connection opened
+    with db.connect, so it is only registered when the db function group is
+    served as well - it would have no way to obtain a connection otherwise.
 
     Args:
         server: The FastMCP server instance to register the tools on.
+        function_groups (list): All function groups being served.
 
     Returns:
         None
@@ -292,3 +298,52 @@ def register_msm_tools(server) -> None:
         return msm.get_deployment_script_versions(
             **_kwargs(schema_project_path=schema_project_path)
         )
+
+    # Registered last, and only together with the db group: deploying needs a
+    # connection opened with db.connect, so without that group the tool could
+    # never obtain one and is left unadvertised rather than exposed as something
+    # that cannot succeed.
+    if general.FUNCTION_GROUP_DB in function_groups:
+
+        @server.tool(name="msm.deploy_schema")
+        async def deploy_schema(
+            ctx: Context,
+            connection_id: str,
+            version: Optional[str] = None,
+            schema_project_path: Optional[str] = None,
+            backup_directory: Optional[str] = None,
+            backup: bool = False,
+        ) -> Optional[str]:
+            """Deploys a version of a database schema onto an open connection.
+
+            Runs the deployment script of the given version, which has to have
+            been generated with msm.generate_deployment_script first. If the
+            schema already exists it is updated to the requested version.
+
+            Args:
+                connection_id: The UUID returned by db.connect, identifying the
+                    connection to deploy onto.
+                version: The version to deploy. Defaults to the latest version a
+                    deployment script exists for.
+                schema_project_path: The path to the schema project. Defaults to
+                    the current working directory.
+                backup_directory: The directory to write the backup to. Only
+                    used when backup is enabled.
+                backup: Whether to dump an existing schema before updating it,
+                    so it can be restored if the update fails. Defaults to
+                    False.
+
+            Returns:
+                A message describing what was deployed.
+            """
+            await general.require_allowed_path(ctx, schema_project_path)
+            await general.require_allowed_path(ctx, backup_directory)
+            return msm.deploy_schema(
+                session=db_functions.get_session(connection_id),
+                **_kwargs(
+                    version=version,
+                    schema_project_path=schema_project_path,
+                    backup_directory=backup_directory,
+                    backup=backup,
+                ),
+            )

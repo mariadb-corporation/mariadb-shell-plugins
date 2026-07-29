@@ -9,8 +9,9 @@ MCP-compatible clients. It registers the global `mcp` object in the shell and se
 "MariaDB plc and/or its affiliates". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), MCP SDK 1.28.1, Python 3.14, `mariadbd`
-at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite: **16 tests pass (~28s), 92% total
-coverage**.
+at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite: **17 tests pass (~28s), 94% total
+coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
+`/opt/homebrew/bin` on PATH (mariadbd is not on the default PATH).
 
 ## Architecture / key decisions
 
@@ -26,6 +27,19 @@ coverage**.
   stderr so tool/shell/C output can't corrupt JSON-RPC. Uses low-level
   `mcp_server._mcp_server.run(...)`.
 - **Function groups** (`function_groups`): `db`, `msm`, `sandbox`; `_FUNCTION_GROUP_REGISTRARS`.
+  Accepted as a LIST or as a comma-separated STRING (split+stripped in `server.py`);
+  omitting it loads ALL THREE (`DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS`).
+- **Cross-group dependency mechanism**: `build_mcp_server` passes the full enabled-group
+  list to EVERY registrar, so `register_db_tools`/`register_msm_tools`/
+  `register_sandbox_tools` all take `(server, function_groups=())`. db and sandbox ignore
+  it. msm uses it to register `msm.deploy_schema` ONLY when `db` is also served — that tool
+  needs a `connection_id` from `db.connect`, so with msm alone it is left UNADVERTISED
+  rather than exposed as something that cannot succeed. It is therefore registered LAST in
+  the registrar, inside an `if` (see Gotchas — an early `return` there silently drops the
+  tools defined after it).
+- **`db_functions.get_session(connection_id)`** is the PUBLIC accessor over the private
+  `_get_session`, so other tool modules (msm) can resolve a `db.connect` session without
+  reaching into another module's privates or keeping a second cache.
 - **Connections**: shell secrets keyed `MCP:Connection:<uri>`. `db.connect` only allows
   configured URIs; opens via `parse_uri`+password -> `shell.open_session` (independent of
   the shell's global session). Sessions cached in-process in `_sessions`, keyed by UUID.
@@ -38,7 +52,7 @@ coverage**.
   MCP-elicits (`ctx.elicit`, schema=one-bool `ConfirmTrustPath`) asking the user to trust
   it; on accept+trust it `config.add_allowed_path()` (persists to settings.json,
   abspath+expanduser, dedup) and proceeds; on decline/cancel/elicit-failure it raises the
-  "not allowed" mysqlsh.Error. Because elicit is async, ALL msm (11) + sandbox (7) tools are
+  "not allowed" mysqlsh.Error. Because elicit is async, ALL msm (12) + sandbox (7) tools are
   `async def` with a leading `ctx: Context` param (`from mcp.server.fastmcp import Context`,
   imported inside the registrar; FastMCP strips it from the client-facing schema).
   db.* tools stay SYNC — none of them elicit (`db.execute_sql_script` checks
@@ -104,21 +118,32 @@ coverage**.
 - Everything from the previous checkpoint's "Next steps" list is DONE and committed:
   REST SQL work (0e97c9e9), the sibling mrs_plugin management-session fix (ca47b8c8 then
   reworked in 82e18c4c), msm lifecycle + streamable-http transport tests (09fa116c).
-- **UNCOMMITTED** (suite green, nothing known-broken): the three introspection tools
-  (`db.list_schemas`, `db.list_objects`, `db.get_object_details`) + their test assertions
-  in `test_db_sql.py`. Only three files are modified: `lib/db_functions.py`,
-  `tests/unit/test_db_sql.py`, this file.
+- The three introspection tools (`db.list_schemas`, `db.list_objects`,
+  `db.get_object_details`) are COMMITTED (3482634a, pushed).
 - Shell fns: `mcp.info`, `mcp.version`, `mcp.setup`, `mcp.startServer`.
 - Tools: db.* (**8**: `list_connections`, `connect`, `list_schemas`, `list_objects`,
   `get_object_details`, `execute_sql`, `execute_sql_script`, `close`),
-  msm.* (11, path-guarded, async),
+  msm.* (**12**, path-guarded, async — the 12th is `deploy_schema`, gated on the db group),
   sandbox.* (7, `sandbox_dir`-guarded, async, port required).
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
-  path-reject), `test_config` (6), `test_msm` (4: create_project, elicit-accept,
-  elicit-decline, lifecycle), `test_db_sql`, `test_rest_sql`, `test_transport_http`.
-- Coverage after latest run: lib/msm_functions 100, lib/db_functions 99, lib/config 96,
-  lib/general 95, lib/server 93, lib/sandbox_functions 87, server.py 85, lib/setup 84,
-  general.py 73. TOTAL 92%.
+  path-reject), `test_config` (6), `test_msm` (5: create_project, elicit-accept,
+  elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,
+  `test_transport_http`.
+- Coverage after latest run: lib/msm_functions 100, lib/db_functions 99, lib/server 98,
+  lib/config 96, lib/general 95, lib/sandbox_functions 87, server.py 85, lib/setup 84,
+  general.py 73. TOTAL 94%.
+- **Sibling `msm_plugin` was changed in the same session** (own commit, own suite: 9 pass
+  via `python3 run_tests.py -s <mariadb-shell>` with /opt/homebrew/bin on PATH):
+  - MySQL -> MariaDB rebrand of all PROSE/branding. Legal notices were NOT word-substituted;
+    the USER instead ADDED a second line `Copyright (c) 2026, MariaDB plc and/or its
+    affiliates.` under the existing Oracle line, leaving Oracle's notice and the "authors of
+    MySQL hereby grant" FOSS exception intact. **Follow that additive pattern**; do not
+    rewrite Oracle's LICENSE or the exception paragraph.
+  - `tests/conftest.py` now uses `from mysqlsh.globals import sandbox` +
+    `sandbox.deploy/kill` instead of `mysqlsh.globals.dba.deploy_sandbox_instance` (this
+    build of mariadb-shell has NO `dba` global), with `ssl: False` and an `int()` port.
+  - `run_tests.py` prefers `mariadb-shell` over `mysqlsh`.
+  - `lib/management.py deploy_schema` gained `backup: bool = False` (see Gotchas).
 
 ## Files that matter
 
@@ -128,13 +153,16 @@ coverage**.
   the introspection SQL constants (`_LIST_SCHEMAS_SQL`, `_LIST_OBJECTS_SQL`,
   `_OBJECT_BASIC_SQL`, `_OBJECT_DETAILS_SQL`, `_ROUTINE_PARAMETERS_SQL`,
   `_OBJECT_COLUMNS_SQL`, `_OBJECT_CONSTRAINTS_SQL`, `_OBJECT_REFERENCES_SQL`).
-- lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`.
-- lib/server.py -> build/serve; `_serve_stdio` hardening.
+- lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`;
+  msm_functions also holds the db-group-gated `msm.deploy_schema`.
+- lib/server.py -> build/serve; `_serve_stdio` hardening; passes function_groups to the
+  registrars.
 - tests/conftest.py -> ordering hook, fixtures (sandbox session, allowed_temp_dir,
   clean_config, stored_connections, non_interactive_shell).
 - tests/unit/helpers.py -> `call_tool` (has `elicitation_callback`), `mcp_session`,
-  `tool_payload`, `find_free_port`, `server_binary_available`, `mysqlsh_binary`,
-  plus streamable-http helpers.
+  `list_tool_names` (what the server ADVERTISES, used for the group gate), `tool_payload`,
+  `find_free_port`, `server_binary_available`, `mysqlsh_binary`, plus streamable-http
+  helpers.
 - tests/unit/test_db_sql.py -> single `_db_flow` coroutine over ONE stdio session:
   connect -> execute_sql (incl. a DECIMAL/DATETIME serialization check) ->
   execute_sql_script (inline + file + denied) -> list_schemas -> creates one object of
@@ -149,9 +177,15 @@ coverage**.
 
 ## Next steps
 
-1. Commit the introspection work: `lib/db_functions.py` + `tests/unit/test_db_sql.py`
-   (this context file too).
-2. (Optional, open questions raised with the user and NOT yet answered)
+1. **`mysqlsh.globals.util.dump_schemas` / `load_dump` do NOT exist in this mariadb-shell
+   build**, so `msm.deploy_schema` / `msm_plugin` `deploy_schema` with `backup=True` raise
+   `AttributeError: unknown attribute: dump_schemas`. The backup feature is unusable (and
+   untested) until the dump/restore is reimplemented — e.g. `mariadb-dump` as a subprocess.
+   `backup=False` is the default precisely because of this.
+2. **`mrs_plugin/lib/general.py:221` and `:231` call `deploy_schema`** and silently lost
+   their rollback dump when `backup` defaulted to False. Add `backup=True` there if that
+   behaviour should be preserved (sibling plugin, deliberately untouched).
+3. (Optional, open questions raised with the user and NOT yet answered)
    - `object_type` is a plain `str` + `_normalize_object_type`, not `Literal[...]`; a
      Literal would publish the 7 values as a JSON-schema enum to clients but would reject
      `"Table"`.
@@ -160,10 +194,12 @@ coverage**.
      JSON booleans.
    - `interval_value`/`interval_field` of an event are raw, not composed into a readable
      schedule.
-3. (Optional) Raise `lib/setup.py` (84%) and `general.py` (73%) coverage — now the two
+4. (Optional) Raise `lib/setup.py` (84%) and `general.py` (73%) coverage — now the two
    weakest modules by far.
-4. (Optional) `test_db_sql.py`'s module docstring still says "connect / execute_sql /
+5. (Optional) `test_db_sql.py`'s module docstring still says "connect / execute_sql /
    close"; the flow now covers far more.
+6. (Optional) `gui/extension/package.json:1192` still labels the plugin "MySQL Schema
+   Management" in the VS Code UI — outside msm_plugin, so left inconsistent by the rebrand.
 
 ## Gotchas / things not to repeat
 
@@ -183,7 +219,19 @@ coverage**.
   sniffing, which would silently reinterpret genuine VARCHAR data. Don't.
 - **`helpers.tool_payload` collapses a single-element list into the bare element** (and an
   empty list into None) — a one-row listing is NOT a list. Normalize in the test before
-  iterating; this bit the list_objects assertions.
+  iterating; this bit the list_objects assertions AND, one commit later, the deploy
+  assertions. It WILL bite again.
+- **Never guard a tool registration with an early `return` in a registrar** — the tools
+  defined AFTER it silently stop being registered. `msm.deploy_schema`'s gate first used
+  `if db not in function_groups: return` placed mid-registrar, which would have dropped
+  `msm.get_deployment_script_versions` from every msm-only server. Register conditional
+  tools LAST, inside an `if`, and assert the neighbouring tools still exist in both
+  configurations (`test_stdio_deploy_schema_requires_the_db_group` does).
+- **Run the suite from the mcp_plugin dir with `/opt/homebrew/bin` on PATH.** Two runs this
+  session died instantly on `can't open file '.../run_tests.py'` because the cwd was the
+  repo root; without homebrew on PATH the sandbox deploy finds no `mariadbd`.
+- **msm_plugin's tests need `-s <path to mariadb-shell>`** (its `run_tests.py` auto-detect
+  only finds a shell on PATH) and the same homebrew PATH for `mariadbd`.
 - **Filtering tests with `-k` breaks the db/msm/sandbox tests** — they depend on
   `test_sandbox_deploy` running first (conftest ordering hook + `sandbox.deployed` flag),
   and skip themselves if it didn't. Run the full suite to validate.
@@ -229,9 +277,9 @@ coverage**.
 
 ## Git state
 
-- Branch: `wip/AIPL-5` (default `main`). Last commit 09fa116c
-  ("Add msm lifecycle and streamable-http transport tests").
-- `git -C mcp_plugin status --short`:
-  - Modified: `lib/db_functions.py`, `tests/unit/test_db_sql.py`
-  - Modified: `.claude/PROJECT_CONTEXT.md` (this file)
-- Nothing from this session's introspection work is committed yet.
+- Branch: `wip/AIPL-5`, upstream `mariadb/wip/AIPL-5` (remote `mariadb` =
+  mariadb-corporation/mariadb-shell-plugins; `origin` is mysql/mysql-shell-plugins and is
+  NOT the push target). Default branch `main`.
+- Session history: 3482634a (db introspection tools) -> the msm_plugin MariaDB/sandbox/
+  backup commit -> the mcp_plugin `msm.deploy_schema` + db-group-gate commit.
+- Working tree clean as of this checkpoint; everything pushed.

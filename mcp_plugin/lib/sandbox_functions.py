@@ -34,11 +34,13 @@ from typing import Optional
 from mcp_plugin.lib import config, general
 
 
-def register_sandbox_tools(server) -> None:
+def register_sandbox_tools(server, function_groups=()) -> None:
     """Registers the sandbox management tools on the given server.
 
     Args:
         server: The FastMCP server instance to register the tools on.
+        function_groups (list): All function groups being served. Unused here,
+            as none of the sandbox tools depend on another group.
 
     Returns:
         None

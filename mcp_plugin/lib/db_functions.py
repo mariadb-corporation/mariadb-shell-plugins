@@ -370,6 +370,21 @@ def _get_session(connection_uri: str):
     return session
 
 
+def get_session(connection_id: str):
+    """Returns the session of a connection opened with ``db.connect``.
+
+    The public entry point for the other tool modules, which work on the
+    connections this one hands out but have no cache of their own.
+
+    Args:
+        connection_id (str): The UUID returned by ``db.connect``.
+
+    Returns:
+        The open shell session.
+    """
+    return _get_session(connection_id)
+
+
 def _serialize_result(result) -> dict:
     """Serializes a shell SQL result into a JSON-friendly dict.
 
@@ -472,11 +487,13 @@ def _parse_json_fields(rows: list, field: str) -> list:
     return rows
 
 
-def register_db_tools(server) -> None:
+def register_db_tools(server, function_groups=()) -> None:
     """Registers the database connection tools on the given server.
 
     Args:
         server: The FastMCP server instance to register the tools on.
+        function_groups (list): All function groups being served. Unused here,
+            as none of the db tools depend on another group.
 
     Returns:
         None
