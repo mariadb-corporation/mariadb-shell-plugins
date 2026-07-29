@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,12 +24,12 @@
 
 # To use this script you need to set these environment variables:
 #
-# MYSQLSH=<path to mysqlsh binary>
-# MYSQLSH_USER_CONFIG_HOME=<mysqlsh home>
+# MYSQLSH=<path to the mariadb-shell binary>
+# MYSQLSH_USER_CONFIG_HOME=<shell home>
 # MYSQLSH_PLUGIN_SOURCE_DIR=<source code path to the plugins>
 #
 # If not configured, they will be set as follows:
-# MYSQLSH to the mysqlsh in PATH
+# MYSQLSH to the mariadb-shell (or mysqlsh) in PATH
 # MYSQLSH_USER_CONFIG_HOME to /tmp/dot_mysqlsh
 # MYSQLSH_PLUGIN_SOURCE_DIR to ../../
 import shutil
@@ -89,9 +90,13 @@ arg_parser.add_argument(
     type=Path,
     default=os.environ.get(
         "MYSQLSH",
-        shutil.which("mysqlsh.exe") if os.name == "nt" else shutil.which("mysqlsh"),
+        (
+            shutil.which("mariadb-shell.exe") or shutil.which("mysqlsh.exe")
+            if os.name == "nt"
+            else shutil.which("mariadb-shell") or shutil.which("mysqlsh")
+        ),
     ),
-    help="Path to MySQL Shell binary",
+    help="Path to MariaDB Shell binary",
 )
 arg_parser.add_argument("-v", "--verbose", required=False, help="Enable verbose mode")
 arg_parser.add_argument(
@@ -126,7 +131,7 @@ assert Path(
 
 assert (
     args.shell is not None
-), "Could not find the MySQL Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
+), "Could not find the MariaDB Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
 
 
 class MyPaths:

@@ -1,4 +1,5 @@
 # Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""The MySQL Shell Schema Management Plugin - Management"""
+"""The MariaDB Shell Schema Management Plugin - Management"""
 
 # cSpell:ignore mysqlsh
 
@@ -593,8 +594,10 @@ def deploy_schema(**kwargs) -> str:
     Deploys the given version of the database schema. If no version is given,
     the latest available version will be deployed.
 
-    If there is an existing schema version that will be upgraded, a dump of
-    that schema is created in order to be able to roll back.
+    If an existing schema version is upgraded and backups are enabled, a dump
+    of that schema is created first, and is loaded back should the update fail.
+    Without backups the schema is left as the failed update leaves it, so no
+    dump is written and nothing is restored.
 
     A log will be written during the update.
 
@@ -605,6 +608,8 @@ def deploy_schema(**kwargs) -> str:
         schema_project_path (str): The path to the schema project.
         version (str): The version to deploy.
         backup_directory (str): The directory to be used for backups
+        backup (bool): Whether to dump an existing schema before updating it,
+            so it can be restored if the update fails. Defaults to False.
         session (object): The database session to use.
 
     Returns:
@@ -613,6 +618,7 @@ def deploy_schema(**kwargs) -> str:
     schema_project_path = kwargs.get("schema_project_path", lib.core.get_working_dir())
     version = kwargs.get("version", None)
     backup_directory = kwargs.get("backup_directory", None)
+    backup = kwargs.get("backup", False)
     session = lib.core.get_current_session(kwargs.get("session", None))
 
     return lib.management.deploy_schema(
@@ -620,4 +626,5 @@ def deploy_schema(**kwargs) -> str:
         schema_project_path=schema_project_path,
         version=version,
         backup_directory=backup_directory,
+        backup=backup,
     )

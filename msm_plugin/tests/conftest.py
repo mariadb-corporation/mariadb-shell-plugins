@@ -1,4 +1,5 @@
 # Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +33,8 @@ from msm_plugin.tests.unit.test_management import SCHEMA_NAME, COPYRIGHT_HOLDER
 
 import mysqlsh
 
+from mysqlsh.globals import sandbox
+
 
 @pytest.fixture(scope="session")
 def sandbox_session() -> mysqlsh.globals.session:
@@ -45,9 +48,19 @@ def sandbox_session() -> mysqlsh.globals.session:
 
     deployment_dir = tempfile.TemporaryDirectory()
 
-    mysqlsh.globals.dba.deploy_sandbox_instance(
-        connection_data["port"],
-        {"password": connection_data["password"], "sandboxDir": deployment_dir.name},
+    # The sandbox API insists on an integer port, while the connection data
+    # carries it as the string it may come from the environment as.
+    port = int(connection_data["port"])
+
+    sandbox.deploy(
+        port,
+        {
+            "password": connection_data["password"],
+            "sandboxDir": deployment_dir.name,
+            # Disabled so the test run does not depend on openssl being
+            # available to generate certificates.
+            "ssl": False,
+        },
     )
 
     session: mysqlsh.globals.session = helpers.create_shell_session()
@@ -58,9 +71,7 @@ def sandbox_session() -> mysqlsh.globals.session:
 
     session.close()
 
-    mysqlsh.globals.dba.kill_sandbox_instance(
-        connection_data["port"], {"sandboxDir": deployment_dir.name}
-    )
+    sandbox.kill(port, {"sandboxDir": deployment_dir.name})
 
 
 @pytest.fixture(scope="session")

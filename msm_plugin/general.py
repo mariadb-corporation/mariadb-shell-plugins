@@ -1,4 +1,5 @@
 # Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""The MySQL Shell Schema Plugin"""
+"""The MariaDB Shell Schema Plugin"""
 
 # cSpell:ignore mysqlsh
 
@@ -40,7 +41,7 @@ def info() -> str:
         str
     """
     return (
-        f"MySQL Schema Management Plugin Version {lib.general.VERSION} PREVIEW\n"
+        f"MariaDB Schema Management Plugin Version {lib.general.VERSION} PREVIEW\n"
         "Warning! For testing purposes only!"
     )
 

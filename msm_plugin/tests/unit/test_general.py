@@ -1,4 +1,5 @@
 # Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +30,7 @@ from msm_plugin.general import *
 
 
 def test_plugin_info():
-    assert info().startswith("MySQL Schema Management Plugin")
+    assert info().startswith("MariaDB Schema Management Plugin")
 
 
 def test_plugin_version():

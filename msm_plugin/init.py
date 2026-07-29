@@ -1,4 +1,5 @@
 # Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +24,7 @@
 
 """Plugin registration
 
-This file is automatically loaded by the MySQL Shell at startup time.
+This file is automatically loaded by the MariaDB Shell at startup time.
 
 It registers the plugin objects and then imports all sub-modules to
 register the plugin object member functions.
