@@ -158,6 +158,38 @@ def call_tool(
     )
 
 
+async def _alist_tool_names(function_groups, timeout):
+    """Lists the tool names a server exposes for the given function groups."""
+    from mcp import ClientSession
+    from mcp.client.stdio import stdio_client
+
+    params = _stdio_server_params(function_groups)
+
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await asyncio.wait_for(session.list_tools(), timeout=timeout)
+
+            return [tool.name for tool in result.tools]
+
+
+def list_tool_names(function_groups, timeout=None):
+    """Returns the names of the tools a server advertises over stdio.
+
+    Args:
+        function_groups (list): The function groups the server should expose.
+        timeout (float): Round-trip timeout in seconds.
+
+    Returns:
+        The list of tool names.
+    """
+    return asyncio.run(
+        _alist_tool_names(
+            function_groups, timeout if timeout is not None else _MCP_TIMEOUT
+        )
+    )
+
+
 @asynccontextmanager
 async def mcp_session(function_groups, timeout=None):
     """Opens a persistent stdio MCP session against a single server subprocess.

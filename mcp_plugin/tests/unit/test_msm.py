@@ -162,19 +162,43 @@ def test_stdio_elicits_and_declines_new_path(clean_config, tmp_path):
     assert os.listdir(target_path) == []
 
 
-def test_stdio_msm_project_lifecycle(allowed_temp_dir):
-    """Drives a project through every remaining msm.* tool over one session.
+def test_stdio_deploy_schema_requires_the_db_group():
+    """msm.deploy_schema is only advertised when the db group is served too.
 
-    A single persistent stdio session (one server subprocess) is used so the
-    whole create -> edit -> release -> deploy-script lifecycle runs against the
-    same project. All paths live under the pre-allowed temp directory, so no
-    elicitation is involved. This exercises the msm tools that the create/elicit
-    tests do not touch (get/set version, sections, release, deployment script).
+    It needs a connection opened with db.connect, so serving the msm group on
+    its own must leave it out - while still registering every other msm tool.
     """
     pytest.importorskip("mcp")
 
+    msm_only = helpers.list_tool_names(["msm"])
+    assert "msm.deploy_schema" not in msm_only
+    # The tools registered around it are unaffected by the gate.
+    assert "msm.create_project" in msm_only
+    assert "msm.get_deployment_script_versions" in msm_only
+
+    with_db = helpers.list_tool_names(["msm", "db"])
+    assert "msm.deploy_schema" in with_db
+    assert "msm.get_deployment_script_versions" in with_db
+    assert "db.connect" in with_db
+
+
+def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
+    """Drives a project through every remaining msm.* tool over one session.
+
+    A single persistent stdio session (one server subprocess) is used so the
+    whole create -> edit -> release -> deploy-script -> deploy lifecycle runs
+    against the same project. All paths live under the pre-allowed temp
+    directory, so no elicitation is involved. This exercises the msm tools that
+    the create/elicit tests do not touch (get/set version, sections, release,
+    deployment script and the deployment itself onto the shared sandbox).
+    """
+    pytest.importorskip("mcp")
+
+    if not sandbox.deployed:
+        pytest.skip("sandbox was not deployed")
+
     async def _run():
-        async with helpers.mcp_session(function_groups=["msm"]) as call:
+        async with helpers.mcp_session(function_groups=["msm", "db"]) as call:
             def payload(result):
                 assert result.isError is False, helpers.tool_payload(result)
                 return helpers.tool_payload(result)
@@ -318,5 +342,52 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir):
                     {"schema_project_path": project_path},
                 )
             ) == [[0, 0, 1]]
+
+            # Deploy the release onto the sandbox. msm.deploy_schema is the only
+            # msm tool that needs a database connection, so the db group is
+            # loaded alongside and db.connect provides the connection id.
+            connection_id = payload(await call("db.connect", {"uri": sandbox.uri}))
+            try:
+                deployed = payload(
+                    await call(
+                        "msm.deploy_schema",
+                        {
+                            "connection_id": connection_id,
+                            "schema_project_path": project_path,
+                            "version": "0.0.1",
+                        },
+                    )
+                )
+                assert "0.0.1" in deployed
+
+                # The schema and the table from section 140 are really there,
+                # and the deployed version is now reported as such.
+                tables = payload(
+                    await call(
+                        "db.list_objects",
+                        {
+                            "connection_id": connection_id,
+                            "schema_name": SCHEMA_NAME,
+                        },
+                    )
+                )
+                # tool_payload hands back the bare entry for a single-entry
+                # list, and the schema holds exactly one table.
+                if isinstance(tables, dict):
+                    tables = [tables]
+                assert "mcp_pytest_table" in [
+                    entry["name"] for entry in tables or []
+                ]
+            finally:
+                payload(
+                    await call(
+                        "db.execute_sql",
+                        {
+                            "connection_id": connection_id,
+                            "sql": f"DROP SCHEMA IF EXISTS `{SCHEMA_NAME}`",
+                        },
+                    )
+                )
+                await call("db.close", {"connection_id": connection_id})
 
     asyncio.run(_run())

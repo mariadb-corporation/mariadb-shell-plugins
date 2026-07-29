@@ -69,8 +69,10 @@ def build_mcp_server(host: str, port: int, function_groups):
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("MariaDB MCP Server", host=host, port=port)
+    # The full list of enabled groups is handed to every registrar, so a group
+    # can leave out the tools that depend on another group not being served.
     for group in function_groups:
-        _FUNCTION_GROUP_REGISTRARS[group](server)
+        _FUNCTION_GROUP_REGISTRARS[group](server, function_groups)
 
     return server
 
