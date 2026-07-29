@@ -1,4 +1,5 @@
 # Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -176,9 +177,9 @@ def get_current_session(session=None):
     session = mysqlsh.globals.shell.get_session()
     if session is None or not session.is_open():
         raise Exception(
-            "MySQL session not specified. Please either pass a session "
+            "MariaDB session not specified. Please either pass a session "
             "object when calling the function or open a database "
-            "connection in the MySQL Shell first."
+            "connection in the MariaDB Shell first."
         )
 
     return session

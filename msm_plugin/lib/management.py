@@ -1,4 +1,5 @@
 # Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -436,7 +437,7 @@ def copy_template_file_and_substitute(
     # Create schema development script
     with open(source_file_path, "r") as f:
         # Remove copyright line and replace placeholders
-        script = Template("".join(f.readlines()[1:]))
+        script = Template("".join(f.readlines()[2:]))
         script = script.substitute(substitutions)
 
     with open(target_file_path, "w") as f:
@@ -1067,7 +1068,7 @@ def prepare_release(
         )
     with open(schema_version_template_file_path, "r") as f:
         # Remove copyright line and replace placeholders
-        schema_version_script = Template("".join(f.readlines()[1:]))
+        schema_version_script = Template("".join(f.readlines()[2:]))
     schema_version_script = schema_version_script.substitute(
         {
             # get_license_text(project_settings=project_settings),
@@ -1561,14 +1562,17 @@ def deploy_schema(
     schema_project_path: str,
     version: str = None,
     backup_directory: str = None,
+    backup: bool = False,
 ) -> str:
     """Deploys the database schema
 
     Deploys the given version of the database schema. If no version is given,
     the latest available version will be deployed.
 
-    If there is an existing schema version that will be upgraded, a dump of
-    that schema is created in order to be able to roll back.
+    If an existing schema version is upgraded and backups are enabled, a dump
+    of that schema is created first, and is loaded back should the update fail.
+    Without backups the schema is left as the failed update leaves it, so no
+    dump is written and nothing is restored.
 
     A log will be written during the update.
 
@@ -1577,6 +1581,8 @@ def deploy_schema(
         schema_project_path (str): The path to the schema project.
         version (str): The version to deploy.
         backup_directory (str): The directory to be used for backups
+        backup (bool): Whether to dump an existing schema before updating it,
+            so it can be restored if the update fails. Defaults to False.
 
     Returns:
         None
@@ -1708,9 +1714,12 @@ def deploy_schema(
             f"{schema_version} to version {version} ...",
         )
 
-    # Perform dump if the schema exists
+    # Perform dump if the schema exists and backups are enabled
     backup_available = False
-    if schema_exists:
+    # Left as if local_infile was already enabled, so nothing tries to restore
+    # it when no dump is taken and the option is therefore never touched.
+    original_local_infile = True
+    if schema_exists and backup:
         lib.core.write_to_msm_schema_update_log(
             "INFO",
             f"Preparing dump of `{schema_name}` version "
@@ -1760,7 +1769,7 @@ def deploy_schema(
             except:
                 err_msg = (
                     "Failed to enable the local_infile option. Please execute "
-                    "SET PERSIST GLOBAL local_infile=1; on the MySQL Server."
+                    "SET PERSIST GLOBAL local_infile=1; on the MariaDB Server."
                 )
                 lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
 
@@ -1817,13 +1826,18 @@ def deploy_schema(
 
         return info_msg
     except Exception as e:
-        # Drop the schema after failed update
-        try:
-            lib.core.MsmDbExec(
-                f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(schema_name)}"
-            ).exec(session)
-        except:
-            pass
+        # Drop the schema after a failed update, but only if it can be restored
+        # from a dump afterwards, or if it did not exist before this deployment
+        # and is therefore this deployment's to clean up. Dropping it without a
+        # backup to load back would discard the very data the update was
+        # applied to.
+        if backup_available or not schema_exists:
+            try:
+                lib.core.MsmDbExec(
+                    f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(schema_name)}"
+                ).exec(session)
+            except:
+                pass
 
         # Restore the backup if available
         if backup_available:
@@ -1884,13 +1898,13 @@ def execute_msm_sql_script(
     session, sql_script: str = None, script_name: str = None, sql_file_path: str = None
 ):
     """
-    Execute a SQL script on the MySQL Server and log the progress in the
+    Execute a SQL script on the MariaDB Server and log the progress in the
     MSM log file.
 
     The SQL script can be provided as a string, or as a path to a file.
 
     Args:
-        session (object): The MySQL session to use.
+        session (object): The MariaDB session to use.
         sql_script (str): The SQL script to execute.
         script_name (str): The name of the SQL script.
         sql_file_path (str): The path to the SQL script file.

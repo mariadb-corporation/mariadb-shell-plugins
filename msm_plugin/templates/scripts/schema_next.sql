@@ -1,4 +1,5 @@
 -- Copyright (c) 2025, Oracle and/or its affiliates.
+-- Copyright (c) 2026, MariaDB plc and/or its affiliates.
 ${license}
 -- #############################################################################
 -- MSM Section 000: Database Schema Development Script
@@ -145,7 +146,7 @@ DELIMITER ;
 -- #############################################################################
 -- MSM Section 180: REST Service Definition
 -- -----------------------------------------------------------------------------
--- This optional section is used to create MySQL REST Service endpoints
+-- This optional section is used to create MariaDB REST Service endpoints
 -- #############################################################################
 
 -- Create a REST service, schema and endpoints
