@@ -15,9 +15,10 @@
 
 """MCP tools for working with database connections.
 
-These tools expose the MariaDB/MySQL Shell connection facilities over MCP:
-listing the configured connections, opening a connection, running SQL
-statements on it and closing it again.
+These tools expose the MariaDB Shell connection facilities over MCP:
+listing the configured connections, opening a connection, listing the schemas
+available on it and the objects within a schema, describing a single object,
+running SQL statements on it and closing it again.
 
 Only the connections configured via ``mcp.setup`` can be opened. Their URIs are
 listed from, and their passwords read back from, the shell secret store (see
@@ -29,8 +30,10 @@ returns. That UUID identifies the connection for the ``db.execute_sql`` and
 are independent of the shell's global session.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp uuid
+# cSpell:ignore mysqlsh MariaDB fastmcp uuid SCHEMATA datatype
+# cSpell:ignore ISNULL IFNULL ARRAYAGG utf8mb3 kcu ORDINAL DTD
 
+import json
 import uuid
 from typing import Optional
 
@@ -40,6 +43,313 @@ from mcp_plugin.lib import config
 
 # Maps a connection UUID to its open shell session.
 _sessions = {}
+
+# Lists the schemas of a server, classified into system and user schemas.
+_LIST_SCHEMAS_SQL = """
+    SELECT SCHEMA_NAME as schema_name,
+        CASE
+            WHEN SCHEMA_NAME = 'mysql'
+                OR SCHEMA_NAME = 'mysql_rest_service_metadata' THEN 'System Schema'
+            WHEN SCHEMA_NAME = 'information_schema' THEN 'System Information Schema'
+            ELSE 'User Schema'
+        END AS schema_type,
+        SCHEMA_COMMENT as schema_comment
+    FROM INFORMATION_SCHEMA.SCHEMATA
+    ORDER BY SCHEMA_TYPE, SCHEMA_NAME
+"""
+
+# Lists the objects of one type within a schema. Each query takes the schema
+# name as its single ? parameter. The columns returned depend on the object
+# type: tables and views carry a comment, sequences their value data type, the
+# remaining types just a name.
+#
+# Sequences and views have their own TABLE_TYPE in INFORMATION_SCHEMA.TABLES,
+# so they do not show up in the table listing; system-versioned tables do have
+# to be included there explicitly, as they are typed SYSTEM VERSIONED rather
+# than BASE TABLE.
+_LIST_OBJECTS_SQL = {
+    "table": """
+        SELECT TABLE_NAME as name, TABLE_COMMENT as comment
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = ?
+            AND TABLE_TYPE IN ('BASE TABLE', 'SYSTEM VERSIONED')
+        ORDER BY TABLE_NAME
+    """,
+    "view": """
+        SELECT TABLE_NAME as name, TABLE_COMMENT as comment
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'VIEW'
+        ORDER BY TABLE_NAME
+    """,
+    "function": """
+        SELECT ROUTINE_NAME as name
+        FROM INFORMATION_SCHEMA.ROUTINES
+        WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION'
+        ORDER BY ROUTINE_NAME
+    """,
+    "procedure": """
+        SELECT ROUTINE_NAME as name
+        FROM INFORMATION_SCHEMA.ROUTINES
+        WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'PROCEDURE'
+        ORDER BY ROUTINE_NAME
+    """,
+    "sequence": """
+        SELECT SEQUENCE_NAME as name, DATA_TYPE as datatype
+        FROM INFORMATION_SCHEMA.SEQUENCES
+        WHERE SEQUENCE_SCHEMA = ?
+        ORDER BY SEQUENCE_NAME
+    """,
+    "trigger": """
+        SELECT TRIGGER_NAME as name
+        FROM INFORMATION_SCHEMA.TRIGGERS
+        WHERE TRIGGER_SCHEMA = ?
+        ORDER BY TRIGGER_NAME
+    """,
+    "event": """
+        SELECT EVENT_NAME as name
+        FROM INFORMATION_SCHEMA.EVENTS
+        WHERE EVENT_SCHEMA = ?
+        ORDER BY EVENT_NAME
+    """,
+}
+
+# Looks a single object up by schema and name, one query per object type. Takes
+# the schema and object name as its two ? parameters and yields the object's
+# comment, so it doubles as the existence check for db.get_object_details. Only
+# triggers have no comment of their own in the INFORMATION_SCHEMA.
+_OBJECT_BASIC_SQL = {
+    "table": """
+        SELECT TABLE_COMMENT as comment
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+            AND TABLE_TYPE IN ('BASE TABLE', 'SYSTEM VERSIONED')
+    """,
+    "view": """
+        SELECT TABLE_COMMENT as comment
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND TABLE_TYPE = 'VIEW'
+    """,
+    "function": """
+        SELECT ROUTINE_COMMENT as comment
+        FROM INFORMATION_SCHEMA.ROUTINES
+        WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = ?
+            AND ROUTINE_TYPE = 'FUNCTION'
+    """,
+    "procedure": """
+        SELECT ROUTINE_COMMENT as comment
+        FROM INFORMATION_SCHEMA.ROUTINES
+        WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = ?
+            AND ROUTINE_TYPE = 'PROCEDURE'
+    """,
+    "sequence": """
+        SELECT TABLE_COMMENT as comment
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND TABLE_TYPE = 'SEQUENCE'
+    """,
+    "trigger": """
+        SELECT NULL as comment
+        FROM INFORMATION_SCHEMA.TRIGGERS
+        WHERE TRIGGER_SCHEMA = ? AND TRIGGER_NAME = ?
+    """,
+    "event": """
+        SELECT EVENT_COMMENT as comment
+        FROM INFORMATION_SCHEMA.EVENTS
+        WHERE EVENT_SCHEMA = ? AND EVENT_NAME = ?
+    """,
+}
+
+# The type specific details of the objects that are described by a single row
+# rather than by columns or parameters. Takes the schema and object name as its
+# two ? parameters.
+_OBJECT_DETAILS_SQL = {
+    "sequence": """
+        SELECT DATA_TYPE AS data_type, START_VALUE AS start_value,
+            INCREMENT AS increment
+        FROM INFORMATION_SCHEMA.SEQUENCES
+        WHERE SEQUENCE_SCHEMA = ? AND SEQUENCE_NAME = ?
+    """,
+    "trigger": """
+        SELECT EVENT_MANIPULATION AS event_manipulation,
+            ACTION_TIMING AS action_timing,
+            ACTION_ORIENTATION AS action_orientation,
+            ACTION_ORDER AS action_order,
+            EVENT_OBJECT_SCHEMA AS table_schema,
+            EVENT_OBJECT_TABLE AS table_name,
+            ACTION_CONDITION AS action_condition,
+            ACTION_STATEMENT AS action_statement,
+            DEFINER AS definer,
+            CREATED AS created,
+            SQL_MODE AS sql_mode
+        FROM INFORMATION_SCHEMA.TRIGGERS
+        WHERE TRIGGER_SCHEMA = ? AND TRIGGER_NAME = ?
+    """,
+    "event": """
+        SELECT EVENT_TYPE AS event_type,
+            EVENT_DEFINITION AS event_definition,
+            EXECUTE_AT AS execute_at,
+            INTERVAL_VALUE AS interval_value,
+            INTERVAL_FIELD AS interval_field,
+            STARTS AS starts,
+            ENDS AS ends,
+            STATUS AS status,
+            ON_COMPLETION AS on_completion,
+            LAST_EXECUTED AS last_executed,
+            DEFINER AS definer,
+            TIME_ZONE AS time_zone
+        FROM INFORMATION_SCHEMA.EVENTS
+        WHERE EVENT_SCHEMA = ? AND EVENT_NAME = ?
+    """,
+}
+
+# The parameters of a stored function or procedure, in ordinal position order.
+# Takes the schema, routine name and upper case routine type as its three ?
+# parameters. A function's RETURNS clause is the row at ordinal position 0, with
+# no name and no mode, so it is filtered out of the parameters and reported
+# separately.
+_ROUTINE_PARAMETERS_SQL = """
+    SELECT ORDINAL_POSITION as position, PARAMETER_NAME as name,
+        PARAMETER_MODE as mode, DTD_IDENTIFIER as datatype,
+        PARAMETER_DEFAULT as parameter_default
+    FROM INFORMATION_SCHEMA.PARAMETERS
+    WHERE SPECIFIC_SCHEMA = ? AND SPECIFIC_NAME = ? AND ROUTINE_TYPE = ?
+    ORDER BY ORDINAL_POSITION
+"""
+
+# The columns of a table or view, in ordinal position order. Takes the schema
+# and object name as its two ? parameters. The INFORMATION_SCHEMA columns are
+# collated explicitly so comparing them against the parameters cannot fail with
+# an illegal mix of collations.
+_OBJECT_COLUMNS_SQL = """
+    SELECT
+        c.COLUMN_NAME AS name,
+        c.COLUMN_TYPE AS datatype,
+        c.IS_NULLABLE = 'NO' AS not_null,
+        c.COLUMN_KEY = 'PRI' AS is_primary,
+        c.COLUMN_KEY = 'UNI' AS is_unique,
+        c.GENERATION_EXPRESSION <> '' AS is_generated,
+        IF(c.EXTRA = 'auto_increment', 'auto_inc',
+            IF(c.COLUMN_KEY = 'PRI' AND c.DATA_TYPE = 'binary'
+                    AND c.CHARACTER_MAXIMUM_LENGTH = 16,
+                'rev_uuid', NULL)) AS id_generation,
+        c.COLUMN_COMMENT AS comment,
+        c.COLUMN_DEFAULT AS column_default,
+        c.CHARACTER_SET_NAME AS charset,
+        c.COLLATION_NAME collation
+    FROM INFORMATION_SCHEMA.COLUMNS AS c
+    WHERE c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = ?
+        AND c.TABLE_NAME COLLATE utf8mb3_general_ci = ?
+    ORDER BY c.ORDINAL_POSITION
+"""
+
+# The constraints of a table, one row per constrained column. Takes the schema
+# and table name as its two ? parameters.
+#
+# The join has to match on TABLE_NAME as well: constraint names are unique per
+# table, not per schema, so joining on the schema alone makes every table's
+# PRIMARY constraint match every other table's primary key columns.
+_OBJECT_CONSTRAINTS_SQL = """
+    SELECT tc.CONSTRAINT_NAME as constraint_name,
+        tc.CONSTRAINT_TYPE as constraint_type, kcu.COLUMN_NAME AS column_name
+    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS tc
+    LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS kcu
+        ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+        AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+        AND tc.TABLE_NAME = kcu.TABLE_NAME
+    WHERE tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ?
+    ORDER BY tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
+"""
+
+# The foreign key relationships of a table, in both directions. Takes the
+# schema and table name TWICE as its four ? parameters, once for each half of
+# the UNION: the first half are the references pointing from this table to
+# other tables (n:1), the second half those pointing from other tables to this
+# one (1:1 or 1:n, depending on whether the primary keys line up).
+_OBJECT_REFERENCES_SQL = """
+    SELECT MAX(c.ORDINAL_POSITION) + 100 AS position,
+        MAX(k.REFERENCED_TABLE_NAME) AS name,
+        GROUP_CONCAT(c.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+        JSON_MERGE_PRESERVE(
+            JSON_OBJECT('kind', 'n:1'),
+            JSON_OBJECT('constraint',
+                CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+            JSON_OBJECT('to_many', FALSE),
+            JSON_OBJECT('referenced_schema', MAX(k.REFERENCED_TABLE_SCHEMA)),
+            JSON_OBJECT('referenced_table', MAX(k.REFERENCED_TABLE_NAME)),
+            JSON_OBJECT('column_mapping',
+                JSON_ARRAYAGG(JSON_OBJECT(
+                    'base', c.COLUMN_NAME,
+                    'ref', k.REFERENCED_COLUMN_NAME)))
+        ) AS reference_mapping,
+        MAX(c.TABLE_SCHEMA) AS table_schema, MAX(c.TABLE_NAME) AS table_name
+    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+        JOIN INFORMATION_SCHEMA.COLUMNS AS c
+            ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                AND c.COLUMN_NAME=k.COLUMN_NAME
+                AND c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = ?
+                AND c.TABLE_NAME COLLATE utf8mb3_general_ci = ?
+    WHERE NOT ISNULL(k.REFERENCED_TABLE_NAME)
+    GROUP BY k.CONSTRAINT_NAME, k.table_schema, k.table_name
+    UNION
+    -- Union with the references that point from other tables to the table
+    -- (1:1 and 1:n)
+    SELECT MAX(c.ORDINAL_POSITION) + 1000 AS position,
+        MAX(c.TABLE_NAME) AS name,
+        GROUP_CONCAT(k.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+        JSON_MERGE_PRESERVE(
+            -- If the PKs of the table and the referred table are exactly the
+            -- same, this is a 1:1 relationship, otherwise an 1:n
+            JSON_OBJECT('kind', IF(JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 1,
+                '1:1', '1:n')),
+            JSON_OBJECT('constraint',
+                CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+            JSON_OBJECT('to_many', JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 0),
+            JSON_OBJECT('referenced_schema', MAX(c.TABLE_SCHEMA)),
+            JSON_OBJECT('referenced_table', MAX(c.TABLE_NAME)),
+            JSON_OBJECT('column_mapping',
+                JSON_ARRAYAGG(JSON_OBJECT(
+                    'base', k.REFERENCED_COLUMN_NAME,
+                    'ref', c.COLUMN_NAME)))
+        ) AS reference_mapping,
+        MAX(k.REFERENCED_TABLE_SCHEMA) AS table_schema,
+        MAX(k.REFERENCED_TABLE_NAME) AS table_name
+    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+        JOIN INFORMATION_SCHEMA.COLUMNS AS c
+            ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                AND c.COLUMN_NAME=k.COLUMN_NAME
+        -- The PK columns of the table, e.g. ['test_fk.product.id']
+        JOIN (SELECT JSON_ARRAYAGG(CONCAT(c2.TABLE_SCHEMA, '.',
+                    c2.TABLE_NAME, '.', c2.COLUMN_NAME)) AS PK,
+                c2.TABLE_SCHEMA, c2.TABLE_NAME
+                FROM INFORMATION_SCHEMA.COLUMNS AS c2
+                WHERE c2.COLUMN_KEY = 'PRI'
+                GROUP BY c2.COLUMN_KEY, c2.TABLE_SCHEMA, c2.TABLE_NAME) AS PK_TABLE
+            ON PK_TABLE.TABLE_SCHEMA = k.REFERENCED_TABLE_SCHEMA
+                AND PK_TABLE.TABLE_NAME = k.REFERENCED_TABLE_NAME
+        -- The PK columns of the referenced table,
+        -- e.g. ['test_fk.product_part.id', 'test_fk.product.id']
+        JOIN (SELECT JSON_ARRAYAGG(PK2.PK_COL) AS PK, PK2.TABLE_SCHEMA, PK2.TABLE_NAME
+            FROM (SELECT IFNULL(
+                CONCAT(MAX(k1.REFERENCED_TABLE_SCHEMA), '.',
+                    MAX(k1.REFERENCED_TABLE_NAME), '.',
+                    MAX(k1.REFERENCED_COLUMN_NAME)),
+                CONCAT(c1.TABLE_SCHEMA, '.', c1.TABLE_NAME, '.',
+                    c1.COLUMN_NAME)) AS PK_COL,
+                c1.TABLE_SCHEMA AS TABLE_SCHEMA, c1.TABLE_NAME AS TABLE_NAME
+                FROM INFORMATION_SCHEMA.COLUMNS AS c1
+                    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k1
+                        ON k1.TABLE_SCHEMA = c1.TABLE_SCHEMA
+                            AND k1.TABLE_NAME = c1.TABLE_NAME
+                            AND k1.COLUMN_NAME = c1.COLUMN_NAME
+                WHERE c1.COLUMN_KEY = 'PRI'
+                GROUP BY c1.COLUMN_NAME, c1.TABLE_SCHEMA, c1.TABLE_NAME) AS PK2
+                GROUP BY PK2.TABLE_SCHEMA, PK2.TABLE_NAME) AS PK_REF
+            ON PK_REF.TABLE_SCHEMA = k.TABLE_SCHEMA
+                AND PK_REF.TABLE_NAME = k.TABLE_NAME
+    WHERE k.REFERENCED_TABLE_SCHEMA COLLATE utf8mb3_general_ci = ?
+        AND k.REFERENCED_TABLE_NAME COLLATE utf8mb3_general_ci = ?
+    GROUP BY k.CONSTRAINT_NAME, c.TABLE_SCHEMA, c.TABLE_NAME
+    ORDER BY position
+"""
 
 
 def _get_session(connection_uri: str):
@@ -81,16 +391,85 @@ def _serialize_result(result) -> dict:
             item = {}
             for column in columns:
                 value = row.get_field(column)
-                # Fall back to a string for values that are not natively
-                # JSON-serializable (e.g. binary data).
+                # Values that are not natively JSON-serializable have to be
+                # converted, as the tool result is returned as JSON. The shell
+                # hands the types that have no JSON equivalent of their own -
+                # decimals, dates and times - back as text already, so only
+                # binary data needs converting; anything else the shell might
+                # return in a type of its own falls back to its text form
+                # rather than failing to serialize.
                 if isinstance(value, (bytes, bytearray)):
                     value = value.hex()
+                elif value is not None and not isinstance(
+                    value, (bool, int, float, str)
+                ):
+                    value = str(value)
                 item[column] = value
             rows.append(item)
         output["columns"] = columns
         output["rows"] = rows
 
     return output
+
+
+def _query_rows(session, sql: str, params: Optional[list] = None) -> list:
+    """Runs a query and returns just its rows.
+
+    Args:
+        session: The open shell session to run the query on.
+        sql: The query to run.
+        params: The parameters to bind to the ? placeholders, in order.
+
+    Returns:
+        A list with one dict per row, empty when the query matched nothing.
+    """
+    result = session.run_sql(sql, params if params is not None else [])
+
+    return _serialize_result(result).get("rows", [])
+
+
+def _normalize_object_type(object_type: str) -> str:
+    """Validates a database object type and normalizes it to lower case.
+
+    Args:
+        object_type (str): The object type to check, matched case-insensitively.
+
+    Returns:
+        The normalized object type.
+    """
+    normalized = object_type.strip().lower()
+    if normalized not in _LIST_OBJECTS_SQL:
+        raise mysqlsh.Error(
+            f"'{object_type}' is not a supported object type. Supported "
+            f"types are: {', '.join(_LIST_OBJECTS_SQL)}."
+        )
+
+    return normalized
+
+
+def _parse_json_fields(rows: list, field: str) -> list:
+    """Expands a JSON column returned as text into real Python values.
+
+    Leaves the value untouched if it is not a JSON string, so the rows are
+    usable whether the server hands the column back as text or the shell has
+    already converted it.
+
+    Args:
+        rows (list): The rows to patch up, modified in place.
+        field (str): The name of the JSON column.
+
+    Returns:
+        The same list of rows.
+    """
+    for row in rows:
+        value = row.get(field)
+        if isinstance(value, str):
+            try:
+                row[field] = json.loads(value)
+            except ValueError:
+                pass
+
+    return rows
 
 
 def register_db_tools(server) -> None:
@@ -139,6 +518,146 @@ def register_db_tools(server) -> None:
         _sessions[connection_id] = session
 
         return connection_id
+
+    @server.tool(name="db.list_schemas")
+    def list_schemas(connection_id: str) -> list:
+        """Lists the database schemas available on an open connection.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+
+        Returns:
+            A list with one dict per schema, holding its name (schema_name), its
+            classification as a system or user schema (schema_type) and its
+            comment (schema_comment). Only the schemas the connection's account
+            has access to are listed.
+        """
+        return _query_rows(_get_session(connection_id), _LIST_SCHEMAS_SQL)
+
+    @server.tool(name="db.list_objects")
+    def list_objects(
+        connection_id: str,
+        schema_name: str,
+        object_type: str = "table",
+    ) -> list:
+        """Lists the objects of one type within a database schema.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            schema_name: The schema to list the objects of, as returned by
+                db.list_schemas.
+            object_type: The type of object to list: table, view, function,
+                procedure, sequence, trigger or event. Defaults to table.
+
+        Returns:
+            A list with one dict per object, always holding its name (name).
+            Tables and views additionally carry their comment (comment) and
+            sequences their value data type (datatype). Only the objects the
+            connection's account has access to are listed; an unknown schema
+            yields an empty list.
+        """
+        sql = _LIST_OBJECTS_SQL[_normalize_object_type(object_type)]
+
+        return _query_rows(_get_session(connection_id), sql, [schema_name])
+
+    @server.tool(name="db.get_object_details")
+    def get_object_details(
+        connection_id: str,
+        schema_name: str,
+        object_name: str,
+        object_type: str = "table",
+    ) -> dict:
+        """Describes a database object in detail.
+
+        Args:
+            connection_id: The UUID returned by db.connect.
+            schema_name: The schema holding the object, as returned by
+                db.list_schemas.
+            object_name: The name of the object, as returned by db.list_objects.
+            object_type: The type of the object: table, view, function,
+                procedure, sequence, trigger or event. Defaults to table.
+
+        Returns:
+            A dict describing the object. It always holds the object itself
+            (basic: its schema, name, type and comment), plus what applies to
+            its type:
+
+            - a table adds its columns in ordinal position order (columns), its
+              constraints, one entry per constrained column (constraints), and
+              its foreign key relationships in both directions (references) -
+              those pointing from this table to other tables (n:1) as well as
+              those pointing from other tables to this one (1:1 or 1:n)
+            - a view adds its columns (columns)
+            - a function or procedure adds its parameters in ordinal position
+              order, each with its name, mode, data type and default
+              (parameters), and, for a function, the data type it returns
+              (returns)
+            - a sequence, trigger or event adds the properties of its type
+              (details)
+        """
+        normalized = _normalize_object_type(object_type)
+        session = _get_session(connection_id)
+        object_id = [schema_name, object_name]
+
+        basic = _query_rows(session, _OBJECT_BASIC_SQL[normalized], object_id)
+        if not basic:
+            raise mysqlsh.Error(
+                f"No {normalized} '{object_name}' found in schema "
+                f"'{schema_name}'. Use db.list_objects to list the "
+                f"{normalized}s of a schema."
+            )
+
+        details = {
+            "basic": {
+                "schema": schema_name,
+                "name": object_name,
+                "type": normalized,
+                "comment": basic[0].get("comment"),
+            }
+        }
+
+        if normalized in ("table", "view"):
+            details["columns"] = _query_rows(
+                session, _OBJECT_COLUMNS_SQL, object_id
+            )
+
+        if normalized == "table":
+            details["constraints"] = _query_rows(
+                session, _OBJECT_CONSTRAINTS_SQL, object_id
+            )
+            # The reference mapping is assembled as JSON by the server, so it
+            # arrives as a string that has to be expanded to stay usable.
+            details["references"] = _parse_json_fields(
+                _query_rows(
+                    session, _OBJECT_REFERENCES_SQL, object_id + object_id
+                ),
+                "reference_mapping",
+            )
+        elif normalized in ("function", "procedure"):
+            rows = _query_rows(
+                session,
+                _ROUTINE_PARAMETERS_SQL,
+                object_id + [normalized.upper()],
+            )
+            # Ordinal position 0 is the RETURNS clause of a function, the
+            # parameters proper start at 1. A procedure returns nothing.
+            returns = [row for row in rows if row["position"] == 0]
+            details["parameters"] = [
+                {
+                    key: row[key]
+                    for key in ("name", "mode", "datatype", "parameter_default")
+                }
+                for row in rows
+                if row["position"] != 0
+            ]
+            details["returns"] = returns[0]["datatype"] if returns else None
+        elif normalized in _OBJECT_DETAILS_SQL:
+            rows = _query_rows(
+                session, _OBJECT_DETAILS_SQL[normalized], object_id
+            )
+            details["details"] = rows[0] if rows else {}
+
+        return details
 
     @server.tool(name="db.execute_sql")
     def execute_sql(

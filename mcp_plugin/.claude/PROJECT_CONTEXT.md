@@ -9,7 +9,8 @@ MCP-compatible clients. It registers the global `mcp` object in the shell and se
 "MariaDB plc and/or its affiliates". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), MCP SDK 1.28.1, Python 3.14, `mariadbd`
-at `/opt/homebrew/bin`. Full suite: **14 tests pass (~26s with REST test), 86% coverage**.
+at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite: **16 tests pass (~28s), 92% total
+coverage**.
 
 ## Architecture / key decisions
 
@@ -27,11 +28,11 @@ at `/opt/homebrew/bin`. Full suite: **14 tests pass (~26s with REST test), 86% c
 - **Function groups** (`function_groups`): `db`, `msm`, `sandbox`; `_FUNCTION_GROUP_REGISTRARS`.
 - **Connections**: shell secrets keyed `MCP:Connection:<uri>`. `db.connect` only allows
   configured URIs; opens via `parse_uri`+password -> `shell.open_session` (independent of
-  the shell's global session).
+  the shell's global session). Sessions cached in-process in `_sessions`, keyed by UUID.
 - **Allowed paths**: `settings.json` under `get_mcp_plugin_data_path()`.
   `config.is_path_allowed()` via `os.path.commonpath` (reads disk fresh each call — NO
   in-memory cache); empty list => deny all.
-- **Path enforcement + elicitation** (committed 6e12ad68): shared guard
+- **Path enforcement + elicitation** (commit 6e12ad68): shared guard
   `general.require_allowed_path(ctx, path)` (ASYNC; skips when arg is None), used by msm.*
   (target/file/schema_project) and sandbox.* (sandbox_dir). When a path is NOT allowed it
   MCP-elicits (`ctx.elicit`, schema=one-bool `ConfirmTrustPath`) asking the user to trust
@@ -40,52 +41,152 @@ at `/opt/homebrew/bin`. Full suite: **14 tests pass (~26s with REST test), 86% c
   "not allowed" mysqlsh.Error. Because elicit is async, ALL msm (11) + sandbox (7) tools are
   `async def` with a leading `ctx: Context` param (`from mcp.server.fastmcp import Context`,
   imported inside the registrar; FastMCP strips it from the client-facing schema).
+  db.* tools stay SYNC — none of them elicit (`db.execute_sql_script` checks
+  `config.is_path_allowed` directly and just errors out).
 - **SQL exec**: `db.execute_sql` = single statement (+ optional `?` params, one result
   dict). `db.execute_sql_script` = multi-statement via `mysqlsh.mysql.split_script()`,
-  returns a LIST. `sandbox.deploy` port REQUIRED int on all 7; `ssl=False` default.
-- **REST SQL** (uncommitted): `db.execute_sql` can run MRS REST SQL (e.g.
+  returns a LIST; accepts `sql_script` XOR `file_path` (file must be an allowed path).
+  `sandbox.deploy` port REQUIRED int on all 7; `ssl=False` default.
+- **Introspection tools** (all UNCOMMITTED, all sync, all built on the user's own SQL —
+  the queries came from the user verbatim, only parameterized; do NOT "improve" them
+  without asking):
+  - `db.list_schemas(connection_id)` -> `_LIST_SCHEMAS_SQL` over I_S.SCHEMATA. Returns a
+    bare LIST of `{schema_name, schema_type, schema_comment}` (lowercase aliases — the
+    USER renamed them from upper case), not the full `_serialize_result` envelope, since
+    a fixed SELECT has no useful affected-rows/warnings. `schema_type` is computed in SQL
+    (System Schema / System Information Schema / User Schema) and is ALSO the first
+    ORDER BY key, so rows sort by LABEL TEXT -> user schemas come LAST. Intended.
+  - `db.list_objects(connection_id, schema_name, object_type="table")` -> one query per
+    type in the `_LIST_OBJECTS_SQL` dict (table, view, function, procedure, sequence,
+    trigger, event), each taking the schema as its single `?`. Columns: `name`+`comment`
+    for table/view, `name`+`datatype` for sequence, `name` alone for the rest.
+  - `db.get_object_details(connection_id, schema_name, object_name, object_type="table")`
+    -> `{"basic": {schema, name, type, comment}}` for every type, plus per type:
+    table -> `columns`+`constraints`+`references`; view -> `columns` only;
+    function/procedure -> `parameters` (name, mode, datatype, parameter_default) +
+    `returns`; sequence/trigger/event -> a single-row `details` dict.
+  - Shared plumbing: `_query_rows` (run + return rows), `_normalize_object_type`
+    (case-insensitive validation against the `_LIST_OBJECTS_SQL` keys, used by BOTH
+    list_objects and get_object_details), `_parse_json_fields`.
+- **Introspection SQL gotchas that are baked in on purpose**:
+  - `table` listing uses `TABLE_TYPE IN ('BASE TABLE', 'SYSTEM VERSIONED')` — system
+    versioned tables have their OWN TABLE_TYPE and would otherwise vanish. Sequences and
+    views have their own types, so they drop out by themselves.
+  - `INFORMATION_SCHEMA.SEQUENCES` is **MariaDB 11.5+**. No fallback for older servers
+    (would need I_S.TABLES `TABLE_TYPE='SEQUENCE'` + I_S.COLUMNS on
+    `next_not_cached_value`).
+  - A routine's RETURNS clause is the `ORDINAL_POSITION = 0` row of I_S.PARAMETERS (no
+    name, no mode) -> split into `returns`, excluded from `parameters`. Procedures have
+    no such row, so `returns` is None. Return type comes from PARAMETERS, NOT from
+    `ROUTINES.DTD_IDENTIFIER` — one source, one documented rule.
+  - Triggers have NO comment column anywhere in the information_schema, hence
+    `SELECT NULL as comment` in `_OBJECT_BASIC_SQL["trigger"]`.
+  - Existence check is "no `_OBJECT_BASIC_SQL` row" (works for all 7 types and catches a
+    type mismatch, e.g. asking for a table as a sequence), NOT "no columns".
+- **Two deliberate FIXES to the user's supplied SQL** (both flagged to and left standing
+  by the user):
+  - constraints query needed `AND tc.TABLE_NAME = kcu.TABLE_NAME` — constraint names are
+    unique per TABLE, not per schema, so joining on schema alone makes every table's
+    `PRIMARY` match every other table's PK columns. Test pins this (two PK tables in the
+    schema, `items` must report exactly one constraint row).
+  - dropped the columns query's dead `LEFT OUTER JOIN` on KEY_COLUMN_USAGE: nothing was
+    selected from it and it can duplicate a column that sits in two FKs. Restore with
+    DISTINCT if fields from it are ever needed.
+  - also added `ORDER BY tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION` for determinism.
+- **REST SQL** (commit 0e97c9e9): `db.execute_sql` can run MRS REST SQL (e.g.
   `CONFIGURE REST METADATA`) because `mrs_plugin` registers a shell SQL handler
   (`@sql_handler("MRS", prefixes=...)`, prefixes incl. "CONFIGURE REST ") that intercepts
-  `session.run_sql`. Requires mrs_plugin loaded in the server subprocess (now symlinked by
+  `session.run_sql`. Requires mrs_plugin loaded in the server subprocess (symlinked by
   run_tests). antlr4 (MRS parser dep) is bundled in mariadb-shell.
 
 ## Current state
 
-- Elicitation refactor: DONE and committed (6e12ad68). All lib/* + msm/sandbox tests in.
-- REST SQL test: DONE, working, UNCOMMITTED. 14 tests pass, 86% coverage.
+- Everything from the previous checkpoint's "Next steps" list is DONE and committed:
+  REST SQL work (0e97c9e9), the sibling mrs_plugin management-session fix (ca47b8c8 then
+  reworked in 82e18c4c), msm lifecycle + streamable-http transport tests (09fa116c).
+- **UNCOMMITTED** (suite green, nothing known-broken): the three introspection tools
+  (`db.list_schemas`, `db.list_objects`, `db.get_object_details`) + their test assertions
+  in `test_db_sql.py`. Only three files are modified: `lib/db_functions.py`,
+  `tests/unit/test_db_sql.py`, this file.
 - Shell fns: `mcp.info`, `mcp.version`, `mcp.setup`, `mcp.startServer`.
-- Tools: db.* (list_connections, connect, execute_sql, execute_sql_script, close),
-  msm.* (11, path-guarded, async), sandbox.* (7, sandbox_dir-guarded, async, port required).
-- Tests (tests/unit/, no __init__): test_sandbox (deploy FIRST, shutdown LAST + path-reject),
-  test_config, test_msm (create_project + elicit-accept + elicit-decline), test_db_sql,
-  test_rest_sql (CONFIGURE REST METADATA).
-- Coverage: config 96, db_functions 94, general(lib) 95, msm_functions 61,
-  sandbox_functions 87, server(lib) 90, setup 84, server.py 85, general.py 73.
+- Tools: db.* (**8**: `list_connections`, `connect`, `list_schemas`, `list_objects`,
+  `get_object_details`, `execute_sql`, `execute_sql_script`, `close`),
+  msm.* (11, path-guarded, async),
+  sandbox.* (7, `sandbox_dir`-guarded, async, port required).
+- Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
+  path-reject), `test_config` (6), `test_msm` (4: create_project, elicit-accept,
+  elicit-decline, lifecycle), `test_db_sql`, `test_rest_sql`, `test_transport_http`.
+- Coverage after latest run: lib/msm_functions 100, lib/db_functions 99, lib/config 96,
+  lib/general 95, lib/server 93, lib/sandbox_functions 87, server.py 85, lib/setup 84,
+  general.py 73. TOTAL 92%.
 
 ## Files that matter
 
 - lib/general.py -> plugin data path + async `require_allowed_path`/`_confirm_trust_path`.
 - lib/config.py -> connections (secrets) + allowed paths (settings.json) + `add_allowed_path`.
-- lib/db_functions.py -> db.* tools; session cache keyed by UUID; `_serialize_result`.
+- lib/db_functions.py -> db.* tools; `_sessions` UUID cache; `_serialize_result`;
+  the introspection SQL constants (`_LIST_SCHEMAS_SQL`, `_LIST_OBJECTS_SQL`,
+  `_OBJECT_BASIC_SQL`, `_OBJECT_DETAILS_SQL`, `_ROUTINE_PARAMETERS_SQL`,
+  `_OBJECT_COLUMNS_SQL`, `_OBJECT_CONSTRAINTS_SQL`, `_OBJECT_REFERENCES_SQL`).
 - lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`.
 - lib/server.py -> build/serve; `_serve_stdio` hardening.
 - tests/conftest.py -> ordering hook, fixtures (sandbox session, allowed_temp_dir,
   clean_config, stored_connections, non_interactive_shell).
-- tests/unit/helpers.py -> `call_tool` (now has `elicitation_callback`), `mcp_session`,
-  `tool_payload`, `find_free_port`, `server_binary_available`, `mysqlsh_binary`.
-- tests/unit/test_rest_sql.py -> REST SQL end-to-end (NEW, uncommitted).
+- tests/unit/helpers.py -> `call_tool` (has `elicitation_callback`), `mcp_session`,
+  `tool_payload`, `find_free_port`, `server_binary_available`, `mysqlsh_binary`,
+  plus streamable-http helpers.
+- tests/unit/test_db_sql.py -> single `_db_flow` coroutine over ONE stdio session:
+  connect -> execute_sql (incl. a DECIMAL/DATETIME serialization check) ->
+  execute_sql_script (inline + file + denied) -> list_schemas -> creates one object of
+  EVERY type in a throwaway schema (incl. a system-versioned table, a sequence, a
+  trigger, an event, and an `orders` table with an FK to `items`) -> list_objects (all 7
+  types + default + case-insensitivity + bad type + unknown schema) ->
+  get_object_details (table both FK directions, view, function, procedure, sequence,
+  trigger, event, plus not-found errors) -> DROP SCHEMA -> close.
 - run_tests.py -> symlinks mcp_plugin + msm_plugin + mrs_plugin into a temp config home,
-  pip-installs pytest/pytest-cov/mcp, runs pytest. .coveragerc omits msm/mrs/shell/site-pkgs.
+  pip-installs pytest/pytest-cov/mcp, runs pytest. `-k/--only` to filter, `-s/--shell`,
+  `-u/--userhome`. .coveragerc omits msm/mrs/shell/site-pkgs.
 
 ## Next steps
 
-1. Commit the REST SQL work: `run_tests.py`, `.coveragerc`, `tests/unit/test_rest_sql.py`.
-2. Land the sibling `mrs_plugin/lib/general.py` fix SEPARATELY (see Gotchas) — it is NOT
-   part of mcp_plugin and test_rest_sql depends on it.
-3. (Optional) Raise msm_functions/setup coverage; streamable-http transport test.
+1. Commit the introspection work: `lib/db_functions.py` + `tests/unit/test_db_sql.py`
+   (this context file too).
+2. (Optional, open questions raised with the user and NOT yet answered)
+   - `object_type` is a plain `str` + `_normalize_object_type`, not `Literal[...]`; a
+     Literal would publish the 7 values as a JSON-schema enum to clients but would reject
+     `"Table"`.
+   - the flag columns of `get_object_details` (`not_null`, `is_primary`, ...) and
+     `to_many` inside `reference_mapping` stay 1/0 as the user's SQL produces them, not
+     JSON booleans.
+   - `interval_value`/`interval_field` of an event are raw, not composed into a readable
+     schedule.
+3. (Optional) Raise `lib/setup.py` (84%) and `general.py` (73%) coverage — now the two
+   weakest modules by far.
+4. (Optional) `test_db_sql.py`'s module docstring still says "connect / execute_sql /
+   close"; the flow now covers far more.
 
 ## Gotchas / things not to repeat
 
+- **`/checkpoint` needs its target folder** — invoked bare it must ask, but this session
+  is non-interactive; target was inferred as `mcp_plugin` from the session's work.
+- **New db.* tools stay SYNC** unless they need elicitation; don't convert them to async
+  "for consistency" with msm/sandbox.
+- **The shell already returns DECIMAL and DATETIME as STRINGS.** Verified: a
+  `CAST(2 AS DECIMAL(10,2))` arrives as `'2.00'`, and I_S.SEQUENCES `START_VALUE` /
+  `INCREMENT` as `'1'`. So `_serialize_result` needs NO numeric conversion — a
+  `numbers.Number -> int/float` branch was written, proven unreachable, and REMOVED. Do
+  not re-add it. What is left is bytes -> hex plus a `str()` guard for anything exotic
+  (that guard is the single uncovered line in db_functions.py; it is insurance against a
+  serialization crash killing a tool call, not a code path the tests exercise). Making
+  decimals into JSON numbers would need CASTs in the individual queries (and
+  `CAST(... AS SIGNED)` would mangle an UNSIGNED sequence past 2^63) or numeric-string
+  sniffing, which would silently reinterpret genuine VARCHAR data. Don't.
+- **`helpers.tool_payload` collapses a single-element list into the bare element** (and an
+  empty list into None) — a one-row listing is NOT a list. Normalize in the test before
+  iterating; this bit the list_objects assertions.
+- **Filtering tests with `-k` breaks the db/msm/sandbox tests** — they depend on
+  `test_sandbox_deploy` running first (conftest ordering hook + `sandbox.deployed` flag),
+  and skip themselves if it didn't. Run the full suite to validate.
 - **mcp 1.28.x runs SYNC tools directly on the event loop** (func_metadata:
   `else: return fn(...)`, no to_thread). So a sync-tool `anyio.from_thread.run` bridge for
   elicitation is IMPOSSIBLE (not in a worker thread). Async tools were the only viable
@@ -99,32 +200,38 @@ at `/opt/homebrew/bin`. Full suite: **14 tests pass (~26s with REST test), 86% c
   returns False -> "not allowed" error. In tests, pass `elicitation_callback` to answer
   (`types.ElicitResult(action="accept", content={"trust": True})`).
 - **REST SQL / MRS session duplication**: MRS runs metadata DDL on a SECOND session so
-  `USE x` etc. don't disturb the caller. `mrs_plugin/lib/general.py:203-207` chose that
-  session: original `if "shell.Object" in str(type(session))` -> no-arg
-  `shell.open_session()` = duplicate the GLOBAL session (carries password). The MCP db layer
-  uses `shell.open_session(connection_data)` and sets NO global session -> original path
-  raised "An open session is required when duplicating sessions". A native shell session has
-  NO `.connection_options` attr (GUI-only) — only `get_uri()` (no password), so the
-  `open_session(session.connection_options)` branch fails with "unknown attribute:
-  connection_options" and URI-reopen can't carry credentials. USER applied an alternative
-  fix in mrs_plugin/lib/general.py that makes it pass; that file is a SIBLING plugin, land
-  it separately. (Alternative never taken: `shell.set_session(session)` in db.connect.)
+  `USE x` etc. don't disturb the caller. `mrs_plugin/lib/general.py` originally did
+  `if "shell.Object" in str(type(session))` -> no-arg `shell.open_session()` = duplicate the
+  GLOBAL session (carries password). The MCP db layer uses `shell.open_session(connection_data)`
+  and sets NO global session -> that path raised "An open session is required when
+  duplicating sessions". A native shell session has NO `.connection_options` attr (GUI-only)
+  — only `get_uri()` (no password), so `open_session(session.connection_options)` fails with
+  "unknown attribute: connection_options" and URI-reopen can't carry credentials. Landed as
+  ca47b8c8 (reuse caller's session) then 82e18c4c (original code restored + a different
+  workaround until `session.clone()` exists). Alternative never taken:
+  `shell.set_session(session)` in db.connect.
 - **test client is plain `ClientSession(read,write)`** — happy-path tests pre-register their
   paths (via fixtures) so no elicitation fires.
 - **tool_payload returns None for an empty list** (zero content blocks). Guard `or []`
   before `in`/iteration (bit test_sandbox_shutdown).
 - **Don't delete `.coverage*` with a glob** — matches `.coveragerc`. Use `.coverage.*`.
 - **pytest-dependency does not build in this env** — ordering is native (conftest hook +
-  `sandbox.deployed` flag). Long runs: Bash `run_in_background: true` so a hang is stoppable.
-- **run_sql rejects multi-statement** (1064) — split via `mysqlsh.mysql.split_script`.
+  `sandbox.deployed` flag). Long runs: Bash `run_in_background: true` so a hang is stoppable;
+  chained `sleep` polling is blocked by the harness — wait for the task notification.
+- **run_sql rejects multi-statement** (1064) — split via `mysqlsh.mysql.split_script`, and
+  don't leave a trailing `;` on single-statement SQL constants.
 - **Sandbox port required** — never None/omit ("Argument #1 is expected to be an integer").
 - **stdio needs clean stdout** — don't add prints to the stdio path.
 - Don't reintroduce bg-thread+SIGTERM serving nor the interactive guard in `start()`.
-  Plain GPLv2+MariaDB header. tests/ has no __init__ (namespace pkg + PYTHONPATH=..).
+  Plain GPLv2+MariaDB header. tests/ has no `__init__` (namespace pkg + `PYTHONPATH=..`).
+- **This file goes stale fast** — the previous checkpoint listed 3 "next steps" that were
+  all already committed. Re-check `git log` against it before trusting it.
 
 ## Git state
 
-- Branch: `wip/AIPL-5` (default `main`). Last commit 6e12ad68 (elicitation).
+- Branch: `wip/AIPL-5` (default `main`). Last commit 09fa116c
+  ("Add msm lifecycle and streamable-http transport tests").
 - `git -C mcp_plugin status --short`:
-  - Modified: .coveragerc, run_tests.py, ../mrs_plugin/lib/general.py (SIBLING).
-  - Untracked: tests/unit/test_rest_sql.py.
+  - Modified: `lib/db_functions.py`, `tests/unit/test_db_sql.py`
+  - Modified: `.claude/PROJECT_CONTEXT.md` (this file)
+- Nothing from this session's introspection work is committed yet.
