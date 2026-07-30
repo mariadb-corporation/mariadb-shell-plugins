@@ -7,7 +7,7 @@ package-lock.json
 plugin-test-coverage.xml
 plugin-tests.xml
 package-lock.json
-tests/mysql-sandboxes
+tests/mariadb-sandboxes
 .pytest_cache
 htmlcov
 run

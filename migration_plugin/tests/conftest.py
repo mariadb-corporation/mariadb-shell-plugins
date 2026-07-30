@@ -148,16 +148,16 @@ def setup_sandbox(request, connection_data, enable_repl: bool):
         sandbox_path = deployment_dir.name
 
     if do_deploy:
-        mysqld_options = []
+        mariadbd_options = []
         if not enable_repl:
-            mysqld_options.append("skip_log_bin")
+            mariadbd_options.append("skip_log_bin")
 
-        mysqlsh.globals.dba.deploy_sandbox_instance(
+        mysqlsh.globals.sandbox.deploy(
             connection_data["port"],
             {
                 "password": connection_data["password"],
                 "sandboxDir": sandbox_path,
-                "mysqldOptions": mysqld_options,
+                "mariadbdOptions": mariadbd_options,
             },
         )
 
@@ -179,7 +179,7 @@ def setup_sandbox(request, connection_data, enable_repl: bool):
         session.close()
 
         if not reuse_sandbox:
-            mysqlsh.globals.dba.kill_sandbox_instance(
+            mysqlsh.globals.sandbox.kill(
                 connection_data["port"], {"sandboxDir": deployment_dir.name}
             )
 

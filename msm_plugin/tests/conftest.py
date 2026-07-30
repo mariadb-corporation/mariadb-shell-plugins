@@ -41,11 +41,11 @@ def sandbox_session() -> mysqlsh.globals.session:
 
     connection_data = helpers.get_connection_data()
 
-    os.makedirs(os.path.join("tests", "mysql-sandboxes"), exist_ok=True)
+    os.makedirs(os.path.join("tests", "mariadb-sandboxes"), exist_ok=True)
 
     deployment_dir = tempfile.TemporaryDirectory()
 
-    mysqlsh.globals.dba.deploy_sandbox_instance(
+    mysqlsh.globals.sandbox.deploy(
         connection_data["port"],
         {"password": connection_data["password"], "sandboxDir": deployment_dir.name},
     )
@@ -58,7 +58,7 @@ def sandbox_session() -> mysqlsh.globals.session:
 
     session.close()
 
-    mysqlsh.globals.dba.kill_sandbox_instance(
+    mysqlsh.globals.sandbox.kill(
         connection_data["port"], {"sandboxDir": deployment_dir.name}
     )
 

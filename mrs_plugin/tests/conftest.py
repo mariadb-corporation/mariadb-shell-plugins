@@ -37,12 +37,12 @@ PHONE_BOOKS = {}
 def start_mysql_session(connection_id=0):
     connection_data = helpers.get_connection_data()
 
-    os.makedirs(os.path.join("tests", "mysql-sandboxes"), exist_ok=True)
+    os.makedirs(os.path.join("tests", "mariadb-sandboxes"), exist_ok=True)
 
     deployment_dir = tempfile.TemporaryDirectory()
 
     if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.dba.deploy_sandbox_instance(
+        mysqlsh.globals.sandbox.deploy(
             connection_data["port"],
             {
                 "password": connection_data["password"],
@@ -89,13 +89,13 @@ def cleanup_mysql_session(session_data):
         temp_dir.cleanup()
 
     session_data["session"].close()
-    # mysqlsh.globals.dba.stop_sandbox_instance(connection_data["port"], {
+    # mysqlsh.globals.sandbox.stop(connection_data["port"], {
     #     "password": connection_data["password"],
     #     "sandboxDir": deployment_dir.name
     # })
 
     if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.dba.kill_sandbox_instance(
+        mysqlsh.globals.sandbox.kill(
             session_data["connection_data"]["port"],
             {"sandboxDir": session_data["deployment_dir"].name},
         )
@@ -109,12 +109,12 @@ def init_mrs():
 
     connection_data = helpers.get_connection_data()
 
-    os.makedirs(os.path.join("tests", "mysql-sandboxes"), exist_ok=True)
+    os.makedirs(os.path.join("tests", "mariadb-sandboxes"), exist_ok=True)
 
     deployment_dir = tempfile.TemporaryDirectory()
 
     if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.dba.deploy_sandbox_instance(
+        mysqlsh.globals.sandbox.deploy(
             connection_data["port"],
             {
                 "password": connection_data["password"],
@@ -157,7 +157,7 @@ def init_mrs():
     session.close()
 
     if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.dba.kill_sandbox_instance(
+        mysqlsh.globals.sandbox.kill(
             connection_data["port"], {"sandboxDir": deployment_dir.name}
         )
 
