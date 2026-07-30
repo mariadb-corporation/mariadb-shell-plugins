@@ -22,8 +22,8 @@ The following plugins are installed by copying the folders into the MySQL Shell 
 
 The plugins location for the MySQL Shell depends on the target platform:
 
-- Windows: %appdata%\MySQL\mysqlsh\plugins
-- Others: ~/.mysqlsh/plugins
+- Windows: %appdata%\MariaDB\mariadb-shell\plugins
+- Others: ~/.mariadb-shell/plugins
 
 For instructions about how to build and install the gui_plugin refer to the MySQL Shell GUI [readme.md](gui/frontend/readme.md).
 

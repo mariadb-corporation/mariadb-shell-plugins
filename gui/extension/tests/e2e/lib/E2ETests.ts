@@ -481,7 +481,7 @@ export class E2ETests {
         switch (platform()) {
 
             case "win32": {
-                webCertificatesPath = join(String(process.env.APPDATA), "MySQL", "mysqlsh", "plugin_data",
+                webCertificatesPath = join(String(process.env.APPDATA), "MariaDB", "mariadb-shell", "plugin_data",
                     "gui_plugin", "web_certs");
                 webCertificatesGuiPath = join(String(process.env.APPDATA), "MySQL", "mysqlsh-gui", "plugin_data",
                     "gui_plugin", "web_certs");
@@ -501,7 +501,7 @@ export class E2ETests {
             case "darwin":
             case "linux": {
                 webCertificatesPath = join(String(process.env.HOME),
-                    ".mysqlsh", "plugin_data", "gui_plugin", "web_certs");
+                    ".mariadb-shell", "plugin_data", "gui_plugin", "web_certs");
                 webCertificatesGuiPath = join(String(process.env.HOME),
                     ".mysqlsh-gui", "plugin_data", "gui_plugin", "web_certs");
 
@@ -554,7 +554,7 @@ export class E2ETests {
                         .success(`Web Certificates symlink set for ${testSuite.name} test suite (from .mysqlsh-gui)`);
                 } else {
                     symlinkSync(webCertificatesPath!, webCerts);
-                    E2ELogger.success(`Web Certificates symlink set for ${testSuite.name} test suite (from .mysqlsh)`);
+                    E2ELogger.success(`Web Certificates symlink set for ${testSuite.name} test suite (from .mariadb-shell)`);
                 }
             } else if (!existsSync(defaultCerts) && existsSync(guiCerts)) {
                 symlinkSync(webCertificatesGuiPath!, webCerts);
@@ -562,7 +562,7 @@ export class E2ETests {
                     .success(`Web Certificates symlink set for ${testSuite.name} test suite (from .mysqlsh-gui)`);
             } else {
                 symlinkSync(webCertificatesPath!, webCerts);
-                E2ELogger.success(`Web Certificates symlink set for ${testSuite.name} test suite (from .mysqlsh)`);
+                E2ELogger.success(`Web Certificates symlink set for ${testSuite.name} test suite (from .mariadb-shell)`);
             }
 
         } else {

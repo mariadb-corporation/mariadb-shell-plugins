@@ -235,7 +235,7 @@ if not paths.runtime.root.is_dir():
 if not paths.runtime.plugins.root.is_dir():
     paths.runtime.plugins.root.mkdir(parents=True)
 
-# remove link to .mysqlsh/plugins/migration_plugin etc
+# remove link to .mariadb-shell/plugins/migration_plugin etc
 for fromp, targetp in [
     (paths.source.code, paths.runtime.plugins.migration_plugin),
     (paths.source.root / "mds_plugin", paths.runtime.plugins.mds_plugin),
@@ -243,7 +243,7 @@ for fromp, targetp in [
     if targetp.exists():
         targetp.unlink()
 
-    # Create source code symlink into the runtime plugin dir (.mysqlsh/plugins/migration_plugin)
+    # Create source code symlink into the runtime plugin dir (.mariadb-shell/plugins/migration_plugin)
     create_symlink(fromp, targetp, is_dir=True)
 
 LOGS = []

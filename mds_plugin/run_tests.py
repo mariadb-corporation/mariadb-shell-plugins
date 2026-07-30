@@ -204,11 +204,11 @@ if not paths.runtime.root.is_dir():
 if not paths.runtime.plugins.root.is_dir():
     paths.runtime.plugins.root.mkdir(parents=True)
 
-# remove link to .mysqlsh/plugins/mds_plugin
+# remove link to .mariadb-shell/plugins/mds_plugin
 if paths.runtime.plugins.mds_plugin.exists():
     paths.runtime.plugins.mds_plugin.unlink()
 
-# Create source code symlink into the runtime plugin dir (.mysqlsh/plugins/mds_plugin)
+# Create source code symlink into the runtime plugin dir (.mariadb-shell/plugins/mds_plugin)
 create_symlink(paths.source.code, paths.runtime.plugins.mds_plugin, is_dir=True)
 
 LOGS = ""

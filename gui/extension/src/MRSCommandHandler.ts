@@ -2013,7 +2013,7 @@ export class MRSCommandHandler {
                         mrsPluginDir = path.join(this.getBaseDir(), "mysqlsh",
                             "plugins", "mrs_plugin");
                     } else {
-                        mrsPluginDir = path.join(this.getBaseDir(), ".mysqlsh", "plugins", "mrs_plugin");
+                        mrsPluginDir = path.join(this.getBaseDir(), ".mariadb-shell", "plugins", "mrs_plugin");
                     }
                     indexPath = path.join(mrsPluginDir, "docs", file);
 

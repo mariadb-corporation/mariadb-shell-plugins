@@ -155,7 +155,7 @@ class BackendSqliteDbManager(BackendDbManager):
         if connection_options and "db_dir" in connection_options:
             self.db_dir = connection_options["db_dir"]
         else:
-            # use ~/.mysqlsh/plugin_data/gui_plugin/mysqlsh_gui_backend_{CURRENT_DB_VERSION}.sqlite3
+            # use ~/.mariadb-shell/plugin_data/gui_plugin/mysqlsh_gui_backend_{CURRENT_DB_VERSION}.sqlite3
             self.db_dir = mysqlsh.plugin_manager.general.get_shell_user_dir(  # pylint: disable=no-member
                 "plugin_data", "gui_plugin"
             )

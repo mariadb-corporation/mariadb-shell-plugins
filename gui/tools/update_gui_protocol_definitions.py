@@ -81,7 +81,7 @@ shell = subprocess.run(command, shell=True, env=env)
 
 home_path = os.path.expanduser("~")
 temp_path = os.path.basename(os.path.dirname(dot_mysqlsh.name))
-final_log_path = os.path.join(home_path, ".mysqlsh", f"mysqlsh-{temp_path}.log")
+final_log_path = os.path.join(home_path, ".mariadb-shell", f"mysqlsh-{temp_path}.log")
 this_log_path = os.path.join(dot_mysqlsh.name, "mysqlsh.log")
 shutil.move(this_log_path, final_log_path)
 print(f"Log file moved to: {final_log_path}")

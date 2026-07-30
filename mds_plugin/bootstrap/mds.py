@@ -93,8 +93,8 @@ def bootstrap_migration_profile(
     The configuration is created  at the migrations/<migration-id> folder at
     the MySQL Shell user config directory which by default is:
 
-    - MacOS / Linux: ~/.mysqlsh
-    - Windows: %APPDATA%\\MySQL\\mysqlsh
+    - MacOS / Linux: ~/.mariadb-shell
+    - Windows: %APPDATA%\\MariaDB\\mariadb-shell
 
     Args:
         region (str): The name of the region for the user.

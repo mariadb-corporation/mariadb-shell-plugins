@@ -28,7 +28,7 @@
 #
 # This script assumes you have unpacked GUI, MDS, MRS, MSM plugins into a
 # location defined by the environment variable SHELL_PLUGINS_LOCATION, if the
-# variable is not defined, the default location of $HOME/.mysqlsh/plugins
+# variable is not defined, the default location of $HOME/.mariadb-shell/plugins
 # will be used, the following are expected:
 #
 #   $SHELL_PLUGINS_LOCATION/gui_plugin
@@ -139,7 +139,7 @@ echo "Starting MySQL Shell for VS Code Extension packaging..."
 # If the shell plugins location is not defined, uses the default
 # location
 if [ -z "$SHELL_PLUGINS_LOCATION" ]; then
-    export SHELL_PLUGINS_LOCATION=$HOME/.mysqlsh/plugins
+    export SHELL_PLUGINS_LOCATION=$HOME/.mariadb-shell/plugins
 fi
 
 if [ ! -d "$SHELL_PLUGINS_LOCATION/gui_plugin" ]; then
@@ -159,12 +159,12 @@ if [ ! -d "$SHELL_PLUGINS_LOCATION/msm_plugin" ]; then
     exit 1
 fi
 if [ ! -d "$SHELL_PLUGINS_LOCATION/util_plugin" ]; then
-    echo "ERROR: The util_plugin is missing from ~/.mysqlsh/plugins/"
+    echo "ERROR: The util_plugin is missing from ~/.mariadb-shell/plugins/"
     exit 1
 fi
 
 if [ ! -d "$SHELL_PLUGINS_LOCATION/migration_plugin" ]; then
-    echo "ERROR: The migration_plugin is missing from ~/.mysqlsh/plugins/"
+    echo "ERROR: The migration_plugin is missing from ~/.mariadb-shell/plugins/"
     exit 1
 fi
 

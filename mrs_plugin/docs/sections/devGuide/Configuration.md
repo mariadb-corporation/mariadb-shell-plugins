@@ -319,8 +319,8 @@ The following example demonstrates connecting to a single development server and
 [http_server]
 port=8443
 ssl=1
-ssl_cert=/Users/myUser/.mysqlsh/plugin_data/gui_plugin/web_certs/server.crt
-ssl_key=/Users/myUser/.mysqlsh/plugin_data/gui_plugin/web_certs/server.key
+ssl_cert=/Users/myUser/.mariadb-shell/plugin_data/gui_plugin/web_certs/server.crt
+ssl_key=/Users/myUser/.mariadb-shell/plugin_data/gui_plugin/web_certs/server.key
 
 [mysql_rest_service]
 mysql_read_only_route=bootstrap_ro

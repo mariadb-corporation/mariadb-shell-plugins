@@ -248,22 +248,22 @@ if not paths.runtime.root.is_dir():
 if not paths.runtime.plugins.root.is_dir():
     paths.runtime.plugins.root.mkdir(parents=True)
 
-# remove link to .mysqlsh/plugins/gui_plugin
+# remove link to .mariadb-shell/plugins/gui_plugin
 if paths.runtime.plugins.gui_plugin.exists():
     paths.runtime.plugins.gui_plugin.unlink()
 
-# remove link to .mysqlsh/plugins/test_plugin
+# remove link to .mariadb-shell/plugins/test_plugin
 if paths.runtime.plugins.test_plugin.exists():
     paths.runtime.plugins.test_plugin.unlink()
 
-# remove .mysqlsh/plugin_data/gui_plugin
+# remove .mariadb-shell/plugin_data/gui_plugin
 if paths.runtime.plugin_data.gui_plugin.exists():
     shutil.rmtree(paths.runtime.plugin_data.gui_plugin, ignore_errors=True)
 
-# Create source code symlink into the runtime plugin dir (.mysqlsh/plugins/gui_plugin)
+# Create source code symlink into the runtime plugin dir (.mariadb-shell/plugins/gui_plugin)
 create_symlink(paths.source.code, paths.runtime.plugins.gui_plugin, is_dir=True)
 
-# Create source code symlink into the runtime plugin dir (.mysqlsh/plugins/gui_plugin)
+# Create source code symlink into the runtime plugin dir (.mariadb-shell/plugins/gui_plugin)
 create_symlink(paths.source.test_plugin, paths.runtime.plugins.test_plugin, is_dir=True)
 
 # create a symlink of the code if it doesn't exist in the source code dir (and using portable code)

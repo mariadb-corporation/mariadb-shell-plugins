@@ -12,8 +12,8 @@ The backend is written as a python plugin for the MySQL Shell and hence needs to
 To prepare the shell home directory, we need to have the plugin in place. To do so, execute the following commands:
 
 ```bash
-mkdir -p ~/.mysqlsh/plugins/
-ln -s `<gui plugin>/backend/gui_plugin` ~/.mysqlsh/plugins/gui_plugin
+mkdir -p ~/.mariadb-shell/plugins/
+ln -s `<gui plugin>/backend/gui_plugin` ~/.mariadb-shell/plugins/gui_plugin
 ```
 
 This way we can keep all python files in the code repository, while using them as registered plugin.
@@ -109,7 +109,7 @@ In vscode, you should use the following configurations. These configurations all
             "pathMappings": [
                 {
                     "localRoot": "${workspaceFolder}",
-                    "remoteRoot": "/home/<user>/.mysqlsh/plugins"
+                    "remoteRoot": "/home/<user>/.mariadb-shell/plugins"
                 }
             ]
 

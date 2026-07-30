@@ -123,9 +123,9 @@ export class MySQLShellLauncher {
             // istanbul ignore next
             if (inDevelopment) {
                 if (os.platform() === "win32") {
-                    shellUserConfigDir = path.join(os.homedir(), "AppData", "Roaming", "MySQL", "mysqlsh");
+                    shellUserConfigDir = path.join(os.homedir(), "AppData", "Roaming", "MariaDB", "mariadb-shell");
                 } else {
-                    shellUserConfigDir = path.join(os.homedir(), ".mysqlsh");
+                    shellUserConfigDir = path.join(os.homedir(), ".mariadb-shell");
                 }
             } else {
                 if (os.platform() === "win32") {

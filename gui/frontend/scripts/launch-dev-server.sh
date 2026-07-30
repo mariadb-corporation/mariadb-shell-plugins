@@ -83,5 +83,5 @@ fi
 #echo "Fixing node module(s)..."
 #sed -ibackup "s/^\/\/\/ <reference types=\"react-dom\" \/>/ /" node_modules/react-scripts/lib/react-app.d.ts
 
-CERT_PATH=~/.mysqlsh/plugin_data/gui_plugin/web_certs
+CERT_PATH=~/.mariadb-shell/plugin_data/gui_plugin/web_certs
 PORT=$port HTTPS=true SSL_CRT_FILE=$CERT_PATH/server.crt SSL_KEY_FILE=$CERT_PATH/server.key NODE_OPTIONS=--max-old-space-size=8192 react-app-rewired start --no-cache
