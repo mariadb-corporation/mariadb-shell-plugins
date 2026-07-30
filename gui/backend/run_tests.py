@@ -24,12 +24,12 @@
 # To use this script you need to set these environment variables:
 #
 # MYSQLSH=<path to mysqlsh binary>
-# MYSQLSH_USER_CONFIG_HOME=<mysqlsh home>
+# MARIADB_SHELL_USER_CONFIG_HOME=<mysqlsh home>
 # MYSQLSH_PLUGIN_SOURCE_DIR=<source code path to the plugins>
 #
 # If not configured, they will be set as follows:
 # MYSQLSH to the mysqlsh in PATH
-# MYSQLSH_USER_CONFIG_HOME to /tmp/dot_mysqlsh
+# MARIADB_SHELL_USER_CONFIG_HOME to /tmp/dot_mysqlsh
 # MYSQLSH_PLUGIN_SOURCE_DIR to ../../
 import shutil
 import os
@@ -101,7 +101,7 @@ arg_parser.add_argument(
     "--userhome",
     required=False,
     type=Path,
-    default=os.environ.get("MYSQLSH_USER_CONFIG_HOME", None),
+    default=os.environ.get("MARIADB_SHELL_USER_CONFIG_HOME", None),
     help="Path to the user config home",
 )
 arg_parser.add_argument(
@@ -290,8 +290,8 @@ if args.color:
 
 with pushd(paths.source.backend):
     env = os.environ.copy()
-    env["MYSQLSH_USER_CONFIG_HOME"] = paths.runtime.root.as_posix()
-    env["MYSQLSH_TERM_COLOR_MODE"] = "nocolor"
+    env["MARIADB_SHELL_USER_CONFIG_HOME"] = paths.runtime.root.as_posix()
+    env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
     env["COV_CORE_DATAFILE"] = ".coverage.eager"
     # tests should run in debug mode to ensure all modules to be tested are loaded
     env["MYSQL_SHELL_GUI_DEBUG_MODE"] = "1"

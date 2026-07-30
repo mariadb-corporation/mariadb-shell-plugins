@@ -403,7 +403,7 @@ class AddUserToBE(ShellTask):
     def run(self) -> None:
         for server in self.servers:
             if server.multi_user:
-                self.environment["MYSQLSH_USER_CONFIG_HOME"] = os.path.join(
+                self.environment["MARIADB_SHELL_USER_CONFIG_HOME"] = os.path.join(
                     WORKING_DIR, f"port_{server.port}"
                 )
                 subprocess.Popen(
@@ -722,7 +722,7 @@ class TaskExecutor:
         self.tasks: typing.List[Runnable] = []
         self.prerequisites: typing.List[Checkable] = []
         self.environment = os.environ.copy()
-        self.environment["MYSQLSH_USER_CONFIG_HOME"] = os.path.join(dir_name, "mariadb-shell")
+        self.environment["MARIADB_SHELL_USER_CONFIG_HOME"] = os.path.join(dir_name, "mariadb-shell")
 
     def add_task(self, task: Runnable) -> None:
         """Adding new task to be executed
@@ -826,7 +826,7 @@ class BEServer:
         with open(self.be_log_path, "a", encoding="UTF-8") as be_log:
             environment = self.environment.copy()
             mysqlsh_user_config_home = self.get_mysqlsh_home()
-            environment["MYSQLSH_USER_CONFIG_HOME"] = mysqlsh_user_config_home
+            environment["MARIADB_SHELL_USER_CONFIG_HOME"] = mysqlsh_user_config_home
             environment["LOG_LEVEL"] = "DEBUG2"
             environment[BACKEND_DB_LOGGING_ENV_VAR] = "1"
             timeout = time.time() + 30  # 30 seconds from now

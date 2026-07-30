@@ -69,7 +69,7 @@ create_symlink(src_migration_plugin, migration_plugin, True)
 create_symlink(src_protocols_root, startup_dir, True)
 
 env = os.environ.copy()
-env["MYSQLSH_USER_CONFIG_HOME"] = dot_mysqlsh.name
+env["MARIADB_SHELL_USER_CONFIG_HOME"] = dot_mysqlsh.name
 env["MYSQL_SHELL_GUI_DEBUG_MODE"] = "1"
 mysqlsh = shutil.which("mariadb-shell.exe") if os.name == "nt" else shutil.which("mariadb-shell")
 

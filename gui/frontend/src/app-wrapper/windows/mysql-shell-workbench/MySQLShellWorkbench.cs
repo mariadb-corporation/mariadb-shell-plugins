@@ -168,7 +168,7 @@ namespace MySQLShellWorkbench {
     private void launchShell() {
       Url = "";
 
-      Environment.SetEnvironmentVariable("MYSQLSH_USER_CONFIG_HOME", Common.GetUserConfigPath());
+      Environment.SetEnvironmentVariable("MARIADB_SHELL_USER_CONFIG_HOME", Common.GetUserConfigPath());
 
       if (!browserMode) {
         int port = START_PORT;

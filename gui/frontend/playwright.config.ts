@@ -44,7 +44,7 @@ export default defineConfig({
             name: "SHELL_SERVER_INVALID",
             env: {
                 ...process.env,
-                MYSQLSH_USER_CONFIG_HOME: String(process.env.CONFIG_DIR_DEFAULT),
+                MARIADB_SHELL_USER_CONFIG_HOME: String(process.env.CONFIG_DIR_DEFAULT),
                 MIGRATION_TEST_DEFAULT_VCN_NAME: "MySQLVCN-E2E-CreateNew",
                 LOG_LEVEL: "DEBUG3"
             },
@@ -56,7 +56,7 @@ export default defineConfig({
             name: "SHELL_SERVER_INVALID",
             env: {
                 ...process.env,
-                MYSQLSH_USER_CONFIG_HOME: String(process.env.CONFIG_DIR_INVALID),
+                MARIADB_SHELL_USER_CONFIG_HOME: String(process.env.CONFIG_DIR_INVALID),
                 LOG_LEVEL: "DEBUG3",
                 MYSQLSH_OCI_CONFIG_FILE: "dummy"
             },

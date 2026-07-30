@@ -757,7 +757,7 @@ export default class MigrationSubApp extends Component<IMigrationSubAppProps, IM
             databaseSource,
 
             // TODO(this should be initialized to some value that makes sense),
-            // possibly a value in MYSQLSH_USER_CONFIG_HOME/migration-assistant/projectname
+            // possibly a value in MARIADB_SHELL_USER_CONFIG_HOME/migration-assistant/projectname
             // OTOH the if the project_name is the folder, why do we need a directory
             // parameter in newProject? in any case, just adding it here to make the FE match the BE
             formGroupValues: {

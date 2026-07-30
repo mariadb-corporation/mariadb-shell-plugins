@@ -37,7 +37,7 @@ class SubMysqlsh:
 
         self.name = name
         env = os.environ.copy()
-        env["MYSQLSH_TERM_COLOR_MODE"] = "nocolor"
+        env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
         env["PYTHONWARNINGS"] = "ignore"
 
         argv = [mysqlsh.executable, "--json=raw"]

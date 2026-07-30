@@ -174,8 +174,8 @@ export class MySQLShellLauncher {
                 // eslint-disable-next-line no-restricted-syntax
                 ...process.env,
                 LOG_LEVEL: config.logLevel,
-                MYSQLSH_USER_CONFIG_HOME: shellUserConfigDir,
-                MYSQLSH_TERM_COLOR_MODE: "nocolor",
+                MARIADB_SHELL_USER_CONFIG_HOME: shellUserConfigDir,
+                MARIADB_SHELL_TERM_COLOR_MODE: "nocolor",
             },
         });
 

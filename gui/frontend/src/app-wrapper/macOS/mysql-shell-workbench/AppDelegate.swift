@@ -571,7 +571,7 @@ class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDel
       ];
 
       self.shellProcess.environment = [
-          "MYSQLSH_USER_CONFIG_HOME": Common.getUserConfigPath().path
+          "MARIADB_SHELL_USER_CONFIG_HOME": Common.getUserConfigPath().path
       ];
 
       let outputPipe = Pipe();

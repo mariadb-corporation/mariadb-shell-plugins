@@ -238,11 +238,11 @@ class ShellModuleSession(ModuleSession):
         env = os.environ.copy()
 
         # TODO: Workaround for Bug #33164726
-        env["MYSQLSH_USER_CONFIG_HOME"] = self._subprocess_home + "/"
-        env["MYSQLSH_JSON_SHELL"] = "1"
+        env["MARIADB_SHELL_USER_CONFIG_HOME"] = self._subprocess_home + "/"
+        env["MARIADB_SHELL_JSON_SHELL"] = "1"
 
-        if "MYSQLSH_PROMPT_THEME" in env:
-            del env["MYSQLSH_PROMPT_THEME"]
+        if "MARIADB_SHELL_PROMPT_THEME" in env:
+            del env["MARIADB_SHELL_PROMPT_THEME"]
         if "ATTACH_DEBUGGER" in env:
             del env["ATTACH_DEBUGGER"]
         if not "TERM" in env:
