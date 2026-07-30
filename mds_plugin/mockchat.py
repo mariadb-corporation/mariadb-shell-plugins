@@ -41,7 +41,7 @@ def interactive_mode_set():
     """Checks the current status of interactive mode
 
     Returns:
-        True if the MySQL Shell is running in interactive mode
+        True if the MariaDB Shell is running in interactive mode
     """
     if mysqlsh.globals.shell.options.useWizards:
         ct = threading.current_thread()

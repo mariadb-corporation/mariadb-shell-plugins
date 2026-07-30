@@ -55,9 +55,9 @@ MySQL REST Service stores its configuration in the `mysql_rest_service_metadata`
 
 Note: The MySQL user that is used to connect to the MySQL Solution must have MySQL privileges to create database schemas and roles.
 
-### MRS Configuration Using MySQL Shell for VS Code
+### MRS Configuration Using MariaDB Shell for VS Code
 
-1. Start VS Code, install the MySQL Shell for VS Code extension, and then add a DB Connection to the MySQL solution that should be configured for the MySQL REST Service.
+1. Start VS Code, install the MariaDB Shell for VS Code extension, and then add a DB Connection to the MySQL solution that should be configured for the MySQL REST Service.
 
 2. Right-click the connection in the DATABASE CONNECTIONS view and select Configure Instance for MySQL REST Service Support.
 
@@ -65,9 +65,9 @@ Note: The MySQL user that is used to connect to the MySQL Solution must have MyS
 
 The MRS metadata schema has now been configured.
 
-### MRS Configuration Using MySQL Shell
+### MRS Configuration Using MariaDB Shell
 
-The MySQL REST Service metadata schema can be configured from the MySQL Shell on the command line after connecting to the MySQL solution.
+The MySQL REST Service metadata schema can be configured from the MariaDB Shell on the command line after connecting to the MySQL solution.
 
 Please note that a MySQL user with `ALL PRIVILEGES` and `WITH GRANT OPTION` needs to be used to configure the MySQL REST Service metadata schema. It is common practice to use the `root` MySQL user or a dedicated `dba` MySQL user to perform this operation.
 
@@ -79,7 +79,7 @@ The following example connects to a local MySQL Server instance using a `dba` My
 
 ```bash
 $ mariadb-shell dba@localhost
-MySQL Shell 9.3.0
+MariaDB Shell 9.3.0
 
 MySQL> localhost:3306> SQL> CONFIGURE REST METADATA;
 Query OK, 0 rows affected (0.3998 sec)
@@ -100,7 +100,7 @@ The following example connects to a local MySQL Server instance using a `dba` My
 
 ```bash
 $ mariadb-shell dba@localhost
-MySQL Shell 9.3.0
+MariaDB Shell 9.3.0
 
 MySQL> localhost:3306> SQL> DROP SCHEMA mysql_rest_service_metadata;
 Query OK, 38 rows affected (0.0770 sec)
@@ -130,7 +130,7 @@ The following MySQL roles can be assigned to MySQL user accounts.
 
 The MySQL [GRANT](https://dev.mysql.com/doc/refman/en/grant.html) statement can be used to assign the given MySQL role to a MySQL user.
 
-Please note that the MySQL role needs to be made active for the MySQL user's current session. This can be done by using the MySQL [SET ROLE](https://dev.mysql.com/doc/refman/en/set-role.html) statement. To properly work with the MySQL Shell for VS Code extension, the MySQL role needs to included in the MySQL user's DEFAULT roles, that can be set via the [SET DEFAULT ROLE](https://dev.mysql.com/doc/refman/en/set-default-role.html) statement.
+Please note that the MySQL role needs to be made active for the MySQL user's current session. This can be done by using the MySQL [SET ROLE](https://dev.mysql.com/doc/refman/en/set-role.html) statement. To properly work with the MariaDB Shell for VS Code extension, the MySQL role needs to included in the MySQL user's DEFAULT roles, that can be set via the [SET DEFAULT ROLE](https://dev.mysql.com/doc/refman/en/set-default-role.html) statement.
 
 **_Example_**
 
@@ -203,15 +203,15 @@ MySQL Router is an essential part of any MySQL solution and therefore often depl
 
 A MySQL Router instance needs to be configured to support MRS. This is usually done by using the `mysqlrouter_bootstrap` command, which queries the user account for the necessary information.
 
-### Using MySQL Shell for VS Code to Bootstrap and Run MySQL Router
+### Using MariaDB Shell for VS Code to Bootstrap and Run MySQL Router
 
 When working with a local development setup it is common to install the MySQL Router instance on the local development machine.
 
-In this case, MySQL Shell for VS Code can be used to simplify the bootstrap process and to launch the MySQL Router instance as follows:
+In this case, MariaDB Shell for VS Code can be used to simplify the bootstrap process and to launch the MySQL Router instance as follows:
 
 1. Download and install the MySQL Router package on your local development machine
    - When not using the DMG on macOS or MSI package on Windows to install MySQL Router, be sure that the directory containing the MySQL Router binaries is in the system PATH.
-2. Inside MySQL Shell for VS Code,  expand a DB Connection in the DATABASE CONNECTIONS view, right-click the `MySQL REST Service` tree item,  and then select `Start Local MySQL Router Instance`.
+2. Inside MariaDB Shell for VS Code,  expand a DB Connection in the DATABASE CONNECTIONS view, right-click the `MySQL REST Service` tree item,  and then select `Start Local MySQL Router Instance`.
    - If the MySQL Router has not been configured yet, the bootstrap operation runs in an integrated VS Code terminal and then starts MySQL Router.
    - MySQL Router debug output can then be inspected in the VS Code terminal.
 3. To shut down MySQL Router, set the focus to the VS Code terminal showing the debug output and press `Ctrl` + `C.`
@@ -251,7 +251,7 @@ As part of the MRS metadata schema creation, two SQL ROLEs have been created for
 - The 'mysql_rest_service_meta_provider' ROLE grants access to the required MRS metadata schema tables.
 - The 'mysql_rest_service_data_provider' ROLE grants access to the served schema objects in the application database schemas.
 
-To create the MySQL account, connect to the MySQL setup with MySQL Shell or MySQL Shell for VS Code and execute the following SQL statements:
+To create the MySQL account, connect to the MySQL setup with MariaDB Shell or MariaDB Shell for VS Code and execute the following SQL statements:
 
 ```sql
 CREATE USER 'mysqlrouter_mrs_<router_name>'@'<router_host>' IDENTIFIED BY 'password';

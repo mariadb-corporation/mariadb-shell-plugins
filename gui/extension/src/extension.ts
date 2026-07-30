@@ -59,16 +59,16 @@ let host: ExtensionHost;
 let startupCompleted = false;
 
 // Dialog Messages
-const restartMessage = "This will close all MySQL Shell tabs and restart the underlying process. " +
+const restartMessage = "This will close all MariaDB Shell tabs and restart the underlying process. " +
     "After that a new connection will automatically be established.";
-const resetMessage = "This will completely reset the MySQL Shell for VS Code extension by deleting the " +
+const resetMessage = "This will completely reset the MariaDB Shell for VS Code extension by deleting the " +
     "web certificate and optionally deleting the user settings directory.";
-const resetRestartMessage = "The MySQL Shell for VS Code extension has been reset. Please restart VS Code " +
+const resetRestartMessage = "The MariaDB Shell for VS Code extension has been reset. Please restart VS Code " +
     "to initialize the extension again or press [Cancel] and remove the Extension from the Extensions View Container.";
 const resetShellUserDirDataMessage = "Do you want to delete the user settings directory?";
 
 /**
- * Prints the given content on the MySQL Shell for VS Code output channel.
+ * Prints the given content on the MariaDB Shell for VS Code output channel.
  *
  * @param content The content to be printed.
  * @param reveal Whether the output channel should be revealed.
@@ -95,7 +95,7 @@ const handleShellOutput = (output: string): void => {
         if (output.includes("Certificate is not installed.")) {
             // If the web certificate is not installed, ask the user if he wants to run the wizard
             void ui.showInformationMessage(
-                "The MySQL Shell for VS Code extension cannot run because the web certificate is not installed. " +
+                "The MariaDB Shell for VS Code extension cannot run because the web certificate is not installed. " +
                 "Do you want to run the Welcome Wizard to install it?", {}, "Run Welcome Wizard", "Cancel")
                 .then((answer) => {
                     if (answer === "Run Welcome Wizard") {
@@ -105,7 +105,7 @@ const handleShellOutput = (output: string): void => {
         } else if (output.includes("Certificate is not correctly installed.")) {
             // If the web certificate is not installed correctly, ask the user if he wants to run the wizard to fix it
             void ui.showInformationMessage(
-                "The MySQL Shell for VS Code extension cannot run because the web certificate is incorrectly " +
+                "The MariaDB Shell for VS Code extension cannot run because the web certificate is incorrectly " +
                 "installed. Do you want to run the Welcome Wizard to fix it?", {}, "Run Welcome Wizard", "Cancel")
                 .then((answer) => {
                     if (answer === "Run Welcome Wizard") {
@@ -201,8 +201,8 @@ const extensionUILayer: IUILayer = {
 export const activate = (context: ExtensionContext): void => {
     registerUiLayer(extensionUILayer);
 
-    outputChannel = window.createOutputChannel("MySQL Shell for VS Code");
-    taskOutputChannel = window.createOutputChannel("MySQL Shell - Tasks");
+    outputChannel = window.createOutputChannel("MariaDB Shell for VS Code");
+    taskOutputChannel = window.createOutputChannel("MariaDB Shell - Tasks");
 
     statusBarItem = window.createStatusBarItem(StatusBarAlignment.Left);
     statusBarItem.hide();
@@ -214,8 +214,8 @@ export const activate = (context: ExtensionContext): void => {
     setupInitialWelcomeWebview(context);
 
     context.subscriptions.push(commands.registerCommand("msg.restartShell", () => {
-        void ui.showWarningMessage(restartMessage, {}, "Restart MySQL Shell", "Cancel").then(async (choice) => {
-            if (choice === "Restart MySQL Shell") {
+        void ui.showWarningMessage(restartMessage, {}, "Restart MariaDB Shell", "Cancel").then(async (choice) => {
+            if (choice === "Restart MariaDB Shell") {
                 host.closeAllTabs();
                 MessageScheduler.get.disconnect();
                 await shellLauncher.exitProcess();
@@ -232,8 +232,8 @@ export const activate = (context: ExtensionContext): void => {
         void window.showInputBox({
             title: "Connect to a MySQL Instance",
             value: externalUrl,
-            prompt: "Enter the address of a MySQL Shell instance to connect to. Leave the field empty to start and " +
-                "connect to a local MySQL Shell",
+            prompt: "Enter the address of a MariaDB Shell instance to connect to. Leave the field empty to start and " +
+                "connect to a local MariaDB Shell",
         }).then(async (value) => {
             host.closeAllTabs();
             MessageScheduler.get.disconnect();
@@ -352,7 +352,7 @@ export const activate = (context: ExtensionContext): void => {
     const msgExtension = extensions.getExtension("Oracle.mysql-shell-for-vs-code")?.packageJSON as IDictionary;
     const currentVersion = msgExtension.version ?? "1.0.0";
 
-    // Check if this is the initial run of the MySQL Shell extension after an update
+    // Check if this is the initial run of the MariaDB Shell extension after an update
     const lastRunVersion = context.globalState.get("MySQLShellLastRunVersion");
     const osName = platform();
     if (!lastRunVersion || lastRunVersion === "" || lastRunVersion !== currentVersion) {
@@ -420,7 +420,7 @@ export const activate = (context: ExtensionContext): void => {
                 if (existsSync(extensionRouterDir)) {
                     symlinkSync(join(extensionRouterDir, "bin", "mysqlrouter"), mysqlRouterLinkPath, "file");
                 }
-                outputChannel.appendLine(`Updated symlinks to MySQL Shell and Router binaries in "${shellHomeDir}".`);
+                outputChannel.appendLine(`Updated symlinks to MariaDB Shell and Router binaries in "${shellHomeDir}".`);
             } else {
                 // Create a mariadb-shell.bat that calls the mariadb-shell binary located in the shell extension folder on Windows
                 let shellBatFilePath = join(shellHomeDir, "mariadb-shell.bat");
@@ -448,14 +448,14 @@ export const activate = (context: ExtensionContext): void => {
                 symlinkSync(shellHomeDir, shellUserHomeDir, "junction");
 
                 outputChannel.appendLine(
-                    `Updated batch file wrappers for MySQL Shell and Router binaries in "${shellUserHomeDir}".`);
+                    `Updated batch file wrappers for MariaDB Shell and Router binaries in "${shellUserHomeDir}".`);
             }
         }
     } else {
         outputChannel.appendLine(`Starting extension version ${currentVersion}.`);
     }
 
-    // Check if this is the initial run of the MySQL Shell extension after installation
+    // Check if this is the initial run of the MariaDB Shell extension after installation
     const initialRun = context.globalState.get("MySQLShellInitialRun");
     if ((!initialRun || initialRun === "") && !appParameters.testsRunning) {
         void context.globalState.update("MySQLShellInitialRun", currentVersion);

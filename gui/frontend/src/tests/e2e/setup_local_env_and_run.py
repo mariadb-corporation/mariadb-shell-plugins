@@ -306,7 +306,7 @@ def main() -> None:
 
         executor.environment["EXECUTION_MODE"] = argv.execution_mode
 
-        executor.add_prerequisite(task_utils.CheckVersionTask("MySQL Shell"))
+        executor.add_prerequisite(task_utils.CheckVersionTask("MariaDB Shell"))
         executor.add_prerequisite(task_utils.CheckVersionTask("MySQL Server"))
         executor.add_prerequisite(task_utils.CheckVersionTask("Chrome browser"))
         executor.add_prerequisite(task_utils.CheckVersionTask("npm"))

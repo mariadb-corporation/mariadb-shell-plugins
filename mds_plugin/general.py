@@ -39,7 +39,7 @@ def info():
         None
     """
     print(
-        "MySQL Shell MDS Plugin for managing the MySQL Database Service (MDS) "
+        "MariaDB Shell MDS Plugin for managing the MySQL Database Service (MDS) "
         f"Version {VERSION} PREVIEW\n"
         "Warning! For testing purposes only!"
     )

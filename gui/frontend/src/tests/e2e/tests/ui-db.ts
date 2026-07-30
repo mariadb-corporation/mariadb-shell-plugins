@@ -1931,7 +1931,7 @@ describe("DATABASE CONNECTIONS", () => {
             }
         });
 
-        it("DB Connection - Open MySQL Shell Console for this connection", async () => {
+        it("DB Connection - Open MariaDB Shell Console for this connection", async () => {
             try {
                 await dbTreeSection.openContextMenuAndSelect(globalConn.caption!,
                     constants.openNewMySQLShellConsoleForThisConnection);

@@ -25,8 +25,8 @@
 import { join } from "path";
 
 // EXTENSION NAME
-export const extensionName = "MySQL Shell for VS Code";
-export const feLogFile = "1-MySQL Shell for VS Code.log";
+export const extensionName = "MariaDB Shell for VS Code";
+export const feLogFile = "1-MariaDB Shell for VS Code.log";
 
 // BASE PATH
 export const basePath = process.env.USERPROFILE ?? process.env.HOME;
@@ -92,8 +92,8 @@ export const openLakeHouseNavigator = "Open Lakehouse Navigator";
 export const showChatOptions = "Show Chat Options";
 
 // TABS
-export const dbDefaultEditor = "MySQL Shell";
-export const mysqlShellConsoles = "MySQL Shell Consoles";
+export const dbDefaultEditor = "MariaDB Shell";
+export const mysqlShellConsoles = "MariaDB Shell Consoles";
 export const addMRSService = "Add MRS Service";
 export const editMRSService = "Edit MRS Service";
 export const addMRSSchema = "Add MRS Schema";
@@ -103,7 +103,7 @@ export const editAuthApp = "Edit Auth App";
 export const addUser = "Add MRS User";
 export const editUser = "Edit MRS User";
 export const mrsDocs = "MRS Docs";
-export const welcomeTab = "Welcome to MySQL Shell";
+export const welcomeTab = "Welcome to MariaDB Shell";
 
 // DATABASE CONNECTION DIALOG
 export const basicTab = "Basic";
@@ -125,10 +125,10 @@ export const serverStatus = "Server Status";
 export const clientConns = "Client Connections";
 export const perfDash = "Performance Dashboard";
 export const mysqlAdmin = "MySQL Administration";
-export const vscodeChannel = "MySQL Shell for VS Code";
+export const vscodeChannel = "MariaDB Shell for VS Code";
 export const collapseAll = "Collapse All";
 export const mysqlRestService = "MySQL REST Service";
-export const welcome = "Welcome to MySQL Shell for VS Code.";
+export const welcome = "Welcome to MariaDB Shell for VS Code.";
 
 // EDITOR ICONS
 export const connOverviewIcon = "overviewPage";
@@ -218,11 +218,11 @@ export const pressEnter = "pressEnter";
 // CONTEXT MENUS ITEMS
 export const executeBlock = "Execute Block";
 export const executeBlockAndAdvance = "Execute Block and Advance";
-export const restartInternalShell = "Restart the Internal MySQL Shell Process";
+export const restartInternalShell = "Restart the Internal MariaDB Shell Process";
 export const importMySQLWorkbenchConnections = "Import MySQL Workbench Connections";
-export const connectToExternalShell = "Connect to External MySQL Shell Process";
+export const connectToExternalShell = "Connect to External MariaDB Shell Process";
 export const relaunchWelcomeWizard = "Relaunch Welcome Wizard";
-export const resetExtension = "Reset MySQL Shell for VS Code Extension";
+export const resetExtension = "Reset MariaDB Shell for VS Code Extension";
 export const dropStoredRoutine = "Drop Stored Routine...";
 export const createStoredFunction = "Create Stored Function...";
 export const createStoredJSFunction = "Create Stored JavaScript Function...";
@@ -238,7 +238,7 @@ export const deleteDBConnection = "Delete DB Connection";
 export const showSystemSchemas = "Show MySQL System Schemas";
 export const loadScriptFromDisk = "Load SQL Script from Disk...";
 export const loadDumpFromDisk = "Load Dump from Disk...";
-export const openShellConnection = "Open New MySQL Shell Console for this Connection";
+export const openShellConnection = "Open New MariaDB Shell Console for this Connection";
 export const browseRESTDocs = "Browse the MySQL REST Service Documentation";
 export const configureInstanceForRestService = "Configure Instance for MySQL REST Service Support";
 export const configureRestService = "Configure MySQL REST Service";
@@ -305,7 +305,7 @@ export const restartDBSystem = "Restart the DB System";
 export const stopDBSystem = "Stop the DB System";
 export const deleteDBSystem = "Delete the DB System";
 export const createRouterEndpoint = "Create MySQL Router Endpoint on new Compute Instance";
-export const openNewShellConsole = "Open New MySQL Shell Console";
+export const openNewShellConsole = "Open New MariaDB Shell Console";
 export const newMySQLScript = "New MySQL Script";
 export const newJS = "New JavaScript Script";
 export const newTS = "New TypeScript Script";

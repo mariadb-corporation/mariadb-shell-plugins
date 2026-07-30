@@ -118,7 +118,7 @@ export class MsmCommandHandler {
                         await ui.showInformationMessage(
                             `New database schema project folder created.`, {});
                     } else {
-                        void ui.showErrorMessage("Please open the MySQL Shell extension prior to using this feature " +
+                        void ui.showErrorMessage("Please open the MariaDB Shell extension prior to using this feature " +
                             "and ensure that there is at least one MySQL connection available.", {});
                     }
                 }
@@ -147,7 +147,7 @@ export class MsmCommandHandler {
                                 `The following error occurred when fetching the MSM project information: ${e}`, {});
                         }
                     } else {
-                        void ui.showErrorMessage("Please open the MySQL Shell extension prior to using this feature " +
+                        void ui.showErrorMessage("Please open the MariaDB Shell extension prior to using this feature " +
                             "and ensure that there is at least one MySQL connection available.", {});
                     }
                 }
@@ -229,7 +229,7 @@ export class MsmCommandHandler {
                         await ui.showInformationMessage(
                             `New database schema version ${version} prepared for release.`, {});
                     } else {
-                        void ui.showErrorMessage("Please open the MySQL Shell extension prior to using this feature " +
+                        void ui.showErrorMessage("Please open the MariaDB Shell extension prior to using this feature " +
                             "and ensure that there is at least one MySQL connection available.", {});
                     }
                 }
@@ -291,7 +291,7 @@ export class MsmCommandHandler {
                         await ui.showInformationMessage(
                             `New database schema deployment script version ${version} generated.`, {});
                     } else {
-                        void ui.showErrorMessage("Please open the MySQL Shell extension prior to using this feature " +
+                        void ui.showErrorMessage("Please open the MariaDB Shell extension prior to using this feature " +
                             "and ensure that there is at least one MySQL connection available.", {});
                     }
                 }

@@ -3197,7 +3197,7 @@ Migration Assistant.`}
                         <Icon src={Codicon.Copy} data-tooltip="inherit" />
                     </Button>
                 </Container>
-                <p>And use MySQL Shell from there (password is what you provided earlier
+                <p>And use MariaDB Shell from there (password is what you provided earlier
                     and defaults to the same as for your source database):</p>
                 <Container className="finalize-info" orientation={Orientation.LeftToRight}>
                     <code style={{ width: "100%" }}>{mysqlshCmd}</code>

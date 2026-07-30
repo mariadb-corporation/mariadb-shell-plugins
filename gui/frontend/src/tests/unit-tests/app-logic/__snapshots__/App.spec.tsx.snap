@@ -22,7 +22,7 @@ exports[`Application tests > Application readiness 1`] = `
         data-tooltip="expand"
         id="headingLabel"
       >
-        MySQL Shell
+        MariaDB Shell
       </label>
       <label
         class="msg label"
@@ -30,11 +30,11 @@ exports[`Application tests > Application readiness 1`] = `
         id="headingSubLabel"
       >
         Welcome to the 
-        MySQL Shell GUI
+        MariaDB Shell GUI
         .
         <br />
         Please provide your 
-        MySQL Shell GUI
+        MariaDB Shell GUI
          credentials to log into the shell interface.
       </label>
     </div>
@@ -116,7 +116,7 @@ exports[`Application tests > Application readiness 1`] = `
       id="loginDialogSubtext"
     >
       If you do not have a 
-      MySQL Shell GUI
+      MariaDB Shell GUI
        account yet, please
       <br />
       ask your administrator to have one created for you.

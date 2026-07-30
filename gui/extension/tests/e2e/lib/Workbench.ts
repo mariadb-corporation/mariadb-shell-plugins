@@ -589,7 +589,7 @@ export class Workbench {
     };
 
     /**
-     * Opens the MySQL Shell for VSCode Extension
+     * Opens the MariaDB Shell for VSCode Extension
      * 
      * @returns A promise resolving when the extension view is opened
      */
@@ -822,7 +822,7 @@ export class Workbench {
     };
 
     /**
-     * Verifies if the MySQL Shell for VS Code extension is fully loaded and ready to be tested
+     * Verifies if the MariaDB Shell for VS Code extension is fully loaded and ready to be tested
      * 
      * @returns A condition resolving to true when the extension is ready
      */

@@ -2,7 +2,7 @@
 title: MySQL REST Service DDL - SQL Extension Reference
 ---
 
-This document discusses the MySQL REST Service (MRS) DDL - SQL Extension. The MRS DDL - SQL Extension adds a set of MRS specific DDL statements to the MySQL Shell SQL handling in order to provide a familiar management interface to MySQL developers and DBAs.
+This document discusses the MySQL REST Service (MRS) DDL - SQL Extension. The MRS DDL - SQL Extension adds a set of MRS specific DDL statements to the MariaDB Shell SQL handling in order to provide a familiar management interface to MySQL developers and DBAs.
 
 __Chapter Overview__
 

@@ -260,7 +260,7 @@ class Wix4:
         # always replaces the old version
         self.__vars["UPGRADE_GUID"] = "A25BD1F4-342B-46E3-B459-5B72E319E133"
         self.__vars["PACKAGE_VENDOR"] = "Oracle and/or its affiliates"
-        self.__vars["PACKAGE_NAME"] = "MySQL Shell Workbench"
+        self.__vars["PACKAGE_NAME"] = "MariaDB Shell Workbench"
         self.__vars["PRODUCT_ICON"] = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
             "mysql-shell-workbench",
@@ -274,7 +274,7 @@ class Wix4:
         if self.__folder is None:
             self.__vars["PACKAGE_VERSION"] = self.__version
             self.__vars["INSTALL_DIRECTORY"] = (
-                f"MySQL/MySQL Shell Workbench {self.__version}"
+                f"MySQL/MariaDB Shell Workbench {self.__version}"
             )
             self.__vars["PACKAGE_FILE_NAME"] = f"{self.__name}-{self.__version}"
             self.msi = os.path.join(

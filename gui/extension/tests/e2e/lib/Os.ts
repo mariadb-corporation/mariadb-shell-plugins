@@ -434,7 +434,7 @@ export class Os {
     };
 
     /**
-     * Gets the MySQL Shell for VS Code log file
+     * Gets the MariaDB Shell for VS Code log file
      *
      * @returns A promise resolving with the location of the log file
      */
@@ -474,7 +474,7 @@ export class Os {
         await setOutputLoggingDirs(logsFolder);
 
         if (logDirs.length > 0) {
-            return join(logDirs[logDirs.length - 1], "1-MySQL Shell for VS Code.log");
+            return join(logDirs[logDirs.length - 1], "1-MariaDB Shell for VS Code.log");
         } else {
             throw new Error(`Could not find the output_logging folder at ${logsFolder}`);
         }

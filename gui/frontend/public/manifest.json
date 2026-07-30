@@ -1,6 +1,6 @@
 {
-    "short_name": "MySQL Shell GUI",
-    "name": "MySQL Shell GUI",
+    "short_name": "MariaDB Shell GUI",
+    "name": "MariaDB Shell GUI",
     "icons": [
         {
             "src": "images/mysql_shell_icon_16x16.png",

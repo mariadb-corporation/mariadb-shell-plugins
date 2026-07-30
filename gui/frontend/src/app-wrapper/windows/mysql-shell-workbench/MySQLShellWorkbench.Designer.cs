@@ -109,7 +109,7 @@ namespace MySQLShellWorkbench {
       this.MainMenuStrip = this.menuStrip1;
       this.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
       this.Name = "MySQLShellWorkbench";
-      this.Text = "MySQL Shell Workbench";
+      this.Text = "MariaDB Shell Workbench";
       this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.MySQLShellWorkbench_FormClosing);
       this.Load += new System.EventHandler(this.MySQLShellWorkbench_Load);
       this.Shown += new System.EventHandler(this.MySQLShellWorkbench_Shown);

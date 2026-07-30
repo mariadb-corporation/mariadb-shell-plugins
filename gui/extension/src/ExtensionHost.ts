@@ -452,7 +452,7 @@ export class ExtensionHost {
             (entry?: ICdmConnectionEntry) => {
                 if (entry) {
                     void window.showOpenDialog({
-                        title: "Select a folder that contains a MySQL Shell dump.",
+                        title: "Select a folder that contains a MariaDB Shell dump.",
                         openLabel: "Select Dump Folder",
                         canSelectFiles: false,
                         canSelectFolders: true,

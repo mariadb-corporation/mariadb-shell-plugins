@@ -254,8 +254,8 @@ export class ConnectionBrowser extends ComponentBase<IConnectionBrowserPropertie
         </Toolbar>;
 
         const contentTitle = "Database Connections";
-        let projectShortName = "MySQL Shell";
-        let projectName = "MySQL Shell for VS Code extension";
+        let projectShortName = "MariaDB Shell";
+        let projectName = "MariaDB Shell for VS Code extension";
         if (isStandalone()) {
             projectShortName = "MySQL Workbench";
             projectName = "MySQL Workbench";
@@ -302,7 +302,7 @@ export class ConnectionBrowser extends ComponentBase<IConnectionBrowserPropertie
                     }} icon={Codicon.CloudUpload} />
                     <MenuItem command={{ title: "-", command: "" }} />
                     <MenuItem command={{
-                        title: "Open New MySQL Shell Console for this Connection",
+                        title: "Open New MariaDB Shell Console for this Connection",
                         command: "msg.newSessionUsingConnection",
                     }} icon={Codicon.Terminal} />
                     <MenuItem command={{ title: "-", command: "" }} />

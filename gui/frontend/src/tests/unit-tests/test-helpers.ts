@@ -469,7 +469,7 @@ export const sendPointerMoveSequence = async (element: Element, includeTouch = f
 };
 
 /**
- * Helper method to launch a MySQL Shell for a test suite and wait for it until it's fully up.
+ * Helper method to launch a MariaDB Shell for a test suite and wait for it until it's fully up.
  *
  * @param showOutput If true then the shell output will be printed to the console (inline). Errors are always displayed.
  * @param handleEvents If this parameter is true, the function also subscribes to serverResponse and webSession events
@@ -520,7 +520,7 @@ export const setupShellForTests = (showOutput: boolean, handleEvents = true,
                 }
             },
             (error) => {
-                console.error(`\nError while setting up MySQL Shell connection: ${error.message}\n`);
+                console.error(`\nError while setting up MariaDB Shell connection: ${error.message}\n`);
             },
             () => { // Called on exit of the shell process.
 
@@ -540,15 +540,15 @@ export const setupShellForTests = (showOutput: boolean, handleEvents = true,
 
                         try {
                             fs.copyFileSync(shellLogPath, destPath);
-                            console.info(`🔍  MySQL Shell log saved to ${destPath}`);
+                            console.info(`🔍  MariaDB Shell log saved to ${destPath}`);
                         } catch (e) {
-                            console.error(`⚠️  Failed to copy MySQL Shell log from ${shellLogPath} to ${destPath}:`, e);
+                            console.error(`⚠️  Failed to copy MariaDB Shell log from ${shellLogPath} to ${destPath}:`, e);
                         }
                     } else {
-                        console.warn(`⚠️  No MySQL Shell log found at ${shellLogPath}`);
+                        console.warn(`⚠️  No MariaDB Shell log found at ${shellLogPath}`);
                     }
                 } else {
-                 console.log("No context provided, skipping MySQL Shell log copy.");   
+                 console.log("No context provided, skipping MariaDB Shell log copy.");   
                 }
 
                 try {

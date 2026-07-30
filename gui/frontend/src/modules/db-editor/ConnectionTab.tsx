@@ -274,7 +274,7 @@ interface IMrsServiceSdkMetadata {
 
 /** A tab page for a single connection (managed by the connection host). */
 export class ConnectionTab extends ComponentBase<IConnectionTabProperties, IConnectionTabState> {
-    private static aboutMessage = `Welcome to the MySQL Shell - DB Notebook.
+    private static aboutMessage = `Welcome to the MariaDB Shell - DB Notebook.
 
 Press %modifier%+Enter to execute the code block.
 

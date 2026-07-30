@@ -203,8 +203,8 @@ export const duplicateThisDBConnection = "Duplicate this DB Connection";
 export const deleteDBConnection = "Delete DB Connection...";
 export const showMySQLSystemSchemas = "Show MySQL System Schemas";
 export const loadSQLScriptFromDisk = "Load SQL Script from Disk...";
-export const openNewMySQLShellConsoleForThisConnection = "Open New MySQL Shell Console for this Connection";
-export const openNewMySQLShellConsole = "Open New MySQL Shell Console";
+export const openNewMySQLShellConsoleForThisConnection = "Open New MariaDB Shell Console for this Connection";
+export const openNewMySQLShellConsole = "Open New MariaDB Shell Console";
 export const browseTheMySQLRestTServiceDocumentation = "Browse the MySQL REST Service Documentation";
 export const configureInstanceForMySQLRestServiceSupport = "Configure Instance for MySQL REST Service Support";
 
@@ -250,12 +250,12 @@ export const getBastionInformation = "Get Bastion Information";
 export const setAsCurrentBastion = "Set as Current Bastion";
 
 export const mysqlAdministrationTreeElement = "MySQL Administration";
-export const mysqlShellConsoles = "MySQL Shell Consoles";
+export const mysqlShellConsoles = "MariaDB Shell Consoles";
 export const workspace = join(process.cwd(), "..", "..", "..", "..");
 export const mysqlScriptIcon = "scriptMysql";
 export const jsScriptIcon = "scriptJs";
 export const tsScriptIcon = "scriptTs";
-export const mysqlShell = "MySQL Shell";
+export const mysqlShell = "MariaDB Shell";
 export const startDBSystem = "Start the DB System";
 export const restartDBSystem = "Restart the DB System";
 export const stopDBSystem = "Stop the DB System";

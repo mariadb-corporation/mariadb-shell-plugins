@@ -96,7 +96,7 @@ describe("Token Verification", () => {
             expect(notification.type).toBe("error");
 
             let regex = "Could not establish a connection to the backend.";
-            regex += " Make sure you use valid user credentials and the MySQL Shell is running.";
+            regex += " Make sure you use valid user credentials and the MariaDB Shell is running.";
             regex += " Trying to reconnect in (\\d+) seconds.";
 
             expect(notification.message).toMatch(new RegExp(regex));
@@ -121,7 +121,7 @@ describe("Token Verification", () => {
             expect(notification.type).toBe("error");
 
             let regex = "Could not establish a connection to the backend.";
-            regex += " Make sure you use valid user credentials and the MySQL Shell is running.";
+            regex += " Make sure you use valid user credentials and the MariaDB Shell is running.";
             regex += " Trying to reconnect in (\\d+) seconds.";
 
             expect(notification.message).toMatch(new RegExp(regex));

@@ -23,7 +23,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 # Working Interactively with REST Services
 
-MySQL Shell for VS Code features a live, interactive workflow for designing REST Services.
+MariaDB Shell for VS Code features a live, interactive workflow for designing REST Services.
 
 It allows developers to immediately test their newly created or modified REST data mapping views and REST procedures by using the MRS SDK TypeScript client API right from within a DB Notebook.
 
@@ -33,7 +33,7 @@ It allows developers to immediately test their newly created or modified REST da
 
 ## Switching to TypeScript Mode
 
-After opening a database connection in MySQL Shell for VS Code the DB Notebook will be displayed. Switch the DB Notebook to TypeScript mode with `\ts` if it is in SQL mode.
+After opening a database connection in MariaDB Shell for VS Code the DB Notebook will be displayed. Switch the DB Notebook to TypeScript mode with `\ts` if it is in SQL mode.
 
 ![DB Notebook - Switch to TS mode](../../images/msg-db-notebook-switch-to-ts.svg "DB Notebook - Switch to TS mode")
 

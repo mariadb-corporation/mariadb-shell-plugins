@@ -1,6 +1,6 @@
-# MySQL Schema Management Plugin for MySQL Shell
+# MySQL Schema Management Plugin for MariaDB Shell
 
-This folder contains the code for the MySQL Schema Management Plugin. It is part of the [MySQL Shell Plugins](../readme.md) repository.
+This folder contains the code for the MySQL Schema Management Plugin. It is part of the [MariaDB Shell Plugins](../readme.md) repository.
 
 ## Contributing to MySQL Schema Management Plugin
 
@@ -8,7 +8,7 @@ No installation is necessary for this plugin, beside the setup of Visual Studio 
 
 ## Running the Tests
 
-To be able to run the tests, MySQL Shell must be installed and in the path.
+To be able to run the tests, MariaDB Shell must be installed and in the path.
 
 ### Installing the Python Requirements
 

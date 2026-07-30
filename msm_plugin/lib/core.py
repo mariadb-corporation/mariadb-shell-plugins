@@ -178,7 +178,7 @@ def get_current_session(session=None):
         raise Exception(
             "MySQL session not specified. Please either pass a session "
             "object when calling the function or open a database "
-            "connection in the MySQL Shell first."
+            "connection in the MariaDB Shell first."
         )
 
     return session

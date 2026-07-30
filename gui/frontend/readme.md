@@ -23,19 +23,19 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 <!-- cSpell:ignore pandoc -->
 
-# MySQL Shell GUI Frontend
+# MariaDB Shell GUI Frontend
 
-MySQL Shell GUI is a next generation MySQL client tool, developed by the same team which wrote [MySQL Workbench](https://github.com/mysql/mysql-workbench). It is the core of the [MySQL Shell for VS Code extension](https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code). It is part of the [MySQL Shell Plugins](../../readme.md) repository.
+MariaDB Shell GUI is a next generation MySQL client tool, developed by the same team which wrote [MySQL Workbench](https://github.com/mysql/mysql-workbench). It is the core of the [MariaDB Shell for VS Code extension](https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code). It is part of the [MariaDB Shell Plugins](../../readme.md) repository.
 
 The tool implements a multi language code editor, which allows to mix MySQL and scripting languages like Javascript and Typescript (in Shell sessions MySQL, Javascript and Python). It provides code completion for all supported languages and code hints for parameters and MySQL built-in functions. It combines the advantages of a terminal and a GUI application.
 
-![MySQL Shell For VS Code Screenshot](../extension/images/screenshots/MySQLShellForVSCodeMain.png)
+![MariaDB Shell For VS Code Screenshot](../extension/images/screenshots/MySQLShellForVSCodeMain.png)
 
-MySQL Shell GUI frontend (FE) is a part of the [MySQL Shell](https://dev.mysql.com/doc/mysql-shell/8.0/en/). It is served by a dedicated [GUI plugin](../backend/gui_plugin/) which also offers a websocket connection which allows the frontend (FE) to run SQL queries and call other MySQL Shell plugins, like the MDS plugin (OCI HeatWave management) and MRS plugin (MySQL REST Service management).
+MariaDB Shell GUI frontend (FE) is a part of the [MariaDB Shell](https://dev.mysql.com/doc/mysql-shell/8.0/en/). It is served by a dedicated [GUI plugin](../backend/gui_plugin/) which also offers a websocket connection which allows the frontend (FE) to run SQL queries and call other MariaDB Shell plugins, like the MDS plugin (OCI HeatWave management) and MRS plugin (MySQL REST Service management).
 
-# Contributing to MySQL Shell GUI
+# Contributing to MariaDB Shell GUI
 
-This frontend folder is part of a monorepo, which consists of all required parts to build the *MySQL Shell for VS Code*. The development setup is based on Visual Studio Code, Node.js, Vite (with its dependencies esbuild and rollup) and Jest for testing. Hence you need VS Code and Node.js (>= 16.x) installed. Recommended is Node.js 19.3.0 or later.
+This frontend folder is part of a monorepo, which consists of all required parts to build the *MariaDB Shell for VS Code*. The development setup is based on Visual Studio Code, Node.js, Vite (with its dependencies esbuild and rollup) and Jest for testing. Hence you need VS Code and Node.js (>= 16.x) installed. Recommended is Node.js 19.3.0 or later.
 
 The [top level readme](../../readme.md) file explains in more details the overall structure of this repository. Here we focus mostly on the frontend aspects.
 
@@ -51,13 +51,13 @@ in a terminal to download all dependencies. This prepares the Shell GUI frontend
 
 ## Deployment
 
-The MySQL Shell GUI app consists of two parts: the web client and a server (MySQL Shell running the GUI plugin). The backend setup in the [backend readme](../backend/readme.md) describes functionality and setup of the server. To create a production build of the app run:
+The MariaDB Shell GUI app consists of two parts: the web client and a server (MariaDB Shell running the GUI plugin). The backend setup in the [backend readme](../backend/readme.md) describes functionality and setup of the server. To create a production build of the app run:
 
 ```bash
 npm run build
 ```
 
-in the `gui/frontend/` folder. This will create a new folder `build` with all the bundles the web server needs. After this step you can either create a new extension package (see [extension readme](../extension/README.md)) or manually set up the MySQL Shell with the required plugins to serve the build folder. However, this setup is officially not yet supported and will be part of a later release.
+in the `gui/frontend/` folder. This will create a new folder `build` with all the bundles the web server needs. After this step you can either create a new extension package (see [extension readme](../extension/README.md)) or manually set up the MariaDB Shell with the required plugins to serve the build folder. However, this setup is officially not yet supported and will be part of a later release.
 
 ## Development
 

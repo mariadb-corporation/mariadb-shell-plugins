@@ -151,8 +151,8 @@ describe("MYSQL SHELL CONSOLES", () => {
 
             let result = await shellConsole.codeEditor.execute("shell.status()") as E2ECommandResultData;
             expect(result.text,
-                errors.queryResultError("MySQL Shell version (\\d+).(\\d+).(\\d+)",
-                    result.text!)).to.match(/MySQL Shell version (\d+).(\d+).(\d+)/);
+                errors.queryResultError("MariaDB Shell version (\\d+).(\\d+).(\\d+)",
+                    result.text!)).to.match(/MariaDB Shell version (\d+).(\d+).(\d+)/);
 
             let uri = `shell.connect('${username}:${password}@${hostname}:${port}0/${schema}')`;
             result = await shellConsole.codeEditor.execute(uri) as E2ECommandResultData;

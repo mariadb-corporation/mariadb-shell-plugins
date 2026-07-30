@@ -23,7 +23,7 @@
 
 """Plugin registration
 
-This file is automatically loaded by the MySQL Shell at startup time.
+This file is automatically loaded by the MariaDB Shell at startup time.
 
 It registers the plugin objects and then imports all sub-modules to
 register the plugin object member functions.
@@ -40,9 +40,9 @@ DEBUG_MODE = int(environ.get("MYSQL_SHELL_GUI_DEBUG_MODE", "0"))
 # @register_plugin decorator to register it
 @plugin
 class gui:
-    """MySQL Shell GUI backend plugin.
+    """MariaDB Shell GUI backend plugin.
 
-    This plugin serves as the backend for the MySQL Shell GUI projects.
+    This plugin serves as the backend for the MariaDB Shell GUI projects.
     """
 
     def __init__(self):
@@ -60,66 +60,66 @@ class gui:
             from gui_plugin import debugger
 
     class cluster:
-        """The InnoDB Cluster MySQL Shell GUI backend module
+        """The InnoDB Cluster MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        InnoDB Cluster MySQL Shell GUI module
+        InnoDB Cluster MariaDB Shell GUI module
         """
 
     class core:
-        """The Core MySQL Shell GUI backend module
+        """The Core MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        Core MySQL Shell GUI module
+        Core MariaDB Shell GUI module
         """
 
     class db_connections:
-        """The DB Connections MySQL Shell GUI backend module
+        """The DB Connections MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        DB Connections MySQL Shell GUI module
+        DB Connections MariaDB Shell GUI module
         """
 
     class modeler:
-        """The Modeler MySQL Shell GUI backend module
+        """The Modeler MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        Modeler MySQL Shell GUI module
+        Modeler MariaDB Shell GUI module
         """
 
     class modules:
-        """The Modules MySQL Shell GUI backend module
+        """The Modules MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        Modules MySQL Shell GUI module
+        Modules MariaDB Shell GUI module
         """
 
     class mds:
-        """The MySQL Database Service MySQL Shell GUI backend module
+        """The MySQL Database Service MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        MySQL Database Service MySQL Shell GUI module
+        MySQL Database Service MariaDB Shell GUI module
         """
 
     class shell:
-        """The Shell MySQL Shell GUI backend module
+        """The Shell MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        Shell MySQL Shell GUI module
+        Shell MariaDB Shell GUI module
         """
 
     class sql_editor:
-        """The SQL Editor MySQL Shell GUI backend module
+        """The SQL Editor MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        SQL Editor MySQL Shell GUI module
+        SQL Editor MariaDB Shell GUI module
         """
 
     class users:
-        """The Users MySQL Shell GUI backend module
+        """The Users MariaDB Shell GUI backend module
 
         This extension object holds the backend implementation of the
-        Users MySQL Shell GUI module
+        Users MariaDB Shell GUI module
         """
 
     if DEBUG_MODE:
@@ -132,9 +132,9 @@ class gui:
             """
 
     class start:
-        """Used to start the MySQL Shell GUI
+        """Used to start the MariaDB Shell GUI
 
-        The MySQL Shell GUI can be started as a native application
+        The MariaDB Shell GUI can be started as a native application
         or as a web application served by a web server.
         """
 

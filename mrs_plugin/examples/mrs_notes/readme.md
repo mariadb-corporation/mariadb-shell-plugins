@@ -74,10 +74,10 @@ If you are using a local MRS deployment deployment you can use these simplified 
 
 The mrsNotes MySQL database schema is the center of the MRS project. It defines the structure of the data and its database tables store all the information the users enter while using the app.
 
-To create the mrsNotes schema the corresponding SQL script file needs to be executed. This can be done via the MySQL Shell or directly within VS Code using the MySQL Shell for VS Code extension.
+To create the mrsNotes schema the corresponding SQL script file needs to be executed. This can be done via the MariaDB Shell or directly within VS Code using the MariaDB Shell for VS Code extension.
 
 - If you are browsing this documentation within VS Code click the button next to the SQL script name `examples/mrs_notes/db_schema/mrs_notes.sql`
-- If you want to use MySQL Shell on the command line, switch to the mrs_notes plugin directory and run the following command.
+- If you want to use MariaDB Shell on the command line, switch to the mrs_notes plugin directory and run the following command.
 
     mariadb-shell dba@localhost --sql -f examples/mrs_notes/db_schema/mrs_notes.sql
 

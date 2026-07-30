@@ -237,7 +237,7 @@ def chat(prompt, **kwargs):
         if not session:
             raise Exception("No database session specified.")
     else:
-        # MySQL Shell VSC - HeatWave Chat
+        # MariaDB Shell VSC - HeatWave Chat
         # Note that when called from the GUI, the session already comes as parameter
         # so the tracking option reporting is done here, since only a VSCode option
         # was added

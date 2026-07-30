@@ -79,12 +79,12 @@ export interface IShellLaunchConfiguration {
 }
 
 /**
- * This class can be used to create new MySQL Shell processes which are managed elsewhere and can
+ * This class can be used to create new MariaDB Shell processes which are managed elsewhere and can
  * create one process and manage it. Only usable in a Node.js environment (VS Code extension or tests).
  */
 export class MySQLShellLauncher {
     /**
-     * When the extension is deployed with an embedded MySQL Shell, a custom shell user config dir is used, as
+     * When the extension is deployed with an embedded MariaDB Shell, a custom shell user config dir is used, as
      * defined in the extensionShellUserConfigFolderBaseName constant. If this constant should be changed at some point
      * in the future, it is important to note that the corresponding constant
      * EXTENSION_SHELL_USER_CONFIG_FOLDER_BASENAME in the ShellModuleSession.py file of the gui_plugin needs to be
@@ -100,12 +100,12 @@ export class MySQLShellLauncher {
     }
 
     /**
-     * Returns the MySQL Shell configuration directory that should be used for this shell session. That can either be
+     * Returns the MariaDB Shell configuration directory that should be used for this shell session. That can either be
      * a special extension path or the standard path in the user's home dir.
      *
      * @param inDevelopment True if we are running in development mode.
      *
-     * @returns The MySQL Shell user config dir as string.
+     * @returns The MariaDB Shell user config dir as string.
      */
     public static getShellUserConfigDir = (inDevelopment: boolean): string => {
         let shellUserConfigDir: string;
@@ -142,7 +142,7 @@ export class MySQLShellLauncher {
     };
 
     /**
-     * Starts an instance of the MySQL Shell using the given context. The caller has to take care to manage
+     * Starts an instance of the MariaDB Shell using the given context. The caller has to take care to manage
      * the return process.
      *
      * @param config Contains the details to set up the shell process.
@@ -150,14 +150,14 @@ export class MySQLShellLauncher {
      * @returns the created process.
      */
     public static runMysqlShell = (config: IShellLaunchConfiguration): cp.ChildProcess => {
-        // Use the MySQL Shell that is available in the given root path - and only if there is no shell, use the one
+        // Use the MariaDB Shell that is available in the given root path - and only if there is no shell, use the one
         // that is installed on the system.
         const shellPath = MySQLShellLauncher.getShellPath(config.rootPath);
         const shellUserConfigDir = MySQLShellLauncher.getShellUserConfigDir(config.inDevelopment);
 
-        // Print which MySQL Shell is actually used.
+        // Print which MariaDB Shell is actually used.
         const embedded = shellPath.startsWith(config.rootPath) ? "embedded " : "";
-        config.onStdOutData(`Starting ${embedded}MySQL Shell, using config dir '${shellUserConfigDir}' ...`);
+        config.onStdOutData(`Starting ${embedded}MariaDB Shell, using config dir '${shellUserConfigDir}' ...`);
 
         // Ensure the shell user config dir exists. Cannot be tested in unit tests, because the folder is always
         // created before entering here.
@@ -195,7 +195,7 @@ export class MySQLShellLauncher {
         // istanbul ignore next
         const onError = (error: Error) => {
             // Errors arriving here are directly reflected in test failures. So we don't need to simulate any.
-            config.onError?.(new Error(`Error while starting MySQL Shell: ${error.message}`));
+            config.onError?.(new Error(`Error while starting MariaDB Shell: ${error.message}`));
         };
 
         shellProcess.on("error", onError);
@@ -261,15 +261,15 @@ export class MySQLShellLauncher {
     };
 
     /**
-     * Returns the path to the MySQL Shell binary that should be used.
+     * Returns the path to the MariaDB Shell binary that should be used.
      *
-     * The function checks if a MySQL Shell exists under the given root path. If so, the path to that binary is
-     * returned. Otherwise it returns just the name of the mariadb-shell executable, assuming that the MySQL Shell is
+     * The function checks if a MariaDB Shell exists under the given root path. If so, the path to that binary is
+     * returned. Otherwise it returns just the name of the mariadb-shell executable, assuming that the MariaDB Shell is
      * installed and that it is in the PATH.
      *
      * @param rootPath The file system path where to look for a shell binary.
      *
-     * @returns The path to the MySQL Shell as string.
+     * @returns The path to the MariaDB Shell as string.
      */
     private static getShellPath = (rootPath: string): string => {
         let shellPath = path.join(rootPath, "shell", "bin", "mariadb-shell");
@@ -279,7 +279,7 @@ export class MySQLShellLauncher {
             shellPath += ".exe";
         }
 
-        // Check if MySQL Shell is bundled with the extension.
+        // Check if MariaDB Shell is bundled with the extension.
         // istanbul ignore else
         if (!fs.existsSync(shellPath)) {
             // If not, try to use the mariadb-shell installed in the system PATH. Mostly used for debugging.
@@ -352,7 +352,7 @@ export class MySQLShellLauncher {
     }
 
     /**
-     * Starts the MySQL Shell gui_plugin webserver in single user mode and connects to the websocket.
+     * Starts the MariaDB Shell gui_plugin webserver in single user mode and connects to the websocket.
      *
      * @param rootPath The path of the extension
      * @param inDevelopment True if we are running in development mode.
@@ -405,7 +405,7 @@ export class MySQLShellLauncher {
                 );
 
                 const onOutput = (output: string) => {
-                    // If the MySQL Shell web server is running and indicates Single user mode, connect to it
+                    // If the MariaDB Shell web server is running and indicates Single user mode, connect to it
                     if (output.includes("Mode: Single user")) {
                         const protocol = secure ? "https" : "http";
                         let host = "localhost";

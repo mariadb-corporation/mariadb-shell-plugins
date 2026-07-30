@@ -269,9 +269,9 @@ export class E2EAccordionSection {
     };
 
     /**
-     * Restarts MySQL Shell from the DATABASE CONNECTIONS section toolbar context menu
+     * Restarts MariaDB Shell from the DATABASE CONNECTIONS section toolbar context menu
      * 
-     * @returns A promise resolving when MySQL Shell is restarted
+     * @returns A promise resolving when MariaDB Shell is restarted
      */
     public restartShell = async (): Promise<void> => {
         const existsRootHost = async (): Promise<boolean> => {
@@ -304,13 +304,13 @@ export class E2EAccordionSection {
                                 return true;
                             }
                         }
-                    }, constants.wait1second * 5, "Could not click on Restart MySQL Shell");
+                    }, constants.wait1second * 5, "Could not click on Restart MariaDB Shell");
                     break;
                 }
             }
         }
-        const notification = await Workbench.getNotification("This will close all MySQL Shell tabs", false);
-        await Workbench.clickOnNotificationButton(notification, "Restart MySQL Shell");
+        const notification = await Workbench.getNotification("This will close all MariaDB Shell tabs", false);
+        await Workbench.clickOnNotificationButton(notification, "Restart MariaDB Shell");
         await driver.wait(async () => {
             return Os.findOnMySQLShLog(/Info/);
         }, constants.wait1second * 5 * 3, "Shell server did not start");

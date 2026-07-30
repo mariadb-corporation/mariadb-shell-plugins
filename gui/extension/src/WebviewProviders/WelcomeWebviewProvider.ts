@@ -220,17 +220,17 @@ const getRequirementsErrorWebviewContent = (requirementsError: string, rootPath:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MySQL Shell Requirements Error</title>
+    <title>MariaDB Shell Requirements Error</title>
     ${getCssWebviewContent(rootPath)}
 </head>
 <body>
     <div id="welcome">
         <div id="sakilaLogo"></div>
-        <h2>MySQL Shell for VS Code</h2>
+        <h2>MariaDB Shell for VS Code</h2>
         <div id="pages">
             <div id="page1" class="page">
-                <h3>MySQL Shell Requirements Error.</h3>
-                <p>The requirements of the MySQL Shell for VS Code extension could not be met.</p>
+                <h3>MariaDB Shell Requirements Error.</h3>
+                <p>The requirements of the MariaDB Shell for VS Code extension could not be met.</p>
                 <p id="requirementsError" class="pError">${requirementsError}</p>
                 <p>You can safely remove the extension from VS Code.<br>
                     Please feel free to file a
@@ -272,17 +272,17 @@ const getWelcomeWebviewContent = (rootPath: Uri, showVCRuntimePrompt: boolean): 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to MySQL Shell</title>
+    <title>Welcome to MariaDB Shell</title>
     ${getCssWebviewContent(rootPath)}
 </head>
 <body>
     <div id="welcome">
         <div id="sakilaLogo"></div>
-        <h2>MySQL Shell for VS Code</h2>
+        <h2>MariaDB Shell for VS Code</h2>
         <div id="pages">
             <div id="page1" class="page">
-                <h3>Welcome to MySQL Shell for VS Code.</h3>
-                <p>This extension provides the powerful tool set of MySQL Shell
+                <h3>Welcome to MariaDB Shell for VS Code.</h3>
+                <p>This extension provides the powerful tool set of MariaDB Shell
                     to users of Visual Studio Code.</p>
                 <div class="links">
                     <a href="https://blogs.oracle.com/mysql/post/introducing-mysql-shell-for-vs-code">
@@ -291,13 +291,13 @@ const getWelcomeWebviewContent = (rootPath: Uri, showVCRuntimePrompt: boolean): 
                     <a href="#">Read Docs &gt;</a>
                 </div>
                 <p>Please click [Next >] to complete the installation of the
-                    MySQL Shell for VS Code extension.</p>
+                    MariaDB Shell for VS Code extension.</p>
             </div>
             ${vcRuntimePage}
             <div id="page3" class="page inactivePage">
                 <h3>Installation of Certificate.</h3>
                 <p>This extension needs a certificate to be installed on your local
-                    user account in order to securely access the MySQL Shell.</p>
+                    user account in order to securely access the MariaDB Shell.</p>
                 <p class="pWithImg">
                     <img src="${rootPath.toString()}/images/welcome/trustSettingDlg-${platform()}.png"
                         width="171px" height="87px" alt="Trust Dialog" align="left" hspace="15px"/>
@@ -305,7 +305,7 @@ const getWelcomeWebviewContent = (rootPath: Uri, showVCRuntimePrompt: boolean): 
                     for you to confirm the installation of the certificate.<br>
                     <br>
                     Please click [Next >] to start the installation of the
-                    MySQL Shell certificate.</p>
+                    MariaDB Shell certificate.</p>
             </div>
             <div id="page4" class="page inactivePage">
                 <h3>Installation of Certificate.</h3>
@@ -316,8 +316,8 @@ const getWelcomeWebviewContent = (rootPath: Uri, showVCRuntimePrompt: boolean): 
             </div>
             <div id="page5" class="page inactivePage">
                 <h3>Installation Completed</h3>
-                <p>Thank you for installing the MySQL Shell for VS Code extension!</p>
-                <p>A reload of the VS Code window is needed to be able to use the MySQL Shell.</p>
+                <p>Thank you for installing the MariaDB Shell for VS Code extension!</p>
+                <p>A reload of the VS Code window is needed to be able to use the MariaDB Shell.</p>
                 <h3>Please click the [Reload VS Code Window] button.</h3>
             </div>
         </div>
@@ -497,7 +497,7 @@ export const checkVcRuntime = (): Promise<boolean> => {
 
 export const setupInitialWelcomeWebview = (context: ExtensionContext): void => {
     context.subscriptions.push(commands.registerCommand("msg.runWelcomeWizard", () => {
-        const panel = window.createWebviewPanel("mysqlShellInitialSetup", "Welcome to MySQL Shell", ViewColumn.One, {
+        const panel = window.createWebviewPanel("mysqlShellInitialSetup", "Welcome to MariaDB Shell", ViewColumn.One, {
             enableScripts: true,
             retainContextWhenHidden: true,
             localResourceRoots: [Uri.file(join(context.extensionPath, "images"))],
@@ -555,7 +555,7 @@ export const setupInitialWelcomeWebview = (context: ExtensionContext): void => {
                                 // Pass the result to the webview
                                 printChannelOutput(output);
 
-                                if (!output.startsWith("Starting embedded MySQL Shell") && !output.includes("DEBUG")) {
+                                if (!output.startsWith("Starting embedded MariaDB Shell") && !output.includes("DEBUG")) {
                                     void panel.webview.postMessage({ command: "installCertResult", output });
                                 }
                             },

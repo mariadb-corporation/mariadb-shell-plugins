@@ -52,9 +52,9 @@ The MRS Script Examples are written in TypeScript and need to be built before th
 5. In the REST Content Set dialog make sure that the `Enable MRS Scripts` checkbox is checked and click `OK` to upload the files to the MRS service.
 6. Open a web browser and access the full path specified in the previous step to open the app, e.g. `https://localhost:8443/myService/testScripts/preactTestPage.html`
 
-#### Using MySQL Shell to Deploy the MRS Scripts Examples
+#### Using MariaDB Shell to Deploy the MRS Scripts Examples
 
-Apart from using the MySQL Shell for VS Code extension it is also possible to use the MySQL Shell to upload the MRS Scripts to MRS.
+Apart from using the MariaDB Shell for VS Code extension it is also possible to use the MariaDB Shell to upload the MRS Scripts to MRS.
 
 ```bash
 ~/.mysqlsh-gui/mysqlsh dba@localhost --sql -e 'CREATE OR REPLACE REST CONTENT SET /mrsScriptsContent ON SERVICE /myService FROM "~/path_to_project_folder/mrs_scripts" LOAD SCRIPTS'

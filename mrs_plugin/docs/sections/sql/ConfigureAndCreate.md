@@ -806,7 +806,7 @@ AS `sakila`.`city` {
 AUTHENTICATION REQUIRED;
 ```
 
-This is what the REST data mapping view looks like in the interactive MySQL REST Object Dialog in the MySQL Shell for VS Code extension.
+This is what the REST data mapping view looks like in the interactive MySQL REST Object Dialog in the MariaDB Shell for VS Code extension.
 
 ![Adding a Referenced Table](../../images/vsc-mrs-rest-object-editor-2-referenced-table.png "Adding a Referenced Table")ı
 

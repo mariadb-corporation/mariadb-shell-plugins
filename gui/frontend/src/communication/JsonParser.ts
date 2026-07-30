@@ -53,7 +53,7 @@ const enum TokenType {
 
 /**
  * A JSON string parser with support for bigint.
- * It only provides the minimal functionality needed for handling responses from the MySQL Shell.
+ * It only provides the minimal functionality needed for handling responses from the MariaDB Shell.
  */
 export class JsonParser {
     public tokenText = "";

@@ -67,15 +67,15 @@ Once a REST service has been defined, the corresponding SDK can be generated in 
 
 Several different methods can be used to perform the actual generation process.
 
-- Generating the SDK files from MySQL Shell for VS Code
-  - When using [VS Code](https://code.visualstudio.com/) or [VSCodium](https://vscodium.com/) and the [MySQL Shell for VS Code extension](https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code), the SDK for a given REST service can be generated directly from the UI.
-  - While using the MySQL Shell for VS Code extension, the SDK will be generated on the fly when using a DB Notebook to enabled instant prototyping of the SDK API calls.
+- Generating the SDK files from MariaDB Shell for VS Code
+  - When using [VS Code](https://code.visualstudio.com/) or [VSCodium](https://vscodium.com/) and the [MariaDB Shell for VS Code extension](https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code), the SDK for a given REST service can be generated directly from the UI.
+  - While using the MariaDB Shell for VS Code extension, the SDK will be generated on the fly when using a DB Notebook to enabled instant prototyping of the SDK API calls.
 - Generating the SDK Files from the Command Line
-  - To integrate the SDK generation into an existing development process, it is possible to use the MySQL Shell on the command line to generate the SDK files.
+  - To integrate the SDK generation into an existing development process, it is possible to use the MariaDB Shell on the command line to generate the SDK files.
 
-An constructor/initializer for the client-side REST service instance is generated based on the conventions established for the selected programming language. It allows to optionally specify the base URL of that REST service, has deployed in the MySQL Router instance used by the MRS installation. This would override the base URL specified when the SDK is generated in the first place, using the MySQL Shell.
+An constructor/initializer for the client-side REST service instance is generated based on the conventions established for the selected programming language. It allows to optionally specify the base URL of that REST service, has deployed in the MySQL Router instance used by the MRS installation. This would override the base URL specified when the SDK is generated in the first place, using the MariaDB Shell.
 
-### Generating the SDK Files from MySQL Shell for VS Code
+### Generating the SDK Files from MariaDB Shell for VS Code
 
 To generate the SDK files for a development project, right click on the MRS Service and select `Dump to Disk > Dump REST Client SDK Files ...`. This will allow you to select a destination folder inside your development project the files will be placed in.
 
@@ -83,7 +83,7 @@ The following files will be placed in the selected folder.
 
 ### On the Fly Generation of TypeScript SDK in VS Code
 
-The MySQL Shell for VS Code extension allows interactive execution of TypeScript code inside a DB Notebook. To make working with the MySQL REST Service easier, the TypeScript SDK for the current REST Service is made available directly within the DB Notebooks.
+The MariaDB Shell for VS Code extension allows interactive execution of TypeScript code inside a DB Notebook. To make working with the MySQL REST Service easier, the TypeScript SDK for the current REST Service is made available directly within the DB Notebooks.
 
 Whenever a REST DB Object has being edited, the TypeScript SDK is updated to allow instant prototyping of REST queries using the Client API.
 
@@ -91,9 +91,9 @@ This allows for adjusting and fine tuning the REST views and routines till they 
 
 ### Generating the SDK Files from the Command Line
 
-To generate the SDK files on the command line, the MySQL Shell needs to be [downloaded](https://dev.mysql.com/downloads/shell/) and installed.
+To generate the SDK files on the command line, the MariaDB Shell needs to be [downloaded](https://dev.mysql.com/downloads/shell/) and installed.
 
-> When using the MySQL Shell for VS Code extension, the MySQL Shell executable is made available at `~/.mysqlsh-gui/mysqlsh` and a dedicated installation of the MySQL Shell is not required.
+> When using the MariaDB Shell for VS Code extension, the MariaDB Shell executable is made available at `~/.mysqlsh-gui/mysqlsh` and a dedicated installation of the MariaDB Shell is not required.
 
 The following template shows how to call the `mrs.dump.sdk_service_files` plugin function to perform the SDK generation.
 

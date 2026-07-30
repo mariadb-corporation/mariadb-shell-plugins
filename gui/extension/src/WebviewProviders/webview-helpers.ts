@@ -27,10 +27,10 @@ import { Webview, workspace } from "vscode";
 
 /**
  * This is the core function for preparing the webview panel for the MSG application.
- * It expects a running MySQL Shell server to be available at the given URL.
+ * It expects a running MariaDB Shell server to be available at the given URL.
  *
  * @param webview The webview to prepare.
- * @param url The URL of the running MySQL Shell server.
+ * @param url The URL of the running MariaDB Shell server.
  */
 export const prepareWebviewContent = (webview: Webview, url: URL): void => {
     // Insert an iframe to load the external URL from the running mysql shell server.
@@ -158,13 +158,13 @@ export const prepareWebviewContent = (webview: Webview, url: URL): void => {
         if ("${url.protocol}" === "https:") {
             showFloatingLabel("Failed to Connect",
                 "Please check if you have the<br>" +
-                "MySQL Shell rootCA.crt certificate<br>" +
+                "MariaDB Shell rootCA.crt certificate<br>" +
                 "<a href='https://dev.mysql.com/doc/mysql-shell-gui/en/mysql-shell-vscode-certificates.html'>" +
                 "installed</a> on your local system.", false);
         } else {
             showFloatingLabel("Failed to Connect",
-                "Unable to connect to MySQL Shell.<br>" +
-                "Please check if the MySQL Shell<br>" +
+                "Unable to connect to MariaDB Shell.<br>" +
+                "Please check if the MariaDB Shell<br>" +
                 "process is running.", false);
         }
     }
@@ -277,7 +277,7 @@ export const prepareWebviewContent = (webview: Webview, url: URL): void => {
 
     if ("${url.protocol}" !== "https:" && ${String(showUnsecuredConnectionWarning)} === true) {
         showFloatingLabel("Warning: Unsecured Connection",
-            "MySQL Shell is currently using HTTP.<br>" +
+            "MariaDB Shell is currently using HTTP.<br>" +
             "Open the VS Code Settings and enable <br>" +
             "Msg &gt; Shell: Enforce Https.",
             true);

@@ -61,7 +61,7 @@ export class WebviewProvider implements IWebviewProvider {
 
     /** @returns the current caption of the web view panel (if it exists). */
     public get caption(): string {
-        return this.#caption ?? "MySQL Shell";
+        return this.#caption ?? "MariaDB Shell";
     }
 
     /** Sets a new caption for the webview panel. */

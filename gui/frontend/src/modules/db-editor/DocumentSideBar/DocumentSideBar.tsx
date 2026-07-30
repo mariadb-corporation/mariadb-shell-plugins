@@ -604,7 +604,7 @@ export class DocumentSideBar extends ComponentBase<IDocumentSideBarProperties, I
                 <MenuItem command={{ title: "-", command: "" }} disabled />,
                 <MenuItem
                     command={{
-                        title: "Open New MySQL Shell Console for this Connection",
+                        title: "Open New MariaDB Shell Console for this Connection",
                         command: "msg.newSessionUsingConnection",
                     }} />,
                 <MenuItem command={{ title: "-", command: "" }} disabled />,
@@ -1273,7 +1273,7 @@ export class DocumentSideBar extends ComponentBase<IDocumentSideBarProperties, I
                     <MenuItem command={{ title: "Load SQL Script from Disk", command: "msg.loadScriptFromDisk" }} />
                     <MenuItem command={{ title: "-", command: "" }} disabled />
                     <MenuItem command={{
-                        title: "Open New MySQL Shell Console for this Connection",
+                        title: "Open New MariaDB Shell Console for this Connection",
                         command: "msg.newSessionUsingConnection",
                     }}
                     />

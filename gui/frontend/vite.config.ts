@@ -78,7 +78,7 @@ export default defineConfig(({ mode }) => {
             port: 3001,
             proxy: {
                 // Forward any request that starts with /ws1.ws (the exact path used by the
-                // MySQL Shell backend) to the real backend running on port 8000.
+                // MariaDB Shell backend) to the real backend running on port 8000.
                 // The `ws: true` flag tells Vite that this is a *WebSocket* proxy.
                 "/ws1.ws": {
                     target: "http://127.0.0.1:8000",

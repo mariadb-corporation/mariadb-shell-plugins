@@ -21,4 +21,4 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Additions for MySQL Shell Utility Plugin"""
+"""Additions for MariaDB Shell Utility Plugin"""

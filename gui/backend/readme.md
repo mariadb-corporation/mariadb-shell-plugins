@@ -1,12 +1,12 @@
 <!--- cSpell:ignore Keychain mkdir --->
 
-# MySQL Shell GUI Backend
-This folder contains all the code for the MySQL Shell GUI (short: MSG) backend.
+# MariaDB Shell GUI Backend
+This folder contains all the code for the MariaDB Shell GUI (short: MSG) backend.
 
 # Environment Setup
-The backend is written as a python plugin for the MySQL Shell and hence needs to be in the usual plugin folder for it to recognize the new functionality. The plugin provides two parts of functionality:
+The backend is written as a python plugin for the MariaDB Shell and hence needs to be in the usual plugin folder for it to recognize the new functionality. The plugin provides two parts of functionality:
 
-- A web server with websocket support to serve the frontend files and to connect to the MySQL Shell.
+- A web server with websocket support to serve the frontend files and to connect to the MariaDB Shell.
 - A library with functionality that the frontend can use to do its work. This avoids having to make the entire shell functionality accessible from the web client (which also imposes security risks).
 
 To prepare the shell home directory, we need to have the plugin in place. To do so, execute the following commands:
@@ -52,7 +52,7 @@ Example on macOS:
   - Double click the imported certificate and change the “When using this certificate:” dropdown to Always Trust in the Trust section.
 
 # Deployment
-In a production scenario a MySQL Shell instance is launched and configured to run the python web server to serve frontend files as described in the [frontend readme](../frontend/readme.md). This instance also runs the library code and the websocket layer for direct command execution.
+In a production scenario a MariaDB Shell instance is launched and configured to run the python web server to serve frontend files as described in the [frontend readme](../frontend/readme.md). This instance also runs the library code and the websocket layer for direct command execution.
 
 ## Debugging the tests
 To start the tests, you need to run

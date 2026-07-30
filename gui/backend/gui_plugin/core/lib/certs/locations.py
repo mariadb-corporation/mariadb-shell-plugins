@@ -638,7 +638,7 @@ class Nss_db_cert(Store_cert):
             return os.path.join(home_dir, ".pki", "nssdb")
 
     def _get_installed_certs(self):
-        cmd = ["certutil", "-d", self._get_nss_db_path(), "-L", "-n", "MySQL Shell"]
+        cmd = ["certutil", "-d", self._get_nss_db_path(), "-L", "-n", "MariaDB Shell"]
         installed = []
 
         try:
@@ -673,18 +673,18 @@ class Nss_db_cert(Store_cert):
             "-t",
             "C,,",
             "-n",
-            "MySQL Shell",
+            "MariaDB Shell",
             "-i",
             self.parent_cert.desc,
         ]
 
     def _get_uninstall_command(self):
-        return ["certutil", "-d", self._get_nss_db_path(), "-D", "-n", "MySQL Shell"]
+        return ["certutil", "-d", self._get_nss_db_path(), "-D", "-n", "MariaDB Shell"]
 
     def _get_cert_install_script(self, padding=0):
         s = " " * padding
         return f"""
-{s}certutil -d {self._get_nss_db_path()} -A -t "C,," -n "MySQL Shell" -i {self.parent_cert.desc}
+{s}certutil -d {self._get_nss_db_path()} -A -t "C,," -n "MariaDB Shell" -i {self.parent_cert.desc}
 
 {s}if [ "$?" != "0" ]; then
 {s}    echo "Failed registering the certificate on the NSS database"
@@ -698,17 +698,17 @@ class Nss_db_cert(Store_cert):
         s = " " * padding
         return f"""
 {s}# Removing the certificate(s) from the the {self.desc}
-{s}certutil -d {self._get_nss_db_path()} -L -n "MySQL Shell" &> /dev/null
+{s}certutil -d {self._get_nss_db_path()} -L -n "MariaDB Shell" &> /dev/null
 {s}while [ "$?" == "0" ]; do
 {s}    echo -e "{BOLD}Removing the certificate from the {self.desc}{NOBOLD}"
-{s}    certutil -d sql:{self._get_nss_db_path()} -D -n "MySQL Shell"
+{s}    certutil -d sql:{self._get_nss_db_path()} -D -n "MariaDB Shell"
 
 {s}    if [ "$?" != "0" ]; then
 {s}        echo "Failed removing the certificate from the {self.desc}"
 {s}        read -r -p "Press any key to continue..." response
 {s}        exit 1
 {s}    fi
-{s}    certutil -d {self._get_nss_db_path()} -L -n "MySQL Shell" &> /dev/null
+{s}    certutil -d {self._get_nss_db_path()} -L -n "MariaDB Shell" &> /dev/null
 {s}done
 
 """
@@ -728,7 +728,7 @@ class Macos(Store_cert):
                 os.path.expanduser("~"), "Library", "Keychains", "login.keychain-db"
             ),
         ]
-        vstring = '"labl"<blob>="MySQL Shell Auto Generated CA Certificate"'
+        vstring = '"labl"<blob>="MariaDB Shell Auto Generated CA Certificate"'
         installed = []
 
         try:
@@ -796,7 +796,7 @@ class Win(Store_cert):
             "-verifystore",
             "-user",
             "ROOT",
-            "MySQL Shell Auto Generated CA Certificate",
+            "MariaDB Shell Auto Generated CA Certificate",
         ]
         installed = []
 
@@ -832,7 +832,7 @@ class Win(Store_cert):
             "-delstore",
             "-user",
             "ROOT",
-            "MySQL Shell Auto Generated CA Certificate",
+            "MariaDB Shell Auto Generated CA Certificate",
         ]
 
 
@@ -877,7 +877,7 @@ class Trust(Store_cert):
 
     def _get_installed_certs(self):
         cmd = ["trust", "list"]
-        vstring = "MySQL Shell Auto Generated CA Certificate"
+        vstring = "MariaDB Shell Auto Generated CA Certificate"
         installed = []
 
         try:

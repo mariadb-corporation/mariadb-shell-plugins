@@ -464,7 +464,7 @@ export class MessageScheduler {
         }
 
         void ui.showErrorMessage(`Could not establish a connection to the backend. Make sure you ` +
-            `use valid user credentials and the MySQL Shell is running. Trying to reconnect in ` +
+            `use valid user credentials and the MariaDB Shell is running. Trying to reconnect in ` +
             `${this.reconnectTimeout / 1000} seconds.`, {});
     };
 
@@ -527,7 +527,7 @@ export class MessageScheduler {
             return responseObject;
         } catch (reason) {
             const message = reason instanceof Error ? reason.message : String(reason);
-            void ui.showErrorMessage(`Could not parse JSON response from MySQL Shell (${message}).`, {});
+            void ui.showErrorMessage(`Could not parse JSON response from MariaDB Shell (${message}).`, {});
         }
     };
 

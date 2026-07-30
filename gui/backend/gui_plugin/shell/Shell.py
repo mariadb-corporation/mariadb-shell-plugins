@@ -43,8 +43,8 @@ def get_gui_module_display_info():
         dict: display information for the module
     """
     return {
-        "name": "MySQL Shell Console",
-        "description": "A graphical MySQL Shell Console",
+        "name": "MariaDB Shell Console",
+        "description": "A graphical MariaDB Shell Console",
         "icon_path": "/images/icons/modules/gui.shell.svg",
     }
 

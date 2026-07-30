@@ -91,7 +91,7 @@ def bootstrap_migration_profile(
     browser.
 
     The configuration is created  at the migrations/<migration-id> folder at
-    the MySQL Shell user config directory which by default is:
+    the MariaDB Shell user config directory which by default is:
 
     - MacOS / Linux: ~/.mariadb-shell
     - Windows: %APPDATA%\\MariaDB\\mariadb-shell

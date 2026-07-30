@@ -64,7 +64,7 @@ def create_certificate(cert_path):
                 x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "MySQL"),
                 x509.NameAttribute(NameOID.EMAIL_ADDRESS, "support@mysql.com"),
                 x509.NameAttribute(
-                    NameOID.COMMON_NAME, "MySQL Shell Auto Generated CA Certificate"
+                    NameOID.COMMON_NAME, "MariaDB Shell Auto Generated CA Certificate"
                 ),
             ]
         )
@@ -258,7 +258,7 @@ def create_certificate_script(type, certs):
 
     # Add the required removal operations
     uninstall_message = (
-        'echo "- Remove the MySQL Shell GUI certificate from the following locations:"'
+        'echo "- Remove the MariaDB Shell GUI certificate from the following locations:"'
     )
     for r in certs:
         if r.installed and (not installing or not r.valid or r.deprecated):
@@ -270,7 +270,7 @@ def create_certificate_script(type, certs):
 
     # Add the required install operations
     if installing:
-        install_message = 'echo "- Install the MySQL Shell GUI certificate at the following locations:"'
+        install_message = 'echo "- Install the MariaDB Shell GUI certificate at the following locations:"'
         for i in certs:
             if not i.deprecated and (not i.installed or not i.valid):
                 if len(install_message):
@@ -285,7 +285,7 @@ def create_certificate_script(type, certs):
         script_sections.insert(
             0,
             f"""#!{output}
-echo "The MySQL Shell Web Root Certificate required by the MySQL for VS Code extension will now be {type}ed on your system."
+echo "The MariaDB Shell Web Root Certificate required by the MySQL for VS Code extension will now be {type}ed on your system."
 echo -e "\\n"
 
 echo -e "The following script will be executed. Some operations will require the {BOLD}sudo password{NOBOLD} , please review at your own discretion:"

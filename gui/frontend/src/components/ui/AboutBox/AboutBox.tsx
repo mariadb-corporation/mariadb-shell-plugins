@@ -175,7 +175,7 @@ export class AboutBox extends ComponentBase<IAboutBoxProperties, IAboutBoxState>
         return (
             <Dialog
                 ref={this.dialogRef}
-                caption={title ?? "About MySQL Shell"}
+                caption={title ?? "About MariaDB Shell"}
                 onClose={(cancelled) => {
                     onClose?.();
                 }}
@@ -189,7 +189,7 @@ export class AboutBox extends ComponentBase<IAboutBoxProperties, IAboutBoxState>
                     <Icon src={Assets.modules.moduleShellIcon} id="sakilaLogo" />
                     <Container id="heading" orientation={Orientation.TopDown}>
                         <Label id="headingLabel">
-                            {title ?? "About MySQL Shell"}
+                            {title ?? "About MariaDB Shell"}
                         </Label>
                     </Container>
 

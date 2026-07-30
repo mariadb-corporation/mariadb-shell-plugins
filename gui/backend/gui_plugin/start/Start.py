@@ -20,7 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
-# Implementation of the MySQL Shell GUI web server
+# Implementation of the MariaDB Shell GUI web server
 
 import json
 import os
@@ -60,7 +60,7 @@ def web_server(
     accept_remote_connections=False,
     single_server=None,
 ):
-    """Starts a web server that will serve the MySQL Shell GUI
+    """Starts a web server that will serve the MariaDB Shell GUI
 
     Args:
         port (int): The optional port the web server should be running on,
@@ -119,7 +119,7 @@ def web_server(
         logger.debug(f"ULIMIT:\n{result.stdout.decode('utf-8')}")
 
     # Start the web server
-    logger.info("Starting MySQL Shell GUI web server...")
+    logger.info("Starting MariaDB Shell GUI web server...")
 
     tmp_certs_path = None
     server = None
@@ -301,10 +301,10 @@ def native_ui():
         executable_path = os.path.join(
             wrappers_path,
             "macos",
-            "MySQL Shell GUI.app",
+            "MariaDB Shell GUI.app",
             "Contents",
             "MacOS",
-            "MySQL Shell GUI",
+            "MariaDB Shell GUI",
         )
 
     try:

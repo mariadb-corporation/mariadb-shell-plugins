@@ -21,6 +21,6 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""The MySQL Shell GUI Plugin"""
+"""The MariaDB Shell GUI Plugin"""
 
 from gui_plugin import init

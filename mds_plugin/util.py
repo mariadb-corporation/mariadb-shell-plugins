@@ -389,7 +389,7 @@ def create_compute_instance_for_endpoint(**kwargs):
                     # Get MySQL Router configuration from remote instance
                     output = ""
                     output = conn.execute('mariadb-shell --js -e "mds.info()"').strip()
-                    if "MySQL Shell MDS Plugin" not in output:
+                    if "MariaDB Shell MDS Plugin" not in output:
                         # If the config is not available yet, give the instance
                         # time to complete setup
                         if interactive:
@@ -400,11 +400,11 @@ def create_compute_instance_for_endpoint(**kwargs):
                             )
                         try:
                             i = 0
-                            while "MySQL Shell MDS Plugin" not in output and i < 25:
+                            while "MariaDB Shell MDS Plugin" not in output and i < 25:
                                 output = conn.execute(
                                     'mariadb-shell --js -e "mds.info()"'
                                 ).strip()
-                                if "MySQL Shell MDS Plugin" not in output:
+                                if "MariaDB Shell MDS Plugin" not in output:
                                     time.sleep(5)
                                     if interactive:
                                         print(".", end="")
@@ -415,7 +415,7 @@ def create_compute_instance_for_endpoint(**kwargs):
                         if interactive:
                             print("")
 
-                    if "MySQL Shell MDS Plugin" not in output:
+                    if "MariaDB Shell MDS Plugin" not in output:
                         raise Exception(
                             f"\nCould not finish the '{instance_name}' setup "
                             f"at {public_ip}.\n"
@@ -1738,7 +1738,7 @@ def dump_to_bucket(**kwargs):
             print(
                 "Please enter the MySQL Server connection URI for the MySQL "
                 "Server serving as data source.\nTo get more information about "
-                "the URI format type '\\? connection' in the MySQL Shell.\n"
+                "the URI format type '\\? connection' in the MariaDB Shell.\n"
                 "Example: admin@localhost:3306\n"
             )
             connection_uri = mysqlsh.globals.shell.prompt(

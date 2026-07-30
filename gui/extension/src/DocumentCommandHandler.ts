@@ -178,7 +178,7 @@ export class DocumentCommandHandler {
             if (e.visible && this.initialDisplayOfOpenEditorsView && showDbConnectionsTab) {
                 this.initialDisplayOfOpenEditorsView = false;
 
-                // If the extension is already connected to the MySQL Shell websocket,
+                // If the extension is already connected to the MariaDB Shell websocket,
                 // open the DB Connection Overview right away
                 if (this.isConnected) {
                     void commands.executeCommand("msg.openDBBrowser");
@@ -667,7 +667,7 @@ export class DocumentCommandHandler {
             entry?: ICdmConnectionEntry) => {
             if (entry) {
                 void window.showOpenDialog({
-                    title: "Select the script file to load to MySQL Shell",
+                    title: "Select the script file to load to MariaDB Shell",
                     openLabel: "Select Script File",
                     canSelectFiles: true,
                     canSelectFolders: false,

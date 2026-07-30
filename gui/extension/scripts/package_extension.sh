@@ -22,7 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-# Creates MySQL Shell for VS Code extension packages for the following platforms:
+# Creates MariaDB Shell for VS Code extension packages for the following platforms:
 # darwin-arm64, darwin-x64, win32-x64
 # Usage: package_extension.sh [single-platform]
 #
@@ -67,7 +67,7 @@ function validate_url(){
     return $?
 }
 
-# Function that tries to download the MySQL Shell macOS package for an unknow macosVersion
+# Function that tries to download the MariaDB Shell macOS package for an unknow macosVersion
 # Usage: download_shell_mac_pkg 8.0.29 arm64 packaging/mysql-shell/darwin-arm64.tar.gz
 function download_shell_mac_pkg(){
     if [[ $# < 4 ]]; then
@@ -134,7 +134,7 @@ function strip_oci_package(){
     fi
 }
 
-echo "Starting MySQL Shell for VS Code Extension packaging..."
+echo "Starting MariaDB Shell for VS Code Extension packaging..."
 
 # If the shell plugins location is not defined, uses the default
 # location
@@ -172,10 +172,10 @@ if [ -z "${SHELL_VERSION}" ] && [ ! -d "packaging" ]; then
     echo "Setting up the packaging resources..."
     mkdir -p packaging/mysql-shell
 
-    read -p "Which version of MySQL Shell should be used [8.0.29]? " SHELL_VERSION
+    read -p "Which version of MariaDB Shell should be used [8.0.29]? " SHELL_VERSION
     SHELL_VERSION=${SHELL_VERSION:-8.0.29}
 
-    echo "Downloading MySQL Shell $SHELL_VERSION packages..."
+    echo "Downloading MariaDB Shell $SHELL_VERSION packages..."
 
     echo "Downloading darwin-arm64 package..."
     download_shell_mac_pkg $SHELL_VERSION arm64 packaging/mysql-shell/darwin-arm64.tar.gz

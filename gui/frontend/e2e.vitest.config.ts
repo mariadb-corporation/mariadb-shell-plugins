@@ -38,7 +38,7 @@ export default defineConfig({
         hookTimeout: 60000,
         testTimeout: 60000,
         setupFiles: ["./src/tests/e2e/setupTests.ts"],
-        reporters: ["default", new StaticHtmlReporter("MySQL Shell GUI E2E Tests Report")],
+        reporters: ["default", new StaticHtmlReporter("MariaDB Shell GUI E2E Tests Report")],
         outputFile: "./test-reports/e2e-tests/index.html",
         globalSetup: "./src/tests/e2e/e2eGlobalSetup.ts",
         logHeapUsage: false,

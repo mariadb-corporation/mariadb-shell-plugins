@@ -1,6 +1,6 @@
-# MySQL Database Service Plugin for MySQL Shell
+# MySQL Database Service Plugin for MariaDB Shell
 
-This folder contains the code for the MySQL Database Service (short: MDS) plugin. It is part of the [MySQL Shell Plugins](../readme.md) repository.
+This folder contains the code for the MySQL Database Service (short: MDS) plugin. It is part of the [MariaDB Shell Plugins](../readme.md) repository.
 
 # Contributing to MySQL Database Service Plugin
 
@@ -13,13 +13,13 @@ Include the following settings in your VS Code settings.json file in order to al
 ```json
 {
     "python.analysis.extraPaths": [
-        "/usr/local/mysql-shell/lib/mariadb-shell/python-packages/",
+        "/usr/local/mariadb-shell/lib/mariadb-shell/python-packages/",
         "${workspaceFolder}\\plugins\\rds_plugin",
-        "/usr/local/mysql-shell/lib/mariadb-shell/lib/python3.9/site-packages"
+        "/usr/local/mariadb-shell/lib/mariadb-shell/lib/python3.9/site-packages"
     ],
     "python.autoComplete.extraPaths": [
-        "/usr/local/mysql-shell/lib/mariadb-shell/python-packages/",
-        "/usr/local/mysql-shell/lib/mariadb-shell/lib/python3.9/site-packages",
+        "/usr/local/mariadb-shell/lib/mariadb-shell/python-packages/",
+        "/usr/local/mariadb-shell/lib/mariadb-shell/lib/python3.9/site-packages",
         "${workspaceFolder}\\plugins\\rds_plugin"
     ]
 }

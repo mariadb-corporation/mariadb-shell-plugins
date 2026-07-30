@@ -1,24 +1,24 @@
-# MySQL Shell for VS Code 2026.5.0+9.7.0
+# MariaDB Shell for VS Code 2026.5.0+9.7.0
 
-The MySQL Shell for VS Code extension integrates the powerful feature set of MySQL Shell - an advanced MySQL client for developers and DBAs - directly into VS Code.
+The MariaDB Shell for VS Code extension integrates the powerful feature set of MariaDB Shell - an advanced MySQL client for developers and DBAs - directly into VS Code.
 
 It provides a modern notebook interface to interactively work with and execute SQL against MySQL databases and the HeatWave service, as well as a traditional SQL script-based workflow.
 
 ## What's New
 
-* The new [MySQL HeatWave Migration Assistant](https://blogs.oracle.com/mysql/introducing-mysql-heatwave-migration-assistant-for-easy-mysql-database-migration-to-oci) is now integrated into MySQL Shell for VS Code.
+* The new [MySQL HeatWave Migration Assistant](https://blogs.oracle.com/mysql/introducing-mysql-heatwave-migration-assistant-for-easy-mysql-database-migration-to-oci) is now integrated into MariaDB Shell for VS Code.
 
-![MySQL Shell For VS Code Screenshot](images/screenshots/MigrationAssistant.png)
+![MariaDB Shell For VS Code Screenshot](images/screenshots/MigrationAssistant.png)
 
 ## Tutorials
 
 How to Create a New Database Connection
 
-![MySQL Shell For VS Code Screenshot](images/screenshots/MySQLShellForVSCodeNewConnection.gif)
+![MariaDB Shell For VS Code Screenshot](images/screenshots/MySQLShellForVSCodeNewConnection.gif)
 
 ## Feature Highlights
 
-![MySQL Shell For VS Code Screenshot](images/screenshots/MySQLShellForVSCodeMain.jpg)
+![MariaDB Shell For VS Code Screenshot](images/screenshots/MySQLShellForVSCodeMain.jpg)
 
 ### Full MySQL HeatWave Integration
 
@@ -36,15 +36,15 @@ The embedded DB Editor offers you a fresh way to work interactively with your da
 
 Switch from SQL to JavaScript or TypeScript to query, manipulate, and visualize your data.
 
-### MySQL Shell GUI Console
+### MariaDB Shell GUI Console
 
-Provides the full power of the MySQL Shell inside a notebook-interface-styled editor.
+Provides the full power of the MariaDB Shell inside a notebook-interface-styled editor.
 
 Multi-line command editing, interactive auto-completion, and powerful plugins.
 
 ### Tight Workflow Integration
 
-MySQL Shell for VS Code integrates seamlessly into your development workflow.
+MariaDB Shell for VS Code integrates seamlessly into your development workflow.
 
 Takes SQL embedded in your source files and runs it inside the DB Editor. Updates modified SQL in your source file.
 
@@ -55,7 +55,7 @@ Takes SQL embedded in your source files and runs it inside the DB Editor. Update
   - Browse through schema catalog
   - Dump schemas and load schemas with support for MHS instances
   - Open DB Editor for a database connection
-  - Open MySQL Shell GUI Console for a database connection
+  - Open MariaDB Shell GUI Console for a database connection
 - Oracle Cloud Infrastructure (OCI) Browser
   - Support for standard OCI profile configuration
   - Browse OCI compartments, MySQL DB Systems, Bastions, Compute Instances, and Load Balancers
@@ -69,7 +69,7 @@ Takes SQL embedded in your source files and runs it inside the DB Editor. Update
   - Support for multiple result sets in tabbed result grids
   - Support for text output for TypeScript and JavaScript code
   - Support for graphs for TypeScript and JavaScript code
-- MySQL Shell GUI Console:
+- MariaDB Shell GUI Console:
   - Notebook Interface
   - Support for SQL, Python, and JavaScript
   - Query result set browsing in a result grid

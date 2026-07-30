@@ -1,7 +1,7 @@
 {
     "name": "utils-shell-plugin",
     "version": "1.0.0",
-    "description": "Additional utility plugins for MySQL Shell",
+    "description": "Additional utility plugins for MariaDB Shell",
     "scripts": {
         "run-pytest": "clear; mariadb-shell -f run_tests.py"
     },

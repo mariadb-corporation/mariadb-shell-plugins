@@ -44,9 +44,9 @@ from . import backend as sql_editor_backend
 
 
 def _match_history_glob(pattern, sql):
-    """Matches MySQL Shell history glob patterns.
+    """Matches MariaDB Shell history glob patterns.
 
-    MySQL Shell's history.sql.ignorePattern option is a colon-separated list
+    MariaDB Shell's history.sql.ignorePattern option is a colon-separated list
     of case-insensitive glob patterns that support '*', '?', and backslash
     escaping for '\\', '*', and '?'.
     """

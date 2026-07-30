@@ -1,8 +1,8 @@
-# Migration Plugin for MySQL Shell
+# Migration Plugin for MariaDB Shell
 
-This folder contains the code for the Migration Plugin. It is part of the [MySQL Shell Plugins](../README.md) repository.
+This folder contains the code for the Migration Plugin. It is part of the [MariaDB Shell Plugins](../README.md) repository.
 
-The migration plugin provides the MySQL Shell backend for planning, validating,
+The migration plugin provides the MariaDB Shell backend for planning, validating,
 and running MySQL database migrations to MySQL HeatWave on Oracle Cloud
 Infrastructure.
 
@@ -10,7 +10,7 @@ Infrastructure.
 
 You do not open this plugin directly. Use one of these MySQL client tools:
 
-- Install the **MySQL Shell for VS Code** extension from the Visual Studio Code
+- Install the **MariaDB Shell for VS Code** extension from the Visual Studio Code
   Extensions view, then open the MySQL HeatWave Migration Assistant from the
   extension.
 - Open **MySQL Workbench** and use its migration workflow to start a MySQL
@@ -72,7 +72,7 @@ No installation is necessary for this plugin, besides setting up Visual Studio C
 
 ## Running the Tests
 
-To run the tests, MySQL Shell must be installed and on your `PATH`.
+To run the tests, MariaDB Shell must be installed and on your `PATH`.
 
 ### Installing the Python Requirements
 

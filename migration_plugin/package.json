@@ -1,7 +1,7 @@
 {
     "name": "migration-shell-plugin",
     "version": "1.0.0",
-    "description": "Migration plugin for MySQL Shell",
+    "description": "Migration plugin for MariaDB Shell",
     "scripts": {
         "run-pytest": "clear;mariadb-shell --disable-builtin-plugins --log-level=debug3 --verbose=4 --py -f run_tests.py",
         "static-check": "./scripts/build.sh"

@@ -111,7 +111,7 @@ def get_executables(name: str) -> str:
 
     system = platform.system()
     executables = {}
-    executables["MySQL Shell"] = "mariadb-shell.exe" if system == "Windows" else "mariadb-shell"
+    executables["MariaDB Shell"] = "mariadb-shell.exe" if system == "Windows" else "mariadb-shell"
     executables["MySQL Server"] = "mysql.exe" if system == "Windows" else "mysql"
     executables["npm"] = "npm.cmd" if system == "Windows" else "npm"
     executables["ChromeDriver"] = (
@@ -239,7 +239,7 @@ class CheckVersionTask:
         else:
             try:
                 args = [self.executable]
-                if self.name == "MySQL Shell":
+                if self.name == "MariaDB Shell":
                     args.append("--disable-builtin-plugins")
                 args.append("--version")
 
@@ -260,7 +260,7 @@ class ShellTask(BaseTask):
     """Base class to execute shell commands"""
 
     def __init__(self, environment: typing.Dict[str, str]) -> None:
-        self.mysqlsh_executable = get_executables("MySQL Shell")
+        self.mysqlsh_executable = get_executables("MariaDB Shell")
         self.environment = environment
 
     def shell_command_execute(
@@ -310,7 +310,7 @@ class ShellTask(BaseTask):
             TaskFailException: task exception
 
         Returns:
-            str: output of MySQL Shell command
+            str: output of MariaDB Shell command
         """
 
         out = ""
@@ -358,7 +358,7 @@ class ShellTask(BaseTask):
             TaskFailException: task exception
 
         Returns:
-            str: output of MySQL Shell command
+            str: output of MariaDB Shell command
         """
 
         out = ""
@@ -420,7 +420,7 @@ class AddUserToBE(ShellTask):
 
 
 class SetPluginsTask(BaseTask):
-    """Setup MySQL Shell home directory in a specific directory"""
+    """Setup MariaDB Shell home directory in a specific directory"""
 
     def __init__(self, plugins_path: pathlib.Path, servers: typing.List = None) -> None:
         self.plugins_path = plugins_path
@@ -454,7 +454,7 @@ class SetPluginsTask(BaseTask):
             create_symlink(self.get_repo_plugin_path(name), link_target)
 
     def install_plugins(self) -> None:
-        """Sets paths for plugins in MySQL Shell home dir"""
+        """Sets paths for plugins in MariaDB Shell home dir"""
 
         os.makedirs(self.plugins_path, exist_ok=True)
 
@@ -691,7 +691,7 @@ class StartBeServersTask:
 
     def __init__(self, environment, servers: typing.List) -> None:
         self.environment = environment
-        self.mysqlsh_executable = get_executables("MySQL Shell")
+        self.mysqlsh_executable = get_executables("MariaDB Shell")
         self.servers: list[BEServer] = servers
 
     def run(self) -> None:
@@ -784,7 +784,7 @@ class BEServer:
         single_server=False,
         start_process: bool = True,
     ) -> None:
-        self.mysqlsh_executable = get_executables("MySQL Shell")
+        self.mysqlsh_executable = get_executables("MariaDB Shell")
         self.port = port
         self.multi_user = multi_user
         self.single_server = single_server

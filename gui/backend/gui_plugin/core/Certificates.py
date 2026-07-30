@@ -31,7 +31,7 @@ import sys
     "gui.core.isShellWebCertificateInstalled", shell=True, cli=True, web=True
 )
 def is_shell_web_certificate_installed(**kwargs):
-    """Checks if the MySQL Shell GUI webserver certificate is installed
+    """Checks if the MariaDB Shell GUI webserver certificate is installed
 
     Args:
         **kwargs: Optional parameters
@@ -64,7 +64,7 @@ def is_shell_web_certificate_installed(**kwargs):
 
 @plugin_function("gui.core.installShellWebCertificate", shell=True, cli=True, web=True)
 def install_shell_web_certificate(**kwargs):
-    """Installs the MySQL Shell GUI webserver certificate
+    """Installs the MariaDB Shell GUI webserver certificate
 
     Args:
         **kwargs: Optional parameters
@@ -106,7 +106,7 @@ def install_shell_web_certificate(**kwargs):
 
 @plugin_function("gui.core.removeShellWebCertificate", shell=True, cli=True, web=True)
 def remove_shell_web_certificate():
-    """Removes the MySQL Shell GUI webserver certificate
+    """Removes the MariaDB Shell GUI webserver certificate
 
     Returns:
        True if successfully removed

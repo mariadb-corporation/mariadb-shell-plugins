@@ -2061,7 +2061,7 @@ def create_instance(**kwargs):
             # Set SSH key and creator metadata
             instance_metadata = {
                 "ssh_authorized_keys": public_key,
-                "creator": "MySQL Shell MDS Plugin",
+                "creator": "MariaDB Shell MDS Plugin",
             }
 
             # Load init_script_file_path if given

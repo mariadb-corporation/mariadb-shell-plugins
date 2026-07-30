@@ -22,7 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-# Init script for MySQL Shell Migration Assistant Remote Helper
+# Init script for MariaDB Shell Migration Assistant Remote Helper
 
 SHELL_PKG_VERSION=9.4.0-1
 ARCH=`arch`

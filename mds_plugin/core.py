@@ -427,13 +427,13 @@ def get_current_session(session=None):
             raise Exception(
                 "MySQL session not specified. Please either pass a session "
                 "object when calling the function or open a database "
-                "connection in the MySQL Shell first."
+                "connection in the MariaDB Shell first."
             )
     return session
 
 
 def format_result_set(res, rows, addColumnHeader=True, addFooter=True):
-    """Formats a MySQL Shell result set in table format
+    """Formats a MariaDB Shell result set in table format
 
     Args:
         res: The result set to use

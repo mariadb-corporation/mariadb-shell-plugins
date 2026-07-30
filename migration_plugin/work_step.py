@@ -63,7 +63,7 @@ k_stage_info = {
     SubStepId.PROVISION_HELPER: {
         "caption": "Prepare Jump Host",
         "type": "",
-        "help": "Install MySQL Shell and other components for importing your database and other remote operations in OCI.",
+        "help": "Install MariaDB Shell and other components for importing your database and other remote operations in OCI.",
     },
     SubStepId.PROVISION_DBSYSTEM: {
         "caption": "MySQL DB System",

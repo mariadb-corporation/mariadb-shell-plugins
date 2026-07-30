@@ -1,7 +1,7 @@
 {
     "name": "mrs-shell-plugin",
     "version": "1.0.0",
-    "description": "MySQL REST Service plugin for MySQL Shell",
+    "description": "MySQL REST Service plugin for MariaDB Shell",
     "scripts": {
         "update-mrs-parser": "scripts/generate_mrs_parser.sh",
         "fix-rrd-svg-files": "scripts/fix_rrd_svg_files.sh",

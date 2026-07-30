@@ -91,7 +91,7 @@ arg_parser.add_argument(
         "MYSQLSH",
         shutil.which("mariadb-shell.exe") if os.name == "nt" else shutil.which("mariadb-shell"),
     ),
-    help="Path to MySQL Shell binary",
+    help="Path to MariaDB Shell binary",
 )
 arg_parser.add_argument(
     "-v", "--verbose", required=False, action="store_true", help="Enable verbose mode"
@@ -143,7 +143,7 @@ assert Path(
 
 assert (
     args.shell is not None
-), "Could not find the MySQL Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
+), "Could not find the MariaDB Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
 
 
 class MyPaths:

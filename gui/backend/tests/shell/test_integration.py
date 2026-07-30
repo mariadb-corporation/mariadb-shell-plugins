@@ -37,47 +37,47 @@ except ModuleNotFoundError:
 )
 def test_gui():
     help_text = """NAME
-      gui - MySQL Shell GUI backend plugin.
+      gui - MariaDB Shell GUI backend plugin.
 
 DESCRIPTION
-      This plugin serves as the backend for the MySQL Shell GUI projects.
+      This plugin serves as the backend for the MariaDB Shell GUI projects.
 
 PROPERTIES
       cluster
-            The InnoDB Cluster MySQL Shell GUI backend module
+            The InnoDB Cluster MariaDB Shell GUI backend module
 
       core
-            The Core MySQL Shell GUI backend module
+            The Core MariaDB Shell GUI backend module
 
       db
             Used to retrieve metadata from database
 
       db_connections
-            The DB Connections MySQL Shell GUI backend module
+            The DB Connections MariaDB Shell GUI backend module
 
       debugger
             The websocket debugger module
 
       mds
-            The MySQL Database Service MySQL Shell GUI backend module
+            The MySQL Database Service MariaDB Shell GUI backend module
 
       modeler
-            The Modeler MySQL Shell GUI backend module
+            The Modeler MariaDB Shell GUI backend module
 
       modules
-            The Modules MySQL Shell GUI backend module
+            The Modules MariaDB Shell GUI backend module
 
       shell
-            The Shell MySQL Shell GUI backend module
+            The Shell MariaDB Shell GUI backend module
 
       sql_editor
-            The SQL Editor MySQL Shell GUI backend module
+            The SQL Editor MariaDB Shell GUI backend module
 
       start
-            Used to start the MySQL Shell GUI
+            Used to start the MariaDB Shell GUI
 
       users
-            The Users MySQL Shell GUI backend module
+            The Users MariaDB Shell GUI backend module
 
 FUNCTIONS
       help([member])
@@ -98,14 +98,14 @@ FUNCTIONS
 )
 def test_gui_cluster():
     help_text = """NAME
-      cluster - The InnoDB Cluster MySQL Shell GUI backend module
+      cluster - The InnoDB Cluster MariaDB Shell GUI backend module
 
 SYNTAX
       gui.cluster
 
 DESCRIPTION
       This extension object holds the backend implementation of the InnoDB
-      Cluster MySQL Shell GUI module
+      Cluster MariaDB Shell GUI module
 
 FUNCTIONS
       get_gui_module_display_info()
@@ -131,7 +131,7 @@ FUNCTIONS
 )
 def test_gui_core():
     help_text = """NAME
-      core - The Core MySQL Shell GUI backend module
+      core - The Core MariaDB Shell GUI backend module
 
 SYNTAX
       gui.core
@@ -151,13 +151,13 @@ FUNCTIONS
             Provides help about this object and it's members
 
       install_shell_web_certificate([kwargs])
-            Installs the MySQL Shell GUI webserver certificate
+            Installs the MariaDB Shell GUI webserver certificate
 
       is_shell_web_certificate_installed([kwargs])
-            Checks if the MySQL Shell GUI webserver certificate is installed
+            Checks if the MariaDB Shell GUI webserver certificate is installed
 
       remove_shell_web_certificate()
-            Removes the MySQL Shell GUI webserver certificate"""
+            Removes the MariaDB Shell GUI webserver certificate"""
 
     assert help_text == mysqlsh.globals.gui.core.help()  # pylint: disable=no-member
 
@@ -168,14 +168,14 @@ FUNCTIONS
 )
 def test_gui_db_connections():
     help_text = """NAME
-      db_connections - The DB Connections MySQL Shell GUI backend module
+      db_connections - The DB Connections MariaDB Shell GUI backend module
 
 SYNTAX
       gui.db_connections
 
 DESCRIPTION
       This extension object holds the backend implementation of the DB
-      Connections MySQL Shell GUI module
+      Connections MariaDB Shell GUI module
 
 FUNCTIONS
       add_db_connection(profile_id, connection[, folder_path_id][, be_session])
@@ -254,14 +254,14 @@ FUNCTIONS
 )
 def test_gui_mds():
     help_text = """NAME
-      mds - The MySQL Database Service MySQL Shell GUI backend module
+      mds - The MySQL Database Service MariaDB Shell GUI backend module
 
 SYNTAX
       gui.mds
 
 DESCRIPTION
       This extension object holds the backend implementation of the MySQL
-      Database Service MySQL Shell GUI module
+      Database Service MariaDB Shell GUI module
 
 FUNCTIONS
       get_gui_module_display_info()
@@ -287,14 +287,14 @@ FUNCTIONS
 )
 def test_gui_modeler():
     help_text = """NAME
-      modeler - The Modeler MySQL Shell GUI backend module
+      modeler - The Modeler MariaDB Shell GUI backend module
 
 SYNTAX
       gui.modeler
 
 DESCRIPTION
       This extension object holds the backend implementation of the Modeler
-      MySQL Shell GUI module
+      MariaDB Shell GUI module
 
 FUNCTIONS
       get_gui_module_display_info()
@@ -320,14 +320,14 @@ FUNCTIONS
 )
 def test_gui_modules():
     help_text = """NAME
-      modules - The Modules MySQL Shell GUI backend module
+      modules - The Modules MariaDB Shell GUI backend module
 
 SYNTAX
       gui.modules
 
 DESCRIPTION
       This extension object holds the backend implementation of the Modules
-      MySQL Shell GUI module
+      MariaDB Shell GUI module
 
 FUNCTIONS
       help([member])
@@ -342,7 +342,7 @@ FUNCTIONS
 )
 def test_gui_shell():
     help_text = """NAME
-      shell - The Shell MySQL Shell GUI backend module
+      shell - The Shell MariaDB Shell GUI backend module
 
 SYNTAX
       gui.shell
@@ -365,8 +365,8 @@ FUNCTIONS
     info = (
         mysqlsh.globals.gui.shell.get_gui_module_display_info()
     )  # pylint: disable=no-member
-    assert info["name"] == "MySQL Shell Console"
-    assert info["description"] == "A graphical MySQL Shell Console"
+    assert info["name"] == "MariaDB Shell Console"
+    assert info["description"] == "A graphical MariaDB Shell Console"
 
 
 @pytest.mark.skipif(
@@ -375,14 +375,14 @@ FUNCTIONS
 )
 def test_gui_sql_editor():
     help_text = """NAME
-      sql_editor - The SQL Editor MySQL Shell GUI backend module
+      sql_editor - The SQL Editor MariaDB Shell GUI backend module
 
 SYNTAX
       gui.sql_editor
 
 DESCRIPTION
       This extension object holds the backend implementation of the SQL Editor
-      MySQL Shell GUI module
+      MariaDB Shell GUI module
 
 FUNCTIONS
       execute(session, sql[, params][, options])
@@ -425,7 +425,7 @@ FUNCTIONS
 )
 def test_gui_users():
     help_text = """NAME
-      users - The Users MySQL Shell GUI backend module
+      users - The Users MariaDB Shell GUI backend module
 
 SYNTAX
       gui.users
@@ -521,13 +521,13 @@ FUNCTIONS
 )
 def test_gui_start():
     help_text = """NAME
-      start - Used to start the MySQL Shell GUI
+      start - Used to start the MariaDB Shell GUI
 
 SYNTAX
       gui.start
 
 DESCRIPTION
-      The MySQL Shell GUI can be started as a native application or as a web
+      The MariaDB Shell GUI can be started as a native application or as a web
       application served by a web server.
 
 FUNCTIONS
@@ -538,6 +538,6 @@ FUNCTIONS
             Starts the native Shell GUI client
 
       web_server([port][, secure][, webrootpath][, single_instance_token][, read_token_on_stdin][, accept_remote_connections][, single_server])
-            Starts a web server that will serve the MySQL Shell GUI"""
+            Starts a web server that will serve the MariaDB Shell GUI"""
 
     assert help_text == mysqlsh.globals.gui.start.help()  # pylint: disable=no-member

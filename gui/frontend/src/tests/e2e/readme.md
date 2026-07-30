@@ -28,7 +28,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 The following pre-requisites need to be satisfied to execute the E2E tests by any of the ways described below:
 
 - The binary of the MySQL Server to be used in PATH
-- The binary of the MySQL Shell to be used in PATH
+- The binary of the MariaDB Shell to be used in PATH
 - The Google Chrome to be used in PATH
 - The Google Chromedriver to be used in PATH
 - Npm available in PATH

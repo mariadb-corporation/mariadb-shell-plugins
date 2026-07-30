@@ -30,7 +30,7 @@
     RequiredVersion="4.0.5">
 
     <Package ProductCode="$(var.PRODUCT_GUID)"
-        Name="MySQL Shell Workbench"
+        Name="MariaDB Shell Workbench"
         Language="1033"
         Version="$(var.PACKAGE_VERSION)"
         Manufacturer="Oracle Corporation"
@@ -98,7 +98,7 @@
             Condition="Installed OR VS14REDIST"
             Message="This application requires Visual Studio 2015-2022 Redistributable version 14.x or newer. Please install the Redistributable then run this installer again." />
 
-        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch MySQL Shell Workbench" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch MariaDB Shell Workbench" />
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
         <Property Id="WixShellExecTarget" Value="[#MySQLShellWorkbench.exe]" />
         <CustomAction Id="LaunchApplication" ExeCommand="" Execute="immediate" Impersonate="yes" Return="asyncNoWait" FileRef="$(var.MAIN_EXECUTABLE_FILE_ID)" />

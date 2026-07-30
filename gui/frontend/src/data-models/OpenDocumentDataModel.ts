@@ -292,7 +292,7 @@ export class OpenDocumentDataModel {
     #subscribers = new Set<DataModelSubscriber<OpenDocumentDataModelEntry>>();
 
     public constructor(private singleServerMode: boolean) {
-        this.#defaultProvider = this.createAppProviderEntry("MySQL Shell") as IOdmAppDefaultProviderEntry;
+        this.#defaultProvider = this.createAppProviderEntry("MariaDB Shell") as IOdmAppDefaultProviderEntry;
     }
 
     /**
@@ -360,7 +360,7 @@ export class OpenDocumentDataModel {
     /** Empties the data model and resets it to uninitialized. */
     public clear(): void {
         this.#appProviders.clear();
-        this.#defaultProvider = this.createAppProviderEntry("MySQL Shell") as IOdmAppDefaultProviderEntry;
+        this.#defaultProvider = this.createAppProviderEntry("MariaDB Shell") as IOdmAppDefaultProviderEntry;
         this.notifySubscribers([{ action: "clear" }]);
     }
 
@@ -410,12 +410,12 @@ export class OpenDocumentDataModel {
      */
     public createUniqueCaption(): string {
         if (this.#appProviders.size === 0) {
-            return "MySQL Shell";
+            return "MariaDB Shell";
         }
 
         let index = 2;
         while (index < 100) {
-            const caption = `MySQL Shell (${index})`;
+            const caption = `MariaDB Shell (${index})`;
             let found = false;
             this.#appProviders.forEach((entry) => {
                 if (entry.caption === caption) {
@@ -1171,7 +1171,7 @@ export class OpenDocumentDataModel {
             parent: entry as IOdmAppProviderEntry,
             state: createDataModelEntryState(),
             sessions: [],
-            caption: "MySQL Shell Consoles",
+            caption: "MariaDB Shell Consoles",
             getChildren: () => {
                 return entry.shellSessionRoot!.sessions;
             },

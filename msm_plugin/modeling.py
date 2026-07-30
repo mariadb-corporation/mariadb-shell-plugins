@@ -21,7 +21,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""The MySQL Shell Schema Management Plugin - Modeling"""
+"""The MariaDB Shell Schema Management Plugin - Modeling"""
 
 from mysqlsh.plugin_manager import plugin_function
 from msm_plugin import lib

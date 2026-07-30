@@ -144,12 +144,12 @@ describe("DATABASE CONNECTIONS", () => {
             }, constants.wait1second * 5, "The tree is not fully collapsed");
         });
 
-        it("Restart internal MySQL Shell process", async () => {
+        it("Restart internal MariaDB Shell process", async () => {
 
             await fs.truncate(Os.getMysqlshLog());
             await dbTreeSection.selectMoreActionsItem(constants.restartInternalShell);
-            const notification = await Workbench.getNotification("This will close all MySQL Shell tabs", false);
-            await Workbench.clickOnNotificationButton(notification, "Restart MySQL Shell");
+            const notification = await Workbench.getNotification("This will close all MariaDB Shell tabs", false);
+            await Workbench.clickOnNotificationButton(notification, "Restart MariaDB Shell");
             await driver.wait(async () => {
                 return Os.findOnMySQLShLog(/Info/);
             }, constants.wait1second * 5 * 3, "Shell server did not start");
@@ -160,7 +160,7 @@ describe("DATABASE CONNECTIONS", () => {
                     if (text.includes("Registering session...")) {
                         return true;
                     }
-                }, constants.wait1second * 20, "Restarting the internal MySQL Shell server went wrong");
+                }, constants.wait1second * 20, "Restarting the internal MariaDB Shell server went wrong");
             } finally {
                 E2ELogger.info("<<<<MySQLSH Logs>>>>");
                 await Os.writeMySQLshLogs();
@@ -187,11 +187,11 @@ describe("DATABASE CONNECTIONS", () => {
 
         });
 
-        it("Reset MySQL Shell for VS Code Extension", async () => {
+        it("Reset MariaDB Shell for VS Code Extension", async () => {
 
             await Workbench.closeAllEditors();
             await dbTreeSection.selectMoreActionsItem(constants.resetExtension);
-            let notification = "This will completely reset the MySQL Shell for VS Code extension by ";
+            let notification = "This will completely reset the MariaDB Shell for VS Code extension by ";
             notification += "deleting the web certificate and optionally deleting the user settings directory.";
             const ntf = await Workbench.getNotification(notification, false);
             await Workbench.clickOnNotificationButton(ntf, constants.cancel);
@@ -772,7 +772,7 @@ describe("DATABASE CONNECTIONS", () => {
 
         });
 
-        it("Open MySQL Shell Console for this connection", async () => {
+        it("Open MariaDB Shell Console for this connection", async () => {
 
             await dbTreeSection.openContextMenuAndSelect(globalConn.caption!, constants.openShellConnection);
             await driver.wait(new E2EShellConsole().untilIsOpened(globalConn), constants.waitShellOpen);

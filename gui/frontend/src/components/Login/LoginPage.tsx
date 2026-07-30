@@ -66,14 +66,14 @@ export class LoginPage extends ComponentBase<{}, ILoginPageState> {
     public render(): ComponentChild {
         const { userName, password, errorMessage } = this.state;
 
-        const title = isStandalone() ? "MySQL Shell Workbench" : "MySQL Shell GUI";
+        const title = isStandalone() ? "MariaDB Shell Workbench" : "MariaDB Shell GUI";
 
         return (
             <Container id="loginDialog" orientation={Orientation.TopDown}>
                 <Icon src={Assets.modules.moduleShellIcon} id="loginDialogSakilaLogo" />
                 <Container id="heading" orientation={Orientation.TopDown}>
                     <Label id="headingLabel">
-                        MySQL Shell
+                        MariaDB Shell
                     </Label>
                     <Label id="headingSubLabel">
                         Welcome to the {title}.

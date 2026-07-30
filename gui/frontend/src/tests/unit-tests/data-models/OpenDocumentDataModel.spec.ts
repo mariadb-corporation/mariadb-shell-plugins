@@ -118,14 +118,14 @@ describe("OpenDocumentDataModel", () => {
         const roots = dataModel.roots;
         expect(roots[0].caption).toBe("Webview Provider 2");
 
-        expect(dataModel.createUniqueCaption()).toBe("MySQL Shell (2)");
-        expect(dataModel.createUniqueCaption()).toBe("MySQL Shell (2)");
+        expect(dataModel.createUniqueCaption()).toBe("MariaDB Shell (2)");
+        expect(dataModel.createUniqueCaption()).toBe("MariaDB Shell (2)");
         provider1 = dataModel.openProvider(webviewProviderMock1);
-        provider1!.caption = "MySQL Shell (2)";
-        expect(dataModel.createUniqueCaption()).toBe("MySQL Shell (3)");
+        provider1!.caption = "MariaDB Shell (2)";
+        expect(dataModel.createUniqueCaption()).toBe("MariaDB Shell (3)");
 
         dataModel.closeProvider();
-        expect(dataModel.createUniqueCaption()).toBe("MySQL Shell");
+        expect(dataModel.createUniqueCaption()).toBe("MariaDB Shell");
 
         checkNoUiWarningsOrErrors();
     });
@@ -159,7 +159,7 @@ describe("OpenDocumentDataModel", () => {
         }));
         expect(children[2]).toMatchObject(expect.objectContaining({
             type: OdmEntityType.ShellSessionRoot,
-            caption: "MySQL Shell Consoles",
+            caption: "MariaDB Shell Consoles",
         }));
 
         expect(children[1]).toBe(page);

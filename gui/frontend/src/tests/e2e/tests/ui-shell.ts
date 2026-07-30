@@ -168,7 +168,7 @@ describe("MYSQL SHELL CONSOLES", () => {
         it("Connect using shell global variable", async () => {
             try {
                 let result = await shellConsole.codeEditor.execute("shell.status()") as E2ECommandResultData;
-                expect(result.text).toMatch(/MySQL Shell version (\d+).(\d+).(\d+)/);
+                expect(result.text).toMatch(/MariaDB Shell version (\d+).(\d+).(\d+)/);
                 let uri = `shell.connect('${username}:${password}@${hostname}:${port}0/${schema}')`;
                 result = await shellConsole.codeEditor.execute(uri) as E2ECommandResultData;
                 uri = `Creating a session to '${username}@${hostname}:${port}0/${schema}'`;

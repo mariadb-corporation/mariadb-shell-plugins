@@ -72,7 +72,7 @@ export interface IShellTabPersistentState extends IShellPromptValues {
 
     backend: ShellInterfaceShellSession;
 
-    /** Assigned when a DB connection (a global session in MySQL Shell terms) was established. */
+    /** Assigned when a DB connection (a global session in MariaDB Shell terms) was established. */
     dbSession?: ShellInterfaceDb;
     schemaList?: string[];
 
@@ -104,7 +104,7 @@ export interface IShellTabProperties extends IComponentProperties {
 
 export class ShellTab extends ComponentBase<IShellTabProperties> {
 
-    private static aboutMessage = `Welcome to the MySQL Shell - GUI Console.
+    private static aboutMessage = `Welcome to the MariaDB Shell - GUI Console.
 
 Press %modifier%+Enter to execute the current statement.
 

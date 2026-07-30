@@ -1261,7 +1261,7 @@ export class MRSCommandHandler {
                             ], "newConnection");
                         }
                     } else {
-                        void ui.showErrorMessage("Please open the MySQL Shell extension prior to using this feature " +
+                        void ui.showErrorMessage("Please open the MariaDB Shell extension prior to using this feature " +
                             "and ensure that there is at least one MySQL connection available.", {});
                     }
                 }

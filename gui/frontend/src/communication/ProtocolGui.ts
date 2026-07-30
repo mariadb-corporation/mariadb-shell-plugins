@@ -47,11 +47,11 @@ export enum ShellAPIGui {
     GuiCoreDeleteFile = "gui.core.delete_file",
     /** Returns information about backend */
     GuiCoreGetBackendInformation = "gui.core.get_backend_information",
-    /** Checks if the MySQL Shell GUI webserver certificate is installed */
+    /** Checks if the MariaDB Shell GUI webserver certificate is installed */
     GuiCoreIsShellWebCertificateInstalled = "gui.core.is_shell_web_certificate_installed",
-    /** Installs the MySQL Shell GUI webserver certificate */
+    /** Installs the MariaDB Shell GUI webserver certificate */
     GuiCoreInstallShellWebCertificate = "gui.core.install_shell_web_certificate",
-    /** Removes the MySQL Shell GUI webserver certificate */
+    /** Removes the MariaDB Shell GUI webserver certificate */
     GuiCoreRemoveShellWebCertificate = "gui.core.remove_shell_web_certificate",
     /** Add a new db_connection and associate the connection with a profile */
     GuiDbConnectionsAddDbConnection = "gui.dbConnections.add_db_connection",

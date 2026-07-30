@@ -340,11 +340,11 @@ export class ConnectionEntryImpl implements ICdmConnectionEntry {
                             // schema.
                             addMrsItem = false;
                             let answer = await ui.confirm(
-                                "This MySQL Shell version requires a new major version of the MRS metadata " +
+                                "This MariaDB Shell version requires a new major version of the MRS metadata " +
                                 "schema. The latest available version is " +
                                 `${String(status.availableMetadataVersion)}. The currently deployed ` +
                                 `schema version is ${String(status.currentMetadataVersion)}. You need to ` +
-                                "downgrade the MySQL Shell version or drop and recreate the MRS metadata " +
+                                "downgrade the MariaDB Shell version or drop and recreate the MRS metadata " +
                                 "schema. Do you want to drop and recreate the MRS metadata schema? " +
                                 "WARNING: All existing MRS data will be lost.",
                                 "Drop and Recreate", "Disable MRS features");
