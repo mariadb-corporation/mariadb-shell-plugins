@@ -1904,7 +1904,7 @@ export class MRSCommandHandler {
             return os.homedir();
         }
 
-        return path.join(os.homedir(), "AppData", "Roaming", "MySQL");
+        return path.join(os.homedir(), "AppData", "Roaming", "MariaDB");
     };
 
     private startStopLocalRouter = async (context: ExtensionContext,
@@ -2004,13 +2004,13 @@ export class MRSCommandHandler {
             try {
                 let data;
                 let mrsPluginDir = path.join(this.host.context.extensionPath, "shell", "lib",
-                    "mysqlsh", "plugins", "mrs_plugin");
+                    "mariadb-shell", "plugins", "mrs_plugin");
                 let indexPath = path.join(mrsPluginDir, "docs", file);
                 if (fs.existsSync(indexPath)) {
                     data = fs.readFileSync(indexPath, "utf8");
                 } else {
                     if (os.platform() === "win32") {
-                        mrsPluginDir = path.join(this.getBaseDir(), "mysqlsh",
+                        mrsPluginDir = path.join(this.getBaseDir(), "mariadb-shell",
                             "plugins", "mrs_plugin");
                     } else {
                         mrsPluginDir = path.join(this.getBaseDir(), ".mariadb-shell", "plugins", "mrs_plugin");

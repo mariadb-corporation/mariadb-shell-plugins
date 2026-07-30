@@ -131,7 +131,7 @@ class SetEnvironmentVariablesTask:
 
         data["SQLITE_PATH_FILE"] = os.path.join(
             self.dir_name,
-            "mysqlsh",
+            "mariadb-shell",
             "plugin_data",
             "gui_plugin",
             "mysqlsh_gui_backend.sqlite3",
@@ -323,7 +323,7 @@ def main() -> None:
 
             executor.add_task(
                 task_utils.SetPluginsTask(
-                    pathlib.Path(tmp_dirname, "mysqlsh", "plugins"), be_servers
+                    pathlib.Path(tmp_dirname, "mariadb-shell", "plugins"), be_servers
                 )
             )
 

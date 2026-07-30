@@ -197,7 +197,7 @@ namespace MySQLShellWorkbench {
           port = nextFreePort(port);
           Logger.Write(LogEvent.Info, string.Format("Using port number: {0}", port));
           mysqlshell = new Process();
-          mysqlshell.StartInfo.FileName = findBundledBinary("mysqlsh.exe", "shell");
+          mysqlshell.StartInfo.FileName = findBundledBinary("mariadb-shell.exe", "shell");
           mysqlshell.StartInfo.RedirectStandardOutput = true;
           mysqlshell.StartInfo.RedirectStandardError = true;
           mysqlshell.StartInfo.UseShellExecute = false;
@@ -262,7 +262,7 @@ namespace MySQLShellWorkbench {
         }
       } else {
         mysqlshell = new Process();
-        mysqlshell.StartInfo.FileName = findBundledBinary("mysqlsh.exe", "shell"); ;
+        mysqlshell.StartInfo.FileName = findBundledBinary("mariadb-shell.exe", "shell"); ;
         mysqlshell.StartInfo.RedirectStandardOutput = true;
         mysqlshell.StartInfo.RedirectStandardError = true;
         mysqlshell.StartInfo.UseShellExecute = false;

@@ -79,7 +79,7 @@ To run the tests, MySQL Shell must be installed and on your `PATH`.
 From the repository root, run the following command in the terminal.
 
 ```bash
-mysqlsh --pym pip install -r migration_plugin/requirements.txt
+mariadb-shell --pym pip install -r migration_plugin/requirements.txt
 ```
 
 ### Running the Tests
@@ -89,13 +89,13 @@ The tests can be executed by running the `run-pytest` script in the NPM SCRIPTS 
 To run the tests from the terminal, change into the `migration_plugin` folder and run the following command.
 
 ```bash
-mysqlsh --log-level=debug3 --verbose=4 --py -f run_tests.py
+mariadb-shell --log-level=debug3 --verbose=4 --py -f run_tests.py
 ```
 
 To run a specific test, use the `-k` option.
 
 ```bash
-mysqlsh --log-level=debug3 --verbose=4 --py -f run_tests.py -k test_plugin_version
+mariadb-shell --log-level=debug3 --verbose=4 --py -f run_tests.py -k test_plugin_version
 ```
 
 Copyright &copy; 2025, 2026, Oracle and/or its affiliates.

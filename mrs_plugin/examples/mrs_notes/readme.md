@@ -79,7 +79,7 @@ To create the mrsNotes schema the corresponding SQL script file needs to be exec
 - If you are browsing this documentation within VS Code click the button next to the SQL script name `examples/mrs_notes/db_schema/mrs_notes.sql`
 - If you want to use MySQL Shell on the command line, switch to the mrs_notes plugin directory and run the following command.
 
-    mysqlsh dba@localhost --sql -f examples/mrs_notes/db_schema/mrs_notes.sql
+    mariadb-shell dba@localhost --sql -f examples/mrs_notes/db_schema/mrs_notes.sql
 
 #### mrsNotes EER Diagram
 

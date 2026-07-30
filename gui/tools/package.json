@@ -10,7 +10,7 @@
         "xml-js": "^1.6.11"
     },
     "scripts": {
-        "update-protocols-file": "mysqlsh --disable-builtin-plugins --py -f ./update_gui_protocol_definitions.py",
-        "update-package-year": "mysqlsh --disable-builtin-plugins --py -f ./src/year_handler.py"
+        "update-protocols-file": "mariadb-shell --disable-builtin-plugins --py -f ./update_gui_protocol_definitions.py",
+        "update-package-year": "mariadb-shell --disable-builtin-plugins --py -f ./src/year_handler.py"
     }
 }

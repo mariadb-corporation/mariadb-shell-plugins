@@ -27,7 +27,7 @@
         {
             "label": "Setup and run e2e FE tests",
             "type": "shell",
-            "command": "mysqlsh",
+            "command": "mariadb-shell",
             "args": [
                 "--py",
                 "-f",

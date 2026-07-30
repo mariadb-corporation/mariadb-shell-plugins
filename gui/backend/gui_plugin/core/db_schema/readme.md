@@ -5,7 +5,7 @@
 Call the following shell command to convert all .mysql.sql files
 
 ```bash
-mysqlsh --py --execute="gui.core.convert_all_gui_mysql_sql_files_to_sqlite()"
+mariadb-shell --py --execute="gui.core.convert_all_gui_mysql_sql_files_to_sqlite()"
 ```
 
 ## Convert CREATE files

@@ -297,8 +297,8 @@ class ShellModuleSession(ModuleSession):
 
         exec_name = (
             executable
-            if executable.endswith("mysqlsh") or executable.endswith("mysqlsh.exe")
-            else "mysqlsh"
+            if executable.endswith("mariadb-shell") or executable.endswith("mariadb-shell.exe")
+            else "mariadb-shell"
         )
 
         # Temporarily passing --no-defaults until it is a configurable option in FE and is received as parameter in the BE

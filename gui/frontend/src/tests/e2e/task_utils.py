@@ -111,7 +111,7 @@ def get_executables(name: str) -> str:
 
     system = platform.system()
     executables = {}
-    executables["MySQL Shell"] = "mysqlsh.exe" if system == "Windows" else "mysqlsh"
+    executables["MySQL Shell"] = "mariadb-shell.exe" if system == "Windows" else "mariadb-shell"
     executables["MySQL Server"] = "mysql.exe" if system == "Windows" else "mysql"
     executables["npm"] = "npm.cmd" if system == "Windows" else "npm"
     executables["ChromeDriver"] = (
@@ -722,7 +722,7 @@ class TaskExecutor:
         self.tasks: typing.List[Runnable] = []
         self.prerequisites: typing.List[Checkable] = []
         self.environment = os.environ.copy()
-        self.environment["MYSQLSH_USER_CONFIG_HOME"] = os.path.join(dir_name, "mysqlsh")
+        self.environment["MYSQLSH_USER_CONFIG_HOME"] = os.path.join(dir_name, "mariadb-shell")
 
     def add_task(self, task: Runnable) -> None:
         """Adding new task to be executed

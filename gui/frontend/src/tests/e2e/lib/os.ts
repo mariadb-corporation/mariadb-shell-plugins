@@ -161,7 +161,7 @@ export class Os {
      */
     public static existsCredentialHelper = async (): Promise<boolean> => {
         const params = ["--py", "--", "shell", "list-credentials"];
-        const response = spawnSync("mysqlsh", params);
+        const response = spawnSync("mariadb-shell", params);
 
         // If there were errors, it would imply there's no credential helper
         return response.status === 0;
@@ -275,7 +275,7 @@ export class Os {
      */
     public static deleteShellCredentials = (): void => {
         const params = ["--js", "-e", "shell.deleteAllCredentials()"];
-        const response = spawnSync("mysqlsh", params);
+        const response = spawnSync("mariadb-shell", params);
 
         if (response.status !== 0 && !this.isWindows()) {
             throw new Error(String(response.error));

@@ -37,10 +37,10 @@ import pytest
 # How to run and update these tests:
 #
 # ## Running
-# mysqlsh --pym pytest [<test>]
+# mariadb-shell --pym pytest [<test>]
 #
 # ## Reviewing mismatched result files and updating them
-# mysqlsh --pym pytest [<failed test>] --explain-review -s
+# mariadb-shell --pym pytest [<failed test>] --explain-review -s
 #
 # If you know that the only change is the CSS stylesheet then passing
 # --explain-ignore-style will update the result file without asking if

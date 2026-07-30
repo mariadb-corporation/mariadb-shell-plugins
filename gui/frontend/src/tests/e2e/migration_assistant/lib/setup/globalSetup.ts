@@ -32,7 +32,7 @@ import { spawnSync } from "child_process";
 const globalSetup = () => {
 
     // Deploy MySQL Sandbox instance
-    spawnSync("mysqlsh", [
+    spawnSync("mariadb-shell", [
         "--",
         "dba",
         "deploy-sandbox-instance",
@@ -49,7 +49,7 @@ const globalSetup = () => {
 
     for (const file of sqlFiles) {
         // eslint-disable-next-line max-len
-        spawnSync(`mysqlsh root:${process.env.DBROOTPASSWORD}@localhost:${mysqlServerPort} --file ${file}`, { shell: true });
+        spawnSync(`mariadb-shell root:${process.env.DBROOTPASSWORD}@localhost:${mysqlServerPort} --file ${file}`, { shell: true });
         console.log(`[OK] ${file} was executed successfully`);
     }
 };

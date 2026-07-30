@@ -227,9 +227,9 @@ test.describe("Successful Migration", () => {
                 expect(step.jumpHost.command).toContain("ssh");
                 await step.jumpHost.copyButton.click();
                 expect(await Misc.existsOnClipboard(/ssh/)).toBe(true);
-                expect(step.mysqlShell.command).toMatch(/mysqlsh.*root@(\d+).(\d+).(\d+).(\d+)/);
+                expect(step.mysqlShell.command).toMatch(/mariadb-shell.*root@(\d+).(\d+).(\d+).(\d+)/);
                 await step.mysqlShell.copyButton.click();
-                expect(await Misc.existsOnClipboard(/mysqlsh.*root@(\d+).(\d+).(\d+).(\d+)/)).toBe(true);
+                expect(await Misc.existsOnClipboard(/mariadb-shell.*root@(\d+).(\d+).(\d+).(\d+)/)).toBe(true);
             } else {
                 throw new Error("Unknown object");
             }

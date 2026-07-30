@@ -38,7 +38,7 @@ export default defineConfig({
     globalTimeout: 400000,
     webServer: [
         {
-            command: `mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=${migrationPort},accept_remote_connections=True,single_instance_token='${migrationToken}')"`,
+            command: `mariadb-shell --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=${migrationPort},accept_remote_connections=True,single_instance_token='${migrationToken}')"`,
             timeout: 15000,
             port: migrationPort,
             name: "SHELL_SERVER_INVALID",
@@ -50,7 +50,7 @@ export default defineConfig({
             },
         },
         {
-            command: `mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=${migrationInvalidPort},accept_remote_connections=True,single_instance_token='${migrationInvalidToken}')"`,
+            command: `mariadb-shell --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=${migrationInvalidPort},accept_remote_connections=True,single_instance_token='${migrationInvalidToken}')"`,
             timeout: 15000,
             port: migrationInvalidPort,
             name: "SHELL_SERVER_INVALID",

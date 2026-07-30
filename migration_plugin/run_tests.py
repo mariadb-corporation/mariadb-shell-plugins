@@ -94,7 +94,7 @@ arg_parser.add_argument(
     type=Path,
     default=os.environ.get(
         "MYSQLSH",
-        shutil.which("mysqlsh.exe") if os.name == "nt" else shutil.which("mysqlsh"),
+        shutil.which("mariadb-shell.exe") if os.name == "nt" else shutil.which("mariadb-shell"),
     ),
     help="Path to MySQL Shell binary",
 )

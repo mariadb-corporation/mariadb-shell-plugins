@@ -12,20 +12,20 @@ Since this is a MySQL Shell plugin, the tests should run as part of a MySQL Shel
 
 ```sh
 $ cd mrs_plugin
-$ mysqlsh --pym pip install --user -r requirements.txt
-$ mysqlsh --pym pip install --user -r sdk/python/requirements.txt
+$ mariadb-shell --pym pip install --user -r requirements.txt
+$ mariadb-shell --pym pip install --user -r sdk/python/requirements.txt
 ```
 
 After the dependencies are installed, the test script can execute as follows:
 
 ```sh
-$ mysqlsh --py -f run_tests.py
+$ mariadb-shell --py -f run_tests.py
 ```
 
 To run a single test or test suite, the script provides a `-k` option that allows to specify a test name or a file name.
 
 ```sh
-$ mysqlsh --py -f run_tests.py -k test_sdk
+$ mariadb-shell --py -f run_tests.py -k test_sdk
 ```
 
 ## Visual Studio Code Settings

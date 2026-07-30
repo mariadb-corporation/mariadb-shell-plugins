@@ -58,13 +58,13 @@ In a production scenario a MySQL Shell instance is launched and configured to ru
 To start the tests, you need to run
 
 ```bash
- mysqlsh --py -f run_tests.py
+ mariadb-shell --py -f run_tests.py
 ```
 
 To allow the tests to wait for a debugger to be attached, the ATTACH_DEBUGGER environment variable needs to be set with 'TESTS' or 'BACKEND'. This enables to debug the tests part or the running backend used in the user stories.
 
 ```bash
-ATTACH_DEBUGGER=BACKEND  mysqlsh --py -f run_tests.py
+ATTACH_DEBUGGER=BACKEND  mariadb-shell --py -f run_tests.py
 ```
 
 In vscode, you should use the following configurations. These configurations allow to properly debug and set breakpoints.
@@ -121,7 +121,7 @@ In vscode, you should use the following configurations. These configurations all
 To debug the backend code in standalone mode, the following command should be issued:
 
 ```bash
-ATTACH_DEBUGGER=BACKEND mysqlsh --py -e "import gui_plugin.debug_utils; import gui_plugin.start; gui.start.web_server(port=8000, secure={}, single_instance_token=\"<same token used in the browser URL>\")"
+ATTACH_DEBUGGER=BACKEND mariadb-shell --py -e "import gui_plugin.debug_utils; import gui_plugin.start; gui.start.web_server(port=8000, secure={}, single_instance_token=\"<same token used in the browser URL>\")"
 ```
 
 Copyright &copy; 2020, 2026, Oracle and/or its affiliates.

@@ -403,11 +403,11 @@ export const activate = (context: ExtensionContext): void => {
             }
 
             if (osName !== "win32") {
-                // Create a direct link to the mysqlsh binary in the shell extension folder on MacOS/Linux
-                const mysqlshLinkPath = join(shellHomeDir, "mysqlsh");
+                // Create a direct link to the mariadb-shell binary in the shell extension folder on MacOS/Linux
+                const mariadbShellLinkPath = join(shellHomeDir, "mariadb-shell");
                 const mysqlRouterLinkPath = join(shellHomeDir, "mysqlrouter");
                 try {
-                    unlinkSync(mysqlshLinkPath);
+                    unlinkSync(mariadbShellLinkPath);
                 } catch {
                     // Remove existing symlink in any case
                 }
@@ -416,16 +416,16 @@ export const activate = (context: ExtensionContext): void => {
                 } catch {
                     // Remove existing symlink in any case
                 }
-                symlinkSync(join(extensionShellDir, "bin", "mysqlsh"), mysqlshLinkPath, "file");
+                symlinkSync(join(extensionShellDir, "bin", "mariadb-shell"), mariadbShellLinkPath, "file");
                 if (existsSync(extensionRouterDir)) {
                     symlinkSync(join(extensionRouterDir, "bin", "mysqlrouter"), mysqlRouterLinkPath, "file");
                 }
                 outputChannel.appendLine(`Updated symlinks to MySQL Shell and Router binaries in "${shellHomeDir}".`);
             } else {
-                // Create a mysqlsh.bat that calls the mysqlsh binary located in the shell extension folder on Windows
-                let shellBatFilePath = join(shellHomeDir, "mysqlsh.bat");
+                // Create a mariadb-shell.bat that calls the mariadb-shell binary located in the shell extension folder on Windows
+                let shellBatFilePath = join(shellHomeDir, "mariadb-shell.bat");
                 try {
-                    writeFileSync(shellBatFilePath, `@echo off\n"${join(extensionShellDir, "bin", "mysqlsh.exe")}" %*`);
+                    writeFileSync(shellBatFilePath, `@echo off\n"${join(extensionShellDir, "bin", "mariadb-shell.exe")}" %*`);
                 } catch (err) {
                     outputChannel.appendLine(`Error while writing to '${shellBatFilePath}'. Error: ${String(err)}`);
                 }

@@ -98,7 +98,7 @@ To generate the SDK files on the command line, the MySQL Shell needs to be [down
 The following template shows how to call the `mrs.dump.sdk_service_files` plugin function to perform the SDK generation.
 
 ```sh
-mysqlsh dba@localhost --py -e 'mrs.dump.sdk_service_files(directory="/path/to/project/sdk", options={"sdk_language": "TypeScript", "service_url":"https://example.com/myService"})'
+mariadb-shell dba@localhost --py -e 'mrs.dump.sdk_service_files(directory="/path/to/project/sdk", options={"sdk_language": "TypeScript", "service_url":"https://example.com/myService"})'
 ```
 
 The full list of parameters include the following.

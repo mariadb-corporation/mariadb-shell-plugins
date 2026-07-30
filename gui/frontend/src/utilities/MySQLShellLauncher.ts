@@ -264,7 +264,7 @@ export class MySQLShellLauncher {
      * Returns the path to the MySQL Shell binary that should be used.
      *
      * The function checks if a MySQL Shell exists under the given root path. If so, the path to that binary is
-     * returned. Otherwise it returns just the name of the mysqlsh executable, assuming that the MySQL Shell is
+     * returned. Otherwise it returns just the name of the mariadb-shell executable, assuming that the MySQL Shell is
      * installed and that it is in the PATH.
      *
      * @param rootPath The file system path where to look for a shell binary.
@@ -272,7 +272,7 @@ export class MySQLShellLauncher {
      * @returns The path to the MySQL Shell as string.
      */
     private static getShellPath = (rootPath: string): string => {
-        let shellPath = path.join(rootPath, "shell", "bin", "mysqlsh");
+        let shellPath = path.join(rootPath, "shell", "bin", "mariadb-shell");
 
         // istanbul ignore next
         if (os.platform() === "win32") {
@@ -282,11 +282,11 @@ export class MySQLShellLauncher {
         // Check if MySQL Shell is bundled with the extension.
         // istanbul ignore else
         if (!fs.existsSync(shellPath)) {
-            // If not, try to use the mysqlsh installed in the system PATH. Mostly used for debugging.
+            // If not, try to use the mariadb-shell installed in the system PATH. Mostly used for debugging.
             if (os.platform() === "win32") {
-                shellPath = findExecutable("mysqlsh");
+                shellPath = findExecutable("mariadb-shell");
             } else {
-                shellPath = "mysqlsh";
+                shellPath = "mariadb-shell";
             }
         }
 

@@ -560,7 +560,7 @@ class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDel
         close(socketFD);
       }
 
-      let shellPath = getBinaryPath(name: "mysqlsh", subdir: "shell");
+      let shellPath = getBinaryPath(name: "mariadb-shell", subdir: "shell");
 
       shellProcess.launchPath = "/bin/bash";
       shellProcess.arguments = [

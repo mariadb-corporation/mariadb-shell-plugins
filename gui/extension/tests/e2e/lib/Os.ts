@@ -131,7 +131,7 @@ export class Os {
                 break;
             }
         }
-        const mysqlsh = join(extDir, extDirName, "shell", "bin", "mysqlsh");
+        const mysqlsh = join(extDir, extDirName, "shell", "bin", "mariadb-shell");
         spawnSync(mysqlsh, params);
     };
 

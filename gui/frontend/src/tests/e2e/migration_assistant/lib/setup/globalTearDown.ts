@@ -43,7 +43,7 @@ const globalTearDown = () => {
         console.log(`[OK] Process on port ${server} was killed successfully`);
     }
 
-    spawnSync("mysqlsh", [
+    spawnSync("mariadb-shell", [
         "--",
         "dba",
         "delete-sandbox-instance",

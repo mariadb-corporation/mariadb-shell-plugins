@@ -26,16 +26,16 @@
 # Generate the stubs
 (
     cd ../internal
-    mysqlsh --py -f generate_pyright_stubs.py
+    mariadb-shell --py -f generate_pyright_stubs.py
 )
 
-python_deps=$(mysqlsh --py -e "import sys; print(','.join('\"%s\"' % p for p in sys.path if 'site-packages' in p))")
+python_deps=$(mariadb-shell --py -e "import sys; print(','.join('\"%s\"' % p for p in sys.path if 'site-packages' in p))")
 
 
 echo "{\"exclude\":[\"tests\",\"run_tests.py\",\"internal\"],\"extraPaths\":[\"..\",\"../internal/typings\",$python_deps],\"stubPath\":\"../internal/typings\"}" > ./pyrightconfig.json
 
 if [[ -n "$PYTHON" ]]; then
-    mysqlsh --pym pyright --pythonpath=$PYTHON .
+    mariadb-shell --pym pyright --pythonpath=$PYTHON .
 else
-    mysqlsh --pym pyright .
+    mariadb-shell --pym pyright .
 fi

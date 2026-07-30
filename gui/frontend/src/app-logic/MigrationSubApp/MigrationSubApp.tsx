@@ -3130,7 +3130,7 @@ Migration Assistant.`}
 
         const sshCmd =
             `ssh -i"${summaryInfo.jumpHostKeyPath}" -oIdentityAgent=none opc@${summaryInfo.jumpHostPublicIP}`;
-        const mysqlshCmd = `mysqlsh -p ${summaryInfo.adminUser}@${summaryInfo.dbSystemIP}`;
+        const mysqlshCmd = `mariadb-shell -p ${summaryInfo.adminUser}@${summaryInfo.dbSystemIP}`;
         const consoleUrl =
             `https://cloud.oracle.com/mysqlaas/db-systems/${summaryInfo.dbSystemId}?region=${summaryInfo.region}`;
         const jumpHostConsoleUrl =

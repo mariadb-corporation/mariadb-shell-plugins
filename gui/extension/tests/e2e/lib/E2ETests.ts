@@ -127,7 +127,7 @@ export class E2ETests {
      * Sets the Shell binary location on the shellBinary attribute
      */
     public static setShellBinary = (): void => {
-        const mysqlsh = platform() !== "win32" ? "mysqlsh" : "mysqlsh.exe";
+        const mysqlsh = platform() !== "win32" ? "mariadb-shell" : "mariadb-shell.exe";
 
         let folderName: string | undefined;
         const files = readdirSync(this.testSuites[0].extensionDir!);

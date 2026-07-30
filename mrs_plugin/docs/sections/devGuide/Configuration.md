@@ -78,7 +78,7 @@ To configure the metadata schema the REST SQL extension [`CONFIGURE REST METADAT
 The following example connects to a local MySQL Server instance using a `dba` MySQL user account and configures the MySQL REST Service metadata schema.
 
 ```bash
-$ mysqlsh dba@localhost
+$ mariadb-shell dba@localhost
 MySQL Shell 9.3.0
 
 MySQL> localhost:3306> SQL> CONFIGURE REST METADATA;
@@ -99,7 +99,7 @@ Please note that a MySQL user account with required privileges to drop the `mysq
 The following example connects to a local MySQL Server instance using a `dba` MySQL user account and drops the MySQL REST Service metadata schema.
 
 ```bash
-$ mysqlsh dba@localhost
+$ mariadb-shell dba@localhost
 MySQL Shell 9.3.0
 
 MySQL> localhost:3306> SQL> DROP SCHEMA mysql_rest_service_metadata;

@@ -187,7 +187,7 @@
             {
                 "label": "Execute Shell in Python Mode",
                 "type": "shell",
-                "command": "mysqlsh",
+                "command": "mariadb-shell",
                 "args": [
                     "--log-file",
                     "${workspaceFolder}/mariadb-shell.log",
@@ -220,7 +220,7 @@
             {
                 "label": "Execute Shell in Python Mode (win)",
                 "type": "shell",
-                "command": "mysqlsh",
+                "command": "mariadb-shell",
                 "args": [
                     "--log-file",
                     "${workspaceFolder}/mariadb-shell.log",
@@ -261,7 +261,7 @@
             {
                 "label": "Execute Shell in Python Mode (win)",
                 "type": "shell",
-                "command": "mysqlsh",
+                "command": "mariadb-shell",
                 "args": [
                     "--log-file",
                     "${workspaceFolder}/mariadb-shell.log",

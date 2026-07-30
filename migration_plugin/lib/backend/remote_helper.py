@@ -136,7 +136,7 @@ class RemoteHelperClient:
         self.local_basedir = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../..")
         )
-        self.mysqlsh = f"mysqlsh --log-level=debug --disable-plugins --disable-builtin-plugins --log-file={self.basedir}/helper-client.log"
+        self.mysqlsh = f"mariadb-shell --log-level=debug --disable-plugins --disable-builtin-plugins --log-file={self.basedir}/helper-client.log"
 
         self.helper_zip_path = None
 

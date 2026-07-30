@@ -133,8 +133,8 @@ def create_test_schema():
 
     command = (
         executable
-        if executable.endswith("mysqlsh") or executable.endswith("mysqlsh.exe")
-        else "mysqlsh"
+        if executable.endswith("mariadb-shell") or executable.endswith("mariadb-shell.exe")
+        else "mariadb-shell"
     )
 
     subprocess.run(

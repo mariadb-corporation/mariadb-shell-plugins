@@ -25,4 +25,4 @@ rem 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 set MYSQL_SHELL_GUI_DEBUG_MODE=1
 set LOG_LEVEL=DEBUG2
-mysqlsh --disable-builtin-plugins --py -e "gui.start.web_server(port=8000, secure={'tempCerts': True}, single_instance_token='1234')"
+mariadb-shell --disable-builtin-plugins --py -e "gui.start.web_server(port=8000, secure={'tempCerts': True}, single_instance_token='1234')"

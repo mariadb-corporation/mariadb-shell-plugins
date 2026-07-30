@@ -50,4 +50,4 @@ else
 fi
 
 # Set log level and execute the command
-MYSQL_SHELL_GUI_DEBUG_MODE=1 LOG_LEVEL=DEBUG2 mysqlsh --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=8000,accept_remote_connections=True$OPTIONAL_PART)"
+MYSQL_SHELL_GUI_DEBUG_MODE=1 LOG_LEVEL=DEBUG2 mariadb-shell --log-level=debug --disable-builtin-plugins --py -e "gui.start.web_server(port=8000,accept_remote_connections=True$OPTIONAL_PART)"
