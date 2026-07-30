@@ -420,7 +420,7 @@ export class E2ETests {
         E2ELogger.success(`MYSQLSH_GUI_CUSTOM_PORT is ${process.env.MYSQLSH_GUI_CUSTOM_PORT}`);
 
         // TRUNCATE THE MYSQL SHELL LOG FILE
-        const mysqlshLog = join(process.env.TEST_RESOURCES_PATH, `mysqlsh-${testSuite.name}`, "mysqlsh.log");
+        const mysqlshLog = join(process.env.TEST_RESOURCES_PATH, `mysqlsh-${testSuite.name}`, "mariadb-shell.log");
 
         if (existsSync(mysqlshLog)) {
             truncateSync(mysqlshLog);
@@ -529,7 +529,7 @@ export class E2ETests {
 
         if (!existsSync(configFolder)) {
             mkdirSync(configFolder);
-            writeFileSync(join(configFolder, "mysqlsh.log"), "");
+            writeFileSync(join(configFolder, "mariadb-shell.log"), "");
             mkdirSync(join(configFolder, "plugin_data", "gui_plugin"), { recursive: true });
             E2ELogger.success(`Created config folder for ${testSuite.name} test suite`);
         }

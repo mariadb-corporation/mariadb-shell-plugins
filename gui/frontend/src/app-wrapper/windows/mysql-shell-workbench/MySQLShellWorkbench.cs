@@ -361,7 +361,7 @@ namespace MySQLShellWorkbench {
                 break;
               case "getApplicationData":
                 Dictionary<string, string> paths = new Dictionary<string, string>();
-                paths.Add("logPath", Common.GetUserConfigPath(new List<string> { "mysqlsh.log" }));
+                paths.Add("logPath", Common.GetUserConfigPath(new List<string> { "mariadb-shell.log" }));
                 paths.Add("projectsPath", Common.GetUserConfigPath(new List<string> { "plugin_data", "migration_plugin" }));
                 var jsonPaths = JsonSerializer.Serialize(paths, new JsonSerializerOptions { WriteIndented = false });
                 sendAppMessage("setApplicationData", jsonPaths);

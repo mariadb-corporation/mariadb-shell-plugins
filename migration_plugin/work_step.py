@@ -411,7 +411,7 @@ def fetch_logs(sub_step_id: Optional[SubStepId] = None, offset: int = 0) -> LogI
     Fetch logs for the given step or the log file.
 
     Args:
-        sub_step_id (int): the step for which to fetch logs or None to fetch mysqlsh.log
+        sub_step_id (int): the step for which to fetch logs or None to fetch mariadb-shell.log
         offset (int): offset for the 1st entry to fetch
 
     Returns: LogInfo object with the log data and offset to use to fetch later entries

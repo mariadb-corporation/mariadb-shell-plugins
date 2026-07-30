@@ -699,7 +699,7 @@ class AppDelegate: NSObject, AppProtocol, NSApplicationDelegate, WKNavigationDel
           sendAppMessage(command: "setCommandLineArguments")
         }
       } else if (dict["command"] as? String == "getApplicationData") {
-          let logPath = Common.getUserConfigPath("mysqlsh.log").path
+          let logPath = Common.getUserConfigPath("mariadb-shell.log").path
           let projectsPath = Common.getUserConfigPath("plugin_data", "migration_plugin").path
           
           let data: [String: String] = ["logPath": logPath, "projectsPath": projectsPath]

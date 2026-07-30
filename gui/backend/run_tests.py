@@ -308,11 +308,11 @@ if not shell.returncode == 0:
     print("MYSQLSH log")
     print("----------------------------------------")
     if args.logs:
-        with open(os.path.join(paths.runtime.root / "mysqlsh.log")) as f:
+        with open(os.path.join(paths.runtime.root / "mariadb-shell.log")) as f:
             for line in f.readlines():
                 print(line.strip())
     else:
-        print(os.path.join(paths.runtime.root / "mysqlsh.log"))
+        print(os.path.join(paths.runtime.root / "mariadb-shell.log"))
 
     print("----------------------------------------")
     print("Backend database log")

@@ -47,7 +47,7 @@ def get_plugin_data_path(create=True) -> str:
 
 
 def get_mysqlsh_log_path() -> str:
-    return os.path.abspath(plugin_manager_general.get_shell_user_dir("mysqlsh.log"))
+    return os.path.abspath(plugin_manager_general.get_shell_user_dir("mariadb-shell.log"))
 
 
 def default_projects_directory(create: bool):

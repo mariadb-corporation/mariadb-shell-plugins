@@ -207,7 +207,7 @@ export class Os {
      */
     public static getMysqlshLog = (): string => {
         if (process.env.TEST_SUITE !== undefined) {
-            return join(process.env.TEST_RESOURCES_PATH!, `mysqlsh-${String(process.env.TEST_SUITE)}`, "mysqlsh.log");
+            return join(process.env.TEST_RESOURCES_PATH!, `mysqlsh-${String(process.env.TEST_SUITE)}`, "mariadb-shell.log");
         } else {
             throw new Error("TEST_SUITE env variable is not defined");
         }

@@ -534,9 +534,9 @@ export const setupShellForTests = (showOutput: boolean, handleEvents = true,
                         console.error(`⚠️  Could not create logs folder at ${logsRoot}:`, e);
                     }
 
-                    const shellLogPath = path.join(targetDir, "mysqlsh.log");
+                    const shellLogPath = path.join(targetDir, "mariadb-shell.log");
                     if (fs.existsSync(shellLogPath)) {
-                        const destPath = path.join(logsRoot, `${context}-mysqlsh.log`);
+                        const destPath = path.join(logsRoot, `${context}-mariadb-shell.log`);
 
                         try {
                             fs.copyFileSync(shellLogPath, destPath);

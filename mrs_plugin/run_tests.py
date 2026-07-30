@@ -281,7 +281,7 @@ if not shell.returncode == 0:
     print("----------------------------------------")
     print("MYSQLSH log")
     print("----------------------------------------")
-    with open(os.path.join(paths.runtime.root / "mysqlsh.log")) as f:
+    with open(os.path.join(paths.runtime.root / "mariadb-shell.log")) as f:
         for line in f.readlines():
             print(line.strip())
 

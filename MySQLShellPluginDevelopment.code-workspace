@@ -190,7 +190,7 @@
                 "command": "mysqlsh",
                 "args": [
                     "--log-file",
-                    "${workspaceFolder}/mysqlsh.log",
+                    "${workspaceFolder}/mariadb-shell.log",
                     "--py"
                 ],
                 "isBackground": true,
@@ -223,7 +223,7 @@
                 "command": "mysqlsh",
                 "args": [
                     "--log-file",
-                    "${workspaceFolder}/mysqlsh.log",
+                    "${workspaceFolder}/mariadb-shell.log",
                     "--py"
                 ],
                 "isBackground": true,
@@ -264,7 +264,7 @@
                 "command": "mysqlsh",
                 "args": [
                     "--log-file",
-                    "${workspaceFolder}/mysqlsh.log",
+                    "${workspaceFolder}/mariadb-shell.log",
                     "--py",
                 ],
                 "isBackground": true,
