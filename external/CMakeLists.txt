@@ -20,8 +20,16 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+# Where the shell keeps its bundled libraries and plugins, relative to the build
+# or install root. The shell defines INSTALL_LIBDIR in its top-level
+# CMakeLists.txt (see MARIADB_PORT.md 14.1); fall back to the same value it uses
+# so this file also works when configured standalone.
+IF(NOT INSTALL_LIBDIR)
+  SET(INSTALL_LIBDIR "lib/mariadb-shell")
+ENDIF()
+
 ADD_CUSTOM_COMMAND(OUTPUT copy_external_plugins
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CONFIG_BINARY_DIR}/lib/mysqlsh
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CONFIG_BINARY_DIR}/${INSTALL_LIBDIR}
     COMMENT "Copying External Plugins"
 )
 
@@ -41,7 +49,7 @@ FOREACH(child ${children})
   IF(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${child})
     ADD_CUSTOM_COMMAND(TARGET external_plugins
         PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/${child} ${CONFIG_BINARY_DIR}/lib/mysqlsh/plugins/${child}
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/${child} ${CONFIG_BINARY_DIR}/${INSTALL_LIBDIR}/plugins/${child}
         COMMENT "Copying External Shell Plugin"
     )
   ENDIF()

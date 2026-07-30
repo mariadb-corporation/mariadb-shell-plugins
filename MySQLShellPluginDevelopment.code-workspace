@@ -58,14 +58,14 @@
         "workbench.colorCustomizations": {},
         "python.envFile": "${workspaceFolder}/python.env",
         "python.analysis.extraPaths": [
-            "/usr/local/mysql-shell/lib/mysqlsh/python-packages/",
+            "/usr/local/mysql-shell/lib/mariadb-shell/python-packages/",
             "${workspaceFolder}\\plugins\\rds_plugin",
             "${workspaceFolder}/..",
-            "/usr/local/mysql-shell/lib/mysqlsh/lib/python3.12/site-packages"
+            "/usr/local/mysql-shell/lib/mariadb-shell/lib/python3.12/site-packages"
         ],
         "python.autoComplete.extraPaths": [
-            "/usr/local/mysql-shell/lib/mysqlsh/python-packages/",
-            "/usr/local/mysql-shell/lib/mysqlsh/lib/python3.12/site-packages",
+            "/usr/local/mysql-shell/lib/mariadb-shell/python-packages/",
+            "/usr/local/mysql-shell/lib/mariadb-shell/lib/python3.12/site-packages",
             "${workspaceFolder}\\plugins\\rds_plugin"
         ],
         "liveServer.settings.multiRootWorkspaceName": "MySQL REST Service Plugin",

@@ -13,13 +13,13 @@ Include the following settings in your VS Code settings.json file in order to al
 ```json
 {
     "python.analysis.extraPaths": [
-        "/usr/local/mysql-shell/lib/mysqlsh/python-packages/",
+        "/usr/local/mysql-shell/lib/mariadb-shell/python-packages/",
         "${workspaceFolder}\\plugins\\rds_plugin",
-        "/usr/local/mysql-shell/lib/mysqlsh/lib/python3.9/site-packages"
+        "/usr/local/mysql-shell/lib/mariadb-shell/lib/python3.9/site-packages"
     ],
     "python.autoComplete.extraPaths": [
-        "/usr/local/mysql-shell/lib/mysqlsh/python-packages/",
-        "/usr/local/mysql-shell/lib/mysqlsh/lib/python3.9/site-packages",
+        "/usr/local/mysql-shell/lib/mariadb-shell/python-packages/",
+        "/usr/local/mysql-shell/lib/mariadb-shell/lib/python3.9/site-packages",
         "${workspaceFolder}\\plugins\\rds_plugin"
     ]
 }

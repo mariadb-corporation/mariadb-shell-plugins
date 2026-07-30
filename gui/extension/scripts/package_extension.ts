@@ -62,13 +62,13 @@ const frontEndFolder = join(shellPluginsGuiFolder, "frontend");
 const extensionFolder = join(shellPluginsGuiFolder, "extension");
 const buildFolder = join(frontEndFolder, "build");
 const guiPluginBackend = join(shellPluginsGuiFolder, "backend", "gui_plugin");
-const mrsPluginPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "mrs_plugin");
-const mdsPluginPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "mds_plugin");
-const msmPluginPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "msm_plugin");
-const guiPluginPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "gui_plugin");
-const utilPluginPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "util_plugin");
-const migrationPluginPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "migration_plugin");
-const webRootPath = join(extensionFolder, "shell", "lib", "mysqlsh", "plugins", "gui_plugin", "core", "webroot");
+const mrsPluginPath = join(extensionFolder, "shell", "lib", "mariadb-shell", "plugins", "mrs_plugin");
+const mdsPluginPath = join(extensionFolder, "shell", "lib", "mariadb-shell", "plugins", "mds_plugin");
+const msmPluginPath = join(extensionFolder, "shell", "lib", "mariadb-shell", "plugins", "msm_plugin");
+const guiPluginPath = join(extensionFolder, "shell", "lib", "mariadb-shell", "plugins", "gui_plugin");
+const utilPluginPath = join(extensionFolder, "shell", "lib", "mariadb-shell", "plugins", "util_plugin");
+const migrationPluginPath = join(extensionFolder, "shell", "lib", "mariadb-shell", "plugins", "migration_plugin");
+const webRootPath = join(extensionFolder, "shell", "lib", "mariadb-shell", "plugins", "gui_plugin", "core", "webroot");
 
 // extra directories containing debug-only features that should not be part of the final package
 const debugOnlyFeatures = [

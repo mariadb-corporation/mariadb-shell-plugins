@@ -239,39 +239,39 @@ for d in packaging/mysql-shell/*; do
         cp -R $d/share shell/.
 
         echo "Cleanup OCI SDK folder"
-        OCIPATH=shell/lib/mysqlsh/lib/python3.13/site-packages/oci
+        OCIPATH=shell/lib/mariadb-shell/lib/python3.13/site-packages/oci
         if [ "$PLATFORM" == "linux-arm64" ] || [ "$PLATFORM" == "linux-x64" ]; then
-            OCIPATH=shell/lib/mysqlsh/lib/python3.13/site-packages/oci
+            OCIPATH=shell/lib/mariadb-shell/lib/python3.13/site-packages/oci
         elif [ "$PLATFORM" == "win32-x64" ]; then
             OCIPATH=shell/lib/Python3.13/Lib/site-packages/oci
         fi
         strip_oci_package $OCIPATH
 
         echo "Wipe out bundled plugins"
-        rm -Rf shell/lib/mysqlsh/plugins/gui_plugin
-        rm -Rf shell/lib/mysqlsh/plugins/mds_plugin
-        rm -Rf shell/lib/mysqlsh/plugins/mrs_plugin
-        rm -Rf shell/lib/mysqlsh/plugins/msm_plugin
-        rm -Rf shell/lib/mysqlsh/plugins/util_plugin
-        rm -Rf shell/lib/mysqlsh/plugins/migration_plugin
+        rm -Rf shell/lib/mariadb-shell/plugins/gui_plugin
+        rm -Rf shell/lib/mariadb-shell/plugins/mds_plugin
+        rm -Rf shell/lib/mariadb-shell/plugins/mrs_plugin
+        rm -Rf shell/lib/mariadb-shell/plugins/msm_plugin
+        rm -Rf shell/lib/mariadb-shell/plugins/util_plugin
+        rm -Rf shell/lib/mariadb-shell/plugins/migration_plugin
 
         echo "Copy plugins"
-        cp -RL $SHELL_PLUGINS_LOCATION/gui_plugin shell/lib/mysqlsh/plugins/.
-        cp -RL $SHELL_PLUGINS_LOCATION/mds_plugin shell/lib/mysqlsh/plugins/.
-        cp -RL $SHELL_PLUGINS_LOCATION/mrs_plugin shell/lib/mysqlsh/plugins/.
-        cp -RL $SHELL_PLUGINS_LOCATION/msm_plugin shell/lib/mysqlsh/plugins/.
-        cp -RL $SHELL_PLUGINS_LOCATION/util_plugin shell/lib/mysqlsh/plugins/.
-        cp -RL $SHELL_PLUGINS_LOCATION/migration_plugin shell/lib/mysqlsh/plugins/.
+        cp -RL $SHELL_PLUGINS_LOCATION/gui_plugin shell/lib/mariadb-shell/plugins/.
+        cp -RL $SHELL_PLUGINS_LOCATION/mds_plugin shell/lib/mariadb-shell/plugins/.
+        cp -RL $SHELL_PLUGINS_LOCATION/mrs_plugin shell/lib/mariadb-shell/plugins/.
+        cp -RL $SHELL_PLUGINS_LOCATION/msm_plugin shell/lib/mariadb-shell/plugins/.
+        cp -RL $SHELL_PLUGINS_LOCATION/util_plugin shell/lib/mariadb-shell/plugins/.
+        cp -RL $SHELL_PLUGINS_LOCATION/migration_plugin shell/lib/mariadb-shell/plugins/.
 
         echo "Prune debug-only features"
-        rm -Rf shell/lib/mysqlsh/plugins/gui_plugin/debugger
+        rm -Rf shell/lib/mariadb-shell/plugins/gui_plugin/debugger
 
         # Clean *.py[co] files and __pycache__ directories
-        find shell/lib/mysqlsh/plugins -type f -name '*.py[co]' -delete -o -type d -name __pycache__ -delete
+        find shell/lib/mariadb-shell/plugins -type f -name '*.py[co]' -delete -o -type d -name __pycache__ -delete
 
         # Remove wrappers
-        if [ -d "shell/lib/mysqlsh/plugins/gui_plugin/wrappers" ]; then
-            rm -rf shell/lib/mysqlsh/plugins/gui_plugin/wrappers
+        if [ -d "shell/lib/mariadb-shell/plugins/gui_plugin/wrappers" ]; then
+            rm -rf shell/lib/mariadb-shell/plugins/gui_plugin/wrappers
         fi
 
         # Remove the shell directory if it exists
