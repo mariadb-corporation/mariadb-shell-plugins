@@ -168,10 +168,10 @@ def configure(
 
             if current_db_version[0] > lib.general.DB_VERSION[0]:
                 raise Exception(
-                    "This version of MySQL Shell does not support the MRS "
+                    "This version of MariaDB Shell does not support the MRS "
                     "metadata database schema version "
                     f"{current_version_str}. Please update "
-                    "MySQL Shell to work with this MRS version."
+                    "MariaDB Shell to work with this MRS version."
                 )
 
             if (
@@ -180,7 +180,7 @@ def configure(
             ):
                 raise Exception(
                     f"The MRS metadata version {current_version_str} is "
-                    "too old to be managed by this version of MySQL Shell. "
+                    "too old to be managed by this version of MariaDB Shell. "
                     "Please update the MRS metadata version, e.g. run "
                     "`mrs.configure(update_if_available=True)` to update."
                 )

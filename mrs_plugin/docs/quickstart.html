@@ -91,7 +91,7 @@
 
                     document.querySelectorAll("code").forEach((e) => {
                         if (e.innerHTML.endsWith(".sql")) {
-                            addVsActionBtn(e, "openSqlFile", "Open in MySQL Shell");
+                            addVsActionBtn(e, "openSqlFile", "Open in MariaDB Shell");
                         } else if (e.innerHTML.endsWith(".mrs.json")) {
                             addVsActionBtn(e, "loadMrsDump", "Load MRS Dump");
                         } else if (e.innerHTML.startsWith("VSCodeProject:") > 0) {
@@ -401,7 +401,7 @@ Service - Quickstart Guide
                 href="https://dev.mysql.com/doc/mysql-installation-excerpt/en/windows-installation.html">Windows</a>.</p>
                 <p>After the MySQL Server has been installed, make sure
                 that it is started up and that a database connection can
-                be established, using the MySQL Shell for VS Code
+                be established, using the MariaDB Shell for VS Code
                 extension.</p>
                 <h2 data-number="2.2" id="setting-up-vs-code"><span
                 class="header-section-number">2.2</span> Setting up VS
@@ -413,24 +413,24 @@ Service - Quickstart Guide
                 Shell for VS Code extension installed.</p>
                 <p>After downloading and installing VS Code, select the
                 Extensions icon in the Activity Bar on the left hand
-                side and enter MySQL Shell, then click the
+                side and enter MariaDB Shell, then click the
                 <code>Install</code> button.</p>
                 <p>When using VSCodium, please see here how to <a
                 href="#enabling-ms-marketplace-on-vscodium">enable the
                 MS Marketplace</a> first. With the MS Marketplace
                 enabled, select the Extensions icon in the Activity Bar
-                on the left hand side, enter MySQL Shell and then click
+                on the left hand side, enter MariaDB Shell and then click
                 the <code>Install</code> button.</p>
                 <h3 data-number="2.2.1"
                 id="mysql-shell-welcome-wizard"><span
-                class="header-section-number">2.2.1</span> MySQL Shell
+                class="header-section-number">2.2.1</span> MariaDB Shell
                 Welcome Wizard</h3>
-                <p>When first launching the MySQL Shell VS Code
+                <p>When first launching the MariaDB Shell VS Code
                 extension, a Welcome Wizard will be shown. Please follow
                 the required steps to configure the extension.</p>
                 <p>In case of an issue, the extension can be reset by
                 bringing up the VS Code Command Palette and selecting
-                the <code>Reset MySQL Shell for VS Code Extension</code>
+                the <code>Reset MariaDB Shell for VS Code Extension</code>
                 or by selecting the corresponding popup menu item of the
                 <code>DATABASE CONNECTIONS</code> view in the Primary
                 Side Bar.</p>
@@ -438,7 +438,7 @@ Service - Quickstart Guide
                 id="adding-a-db-connection"><span
                 class="header-section-number">2.2.2</span> Adding a DB
                 Connection</h3>
-                <p>After successfully configuring the MySQL Shell VS
+                <p>After successfully configuring the MariaDB Shell VS
                 Code extension, select its icon in the VS Code Activity
                 Bar on the left hand side. Then click the
                 <code>DB Connection Overview</code> entry in the
@@ -478,9 +478,9 @@ Service - Quickstart Guide
                 explicitly configured on a given MySQL setup, before it
                 can be used.</p>
                 <p>This configuration can either be performed directly
-                in the MySQL Shell for VS Code extension or via the <a
+                in the MariaDB Shell for VS Code extension or via the <a
                 href="index.html#mrs-configuration-using-mysql-shell">REST
-                SQL extension available</a> in the MySQL Shell.</p>
+                SQL extension available</a> in the MariaDB Shell.</p>
                 <blockquote>
                 <p>When using a HeatWave setup on OCI, please browse the
                 HeatWave documentation on how to enable REST service
@@ -489,8 +489,8 @@ Service - Quickstart Guide
                 <h3 data-number="2.3.1"
                 id="configuring-mrs-in-mysql-shell-for-vs-code"><span
                 class="header-section-number">2.3.1</span> Configuring
-                MRS in MySQL Shell for VS Code</h3>
-                <p>Using the MySQL Shell for VS Code extension, locate
+                MRS in MariaDB Shell for VS Code</h3>
+                <p>Using the MariaDB Shell for VS Code extension, locate
                 the <code>DATABASE CONNECTIONS</code> view in the
                 Primary Side Bar and right-click on the DB Connection
                 entry <code>MRS Development</code> created above. This
@@ -672,8 +672,8 @@ Service - Quickstart Guide
                 <p>After configuring a MySQL instance for MySQL REST
                 Service support, you can define new REST services and
                 endpoints. This can be done using the graphical user
-                interface built into the MySQL Shell extension for
-                Visual Studio Code or directly via the MySQL Shell REST
+                interface built into the MariaDB Shell extension for
+                Visual Studio Code or directly via the MariaDB Shell REST
                 SQL extension.</p>
                 <h2 data-number="3.1"
                 id="deploying-the-sakila-schema"><span
@@ -688,7 +688,7 @@ Service - Quickstart Guide
                 <li>Double-click the downloaded ZIP file to extract it.
                 This will create a folder <code>sakila-db</code>
                 containing two SQL scripts.</li>
-                <li>Using the MySQL Shell for VS Code extension, locate
+                <li>Using the MariaDB Shell for VS Code extension, locate
                 the <code>DATABASE CONNECTIONS</code> view in the
                 Primary Side Bar and right-click on the DB Connection
                 entry <code>MRS Development</code> created above. From
@@ -935,9 +935,9 @@ Service - Quickstart Guide
                 <h2 data-number="4.2" id="typescript-prompt"><span
                 class="header-section-number">4.2</span> TypeScript
                 Prompt</h2>
-                <p>The MySQL Shell for VS Code supports and interactive
+                <p>The MariaDB Shell for VS Code supports and interactive
                 workflow to prototype REST access using TypeScript.</p>
-                <p>After opening a database connection in MySQL Shell
+                <p>After opening a database connection in MariaDB Shell
                 for VS Code the DB Notebook will be displayed. Switch
                 the DB Notebook to TypeScript mode with <code>\ts</code>
                 if it is in SQL mode.</p>

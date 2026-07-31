@@ -91,7 +91,7 @@
 
                     document.querySelectorAll("code").forEach((e) => {
                         if (e.innerHTML.endsWith(".sql")) {
-                            addVsActionBtn(e, "openSqlFile", "Open in MySQL Shell");
+                            addVsActionBtn(e, "openSqlFile", "Open in MariaDB Shell");
                         } else if (e.innerHTML.endsWith(".mrs.json")) {
                             addVsActionBtn(e, "loadMrsDump", "Load MRS Dump");
                         } else if (e.innerHTML.startsWith("VSCodeProject:") > 0) {
@@ -793,7 +793,7 @@ Service - SDK Reference
                 <p>Several different methods can be used to perform the
                 actual generation process.</p>
                 <ul>
-                <li>Generating the SDK files from MySQL Shell for VS
+                <li>Generating the SDK files from MariaDB Shell for VS
                 Code
                 <ul>
                 <li>When using <a
@@ -802,7 +802,7 @@ Service - SDK Reference
                 href="https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code">MySQL
                 Shell for VS Code extension</a>, the SDK for a given
                 REST service can be generated directly from the UI.</li>
-                <li>While using the MySQL Shell for VS Code extension,
+                <li>While using the MariaDB Shell for VS Code extension,
                 the SDK will be generated on the fly when using a DB
                 Notebook to enabled instant prototyping of the SDK API
                 calls.</li>
@@ -822,11 +822,11 @@ Service - SDK Reference
                 service, has deployed in the MySQL Router instance used
                 by the MRS installation. This would override the base
                 URL specified when the SDK is generated in the first
-                place, using the MySQL Shell.</p>
+                place, using the MariaDB Shell.</p>
                 <h3 data-number="1.2.1"
                 id="generating-the-sdk-files-from-mysql-shell-for-vs-code"><span
                 class="header-section-number">1.2.1</span> Generating
-                the SDK Files from MySQL Shell for VS Code</h3>
+                the SDK Files from MariaDB Shell for VS Code</h3>
                 <p>To generate the SDK files for a development project,
                 right click on the MRS Service and select
                 <code>Dump to Disk &gt; Dump REST Client SDK Files ...</code>.
@@ -839,7 +839,7 @@ Service - SDK Reference
                 id="on-the-fly-generation-of-typescript-sdk-in-vs-code"><span
                 class="header-section-number">1.2.2</span> On the Fly
                 Generation of TypeScript SDK in VS Code</h3>
-                <p>The MySQL Shell for VS Code extension allows
+                <p>The MariaDB Shell for VS Code extension allows
                 interactive execution of TypeScript code inside a DB
                 Notebook. To make working with the MySQL REST Service
                 easier, the TypeScript SDK for the current REST Service
@@ -856,14 +856,14 @@ Service - SDK Reference
                 class="header-section-number">1.2.3</span> Generating
                 the SDK Files from the Command Line</h3>
                 <p>To generate the SDK files on the command line, the
-                MySQL Shell needs to be <a
+                MariaDB Shell needs to be <a
                 href="https://dev.mysql.com/downloads/shell/">downloaded</a>
                 and installed.</p>
                 <blockquote>
-                <p>When using the MySQL Shell for VS Code extension, the
-                MySQL Shell executable is made available at
+                <p>When using the MariaDB Shell for VS Code extension, the
+                MariaDB Shell executable is made available at
                 <code>~/.mysqlsh-gui/mysqlsh</code> and a dedicated
-                installation of the MySQL Shell is not required.</p>
+                installation of the MariaDB Shell is not required.</p>
                 </blockquote>
                 <p>The following template shows how to call the
                 <code>mrs.dump.sdk_service_files</code> plugin function
@@ -5394,7 +5394,7 @@ Service - SDK Reference
                 result sets.</p>
                 <p>If you want a typed result set, meaning you wish to
                 specify a type, you can do so at the MRS procedure level
-                via the MySQL Shell:</p>
+                via the MariaDB Shell:</p>
                 <div class="sourceCode" id="cb118"><pre
                 class="sourceCode sql"><code class="sourceCode sql"><span id="cb118-1"><a href="#cb118-1" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">OR</span> <span class="kw">REPLACE</span> REST <span class="kw">PROCEDURE</span> <span class="op">/</span>sampleProc</span>
 <span id="cb118-2"><a href="#cb118-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">ON</span> SERVICE <span class="op">/</span>myService <span class="kw">SCHEMA</span> <span class="op">/</span>mrsTests</span>

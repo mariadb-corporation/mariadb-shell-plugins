@@ -53,9 +53,9 @@ import {
     // --- importDeleteOnlyEnd
 } from "./MrsBaseClasses";
 
-// --- MySQL Shell for VS Code Extension Remove --- Begin
+// --- MariaDB Shell for VS Code Extension Remove --- Begin
 export type { IMrsAuthUser, IMrsAuthStatus } from "./MrsBaseClasses";
-// --- MySQL Shell for VS Code Extension Remove --- End
+// --- MariaDB Shell for VS Code Extension Remove --- End
 
 // --- importLoopEnd
 // --- schemaLoopStart
@@ -235,11 +235,11 @@ class ${obj_class_name}Object extends MrsBaseObject {
     };
     // --- crudFunctionTaskRunOnlyEnd
 
-// --- MySQL Shell for VS Code Extension Only --- Begin
+// --- MariaDB Shell for VS Code Extension Only --- Begin
     public edit = (): void => {
         mrsEditDbObject("${obj_id}");
     }
-// --- MySQL Shell for VS Code Extension Only --- End
+// --- MariaDB Shell for VS Code Extension Only --- End
 }
 
 ${obj_interfaces}
@@ -258,11 +258,11 @@ class ${schema_class_name} extends MrsBaseSchema {
         return this.#${obj_name};
     }
     // --- objectLoopEnd
-    // --- MySQL Shell for VS Code Extension Only --- Begin
+    // --- MariaDB Shell for VS Code Extension Only --- Begin
     public edit = (): void => {
         mrsEditSchema("${schema_id}");
     };
-    // --- MySQL Shell for VS Code Extension Only --- End
+    // --- MariaDB Shell for VS Code Extension Only --- End
 }
 
 // --- schemaLoopEnd
@@ -288,7 +288,7 @@ export class ${service_class_name} extends MrsBaseService {
         return this.#${schema_name};
     }
     // --- schemaLoopEnd
-    // --- MySQL Shell for VS Code Extension Only --- Begin
+    // --- MariaDB Shell for VS Code Extension Only --- Begin
     public edit = (): void => {
         mrsEditService("${service_id}");
     };
@@ -322,22 +322,22 @@ export class ${service_class_name} extends MrsBaseService {
     public setAsCurrent = () => {
         mrsSetCurrentService("${service_id}");
     };
-    // --- MySQL Shell for VS Code Extension Only --- End
+    // --- MariaDB Shell for VS Code Extension Only --- End
 
     // --- serviceAuthenticateStart
-    // --- MySQL Shell for VS Code Extension Only --- Begin
+    // --- MariaDB Shell for VS Code Extension Only --- Begin
     public async authenticate(options?: Partial<Omit<IAuthenticateOptions, "password" | "vendor">>): Promise<IMrsLoginResult>;
-    // --- MySQL Shell for VS Code Extension Only --- End
+    // --- MariaDB Shell for VS Code Extension Only --- End
     public async authenticate(options: IAuthenticateOptions): Promise<IMrsLoginResult> {
-        // --- MySQL Shell for VS Code Extension Only --- Begin
+        // --- MariaDB Shell for VS Code Extension Only --- Begin
         options = options ?? {}
-        // --- MySQL Shell for VS Code Extension Only --- End
+        // --- MariaDB Shell for VS Code Extension Only --- End
         const { username, password, app, vendor } = options;
-        // --- MySQL Shell for VS Code Extension Only --- Begin
+        // --- MariaDB Shell for VS Code Extension Only --- Begin
         if (typeof ${service_class_name}.authenticate === "function") {
             return ${service_class_name}.authenticate({ username, app, vendor });
         }
-        // --- MySQL Shell for VS Code Extension Only --- End
+        // --- MariaDB Shell for VS Code Extension Only --- End
 
         return super.authenticate({ username, password, app, vendor });
     }
@@ -348,7 +348,7 @@ export class ${service_class_name} extends MrsBaseService {
     // --- serviceAuthenticateEnd
 }
 
-// --- MySQL Shell for VS Code Extension Only --- Begin
+// --- MariaDB Shell for VS Code Extension Only --- Begin
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ${service_name} = new ${service_class_name}();
-// --- MySQL Shell for VS Code Extension Only --- End
+// --- MariaDB Shell for VS Code Extension Only --- End

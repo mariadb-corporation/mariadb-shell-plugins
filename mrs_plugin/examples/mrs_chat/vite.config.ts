@@ -31,7 +31,7 @@ import { existsSync, readFileSync } from "fs";
 import { platform, homedir } from "os";
 import { join } from "path";
 
-// Use the MySQL Shell for VS Code certificate for HTTPS, if available
+// Use the MariaDB Shell for VS Code certificate for HTTPS, if available
 const shellUserConfigDir = (platform() === "win32")
     ? join(homedir(), "AppData", "Roaming", "MySQL", "mysqlsh-gui")
     : join(homedir(), ".mysqlsh-gui");

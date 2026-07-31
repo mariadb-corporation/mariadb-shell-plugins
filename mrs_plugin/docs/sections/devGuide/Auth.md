@@ -35,7 +35,7 @@ All roles have the minimal set of MySQL privileges necessary, mostly restricted 
 
 ### MRS Administrative Users
 
-Administrative tasks (configuration, creating and managing endpoints etc) are performed through MySQL Shell. The operations that a user is allowed to perform depend on the MySQL user that was used to connect MySQL Shell to MySQL (i.e. the Username that was set when the Connection was created in MySQL Shell for VSCode or passed in the command line of `mysqlsh`).
+Administrative tasks (configuration, creating and managing endpoints etc) are performed through MariaDB Shell. The operations that a user is allowed to perform depend on the MySQL user that was used to connect MariaDB Shell to MySQL (i.e. the Username that was set when the Connection was created in MariaDB Shell for VSCode or passed in the command line of `mysqlsh`).
 
 Note that any MySQL root or admin users that have full privileges to MySQL will also have full privileges to MRS instances. Therefore, it is recommended that MRS management is done using a dedicated MySQL user with minimal privileges.
 
@@ -67,7 +67,7 @@ A Schema Administrator is allowed to:
 * view the MRS audit log
 
 Schema administrators must have the `mysql_rest_schema_admin` MySQL role.
-In addition to that role, Schema Administrator users must be able to view and grant all relevant privileges on objects that they wish to create endpoints for (e.g. `SELECT`, `INSERT`, `UPDATE`, `DELETE` on tables that will be published and updatable, `WITH GRANT OPTION`). These privileges will automatically be re-granted by MySQL Shell to the `mysql_rest_service_data_provider` role, so that MySQL Router can do whatever is required by the endpoint configuration.
+In addition to that role, Schema Administrator users must be able to view and grant all relevant privileges on objects that they wish to create endpoints for (e.g. `SELECT`, `INSERT`, `UPDATE`, `DELETE` on tables that will be published and updatable, `WITH GRANT OPTION`). These privileges will automatically be re-granted by MariaDB Shell to the `mysql_rest_service_data_provider` role, so that MySQL Router can do whatever is required by the endpoint configuration.
 
 #### Developer (`mysql_rest_service_dev`)
 
@@ -82,7 +82,7 @@ Developers are allowed to:
 * view the MRS audit log
 
 Developers must have the `mysql_rest_service_dev` MySQL role.
-In addition to that role, Developer users must be able to grant all relevant privileges on objects that they wish to create endpoints for (e.g. `SELECT`, `INSERT`, `UPDATE`, `DELETE` on tables that will be published and updatable, `WITH GRANT OPTION`). These privileges will automatically be re-granted by MySQL Shell to the `mysql_rest_service_data_provider` role, so that MySQL Router can do whatever is required by the endpoint configuration.
+In addition to that role, Developer users must be able to grant all relevant privileges on objects that they wish to create endpoints for (e.g. `SELECT`, `INSERT`, `UPDATE`, `DELETE` on tables that will be published and updatable, `WITH GRANT OPTION`). These privileges will automatically be re-granted by MariaDB Shell to the `mysql_rest_service_data_provider` role, so that MySQL Router can do whatever is required by the endpoint configuration.
 
 ### MRS Service User
 
@@ -94,7 +94,7 @@ That account has these 2 roles granted:
 This is the MySQL role MySQL Router uses to execute SQL necessary to serve HTTP REST requests on behalf of MRS users.
 This role must have grants on all MySQL objects that are exposed as REST endpoints.
 
-The MySQL Shell automatically manages privileges granted to this role, as DB objects are added as REST endpoints.
+The MariaDB Shell automatically manages privileges granted to this role, as DB objects are added as REST endpoints.
 
 Note that access control for MRS users is performed at REST endpoint level by MRS; but all REST requests, regardless of the MRS user they're originating from, will be executed through the same MySQL user. Care must be taken when exposing views and stored procedures to avoid granting access to objects to unintended users.
 

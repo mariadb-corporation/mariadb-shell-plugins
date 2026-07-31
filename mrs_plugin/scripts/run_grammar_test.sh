@@ -38,6 +38,6 @@ else
     color="grep --color=always -e ^ -e 'Syntax.*' -e 'Error:.*' -e '^ERROR.*'"
 fi
 
-mysqlsh root@localhost --sql -f "./grammar/test/grammar_test_setup.sql"
-mysqlsh root@localhost --sql --interactive=full --log-level=debug3 --verbose=4 -f ./grammar/test/grammar_test.sql 2>&1 | $color
+mariadb-shell root@localhost --sql -f "./grammar/test/grammar_test_setup.sql"
+mariadb-shell root@localhost --sql --interactive=full --log-level=debug3 --verbose=4 -f ./grammar/test/grammar_test.sql 2>&1 | $color
 

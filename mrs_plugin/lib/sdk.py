@@ -131,8 +131,8 @@ def get_base_classes(
         # Remove the part that does not belong in the runtime SDK
         delimiter = language_comment_delimiter(sdk_language)
         code = re.sub(
-            f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- Begin.*?"
-            + f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- End\n",
+            f"^\\s*?{delimiter} --- MariaDB Shell for VS Code Extension Remove --- Begin.*?"
+            + f"^\\s*?{delimiter} --- MariaDB Shell for VS Code Extension Remove --- End\n",
             "",
             code,
             flags=re.DOTALL | re.MULTILINE,
@@ -221,8 +221,8 @@ def generate_service_sdk(
         template = template.replace("export ", "")
         # Remove the part that does not belong in the runtime SDK
         template = re.sub(
-            f"^[^\\S\r\n]*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- Begin.*?"
-            + f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Remove --- End\n",
+            f"^[^\\S\r\n]*?{delimiter} --- MariaDB Shell for VS Code Extension Remove --- Begin.*?"
+            + f"^\\s*?{delimiter} --- MariaDB Shell for VS Code Extension Remove --- End\n",
             "",
             template,
             flags=re.DOTALL | re.MULTILINE,
@@ -234,8 +234,8 @@ def generate_service_sdk(
     else:
         # Remove the part that does not belong in the generated SDK
         template = re.sub(
-            f"^[^\\S\r\n]*?{delimiter} --- MySQL Shell for VS Code Extension Only --- Begin.*?"
-            + f"^\\s*?{delimiter} --- MySQL Shell for VS Code Extension Only --- End\n",
+            f"^[^\\S\r\n]*?{delimiter} --- MariaDB Shell for VS Code Extension Only --- Begin.*?"
+            + f"^\\s*?{delimiter} --- MariaDB Shell for VS Code Extension Only --- End\n",
             "",
             template,
             flags=re.DOTALL | re.MULTILINE,

@@ -1310,7 +1310,7 @@ print(procedure_result)
 
 The first two procedures do not generate result sets, however the third one does. By omission, result sets are untyped meaning generic type names are used for the result sets.
 
-If you want a typed result set, meaning you wish to specify a type, you can do so at the MRS procedure level via the MySQL Shell:
+If you want a typed result set, meaning you wish to specify a type, you can do so at the MRS procedure level via the MariaDB Shell:
 
 ```sql
 CREATE OR REPLACE REST PROCEDURE /sampleProc
