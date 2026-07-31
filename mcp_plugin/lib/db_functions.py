@@ -352,7 +352,7 @@ _OBJECT_REFERENCES_SQL = """
 """
 
 
-def _get_session(connection_uri: str):
+def _get_session(connection_id: str):
     """Returns the cached session for the given connection id.
 
     Args:
@@ -361,10 +361,10 @@ def _get_session(connection_uri: str):
     Returns:
         The open shell session.
     """
-    session = _sessions.get(connection_uri)
+    session = _sessions.get(connection_id)
     if session is None:
         raise mysqlsh.Error(
-            f"No open connection found for id '{connection_uri}'. "
+            f"No open connection found for id '{connection_id}'. "
             "Open one first with db.connect."
         )
     return session
