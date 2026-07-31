@@ -24,12 +24,12 @@
 # To use this script you need to set these environment variables:
 #
 # MYSQLSH=<path to mysqlsh binary>
-# MYSQLSH_USER_CONFIG_HOME=<mysqlsh home>
+# MARIADB_SHELL_USER_CONFIG_HOME=<mysqlsh home>
 # MYSQLSH_PLUGIN_SOURCE_DIR=<source code path to the plugins>
 #
 # If not configured, they will be set as follows:
 # MYSQLSH to the mysqlsh in PATH
-# MYSQLSH_USER_CONFIG_HOME to /tmp/dot_mysqlsh
+# MARIADB_SHELL_USER_CONFIG_HOME to /tmp/dot_mysqlsh
 # MYSQLSH_PLUGIN_SOURCE_DIR to ../../
 import shutil
 import os
@@ -89,9 +89,9 @@ arg_parser.add_argument(
     type=Path,
     default=os.environ.get(
         "MYSQLSH",
-        shutil.which("mysqlsh.exe") if os.name == "nt" else shutil.which("mysqlsh"),
+        shutil.which("mariadb-shell.exe") if os.name == "nt" else shutil.which("mariadb-shell"),
     ),
-    help="Path to MySQL Shell binary",
+    help="Path to MariaDB Shell binary",
 )
 arg_parser.add_argument("-v", "--verbose", required=False, help="Enable verbose mode")
 arg_parser.add_argument(
@@ -99,7 +99,7 @@ arg_parser.add_argument(
     "--userhome",
     required=False,
     type=Path,
-    default=os.environ.get("MYSQLSH_USER_CONFIG_HOME", None),
+    default=os.environ.get("MARIADB_SHELL_USER_CONFIG_HOME", None),
     help="Path to the user config home",
 )
 arg_parser.add_argument(
@@ -141,7 +141,7 @@ assert Path(
 
 assert (
     args.shell is not None
-), "Could not find the MySQL Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
+), "Could not find the MariaDB Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
 
 
 class MyPaths:
@@ -240,15 +240,15 @@ if not paths.runtime.root.is_dir():
 if not paths.runtime.plugins.root.is_dir():
     paths.runtime.plugins.root.mkdir(parents=True)
 
-# remove link to .mysqlsh/plugins/mrs_plugin
+# remove link to .mariadb-shell/plugins/mrs_plugin
 if paths.runtime.plugins.mrs_plugin.exists():
     paths.runtime.plugins.mrs_plugin.unlink()
 
-# remove link to .mysqlsh/plugins/mrs_plugin
+# remove link to .mariadb-shell/plugins/mrs_plugin
 if paths.runtime.plugins.msm_plugin.exists():
     paths.runtime.plugins.msm_plugin.unlink()
 
-# Create source code symlink into the runtime plugin dir (.mysqlsh/plugins/mrs_plugin)
+# Create source code symlink into the runtime plugin dir (.mariadb-shell/plugins/mrs_plugin)
 create_symlink(paths.source.code, paths.runtime.plugins.mrs_plugin, is_dir=True)
 
 create_symlink(paths.source.msm_plugin, paths.runtime.plugins.msm_plugin, is_dir=True)
@@ -266,8 +266,8 @@ if args.only is not None:
 
 with pushd(paths.source.plugin):
     env = os.environ.copy()
-    env["MYSQLSH_USER_CONFIG_HOME"] = paths.runtime.root.as_posix()
-    env["MYSQLSH_TERM_COLOR_MODE"] = "nocolor"
+    env["MARIADB_SHELL_USER_CONFIG_HOME"] = paths.runtime.root.as_posix()
+    env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
     env["COV_CORE_DATAFILE"] = ".coverage.eager"
 
     if args.debug is not None:
@@ -281,7 +281,7 @@ if not shell.returncode == 0:
     print("----------------------------------------")
     print("MYSQLSH log")
     print("----------------------------------------")
-    with open(os.path.join(paths.runtime.root / "mysqlsh.log")) as f:
+    with open(os.path.join(paths.runtime.root / "mariadb-shell.log")) as f:
         for line in f.readlines():
             print(line.strip())
 

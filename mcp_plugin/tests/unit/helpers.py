@@ -16,7 +16,7 @@
 """Test helpers for the MariaDB MCP Server Plugin.
 
 Provides utilities to talk to the plugin's MCP server over the stdio transport.
-The server is launched as a ``mysqlsh`` subprocess running
+The server is launched as a ``mariadb-shell`` subprocess running
 ``mcp start-server --transport=stdio`` and is driven with the MCP client SDK.
 """
 
@@ -41,17 +41,21 @@ TEST_CONNECTION_URIS = [
 TEST_CONNECTION_PASSWORD = "mcp_pytest_password"
 
 # Time budget (seconds) for a single MCP stdio round-trip, including the time it
-# takes to start the mysqlsh subprocess and load the plugins.
+# takes to start the mariadb-shell subprocess and load the plugins.
 _MCP_TIMEOUT = 90
 
 
-def mysqlsh_binary() -> str:
-    """Returns the path to the mariadb-shell/mysqlsh binary to use."""
+def shell_binary() -> str:
+    """Returns the path to the mariadb-shell binary to use.
+
+    Falls back to the pre-rename ``mysqlsh`` name so the suite still runs
+    against an older shell build that has not been renamed yet.
+    """
     return (
         os.environ.get("MYSQLSH")
         or shutil.which("mariadb-shell")
         or shutil.which("mysqlsh")
-        or "mysqlsh"
+        or "mariadb-shell"
     )
 
 
@@ -90,10 +94,11 @@ def _stdio_server_params(function_groups):
         env["COVERAGE_PROCESS_START"] = coverage_rc
 
     return StdioServerParameters(
-        command=mysqlsh_binary(),
+        command=shell_binary(),
         # --quiet-start=2 suppresses the shell banner so stdout carries only the
-        # MCP JSON-RPC stream. The subprocess inherits MYSQLSH_USER_CONFIG_HOME
-        # from the environment, so it sees the same secrets and settings.json.
+        # MCP JSON-RPC stream. The subprocess inherits
+        # MARIADB_SHELL_USER_CONFIG_HOME from the environment, so it sees the
+        # same secrets and settings.json.
         args=[
             "--quiet-start=2",
             "--",
@@ -254,7 +259,7 @@ def _wait_for_port(host, port, timeout):
 async def http_session(function_groups, timeout=None):
     """Runs the server over streamable-http and yields a per-call coroutine.
 
-    A ``mysqlsh`` subprocess is launched with ``--transport=streamable-http`` on
+    A ``mariadb-shell`` subprocess is launched with ``--transport=streamable-http`` on
     a free port; once it is listening, an MCP streamable-http client connects to
     ``http://127.0.0.1:<port>/mcp`` and initializes a session. Multiple tool
     calls made through the yielded ``call`` coroutine share the same server
@@ -282,7 +287,7 @@ async def http_session(function_groups, timeout=None):
 
     proc = subprocess.Popen(
         [
-            mysqlsh_binary(),
+            shell_binary(),
             "--quiet-start=2",
             "--",
             "mcp",

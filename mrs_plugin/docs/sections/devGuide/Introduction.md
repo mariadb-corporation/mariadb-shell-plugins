@@ -52,7 +52,7 @@ The MySQL REST Service consists of four major building blocks, delivering an int
 **_Experience_**
 
 - Direct VS Code Extension integration featuring point-and-click, WYSIWYG editors and live-querying of REST endpoints via TypeScript.
-- Dedicated REST SQL extension support in MySQL Shell for scripting and development process integration.
+- Dedicated REST SQL extension support in MariaDB Shell for scripting and development process integration.
 - Client SDK generation support for popular languages to vastly simplify development process and project integration.
 - Support for local development environment & debugging.
 
@@ -113,8 +113,8 @@ Representational State Transfer (REST) is a style of software architecture for d
 
 MySQL REST Service can be configured using MySQL Server versions from 8.0.39 onwards.
 
-A MySQL Router 9.3.1 or later is required to serve the REST endpoints and Progressive Web Apps. The MySQL Shell for VS Code extension includes a recent MySQL Router version for local development deployments.
+A MySQL Router 9.3.1 or later is required to serve the REST endpoints and Progressive Web Apps. The MariaDB Shell for VS Code extension includes a recent MySQL Router version for local development deployments.
 
 Alternatively, experimental packages of MySQL Server including the upcoming MySQL REST Service server component can be downloaded from [labs.mysql.com](https://labs.mysql.com).
 
-It is recommended to use the latest available version of MySQL Shell (9.4.0 and higher) to configure and work with the MySQL REST Service, regardless of the MySQL Server and MySQL Router versions.
+It is recommended to use the latest available version of MariaDB Shell (9.4.0 and higher) to configure and work with the MySQL REST Service, regardless of the MySQL Server and MySQL Router versions.

@@ -161,7 +161,7 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
   clean_config, stored_connections, non_interactive_shell).
 - tests/unit/helpers.py -> `call_tool` (has `elicitation_callback`), `mcp_session`,
   `list_tool_names` (what the server ADVERTISES, used for the group gate), `tool_payload`,
-  `find_free_port`, `server_binary_available`, `mysqlsh_binary`, plus streamable-http
+  `find_free_port`, `server_binary_available`, `shell_binary`, plus streamable-http
   helpers.
 - tests/unit/test_db_sql.py -> single `_db_flow` coroutine over ONE stdio session:
   connect -> execute_sql (incl. a DECIMAL/DATETIME serialization check) ->

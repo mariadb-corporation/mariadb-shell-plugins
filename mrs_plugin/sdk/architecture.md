@@ -24,7 +24,7 @@ services.get_runtime_management_code()
 
 ## Entrypoint
 
-The frontend client (VSCode extension) communicates via web-sockets with the MySQL Shell backend plugin, in this case, via the `mrs.dump.sdkServiceFiles` (:shrug:) service. The service implementation is available at the `mrs_plugin/services.py` file. Internally, it calls functions specified by a custom library with SDK-related utilities which is available at the `mrs_plugin/lib/sdk.py` file.
+The frontend client (VSCode extension) communicates via web-sockets with the MariaDB Shell backend plugin, in this case, via the `mrs.dump.sdkServiceFiles` (:shrug:) service. The service implementation is available at the `mrs_plugin/services.py` file. Internally, it calls functions specified by a custom library with SDK-related utilities which is available at the `mrs_plugin/lib/sdk.py` file.
 
 In a nutshell, the `dump_sdk_service_files()` function sets up the basic file structure for each platform (for now, TypeScript and Python), i.e. "packages" the base files and other language-specific stuff.
 

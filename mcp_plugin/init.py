@@ -15,7 +15,7 @@
 
 """Plugin registration
 
-This file is automatically loaded by the MySQL/MariaDB Shell at startup time.
+This file is automatically loaded by the MariaDB Shell at startup time.
 
 It registers the plugin objects and then imports all sub-modules to
 register the plugin object member functions.

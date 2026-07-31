@@ -29,25 +29,25 @@ To get started with the MySQL REST Service, you must first deploy a MySQL soluti
 
 Please go to the [MySQL download page](https://dev.mysql.com/downloads/mysql/) and select a MySQL Server version. It is recommended to download the latest MySQL Innovation or LTS release. Download the appropriate packages for your local operating system and perform the local installation either on [MacOS](https://dev.mysql.com/doc/mysql-installation-excerpt/en/macos-installation.html), [Linux](https://dev.mysql.com/doc/mysql-installation-excerpt/en/linux-installation.html) or [Windows](https://dev.mysql.com/doc/mysql-installation-excerpt/en/windows-installation.html).
 
-After the MySQL Server has been installed, make sure that it is started up and that a database connection can be established, using the MySQL Shell for VS Code extension.
+After the MySQL Server has been installed, make sure that it is started up and that a database connection can be established, using the MariaDB Shell for VS Code extension.
 
 ## Setting up VS Code
 
-The recommended way to configure a MySQL REST Service development setup is to use [VS Code](https://code.visualstudio.com/) or [VSCodium](https://vscodium.com/) with the MySQL Shell for VS Code extension installed.
+The recommended way to configure a MySQL REST Service development setup is to use [VS Code](https://code.visualstudio.com/) or [VSCodium](https://vscodium.com/) with the MariaDB Shell for VS Code extension installed.
 
-After downloading and installing VS Code, select the Extensions icon in the Activity Bar on the left hand side and enter MySQL Shell, then click the `Install` button.
+After downloading and installing VS Code, select the Extensions icon in the Activity Bar on the left hand side and enter MariaDB Shell, then click the `Install` button.
 
-When using VSCodium, please see here how to [enable the MS Marketplace](#enabling-ms-marketplace-on-vscodium) first. With the MS Marketplace enabled, select the Extensions icon in the Activity Bar on the left hand side, enter MySQL Shell and then click the `Install` button.
+When using VSCodium, please see here how to [enable the MS Marketplace](#enabling-ms-marketplace-on-vscodium) first. With the MS Marketplace enabled, select the Extensions icon in the Activity Bar on the left hand side, enter MariaDB Shell and then click the `Install` button.
 
-### MySQL Shell Welcome Wizard
+### MariaDB Shell Welcome Wizard
 
-When first launching the MySQL Shell VS Code extension, a Welcome Wizard will be shown. Please follow the required steps to configure the extension.
+When first launching the MariaDB Shell VS Code extension, a Welcome Wizard will be shown. Please follow the required steps to configure the extension.
 
-In case of an issue, the extension can be reset by bringing up the VS Code Command Palette and selecting the `Reset MySQL Shell for VS Code Extension` or by selecting the corresponding popup menu item of the `DATABASE CONNECTIONS` view in the Primary Side Bar.
+In case of an issue, the extension can be reset by bringing up the VS Code Command Palette and selecting the `Reset MariaDB Shell for VS Code Extension` or by selecting the corresponding popup menu item of the `DATABASE CONNECTIONS` view in the Primary Side Bar.
 
 ### Adding a DB Connection
 
-After successfully configuring the MySQL Shell VS Code extension, select its icon in the VS Code Activity Bar on the left hand side. Then click the `DB Connection Overview` entry in the `OPEN EDITORS` view in the Primary Side Bar.
+After successfully configuring the MariaDB Shell VS Code extension, select its icon in the VS Code Activity Bar on the left hand side. Then click the `DB Connection Overview` entry in the `OPEN EDITORS` view in the Primary Side Bar.
 
 On the `DB Connection Overview` page, click the `New Connection` tile in the `Database Connections` list. This will bring up the `Database Connection Configuration` dialog.
 
@@ -67,13 +67,13 @@ A new `DB Notebook` page will be opened, showing an SQL prompt.
 
 Support for the MySQL REST Service has to be explicitly configured on a given MySQL setup, before it can be used.
 
-This configuration can either be performed directly in the MySQL Shell for VS Code extension or via the [REST SQL extension available](index.html#mrs-configuration-using-mysql-shell) in the MySQL Shell.
+This configuration can either be performed directly in the MariaDB Shell for VS Code extension or via the [REST SQL extension available](index.html#mrs-configuration-using-mysql-shell) in the MariaDB Shell.
 
 > When using a HeatWave setup on OCI, please browse the HeatWave documentation on how to enable REST service support for the given HeatWave instance.
 
-### Configuring MRS in MySQL Shell for VS Code
+### Configuring MRS in MariaDB Shell for VS Code
 
-Using the MySQL Shell for VS Code extension, locate the `DATABASE CONNECTIONS` view in the Primary Side Bar and right-click on the DB Connection entry `MRS Development` created above. This will bring up the popup menu.
+Using the MariaDB Shell for VS Code extension, locate the `DATABASE CONNECTIONS` view in the Primary Side Bar and right-click on the DB Connection entry `MRS Development` created above. This will bring up the popup menu.
 
 Select `Configuring Instance for MySQL REST Service Support` in the DB Connection's popup menu, which will bring up the `MySQL REST Service` dialog.
 

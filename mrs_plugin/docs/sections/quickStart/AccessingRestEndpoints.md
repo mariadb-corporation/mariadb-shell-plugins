@@ -87,9 +87,9 @@ This will open up a web browser pointing at the REST endpoint URL `https://local
 
 ## TypeScript Prompt
 
-The MySQL Shell for VS Code supports and interactive workflow to prototype REST access using TypeScript.
+The MariaDB Shell for VS Code supports and interactive workflow to prototype REST access using TypeScript.
 
-After opening a database connection in MySQL Shell for VS Code the DB Notebook will be displayed. Switch the DB Notebook to TypeScript mode with `\ts` if it is in SQL mode.
+After opening a database connection in MariaDB Shell for VS Code the DB Notebook will be displayed. Switch the DB Notebook to TypeScript mode with `\ts` if it is in SQL mode.
 
 ![DB Notebook - Switch to TS mode](../../images/msg-db-notebook-switch-to-ts.svg "DB Notebook - Switch to TS mode")
 

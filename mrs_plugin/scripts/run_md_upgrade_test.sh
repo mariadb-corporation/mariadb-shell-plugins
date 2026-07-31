@@ -22,5 +22,5 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-mysqlsh -f run_tests.py ./tests/unit/test_md_upgrade.py --mdupgrade
+mariadb-shell -f run_tests.py ./tests/unit/test_md_upgrade.py --mdupgrade
 

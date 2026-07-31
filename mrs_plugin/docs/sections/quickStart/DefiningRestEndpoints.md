@@ -23,7 +23,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 # Defining REST Endpoints
 
-After configuring a MySQL instance for MySQL REST Service support, you can define new REST services and endpoints. This can be done using the graphical user interface built into the MySQL Shell extension for Visual Studio Code or directly via the MySQL Shell REST SQL extension.
+After configuring a MySQL instance for MySQL REST Service support, you can define new REST services and endpoints. This can be done using the graphical user interface built into the MariaDB Shell extension for Visual Studio Code or directly via the MariaDB Shell REST SQL extension.
 
 ## Deploying the Sakila Schema
 
@@ -31,7 +31,7 @@ All further examples in the quickstart guide use the `Sakila` example database s
 
 1. Download the Sakila schema from [https://downloads.mysql.com/docs/sakila-db.zip](https://downloads.mysql.com/docs/sakila-db.zip)
 2. Double-click the downloaded ZIP file to extract it. This will create a folder `sakila-db` containing two SQL scripts.
-3. Using the MySQL Shell for VS Code extension, locate the `DATABASE CONNECTIONS` view in the Primary Side Bar and right-click on the DB Connection entry `MRS Development` created above. From the popup menu select `Load SQL Script from Disk...` and select the `sakila-schema.sql` script.
+3. Using the MariaDB Shell for VS Code extension, locate the `DATABASE CONNECTIONS` view in the Primary Side Bar and right-click on the DB Connection entry `MRS Development` created above. From the popup menu select `Load SQL Script from Disk...` and select the `sakila-schema.sql` script.
 4. After the script has loaded, click the first lightning bolt in the toolbar to execute the full script. Monitor the output until the line `✓ SQL Script execution completed in ___s. 46 statements executed successfully.` is displayed.
 5. Use `Load SQL Script from Disk...` again and select the `sakila-data.sql` script. Execute it and monitor the output for `✓ SQL Script execution completed in ___s. 62 statements executed successfully.`
 

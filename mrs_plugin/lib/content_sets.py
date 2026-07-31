@@ -306,7 +306,7 @@ def add_content_set(
 ):
 
     # Example usage:
-    # mysqlsh dba@localhost --sql -e "CREATE OR REPLACE REST CONTENT SET /mrsScriptsContent ON SERVICE /myService FROM '~/git/shell-plugins/mrs_plugin/examples/mrs_scripts/' LOAD SCRIPTS"
+    # mariadb-shell dba@localhost --sql -e "CREATE OR REPLACE REST CONTENT SET /mrsScriptsContent ON SERVICE /myService FROM '~/git/shell-plugins/mrs_plugin/examples/mrs_scripts/' LOAD SCRIPTS"
 
     if service is None:
         service = services.get_service(session=session, service_id=service_id)

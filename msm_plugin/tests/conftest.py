@@ -44,7 +44,7 @@ def sandbox_session() -> mysqlsh.globals.session:
 
     connection_data = helpers.get_connection_data()
 
-    os.makedirs(os.path.join("tests", "mysql-sandboxes"), exist_ok=True)
+    os.makedirs(os.path.join("tests", "mariadb-sandboxes"), exist_ok=True)
 
     deployment_dir = tempfile.TemporaryDirectory()
 

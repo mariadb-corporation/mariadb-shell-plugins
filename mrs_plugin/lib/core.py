@@ -237,7 +237,7 @@ def get_current_session(session=None):
         raise Exception(
             "MySQL session not specified. Please either pass a session "
             "object when calling the function or open a database "
-            "connection in the MySQL Shell first."
+            "connection in the MariaDB Shell first."
         )
 
     return session
@@ -959,9 +959,9 @@ class MrsDbSession:
             current_db_version = get_mrs_schema_version(self._session)
             if current_db_version[0] < 2:
                 raise Exception(
-                    "This MySQL Shell version requires a new major version of the MRS metadata schema, "
+                    "This MariaDB Shell version requires a new major version of the MRS metadata schema, "
                     f"{general.DB_VERSION_STR}. The currently deployed schema version is "
-                    f"{'%d.%d.%d' % tuple(current_db_version)}. Please downgrade the MySQL Shell version "
+                    f"{'%d.%d.%d' % tuple(current_db_version)}. Please downgrade the MariaDB Shell version "
                     "or drop the MRS metadata schema and run `mrs.configure()`."
                 )
         if self._session.connection_id not in self.__used_sessions:
