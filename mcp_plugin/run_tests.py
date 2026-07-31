@@ -15,12 +15,15 @@
 
 # To use this script you need to set these environment variables:
 #
-# MYSQLSH=<path to mysqlsh/mariadb-shell binary>
-# MYSQLSH_USER_CONFIG_HOME=<shell user config home to use for the test run>
+# MYSQLSH=<path to the mariadb-shell binary>
+# MARIADB_SHELL_USER_CONFIG_HOME=<shell user config home to use for the test run>
 #
 # If not configured, they will be set as follows:
-# MYSQLSH to the mysqlsh (or mariadb-shell) found in PATH
-# MYSQLSH_USER_CONFIG_HOME to a temporary directory
+# MYSQLSH to the mariadb-shell (or mysqlsh) found in PATH
+# MARIADB_SHELL_USER_CONFIG_HOME to a temporary directory
+#
+# The shell reads MARIADB_SHELL_* first and falls back to the pre-rename
+# MYSQLSH_* name for the same variable, so both are accepted here as well.
 
 # cSpell:ignore mysqlsh mariadb userhome
 
@@ -40,7 +43,7 @@ def _resolve_shell(explicit):
         or shutil.which("mysqlsh")
     )
     assert shell is not None, (
-        "Could not find the MySQL/MariaDB Shell binary. Set MYSQLSH or pass "
+        "Could not find the MariaDB Shell binary. Set MYSQLSH or pass "
         "--shell."
     )
     return str(shell)
@@ -63,7 +66,8 @@ def main() -> int:
     parser.add_argument(
         "-u",
         "--userhome",
-        default=os.environ.get("MYSQLSH_USER_CONFIG_HOME"),
+        default=os.environ.get("MARIADB_SHELL_USER_CONFIG_HOME")
+        or os.environ.get("MYSQLSH_USER_CONFIG_HOME"),
         help="Shell user config home to use",
     )
     parser.add_argument(
@@ -82,7 +86,9 @@ def main() -> int:
 
     user_home = Path(
         args.userhome
-        or os.path.join(tempfile.mkdtemp(prefix="mcp_dot_mysqlsh_"), "dot_mysqlsh")
+        or os.path.join(
+            tempfile.mkdtemp(prefix="mcp_dot_mariadb_shell_"), "dot_mariadb_shell"
+        )
     )
     plugins_dir = user_home / "plugins"
     plugins_dir.mkdir(parents=True, exist_ok=True)
@@ -98,8 +104,8 @@ def main() -> int:
             _create_symlink(sibling_source, plugins_dir / sibling)
 
     env = os.environ.copy()
-    env["MYSQLSH_USER_CONFIG_HOME"] = user_home.as_posix()
-    env["MYSQLSH_TERM_COLOR_MODE"] = "nocolor"
+    env["MARIADB_SHELL_USER_CONFIG_HOME"] = user_home.as_posix()
+    env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
     env["MYSQLSH"] = shell
 
     # Enable coverage of the MCP server stdio subprocess: put the coverage

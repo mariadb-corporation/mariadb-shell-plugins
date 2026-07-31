@@ -5,7 +5,7 @@ Model Context Protocol (MCP) server functionality for the MariaDB AI Plugins,
 exposing their capabilities to MCP-compatible clients such as AI assistants and
 agent frameworks.
 
-The plugin registers the global `mcp` object in the MariaDB/MySQL Shell and runs a
+The plugin registers the global `mcp` object in the MariaDB Shell and runs a
 [FastMCP](https://github.com/modelcontextprotocol/python-sdk) server in the
 foreground. It supports two transports, selected with the `transport` option:
 
@@ -110,11 +110,11 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 
 ## Installation
 
-The plugin is installed by copying the `mcp_plugin` folder into the MariaDB/MySQL
-Shell plugins directory:
+The plugin is installed by copying the `mcp_plugin` folder into the MariaDB Shell
+plugins directory:
 
-- Windows: `%appdata%\MySQL\mysqlsh\plugins`
-- Others: `~/.mysqlsh/plugins`
+- Windows: `%AppData%\MariaDB\mariadb-shell\plugins`
+- Others: `~/.mariadb-shell/plugins`
 
 The plugin is loaded automatically the next time the shell starts. It depends on the
 [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) and on the
@@ -164,8 +164,9 @@ mariadb-shell --log-level=debug3 --verbose=4 --py -f run_tests.py
 ```
 
 `run_tests.py` symlinks `mcp_plugin` (and the sibling `msm_plugin`) into a shell user
-config home, then runs the suite via `mysqlsh --pym pytest`. Set `MYSQLSH` to select
-the shell binary and `MYSQLSH_USER_CONFIG_HOME` to reuse a config home. The tests
+config home, then runs the suite via `mariadb-shell --pym pytest`. Set `MYSQLSH` to
+select the shell binary and `MARIADB_SHELL_USER_CONFIG_HOME` to reuse a config home
+(the pre-rename `MYSQLSH_USER_CONFIG_HOME` is still honoured). The tests
 launch the MCP server as a stdio subprocess and drive it with the MCP client SDK; the
 stored connections, allowed paths and any created project folders are removed
 afterwards.

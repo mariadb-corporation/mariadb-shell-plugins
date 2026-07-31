@@ -1,7 +1,7 @@
 # Copyright (c) 2026, MariaDB plc and/or its affiliates.
 
 # Run the following command to install the dependencies in the local MariaDB Shell
-# mysqlsh --pym pip install -r mcp_plugin/requirements.txt
+# mariadb-shell --pym pip install -r mcp_plugin/requirements.txt
 
 # The MCP Python SDK, which provides FastMCP.
 mcp >= 1.2.0
