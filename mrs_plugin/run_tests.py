@@ -23,14 +23,14 @@
 
 # To use this script you need to set these environment variables:
 #
-# MYSQLSH=<path to mysqlsh binary>
-# MARIADB_SHELL_USER_CONFIG_HOME=<mysqlsh home>
-# MYSQLSH_PLUGIN_SOURCE_DIR=<source code path to the plugins>
+# MARIADB_SHELL=<path to the mariadb-shell binary>
+# MARIADB_SHELL_USER_CONFIG_HOME=<shell user config home>
+# MARIADB_SHELL_PLUGIN_SOURCE_DIR=<source code path to the plugins>
 #
 # If not configured, they will be set as follows:
-# MYSQLSH to the mysqlsh in PATH
-# MARIADB_SHELL_USER_CONFIG_HOME to /tmp/dot_mysqlsh
-# MYSQLSH_PLUGIN_SOURCE_DIR to ../../
+# MARIADB_SHELL to the mariadb-shell in PATH
+# MARIADB_SHELL_USER_CONFIG_HOME to /tmp/dot_mariadb_shell
+# MARIADB_SHELL_PLUGIN_SOURCE_DIR to ../../
 import shutil
 import os
 import tempfile
@@ -88,7 +88,7 @@ arg_parser.add_argument(
     required=False,
     type=Path,
     default=os.environ.get(
-        "MYSQLSH",
+        "MARIADB_SHELL",
         shutil.which("mariadb-shell.exe") if os.name == "nt" else shutil.which("mariadb-shell"),
     ),
     help="Path to MariaDB Shell binary",
@@ -120,11 +120,11 @@ arg_parser.add_argument(
 )
 arg_parser.add_argument(
     "-M",
-    "--mysqlsh",
+    "--shell-options",
     required=False,
     type=str,
     default=None,
-    help="Pass additional options to mysqlsh",
+    help="Pass additional options to the MariaDB Shell",
 )
 
 try:
@@ -141,7 +141,7 @@ assert Path(
 
 assert (
     args.shell is not None
-), "Could not find the MariaDB Shell binary. Please specify it using the --shell parameter of the MYSQLSH environment variable."
+), "Could not find the MariaDB Shell binary. Please specify it using the --shell parameter or the MARIADB_SHELL environment variable."
 
 
 class MyPaths:
@@ -163,7 +163,7 @@ class MyPaths:
             shutil.rmtree(self.runtime.root, ignore_errors=True)
         elif userhome_path is None:
             self.runtime.root = Path(
-                os.path.join(tempfile.TemporaryDirectory().name, "dot_mysqlsh")
+                os.path.join(tempfile.TemporaryDirectory().name, "dot_mariadb_shell")
             )
         else:
             self.runtime.root = Path(userhome_path)
@@ -236,7 +236,7 @@ if args.debug is not None and paths.runtime.root.exists():
 if not paths.runtime.root.is_dir():
     paths.runtime.root.mkdir(parents=True)
 
-# # create mysqlsh/plugins
+# create .mariadb-shell/plugins
 if not paths.runtime.plugins.root.is_dir():
     paths.runtime.plugins.root.mkdir(parents=True)
 
@@ -254,12 +254,12 @@ create_symlink(paths.source.code, paths.runtime.plugins.mrs_plugin, is_dir=True)
 create_symlink(paths.source.msm_plugin, paths.runtime.plugins.msm_plugin, is_dir=True)
 LOGS = ""
 PATTERN = ""
-MYSQLSH_FLAGS = args.mysqlsh or ""
+SHELL_FLAGS = args.shell_options or ""
 EXTRA_OPTIONS = ""
 # Enables verbose execution
 if args.verbose is not None or args.debug is not None:
     LOGS = "-sv"
-    MYSQLSH_FLAGS += " --verbose"
+    SHELL_FLAGS += " --verbose"
 
 if args.only is not None:
     PATTERN = f"-k {args.only}"
@@ -273,13 +273,27 @@ with pushd(paths.source.plugin):
     if args.debug is not None:
         env["ATTACH_DEBUGGER"] = args.debug
 
-    command = f"{paths.shell} {MYSQLSH_FLAGS} --pym pytest {args.pytest or ''} --cov={paths.source.code} --cov-append -vv -c {paths.source.pytest_config} {LOGS} {paths.source.plugin} {PATTERN} {" ".join(other_arguments)}"
+    # Install the test dependencies into the shell's Python. pytest-mock and
+    # pytest-asyncio are needed by the suite itself (the `mocker` fixture and
+    # the bare `async def` tests), so a missing install shows up as collection
+    # errors rather than as an obvious failure.
+    command = (
+        f"{paths.shell} --pym pip install "
+        f"-r {paths.source.plugin / 'requirements.txt'}"
+    )
+    print(f"Dependency install command: {command}")
+    completed = subprocess.run(command, shell=True, env=env)
+    if completed.returncode != 0:
+        print("Failed to install the test dependencies.")
+        exit(completed.returncode)
+
+    command = f"{paths.shell} {SHELL_FLAGS} --pym pytest {args.pytest or ''} --cov={paths.source.code} --cov-append -vv -c {paths.source.pytest_config} {LOGS} {paths.source.plugin} {PATTERN} {" ".join(other_arguments)}"
     print(f"Test run command: {command}")
     shell = subprocess.run(command, shell=True, env=env)
 
 if not shell.returncode == 0:
     print("----------------------------------------")
-    print("MYSQLSH log")
+    print("MariaDB Shell log")
     print("----------------------------------------")
     with open(os.path.join(paths.runtime.root / "mariadb-shell.log")) as f:
         for line in f.readlines():

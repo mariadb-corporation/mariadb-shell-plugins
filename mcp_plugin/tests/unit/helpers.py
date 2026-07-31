@@ -20,7 +20,7 @@ The server is launched as a ``mariadb-shell`` subprocess running
 ``mcp start-server --transport=stdio`` and is driven with the MCP client SDK.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp
+# cSpell:ignore mysqlsh MariaDB mcpserver
 
 import asyncio
 import json
@@ -52,9 +52,8 @@ def shell_binary() -> str:
     against an older shell build that has not been renamed yet.
     """
     return (
-        os.environ.get("MYSQLSH")
+        os.environ.get("MARIADB_SHELL")
         or shutil.which("mariadb-shell")
-        or shutil.which("mysqlsh")
         or "mariadb-shell"
     )
 
@@ -274,7 +273,7 @@ async def http_session(function_groups, timeout=None):
         CallToolResult.
     """
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.streamable_http import streamable_http_client
 
     call_timeout = timeout if timeout is not None else _MCP_TIMEOUT
     host = "127.0.0.1"
@@ -306,7 +305,7 @@ async def http_session(function_groups, timeout=None):
         _wait_for_port(host, port, call_timeout)
 
         url = f"http://{host}:{port}/mcp"
-        async with streamablehttp_client(url) as (read, write, _get_session_id):
+        async with streamable_http_client(url) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
@@ -330,11 +329,11 @@ def tool_payload(result):
     """Extracts the Python payload returned by a tool from a CallToolResult.
 
     Prefers the structured content when present. Otherwise falls back to the
-    text content blocks: FastMCP emits one content block per element when a
+    text content blocks: the server emits one content block per element when a
     tool returns a list, so multiple blocks are aggregated back into a list
     while a single block is returned as a scalar.
     """
-    structured = getattr(result, "structuredContent", None)
+    structured = getattr(result, "structured_content", None)
     if isinstance(structured, dict) and "result" in structured:
         return structured["result"]
 

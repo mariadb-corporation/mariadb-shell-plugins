@@ -80,7 +80,7 @@ def test_stdio_creates_msm_project(allowed_temp_dir):
         },
     )
 
-    assert result.isError is False
+    assert result.is_error is False
 
     project_path = helpers.tool_payload(result)
     assert isinstance(project_path, str) and project_path != ""
@@ -117,7 +117,7 @@ def test_stdio_elicits_to_allow_new_path(clean_config, tmp_path):
 
     # The path was not allowed, but the accepted elicitation authorized it, so
     # the project is created.
-    assert result.isError is False
+    assert result.is_error is False
 
     project_path = helpers.tool_payload(result)
     assert isinstance(project_path, str) and project_path != ""
@@ -153,7 +153,7 @@ def test_stdio_elicits_and_declines_new_path(clean_config, tmp_path):
     )
 
     # Declining leaves the path disallowed, so the guard reports a tool error.
-    assert result.isError is True
+    assert result.is_error is True
     payload = helpers.tool_payload(result)
     assert isinstance(payload, str) and "not allowed" in payload
 
@@ -200,7 +200,7 @@ def test_stdio_msm_project_lifecycle(allowed_temp_dir, sandbox):
     async def _run():
         async with helpers.mcp_session(function_groups=["msm", "db"]) as call:
             def payload(result):
-                assert result.isError is False, helpers.tool_payload(result)
+                assert result.is_error is False, helpers.tool_payload(result)
                 return helpers.tool_payload(result)
 
             # Create the project inside the allowed directory.

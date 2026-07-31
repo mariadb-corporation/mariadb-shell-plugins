@@ -66,7 +66,7 @@ def test_get_current_service(phone_book):
         "full_service_path": "/test",
         "published": 0,
         "sorted_developers": None,
-        "name": "mrs",
+        "name": "test",
         "auth_apps": ["MRS Auth App"],
     }
 
@@ -166,7 +166,7 @@ def test_validate_service_path(phone_book):
             "full_service_path": "/test",
             "published": 0,
             "sorted_developers": None,
-            "name": "mrs",
+            "name": "test",
             "auth_apps": ["MRS Auth App"],
         }
 

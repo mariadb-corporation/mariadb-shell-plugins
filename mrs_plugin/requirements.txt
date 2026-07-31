@@ -1,5 +1,12 @@
 # Copyright (c) 2020, 2024, Oracle and/or its affiliates.
-pytest >= 6.1.2, <= 7.0
+# pytest 7.0 crashes on the shell's Python 3.14 (its assertion rewriter uses
+# ast.Str, removed in Python 3.12), so the floor is the oldest release that runs
+# there. Left open at the top end - 7.4, 8.4 and 9.1 all work.
+pytest >= 7.4
 websocket-client >= 0.57.0
 pytest-cov >= 2.10.1
 pytest-mock
+# The async tests in sdk/python/tests are bare `async def` and rely on the
+# asyncio_mode = auto set in pytest.ini / pytest-coverage.ini, which needs this
+# plugin installed to take effect.
+pytest-asyncio

@@ -30,7 +30,7 @@ returns. That UUID identifies the connection for the ``db.execute_sql`` and
 are independent of the shell's global session.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp uuid SCHEMATA datatype
+# cSpell:ignore mysqlsh MariaDB mcpserver uuid SCHEMATA datatype
 # cSpell:ignore ISNULL IFNULL ARRAYAGG utf8mb3 kcu ORDINAL DTD
 
 import json
@@ -491,7 +491,7 @@ def register_db_tools(server, function_groups=()) -> None:
     """Registers the database connection tools on the given server.
 
     Args:
-        server: The FastMCP server instance to register the tools on.
+        server: The MCPServer instance to register the tools on.
         function_groups (list): All function groups being served. Unused here,
             as none of the db tools depend on another group.
 
