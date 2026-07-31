@@ -44,7 +44,7 @@ def test_streamable_http_lists_connections(stored_connections):
     async def _run():
         async with helpers.http_session(function_groups=["db"]) as call:
             result = await call("db.list_connections")
-            assert result.isError is False, helpers.tool_payload(result)
+            assert result.is_error is False, helpers.tool_payload(result)
 
             uris = helpers.tool_payload(result)
             assert isinstance(uris, list)

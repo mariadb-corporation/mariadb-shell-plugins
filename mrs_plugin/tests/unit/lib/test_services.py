@@ -69,7 +69,7 @@ def test_get_service(phone_book, table_contents):
             "full_service_path": "/test",
             "published": 0,
             "sorted_developers": None,
-            "name": "mrs",
+            "name": "test",
             "auth_apps": ["MRS Auth App"],
         }
 
@@ -102,7 +102,7 @@ def test_get_service(phone_book, table_contents):
                 "full_service_path": "/service2",
                 "published": 0,
                 "sorted_developers": None,
-                "name": "mrs",
+                "name": "service2",
                 "auth_apps": None,
             }
 
@@ -124,7 +124,7 @@ def test_get_service(phone_book, table_contents):
                 "custom_metadata_schema": None,
                 "enable_sql_endpoint": 0,
                 "published": 0,
-                "name": "mrs",
+                "name": "service2",
             }
 
             with pytest.raises(Exception) as exc_info:

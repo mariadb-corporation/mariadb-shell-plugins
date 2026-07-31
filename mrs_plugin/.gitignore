@@ -7,7 +7,7 @@ plugin-test-coverage.xml
 plugin-tests.xml
 .vscode/launch.json
 package-lock.json
-
+tests/mariadb-sandboxes
 *.interp
 grammar/pytmp
 grammar/antlr-4.13.0-complete.jar

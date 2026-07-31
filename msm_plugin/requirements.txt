@@ -4,5 +4,8 @@
 # Run the following command to install the dependencies in the local MariaDB Shell
 # mariadb-shell --pym pip install -r msm_plugin/requirements.txt
 
-pytest >= 6.1.2, <= 7.0
+# pytest 7.0 crashes on the shell's Python 3.14 (its assertion rewriter uses
+# ast.Str, removed in Python 3.12), so the floor is the oldest release verified
+# to work. Left open at the top end - 7.4, 8.4 and 9.1 all pass the suite.
+pytest >= 7.4
 pytest-cov >= 2.10.1

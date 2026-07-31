@@ -183,7 +183,7 @@ def test_validate_service_path(phone_book):
         "full_service_path": "/test",
         "published": 0,
         "sorted_developers": None,
-        "name": "mrs",
+        "name": "test",
         "auth_apps": ["MRS Auth App"],
     }
 
@@ -280,7 +280,7 @@ def test_get_services(phone_book, table_contents):
             "full_service_path": "/test",
             "published": 0,
             "sorted_developers": None,
-            "name": "mrs",
+            "name": "test",
             "auth_apps": ["MRS Auth App"],
         }
     ]
@@ -318,7 +318,7 @@ def test_get_service(phone_book, table_contents):
         "full_service_path": "/test",
         "published": 0,
         "sorted_developers": None,
-        "name": "mrs",
+        "name": "test",
         "auth_apps": ["MRS Auth App"],
     }
     assert service_table.snapshot[0] == {
@@ -339,7 +339,7 @@ def test_get_service(phone_book, table_contents):
         "enable_sql_endpoint": 0,
         "in_development": None,
         "published": 0,
-        "name": "mrs",
+        "name": "test",
     }
 
     with ServiceCT(session, "/service2", **args) as service_id:
@@ -368,7 +368,7 @@ def test_get_service(phone_book, table_contents):
             "full_service_path": "/service2",
             "published": 0,
             "sorted_developers": None,
-            "name": "mrs",
+            "name": "service2",
             "auth_apps": None,
         }
 
@@ -454,7 +454,7 @@ def test_delete_service(phone_book, table_contents):
         "url_protocol": "HTTP",
         "is_default": False,
         "comments": "no comments",
-        "name": "mrs",
+        "name": "servicetodelete",
     }
 
     result = add_service(**service_args)

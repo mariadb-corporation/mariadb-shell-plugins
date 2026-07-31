@@ -63,7 +63,7 @@ async def require_allowed_path(ctx, path) -> None:
     normally; otherwise a :class:`mysqlsh.Error` is raised.
 
     Args:
-        ctx: The FastMCP request context, used to elicit confirmation from the
+        ctx: The MCP request context, used to elicit confirmation from the
             user. May be ``None``, in which case no elicitation is attempted.
         path: The filesystem path to authorize, or ``None``.
 
@@ -93,7 +93,7 @@ async def _confirm_trust_path(ctx, path) -> bool:
     """Asks the user, via MCP elicitation, whether to trust the given path.
 
     Args:
-        ctx: The FastMCP request context, or ``None``.
+        ctx: The MCP request context, or ``None``.
         path: The filesystem path to ask about.
 
     Returns:

@@ -27,7 +27,7 @@ Path arguments are authorized through
 MCP elicitation - to trust a path that is not yet allowed.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp sandboxlib mariadbd openssl
+# cSpell:ignore mysqlsh MariaDB mcpserver sandboxlib mariadbd openssl
 
 from typing import Optional
 
@@ -38,14 +38,14 @@ def register_sandbox_tools(server, function_groups=()) -> None:
     """Registers the sandbox management tools on the given server.
 
     Args:
-        server: The FastMCP server instance to register the tools on.
+        server: The MCPServer instance to register the tools on.
         function_groups (list): All function groups being served. Unused here,
             as none of the sandbox tools depend on another group.
 
     Returns:
         None
     """
-    from mcp.server.fastmcp import Context
+    from mcp.server.mcpserver import Context
     from mysqlsh.globals import sandbox
 
     def _options(**pairs) -> dict:

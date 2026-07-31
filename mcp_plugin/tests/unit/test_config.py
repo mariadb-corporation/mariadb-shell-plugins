@@ -43,7 +43,7 @@ def test_stdio_lists_stored_connections(stored_connections):
         tool_name="db.list_connections",
     )
 
-    assert result.isError is False
+    assert result.is_error is False
 
     listed = helpers.tool_payload(result)
     assert isinstance(listed, list)

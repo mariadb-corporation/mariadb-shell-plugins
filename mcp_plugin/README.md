@@ -5,8 +5,8 @@ Model Context Protocol (MCP) server functionality for the MariaDB AI Plugins,
 exposing their capabilities to MCP-compatible clients such as AI assistants and
 agent frameworks.
 
-The plugin registers the global `mcp` object in the MariaDB Shell and runs a
-[FastMCP](https://github.com/modelcontextprotocol/python-sdk) server in the
+The plugin registers the global `mcp` object in the MariaDB Shell and runs an
+[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) server in the
 foreground. It supports two transports, selected with the `transport` option:
 
 - **`streamable-http`** (default): served over HTTP on the configured `host`/`port`.
@@ -172,9 +172,9 @@ mariadb-shell --log-level=debug3 --verbose=4 --py -f run_tests.py
 ```
 
 `run_tests.py` symlinks `mcp_plugin` (and the sibling `msm_plugin`) into a shell user
-config home, then runs the suite via `mariadb-shell --pym pytest`. Set `MYSQLSH` to
+config home, then runs the suite via `mariadb-shell --pym pytest`. Set `MARIADB_SHELL` to
 select the shell binary and `MARIADB_SHELL_USER_CONFIG_HOME` to reuse a config home
-(the pre-rename `MYSQLSH_USER_CONFIG_HOME` is still honoured). The tests
+(the pre-rename `MARIADB_SHELL_USER_CONFIG_HOME` is still honoured). The tests
 launch the MCP server as a stdio subprocess and drive it with the MCP client SDK; the
 stored connections, allowed paths and any created project folders are removed
 afterwards.

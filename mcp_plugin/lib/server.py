@@ -19,7 +19,7 @@ The MCP server is meant to be launched from the command line, e.g.
 
     mariadb-shell -- mcp start-server --port=8080
 
-It builds a FastMCP server, registers the requested function groups on it - the
+It builds an MCPServer, registers the requested function groups on it - the
 database tools (see :mod:`mcp_plugin.lib.db_functions`) and/or the MariaDB
 Schema Management tools (see :mod:`mcp_plugin.lib.msm_functions`), which can be
 loaded independently - and serves it in the foreground using one of two
@@ -34,7 +34,7 @@ The shell's interactive mode is disabled before serving, so the wrapped ``msm``
 plugin functions return their results instead of prompting for input.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp streamable fdopen dup2
+# cSpell:ignore mysqlsh MariaDB mcpserver streamable fdopen dup2
 
 import os
 import sys
@@ -52,23 +52,24 @@ _FUNCTION_GROUP_REGISTRARS = {
 }
 
 
-def build_mcp_server(host: str, port: int, function_groups):
+def build_mcp_server(function_groups):
     """Builds and configures the MariaDB MCP server.
 
+    The host and port are not part of the server itself; they are transport
+    options passed when the server is served (see :func:`start`).
+
     Args:
-        host (str): The host address to bind the server to.
-        port (int): The TCP port to listen on.
         function_groups (list): The function groups whose tools should be
             registered on the server.
 
     Returns:
-        The configured FastMCP server instance.
+        The configured MCPServer instance.
     """
     # Imported lazily so that the plugin can be loaded even when the optional
     # `mcp` dependency is not available.
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
-    server = FastMCP("MariaDB MCP Server", host=host, port=port)
+    server = MCPServer("MariaDB MCP Server")
     # The full list of enabled groups is handed to every registrar, so a group
     # can leave out the tools that depend on another group not being served.
     for group in function_groups:
@@ -119,14 +120,12 @@ def start(host: str, port: int, transport: str, function_groups) -> None:
     # results instead of prompting for input.
     mysqlsh.globals.shell.options.useWizards = False
 
-    mcp_server = build_mcp_server(
-        host=host, port=port, function_groups=function_groups
-    )
+    mcp_server = build_mcp_server(function_groups=function_groups)
 
     if transport == general.TRANSPORT_STDIO:
         _serve_stdio(mcp_server)
     else:
-        mcp_server.run(transport=transport)
+        mcp_server.run(transport=transport, host=host, port=port)
 
 
 def _serve_stdio(mcp_server) -> None:
@@ -141,7 +140,7 @@ def _serve_stdio(mcp_server) -> None:
     never reach the client.
 
     Args:
-        mcp_server: The FastMCP server instance to serve.
+        mcp_server: The MCPServer instance to serve.
 
     Returns:
         None
@@ -169,10 +168,10 @@ def _serve_stdio(mcp_server) -> None:
             read_stream,
             write_stream,
         ):
-            await mcp_server._mcp_server.run(
+            await mcp_server._lowlevel_server.run(
                 read_stream,
                 write_stream,
-                mcp_server._mcp_server.create_initialization_options(),
+                mcp_server._lowlevel_server.create_initialization_options(),
             )
 
     try:

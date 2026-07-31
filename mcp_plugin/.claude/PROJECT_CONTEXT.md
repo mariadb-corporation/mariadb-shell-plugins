@@ -2,30 +2,52 @@
 
 ## Project
 
-`mcp_plugin` ("MariaDB MCP Server Plugin") is a MariaDB/MySQL Shell plugin that hosts a
+`mcp_plugin` ("MariaDB MCP Server Plugin") is a MariaDB Shell plugin that hosts a
 Model Context Protocol (MCP) server exposing MariaDB AI Plugin capabilities to
 MCP-compatible clients. It registers the global `mcp` object in the shell and serves
 `db.*`, `msm.*`, and `sandbox.*` tool groups over stdio or streamable-http. GPLv2,
 "MariaDB plc and/or its affiliates". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
-(`/Users/mzinner/git/mariadb-shell/build/bin`), MCP SDK 1.28.1, Python 3.14, `mariadbd`
-at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite: **17 tests pass (~28s), 94% total
-coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
-`/opt/homebrew/bin` on PATH (mariadbd is not on the default PATH).
+(`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
+9.1.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite: **17 tests pass
+(~28s), 93% total coverage**. Run it with `mariadb-shell --py -f run_tests.py` FROM the
+mcp_plugin dir and with `/opt/homebrew/bin` on PATH (mariadbd is not on the default
+PATH).
+
+The shell's env vars are `MARIADB_SHELL`, `MARIADB_SHELL_USER_CONFIG_HOME` and
+`MARIADB_SHELL_TERM_COLOR_MODE` — the pre-rename `MYSQLSH*` names are GONE from all
+three plugins' runners and test helpers. `run_tests.py` exports `MARIADB_SHELL` and
+`tests/unit/helpers.py shell_binary()` reads it; keep those two in sync or the suite
+silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Architecture / key decisions
 
 - Repo's existing `*_plugin` layout (NOT create-shell-plugin's `python/plugins/`).
   `@plugin` / `@plugin_function` decorators. FQNs camelCase (`mcp.startServer`) ->
   snake_case in Python, kebab-case in CLI. MCP tool names use dots per user request.
-- MCP server built with **FastMCP** (`mcp.server.fastmcp`, the bundled one — NOT the
-  standalone `fastmcp` v2). `mcp`, `msm_plugin`, `mrs_plugin`, and the `sandbox` global
-  are imported lazily so plugin load never hard-fails.
+- MCP server built with **MCPServer** (`mcp.server.mcpserver`, the MCP Python SDK 2.x
+  successor of 1.x's `mcp.server.fastmcp.FastMCP` — NOT the standalone `fastmcp` v2).
+  `requirements.txt` pins `mcp >= 2.0.0, < 3.0.0`; on the 1.x API every server-side import
+  here fails. `mcp`, `msm_plugin`, `mrs_plugin`, and the `sandbox` global are imported
+  lazily so plugin load never hard-fails.
+- **SDK 2.x API notes**: `MCPServer(name)` takes NO `host`/`port` — they are transport
+  options passed to `run(transport=..., host=..., port=...)`, so `build_mcp_server()` takes
+  only `function_groups`. The low-level server is `_lowlevel_server` (1.x: `_mcp_server`).
+  Client side, `mcp.client.streamable_http.streamable_http_client` (1.x:
+  `streamablehttp_client`) yields a 2-tuple `(read, write)` — the third `get_session_id`
+  element is gone. The result models moved to **snake_case attributes with camelCase wire
+  aliases**: `result.is_error` / `result.structured_content` (1.x: `isError` /
+  `structuredContent`). The wire format did NOT change, so this is attribute access only —
+  but `getattr(result, "structuredContent", None)` silently returns None instead of
+  raising, which is exactly how `tool_payload` degraded unnoticed to its text-block
+  fallback. `stdio_client`, `StdioServerParameters`, `ClientSession`,
+  `server.tool(name=...)`, `stdio_server(stdout=)` and `ctx.elicit(message=, schema=)` are
+  unchanged, as is `types.ElicitResult(action=, content=)`.
 - Server runs **foreground on the main thread**; `start()` sets `useWizards=False`.
 - Transports: `streamable-http` (default) and `stdio`. **stdio hardened** (`_serve_stdio`):
   real stdout (fd 1) dup'd for the transport, then fd 1 AND `sys.stdout` redirected to
   stderr so tool/shell/C output can't corrupt JSON-RPC. Uses low-level
-  `mcp_server._mcp_server.run(...)`.
+  `mcp_server._lowlevel_server.run(...)`.
 - **Function groups** (`function_groups`): `db`, `msm`, `sandbox`; `_FUNCTION_GROUP_REGISTRARS`.
   Accepted as a LIST or as a comma-separated STRING (split+stripped in `server.py`);
   omitting it loads ALL THREE (`DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS`).
@@ -43,7 +65,7 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
 - **Connections**: shell secrets keyed `MCP:Connection:<uri>`. `db.connect` only allows
   configured URIs; opens via `parse_uri`+password -> `shell.open_session` (independent of
   the shell's global session). Sessions cached in-process in `_sessions`, keyed by UUID.
-- **Allowed paths**: `settings.json` under `get_mcp_plugin_data_path()`.
+- **Allowed paths**: `settings.json` under `general.get_plugin_data_path()`.
   `config.is_path_allowed()` via `os.path.commonpath` (reads disk fresh each call — NO
   in-memory cache); empty list => deny all.
 - **Path enforcement + elicitation** (commit 6e12ad68): shared guard
@@ -53,16 +75,16 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
   it; on accept+trust it `config.add_allowed_path()` (persists to settings.json,
   abspath+expanduser, dedup) and proceeds; on decline/cancel/elicit-failure it raises the
   "not allowed" mysqlsh.Error. Because elicit is async, ALL msm (12) + sandbox (7) tools are
-  `async def` with a leading `ctx: Context` param (`from mcp.server.fastmcp import Context`,
-  imported inside the registrar; FastMCP strips it from the client-facing schema).
+  `async def` with a leading `ctx: Context` param (`from mcp.server.mcpserver import Context`,
+  imported inside the registrar; the server strips it from the client-facing schema).
   db.* tools stay SYNC — none of them elicit (`db.execute_sql_script` checks
   `config.is_path_allowed` directly and just errors out).
 - **SQL exec**: `db.execute_sql` = single statement (+ optional `?` params, one result
   dict). `db.execute_sql_script` = multi-statement via `mysqlsh.mysql.split_script()`,
   returns a LIST; accepts `sql_script` XOR `file_path` (file must be an allowed path).
   `sandbox.deploy` port REQUIRED int on all 7; `ssl=False` default.
-- **Introspection tools** (all UNCOMMITTED, all sync, all built on the user's own SQL —
-  the queries came from the user verbatim, only parameterized; do NOT "improve" them
+- **Introspection tools** (committed in 3482634a; all sync, all built on the user's own
+  SQL — the queries came from the user verbatim, only parameterized; do NOT "improve" them
   without asking):
   - `db.list_schemas(connection_id)` -> `_LIST_SCHEMAS_SQL` over I_S.SCHEMATA. Returns a
     bare LIST of `{schema_name, schema_type, schema_comment}` (lowercase aliases — the
@@ -115,6 +137,16 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
 
 ## Current state
 
+- **This session: migrated the plugin from MCP SDK 1.x to 2.0.0** (the shell's bundled
+  Python now ships 2.0.0; `requirements.txt` had `mcp >= 1.2.0` with no upper bound, so the
+  major bump was picked up silently and 8 of 17 tests failed —
+  `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` killed the server subprocess
+  at import, which surfaced as `MCPError(-32000, 'Connection closed')`). Changes:
+  `mcp.server.fastmcp.FastMCP` -> `mcp.server.mcpserver.MCPServer` (server.py, plus the
+  `Context` import in msm_functions/sandbox_functions), host/port off the constructor and
+  onto `run()`, `_mcp_server` -> `_lowlevel_server`, `streamablehttp_client` ->
+  `streamable_http_client` (2-tuple), and `.isError`/`structuredContent` ->
+  `.is_error`/`structured_content` at 31 assertion sites + `tool_payload`.
 - Everything from the previous checkpoint's "Next steps" list is DONE and committed:
   REST SQL work (0e97c9e9), the sibling mrs_plugin management-session fix (ca47b8c8 then
   reworked in 82e18c4c), msm lifecycle + streamable-http transport tests (09fa116c).
@@ -129,11 +161,11 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
   path-reject), `test_config` (6), `test_msm` (5: create_project, elicit-accept,
   elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,
   `test_transport_http`.
-- Coverage after latest run: lib/msm_functions 100, lib/db_functions 99, lib/server 98,
-  lib/config 96, lib/general 95, lib/sandbox_functions 87, server.py 85, lib/setup 84,
-  general.py 73. TOTAL 94%.
-- **Sibling `msm_plugin` was changed in the same session** (own commit, own suite: 9 pass
-  via `python3 run_tests.py -s <mariadb-shell>` with /opt/homebrew/bin on PATH):
+- Coverage after latest run: lib/msm_functions 100, lib/general 98, lib/server 98,
+  lib/config 96, lib/db_functions 95, lib/sandbox_functions 93, server.py 85, lib/setup 84,
+  general.py 73. TOTAL 93% (509 statements, 37 missed).
+- **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass
+  — see the invocation note in Gotchas):
   - MySQL -> MariaDB rebrand of all PROSE/branding. Legal notices were NOT word-substituted;
     the USER instead ADDED a second line `Copyright (c) 2026, MariaDB plc and/or its
     affiliates.` under the existing Oracle line, leaving Oracle's notice and the "authors of
@@ -144,6 +176,25 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
     build of mariadb-shell has NO `dba` global), with `ssl: False` and an `int()` port.
   - `run_tests.py` prefers `mariadb-shell` over `mysqlsh`.
   - `lib/management.py deploy_schema` gained `backup: bool = False` (see Gotchas).
+- **Sibling plugins touched again THIS session** (rebranding cherry-pick from
+  `mariadb/rennox/rebranding` — 759c375d/7f119fd6/f11a3897 — plus follow-up fixes):
+  - **`msm_plugin`: 9 pass.** `run_tests.py` fully de-`MYSQLSH`'d, `dot_mariadb_shell`,
+    `pip install -r requirements.txt` + a return-code check. A `pip install ... msm` line
+    was removed: `msm` is an unrelated PyPI package (a Minecraft server manager), and this
+    plugin's own code comes from the runner's symlink.
+  - **`mrs_plugin`: 228 pass, 20 fail, 0 errors** (was 72 pass / 15 fail / 161 errors).
+    `run_tests.py` gained the missing `pip install -r requirements.txt` step (it had NONE,
+    so the declared `pytest-mock` was never installed -> 81 `fixture 'mocker' not found`
+    errors), `pytest-asyncio` added to requirements (`asyncio_mode = auto` was already set
+    in both ini files, so the plugin was the only thing missing -> 9 async failures), and
+    the stale `"name": "mrs"` service expectation fixed in 12 places (see Gotchas).
+    `--mysqlsh` renamed to `--shell-options`; `MYSQLSH_FLAGS` -> `SHELL_FLAGS`.
+  - **All three `requirements.txt` had `pytest >= 6.1.2, <= 7.0`**, which resolves to
+    exactly 7.0.0 — and 7.0.0 crashes on Python 3.14 with
+    `AttributeError: module 'ast' has no attribute 'Str'` (`ast.Str` was removed in 3.12).
+    Now `pytest >= 7.4`, no upper bound. Verified by bisecting on a real suite: 7.0.0
+    crashes, 7.4.4 / 8.4.2 / 9.1.1 all pass. The inline package lists in the runners
+    existed to dodge this pin; fixing the pin is what let them switch to `-r`.
 
 ## Files that matter
 
@@ -171,9 +222,12 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
   types + default + case-insensitivity + bad type + unknown schema) ->
   get_object_details (table both FK directions, view, function, procedure, sequence,
   trigger, event, plus not-found errors) -> DROP SCHEMA -> close.
-- run_tests.py -> symlinks mcp_plugin + msm_plugin + mrs_plugin into a temp config home,
-  pip-installs pytest/pytest-cov/mcp, runs pytest. `-k/--only` to filter, `-s/--shell`,
-  `-u/--userhome`. .coveragerc omits msm/mrs/shell/site-pkgs.
+- run_tests.py -> symlinks mcp_plugin + msm_plugin + mrs_plugin into a temp config home
+  (`dot_mariadb_shell` under a `mcp_dot_mariadb_shell_*` temp dir), `pip install -r
+  requirements.txt` (was an inline `pytest pytest-cov mcp` list — driving it off
+  requirements.txt is what makes the `mcp < 3.0.0` pin actually bind), then runs pytest.
+  Exits early if the install fails. `-k/--only` to filter, `-s/--shell`, `-u/--userhome`.
+  .coveragerc omits msm/mrs/shell/site-pkgs.
 
 ## Next steps
 
@@ -181,11 +235,19 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
    build**, so `msm.deploy_schema` / `msm_plugin` `deploy_schema` with `backup=True` raise
    `AttributeError: unknown attribute: dump_schemas`. The backup feature is unusable (and
    untested) until the dump/restore is reimplemented — e.g. `mariadb-dump` as a subprocess.
-   `backup=False` is the default precisely because of this.
-2. **`mrs_plugin/lib/general.py:221` and `:231` call `deploy_schema`** and silently lost
+   `backup=False` is the default precisely because of this. STILL REPRODUCING: it is one of
+   the 20 remaining mrs_plugin failures (`lib/test_services.py::test_service_as_project`).
+2. **`mrs_plugin`'s 20 remaining failures**, all pre-existing and independent of this
+   session's work. Grouped: 3x `REGEXP_LIKE does not exist` (see Gotchas — a genuine
+   MariaDB portability bug in `mysql_tasks`' SQL); 5x `test_downstream_converter` in
+   `sdk/python/tests/test_mrs_base_classes.py` returning strings instead of
+   `int`/`datetime`/`date`/`timedelta`; 2x `request_path is already used` (test isolation);
+   1x `dump_schemas` (item 1); several `CREATE OR REPLACE REST ...` statement-text
+   mismatches; a few object-count assertions (`assert 2 == 1`, `assert 2 == 4`).
+3. **`mrs_plugin/lib/general.py:221` and `:231` call `deploy_schema`** and silently lost
    their rollback dump when `backup` defaulted to False. Add `backup=True` there if that
    behaviour should be preserved (sibling plugin, deliberately untouched).
-3. (Optional, open questions raised with the user and NOT yet answered)
+4. (Optional, open questions raised with the user and NOT yet answered)
    - `object_type` is a plain `str` + `_normalize_object_type`, not `Literal[...]`; a
      Literal would publish the 7 values as a JSON-schema enum to clients but would reject
      `"Table"`.
@@ -194,11 +256,11 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
      JSON booleans.
    - `interval_value`/`interval_field` of an event are raw, not composed into a readable
      schedule.
-4. (Optional) Raise `lib/setup.py` (84%) and `general.py` (73%) coverage — now the two
+5. (Optional) Raise `lib/setup.py` (84%) and `general.py` (73%) coverage — now the two
    weakest modules by far.
-5. (Optional) `test_db_sql.py`'s module docstring still says "connect / execute_sql /
+6. (Optional) `test_db_sql.py`'s module docstring still says "connect / execute_sql /
    close"; the flow now covers far more.
-6. (Optional) `gui/extension/package.json:1192` still labels the plugin "MySQL Schema
+7. (Optional) `gui/extension/package.json:1192` still labels the plugin "MySQL Schema
    Management" in the VS Code UI — outside msm_plugin, so left inconsistent by the rebrand.
 
 ## Gotchas / things not to repeat
@@ -230,15 +292,21 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
 - **Run the suite from the mcp_plugin dir with `/opt/homebrew/bin` on PATH.** Two runs this
   session died instantly on `can't open file '.../run_tests.py'` because the cwd was the
   repo root; without homebrew on PATH the sandbox deploy finds no `mariadbd`.
-- **msm_plugin's tests need `-s <path to mariadb-shell>`** (its `run_tests.py` auto-detect
-  only finds a shell on PATH) and the same homebrew PATH for `mariadbd`.
+- **msm_plugin / mrs_plugin suites**: run each as `mariadb-shell --py -f run_tests.py` from
+  ITS OWN plugin dir, with `/opt/homebrew/bin` on PATH for `mariadbd`. `-s <path>` is no
+  longer needed now that the runners default from `MARIADB_SHELL` or
+  `shutil.which("mariadb-shell")`.
 - **Filtering tests with `-k` breaks the db/msm/sandbox tests** — they depend on
   `test_sandbox_deploy` running first (conftest ordering hook + `sandbox.deployed` flag),
   and skip themselves if it didn't. Run the full suite to validate.
-- **mcp 1.28.x runs SYNC tools directly on the event loop** (func_metadata:
-  `else: return fn(...)`, no to_thread). So a sync-tool `anyio.from_thread.run` bridge for
-  elicitation is IMPOSSIBLE (not in a worker thread). Async tools were the only viable
-  route — and introduce NO new blocking since sync tools already blocked the loop.
+- **OBSOLETE AS OF SDK 2.0 — do not act on the old note.** Under mcp 1.28.x sync tools ran
+  directly on the event loop (func_metadata: `else: return fn(...)`), which is why a
+  sync-tool `anyio.from_thread.run` elicitation bridge was impossible and async tools were
+  the only route. In **2.0.0 that changed**: `func_metadata.py` now does
+  `await anyio.to_thread.run_sync(functools.partial(fn, ...))` for the non-async branch, so
+  sync tools DO run in a worker thread and such a bridge is now technically possible. The
+  existing async msm/sandbox tools work fine and there is no reason to rewrite them — but
+  the stated impossibility is no longer a valid argument.
 - **Elicitation is async**: `await ctx.elicit(message, schema=BaseModel)` ->
   ElicitationResult with `.action` ("accept"/"decline"/"cancel") and `.data`. Tools must be
   `async def` and declare `ctx: Context`.
@@ -272,8 +340,35 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
 - **stdio needs clean stdout** — don't add prints to the stdio path.
 - Don't reintroduce bg-thread+SIGTERM serving nor the interactive guard in `start()`.
   Plain GPLv2+MariaDB header. tests/ has no `__init__` (namespace pkg + `PYTHONPATH=..`).
+- **A stale `.pyc` makes a rename look like it didn't apply.** After renaming the runtime
+  home `dot_mysqlsh` -> `dot_mariadb_shell`, pytest kept printing the OLD path — the same
+  temp dir across two runs, which is the tell (a fresh `TemporaryDirectory()` differs every
+  run). The old path was baked into `co_filename` in `tests/unit/__pycache__/*.pyc`. Clear
+  `__pycache__` and `.pytest_cache` before concluding an edit didn't take.
+- **`mrs_plugin`'s suite leaks its sandbox on port 3388** whenever a run errors out, and the
+  NEXT run then fails ~80 tests with `Port '3388' is already in use`. Two measurements were
+  wasted on that echo. Kill the listener (`lsof -tnP -iTCP:3388 -sTCP:LISTEN`) and confirm
+  the port is free BEFORE trusting any mrs_plugin pass/fail count.
+- **`service.name` is a DB DEFAULT EXPRESSION**, not a trigger and not set by
+  `add_service`: `regexp_replace(url_context_root, '[^0-9a-zA-Z ]', '')`. Reading the table
+  DDL and the triggers does NOT reveal it — only
+  `INFORMATION_SCHEMA.COLUMNS.COLUMN_DEFAULT` does. So a service at `/test` is named
+  `test`, and `/service_to_delete` becomes `servicetodelete` (`_` is stripped too).
+  `"name": "mrs"` was only ever right for the table's default `/mrs` context root, which
+  `add_service` now REJECTS as reserved. It was stale in 12 places across
+  `tests/unit/helpers.py`, `test_core.py`, `test_services.py`, `lib/test_services.py` and
+  blocked 80 tests in fixture setup. When a whole suite errors in one fixture, fix the
+  fixture first and re-measure — the failure count went UP (6 -> 25) because unblocked
+  tests then failed on their own merits.
+- **`REGEXP_LIKE` does not exist in MariaDB** (MySQL 8 only). `mysql_tasks`' SQL calls it
+  (e.g. `mysql_tasks_3.0.2.sql:1809`), so 3 mrs_plugin tests die with
+  `MySQL Error (1305): FUNCTION ... REGEXP_LIKE does not exist`. MariaDB form is the
+  `REGEXP` operator / `REGEXP_REPLACE`. (The pattern `';[:space:]*$'` there also looks like
+  a typo for `';[[:space:]]*$'`.) A real portability bug, not a test issue.
 - **This file goes stale fast** — the previous checkpoint listed 3 "next steps" that were
-  all already committed. Re-check `git log` against it before trusting it.
+  all already committed, claimed the introspection tools were UNCOMMITTED when they were in
+  3482634a, and carried an SDK-1.x threading gotcha that 2.0 reversed. Re-check `git log`
+  and the installed SDK against it before trusting it.
 
 ## Git state
 
@@ -281,5 +376,13 @@ coverage**. Run it with `python3 run_tests.py` FROM the mcp_plugin dir and with
   mariadb-corporation/mariadb-shell-plugins; `origin` is mysql/mysql-shell-plugins and is
   NOT the push target). Default branch `main`.
 - Session history: 3482634a (db introspection tools) -> the msm_plugin MariaDB/sandbox/
-  backup commit -> the mcp_plugin `msm.deploy_schema` + db-group-gate commit.
-- Working tree clean as of this checkpoint; everything pushed.
+  backup commit -> the mcp_plugin `msm.deploy_schema` + db-group-gate commit -> 72c07ef8
+  (doc the new db/msm tools + `get_mcp_plugin_data_path` -> `get_plugin_data_path`).
+- Then THIS session: the three rebranding commits from `mariadb/rennox/rebranding`
+  (759c375d msm, 7f119fd6 mrs, f11a3897 mcp) cherry-picked with `-n` onto `wip/AIPL-5`,
+  reviewed by the user, and committed together with the MCP SDK 2.0 migration and the
+  test-suite fixes.
+- `mariadb/rennox/rebranding` itself is NOT merged — its commits were replayed, so the
+  branch will look unmerged and a future merge would conflict. Rebase or drop it.
+- One unrelated pre-existing edit was left UNSTAGED on purpose:
+  `.claude/skills/create-shell-plugin/SKILL.md` (not this session's work).

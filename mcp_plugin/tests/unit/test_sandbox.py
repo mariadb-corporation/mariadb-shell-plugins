@@ -29,7 +29,7 @@ deployment failed). All are skipped if no MariaDB/MySQL server binary is on the
 PATH.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp mariadbd
+# cSpell:ignore mysqlsh MariaDB mcpserver mariadbd
 
 import os
 
@@ -69,7 +69,7 @@ def test_sandbox_deploy(sandbox):
         },
         timeout=DEPLOY_TIMEOUT,
     )
-    assert deploy_result.isError is False
+    assert deploy_result.is_error is False
     # Mark the sandbox as deployed so dependent tests run (and are torn down).
     sandbox.deployed = True
     assert os.path.isdir(sandbox.instance_dir)
@@ -112,13 +112,13 @@ def test_sandbox_shutdown(sandbox):
             "password": sandbox.password,
         },
     )
-    assert stop_result.isError is False
+    assert stop_result.is_error is False
 
     delete_result = _sandbox_call(
         "sandbox.delete",
         {"port": sandbox.port, "sandbox_dir": sandbox.sandbox_dir},
     )
-    assert delete_result.isError is False
+    assert delete_result.is_error is False
 
     # After a successful delete the instance directory is gone.
     assert not os.path.isdir(sandbox.instance_dir)
@@ -142,6 +142,6 @@ def test_sandbox_dir_outside_allowed_paths_is_rejected(allowed_temp_dir, tmp_pat
     )
 
     # The path guard raises, which the MCP server reports as a tool error.
-    assert result.isError is True
+    assert result.is_error is True
     payload = helpers.tool_payload(result)
     assert isinstance(payload, str) and "not allowed" in payload

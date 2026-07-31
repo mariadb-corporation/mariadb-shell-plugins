@@ -16,7 +16,7 @@
 """MCP tools wrapping the MariaDB Schema Management (``msm``) plugin.
 
 Each tool registered here wraps the corresponding function of the
-``msm_plugin/management.py`` module and is exposed on the FastMCP server built
+``msm_plugin/management.py`` module and is exposed on the MCPServer built
 in :mod:`mcp_plugin.lib.server`.
 
 The tools run while the shell is in non-interactive mode, so the wrapped
@@ -26,7 +26,7 @@ Path arguments are authorized through
 MCP elicitation - to trust a path that is not yet allowed.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp
+# cSpell:ignore mysqlsh MariaDB mcpserver
 
 from typing import Optional
 
@@ -42,13 +42,13 @@ def register_msm_tools(server, function_groups=()) -> None:
     served as well - it would have no way to obtain a connection otherwise.
 
     Args:
-        server: The FastMCP server instance to register the tools on.
+        server: The MCPServer instance to register the tools on.
         function_groups (list): All function groups being served.
 
     Returns:
         None
     """
-    from mcp.server.fastmcp import Context
+    from mcp.server.mcpserver import Context
     from msm_plugin import management as msm
 
     def _kwargs(**pairs) -> dict:

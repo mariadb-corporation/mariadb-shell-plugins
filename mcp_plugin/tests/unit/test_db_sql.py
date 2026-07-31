@@ -22,7 +22,7 @@ The test schema it creates is dropped and the connection closed at the end; the
 sandbox itself is torn down by ``test_sandbox_shutdown``.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp mariadbd
+# cSpell:ignore mysqlsh MariaDB mcpserver mariadbd
 
 import asyncio
 import os
@@ -45,7 +45,7 @@ async def _db_flow(uri, script_dir):
     async with helpers.mcp_session(["db"]) as call:
         # Open the connection and cache it in the server process.
         connect_result = await call("db.connect", {"uri": uri})
-        assert connect_result.isError is False
+        assert connect_result.is_error is False
         connection_id = helpers.tool_payload(connect_result)
         assert isinstance(connection_id, str) and connection_id != ""
 
@@ -54,7 +54,7 @@ async def _db_flow(uri, script_dir):
             "db.execute_sql",
             {"connection_id": connection_id, "sql": "SELECT @@version"},
         )
-        assert version_result.isError is False
+        assert version_result.is_error is False
         version_rows = helpers.tool_payload(version_result)["rows"]
         assert len(version_rows) == 1
         version_value = list(version_rows[0].values())[0]
@@ -73,7 +73,7 @@ async def _db_flow(uri, script_dir):
                 ),
             },
         )
-        assert typed_result.isError is False
+        assert typed_result.is_error is False
         typed_row = helpers.tool_payload(typed_result)["rows"][0]
         assert typed_row["whole"] == "2.00"
         assert typed_row["fraction"] == "1.50"
@@ -93,7 +93,7 @@ async def _db_flow(uri, script_dir):
             "db.execute_sql_script",
             {"connection_id": connection_id, "sql_script": script},
         )
-        assert script_result.isError is False
+        assert script_result.is_error is False
         statements = helpers.tool_payload(script_result)
         assert isinstance(statements, list) and len(statements) == 3
         # The INSERT (third statement) affected three rows.
@@ -104,7 +104,7 @@ async def _db_flow(uri, script_dir):
         schemas_result = await call(
             "db.list_schemas", {"connection_id": connection_id}
         )
-        assert schemas_result.isError is False
+        assert schemas_result.is_error is False
         schemas = helpers.tool_payload(schemas_result)
         assert isinstance(schemas, list)
         by_name = {entry["schema_name"]: entry for entry in schemas}
@@ -142,7 +142,7 @@ async def _db_flow(uri, script_dir):
             "db.execute_sql_script",
             {"connection_id": connection_id, "sql_script": objects_script},
         )
-        assert objects_result.isError is False
+        assert objects_result.is_error is False
         assert len(helpers.tool_payload(objects_result)) == 9
 
         async def list_objects(object_type=None):
@@ -155,7 +155,7 @@ async def _db_flow(uri, script_dir):
             if object_type is not None:
                 arguments["object_type"] = object_type
             result = await call("db.list_objects", arguments)
-            assert result.isError is False
+            assert result.is_error is False
             payload = helpers.tool_payload(result)
             if payload is None:
                 return []
@@ -204,12 +204,12 @@ async def _db_flow(uri, script_dir):
                 "object_type": "sequences",
             },
         )
-        assert bad_type.isError is True
+        assert bad_type.is_error is True
         missing_schema = await call(
             "db.list_objects",
             {"connection_id": connection_id, "schema_name": "no_such_schema_here"},
         )
-        assert missing_schema.isError is False
+        assert missing_schema.is_error is False
         assert (helpers.tool_payload(missing_schema) or []) == []
 
         async def get_details(object_name, object_type=None):
@@ -222,7 +222,7 @@ async def _db_flow(uri, script_dir):
             if object_type is not None:
                 arguments["object_type"] = object_type
             result = await call("db.get_object_details", arguments)
-            assert result.isError is False
+            assert result.is_error is False
             return helpers.tool_payload(result)
 
         # The referenced side of the foreign key: `items` is described with its
@@ -371,7 +371,7 @@ async def _db_flow(uri, script_dir):
                     **arguments,
                 },
             )
-            assert rejected.isError is True
+            assert rejected.is_error is True
 
         # The same script read from a file on disk (within an allowed path)
         # adds two more rows, exercising the file_path parameter.
@@ -385,7 +385,7 @@ async def _db_flow(uri, script_dir):
             "db.execute_sql_script",
             {"connection_id": connection_id, "file_path": script_path},
         )
-        assert file_result.isError is False
+        assert file_result.is_error is False
         file_statements = helpers.tool_payload(file_result)
         assert isinstance(file_statements, list) and len(file_statements) == 2
         assert file_statements[0]["affected_items_count"] == 1
@@ -396,7 +396,7 @@ async def _db_flow(uri, script_dir):
             "db.execute_sql_script",
             {"connection_id": connection_id, "file_path": "/etc/hosts"},
         )
-        assert denied_result.isError is True
+        assert denied_result.is_error is True
 
         try:
             # Aggregate SELECT.
@@ -407,7 +407,7 @@ async def _db_flow(uri, script_dir):
                     "sql": f"SELECT COUNT(*) AS cnt FROM `{schema}`.`items`",
                 },
             )
-            assert count_result.isError is False
+            assert count_result.is_error is False
             assert helpers.tool_payload(count_result)["rows"][0]["cnt"] == 5
 
             # Ordered SELECT returns the rows in insertion order.
@@ -438,18 +438,18 @@ async def _db_flow(uri, script_dir):
                 "db.execute_sql",
                 {"connection_id": connection_id, "sql": f"DROP SCHEMA `{schema}`"},
             )
-            assert drop_result.isError is False
+            assert drop_result.is_error is False
 
         # Close the connection.
         close_result = await call("db.close", {"connection_id": connection_id})
-        assert close_result.isError is False
+        assert close_result.is_error is False
 
         # The connection id is no longer usable after closing.
         reused = await call(
             "db.execute_sql",
             {"connection_id": connection_id, "sql": "SELECT 1"},
         )
-        assert reused.isError is True
+        assert reused.is_error is True
 
 
 def test_db_connect_execute_and_close(sandbox):

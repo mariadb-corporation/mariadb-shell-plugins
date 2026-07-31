@@ -23,6 +23,7 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 import os
+import re
 
 import mysqlsh
 from mrs_plugin import lib
@@ -661,7 +662,10 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
         "full_service_path": f"{service_context_root}",
         "published": 0,
         "sorted_developers": None,
-        "name": "mrs",
+        # The service.name column defaults to
+        # regexp_replace(url_context_root, '[^0-9a-zA-Z ]', ''), so a service
+        # added without an explicit name is named after its context root.
+        "name": re.sub(r"[^0-9a-zA-Z ]", "", service_context_root),
         "auth_apps": service["auth_apps"],
     }
     assert service == expected, f"{service}\n{expected}"

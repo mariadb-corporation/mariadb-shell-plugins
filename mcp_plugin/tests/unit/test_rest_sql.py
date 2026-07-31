@@ -24,7 +24,7 @@ routes a statement through a shell SQL handler. A successful run provisions the
 ``mysql_rest_service_metadata`` schema on the target server.
 """
 
-# cSpell:ignore mysqlsh MariaDB fastmcp mrs
+# cSpell:ignore mysqlsh MariaDB mcpserver mrs
 
 import asyncio
 
@@ -43,7 +43,7 @@ async def _rest_sql_flow(uri):
     """Drives connect -> CONFIGURE REST METADATA -> verify -> close."""
     async with helpers.mcp_session(["db"]) as call:
         connect_result = await call("db.connect", {"uri": uri})
-        assert connect_result.isError is False
+        assert connect_result.is_error is False
         connection_id = helpers.tool_payload(connect_result)
         assert isinstance(connection_id, str) and connection_id != ""
 
@@ -59,7 +59,7 @@ async def _rest_sql_flow(uri):
                     "params": [_METADATA_SCHEMA],
                 },
             )
-            assert result.isError is False
+            assert result.is_error is False
             return helpers.tool_payload(result)["rows"]
 
         try:
@@ -72,13 +72,13 @@ async def _rest_sql_flow(uri):
                 "db.execute_sql",
                 {"connection_id": connection_id, "sql": "CONFIGURE REST METADATA;"},
             )
-            assert configure_result.isError is False
+            assert configure_result.is_error is False
 
             # Running it provisioned the REST metadata schema.
             assert len(await _metadata_schema_rows()) == 1
         finally:
             close_result = await call("db.close", {"connection_id": connection_id})
-            assert close_result.isError is False
+            assert close_result.is_error is False
 
 
 def test_rest_configure_metadata(sandbox):
