@@ -24,13 +24,13 @@
 
 # To use this script you need to set these environment variables:
 #
-# MYSQLSH=<path to the mariadb-shell binary>
-# MYSQLSH_USER_CONFIG_HOME=<shell home>
+# MYSQLSH=<path to mysqlsh binary>
+# MARIADB_SHELL_USER_CONFIG_HOME=<mysqlsh home>
 # MYSQLSH_PLUGIN_SOURCE_DIR=<source code path to the plugins>
 #
 # If not configured, they will be set as follows:
-# MYSQLSH to the mariadb-shell (or mysqlsh) in PATH
-# MYSQLSH_USER_CONFIG_HOME to /tmp/dot_mysqlsh
+# MYSQLSH to the mysqlsh in PATH
+# MARIADB_SHELL_USER_CONFIG_HOME to /tmp/dot_mysqlsh
 # MYSQLSH_PLUGIN_SOURCE_DIR to ../../
 import shutil
 import os
@@ -90,11 +90,7 @@ arg_parser.add_argument(
     type=Path,
     default=os.environ.get(
         "MYSQLSH",
-        (
-            shutil.which("mariadb-shell.exe") or shutil.which("mysqlsh.exe")
-            if os.name == "nt"
-            else shutil.which("mariadb-shell") or shutil.which("mysqlsh")
-        ),
+        shutil.which("mariadb-shell.exe") if os.name == "nt" else shutil.which("mariadb-shell"),
     ),
     help="Path to MariaDB Shell binary",
 )
@@ -104,7 +100,7 @@ arg_parser.add_argument(
     "--userhome",
     required=False,
     type=Path,
-    default=os.environ.get("MYSQLSH_USER_CONFIG_HOME", None),
+    default=os.environ.get("MARIADB_SHELL_USER_CONFIG_HOME", None),
     help="Path to the user config home",
 )
 arg_parser.add_argument(
@@ -223,11 +219,11 @@ if not paths.runtime.root.is_dir():
 if not paths.runtime.plugins.root.is_dir():
     paths.runtime.plugins.root.mkdir(parents=True)
 
-# remove link to .mysqlsh/plugins/msm_plugin
+# remove link to .mariadb-shell/plugins/msm_plugin
 if paths.runtime.plugins.msm_plugin.exists():
     paths.runtime.plugins.msm_plugin.unlink()
 
-# Create source code symlink into the runtime plugin dir (.mysqlsh/plugins/msm_plugin)
+# Create source code symlink into the runtime plugin dir (.mariadb-shell/plugins/msm_plugin)
 create_symlink(paths.source.code, paths.runtime.plugins.msm_plugin, is_dir=True)
 
 LOGS = ""
@@ -241,8 +237,8 @@ if args.only is not None:
 
 with pushd(paths.source.plugin):
     env = os.environ.copy()
-    env["MYSQLSH_USER_CONFIG_HOME"] = paths.runtime.root.as_posix()
-    env["MYSQLSH_TERM_COLOR_MODE"] = "nocolor"
+    env["MARIADB_SHELL_USER_CONFIG_HOME"] = paths.runtime.root.as_posix()
+    env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
     env["COV_CORE_DATAFILE"] = ".coverage.eager"
 
     if args.debug is not None:
@@ -256,7 +252,7 @@ if not shell.returncode == 0:
     print("----------------------------------------")
     print("MYSQLSH log")
     print("----------------------------------------")
-    with open(os.path.join(paths.runtime.root / "mysqlsh.log")) as f:
+    with open(os.path.join(paths.runtime.root / "mariadb-shell.log")) as f:
         for line in f.readlines():
             print(line.strip())
 

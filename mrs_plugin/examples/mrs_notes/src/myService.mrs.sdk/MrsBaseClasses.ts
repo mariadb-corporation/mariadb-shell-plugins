@@ -91,9 +91,9 @@ export interface IMrsLoginResult {
     errorMessage?: string;
 }
 
-// --- MySQL Shell for VS Code Extension Remove --- Begin
+// --- MariaDB Shell for VS Code Extension Remove --- Begin
 declare const mrsLoginResult: IMrsLoginResult | undefined;
-// --- MySQL Shell for VS Code Extension Remove --- End
+// --- MariaDB Shell for VS Code Extension Remove --- End
 
 /**
  * Implements a session that is used by a MrsService to perform fetch() calls.
@@ -114,7 +114,7 @@ export class MrsBaseSession {
         protected defaultTimeout = 8000) {
         this.authPath = `${authPath}/login`;
         this.deauthPath = `${authPath}/logout`;
-        // --- MySQL Shell for VS Code Extension Only --- Begin
+        // --- MariaDB Shell for VS Code Extension Only --- Begin
         try {
             // Try to get global mrsLoginResult values when already authenticated in the DB NoteBook
             this.accessToken = mrsLoginResult?.jwt;
@@ -122,7 +122,7 @@ export class MrsBaseSession {
         } catch {
             // Ignore
         }
-        // --- MySQL Shell for VS Code Extension Only --- End
+        // --- MariaDB Shell for VS Code Extension Only --- End
     }
 
     /**

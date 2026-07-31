@@ -23,7 +23,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 # MRS Metadata Schema
 
-The MySQL REST Service metadata schema is managed by the MySQL Schema Management plugin of the MySQL Shell. Please make sure to install the MySQL Shell for VS Code extension before working with the MRS metadata schema.
+The MySQL REST Service metadata schema is managed by the MySQL Schema Management plugin of the MariaDB Shell. Please make sure to install the MariaDB Shell for VS Code extension before working with the MRS metadata schema.
 
 MySQL Workbench is used to design the MRS metadata schema and must be used to change the `./mysql_rest_service_metadata.msm.project/development/wb/mysql_rest_service_metadata.mwb` file and generate the core SQL CREATE script.
 

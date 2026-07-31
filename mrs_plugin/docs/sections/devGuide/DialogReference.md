@@ -23,7 +23,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 # MRS Dialog Reference
 
-This section discusses the individual MRS UI dialogs offered by MySQL Shell for VS Code.
+This section discusses the individual MRS UI dialogs offered by MariaDB Shell for VS Code.
 
 ## MRS Service Dialog
 

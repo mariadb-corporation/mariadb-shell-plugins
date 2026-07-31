@@ -44,7 +44,7 @@ The following figure visualizes these two use cases.
 
 ### REST Data Mapping View Workflow
 
-The REST data mapping views can be created using the [CREATE REST DATA MAPPING VIEW](sql.html#create-rest-view) MRS DDL statement or [interactively using the MRS Object Dialog](#interactive-rest-view-design) of the MySQL Shell for VS Code extension.
+The REST data mapping views can be created using the [CREATE REST DATA MAPPING VIEW](sql.html#create-rest-view) MRS DDL statement or [interactively using the MRS Object Dialog](#interactive-rest-view-design) of the MariaDB Shell for VS Code extension.
 
 Once a REST data mapping view has been created, it is extremely simple to access it using REST. The following workflow applies.
 
@@ -124,13 +124,13 @@ If the target object has been changed (e.g. by another user) between the `GET` a
 
 While REST data mapping views can be created by manually writing [CREATE REST DATA MAPPING VIEW](sql.html#create-rest-view) MRS DDL statements, it is often much easier to design REST data mapping views in a visual editor.
 
-[MySQL Shell for VS Code](https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code) includes the MySQL REST Object dialog which features an advanced `Data Mapping` designer. Using this designer it is possible to create even complex, nested REST data mapping views within seconds.
+[MariaDB Shell for VS Code](https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code) includes the MySQL REST Object dialog which features an advanced `Data Mapping` designer. Using this designer it is possible to create even complex, nested REST data mapping views within seconds.
 
 The `DDL Preview` button allows to preview the corresponding MRS DDL statement while interactively designing the REST data mapping view.
 
 ### Building a REST Data Mapping View
 
-Building a REST data mapping view for a single relational table (or view) is straight forward. Using MySQL Shell for VS Code to [add the database schema table](adding-a-schema-object-with-mysql-shell-for-vs-code-ui) automatically creates the corresponding REST data mapping view containing all columns of the table in a **flat** JSON object.
+Building a REST data mapping view for a single relational table (or view) is straight forward. Using MariaDB Shell for VS Code to [add the database schema table](adding-a-schema-object-with-mysql-shell-for-vs-code-ui) automatically creates the corresponding REST data mapping view containing all columns of the table in a **flat** JSON object.
 
 ![JSON Relational Editor](../../images/vsc-mrs-rest-object-editor.svg "REST Object Editor")
 

@@ -1,6 +1,6 @@
-# MySQL REST Service Plugin for MySQL Shell
+# MySQL REST Service Plugin for MariaDB Shell
 
-This folder contains the code for the MySQL REST Service (short: MRS) Plugin. It is part of the [MySQL Shell Plugins](../readme.md) repository.
+This folder contains the code for the MySQL REST Service (short: MRS) Plugin. It is part of the [MariaDB Shell Plugins](../readme.md) repository.
 
 # Contributing to MySQL REST Service Plugin
 
@@ -8,24 +8,24 @@ No installation is necessary for this plugin, beside the setup of Visual Studio 
 
 ## Testing
 
-Since this is a MySQL Shell plugin, the tests should run as part of a MySQL Shell session. The test script should be executed within the `mrs_plugin` directory and the required testing dependencies should be installed as follows:
+Since this is a MariaDB Shell plugin, the tests should run as part of a MariaDB Shell session. The test script should be executed within the `mrs_plugin` directory and the required testing dependencies should be installed as follows:
 
 ```sh
 $ cd mrs_plugin
-$ mysqlsh --pym pip install --user -r requirements.txt
-$ mysqlsh --pym pip install --user -r sdk/python/requirements.txt
+$ mariadb-shell --pym pip install --user -r requirements.txt
+$ mariadb-shell --pym pip install --user -r sdk/python/requirements.txt
 ```
 
 After the dependencies are installed, the test script can execute as follows:
 
 ```sh
-$ mysqlsh --py -f run_tests.py
+$ mariadb-shell --py -f run_tests.py
 ```
 
 To run a single test or test suite, the script provides a `-k` option that allows to specify a test name or a file name.
 
 ```sh
-$ mysqlsh --py -f run_tests.py -k test_sdk
+$ mariadb-shell --py -f run_tests.py -k test_sdk
 ```
 
 ## Visual Studio Code Settings
@@ -35,13 +35,13 @@ Include the following settings in your VS Code settings.json file in order to al
 ```json
 {
     "python.analysis.extraPaths": [
-        "/usr/local/mysql-shell/lib/mysqlsh/python-packages/",
+        "/usr/local/mariadb-shell/lib/mariadb-shell/python-packages/",
         "${workspaceFolder}\\plugins\\rds_plugin",
-        "/usr/local/mysql-shell/lib/mysqlsh/lib/python3.9/site-packages"
+        "/usr/local/mariadb-shell/lib/mariadb-shell/lib/python3.9/site-packages"
     ],
     "python.autoComplete.extraPaths": [
-        "/usr/local/mysql-shell/lib/mysqlsh/python-packages/",
-        "/usr/local/mysql-shell/lib/mysqlsh/lib/python3.9/site-packages",
+        "/usr/local/mariadb-shell/lib/mariadb-shell/python-packages/",
+        "/usr/local/mariadb-shell/lib/mariadb-shell/lib/python3.9/site-packages",
         "${workspaceFolder}\\plugins\\rds_plugin"
     ]
 }

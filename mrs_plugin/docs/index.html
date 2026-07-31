@@ -91,7 +91,7 @@
 
                     document.querySelectorAll("code").forEach((e) => {
                         if (e.innerHTML.endsWith(".sql")) {
-                            addVsActionBtn(e, "openSqlFile", "Open in MySQL Shell");
+                            addVsActionBtn(e, "openSqlFile", "Open in MariaDB Shell");
                         } else if (e.innerHTML.endsWith(".mrs.json")) {
                             addVsActionBtn(e, "loadMrsDump", "Load MRS Dump");
                         } else if (e.innerHTML.startsWith("VSCodeProject:") > 0) {
@@ -560,7 +560,7 @@ Service - Reference Manual
                 <li>Direct VS Code Extension integration featuring
                 point-and-click, WYSIWYG editors and live-querying of
                 REST endpoints via TypeScript.</li>
-                <li>Dedicated REST SQL extension support in MySQL Shell
+                <li>Dedicated REST SQL extension support in MariaDB Shell
                 for scripting and development process integration.</li>
                 <li>Client SDK generation support for popular languages
                 to vastly simplify development process and project
@@ -736,7 +736,7 @@ Service - Reference Manual
                 component can be downloaded from <a
                 href="https://labs.mysql.com">labs.mysql.com</a>.</p>
                 <p>It is recommended to use the latest available version
-                of MySQL Shell (9.4.0 and higher) to configure and work
+                of MariaDB Shell (9.4.0 and higher) to configure and work
                 with the MySQL REST Service, regardless of the MySQL
                 Server and MySQL Router versions.</p>
                 <!-- Copyright (c) 2022, 2026, Oracle and/or its affiliates.
@@ -783,7 +783,7 @@ Service - Reference Manual
                 HTTPS REST interface.</li>
                 <li>Either running in developer or production mode.</li>
                 </ul></li>
-                <li>MySQL Shell / MySQL Shell for VS Code
+                <li>MariaDB Shell / MariaDB Shell for VS Code
                 <ul>
                 <li>Support for the REST SQL extension, to configure and
                 manage REST endpoints via REST SQL commands.</li>
@@ -803,7 +803,7 @@ Service - Reference Manual
                 <li>A local development setup used to develop new REST
                 services.
                 <ul>
-                <li>A local MySQL Shell installation to connect to and
+                <li>A local MariaDB Shell installation to connect to and
                 execute REST SQL extension commands.</li>
                 <li>A local MySQL Router installation, running in
                 developer mode.</li>
@@ -944,9 +944,9 @@ Service - Reference Manual
                 <h3 data-number="3.1.1"
                 id="mrs-configuration-using-mysql-shell-for-vs-code"><span
                 class="header-section-number">3.1.1</span> MRS
-                Configuration Using MySQL Shell for VS Code</h3>
+                Configuration Using MariaDB Shell for VS Code</h3>
                 <ol type="1">
-                <li><p>Start VS Code, install the MySQL Shell for VS
+                <li><p>Start VS Code, install the MariaDB Shell for VS
                 Code extension, and then add a DB Connection to the
                 MySQL solution that should be configured for the MySQL
                 REST Service.</p></li>
@@ -966,9 +966,9 @@ Service - Reference Manual
                 <h3 data-number="3.1.2"
                 id="mrs-configuration-using-mysql-shell"><span
                 class="header-section-number">3.1.2</span> MRS
-                Configuration Using MySQL Shell</h3>
+                Configuration Using MariaDB Shell</h3>
                 <p>The MySQL REST Service metadata schema can be
-                configured from the MySQL Shell on the command line
+                configured from the MariaDB Shell on the command line
                 after connecting to the MySQL solution.</p>
                 <p>Please note that a MySQL user with
                 <code>ALL PRIVILEGES</code> and
@@ -987,7 +987,7 @@ Service - Reference Manual
                 account and configures the MySQL REST Service metadata
                 schema.</p>
                 <div class="sourceCode" id="cb1"><pre
-                class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> mysqlsh dba@localhost</span>
+                class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> mariadb-shell dba@localhost</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">MySQL</span> Shell 9.3.0</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ex">MySQL</span><span class="op">&gt;</span> localhost:3306<span class="op">&gt;</span> SQL<span class="op">&gt;</span> CONFIGURE REST METADATA<span class="kw">;</span></span>
@@ -1015,7 +1015,7 @@ Service - Reference Manual
                 account and drops the MySQL REST Service metadata
                 schema.</p>
                 <div class="sourceCode" id="cb2"><pre
-                class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> mysqlsh dba@localhost</span>
+                class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> mariadb-shell dba@localhost</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">MySQL</span> Shell 9.3.0</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="ex">MySQL</span><span class="op">&gt;</span> localhost:3306<span class="op">&gt;</span> SQL<span class="op">&gt;</span> DROP SCHEMA mysql_rest_service_metadata<span class="kw">;</span></span>
@@ -1239,7 +1239,7 @@ Service - Reference Manual
                 <p>When working with a local development setup it is
                 common to install the MySQL Router instance on the local
                 development machine.</p>
-                <p>In this case, MySQL Shell for VS Code can be used to
+                <p>In this case, MariaDB Shell for VS Code can be used to
                 simplify the bootstrap process and to launch the MySQL
                 Router instance as follows:</p>
                 <ol type="1">
@@ -1251,7 +1251,7 @@ Service - Reference Manual
                 directory containing the MySQL Router binaries is in the
                 system PATH.</li>
                 </ul></li>
-                <li>Inside MySQL Shell for VS Code, expand a DB
+                <li>Inside MariaDB Shell for VS Code, expand a DB
                 Connection in the DATABASE CONNECTIONS view, right-click
                 the <code>MySQL REST Service</code> tree item, and then
                 select <code>Start Local MySQL Router Instance</code>.
@@ -1342,7 +1342,7 @@ Service - Reference Manual
                 database schemas.</li>
                 </ul>
                 <p>To create the MySQL account, connect to the MySQL
-                setup with MySQL Shell or MySQL Shell for VS Code and
+                setup with MariaDB Shell or MariaDB Shell for VS Code and
                 execute the following SQL statements:</p>
                 <div class="sourceCode" id="cb6"><pre
                 class="sourceCode sql"><code class="sourceCode sql"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="fu">USER</span> <span class="st">&#39;mysqlrouter_mrs_&lt;router_name&gt;&#39;</span>@<span class="st">&#39;&lt;router_host&gt;&#39;</span> <span class="kw">IDENTIFIED</span> <span class="kw">BY</span> <span class="st">&#39;password&#39;</span>;</span>
@@ -1458,8 +1458,8 @@ Service - Reference Manual
                 class="sourceCode ini"><code class="sourceCode ini"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[http_server]</span></span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="dt">port</span><span class="ot">=</span><span class="dv">8443</span></span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="dt">ssl</span><span class="ot">=</span><span class="dv">1</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="dt">ssl_cert</span><span class="ot">=</span><span class="st">/Users/myUser/.mysqlsh/plugin_data/gui_plugin/web_certs/server.crt</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="dt">ssl_key</span><span class="ot">=</span><span class="st">/Users/myUser/.mysqlsh/plugin_data/gui_plugin/web_certs/server.key</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="dt">ssl_cert</span><span class="ot">=</span><span class="st">/Users/myUser/.mariadb-shell/plugin_data/gui_plugin/web_certs/server.crt</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="dt">ssl_key</span><span class="ot">=</span><span class="st">/Users/myUser/.mariadb-shell/plugin_data/gui_plugin/web_certs/server.key</span></span>
 <span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="kw">[mysql_rest_service]</span></span>
 <span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="dt">mysql_read_only_route</span><span class="ot">=</span><span class="st">bootstrap_ro</span></span>
@@ -1850,19 +1850,19 @@ Service - Reference Manual
                 <p>A new REST service can be added in one of the
                 following ways:</p>
                 <ul>
-                <li>MySQL Shell for VS Code provides a GUI dialog to
+                <li>MariaDB Shell for VS Code provides a GUI dialog to
                 create the REST service.</li>
-                <li>MySQL Shell offers the MRS plugin that can be used
+                <li>MariaDB Shell offers the MRS plugin that can be used
                 to create a REST service interactively or with scripts
                 in a terminal.</li>
-                <li>When writing a script or plugin for MySQL Shell, the
+                <li>When writing a script or plugin for MariaDB Shell, the
                 MRS plugin can be used to script the creation in Python
                 or JavaScript.</li>
                 </ul>
                 <h3 data-number="4.3.1"
                 id="adding-a-rest-service-using-mysql-shell-for-vs-code"><span
                 class="header-section-number">4.3.1</span> Adding a REST
-                Service Using MySQL Shell for VS Code</h3>
+                Service Using MariaDB Shell for VS Code</h3>
                 <p>After configuring the MySQL REST Service on the
                 target MySQL instance, the DB Connection in the DATABASE
                 CONNECTIONS view (when expanded) shows a new tree item,
@@ -1887,8 +1887,8 @@ Service - Reference Manual
                 <h3 data-number="4.3.2"
                 id="adding-a-rest-service-using-mysql-shell"><span
                 class="header-section-number">4.3.2</span> Adding a REST
-                Service Using MySQL Shell</h3>
-                <p>For MySQL Shell, the <code>mrs</code> plugin is used
+                Service Using MariaDB Shell</h3>
+                <p>For MariaDB Shell, the <code>mrs</code> plugin is used
                 to work with the MySQL REST Service. The
                 <code>mrs.add.service()</code> function adds a new REST
                 service.</p>
@@ -1998,8 +1998,8 @@ Service - Reference Manual
                 possible to add the same MySQL database schema to
                 different REST services by creating several REST schemas
                 for the MySQL database schema.</p>
-                <p>The REST schema can be created by using MySQL Shell
-                for VS Code or MySQL Shell on the command line.</p>
+                <p>The REST schema can be created by using MariaDB Shell
+                for VS Code or MariaDB Shell on the command line.</p>
                 <p>Note: Adding a database schema as a REST schema is
                 not equivalent to exposing all tables and views in the
                 schema through the RESTful Web service. It just means
@@ -2032,7 +2032,7 @@ Service - Reference Manual
                 id="adding-a-schema-via-mrs-ddl"><span
                 class="header-section-number">4.4.1</span> Adding a
                 Schema via MRS DDL</h3>
-                <p>On an active MySQL Shell connection execute the <a
+                <p>On an active MariaDB Shell connection execute the <a
                 href="sql.html#create-rest-schema">CREATE REST
                 SCHEMA</a> DDL statement referencing the corresponding
                 MySQL database schema in the FROM clause. Please see the
@@ -2048,7 +2048,7 @@ Service - Reference Manual
                 <h3 data-number="4.4.2"
                 id="adding-a-schema-using-the-mysql-shell-for-vs-code-ui"><span
                 class="header-section-number">4.4.2</span> Adding a
-                Schema using the MySQL Shell for VS Code UI</h3>
+                Schema using the MariaDB Shell for VS Code UI</h3>
                 <p>To add a database schema to a REST service:</p>
                 <ol type="1">
                 <li><p>Right-click the schema in the DATABASE
@@ -2069,7 +2069,7 @@ Service - Reference Manual
                 <h3 data-number="4.4.3"
                 id="adding-a-rest-schema-with-a-mysql-shell-script"><span
                 class="header-section-number">4.4.3</span> Adding a REST
-                Schema with a MySQL Shell Script</h3>
+                Schema with a MariaDB Shell Script</h3>
                 <p>To add a database schema to a REST service, call the
                 <code>mrs.add.schema()</code> function.</p>
                 <p>When started without parameters, an interactive
@@ -2133,13 +2133,13 @@ Service - Reference Manual
                 advantages of using REST data mapping views.</p>
                 </blockquote>
                 <p>The MySQL database schema objects can be added by
-                using MySQL Shell for VS Code or MySQL Shell on the
+                using MariaDB Shell for VS Code or MariaDB Shell on the
                 command line.</p>
                 <h3 data-number="4.5.1"
                 id="adding-a-schema-object-via-mrs-ddl"><span
                 class="header-section-number">4.5.1</span> Adding a
                 Schema Object via MRS DDL</h3>
-                <p>On an active MySQL Shell connection execute the <a
+                <p>On an active MariaDB Shell connection execute the <a
                 href="sql.html#create-rest-view">CREATE REST DATA
                 MAPPING VIEW</a> DDL statement to add a database schema
                 table or view as REST object. Please see the <a
@@ -2180,7 +2180,7 @@ Service - Reference Manual
                 <h3 data-number="4.5.2"
                 id="adding-a-schema-object-with-mysql-shell-for-vs-code-ui"><span
                 class="header-section-number">4.5.2</span> Adding a
-                Schema Object with MySQL Shell for VS Code UI</h3>
+                Schema Object with MariaDB Shell for VS Code UI</h3>
                 <p>To add a database schema object to a REST schema:</p>
                 <ol type="1">
                 <li><p>Right-click on the database object in the
@@ -2204,7 +2204,7 @@ Service - Reference Manual
                 <h3 data-number="4.5.3"
                 id="adding-a-database-object-with-mysql-shell"><span
                 class="header-section-number">4.5.3</span> Adding a
-                Database Object with MySQL Shell</h3>
+                Database Object with MariaDB Shell</h3>
                 <p>To add a database schema to a REST service call the
                 <code>mrs.add.dbObject()</code> function.</p>
                 <p>When started without parameters, an interactive
@@ -2287,7 +2287,7 @@ Service - Reference Manual
                 id="working-interactively-with-rest-services"><span
                 class="header-section-number">5</span> Working
                 Interactively with REST Services</h1>
-                <p>MySQL Shell for VS Code features a live, interactive
+                <p>MariaDB Shell for VS Code features a live, interactive
                 workflow for designing REST Services.</p>
                 <p>It allows developers to immediately test their newly
                 created or modified REST data mapping views and REST
@@ -2307,7 +2307,7 @@ Service - Reference Manual
                 id="switching-to-typescript-mode"><span
                 class="header-section-number">5.1</span> Switching to
                 TypeScript Mode</h2>
-                <p>After opening a database connection in MySQL Shell
+                <p>After opening a database connection in MariaDB Shell
                 for VS Code the DB Notebook will be displayed. Switch
                 the DB Notebook to TypeScript mode with <code>\ts</code>
                 if it is in SQL mode.</p>
@@ -2561,7 +2561,7 @@ Service - Reference Manual
                 <a href="sql.html#create-rest-view">CREATE REST DATA
                 MAPPING VIEW</a> MRS DDL statement or <a
                 href="#interactive-rest-view-design">interactively using
-                the MRS Object Dialog</a> of the MySQL Shell for VS Code
+                the MRS Object Dialog</a> of the MariaDB Shell for VS Code
                 extension.</p>
                 <p>Once a REST data mapping view has been created, it is
                 extremely simple to access it using REST. The following
@@ -2694,7 +2694,7 @@ Service - Reference Manual
                 REST Data Mapping View</h3>
                 <p>Building a REST data mapping view for a single
                 relational table (or view) is straight forward. Using
-                MySQL Shell for VS Code to <a
+                MariaDB Shell for VS Code to <a
                 href="adding-a-schema-object-with-mysql-shell-for-vs-code-ui">add
                 the database schema table</a> automatically creates the
                 corresponding REST data mapping view containing all
@@ -2985,7 +2985,7 @@ Service - Reference Manual
                 class="header-section-number">7</span> MRS Dialog
                 Reference</h1>
                 <p>This section discusses the individual MRS UI dialogs
-                offered by MySQL Shell for VS Code.</p>
+                offered by MariaDB Shell for VS Code.</p>
                 <h2 data-number="7.1" id="mrs-service-dialog"><span
                 class="header-section-number">7.1</span> MRS Service
                 Dialog</h2>
@@ -3278,7 +3278,7 @@ Service - Reference Manual
                 Shell. The operations that a user is allowed to perform
                 depend on the MySQL user that was used to connect MySQL
                 Shell to MySQL (i.e. the Username that was set when the
-                Connection was created in MySQL Shell for VSCode or
+                Connection was created in MariaDB Shell for VSCode or
                 passed in the command line of <code>mysqlsh</code>).</p>
                 <p>Note that any MySQL root or admin users that have
                 full privileges to MySQL will also have full privileges
@@ -3333,7 +3333,7 @@ Service - Reference Manual
                 <code>UPDATE</code>, <code>DELETE</code> on tables that
                 will be published and updatable,
                 <code>WITH GRANT OPTION</code>). These privileges will
-                automatically be re-granted by MySQL Shell to the
+                automatically be re-granted by MariaDB Shell to the
                 <code>mysql_rest_service_data_provider</code> role, so
                 that MySQL Router can do whatever is required by the
                 endpoint configuration.</p>
@@ -3380,7 +3380,7 @@ Service - Reference Manual
                 SQL necessary to serve HTTP REST requests on behalf of
                 MRS users. This role must have grants on all MySQL
                 objects that are exposed as REST endpoints.</p>
-                <p>The MySQL Shell automatically manages privileges
+                <p>The MariaDB Shell automatically manages privileges
                 granted to this role, as DB objects are added as REST
                 endpoints.</p>
                 <p>Note that access control for MRS users is performed
@@ -3815,13 +3815,13 @@ Service - Reference Manual
                 users enter while using the app.</p>
                 <p>To create the mrsNotes schema the corresponding SQL
                 script file needs to be executed. This can be done via
-                the MySQL Shell or directly within VS Code using the
-                MySQL Shell for VS Code extension.</p>
+                the MariaDB Shell or directly within VS Code using the
+                MariaDB Shell for VS Code extension.</p>
                 <ul>
                 <li><p>If you are browsing this documentation within VS
                 Code click the button next to the SQL script name
                 <code>examples/mrs_notes/db_schema/mrs_notes.sql</code></p></li>
-                <li><p>If you want to use MySQL Shell on the command
+                <li><p>If you want to use MariaDB Shell on the command
                 line, switch to the mrs_notes plugin directory and run
                 the following command.</p>
                 <p>mysqlsh dba@localhost –sql -f
@@ -3960,8 +3960,8 @@ Service - Reference Manual
                 id="using-mysql-shell-to-deploy-the-mrs-scripts-examples"><span
                 class="header-section-number">9.2.1.2</span> Using MySQL
                 Shell to Deploy the MRS Scripts Examples</h4>
-                <p>Apart from using the MySQL Shell for VS Code
-                extension it is also possible to use the MySQL Shell to
+                <p>Apart from using the MariaDB Shell for VS Code
+                extension it is also possible to use the MariaDB Shell to
                 upload the MRS Scripts to MRS.</p>
                 <div class="sourceCode" id="cb53"><pre
                 class="sourceCode bash"><code class="sourceCode bash"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="ex">~/.mysqlsh-gui/mysqlsh</span> dba@localhost <span class="at">--sql</span> <span class="at">-e</span> <span class="st">&#39;CREATE OR REPLACE REST CONTENT SET /mrsScriptsContent ON SERVICE /myService FROM &quot;~/path_to_project_folder/mrs_scripts&quot; LOAD SCRIPTS&#39;</span></span></code></pre></div>

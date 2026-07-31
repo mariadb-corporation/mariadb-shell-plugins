@@ -91,7 +91,7 @@
 
                     document.querySelectorAll("code").forEach((e) => {
                         if (e.innerHTML.endsWith(".sql")) {
-                            addVsActionBtn(e, "openSqlFile", "Open in MySQL Shell");
+                            addVsActionBtn(e, "openSqlFile", "Open in MariaDB Shell");
                         } else if (e.innerHTML.endsWith(".mrs.json")) {
                             addVsActionBtn(e, "loadMrsDump", "Load MRS Dump");
                         } else if (e.innerHTML.startsWith("VSCodeProject:") > 0) {
@@ -551,7 +551,7 @@ Service - SQL Reference
             <div class="main">
                 <p>This document discusses the MySQL REST Service (MRS)
                 DDL - SQL Extension. The MRS DDL - SQL Extension adds a
-                set of MRS specific DDL statements to the MySQL Shell
+                set of MRS specific DDL statements to the MariaDB Shell
                 SQL handling in order to provide a familiar management
                 interface to MySQL developers and DBAs.</p>
                 <p><strong>Chapter Overview</strong></p>

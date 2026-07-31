@@ -25,7 +25,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 It has been an essential goal of the MySQL REST Service (MRS) to provide a management interface that feels familiar to MySQL developers and DBAs and integrates well into their existing processes.
 
-For this purpose the MySQL REST Service plugins directly into the [MySQL Shell](https://dev.mysql.com/downloads/shell/) and [MySQL Shell for VS Code](https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code). It extends the available SQL commands to include DDL (Data Definition Language) statements that allow managing the MySQL REST Service in an easy and seamless way.
+For this purpose the MySQL REST Service plugins directly into the [MariaDB Shell](https://dev.mysql.com/downloads/shell/) and [MariaDB Shell for VS Code](https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code). It extends the available SQL commands to include DDL (Data Definition Language) statements that allow managing the MySQL REST Service in an easy and seamless way.
 
 This makes the process of creating a MySQL REST Service for your application as easy as creating a database schema or table.
 

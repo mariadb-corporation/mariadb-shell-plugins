@@ -64,20 +64,20 @@ def save_server_state(session):
 def module_fixture(phone_book):
     conn = helpers.get_connection_data(instance=1)
     try:
-        mysqlsh.globals.dba.kill_sandbox_instance(
+        mysqlsh.globals.sandbox.kill(
             conn["port"], {"sandboxDir": phone_book["temp_dir"]}
         )
     except:
         pass
 
-    mysqlsh.globals.dba.deploy_sandbox_instance(
+    mysqlsh.globals.sandbox.deploy(
         conn["port"],
         {"password": conn["password"], "sandboxDir": phone_book["temp_dir"]},
     )
     mysqlsh.globals.shell.connect(conn)
     yield conn
     mysqlsh.globals.shell.set_session(phone_book["session"])
-    mysqlsh.globals.dba.kill_sandbox_instance(
+    mysqlsh.globals.sandbox.kill(
         conn["port"], {"sandboxDir": phone_book["temp_dir"]}
     )
 

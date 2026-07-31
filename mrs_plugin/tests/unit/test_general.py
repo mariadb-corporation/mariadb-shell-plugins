@@ -54,14 +54,14 @@ def test_configure(phone_book):
 
     with pytest.raises(
         Exception,
-        match="MySQL session not specified. Please either pass a session object when calling the function or open a database connection in the MySQL Shell first.",
+        match="MySQL session not specified. Please either pass a session object when calling the function or open a database connection in the MariaDB Shell first.",
     ) as exp:
         config_output = configure()
     mysqlsh.globals.shell.set_session(None)
 
     with pytest.raises(
         Exception,
-        match="MySQL session not specified. Please either pass a session object when calling the function or open a database connection in the MySQL Shell first.",
+        match="MySQL session not specified. Please either pass a session object when calling the function or open a database connection in the MariaDB Shell first.",
     ) as exp:
         config_output = configure()
 

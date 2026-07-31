@@ -91,7 +91,7 @@
 
                     document.querySelectorAll("code").forEach((e) => {
                         if (e.innerHTML.endsWith(".sql")) {
-                            addVsActionBtn(e, "openSqlFile", "Open in MySQL Shell");
+                            addVsActionBtn(e, "openSqlFile", "Open in MariaDB Shell");
                         } else if (e.innerHTML.endsWith(".mrs.json")) {
                             addVsActionBtn(e, "loadMrsDump", "Load MRS Dump");
                         } else if (e.innerHTML.startsWith("VSCodeProject:") > 0) {

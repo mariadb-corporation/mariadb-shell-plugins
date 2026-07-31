@@ -68,11 +68,11 @@ ALTER USER 'user_account'@'%' DEFAULT ROLE 'mysql_rest_service_admin';
 
 A new REST service can be added in one of the following ways:
 
-- MySQL Shell for VS Code provides a GUI dialog to create the REST service.
-- MySQL Shell offers the MRS plugin that can be used to create a REST service interactively or with scripts in a terminal.
-- When writing a script or plugin for MySQL Shell, the MRS plugin can be used to script the creation in Python or JavaScript.
+- MariaDB Shell for VS Code provides a GUI dialog to create the REST service.
+- MariaDB Shell offers the MRS plugin that can be used to create a REST service interactively or with scripts in a terminal.
+- When writing a script or plugin for MariaDB Shell, the MRS plugin can be used to script the creation in Python or JavaScript.
 
-### Adding a REST Service Using MySQL Shell for VS Code
+### Adding a REST Service Using MariaDB Shell for VS Code
 
 After configuring the MySQL REST Service on the target MySQL instance, the DB Connection in the DATABASE CONNECTIONS view (when expanded) shows a new tree item, `MySQL REST Service`.
 
@@ -82,9 +82,9 @@ After configuring the MySQL REST Service on the target MySQL instance, the DB Co
 
 ![Adding a REST Service](../../images/vsc-mrs-add-service.png "Adding a REST Service")
 
-### Adding a REST Service Using MySQL Shell
+### Adding a REST Service Using MariaDB Shell
 
-For MySQL Shell, the `mrs` plugin is used to work with the MySQL REST Service. The `mrs.add.service()` function adds a new REST service.
+For MariaDB Shell, the `mrs` plugin is used to work with the MySQL REST Service. The `mrs.add.service()` function adds a new REST service.
 
 When started without parameters, an interactive wizard prompt you for the required parameters. For example:
 
@@ -150,7 +150,7 @@ This section introduces some common terms that are used throughout this document
 
 For each MySQL database schema a corresponding REST schema can be created and added to a REST service. It is possible to add the same MySQL database schema to different REST services by creating several REST schemas for the MySQL database schema.
 
-The REST schema can be created by using MySQL Shell for VS Code or MySQL Shell on the command line.
+The REST schema can be created by using MariaDB Shell for VS Code or MariaDB Shell on the command line.
 
 Note: Adding a database schema as a REST schema is not equivalent to exposing all tables and views in the schema through the RESTful Web service. It just means making the MySQL REST Service aware that the schema exists and that it may have zero or more resources to expose via HTTP/S.
 
@@ -173,7 +173,7 @@ ALTER USER 'user_account'@'%' DEFAULT ROLE 'mysql_rest_service_schema_admin';
 
 ### Adding a Schema via MRS DDL
 
-On an active MySQL Shell connection execute the [CREATE REST SCHEMA](sql.html#create-rest-schema) DDL statement referencing the corresponding MySQL database schema in the FROM clause. Please see the MRS SQL Reference for more details.
+On an active MariaDB Shell connection execute the [CREATE REST SCHEMA](sql.html#create-rest-schema) DDL statement referencing the corresponding MySQL database schema in the FROM clause. Please see the MRS SQL Reference for more details.
 
 **_Example_**
 
@@ -185,7 +185,7 @@ CREATE OR REPLACE REST SCHEMA /sakila ON SERVICE /myService
     COMMENT "The sakila schema";
 ```
 
-### Adding a Schema using the MySQL Shell for VS Code UI
+### Adding a Schema using the MariaDB Shell for VS Code UI
 
 To add a database schema to a REST service:
 
@@ -195,7 +195,7 @@ To add a database schema to a REST service:
 
 ![Adding a Database Schema](../../images/vsc-mrs-add-schema.png "Adding a Database Schema")
 
-### Adding a REST Schema with a MySQL Shell Script
+### Adding a REST Schema with a MariaDB Shell Script
 
 To add a database schema to a REST service, call the `mrs.add.schema()` function.
 
@@ -240,11 +240,11 @@ Once a MySQL database schema has been added as a REST schema, its objects can be
 
 > Note: REST data mapping views enabled application developers to take a document centric approach when implementing their applications. Please refer to the [JSON data mapping view](#rest-data-mapping-views) section of this document to learn about the advantages of using REST data mapping views.
 
-The MySQL database schema objects can be added by using MySQL Shell for VS Code or MySQL Shell on the command line.
+The MySQL database schema objects can be added by using MariaDB Shell for VS Code or MariaDB Shell on the command line.
 
 ### Adding a Schema Object via MRS DDL
 
-On an active MySQL Shell connection execute the [CREATE REST DATA MAPPING VIEW](sql.html#create-rest-view) DDL statement to add a database schema table or view as REST object. Please see the [MRS SQL Reference](sql.html#create-rest-view) for more details.
+On an active MariaDB Shell connection execute the [CREATE REST DATA MAPPING VIEW](sql.html#create-rest-view) DDL statement to add a database schema table or view as REST object. Please see the [MRS SQL Reference](sql.html#create-rest-view) for more details.
 
 To add a stored procedure the [CREATE REST PROCEDURE](sql.html#create-rest-procedure) DDL statement can be used.
 
@@ -280,7 +280,7 @@ RESULT MyServiceSakilaFilmInStock {
 AUTHENTICATION REQUIRED;
 ```
 
-### Adding a Schema Object with MySQL Shell for VS Code UI
+### Adding a Schema Object with MariaDB Shell for VS Code UI
 
 To add a database schema object to a REST schema:
 
@@ -292,7 +292,7 @@ To add a database schema object to a REST schema:
 
 ![Adding a Database Object](../../images/vsc-mrs-add-db-object.png "Adding a Database Object")
 
-### Adding a Database Object with MySQL Shell
+### Adding a Database Object with MariaDB Shell
 
 To add a database schema to a REST service call the `mrs.add.dbObject()` function.
 
