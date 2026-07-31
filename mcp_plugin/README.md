@@ -66,6 +66,9 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 | --- | --- |
 | `db.list_connections` | Lists the configured connection URIs. |
 | `db.connect` | Opens a configured connection (`shell.open_session()`) and returns a connection UUID. |
+| `db.list_schemas` | Lists the schemas available on a connection UUID, with their type (system or user) and comment. |
+| `db.list_objects` | Lists the objects of one type (`table`, `view`, `function`, `procedure`, `sequence`, `trigger`, `event`; defaults to `table`) in a schema. |
+| `db.get_object_details` | Describes one object in detail: columns, constraints, foreign keys in both directions, parameters, or type-specific properties. |
 | `db.execute_sql` | Runs a single SQL statement (with optional parameters) on a connection UUID. |
 | `db.execute_sql_script` | Runs a multi-statement SQL script on a connection UUID. |
 | `db.close` | Closes the connection for a UUID (`session.close()`). |
@@ -88,10 +91,15 @@ Management (`msm`) plugin:
 | `msm.set_section_sql_content` | `set_section_sql_content` |
 | `msm.generate_deployment_script` | `generate_deployment_script` |
 | `msm.get_deployment_script_versions` | `get_deployment_script_versions` |
+| `msm.deploy_schema` | `deploy_schema` |
 
 Because the server is only started from a non-interactive shell, the wrapped `msm`
 functions run in non-interactive mode and return their results directly instead of
 prompting for input.
+
+`msm.deploy_schema` deploys onto a connection opened with `db.connect`, so it is only
+registered when the `db` function group is served as well. All other `msm` tools work
+on a schema project on disk and are always available.
 
 ### Sandbox tools (`sandbox`)
 

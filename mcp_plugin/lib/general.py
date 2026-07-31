@@ -43,7 +43,7 @@ SUPPORTED_FUNCTION_GROUPS = (
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
-def get_mcp_plugin_data_path() -> str:
+def get_plugin_data_path() -> str:
     # Get msm plugin data folder, create if it does not exist yet
     mcm_plugin_data_path = os.path.abspath(
         mysqlsh.plugin_manager.general.get_shell_user_dir("plugin_data", "mcp_plugin")

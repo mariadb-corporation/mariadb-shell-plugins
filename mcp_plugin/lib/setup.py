@@ -248,7 +248,7 @@ def run_setup() -> None:
         )
 
     print("=== MariaDB MCP Server setup ===")
-    print(f"Configuration is stored in: {general.get_mcp_plugin_data_path()}")
+    print(f"Configuration is stored in: {general.get_plugin_data_path()}")
 
     if config.settings_file_exists() or config.list_connection_uris():
         _menu()

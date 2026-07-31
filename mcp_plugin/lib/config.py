@@ -108,7 +108,7 @@ def delete_connection(uri: str) -> None:
 
 def get_settings_file_path() -> str:
     """Returns the full path of the settings.json file."""
-    return os.path.join(general.get_mcp_plugin_data_path(), SETTINGS_FILE_NAME)
+    return os.path.join(general.get_plugin_data_path(), SETTINGS_FILE_NAME)
 
 
 def settings_file_exists() -> bool:

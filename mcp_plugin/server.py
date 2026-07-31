@@ -47,8 +47,8 @@ def start_server(**options) -> None:
         transport (str): The MCP transport to use, either "streamable-http" or
             "stdio". Defaults to streamable-http.
         function_groups (list): The function groups to expose, allowing them to
-            be loaded independently. Supported groups are "db" and "msm".
-            Defaults to all groups.
+            be loaded independently. Supported groups are "db", "sandbox" and
+            "msm". Defaults to all groups.
 
     Returns:
         None
