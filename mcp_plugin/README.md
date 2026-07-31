@@ -184,4 +184,4 @@ afterwards.
 This plugin is released under the terms of the GNU General Public License,
 version 2.0. See the [LICENSE](LICENSE) file for the full license text.
 
-Copyright &copy; 2026, MariaDB plc and/or its affiliates.
+Copyright &copy; 2026, MariaDB plc.

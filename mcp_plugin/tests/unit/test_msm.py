@@ -1,4 +1,4 @@
-# Copyright (c) 2026, MariaDB plc and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@ from mcp_plugin.lib import config
 import mcp_plugin.tests.unit.helpers as helpers
 
 SCHEMA_NAME = "mcp_pytest_schema"
-COPYRIGHT_HOLDER = "MariaDB plc and/or its affiliates."
+COPYRIGHT_HOLDER = "MariaDB plc."
 
 # A CREATE TABLE statement written into MSM section 140 (non-idempotent schema
 # objects) of the development script so the prepared release has real content.

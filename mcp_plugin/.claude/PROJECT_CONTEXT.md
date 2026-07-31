@@ -6,7 +6,7 @@
 Model Context Protocol (MCP) server exposing MariaDB AI Plugin capabilities to
 MCP-compatible clients. It registers the global `mcp` object in the shell and serves
 `db.*`, `msm.*`, and `sandbox.*` tool groups over stdio or streamable-http. GPLv2,
-"MariaDB plc and/or its affiliates". Top-level plugin folder in mysql-shell-plugins
+"MariaDB plc". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
 9.1.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite: **17 tests pass
@@ -167,10 +167,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass
   — see the invocation note in Gotchas):
   - MySQL -> MariaDB rebrand of all PROSE/branding. Legal notices were NOT word-substituted;
-    the USER instead ADDED a second line `Copyright (c) 2026, MariaDB plc and/or its
-    affiliates.` under the existing Oracle line, leaving Oracle's notice and the "authors of
-    MySQL hereby grant" FOSS exception intact. **Follow that additive pattern**; do not
-    rewrite Oracle's LICENSE or the exception paragraph.
+    the USER instead ADDED a second line `Copyright (c) 2026, MariaDB plc.` under the
+    existing Oracle line, leaving Oracle's notice and the "authors of MySQL hereby grant"
+    FOSS exception intact. **Follow that additive pattern**; do not rewrite Oracle's LICENSE
+    or the exception paragraph.
+  - **The MariaDB notice is exactly `Copyright (c) 2026, MariaDB plc.`** — NOT "MariaDB plc
+    and/or its affiliates." (that phrasing is Oracle's and is wrong for MariaDB) and not a
+    bare "MariaDB". Both wrong forms existed and were normalized across 55 occurrences in 50
+    files. Only the MariaDB line is ever rewritten; Oracle's "and/or its affiliates" stays.
   - `tests/conftest.py` now uses `from mysqlsh.globals import sandbox` +
     `sandbox.deploy/kill` instead of `mysqlsh.globals.dba.deploy_sandbox_instance` (this
     build of mariadb-shell has NO `dba` global), with `ssl: False` and an `int()` port.

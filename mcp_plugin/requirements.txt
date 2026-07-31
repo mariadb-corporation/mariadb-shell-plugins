@@ -1,4 +1,4 @@
-# Copyright (c) 2026, MariaDB plc and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 
 # Run the following command to install the dependencies in the local MariaDB Shell
 # mariadb-shell --pym pip install -r mcp_plugin/requirements.txt
