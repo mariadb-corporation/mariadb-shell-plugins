@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -91,13 +92,13 @@ DELIMITER ;
 -- CREATE TABLE statements and standard INSERTs.
 -- #############################################################################
 
-SOURCE './sections/140-10_tables.sql'[663:-115]; -- Ignore header and footer
+SOURCE './sections/140-10_tables.sql'[700:-115]; -- Ignore header and footer
 
-SOURCE './sections/140-20_table_additions.sql'[53:]; -- Remove copyright
+SOURCE './sections/140-20_table_additions.sql'[89:]; -- Remove copyright
 
-SOURCE './sections/140-30_inserts.sql'[53:]; -- Remove copyright
+SOURCE './sections/140-30_inserts.sql'[89:]; -- Remove copyright
 
-SOURCE './sections/140-40_default_static_content.sql'[53:]; -- Remove copyright
+SOURCE './sections/140-40_default_static_content.sql'[89:]; -- Remove copyright
 
 -- #############################################################################
 -- MSM Section 150: Idempotent Schema Objects
@@ -111,15 +112,15 @@ SOURCE './sections/140-40_default_static_content.sql'[53:]; -- Remove copyright
 -- EVENTS, ...).
 -- #############################################################################
 
-SOURCE './sections/150-10_views.sql'[53:]; -- Remove copyright
+SOURCE './sections/150-10_views.sql'[89:]; -- Remove copyright
 
-SOURCE './sections/150-20_procedures_functions.sql'[53:]; -- Remove copyright
+SOURCE './sections/150-20_procedures_functions.sql'[89:]; -- Remove copyright
 
-SOURCE './sections/150-30_triggers.sql'[53:]; -- Remove copyright
+SOURCE './sections/150-30_triggers.sql'[89:]; -- Remove copyright
 
-SOURCE './sections/150-40_audit_log_triggers.sql'[58:]; -- Remove copyright
+SOURCE './sections/150-40_audit_log_triggers.sql'[94:]; -- Remove copyright
 
-SOURCE './sections/150-50_events.sql'[53:]; -- Remove copyright
+SOURCE './sections/150-50_events.sql'[89:]; -- Remove copyright
 
 DELIMITER %%
 
@@ -132,7 +133,7 @@ CREATE PROCEDURE `mysql_rest_service_metadata`.`restore_roles`()
 SQL SECURITY DEFINER
 COMMENT 'This procedure restores all the ROLEs required by the MySQL REST Service.'
 BEGIN
-    SOURCE './sections/170_roles.sql'[53:]; -- Remove copyright
+    SOURCE './sections/170_roles.sql'[89:]; -- Remove copyright
 END%%
 
 DELIMITER ;
@@ -143,7 +144,7 @@ DELIMITER ;
 -- This section is used to define the ROLEs and GRANT statements.
 -- #############################################################################
 
-SOURCE './sections/170_roles.sql'[53:]; -- Remove copyright
+SOURCE './sections/170_roles.sql'[89:]; -- Remove copyright
 
 -- #############################################################################
 -- MSM Section 180: REST Service Definition

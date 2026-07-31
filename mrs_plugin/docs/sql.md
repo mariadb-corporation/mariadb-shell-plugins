@@ -39,3 +39,4 @@ Please also see
 !include sections/sql/Dump.md
 
 Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.

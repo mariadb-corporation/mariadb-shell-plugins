@@ -24,4 +24,4 @@
 import debugpy
 
 debugpy.listen(("0.0.0.0", 5678))
-print("Started Debug Server")
+shell.log("info", "Started Debug Server")

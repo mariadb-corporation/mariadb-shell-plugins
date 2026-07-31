@@ -1,4 +1,5 @@
 -- Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+-- Copyright (c) 2026, MariaDB plc.
 -- Wed Apr 30 12:25:31 2025
 -- Model: New Model    Version: 1.0
 -- MySQL Workbench Forward Engineering

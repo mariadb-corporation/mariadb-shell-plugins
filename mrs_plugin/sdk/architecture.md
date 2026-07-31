@@ -47,3 +47,4 @@ The content replacement happens based on placeholders specified using "${}" and 
 For instance, if the user enables just READ operations, only the `find*()` commands will be included as part of the SDK, these are delimited by the "^// --- crudReadOnlyStart\n" and "^// --- crudReadOnlyEnd\n" control comments.
 
 Copyright &copy; 2024, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.

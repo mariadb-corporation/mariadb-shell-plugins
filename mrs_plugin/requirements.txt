@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 # pytest 7.0 crashes on the shell's Python 3.14 (its assertion rewriter uses
 # ast.Str, removed in Python 3.12), so the floor is the oldest release that runs
 # there. Left open at the top end - 7.4, 8.4 and 9.1 all work.

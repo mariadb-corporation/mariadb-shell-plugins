@@ -15,3 +15,4 @@ Please check the version of the ANTLR Python runtime before generating the lexer
 To generate the required Python lexer/parser files, run the npm script `update-mrs-parser`.
 
 Copyright (c) 2023, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.

@@ -163,3 +163,4 @@ This document explains how to work with the MRS Software Development Kit and dis
 !include sections/sdk/ApplicationMetadata.md
 
 Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.

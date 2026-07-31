@@ -1,4 +1,5 @@
 -- Copyright (c) 2025, Oracle and/or its affiliates.
+-- Copyright (c) 2026, MariaDB plc.
 -- -----------------------------------------------------
 -- PROCEDURES and FUNCTIONs
 

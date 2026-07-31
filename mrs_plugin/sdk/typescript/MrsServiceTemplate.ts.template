@@ -1,4 +1,5 @@
 /* Copyright (c) 2023, 2025, Oracle and/or its affiliates. */
+/* Copyright (c) 2026, MariaDB plc. */
 
 /* eslint-disable max-len */
 /* eslint-disable @typescript-eslint/no-unnecessary-type-arguments */

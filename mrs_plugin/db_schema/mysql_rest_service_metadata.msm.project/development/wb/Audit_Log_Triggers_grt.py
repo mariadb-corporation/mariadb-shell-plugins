@@ -1,4 +1,5 @@
 # Copyright (c) 2023, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 # MySQL Workbench Plugin
 # Module with Audit Log Trigger function
 # Written in MySQL Workbench 8.0.26
