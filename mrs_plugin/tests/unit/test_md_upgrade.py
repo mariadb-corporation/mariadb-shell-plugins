@@ -78,7 +78,10 @@ def module_fixture(phone_book):
     mysqlsh.globals.shell.connect(conn)
     yield conn
     mysqlsh.globals.shell.set_session(phone_book["session"])
-    mysqlsh.globals.sandbox.kill(
+    mysqlsh.globals.sandbox.stop(
+        conn["port"], {"sandboxDir": phone_book["temp_dir"]}
+    )
+    mysqlsh.globals.sandbox.delete(
         conn["port"], {"sandboxDir": phone_book["temp_dir"]}
     )
 

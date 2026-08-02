@@ -1,8 +1,8 @@
-# MySQL Shell Plugins
+# MariaDB Shell Plugins
 
-The MySQL Shell Plugins Repository is a collection of plugins for the MySQL Shell (part of MySQL Server), written by the MySQL Client Tools team. It covers currently these plugins:
+The MariaDB Shell Plugins Repository is a collection of plugins for the [MariaDB Shell](https://github.com/mariadb-corporation/mariadb-shell). It covers currently these plugins:
 
-- **GUI plugin**: provides backend functionality for the [MySQL Shell GUI](gui/frontend/readme.md) application.
+- **GUI plugin**: provides backend functionality for the [MariaDB Shell GUI](gui/frontend/readme.md) application.
 - **MDS plugin**: implements [MySQL Database Services](mds_plugin/readme.md) and Oracle Cloud Infrastructure support
 - **MRS plugin**: implements [MySQL REST Service](mrs_plugin/readme.md) support
 - **MSM plugin**: implements [MySQL Schema Management operations](msm_plugin/readme.md)
@@ -10,9 +10,9 @@ The MySQL Shell Plugins Repository is a collection of plugins for the MySQL Shel
 
 ## Installation
 
-The GUI plugin backend and the other plugins can all be used on their own via MySQL Shell, but together they power the [MySQL Shell GUI](gui/frontend/readme.md) and the [MySQL Shell for VS Code](gui/extension/readme.md). Read the individual project readme files for more details, how to contribute and other information.
+The GUI plugin backend and the other plugins can all be used on their own via MariaDB Shell, but together they power the [MariaDB Shell GUI](gui/frontend/readme.md) and the [MariaDB Shell for VS Code](gui/extension/readme.md). Read the individual project readme files for more details, how to contribute and other information.
 
-The following plugins are installed by copying the folders into the MySQL Shell Plugins directory:
+The following plugins are installed by copying the folders into the MariaDB Shell Plugins directory:
 
 - mds_plugin
 - mrs_plugin
@@ -20,16 +20,16 @@ The following plugins are installed by copying the folders into the MySQL Shell 
 - util_plugin
 - migration_plugin
 
-The plugins location for the MySQL Shell depends on the target platform:
+The plugins location for the MariaDB Shell depends on the target platform:
 
-- Windows: %appdata%\MySQL\mysqlsh\plugins
-- Others: ~/.mysqlsh/plugins
+- Windows: %appdata%\MariaDB\mariadb-shell\plugins
+- Others: ~/.mariadb-shell/plugins
 
-For instructions about how to build and install the gui_plugin refer to the MySQL Shell GUI [readme.md](gui/frontend/readme.md).
+For instructions about how to build and install the gui_plugin refer to the MariaDB Shell GUI [readme.md](gui/frontend/readme.md).
 
 ## Documentation
 
-For full documentation on MySQL Server, MySQL Shell and related topics, see: https://dev.mysql.com/doc/refman/en/
+For full documentation on the MariaDB Shell, see the `MARIADB_PORT.md` and `man/mariadb-shell.1` files in the [mariadb-shell](https://github.com/mariadb-corporation/mariadb-shell) repository. For MySQL Server reference material, see: https://dev.mysql.com/doc/refman/en/
 
 
 ## Contributing
@@ -48,7 +48,7 @@ License information can be found in the LICENSE.txt file.
 
 This distribution may include materials developed by third parties. For license and attribution notices for these materials, please refer to the LICENSE file.
 
-For additional downloads and the source of MySQL Shell (part of MySQL Server), visit: https://dev.mysql.com/downloads
+For the source of the MariaDB Shell itself, see: https://github.com/mariadb-corporation/mariadb-shell
 
 Copyright &copy; 2022, 2026, Oracle and/or its affiliates.
 

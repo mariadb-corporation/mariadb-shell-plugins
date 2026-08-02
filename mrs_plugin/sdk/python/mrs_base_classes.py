@@ -65,8 +65,9 @@ from typing import (
     is_typeddict,
     get_type_hints,
     get_args,
+    get_origin,
 )
-from types import GenericAlias
+from types import GenericAlias, NoneType, UnionType
 from urllib.parse import urlencode, quote
 from urllib.request import HTTPError, Request, urlopen
 
@@ -1408,7 +1409,22 @@ class MrsDataDownstreamConverter:
             output: Converted value if conversion isn't skipped, or the original
             value otherwise.
         """
-        type_alias_type_instance: Optional[TypeAliasType] = None
+        # An `Optional[T]` (a.k.a. `T | None`) type hint carries the actual client type
+        # as one of the union members, hence the union must be unwrapped before the
+        # destination type can be inspected. Note the union itself cannot be identified
+        # by its `__name__` - depending on the Python version it is either "Optional"
+        # or "Union" - so the origin is checked instead.
+        if get_origin(dst_type) in (Union, UnionType):
+            inner_types = [arg for arg in get_args(dst_type) if arg is not NoneType]
+            if len(inner_types) == 1:
+                dst_type = inner_types[0]
+            else:
+                # A union of several client types - conversion is only supported for
+                # type aliases, so the first one found (if any) is the target type.
+                for arg in inner_types:
+                    if isinstance(arg, TypeAliasType):
+                        dst_type = arg
+                        break
 
         # handle a list of classes (for nested values)
         if isinstance(dst_type, GenericAlias) and isinstance(value, list):
@@ -1419,13 +1435,9 @@ class MrsDataDownstreamConverter:
             # otherwise, the class is a custom dataclass (based on MRSDocument)
             return [class_name(schema=None, data=item) for item in value]
 
-        if isinstance(dst_type, TypeAliasType):
-            type_alias_type_instance = dst_type
-        elif hasattr(dst_type, "__name__") and dst_type.__name__.startswith("Optional"):
-            for arg in get_args(dst_type):
-                if isinstance(arg, TypeAliasType):
-                    type_alias_type_instance = arg
-                    break
+        type_alias_type_instance: Optional[TypeAliasType] = (
+            dst_type if isinstance(dst_type, TypeAliasType) else None
+        )
 
         if type_alias_type_instance in (Date, DateTime, Time, Year):
             return MrsDataDownstreamConverter._convert_date_or_time(

@@ -45,15 +45,16 @@ from mrs_plugin import lib
 service_create_statement = """CREATE OR REPLACE REST SERVICE /test
     COMMENT 'Test service'
     OPTIONS {
+        "headers": {
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+        },
         "http": {
             "allowedOrigin": "auto"
         },
-        "headers": {
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Credentials": "true"
-        },
         "logging": {
+            "exceptions": true,
             "request": {
                 "body": true,
                 "headers": true
@@ -61,26 +62,26 @@ service_create_statement = """CREATE OR REPLACE REST SERVICE /test
             "response": {
                 "body": true,
                 "headers": true
-            },
-            "exceptions": true
+            }
         },
-        "includeLinksInResults": false,
-        "returnInternalErrorDetails": true
+        "returnInternalErrorDetails": true,
+        "includeLinksInResults": false
     }
     ADD AUTH APP `MRS Auth App` IF EXISTS;"""
 
 service_create_statement_include_database_endpoints = """CREATE OR REPLACE REST SERVICE /test
     COMMENT 'Test service'
     OPTIONS {
+        "headers": {
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+        },
         "http": {
             "allowedOrigin": "auto"
         },
-        "headers": {
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Credentials": "true"
-        },
         "logging": {
+            "exceptions": true,
             "request": {
                 "body": true,
                 "headers": true
@@ -88,11 +89,10 @@ service_create_statement_include_database_endpoints = """CREATE OR REPLACE REST 
             "response": {
                 "body": true,
                 "headers": true
-            },
-            "exceptions": true
+            }
         },
-        "includeLinksInResults": false,
-        "returnInternalErrorDetails": true
+        "returnInternalErrorDetails": true,
+        "includeLinksInResults": false
     }
     ADD AUTH APP `MRS Auth App` IF EXISTS;
 
@@ -479,26 +479,6 @@ def test_get_service_create_statement(phone_book, table_contents):
     user_table: TableContents = table_contents("mrs_user")
     session = phone_book["session"]
 
-    expected_service_create_statement = string_replace(
-        service_create_statement,
-        {
-            "__USER1_PASSWORD__": user_table.filter("name", "User 1")[0]["auth_string"],
-        },
-    )
-
-    expected_service_create_statement_include_database_endpoints = string_replace(
-        service_create_statement_include_database_endpoints,
-        {
-            "__README_TXT_LAST_MODIFICATION__": content_file_table.filter(
-                "request_path", "/readme.txt"
-            )[0]["options"]["last_modification"],
-            "__SOMEBINARYFILE_BIN_LAST_MODIFICATION__": content_file_table.filter(
-                "request_path", "/somebinaryfile.bin"
-            )[0]["options"]["last_modification"],
-            "__USER1_PASSWORD__": user_table.filter("name", "User 1")[0]["auth_string"],
-        },
-    )
-
     # Test without including all objects
     sql = get_service_create_statement(
         service_id=phone_book["service_id"],
@@ -506,7 +486,7 @@ def test_get_service_create_statement(phone_book, table_contents):
         session=phone_book["session"],
     )
 
-    assert sql == expected_service_create_statement
+    assert sql == service_create_statement
 
     # Test by including all objects
     sql = get_service_create_statement(
@@ -515,7 +495,7 @@ def test_get_service_create_statement(phone_book, table_contents):
         session=phone_book["session"],
     )
 
-    assert sql == expected_service_create_statement_include_database_endpoints
+    assert sql == service_create_statement_include_database_endpoints
 
 
 def test_service_selection(phone_book, table_contents):
@@ -534,15 +514,16 @@ def test_service_selection(phone_book, table_contents):
         service2_create_statement = """CREATE OR REPLACE REST SERVICE /service2
     COMMENT 'Test service2'
     OPTIONS {
+        "headers": {
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+        },
         "http": {
             "allowedOrigin": "auto"
         },
-        "headers": {
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Credentials": "true"
-        },
         "logging": {
+            "exceptions": true,
             "request": {
                 "body": true,
                 "headers": true
@@ -550,11 +531,10 @@ def test_service_selection(phone_book, table_contents):
             "response": {
                 "body": true,
                 "headers": true
-            },
-            "exceptions": true
+            }
         },
-        "includeLinksInResults": false,
-        "returnInternalErrorDetails": true
+        "returnInternalErrorDetails": true,
+        "includeLinksInResults": false
     };"""
 
         items = [
@@ -602,17 +582,19 @@ def test_sql_service_add_authapp(phone_book):
         "create rest service /myTestSvc add auth app `MyAuthApp` if exists add auth app `Invalid` if exists"
     )
     ddl = session.run_sql("show create rest service /myTestSvc").fetch_one()[0]
+    service_create_statement.replace("/Test", "/myTestSvc")
     assert ddl == """CREATE OR REPLACE REST SERVICE /myTestSvc
     OPTIONS {
+        "headers": {
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+        },
         "http": {
             "allowedOrigin": "auto"
         },
-        "headers": {
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Credentials": "true"
-        },
         "logging": {
+            "exceptions": true,
             "request": {
                 "body": true,
                 "headers": true
@@ -620,11 +602,10 @@ def test_sql_service_add_authapp(phone_book):
             "response": {
                 "body": true,
                 "headers": true
-            },
-            "exceptions": true
+            }
         },
-        "includeLinksInResults": false,
-        "returnInternalErrorDetails": true
+        "returnInternalErrorDetails": true,
+        "includeLinksInResults": false
     }
     ADD AUTH APP `MyAuthApp` IF EXISTS;"""
     session.run_sql(
@@ -633,15 +614,16 @@ def test_sql_service_add_authapp(phone_book):
     ddl = session.run_sql("show create rest service /myTestSvc").fetch_one()[0]
     assert ddl == """CREATE OR REPLACE REST SERVICE /myTestSvc
     OPTIONS {
+        "headers": {
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+        },
         "http": {
             "allowedOrigin": "auto"
         },
-        "headers": {
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Credentials": "true"
-        },
         "logging": {
+            "exceptions": true,
             "request": {
                 "body": true,
                 "headers": true
@@ -649,11 +631,10 @@ def test_sql_service_add_authapp(phone_book):
             "response": {
                 "body": true,
                 "headers": true
-            },
-            "exceptions": true
+            }
         },
-        "includeLinksInResults": false,
-        "returnInternalErrorDetails": true
+        "returnInternalErrorDetails": true,
+        "includeLinksInResults": false
     }
     ADD AUTH APP `MyAuthApp2` IF EXISTS;"""
 
@@ -662,6 +643,16 @@ def test_sql_service_add_authapp(phone_book):
     session.run_sql("drop rest service /myTestSvc")
 
 
+# MARIADB PORT: this test dumps and reloads schemas as part of a project, which
+# relies on the `util.dump_schemas()` and `util.load_dump()` shell utilities.
+# Neither has been ported to the MariaDB Shell yet, so `dump_service_as_project()`
+# and `load_project()` cannot complete here.
+# RE-ENABLE POINT: remove the skip below once the dump/load utilities are
+# available in the MariaDB port. See the matching skip on `test_service_as_project`
+# in mrs_plugin/tests/unit/lib/test_services.py.
+@pytest.mark.skip(
+    reason="MariaDB port: util.dump_schemas()/util.load_dump() are not available yet"
+)
 def test_service_as_project(phone_book, table_contents):
     session = phone_book["session"]
 

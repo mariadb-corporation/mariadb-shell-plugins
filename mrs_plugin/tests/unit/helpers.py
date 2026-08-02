@@ -22,6 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+import json
 import os
 import re
 
@@ -400,42 +401,63 @@ class TableContents(object):
         assert self._snapshot is not None
         return self._snapshot
 
+    @staticmethod
+    def _canonical(rows):
+        # A snapshot compares the *contents* of a table, and the queries backing
+        # it carry no ORDER BY, so the server is free to hand the same rows back
+        # in a different sequence. That is not hypothetical for the
+        # INFORMATION_SCHEMA privilege views: a GRANT/REVOKE cycle re-buckets the
+        # in-memory grant tables and transposes unrelated rows. Compare as a
+        # multiset so row order never decides the result.
+        return sorted(json.dumps(row, sort_keys=True, default=str) for row in rows)
+
     @property
     def same_as_snapshot(self):
         assert self._snapshot is not None
 
         current = lib.core.select(table=self._table_name).exec(self._session).items
-        if len(current) != len(self._snapshot):
-            return False
-
-        for index in range(0, len(self._snapshot)):
-            if self._snapshot[index] != current[index]:
-                return False
-
-        return True
+        return self._canonical(current) == self._canonical(self._snapshot.items)
 
     def assert_same(self):
         assert self._snapshot is not None
 
-        current = lib.core.select(table=self._table_name).exec(self._session).items
-        if len(current) != len(self._snapshot):
-            return False
-
-        for index in range(0, len(self._snapshot)):
-            assert self._snapshot[index] == current[index]
+        assert self.same_as_snapshot, self.diff_text
 
     @property
     def diff_text(self):
         assert self._snapshot is not None
 
         current = lib.core.select(table=self._table_name).exec(self._session).items
-        if len(self._snapshot._data) != len(current):
-            return f"\nCurrent:\n  {current}\nExpected:\n  {self._snapshot._data}"
+        expected = self._snapshot.items
 
-        for index in range(0, len(current)):
-            if current[index] != self._snapshot._data[index]:
-                return f"\nCurrent:\n  {current[index]}\nExpected:\n  {self._snapshot._data[index]}"
-        return ""
+        added = self._multiset_difference(current, expected)
+        removed = self._multiset_difference(expected, current)
+
+        if not added and not removed:
+            return ""
+
+        text = ""
+        if added:
+            text += f"\nUnexpected rows ({len(added)}):"
+            for row in added:
+                text += f"\n  + {row}"
+        if removed:
+            text += f"\nMissing rows ({len(removed)}):"
+            for row in removed:
+                text += f"\n  - {row}"
+        return text
+
+    @staticmethod
+    def _multiset_difference(left, right):
+        """Rows in `left` that `right` does not account for, duplicates included."""
+        remaining = list(right)
+        difference = []
+        for row in left:
+            if row in remaining:
+                remaining.remove(row)
+            else:
+                difference.append(row)
+        return difference
 
 
 class QueryResults(object):
@@ -975,33 +997,41 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
 
 
 def get_db_object_privileges(session, schema_name, db_object_name):
-    grants = lib.core.MrsDbExec(f"""
+    # 1. Fetch table privileges
+    raw_table_grants = lib.core.MrsDbExec(f"""
         SELECT PRIVILEGE_TYPE
         FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
         WHERE TABLE_SCHEMA = '{schema_name}'
             AND TABLE_NAME = '{db_object_name}'
         """).exec(session).items
 
-    # The Db and Routine_name column values are identifier names, which on mysql.* tables are bound to some
-    # case-sensitivity constraints (https://dev.mysql.com/doc/refman/8.4/en/identifier-case-sensitivity.html).
-    # In order to allow the tests to use case sensitive Procedure names, we must ensure the lookup works around these
-    # constraints on every platform, regardless of the value of the `lower_case_table_names` system variable.
-    # One way to do that is by using case-insensitive pattern matching with REGEXP_LIKE (
-    # https://dev.mysql.com/doc/refman/8.4/en/pattern-matching.html).
-    grants2 = lib.core.MrsDbExec("""
+    table_grants = [g["PRIVILEGE_TYPE"].upper() for g in raw_table_grants]
+
+    # 2. Fetch procedure/routine privileges
+    raw_proc_grants = lib.core.MrsDbExec("""
         SELECT PROC_PRIV
         FROM mysql.procs_priv
-        WHERE REGEXP_LIKE(DB, ?, 'i')
-            AND REGEXP_LIKE(ROUTINE_NAME, ?, 'i')
+        WHERE LOWER(Db) = LOWER(?)
+            AND LOWER(Routine_name) = LOWER(?)
         """).exec(session, [schema_name, db_object_name]).items
 
-    if grants2:
-        grants2 = [g.upper() for g in grants2[0]["PROC_PRIV"]]
+    proc_grants = []
+    for row in raw_proc_grants:
+        priv = row.get("PROC_PRIV")
+        if not priv:
+            continue
+        
+        # Handle string ('Execute,Alter Routine') or set/list ({'Execute', 'Alter Routine'})
+        if isinstance(priv, str):
+            proc_grants.extend([p.strip().upper() for p in priv.split(',') if p.strip()])
+        elif isinstance(priv, (set, list, tuple)):
+            proc_grants.extend([p.strip().upper() for p in priv])
 
-    grants = [g["PRIVILEGE_TYPE"] for g in grants]
-    grants = grants + [g.upper() for g in grants2]
-
-    return grants
+    # 3. Combine and deduplicate preserving insertion order
+    all_grants = table_grants + proc_grants
+    
+    # dict.fromkeys removes duplicates while keeping original list order
+    return list(dict.fromkeys(all_grants))
 
 
 def get_connection_data(instance: int = 0):

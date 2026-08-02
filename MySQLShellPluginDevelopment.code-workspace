@@ -62,14 +62,12 @@
         "workbench.colorCustomizations": {},
         "python.envFile": "${workspaceFolder}/python.env",
         "python.analysis.extraPaths": [
-            "/usr/local/mysql-shell/lib/mysqlsh/python-packages/",
             "${workspaceFolder}\\plugins\\rds_plugin",
             "${workspaceFolder}/..",
-            "/usr/local/mysql-shell/lib/mysqlsh/lib/python3.12/site-packages"
         ],
         "python.autoComplete.extraPaths": [
-            "/usr/local/mysql-shell/lib/mysqlsh/python-packages/",
-            "/usr/local/mysql-shell/lib/mysqlsh/lib/python3.12/site-packages",
+            "/usr/local/mariadb-shell/lib/mariadb-shell/python-packages/",
+            "/usr/local/mariadb-shell/lib/mariadb-shell/lib/python3.12/site-packages",
             "${workspaceFolder}\\plugins\\rds_plugin"
         ],
         "liveServer.settings.multiRootWorkspaceName": "MySQL REST Service Plugin",
@@ -154,6 +152,18 @@
                     "timeout": 2000
                 },
             },
+            {
+                "name": "Debug MRS Test",
+                "type": "debugpy",
+                "request": "attach",
+                "connect": {
+                    "host": "localhost",
+                    "port": 5678,
+                    "timeout": 2000
+                },
+                "preLaunchTask": "Execute MRS Test",
+                "postDebugTask": "Disable python debugging",
+            },
         ]
     },
     "tasks": {
@@ -166,7 +176,7 @@
                 "args": [
                     "-s",
                     "${workspaceFolder}/gui/tools/enable_python_debugger",
-                    "~/.mysqlsh/init.d"
+                    "~/.mariadb-shell/init.d"
                 ],
             },
             {
@@ -176,7 +186,7 @@
                 "args": [
                     "cmd",
                     "/c",
-                    "mklink /j %appdata%\\MySQL\\mysqlsh\\init.d ${workspaceFolder}\\..\\tools\\enable_python_debugger"
+                    "mklink /j %appdata%\\MariaDB\\mariadb-shell\\init.d ${workspaceFolder}\\..\\tools\\enable_python_debugger"
                 ],
                 "presentation": {
                     "echo": true,
@@ -194,9 +204,10 @@
                 "command": "mariadb-shell",
                 "args": [
                     "--log-file",
-                    "${workspaceFolder}/mysqlsh.log",
+                    "${workspaceFolder}/mariadb-shell.log",
                     "--py"
                 ],
+                "options": {"cwd": "/Users/juanram/dev/mariadb-shell-plugins/mrs_plugin"},
                 "isBackground": true,
                 "dependsOn": "Enable python debugging",
                 "problemMatcher": {
@@ -219,15 +230,23 @@
                         "beginsPattern": "Started Debug Server",
                         "endsPattern": ".*"
                     }
+                },
+                "presentation": {
+                    "echo": true,
+                    "reveal": "always",
+                    "focus": false,
+                    "panel": "shared",
+                    "showReuseMessage": true,
+                    "clear": true
                 }
             },
             {
                 "label": "Execute Shell in Python Mode (win)",
                 "type": "shell",
-                "command": "mysqlsh",
+                "command": "mariadb-shell",
                 "args": [
                     "--log-file",
-                    "${workspaceFolder}/mysqlsh.log",
+                    "${workspaceFolder}/mariadb-shell.log",
                     "--py"
                 ],
                 "isBackground": true,
@@ -265,10 +284,10 @@
             {
                 "label": "Execute Shell in Python Mode (win)",
                 "type": "shell",
-                "command": "mysqlsh",
+                "command": "mariadb-shell",
                 "args": [
                     "--log-file",
-                    "${workspaceFolder}/mysqlsh.log",
+                    "${workspaceFolder}/mariadb-shell.log",
                     "--py",
                 ],
                 "isBackground": true,
@@ -308,7 +327,7 @@
                 "type": "shell",
                 "command": "rm",
                 "args": [
-                    "~/.mysqlsh/init.d"
+                    "~/.mariadb-shell/init.d"
                 ],
                 "problemMatcher": []
             },
@@ -319,7 +338,7 @@
                 "args": [
                     "cmd",
                     "/c",
-                    "rmdir %appdata%\\MySQL\\mysqlsh\\init.d"
+                    "rmdir %appdata%\\MariaDB\\mariadb-shell\\init.d"
                 ],
                 "presentation": {
                     "echo": true,
@@ -330,7 +349,66 @@
                     "clear": false
                 },
                 "problemMatcher": []
-            }
+            },
+            {
+                "label": "Execute MRS Test",
+                "type": "shell",
+                "command": "mariadb-shell",
+                "args": [
+                    "--log-file",
+                    "${workspaceFolder}/mariadb-shell.log",
+                    "--pym",
+                    "pytest",
+                    "-c",
+                    "${workspaceFolder}/mrs_plugin/pytest.ini",
+                    "-sv",
+                    "${workspaceFolder}/mrs_plugin",
+                    "-k",
+                    "${input:test-filter}",
+                    "-vvv",
+                    "-s"
+                ],
+                "options": {"cwd": "/Users/juanram/dev/mariadb-shell-plugins/mrs_plugin"},
+                "isBackground": true,
+                "dependsOn": "Enable python debugging",
+                "problemMatcher": {
+                    "owner": "shell",
+                    "fileLocation": [
+                        "relative",
+                        "${workspaceFolder}"
+                    ],
+                    "pattern": [
+                        {
+                            "regexp": "^.*\\[.*\\]:\\s(Error|Warning|Info):\\s(.*)",
+                            "location": 0,
+                            "file": 0,
+                            "severity": 1,
+                            "message": 2
+                        }
+                    ],
+                    "background": {
+                        "activeOnStart": true,
+                        "beginsPattern": "Started Debug Server",
+                        "endsPattern": ".*"
+                    }
+                },
+                "presentation": {
+                    "echo": true,
+                    "reveal": "always",
+                    "focus": false,
+                    "panel": "shared",
+                    "showReuseMessage": true,
+                    "clear": true
+                }
+            },
+        ],
+        "inputs": [
+            {
+                "id": "test-filter",
+                "description": "Run Test Filter",
+                "default": "*",
+                "type": "promptString",
+            },
         ]
     },
     "extensions": {

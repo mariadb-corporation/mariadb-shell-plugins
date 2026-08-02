@@ -285,6 +285,9 @@ CREATE OR REPLACE REST CONTENT FILE `/somebinaryfile.bin`
     assert len(content_sets) == 1
 
 
+@pytest.mark.skip(
+    reason="This test requires the project to be built in order to load the content set"
+)
 def test_auth_app_grant_options(phone_book, table_contents):
     session = phone_book["session"]
 

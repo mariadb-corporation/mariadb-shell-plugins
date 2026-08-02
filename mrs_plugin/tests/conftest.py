@@ -158,7 +158,10 @@ def init_mrs():
     session.close()
 
     if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.sandbox.kill(
+        mysqlsh.globals.sandbox.stop(
+            connection_data["port"], {"sandboxDir": deployment_dir.name}
+        )
+        mysqlsh.globals.sandbox.delete(
             connection_data["port"], {"sandboxDir": deployment_dir.name}
         )
 

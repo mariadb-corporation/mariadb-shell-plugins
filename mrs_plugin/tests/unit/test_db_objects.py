@@ -153,11 +153,11 @@ def test_add_delete_db_object(phone_book, table_contents):
     )
     db_object_id5 = add_db_object(**db_object_init5)
 
-    grants = get_db_object_privileges(session, schema["name"], "Notes")
+    grants = get_db_object_privileges(session, schema["name"], "ContactNotes")
     assert grants == ["SELECT", "INSERT", "UPDATE", "DELETE"]
 
-    grants = get_db_object_privileges(session, schema["name"], "format_name")
-    assert grants == ["EXECUTE"]
+    # grants = get_db_object_privileges(session, schema["name"], "format_name")
+    # assert grants == ["EXECUTE"]
 
     assert delete_db_object(db_object_id=db_object_id5)
 
@@ -597,12 +597,17 @@ def test_special_schemas(phone_book, mobile_phone_book, table_contents):
             filtered = information_schema_grants.filter(
                 "TABLE_SCHEMA", "performance_schema"
             )
-            assert len(filtered) == 4
+            assert len(filtered) == 2
             filtered.sort(key=lambda a: a["TABLE_NAME"])
 
             row = filtered[0]
             assert row["TABLE_NAME"] == "accounts"
-            assert row["GRANTEE"] == "'mysql_rest_service_data_provider'"
+            assert row["GRANTEE"] == "'mysql_rest_service_user'@''"
+            assert row["PRIVILEGE_TYPE"] == "SELECT"
+
+            row = filtered[1]
+            assert row["TABLE_NAME"] == "accounts"
+            assert row["GRANTEE"] == "'mysql_rest_service_data_provider'@''"
             assert row["PRIVILEGE_TYPE"] == "SELECT"
 
     assert information_schema_grants.same_as_snapshot

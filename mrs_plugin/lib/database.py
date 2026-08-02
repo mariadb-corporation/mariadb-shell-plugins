@@ -95,7 +95,7 @@ def get_db_objects(session, schema_name, db_object_type):
             core.select(
                 table="INFORMATION_SCHEMA.ROUTINES",
                 cols="ROUTINE_NAME AS OBJECT_NAME",
-                where=["ROUTINE_SCHEMA=? /*=sakila*/", "ROUTINE_TYPE='PROCEDURE'"],
+                where=["LOWER(ROUTINE_SCHEMA)=LOWER(?) /*=sakila*/", "ROUTINE_TYPE='PROCEDURE'"],
                 order="ROUTINE_NAME",
             )
             .exec(session, [schema_name])
@@ -106,7 +106,7 @@ def get_db_objects(session, schema_name, db_object_type):
             core.select(
                 table="INFORMATION_SCHEMA.ROUTINES",
                 cols="ROUTINE_NAME AS OBJECT_NAME",
-                where=["ROUTINE_SCHEMA=? /*=sakila*/", "ROUTINE_TYPE='FUNCTION'"],
+                where=["LOWER(ROUTINE_SCHEMA)=LOWER(?) /*=sakila*/", "ROUTINE_TYPE='FUNCTION'"],
                 order="ROUTINE_NAME",
             )
             .exec(session, [schema_name])
@@ -150,7 +150,7 @@ def get_db_object(session, schema_name, db_object_name, db_object_type):
                 table="INFORMATION_SCHEMA.ROUTINES",
                 cols="ROUTINE_NAME AS OBJECT_NAME",
                 where=[
-                    "ROUTINE_SCHEMA=?",
+                    "LOWER(ROUTINE_SCHEMA)=LOWER(?)",
                     "ROUTINE_TYPE='PROCEDURE'",
                     "ROUTINE_NAME=?",
                 ],
@@ -163,7 +163,7 @@ def get_db_object(session, schema_name, db_object_name, db_object_type):
             core.select(
                 table="INFORMATION_SCHEMA.ROUTINES",
                 cols="ROUTINE_NAME AS OBJECT_NAME",
-                where=["ROUTINE_SCHEMA=?", "ROUTINE_TYPE='FUNCTION'", "ROUTINE_NAME=?"],
+                where=["LOWER(ROUTINE_SCHEMA)=LOWER(?)", "ROUTINE_TYPE='FUNCTION'", "ROUTINE_NAME=?"],
             )
             .exec(session, [schema_name, db_object_name])
             .first
@@ -195,13 +195,13 @@ def get_object_type_count(session, schema_name, db_object_type):
         query = core.select(
             table="INFORMATION_SCHEMA.ROUTINES",
             cols="COUNT(*) AS object_count",
-            where=["ROUTINE_SCHEMA=?", "ROUTINE_TYPE='PROCEDURE'"],
+            where=["LOWER(ROUTINE_SCHEMA)=LOWER(?)", "ROUTINE_TYPE='PROCEDURE'"],
         )
     elif db_object_type == "FUNCTION":
         query = core.select(
             table="INFORMATION_SCHEMA.ROUTINES",
             cols="COUNT(*) AS object_count",
-            where=["ROUTINE_SCHEMA=?", "ROUTINE_TYPE='FUNCTION'"],
+            where=["LOWER(ROUTINE_SCHEMA)=LOWER(?)", "ROUTINE_TYPE='FUNCTION'"],
         )
     else:
         raise ValueError(
@@ -266,7 +266,7 @@ def stored_object_executes_as_invoker(session, schema_name, db_object_name):
         WHERE TABLE_SCHEMA = ? and TABLE_NAME = ?
         UNION
         SELECT SECURITY_TYPE FROM INFORMATION_SCHEMA.ROUTINES
-        WHERE ROUTINE_SCHEMA = ? and ROUTINE_NAME = ?
+        WHERE LOWER(ROUTINE_SCHEMA) = LOWER(?) and ROUTINE_NAME = ?
     """
 
     row = (
