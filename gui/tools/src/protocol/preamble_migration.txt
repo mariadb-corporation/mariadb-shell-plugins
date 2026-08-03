@@ -1,3 +1,0 @@
-import { IShellDictionary } from "./Protocol.js";
-
-/* eslint-disable max-len */

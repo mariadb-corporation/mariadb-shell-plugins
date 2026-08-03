@@ -6,22 +6,6 @@
             "path": "."
         },
         {
-            "name": "Shell GUI Frontend",
-            "path": "gui/frontend"
-        },
-        {
-            "name": "VSCode Extension",
-            "path": "gui/extension"
-        },
-        {
-            "name": "Shell GUI Backend",
-            "path": "gui/backend"
-        },
-        {
-            "name": "MySQL Database Service Plugin",
-            "path": "mds_plugin"
-        },
-        {
             "name": "MySQL REST Service Plugin",
             "path": "mrs_plugin"
         },
@@ -42,16 +26,8 @@
             "path": "msm_plugin"
         },
         {
-            "name": "Migration Plugin",
-            "path": "migration_plugin"
-        },
-        {
             "name": "Shell Plugin Tools",
-            "path": "gui/tools"
-        },
-        {
-            "name": "Shell Utility Plugin Additions",
-            "path": "util_plugin"
+            "path": "tools"
         },
         {
             "name": "MCP Plugin",
@@ -62,22 +38,14 @@
         "workbench.colorCustomizations": {},
         "python.envFile": "${workspaceFolder}/python.env",
         "python.analysis.extraPaths": [
-            "${workspaceFolder}\\plugins\\rds_plugin",
-            "${workspaceFolder}/..",
         ],
         "python.autoComplete.extraPaths": [
-            "/usr/local/mariadb-shell/lib/mariadb-shell/python-packages/",
-            "/usr/local/mariadb-shell/lib/mariadb-shell/lib/python3.12/site-packages",
-            "${workspaceFolder}\\plugins\\rds_plugin"
         ],
         "liveServer.settings.multiRootWorkspaceName": "MySQL REST Service Plugin",
         "jest.runMode": "on-demand",
         "jest.disabledWorkspaceFolders": [
             "MySQL REST Service Plugin",
-            "Shell GUI Backend",
             "Shell Plugin Tools",
-            "MySQL Database Service Plugin",
-            "VSCode Extension",
             "MRS Notes Example",
             "MRS Scripts Example"
         ],
@@ -90,12 +58,9 @@
             "visitors": false,
         },
         "files.exclude": {
-            "gui": true,
-            "mds_plugin": true,
             "mrs_plugin": true,
             "msm_plugin": true,
-            "migration_plugin": true,
-            "util_plugin": true,
+            "mcp_plugin": true,
             "MySQLShellPluginDevelopment.code-workspace": true,
         },
         "editor.defaultFormatter": "ms-python.black-formatter"
@@ -131,18 +96,6 @@
                 "postDebugTask": "Disable python debugging",
             },
             {
-                "name": "Debug Shell Plugins (win)",
-                "type": "debugpy",
-                "request": "attach",
-                "connect": {
-                    "host": "localhost",
-                    "port": 5678,
-                    "timeout": 2000
-                },
-                "preLaunchTask": "Execute Shell in Python Mode (win)",
-                "postDebugTask": "Disable python debugging (win)",
-            },
-            {
                 "name": "Debug Shell Plugins Attach",
                 "type": "debugpy",
                 "request": "attach",
@@ -175,26 +128,15 @@
                 "command": "ln",
                 "args": [
                     "-s",
-                    "${workspaceFolder}/gui/tools/enable_python_debugger",
+                    "${workspaceFolder}/tools/enable_python_debugger",
                     "~/.mariadb-shell/init.d"
                 ],
-            },
-            {
-                "label": "Enable python debugging (win)",
-                "type": "shell",
-                "command": "wt.exe",
-                "args": [
-                    "cmd",
-                    "/c",
-                    "mklink /j %appdata%\\MariaDB\\mariadb-shell\\init.d ${workspaceFolder}\\..\\tools\\enable_python_debugger"
-                ],
-                "presentation": {
-                    "echo": true,
-                    "reveal": "never",
-                    "focus": false,
-                    "panel": "shared",
-                    "showReuseMessage": true,
-                    "clear": false
+                "windows": {
+                    "command": "cmd",
+                    "args": [
+                        "/c",
+                        "mklink /j %appdata%\\MariaDB\\mariadb-shell\\init.d ${workspaceFolder}\\tools\\enable_python_debugger"
+                    ]
                 },
                 "problemMatcher": []
             },
@@ -207,7 +149,9 @@
                     "${workspaceFolder}/mariadb-shell.log",
                     "--py"
                 ],
-                "options": {"cwd": "/Users/juanram/dev/mariadb-shell-plugins/mrs_plugin"},
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                },
                 "isBackground": true,
                 "dependsOn": "Enable python debugging",
                 "problemMatcher": {
@@ -241,112 +185,18 @@
                 }
             },
             {
-                "label": "Execute Shell in Python Mode (win)",
-                "type": "shell",
-                "command": "mariadb-shell",
-                "args": [
-                    "--log-file",
-                    "${workspaceFolder}/mariadb-shell.log",
-                    "--py"
-                ],
-                "isBackground": true,
-                "dependsOn": "Enable python debugging (win)",
-                "presentation": {
-                    "echo": true,
-                    "reveal": "never",
-                    "focus": false,
-                    "panel": "shared",
-                    "showReuseMessage": true,
-                    "clear": false
-                },
-                "problemMatcher": {
-                    "owner": "shell",
-                    "fileLocation": [
-                        "relative",
-                        "${workspaceFolder}"
-                    ],
-                    "pattern": [
-                        {
-                            "regexp": "^.*\\[.*\\]:\\s(Error|Warning|Info):\\s(.*)",
-                            "location": 0,
-                            "file": 0,
-                            "severity": 1,
-                            "message": 2
-                        }
-                    ],
-                    "background": {
-                        "activeOnStart": true,
-                        "beginsPattern": "Started Debug Server",
-                        "endsPattern": ".*"
-                    }
-                }
-            },
-            {
-                "label": "Execute Shell in Python Mode (win)",
-                "type": "shell",
-                "command": "mariadb-shell",
-                "args": [
-                    "--log-file",
-                    "${workspaceFolder}/mariadb-shell.log",
-                    "--py",
-                ],
-                "isBackground": true,
-                "dependsOn": "Enable python debugging (win)",
-                "presentation": {
-                    "echo": true,
-                    "reveal": "never",
-                    "focus": false,
-                    "panel": "shared",
-                    "showReuseMessage": true,
-                    "clear": false
-                },
-                "problemMatcher": {
-                    "owner": "shell",
-                    "fileLocation": [
-                        "relative",
-                        "${workspaceFolder}"
-                    ],
-                    "pattern": [
-                        {
-                            "regexp": "^.*\\[.*\\]:\\s(Error|Warning|Info):\\s(.*)",
-                            "location": 0,
-                            "file": 0,
-                            "severity": 1,
-                            "message": 2,
-                        }
-                    ],
-                    "background": {
-                        "activeOnStart": true,
-                        "beginsPattern": "Started Debug Server",
-                        "endsPattern": ".*"
-                    }
-                }
-            },
-            {
                 "label": "Disable python debugging",
                 "type": "shell",
                 "command": "rm",
                 "args": [
                     "~/.mariadb-shell/init.d"
                 ],
-                "problemMatcher": []
-            },
-            {
-                "label": "Disable python debugging (win)",
-                "type": "shell",
-                "command": "wt.exe",
-                "args": [
-                    "cmd",
-                    "/c",
-                    "rmdir %appdata%\\MariaDB\\mariadb-shell\\init.d"
-                ],
-                "presentation": {
-                    "echo": true,
-                    "reveal": "never",
-                    "focus": false,
-                    "panel": "shared",
-                    "showReuseMessage": true,
-                    "clear": false
+                "windows": {
+                    "command": "cmd",
+                    "args": [
+                        "/c",
+                        "rmdir %appdata%\\MariaDB\\mariadb-shell\\init.d"
+                    ]
                 },
                 "problemMatcher": []
             },
@@ -368,7 +218,9 @@
                     "-vvv",
                     "-s"
                 ],
-                "options": {"cwd": "/Users/juanram/dev/mariadb-shell-plugins/mrs_plugin"},
+                "options": {
+                    "cwd": "${workspaceFolder}/mrs_plugin"
+                },
                 "isBackground": true,
                 "dependsOn": "Enable python debugging",
                 "problemMatcher": {

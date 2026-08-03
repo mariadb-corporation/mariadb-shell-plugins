@@ -1,8 +1,0 @@
-{
-    "files.exclude": {
-        ".rollup.cache/**": true,
-        "build": true,
-        "coverage": true,
-        "src/wrapper/**": true
-    },
-}
