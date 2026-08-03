@@ -5,6 +5,13 @@ on:
     branches: [ main, test-workflow ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      force_all_tests:
+        description: 'Run every plugin test suite, ignoring which files changed'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   build:
@@ -16,7 +23,10 @@ jobs:
     steps:
 
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+        with:
+          # Need history so we can diff against the previous commit / PR base.
+          fetch-depth: 0
 
       - name: Add mariadb-13.1.0-linux-x86_64/bin to PATH
         run: |
@@ -35,62 +45,70 @@ jobs:
           msh -- sandbox deploy $MYSQL_PORT --password=
           echo "deployed=true" >> $GITHUB_OUTPUT
 
-      - name: Run tests for mrs_plugin if files are modified
-        id: check_mrs_plugin_files
+      - name: Determine which plugins changed
+        id: changes
         run: |
-          # Check if any file in the mrs_plugin folder has been changed
-          changed=$(git diff --name-only HEAD@{1} HEAD | grep "^mrs_plugin/")
-          echo "Changed mrs_plugin files: $changed"
-          if [ -n "$changed" ]; then
-            echo "Files have changed in mrs_plugin, running tests."
-            echo "run_tests=true"  >> $GITHUB_OUTPUT
+          set -uo pipefail
+
+          changed=""
+          run_all=false
+
+          if [ "$FORCE_ALL_TESTS" = "true" ]; then
+            echo "force_all_tests requested — running all plugin tests."
+            run_all=true
           else
-            echo "No changes in mrs_plugin, skipping tests."
-            echo "run_tests=false" >> $GITHUB_OUTPUT
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              base="$PR_BASE_SHA"
+            else
+              base="$PUSH_BEFORE_SHA"
+            fi
+
+            # New branch, force push, or manual run: fall back to the parent commit.
+            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              base="$(git rev-parse --verify --quiet HEAD~1 || true)"
+            fi
+
+            if [ -z "$base" ]; then
+              echo "No usable diff base (first commit?) — running all plugin tests."
+              run_all=true
+            else
+              echo "Diffing ${base}...HEAD"
+              changed="$(git diff --name-only "${base}...HEAD")"
+              echo "Changed files:"
+              echo "$changed"
+            fi
           fi
 
-      - name: Run mrs_plugin tests if files are modified
-        # if: steps.check_mrs_plugin_files.outputs.run_tests == 'true'
+          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+            if [ "$run_all" = true ] || printf '%s\n' "$changed" | grep -q "^${plugin}/"; then
+              echo "${plugin}: running tests"
+              echo "${plugin}=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "${plugin}: unchanged -> skipping tests"
+              echo "${plugin}=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          FORCE_ALL_TESTS: ${{ inputs.force_all_tests }}
+
+      - name: Run mrs_plugin tests
+        if: steps.changes.outputs.mrs_plugin == 'true'
         run: |
           cd mrs_plugin && msh --py -f run_tests.py
         shell: bash
 
-      - name: Run tests for msm_plugin if files are modified
-        id: check_msm_plugin_files
-        run: |
-          # Check if any file in the msm_plugin folder has been changed
-          changed=$(git diff --name-only HEAD@{1} HEAD | grep "^msm_plugin/")
-          echo "Changed msm_plugin files: $changed"
-          if [ -n "$changed" ]; then
-            echo "Files have changed in msm_plugin, running tests."
-            echo "run_tests=true"  >> $GITHUB_OUTPUT
-          else
-            echo "No changes in msm_plugin, skipping tests."
-            echo "run_tests=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run msm_plugin tests if files are modified
-        # if: steps.check_msm_plugin_files.outputs.run_tests == 'true'
+      - name: Run msm_plugin tests
+        if: steps.changes.outputs.msm_plugin == 'true'
         run: |
           cd msm_plugin && msh --py -f run_tests.py
         shell: bash
 
-      - name: Run tests for mcp_plugin if files are modified
-        id: check_mcp_plugin_files
-        run: |
-          # Check if any file in the mcp_plugin folder has been changed
-          changed=$(git diff --name-only HEAD@{1} HEAD | grep "^mcp_plugin/")
-          echo "Changed mcp_plugin files: $changed"
-          if [ -n "$changed" ]; then
-            echo "Files have changed in mcp_plugin, running tests."
-            echo "run_tests=true"  >> $GITHUB_OUTPUT
-          else
-            echo "No changes in mcp_plugin, skipping tests."
-            echo "run_tests=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run mcp_plugin tests if files are modified
-        # if: steps.check_mcp_plugin_files.outputs.run_tests == 'true'
+      - name: Run mcp_plugin tests
+        if: steps.changes.outputs.mcp_plugin == 'true'
         run: |
           cd mcp_plugin && msh --py -f run_tests.py
         shell: bash
