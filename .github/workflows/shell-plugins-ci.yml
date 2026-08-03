@@ -39,12 +39,6 @@ jobs:
           MARIADB_SHELL_BIN=$(echo $GITHUB_WORKSPACE/mariadb-shell-*/bin)
           echo "$MARIADB_SHELL_BIN" >> $GITHUB_PATH
 
-      - name: Set up MariaDB sandbox
-        id: sandbox
-        run: |
-          msh -- sandbox deploy $MYSQL_PORT --password=
-          echo "deployed=true" >> $GITHUB_OUTPUT
-
       - name: Determine which plugins changed
         id: changes
         run: |
@@ -112,9 +106,3 @@ jobs:
         run: |
           cd mcp_plugin && msh --py -f run_tests.py
         shell: bash
-
-      - name: Clean up MariaDB sandbox
-        if: always() && steps.sandbox.outputs.deployed == 'true'
-        run: |
-          msh -- sandbox stop $MYSQL_PORT
-          msh -- sandbox delete $MYSQL_PORT
