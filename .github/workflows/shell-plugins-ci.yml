@@ -19,12 +19,15 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Add mariadb-13.1.0-linux-x86_64/bin to PATH
-        run: echo "/home/runner/.cache/ci/mariadb-13.1.0-linux-x86_64/bin" >> $GITHUB_PATH
+        run: |
+          MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
+          echo "$MARIADB_BIN" >> $GITHUB_PATH
 
       - name: Extract and add mariadb-shell-9.7.0-linux-glibc2.39-x86-64bit.tar.gz/bin to PATH
         run: |
-          tar -xzf mariadb-shell-9.7.0-linux-glibc2.39-x86-64bit.tar.gz -C $GITHUB_WORKSPACE
-          echo "$GITHUB_WORKSPACE/mariadb-shell-9.7.0-linux-glibc2.39-x86-64bit/bin" >> $GITHUB_PATH
+          tar -xzf ~/.cache/ci/mariadb-shell-*.tar.gz -C $GITHUB_WORKSPACE
+          MARIADB_SHELL_BIN=$(echo $GITHUB_WORKSPACE/mariadb-shell-*/bin)
+          echo "$MARIADB_SHELL_BIN" >> $GITHUB_PATH
 
       - name: Set up MariaDB sandbox
         run: |
