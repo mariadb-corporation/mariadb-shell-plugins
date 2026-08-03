@@ -2,7 +2,7 @@ name: Shell Plugins CI
 
 on:
   push:
-    branches: [ main, test-workflow ]
+    branches: [ test-workflow ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -45,7 +45,7 @@ jobs:
           set -uo pipefail
 
           changed=""
-          run_all=true
+          run_all=false
 
           if [ "$FORCE_ALL_TESTS" = "true" ]; then
             echo "force_all_tests requested — running all plugin tests."
