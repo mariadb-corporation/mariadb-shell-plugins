@@ -40,6 +40,7 @@ jobs:
         run: |
           # Check if any file in the mrs_plugin folder has been changed
           changed=$(git diff --name-only HEAD@{1} HEAD | grep "^mrs_plugin/")
+          echo "Changed mrs_plugin files: $changed"
           if [ -n "$changed" ]; then
             echo "Files have changed in mrs_plugin, running tests."
             echo "run_tests=true"  >> $GITHUB_OUTPUT
@@ -59,6 +60,7 @@ jobs:
         run: |
           # Check if any file in the msm_plugin folder has been changed
           changed=$(git diff --name-only HEAD@{1} HEAD | grep "^msm_plugin/")
+          echo "Changed msm_plugin files: $changed"
           if [ -n "$changed" ]; then
             echo "Files have changed in msm_plugin, running tests."
             echo "run_tests=true"  >> $GITHUB_OUTPUT
@@ -78,6 +80,7 @@ jobs:
         run: |
           # Check if any file in the mcp_plugin folder has been changed
           changed=$(git diff --name-only HEAD@{1} HEAD | grep "^mcp_plugin/")
+          echo "Changed mcp_plugin files: $changed"
           if [ -n "$changed" ]; then
             echo "Files have changed in mcp_plugin, running tests."
             echo "run_tests=true"  >> $GITHUB_OUTPUT
