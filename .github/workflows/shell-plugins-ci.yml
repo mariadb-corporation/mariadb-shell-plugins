@@ -30,8 +30,10 @@ jobs:
           echo "$MARIADB_SHELL_BIN" >> $GITHUB_PATH
 
       - name: Set up MariaDB sandbox
+        id: sandbox
         run: |
           msh -- sandbox deploy $MYSQL_PORT --password=
+          echo "deployed=true" >> $GITHUB_OUTPUT
 
       - name: Run tests for mrs_plugin if files are modified
         id: check_mrs_plugin_files
@@ -91,6 +93,7 @@ jobs:
         shell: bash
 
       - name: Clean up MariaDB sandbox
+        if: always() && steps.sandbox.outputs.deployed == 'true'
         run: |
           msh -- sandbox stop $MYSQL_PORT
           msh -- sandbox delete $MYSQL_PORT
