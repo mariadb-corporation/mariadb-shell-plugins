@@ -1,0 +1,46 @@
+name: Trigger MariaDB Shell Release
+
+# The release packages are built in mariadb-corporation/mariadb-shell, not here:
+# its MariaDB-Shell-Release workflow checks this repo out at release/candidate,
+# copies mrs_plugin/msm_plugin/mcp_plugin into plugins/external/ before Configure,
+# and CPacks them into the shell tarballs. A push here therefore has to tell that
+# repo to rebuild -- nothing in the shell repo changed, so its own push trigger
+# will not fire.
+#
+# That workflow already listens for the repository_dispatch type sent below
+# (see .github/workflows/shell-release.yml in mariadb-shell). It always re-checks
+# out release/candidate itself, so the dispatch carries no payload the build
+# depends on -- the client_payload here is for traceability in the run log only.
+
+on:
+  push:
+    branches: [ "release/candidate" ]
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+
+    steps:
+      # A cross-repository dispatch cannot use the automatic GITHUB_TOKEN: that
+      # token is scoped to this repo only. DEVTOOLS_TOKEN is the same PAT (or
+      # GitHub App token) the shell release workflow uses to read this private
+      # repo, and it needs contents: write on mariadb-corporation/mariadb-shell
+      # for the dispatch to be accepted.
+      - name: Dispatch release build to mariadb-shell
+        env:
+          GH_TOKEN: ${{ secrets.DEVTOOLS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/mariadb-corporation/mariadb-shell/dispatches \
+            -f event_type=updated-shell-plugins-rc \
+            -F "client_payload[plugins_ref]=$GITHUB_REF_NAME" \
+            -F "client_payload[plugins_sha]=$GITHUB_SHA" \
+            -F "client_payload[triggered_by]=$GITHUB_REPOSITORY"
+
+          echo "Requested a release build of mariadb-shell for ${GITHUB_REPOSITORY}@${GITHUB_SHA}."
+          echo "Watch it at: https://github.com/mariadb-corporation/mariadb-shell/actions/workflows/shell-release.yml"
