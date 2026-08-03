@@ -1,0 +1,93 @@
+name: Shell Plugins CI
+
+on:
+  push:
+    branches: [ main, test-workflow ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: self-linux-x64
+
+    env:
+        MYSQL_PORT: 3312
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Add mariadb-13.1.0-linux-x86_64/bin to PATH
+        run: echo "/home/runner/.cache/ci/mariadb-13.1.0-linux-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Extract and add mariadb-shell-9.7.0-linux-glibc2.39-x86-64bit.tar.gz/bin to PATH
+        run: |
+          tar -xzf mariadb-shell-9.7.0-linux-glibc2.39-x86-64bit.tar.gz -C $GITHUB_WORKSPACE
+          echo "$GITHUB_WORKSPACE/mariadb-shell-9.7.0-linux-glibc2.39-x86-64bit/bin" >> $GITHUB_PATH
+
+      - name: Set up MariaDB sandbox
+        run: |
+          msh -- sandbox deploy $MYSQL_PORT --password=
+
+      - name: Run tests for mrs_plugin if files are modified
+        id: check_mrs_plugin_files
+        run: |
+          # Check if any file in the mrs_plugin folder has been changed
+          changed=$(git diff --name-only HEAD@{1} HEAD | grep "^mrs_plugin/")
+          if [ -n "$changed" ]; then
+            echo "Files have changed in mrs_plugin, running tests."
+            echo "::set-output name=run_tests::true"
+          else
+            echo "No changes in mrs_plugin, skipping tests."
+            echo "::set-output name=run_tests::false"
+          fi
+
+      - name: Run mrs_plugin tests if files are modified
+        # if: steps.check_mrs_plugin_files.outputs.run_tests == 'true'
+        run: |
+          cd mrs_plugin && msh --py -f run_tests.py
+        shell: bash
+
+      - name: Run tests for msm_plugin if files are modified
+        id: check_msm_plugin_files
+        run: |
+          # Check if any file in the msm_plugin folder has been changed
+          changed=$(git diff --name-only HEAD@{1} HEAD | grep "^msm_plugin/")
+          if [ -n "$changed" ]; then
+            echo "Files have changed in msm_plugin, running tests."
+            echo "::set-output name=run_tests::true"
+          else
+            echo "No changes in msm_plugin, skipping tests."
+            echo "::set-output name=run_tests::false"
+          fi
+
+      - name: Run msm_plugin tests if files are modified
+        # if: steps.check_msm_plugin_files.outputs.run_tests == 'true'
+        run: |
+          cd msm_plugin && msh --py -f run_tests.py
+        shell: bash
+
+      - name: Run tests for mcp_plugin if files are modified
+        id: check_mcp_plugin_files
+        run: |
+          # Check if any file in the mcp_plugin folder has been changed
+          changed=$(git diff --name-only HEAD@{1} HEAD | grep "^mcp_plugin/")
+          if [ -n "$changed" ]; then
+            echo "Files have changed in mcp_plugin, running tests."
+            echo "::set-output name=run_tests::true"
+          else
+            echo "No changes in mcp_plugin, skipping tests."
+            echo "::set-output name=run_tests::false"
+          fi
+
+      - name: Run mcp_plugin tests if files are modified
+        # if: steps.check_mcp_plugin_files.outputs.run_tests == 'true'
+        run: |
+          cd mcp_plugin && msh --py -f run_tests.py
+        shell: bash
+
+      - name: Clean up MariaDB sandbox
+        run: |
+          msh -- sandbox stop $MYSQL_PORT
+          msh -- sandbox delete $MYSQL_PORT
