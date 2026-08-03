@@ -51,7 +51,7 @@ jobs:
           set -uo pipefail
 
           changed=""
-          run_all=false
+          run_all=true
 
           if [ "$FORCE_ALL_TESTS" = "true" ]; then
             echo "force_all_tests requested — running all plugin tests."
