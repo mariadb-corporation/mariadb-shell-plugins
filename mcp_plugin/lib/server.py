@@ -30,6 +30,13 @@ transports:
   client. The real stdout is reserved for the JSON-RPC protocol and all other
   output is redirected to stderr (see :func:`_serve_stdio`).
 
+The transport in use is recorded via
+:func:`mcp_plugin.lib.general.set_active_transport` before serving starts. Over
+HTTP the server is reachable by more than one client, so the database
+connections are bound to the client that opened them and closed once they fall
+idle (see :mod:`mcp_plugin.lib.db_functions`); over stdio, where there is only
+ever the one client that owns the server process, neither applies.
+
 The shell's interactive mode is disabled before serving, so the wrapped ``msm``
 plugin functions return their results instead of prompting for input.
 """
@@ -119,6 +126,11 @@ def start(host: str, port: int, transport: str, function_groups) -> None:
     # Disable interactive mode so the wrapped msm functions return their
     # results instead of prompting for input.
     mysqlsh.globals.shell.options.useWizards = False
+
+    # Recorded before anything is served: the transport decides whether the
+    # database connections are bound to the client that opened them and closed
+    # when they fall idle (see mcp_plugin.lib.db_functions).
+    general.set_active_transport(transport)
 
     mcp_server = build_mcp_server(function_groups=function_groups)
 
