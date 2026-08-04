@@ -84,7 +84,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
     BYTE-IDENTICAL error an unknown UUID raises, so probing cannot tell a real UUID from a
     guessed one — keep those two messages the same. In HTTP mode `db.connect` with no
     determinable address FAILS CLOSED.
-  - **10-minute idle timeout** (`general.SESSION_IDLE_TIMEOUT = 600`): a daemon reaper
+  - **30-minute idle timeout** (`general.SESSION_IDLE_TIMEOUT = 1800`, raised from the
+    10 minutes it shipped with in 0bba1318): a daemon reaper
     thread (`_reap_idle_sessions`, started ONCE by the first `db.connect` via
     `_start_idle_reaper`, wakes every `_IDLE_CHECK_INTERVAL = 30`s) closes the SESSION of
     every idle connection but KEEPS the `_Connection`, so the UUID stays valid and the next
