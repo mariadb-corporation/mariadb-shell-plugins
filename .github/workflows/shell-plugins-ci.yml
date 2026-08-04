@@ -31,7 +31,8 @@ jobs:
       - name: Add MariaDB Server to PATH
         run: |
           MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
-          MARIADB_SERVER_VERSION=$($MARIADB_BIN/mariadbd --version)
+          # mariadbd prints its own path before the version banner; drop it.
+          MARIADB_SERVER_VERSION=$($MARIADB_BIN/mariadbd --version | sed 's/^.* \(Ver .*\)$/\1/')
           echo "MariaDB Server Version: $MARIADB_SERVER_VERSION"
           echo "$MARIADB_BIN" >> $GITHUB_PATH
 
@@ -39,7 +40,8 @@ jobs:
         run: |
           tar -xzf ~/.cache/ci/mariadb-shell-*.tar.gz -C $GITHUB_WORKSPACE
           MARIADB_SHELL_BIN=$(echo $GITHUB_WORKSPACE/mariadb-shell-*/bin)
-          MARIADB_SHELL_VERSION=$($MARIADB_SHELL_BIN/mariadb-shell --version)
+          # mariadb-shell prints its own path before the version banner; drop it.
+          MARIADB_SHELL_VERSION=$($MARIADB_SHELL_BIN/mariadb-shell --version | sed 's/^.* \(Ver .*\)$/\1/')
           echo "MariaDB Shell Version: $MARIADB_SHELL_VERSION"
           echo "$MARIADB_SHELL_BIN" >> $GITHUB_PATH
 
