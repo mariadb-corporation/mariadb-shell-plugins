@@ -85,7 +85,7 @@ can reach the port, so two safeguards apply there, and there only:
   forge). A request from any other address is answered exactly as one naming a
   connection UUID that was never handed out, so a connection cannot be taken over
   by guessing its UUID.
-- **An unused connection is closed after 10 minutes.** A background reaper closes
+- **An unused connection is closed after 30 minutes.** A background reaper closes
   the database session of every connection that has been unused for that long,
   releasing the connection on the server. The connection UUID stays valid: the
   next tool call using it opens a new session transparently, while `db.close`

@@ -38,7 +38,7 @@ DEFAULT_TRANSPORT = TRANSPORT_STREAMABLE_HTTP
 # unused before it is closed automatically. Only applied when serving over
 # HTTP, where the server outlives the client that opened the connection; see
 # mcp_plugin.lib.db_functions.
-SESSION_IDLE_TIMEOUT = 600
+SESSION_IDLE_TIMEOUT = 1800
 
 # The transport the MCP server is currently being served with, set by
 # mcp_plugin.lib.server.start() before it starts serving. None while no server
