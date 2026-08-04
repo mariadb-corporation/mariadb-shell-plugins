@@ -28,15 +28,19 @@ jobs:
           # Need history so we can diff against the previous commit / PR base.
           fetch-depth: 0
 
-      - name: Add mariadb-13.1.0-linux-x86_64/bin to PATH
+      - name: Add MariaDB Server to PATH
         run: |
           MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
+          MARIADB_SERVER_VERSION=$($MARIADB_BIN/mariadbd --version')
+          echo "MariaDB Server Version: $MARIADB_SERVER_VERSION"
           echo "$MARIADB_BIN" >> $GITHUB_PATH
 
-      - name: Extract and add mariadb-shell-9.7.0-linux-glibc2.39-x86-64bit.tar.gz/bin to PATH
+      - name: Extract and add MariaDB Shell to PATH
         run: |
           tar -xzf ~/.cache/ci/mariadb-shell-*.tar.gz -C $GITHUB_WORKSPACE
           MARIADB_SHELL_BIN=$(echo $GITHUB_WORKSPACE/mariadb-shell-*/bin)
+          MARIADB_SHELL_VERSION=$($MARIADB_SHELL_BIN/mariadb-shell --version')
+          echo "MariaDB Shell Version: $MARIADB_SHELL_VERSION"
           echo "$MARIADB_SHELL_BIN" >> $GITHUB_PATH
 
       - name: Determine which plugins changed
