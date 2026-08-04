@@ -72,7 +72,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   UUID to a **`_Connection`** record (uri, `client_address`, `session`, `last_used`,
   `lock`), NOT to a bare session; `_sessions_lock` guards the dict, each `_Connection` has
   an `RLock` of its own.
-- **HTTP-only connection safeguards** (branch `wip/connection_handling`): gated on
+- **HTTP-only connection safeguards** (branch `wip/AIPL-16`): gated on
   `general.is_http_transport()`, which reads the `_active_transport` module global that
   `lib/server.start()` sets from its `transport` arg BEFORE serving. Over stdio (one
   client, the parent process, for the server's whole life) NEITHER applies:
@@ -171,7 +171,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Current state
 
-- **THIS session (branch `wip/connection_handling`, off `main`): the two HTTP-only
+- **THIS session (branch `wip/AIPL-16`, off `main`): the two HTTP-only
   connection safeguards** described above — address binding + 10-minute idle timeout.
   Touched `lib/general.py` (transport global, `SESSION_IDLE_TIMEOUT`,
   `set_active_transport`/`is_http_transport`/`get_client_address`), `lib/db_functions.py`
@@ -462,8 +462,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Git state
 
-- Branch: **`wip/connection_handling`**, cut from `main` (which is at 8da59831 and tracks
-  `mariadb`) and pushed to `mariadb/wip/connection_handling`. Remote `mariadb` =
+- Branch: **`wip/AIPL-16`**, cut from `main` (which is at 8da59831 and tracks
+  `mariadb`) and pushed to `mariadb/wip/AIPL-16`. Remote `mariadb` =
   mariadb-corporation/mariadb-shell-plugins; `origin` is mysql/mysql-shell-plugins and is
   NOT the push target. There is also a `local_office` remote (a NAS mirror) — not a push
   target either.
