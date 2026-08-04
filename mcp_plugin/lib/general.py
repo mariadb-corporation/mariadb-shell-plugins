@@ -18,6 +18,8 @@
 # Define plugin version
 import os
 import pathlib
+from typing import Optional
+
 import mysqlsh
 
 VERSION = "2026.5.0"
@@ -31,6 +33,17 @@ TRANSPORT_STREAMABLE_HTTP = "streamable-http"
 TRANSPORT_STDIO = "stdio"
 SUPPORTED_TRANSPORTS = (TRANSPORT_STREAMABLE_HTTP, TRANSPORT_STDIO)
 DEFAULT_TRANSPORT = TRANSPORT_STREAMABLE_HTTP
+
+# How long (in seconds) a database connection opened with db.connect may sit
+# unused before it is closed automatically. Only applied when serving over
+# HTTP, where the server outlives the client that opened the connection; see
+# mcp_plugin.lib.db_functions.
+SESSION_IDLE_TIMEOUT = 600
+
+# The transport the MCP server is currently being served with, set by
+# mcp_plugin.lib.server.start() before it starts serving. None while no server
+# is running, which is also what the in-process tests see.
+_active_transport = None
 
 # MCP function groups that can be loaded independently
 FUNCTION_GROUP_DB = "db"
@@ -51,6 +64,63 @@ def get_plugin_data_path() -> str:
     pathlib.Path(mcm_plugin_data_path).mkdir(parents=True, exist_ok=True)
 
     return mcm_plugin_data_path
+
+
+def set_active_transport(transport) -> None:
+    """Records the transport the MCP server is being served with.
+
+    The transport decides whether the connection safeguards that only make
+    sense for a server reachable over the network are applied - binding a
+    database connection to the client address that opened it and closing it
+    when it has been unused for too long (see
+    :mod:`mcp_plugin.lib.db_functions`).
+
+    Args:
+        transport (str): The transport being served, or None to reset.
+
+    Returns:
+        None
+    """
+    global _active_transport
+
+    _active_transport = transport
+
+
+def is_http_transport() -> bool:
+    """Returns whether the server is being served over HTTP.
+
+    Returns:
+        True while a server is running with the streamable-http transport.
+    """
+    return _active_transport == TRANSPORT_STREAMABLE_HTTP
+
+
+def get_client_address(ctx) -> Optional[str]:
+    """Returns the IP address the current request was sent from.
+
+    The address is taken from the transport's own request object, i.e. from the
+    peer address of the TCP connection the request arrived on. It is not read
+    from any header, as those are client-supplied and can be forged.
+
+    Args:
+        ctx: The MCP request context, or None.
+
+    Returns:
+        The client's IP address, or None if the transport does not have one -
+        which is the case for stdio, where the client is the parent process.
+    """
+    if ctx is None:
+        return None
+
+    try:
+        # The HTTP transports attach the request they received to the context;
+        # stdio has no request object to attach, and outside of a request the
+        # context has no request context at all.
+        request = getattr(ctx.request_context, "request", None)
+    except Exception:  # noqa: BLE001 - no request context outside a request
+        return None
+
+    return getattr(getattr(request, "client", None), "host", None)
 
 
 async def require_allowed_path(ctx, path) -> None:

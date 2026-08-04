@@ -28,21 +28,51 @@ Open sessions are cached in-process, keyed by a UUID that ``db.connect``
 returns. That UUID identifies the connection for the ``db.execute_sql`` and
 ``db.close`` tools. Connections are opened with ``shell.open_session`` so they
 are independent of the shell's global session.
+
+When the server is served over HTTP it is reachable by more than one client and
+outlives the client that opened a connection, so two safeguards apply there
+(and only there - over stdio the server talks to a single client, its own
+parent process, for its entire lifetime):
+
+* A connection is bound to the IP address of the client that opened it. A
+  request coming from any other address is answered as if the connection did
+  not exist, so a connection cannot be taken over by guessing its UUID.
+* A connection that has been unused for
+  :data:`mcp_plugin.lib.general.SESSION_IDLE_TIMEOUT` seconds has its session
+  closed by a background reaper, releasing the server-side connection. The
+  connection itself stays valid: the next tool call that uses it transparently
+  opens a new session, whereas ``db.close`` just drops it without reopening
+  anything. As the session is a new one, anything that only lived in the old
+  session - temporary tables, session variables, the current schema, an open
+  transaction - is gone.
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver uuid SCHEMATA datatype
 # cSpell:ignore ISNULL IFNULL ARRAYAGG utf8mb3 kcu ORDINAL DTD
 
 import json
+import threading
+import time
 import uuid
+from contextlib import contextmanager
 from typing import Optional
 
 import mysqlsh
 
-from mcp_plugin.lib import config
+from mcp_plugin.lib import config, general
 
-# Maps a connection UUID to its open shell session.
+# Maps a connection UUID to its _Connection.
 _sessions = {}
+
+# Guards the _sessions dict itself; each connection has a lock of its own.
+_sessions_lock = threading.Lock()
+
+# How often the reaper looks for connections that have been idle for too long.
+_IDLE_CHECK_INTERVAL = 30
+
+# The thread closing idle connections, started with the first connection opened
+# over HTTP.
+_idle_reaper = None
 
 # Lists the schemas of a server, classified into system and user schemas.
 _LIST_SCHEMAS_SQL = """
@@ -352,37 +382,233 @@ _OBJECT_REFERENCES_SQL = """
 """
 
 
-def _get_session(connection_id: str):
-    """Returns the cached session for the given connection id.
+class _Connection:
+    """A database connection opened with ``db.connect``.
+
+    Holds the open shell session together with what is needed to police its
+    use: the URI it was opened from, so a session closed for being idle can be
+    opened again, the address of the client that opened it, and the time it was
+    last used.
+
+    The lock is held for as long as a tool works with the session. That keeps
+    the idle reaper from closing a session out from under a running statement,
+    and serializes the tool calls that share a connection - a shell session
+    cannot run two statements at once anyway.
+    """
+
+    def __init__(self, uri: str, client_address: Optional[str]):
+        self.uri = uri
+        self.client_address = client_address
+        self.session = None
+        self.last_used = time.monotonic()
+        self.lock = threading.RLock()
+
+    def is_accessible_from(self, client_address: Optional[str]) -> bool:
+        """Returns whether a client at the given address may use this connection.
+
+        Over stdio there is only ever one client, so the address is not
+        checked. Over HTTP the connection belongs to the client that opened it
+        and to no one else.
+
+        Args:
+            client_address (str): The address the request came from, or None.
+
+        Returns:
+            True if the connection may be used by that client.
+        """
+        if not general.is_http_transport():
+            return True
+
+        return (
+            client_address is not None and client_address == self.client_address
+        )
+
+    def open_session(self):
+        """Opens the session, or returns the one already open.
+
+        Returns:
+            The open shell session.
+        """
+        with self.lock:
+            if self.session is None:
+                self.session = _open_session(self.uri)
+
+            return self.session
+
+    def close_session(self) -> None:
+        """Closes the session, if one is open.
+
+        Returns:
+            None
+        """
+        with self.lock:
+            session = self.session
+            self.session = None
+
+        if session is not None:
+            try:
+                session.close()
+            except Exception:  # noqa: BLE001 - the connection may be gone
+                pass
+
+    def close_session_if_idle(self, timeout: float) -> bool:
+        """Closes the session if it has not been used for ``timeout`` seconds.
+
+        Never waits for the lock: a connection another thread is working with
+        is by definition not idle.
+
+        Args:
+            timeout (float): The idle time after which to close, in seconds.
+
+        Returns:
+            True if a session was closed.
+        """
+        if not self.lock.acquire(blocking=False):
+            return False
+
+        try:
+            if (
+                self.session is None
+                or time.monotonic() - self.last_used < timeout
+            ):
+                return False
+
+            self.close_session()
+
+            return True
+        finally:
+            self.lock.release()
+
+
+def _open_session(uri: str):
+    """Opens a shell session for one of the configured connection URIs.
 
     Args:
-        connection_id (str): The UUID returned by ``db.connect``.
+        uri (str): The connection URI, as configured via ``mcp.setup``.
 
     Returns:
         The open shell session.
     """
-    session = _sessions.get(connection_id)
-    if session is None:
+    # Read the stored password back and open the session with it. The session
+    # is independent of the shell's global session.
+    connection_data = mysqlsh.globals.shell.parse_uri(uri)
+    connection_data["password"] = config.get_connection_password(uri)
+
+    return mysqlsh.globals.shell.open_session(connection_data)
+
+
+def _get_connection(connection_id: str, client_address: Optional[str]):
+    """Looks a connection up, checking that the client may use it.
+
+    A connection that exists but belongs to another client is reported exactly
+    like one that does not exist, so the error cannot be used to tell valid
+    connection ids from invalid ones.
+
+    Args:
+        connection_id (str): The UUID returned by ``db.connect``.
+        client_address (str): The address the request came from, or None.
+
+    Returns:
+        The :class:`_Connection`.
+    """
+    with _sessions_lock:
+        connection = _sessions.get(connection_id)
+
+    if connection is None or not connection.is_accessible_from(client_address):
         raise mysqlsh.Error(
             f"No open connection found for id '{connection_id}'. "
             "Open one first with db.connect."
         )
-    return session
+
+    return connection
 
 
-def get_session(connection_id: str):
-    """Returns the session of a connection opened with ``db.connect``.
+@contextmanager
+def use_session(connection_id: str, client_address: Optional[str] = None):
+    """Yields the session of a connection opened with ``db.connect``.
 
     The public entry point for the other tool modules, which work on the
-    connections this one hands out but have no cache of their own.
+    connections this one hands out but have no cache of their own. The session
+    is opened again if it had been closed for being idle, and stays reserved
+    for the caller for the duration of the ``with`` block.
 
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
+        client_address (str): The address the request came from, as returned by
+            :func:`mcp_plugin.lib.general.get_client_address`. Required while
+            serving over HTTP, where a connection may only be used by the
+            client that opened it.
 
-    Returns:
+    Yields:
         The open shell session.
     """
-    return _get_session(connection_id)
+    connection = _get_connection(connection_id, client_address)
+
+    with connection.lock:
+        session = connection.open_session()
+        try:
+            yield session
+        finally:
+            connection.last_used = time.monotonic()
+
+
+def _close_idle_sessions() -> int:
+    """Closes the sessions of all connections that have been idle too long.
+
+    The connections themselves are kept, so they can be used again: the next
+    tool call opens a new session for them.
+
+    Returns:
+        The number of sessions that were closed.
+    """
+    timeout = general.SESSION_IDLE_TIMEOUT
+    with _sessions_lock:
+        connections = list(_sessions.values())
+
+    return sum(
+        1
+        for connection in connections
+        if connection.close_session_if_idle(timeout)
+    )
+
+
+def _reap_idle_sessions() -> None:
+    """Closes idle sessions for as long as the server runs.
+
+    Returns:
+        None
+    """
+    while True:
+        time.sleep(_IDLE_CHECK_INTERVAL)
+        try:
+            _close_idle_sessions()
+        except Exception:  # noqa: BLE001 - the reaper must never die
+            pass
+
+
+def _start_idle_reaper() -> None:
+    """Starts the idle-session reaper, once, when serving over HTTP.
+
+    Returns:
+        None
+    """
+    global _idle_reaper
+
+    if not general.is_http_transport():
+        return
+
+    with _sessions_lock:
+        if _idle_reaper is not None:
+            return
+
+        # A daemon thread: it only ever closes idle sessions, so it must not
+        # keep the process alive when the server stops serving.
+        _idle_reaper = threading.Thread(
+            target=_reap_idle_sessions,
+            name="mcp-db-idle-session-reaper",
+            daemon=True,
+        )
+        _idle_reaper.start()
 
 
 def _serialize_result(result) -> dict:
@@ -498,6 +724,7 @@ def register_db_tools(server, function_groups=()) -> None:
     Returns:
         None
     """
+    from mcp.server.mcpserver import Context
 
     @server.tool(name="db.list_connections")
     def list_connections() -> list:
@@ -510,8 +737,16 @@ def register_db_tools(server, function_groups=()) -> None:
         return config.list_connection_uris()
 
     @server.tool(name="db.connect")
-    def connect(uri: str) -> str:
+    def connect(ctx: Context, uri: str) -> str:
         """Opens a configured database connection and caches it.
+
+        The connection remains usable until it is closed with db.close. When
+        the server is served over HTTP it can only be used by the client that
+        opened it, and its database session is closed once it has been unused
+        for a while. The next call using the connection opens a new session
+        automatically, so no state that only lived in the previous session -
+        temporary tables, session variables, the current schema or an open
+        transaction - survives an idle period.
 
         Args:
             uri: A connection URI, as returned by db.list_connections.
@@ -526,18 +761,32 @@ def register_db_tools(server, function_groups=()) -> None:
                 "to list the available connections, or configure it with mcp.setup."
             )
 
-        # Read the stored password back and open the session with it.
-        connection_data = mysqlsh.globals.shell.parse_uri(uri)
-        connection_data["password"] = config.get_connection_password(uri)
-        session = mysqlsh.globals.shell.open_session(connection_data)
+        # The connection belongs to the client that opens it. Without an
+        # address to bind it to there is no way to keep another client from
+        # using it, so serving over HTTP requires one.
+        client_address = general.get_client_address(ctx)
+        if general.is_http_transport() and client_address is None:
+            raise mysqlsh.Error(
+                "The address of the client could not be determined, so the "
+                "connection cannot be bound to it. Connections can only be "
+                "opened by a client the server can identify."
+            )
+
+        connection = _Connection(uri, client_address)
+        # Opened right away, so a bad password or an unreachable server is
+        # reported by db.connect rather than by the first tool using it.
+        connection.open_session()
 
         connection_id = str(uuid.uuid4())
-        _sessions[connection_id] = session
+        with _sessions_lock:
+            _sessions[connection_id] = connection
+
+        _start_idle_reaper()
 
         return connection_id
 
     @server.tool(name="db.list_schemas")
-    def list_schemas(connection_id: str) -> list:
+    def list_schemas(ctx: Context, connection_id: str) -> list:
         """Lists the database schemas available on an open connection.
 
         Args:
@@ -549,10 +798,12 @@ def register_db_tools(server, function_groups=()) -> None:
             comment (schema_comment). Only the schemas the connection's account
             has access to are listed.
         """
-        return _query_rows(_get_session(connection_id), _LIST_SCHEMAS_SQL)
+        with use_session(connection_id, general.get_client_address(ctx)) as session:
+            return _query_rows(session, _LIST_SCHEMAS_SQL)
 
     @server.tool(name="db.list_objects")
     def list_objects(
+        ctx: Context,
         connection_id: str,
         schema_name: str,
         object_type: str = "table",
@@ -575,10 +826,12 @@ def register_db_tools(server, function_groups=()) -> None:
         """
         sql = _LIST_OBJECTS_SQL[_normalize_object_type(object_type)]
 
-        return _query_rows(_get_session(connection_id), sql, [schema_name])
+        with use_session(connection_id, general.get_client_address(ctx)) as session:
+            return _query_rows(session, sql, [schema_name])
 
     @server.tool(name="db.get_object_details")
     def get_object_details(
+        ctx: Context,
         connection_id: str,
         schema_name: str,
         object_name: str,
@@ -613,71 +866,77 @@ def register_db_tools(server, function_groups=()) -> None:
               (details)
         """
         normalized = _normalize_object_type(object_type)
-        session = _get_session(connection_id)
         object_id = [schema_name, object_name]
 
-        basic = _query_rows(session, _OBJECT_BASIC_SQL[normalized], object_id)
-        if not basic:
-            raise mysqlsh.Error(
-                f"No {normalized} '{object_name}' found in schema "
-                f"'{schema_name}'. Use db.list_objects to list the "
-                f"{normalized}s of a schema."
-            )
+        with use_session(connection_id, general.get_client_address(ctx)) as session:
+            basic = _query_rows(session, _OBJECT_BASIC_SQL[normalized], object_id)
+            if not basic:
+                raise mysqlsh.Error(
+                    f"No {normalized} '{object_name}' found in schema "
+                    f"'{schema_name}'. Use db.list_objects to list the "
+                    f"{normalized}s of a schema."
+                )
 
-        details = {
-            "basic": {
-                "schema": schema_name,
-                "name": object_name,
-                "type": normalized,
-                "comment": basic[0].get("comment"),
-            }
-        }
-
-        if normalized in ("table", "view"):
-            details["columns"] = _query_rows(
-                session, _OBJECT_COLUMNS_SQL, object_id
-            )
-
-        if normalized == "table":
-            details["constraints"] = _query_rows(
-                session, _OBJECT_CONSTRAINTS_SQL, object_id
-            )
-            # The reference mapping is assembled as JSON by the server, so it
-            # arrives as a string that has to be expanded to stay usable.
-            details["references"] = _parse_json_fields(
-                _query_rows(
-                    session, _OBJECT_REFERENCES_SQL, object_id + object_id
-                ),
-                "reference_mapping",
-            )
-        elif normalized in ("function", "procedure"):
-            rows = _query_rows(
-                session,
-                _ROUTINE_PARAMETERS_SQL,
-                object_id + [normalized.upper()],
-            )
-            # Ordinal position 0 is the RETURNS clause of a function, the
-            # parameters proper start at 1. A procedure returns nothing.
-            returns = [row for row in rows if row["position"] == 0]
-            details["parameters"] = [
-                {
-                    key: row[key]
-                    for key in ("name", "mode", "datatype", "parameter_default")
+            details = {
+                "basic": {
+                    "schema": schema_name,
+                    "name": object_name,
+                    "type": normalized,
+                    "comment": basic[0].get("comment"),
                 }
-                for row in rows
-                if row["position"] != 0
-            ]
-            details["returns"] = returns[0]["datatype"] if returns else None
-        elif normalized in _OBJECT_DETAILS_SQL:
-            rows = _query_rows(
-                session, _OBJECT_DETAILS_SQL[normalized], object_id
-            )
-            details["details"] = rows[0] if rows else {}
+            }
 
-        return details
+            if normalized in ("table", "view"):
+                details["columns"] = _query_rows(
+                    session, _OBJECT_COLUMNS_SQL, object_id
+                )
+
+            if normalized == "table":
+                details["constraints"] = _query_rows(
+                    session, _OBJECT_CONSTRAINTS_SQL, object_id
+                )
+                # The reference mapping is assembled as JSON by the server, so
+                # it arrives as a string that has to be expanded to stay usable.
+                details["references"] = _parse_json_fields(
+                    _query_rows(
+                        session, _OBJECT_REFERENCES_SQL, object_id + object_id
+                    ),
+                    "reference_mapping",
+                )
+            elif normalized in ("function", "procedure"):
+                rows = _query_rows(
+                    session,
+                    _ROUTINE_PARAMETERS_SQL,
+                    object_id + [normalized.upper()],
+                )
+                # Ordinal position 0 is the RETURNS clause of a function, the
+                # parameters proper start at 1. A procedure returns nothing.
+                returns = [row for row in rows if row["position"] == 0]
+                details["parameters"] = [
+                    {
+                        key: row[key]
+                        for key in (
+                            "name",
+                            "mode",
+                            "datatype",
+                            "parameter_default",
+                        )
+                    }
+                    for row in rows
+                    if row["position"] != 0
+                ]
+                details["returns"] = returns[0]["datatype"] if returns else None
+            elif normalized in _OBJECT_DETAILS_SQL:
+                rows = _query_rows(
+                    session, _OBJECT_DETAILS_SQL[normalized], object_id
+                )
+                details["details"] = rows[0] if rows else {}
+
+            return details
 
     @server.tool(name="db.execute_sql")
     def execute_sql(
+        ctx: Context,
         connection_id: str,
         sql: str,
         params: Optional[list] = None,
@@ -693,13 +952,14 @@ def register_db_tools(server, function_groups=()) -> None:
             A dict with the result set (columns and rows) and execution
             metadata.
         """
-        session = _get_session(connection_id)
-        result = session.run_sql(sql, params if params is not None else [])
+        with use_session(connection_id, general.get_client_address(ctx)) as session:
+            result = session.run_sql(sql, params if params is not None else [])
 
-        return _serialize_result(result)
+            return _serialize_result(result)
 
     @server.tool(name="db.execute_sql_script")
     def execute_sql_script(
+        ctx: Context,
         connection_id: str,
         sql_script: Optional[str] = None,
         file_path: Optional[str] = None,
@@ -738,18 +998,17 @@ def register_db_tools(server, function_groups=()) -> None:
             with open(file_path, "r", encoding="utf-8") as script_file:
                 sql_script = script_file.read()
 
-        session = _get_session(connection_id)
+        with use_session(connection_id, general.get_client_address(ctx)) as session:
+            results = []
+            for statement in mysqlsh.mysql.split_script(sql_script):
+                if statement.strip() == "":
+                    continue
+                results.append(_serialize_result(session.run_sql(statement, [])))
 
-        results = []
-        for statement in mysqlsh.mysql.split_script(sql_script):
-            if statement.strip() == "":
-                continue
-            results.append(_serialize_result(session.run_sql(statement, [])))
-
-        return results
+            return results
 
     @server.tool(name="db.close")
-    def close(connection_id: str) -> None:
+    def close(ctx: Context, connection_id: str) -> None:
         """Closes an open database connection.
 
         Args:
@@ -758,6 +1017,13 @@ def register_db_tools(server, function_groups=()) -> None:
         Returns:
             None
         """
-        session = _get_session(connection_id)
-        session.close()
-        _sessions.pop(connection_id, None)
+        connection = _get_connection(
+            connection_id, general.get_client_address(ctx)
+        )
+
+        with _sessions_lock:
+            _sessions.pop(connection_id, None)
+
+        # Closes the session if one is open. A session that was already closed
+        # for being idle is not opened again just to close it.
+        connection.close_session()

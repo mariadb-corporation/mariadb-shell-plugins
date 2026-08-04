@@ -338,12 +338,15 @@ def register_msm_tools(server, function_groups=()) -> None:
             """
             await general.require_allowed_path(ctx, schema_project_path)
             await general.require_allowed_path(ctx, backup_directory)
-            return msm.deploy_schema(
-                session=db_functions.get_session(connection_id),
-                **_kwargs(
-                    version=version,
-                    schema_project_path=schema_project_path,
-                    backup_directory=backup_directory,
-                    backup=backup,
-                ),
-            )
+            with db_functions.use_session(
+                connection_id, general.get_client_address(ctx)
+            ) as session:
+                return msm.deploy_schema(
+                    session=session,
+                    **_kwargs(
+                        version=version,
+                        schema_project_path=schema_project_path,
+                        backup_directory=backup_directory,
+                        backup=backup,
+                    ),
+                )

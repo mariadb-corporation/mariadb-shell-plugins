@@ -59,12 +59,44 @@ silently runs against whatever `mariadb-shell` is on PATH.
   rather than exposed as something that cannot succeed. It is therefore registered LAST in
   the registrar, inside an `if` (see Gotchas — an early `return` there silently drops the
   tools defined after it).
-- **`db_functions.get_session(connection_id)`** is the PUBLIC accessor over the private
-  `_get_session`, so other tool modules (msm) can resolve a `db.connect` session without
-  reaching into another module's privates or keeping a second cache.
+- **`db_functions.use_session(connection_id, client_address=None)`** is the PUBLIC accessor
+  (a `@contextmanager`, NOT the old plain `get_session` — that name is GONE), so other tool
+  modules (msm) can resolve a `db.connect` session without reaching into another module's
+  privates or keeping a second cache. It authorizes the caller, reopens a session that was
+  closed for being idle, holds the connection's lock for the whole `with` block and stamps
+  `last_used` on exit. `msm.deploy_schema` goes through it too — otherwise it would be a
+  bypass of the address check.
 - **Connections**: shell secrets keyed `MCP:Connection:<uri>`. `db.connect` only allows
-  configured URIs; opens via `parse_uri`+password -> `shell.open_session` (independent of
-  the shell's global session). Sessions cached in-process in `_sessions`, keyed by UUID.
+  configured URIs; opens via `_open_session()` = `parse_uri`+password ->
+  `shell.open_session` (independent of the shell's global session). `_sessions` maps the
+  UUID to a **`_Connection`** record (uri, `client_address`, `session`, `last_used`,
+  `lock`), NOT to a bare session; `_sessions_lock` guards the dict, each `_Connection` has
+  an `RLock` of its own.
+- **HTTP-only connection safeguards** (branch `wip/connection_handling`): gated on
+  `general.is_http_transport()`, which reads the `_active_transport` module global that
+  `lib/server.start()` sets from its `transport` arg BEFORE serving. Over stdio (one
+  client, the parent process, for the server's whole life) NEITHER applies:
+  - **Address binding**: a connection may only be used from the IP that opened it.
+    `general.get_client_address(ctx)` = `ctx.request_context.request.client.host` — the
+    TCP peer of the request, deliberately NOT `X-Forwarded-For` or any other header
+    (client-supplied, forgeable). `request` is a starlette Request on HTTP and None on
+    stdio, so the `try/except` + `getattr` chain returns None there. A mismatch raises the
+    BYTE-IDENTICAL error an unknown UUID raises, so probing cannot tell a real UUID from a
+    guessed one — keep those two messages the same. In HTTP mode `db.connect` with no
+    determinable address FAILS CLOSED.
+  - **10-minute idle timeout** (`general.SESSION_IDLE_TIMEOUT = 600`): a daemon reaper
+    thread (`_reap_idle_sessions`, started ONCE by the first `db.connect` via
+    `_start_idle_reaper`, wakes every `_IDLE_CHECK_INTERVAL = 30`s) closes the SESSION of
+    every idle connection but KEEPS the `_Connection`, so the UUID stays valid and the next
+    tool call reopens transparently. `db.close` is the documented exception: it drops the
+    entry and closes only an already-open session, it never reopens one to close it.
+  - The reopened session is a NEW server session: temp tables, session vars, current
+    schema and open transactions do NOT survive an idle period. Documented in the
+    `db.connect` tool description (which clients see), the module docstring and the README.
+- **All db.\* tools now take a leading `ctx: Context`** (same `from mcp.server.mcpserver
+  import Context` inside the registrar as msm/sandbox; the server strips it from the
+  client-facing schema) purely to reach the client address — they are still SYNC and still
+  do not elicit.
 - **Allowed paths**: `settings.json` under `general.get_plugin_data_path()`.
   `config.is_path_allowed()` via `os.path.commonpath` (reads disk fresh each call — NO
   in-memory cache); empty list => deny all.
@@ -78,7 +110,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `async def` with a leading `ctx: Context` param (`from mcp.server.mcpserver import Context`,
   imported inside the registrar; the server strips it from the client-facing schema).
   db.* tools stay SYNC — none of them elicit (`db.execute_sql_script` checks
-  `config.is_path_allowed` directly and just errors out).
+  `config.is_path_allowed` directly and just errors out) — but they DO take `ctx` now, see
+  the connection-safeguards bullet above.
 - **SQL exec**: `db.execute_sql` = single statement (+ optional `?` params, one result
   dict). `db.execute_sql_script` = multi-statement via `mysqlsh.mysql.split_script()`,
   returns a LIST; accepts `sql_script` XOR `file_path` (file must be an allowed path).
@@ -137,7 +170,17 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Current state
 
-- **This session: migrated the plugin from MCP SDK 1.x to 2.0.0** (the shell's bundled
+- **THIS session (branch `wip/connection_handling`, off `main`): the two HTTP-only
+  connection safeguards** described above — address binding + 10-minute idle timeout.
+  Touched `lib/general.py` (transport global, `SESSION_IDLE_TIMEOUT`,
+  `set_active_transport`/`is_http_transport`/`get_client_address`), `lib/db_functions.py`
+  (the `_Connection` record, `_open_session`, `_get_connection`, `use_session`,
+  `_close_idle_sessions`/`_reap_idle_sessions`/`_start_idle_reaper`, `ctx: Context` on all
+  8 db tools), `lib/server.py` (`set_active_transport(transport)` in `start()`),
+  `lib/msm_functions.py` (`deploy_schema` -> `use_session`), README and tests. NOTE: the
+  cross-IP rejection is proven in-process only — driving two genuinely different source
+  addresses at a local server needs a loopback alias (root on macOS), so the suite does not.
+- Previous session: **migrated the plugin from MCP SDK 1.x to 2.0.0** (the shell's bundled
   Python now ships 2.0.0; `requirements.txt` had `mcp >= 1.2.0` with no upper bound, so the
   major bump was picked up silently and 8 of 17 tests failed —
   `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` killed the server subprocess
@@ -160,10 +203,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
   path-reject), `test_config` (6), `test_msm` (5: create_project, elicit-accept,
   elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,
-  `test_transport_http`.
-- Coverage after latest run: lib/msm_functions 100, lib/general 98, lib/server 98,
+  `test_transport_http` (2: list_connections + a full connect/execute/close db flow over
+  HTTP), `test_db_sessions` (7, the connection safeguards). **25 pass, ~29s.**
+- Coverage after latest run: lib/msm_functions 100, lib/server 100, lib/general 98,
   lib/config 96, lib/db_functions 95, lib/sandbox_functions 93, server.py 85, lib/setup 84,
-  general.py 73. TOTAL 93% (509 statements, 37 missed).
+  general.py 73. TOTAL 93% (605 statements, 40 missed). What is left uncovered in
+  db_functions is defensive only: the `session.close()` swallow, the reaper thread's own
+  loop body (it sleeps 30s), `_start_idle_reaper`'s not-http return, the JSON-parse
+  fallback and the `_serialize_result` `str()` guard.
 - **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass
   — see the invocation note in Gotchas):
   - MySQL -> MariaDB rebrand of all PROSE/branding. Legal notices were NOT word-substituted;
@@ -202,9 +249,12 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Files that matter
 
-- lib/general.py -> plugin data path + async `require_allowed_path`/`_confirm_trust_path`.
+- lib/general.py -> plugin data path, async `require_allowed_path`/`_confirm_trust_path`,
+  the transport global (`set_active_transport`/`is_http_transport`), `get_client_address`
+  and `SESSION_IDLE_TIMEOUT`.
 - lib/config.py -> connections (secrets) + allowed paths (settings.json) + `add_allowed_path`.
-- lib/db_functions.py -> db.* tools; `_sessions` UUID cache; `_serialize_result`;
+- lib/db_functions.py -> db.* tools; the `_Connection` cache (`_sessions` + `use_session` +
+  the idle reaper); `_serialize_result`;
   the introspection SQL constants (`_LIST_SCHEMAS_SQL`, `_LIST_OBJECTS_SQL`,
   `_OBJECT_BASIC_SQL`, `_OBJECT_DETAILS_SQL`, `_ROUTINE_PARAMETERS_SQL`,
   `_OBJECT_COLUMNS_SQL`, `_OBJECT_CONSTRAINTS_SQL`, `_OBJECT_REFERENCES_SQL`).
@@ -226,6 +276,13 @@ silently runs against whatever `mariadb-shell` is on PATH.
   types + default + case-insensitivity + bad type + unknown schema) ->
   get_object_details (table both FK directions, view, function, procedure, sequence,
   trigger, event, plus not-found errors) -> DROP SCHEMA -> close.
+- tests/unit/test_db_sessions.py -> the connection safeguards, driven IN-PROCESS with a
+  `_StubSession` and a `_ToolRecorder` (a fake server whose `.tool(name=)` decorator just
+  collects the tool functions, so they can be called directly, `ctx` positionally). Its
+  `_context(address)` builds the `request_context.request.client.host` chain the HTTP
+  transport supplies, and `http_transport`/`stdio_transport` fixtures flip
+  `general.set_active_transport` and clear `_sessions`. No time is ever waited out —
+  `connection.last_used -= SESSION_IDLE_TIMEOUT + 1` then `_close_idle_sessions()` directly.
 - run_tests.py -> symlinks mcp_plugin + msm_plugin + mrs_plugin into a temp config home
   (`dot_mariadb_shell` under a `mcp_dot_mariadb_shell_*` temp dir), `pip install -r
   requirements.txt` (was an inline `pytest pytest-cov mcp` list — driving it off
@@ -251,7 +308,15 @@ silently runs against whatever `mariadb-shell` is on PATH.
 3. **`mrs_plugin/lib/general.py:221` and `:231` call `deploy_schema`** and silently lost
    their rollback dump when `backup` defaulted to False. Add `backup=True` there if that
    behaviour should be preserved (sibling plugin, deliberately untouched).
-4. (Optional, open questions raised with the user and NOT yet answered)
+4. (Optional, connection handling) Open points deliberately NOT built, none of them asked
+   for: the 10-minute timeout is a constant, not a `mcp.startServer` option; the binding is
+   to the raw peer address only, so a reverse proxy in front of the server would collapse
+   every client onto one address (no `X-Forwarded-For` support — that would need an
+   explicit trusted-proxy setting, never a blind header read); and the session is not
+   additionally bound to the MCP session id. A cross-IP END-TO-END test also needs a
+   loopback alias (`ifconfig lo0 alias 127.0.0.2`, root on macOS) or binding 0.0.0.0 and
+   dialing the LAN IP.
+5. (Optional, open questions raised with the user and NOT yet answered)
    - `object_type` is a plain `str` + `_normalize_object_type`, not `Literal[...]`; a
      Literal would publish the 7 values as a JSON-schema enum to clients but would reject
      `"Table"`.
@@ -260,11 +325,11 @@ silently runs against whatever `mariadb-shell` is on PATH.
      JSON booleans.
    - `interval_value`/`interval_field` of an event are raw, not composed into a readable
      schedule.
-5. (Optional) Raise `lib/setup.py` (84%) and `general.py` (73%) coverage — now the two
+6. (Optional) Raise `lib/setup.py` (84%) and `general.py` (73%) coverage — now the two
    weakest modules by far.
-6. (Optional) `test_db_sql.py`'s module docstring still says "connect / execute_sql /
+7. (Optional) `test_db_sql.py`'s module docstring still says "connect / execute_sql /
    close"; the flow now covers far more.
-7. (Optional) `gui/extension/package.json:1192` still labels the plugin "MySQL Schema
+8. (Optional) `gui/extension/package.json:1192` still labels the plugin "MySQL Schema
    Management" in the VS Code UI — outside msm_plugin, so left inconsistent by the rebrand.
 
 ## Gotchas / things not to repeat
@@ -272,7 +337,27 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **`/checkpoint` needs its target folder** — invoked bare it must ask, but this session
   is non-interactive; target was inferred as `mcp_plugin` from the session's work.
 - **New db.* tools stay SYNC** unless they need elicitation; don't convert them to async
-  "for consistency" with msm/sandbox.
+  "for consistency" with msm/sandbox. They do take `ctx: Context` — a new one MUST, or it
+  silently skips the client-address check.
+- **The `_Connection` lock is an `RLock` and that matters twice.** `use_session` holds it
+  and calls `open_session()`, which takes it again; `close_session_if_idle` holds it and
+  calls `close_session()`, same. But reentrancy also means the "a session in use is never
+  reaped" guarantee only holds ACROSS THREADS — a same-thread `_close_idle_sessions()`
+  inside a `use_session` block WOULD acquire the lock and close it. Production is safe (the
+  reaper is its own thread) and `test_a_session_in_use_is_not_closed` therefore runs the
+  reaper pass from a real `threading.Thread`; do not "simplify" it to a direct call, it
+  would pass for the wrong reason and assert the opposite of the truth.
+- **Lock order is `_sessions_lock` -> `connection.lock`, never the reverse** (`db.close`
+  takes and releases the dict lock, THEN closes). Keep it that way.
+- **Don't make the wrong-client error more helpful.** It is byte-identical to the
+  unknown-UUID error on purpose, so a probing client cannot tell a live connection id from
+  a made-up one. `test_a_connection_is_bound_to_its_client_over_http` compares the two
+  strings with the ids masked out and will fail if they drift apart.
+- **The idle reaper is a module-global daemon thread started once** (`_idle_reaper`). The
+  in-process test that calls `db.connect` really does start it, and it then lives for the
+  rest of the pytest run, waking every 30s. That is harmless (it only ever touches
+  `_sessions`, which the fixtures clear), but don't be surprised by it, and don't reset
+  `_idle_reaper` to None in a fixture — that would start a second one.
 - **The shell already returns DECIMAL and DATETIME as STRINGS.** Verified: a
   `CAST(2 AS DECIMAL(10,2))` arrives as `'2.00'`, and I_S.SEQUENCES `START_VALUE` /
   `INCREMENT` as `'1'`. So `_serialize_result` needs NO numeric conversion — a
@@ -376,9 +461,15 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Git state
 
-- Branch: `wip/AIPL-5`, upstream `mariadb/wip/AIPL-5` (remote `mariadb` =
+- Branch: **`wip/connection_handling`**, cut from `main` (which is at 8da59831 and tracks
+  `mariadb`) and pushed to `mariadb/wip/connection_handling`. Remote `mariadb` =
   mariadb-corporation/mariadb-shell-plugins; `origin` is mysql/mysql-shell-plugins and is
-  NOT the push target). Default branch `main`.
+  NOT the push target. There is also a `local_office` remote (a NAS mirror) — not a push
+  target either.
+- THIS session is one commit on that branch: the HTTP-only connection safeguards
+  (lib/general, lib/db_functions, lib/server, lib/msm_functions, README,
+  tests/unit/test_db_sessions.py, tests/unit/test_transport_http.py).
+- The `wip/AIPL-5` history below predates it and is already in `main`:
 - Session history: 3482634a (db introspection tools) -> the msm_plugin MariaDB/sandbox/
   backup commit -> the mcp_plugin `msm.deploy_schema` + db-group-gate commit -> 72c07ef8
   (doc the new db/msm tools + `get_mcp_plugin_data_path` -> `get_plugin_data_path`).

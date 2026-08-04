@@ -53,3 +53,48 @@ def test_streamable_http_lists_connections(stored_connections):
                 assert uri in uris
 
     asyncio.run(_run())
+
+
+def test_streamable_http_connect_execute_and_close(sandbox):
+    """A connection opened over HTTP is usable by the client that opened it.
+
+    Over HTTP a connection is bound to the address of the client that opened
+    it, so this drives the whole db flow - connect, run a statement, close -
+    through the transport that applies the binding, against the shared sandbox
+    deployed by ``test_sandbox_deploy``.
+    """
+    pytest.importorskip("mcp")
+
+    if not sandbox.deployed:
+        pytest.skip("sandbox was not deployed")
+
+    async def _run():
+        async with helpers.http_session(function_groups=["db"]) as call:
+            connect_result = await call("db.connect", {"uri": sandbox.uri})
+            assert connect_result.is_error is False, helpers.tool_payload(
+                connect_result
+            )
+            connection_id = helpers.tool_payload(connect_result)
+            assert isinstance(connection_id, str) and connection_id != ""
+
+            # The client's own connection works for it across calls, i.e. the
+            # address it is bound to is stable over the HTTP session.
+            for _ in range(2):
+                result = await call(
+                    "db.execute_sql",
+                    {"connection_id": connection_id, "sql": "SELECT 1 AS one"},
+                )
+                assert result.is_error is False, helpers.tool_payload(result)
+                assert helpers.tool_payload(result)["rows"] == [{"one": 1}]
+
+            close_result = await call("db.close", {"connection_id": connection_id})
+            assert close_result.is_error is False
+
+            # The connection id is no longer usable after closing.
+            reused = await call(
+                "db.execute_sql",
+                {"connection_id": connection_id, "sql": "SELECT 1"},
+            )
+            assert reused.is_error is True
+
+    asyncio.run(_run())

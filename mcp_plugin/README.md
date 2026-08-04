@@ -73,6 +73,26 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 | `db.execute_sql_script` | Runs a multi-statement SQL script on a connection UUID. |
 | `db.close` | Closes the connection for a UUID (`session.close()`). |
 
+#### Connection handling over HTTP
+
+Served over stdio, the server talks to a single client - the process that started
+it - for its entire lifetime. Served over HTTP it is reachable by any client that
+can reach the port, so two safeguards apply there, and there only:
+
+- **A connection belongs to the client that opened it.** It is bound to the IP
+  address `db.connect` was called from, taken from the peer address of the
+  connection the request arrived on (never from a header, which a client can
+  forge). A request from any other address is answered exactly as one naming a
+  connection UUID that was never handed out, so a connection cannot be taken over
+  by guessing its UUID.
+- **An unused connection is closed after 10 minutes.** A background reaper closes
+  the database session of every connection that has been unused for that long,
+  releasing the connection on the server. The connection UUID stays valid: the
+  next tool call using it opens a new session transparently, while `db.close`
+  simply drops it without opening anything. As it is a new session, nothing that
+  only lived in the previous one - temporary tables, session variables, the
+  current schema, an open transaction - survives an idle period.
+
 ### Schema management tools (`msm`)
 
 The following tools wrap the corresponding functions of the MariaDB Schema
