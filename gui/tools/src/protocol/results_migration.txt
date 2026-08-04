@@ -1,2 +1,0 @@
-// TODO: Define all Interfaces and replace generic IDictionary usage
-export type MigrationVersion = [number, number, number];

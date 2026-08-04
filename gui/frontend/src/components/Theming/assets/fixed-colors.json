@@ -1,5 +1,0 @@
-{
-    "dropdown.listBackground": "$dropdown.background",
-    "statusBar.background": "$panel.background",
-    "scrollbarSlider.background": "$resultView.headerForeground"
-}

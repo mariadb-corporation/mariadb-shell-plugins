@@ -1,3 +1,0 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
-
-exports[`Calendar render testing > Test Calendar (Snapshot) 1`] = `<div />`;
