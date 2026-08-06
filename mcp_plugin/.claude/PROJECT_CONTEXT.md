@@ -9,10 +9,16 @@ MCP-compatible clients. It registers the global `mcp` object in the shell and se
 "MariaDB plc". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
-9.1.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite: **17 tests pass
-(~28s), 93% total coverage**. Run it with `mariadb-shell --py -f run_tests.py` FROM the
-mcp_plugin dir and with `/opt/homebrew/bin` on PATH (mariadbd is not on the default
-PATH).
+9.1.1, uvicorn 0.52.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite:
+**29 tests pass (~36s), 92% total coverage**. Run it with
+`mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
+on PATH (mariadbd is not on the default PATH).
+
+The shell's bundled Python — the one that matters for every "which version does this
+behave like" question — is
+`/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/site-packages`.
+Read the SDK and uvicorn sources THERE, not upstream. (Ask the shell itself rather than
+`find /`: `mariadb-shell --py -f <script printing module __file__>`.)
 
 The shell's env vars are `MARIADB_SHELL`, `MARIADB_SHELL_USER_CONFIG_HOME` and
 `MARIADB_SHELL_TERM_COLOR_MODE` — the pre-rename `MYSQLSH*` names are GONE from all
@@ -44,6 +50,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `server.tool(name=...)`, `stdio_server(stdout=)` and `ctx.elicit(message=, schema=)` are
   unchanged, as is `types.ElicitResult(action=, content=)`.
 - Server runs **foreground on the main thread**; `start()` sets `useWizards=False`.
+- **streamable-http is served on OUR OWN uvicorn server** (`_serve_streamable_http`), NOT
+  via `mcp_server.run(transport=...)`. Verified on the bundled SDK: 2.0.0's
+  `run_streamable_http_async` builds `uvicorn.Config(app, host=, port=, log_level=)`
+  internally and forwards NOTHING else, so `proxy_headers` cannot be reached through
+  `run()`. `_serve_streamable_http` does exactly what the SDK does — including passing
+  `host=` into `streamable_http_app()` so the SDK's DNS-rebinding protection still
+  auto-enables on a loopback bind, and using `settings.log_level` — plus
+  **`proxy_headers=False`**. See Gotchas: this is a security fix, not a style choice.
 - Transports: `streamable-http` (default) and `stdio`. **stdio hardened** (`_serve_stdio`):
   real stdout (fd 1) dup'd for the transport, then fd 1 AND `sys.stdout` redirected to
   stderr so tool/shell/C output can't corrupt JSON-RPC. Uses low-level
@@ -72,18 +86,30 @@ silently runs against whatever `mariadb-shell` is on PATH.
   UUID to a **`_Connection`** record (uri, `client_address`, `session`, `last_used`,
   `lock`), NOT to a bare session; `_sessions_lock` guards the dict, each `_Connection` has
   an `RLock` of its own.
-- **HTTP-only connection safeguards** (branch `wip/AIPL-16`): gated on
-  `general.is_http_transport()`, which reads the `_active_transport` module global that
-  `lib/server.start()` sets from its `transport` arg BEFORE serving. Over stdio (one
-  client, the parent process, for the server's whole life) NEITHER applies:
-  - **Address binding**: a connection may only be used from the IP that opened it.
-    `general.get_client_address(ctx)` = `ctx.request_context.request.client.host` — the
-    TCP peer of the request, deliberately NOT `X-Forwarded-For` or any other header
-    (client-supplied, forgeable). `request` is a starlette Request on HTTP and None on
-    stdio, so the `try/except` + `getattr` chain returns None there. A mismatch raises the
-    BYTE-IDENTICAL error an unknown UUID raises, so probing cannot tell a real UUID from a
-    guessed one — keep those two messages the same. In HTTP mode `db.connect` with no
-    determinable address FAILS CLOSED.
+- **Connection safeguards.** `general.is_http_transport()` reads the `_active_transport`
+  module global that `lib/server.start()` sets from its `transport` arg BEFORE serving.
+  It gates EXACTLY TWO THINGS and nothing else (grep it — there are only two call sites
+  in `lib/`): `_start_idle_reaper` and `db.connect`'s fail-closed branch.
+  - **Address binding**: a connection may only be used from the address it was opened
+    from. **`_Connection.is_accessible_from` is a PLAIN EQUALITY, NOT gated on the
+    transport** — see Gotchas, re-gating it is a fail-open. Over stdio no request carries
+    an address, so a connection is opened with None and every later call presents None:
+    the one client matches itself and the check needs no knowledge of the transport.
+    `general.get_client_address(ctx)` = `ctx.request_context.request.client.host`
+    NORMALIZED — the TCP peer of the request, deliberately NOT `X-Forwarded-For` or any
+    other header (client-supplied, forgeable). `request` is a starlette Request on HTTP
+    and None on stdio, so the `try/except` + `getattr` chain returns None there. A
+    mismatch raises the BYTE-IDENTICAL error an unknown UUID raises, so probing cannot
+    tell a real UUID from a guessed one — keep those two messages the same. In HTTP mode
+    `db.connect` with no determinable address FAILS CLOSED.
+  - **Address normalization** (`general.normalize_client_address`, applied in
+    `get_client_address`, `_Connection.__init__` AND `is_accessible_from` — all three, so
+    no caller can forget): the equality above would otherwise inherit spelling
+    false-negatives. IPv4-mapped `::ffff:a.b.c.d` -> `a.b.c.d`; EVERY loopback form ->
+    the single `general.LOOPBACK_ADDRESS = "loopback"` token (deliberately not a valid IP
+    literal, so it cannot collide with a real client address); IPv6 canonicalized via
+    `str(ipaddress.ip_address(...))`; a non-IP string (unix socket path) passed through
+    unchanged to compare only with itself; `None`/blank -> None.
   - **30-minute idle timeout** (`general.SESSION_IDLE_TIMEOUT = 1800`, raised from the
     10 minutes it shipped with in 0bba1318): a daemon reaper
     thread (`_reap_idle_sessions`, started ONCE by the first `db.connect` via
@@ -171,8 +197,45 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Current state
 
-- **THIS session (branch `wip/AIPL-16`, off `main`): the two HTTP-only
-  connection safeguards** described above — address binding + 10-minute idle timeout.
+- **THIS session (branch `wip/AIPL-16`): the user is working through a numbered
+  security-review list (S1..S8+) of the connection handling.** They send one issue at a
+  time; each is to be VERIFIED against the bundled SDK/uvicorn rather than taken on faith,
+  fixed, and pinned by a test PROVEN to fail without the fix (revert the one line, re-run,
+  restore). **S1 and S2 are DONE and committed. S3 onwards are NOT YET RECEIVED** — the
+  user has them and will continue "tomorrow" (i.e. after 2026-08-06). S3 was described as
+  combining with S1 into connection takeover rather than mere UUID probing; S8 was
+  described as address-normalization and was folded into the S2 commit at the user's
+  instruction ("must land together with S8").
+  - **S1 (HIGH, header-derived peer address)**: uvicorn 0.52.1 has `proxy_headers=True`
+    and `forwarded_allow_ips="127.0.0.1"` by DEFAULT (config.py:220/357), and
+    `ProxyHeadersMiddleware` (config.py:526) rewrites `scope["client"]` from
+    `X-Forwarded-For` when the peer is trusted. The plugin's `DEFAULT_HOST` is
+    `127.0.0.1`, so EVERY request qualified and any client could pick the address the
+    binding compared against. Fixed with `_serve_streamable_http` +
+    `proxy_headers=False`. PROVEN: with `mcp_server.run(...)` restored, the new test fails
+    with "No open connection found for id ..." — i.e. the header really did move the
+    address.
+  - **S2 (HIGH, fail-open when the transport global is unset)**: `is_accessible_from`
+    short-circuited to True unless `is_http_transport()`, so any embedding that serves via
+    the public `build_mcp_server` without `lib.server.start()` — and any moment after a
+    server stops, since the global is never reset — silently disabled the binding. Now a
+    plain normalized equality. PROVEN: restoring the gate fails
+    `test_a_connection_stays_bound_without_an_active_transport` and
+    `test_a_connection_is_usable_over_stdio` (8 others still pass).
+  - Touched this session: `lib/server.py` (`_serve_streamable_http`), `lib/general.py`
+    (`normalize_client_address`, `LOOPBACK_ADDRESS`, `get_client_address` normalizes,
+    `import ipaddress`), `lib/db_functions.py` (`_Connection.__init__` +
+    `is_accessible_from`), `README.md`, `tests/unit/helpers.py` (`http_session` split into
+    `http_server` + `http_client_session(headers=)`), `tests/unit/test_transport_http.py`,
+    `tests/unit/test_db_sessions.py`.
+  - **RESIDUAL flagged to the user, not yet decided**: `db.connect`'s fail-closed branch is
+    still gated on `is_http_transport()` (S2 said to keep it that way), so an embedder
+    serving over HTTP without `start()` whose transport attaches no peer address would bind
+    to None and let those clients share connections. Strictly better than before (where ALL
+    connections were unbound in that case) but it is the one path where the global can still
+    soften something. Making it unconditional would need an explicit stdio exemption.
+- Previous session on this branch: the two connection safeguards as originally built
+  (0bba1318 + 6067fd8c) — address binding + the idle timeout, then raised to 30 minutes.
   Touched `lib/general.py` (transport global, `SESSION_IDLE_TIMEOUT`,
   `set_active_transport`/`is_http_transport`/`get_client_address`), `lib/db_functions.py`
   (the `_Connection` record, `_open_session`, `_get_connection`, `use_session`,
@@ -181,6 +244,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `lib/msm_functions.py` (`deploy_schema` -> `use_session`), README and tests. NOTE: the
   cross-IP rejection is proven in-process only — driving two genuinely different source
   addresses at a local server needs a loopback alias (root on macOS), so the suite does not.
+  The S1 test gets at the same thing from the other side: two clients on the SAME real peer
+  address, one of them lying about it in a header.
 - Previous session: **migrated the plugin from MCP SDK 1.x to 2.0.0** (the shell's bundled
   Python now ships 2.0.0; `requirements.txt` had `mcp >= 1.2.0` with no upper bound, so the
   major bump was picked up silently and 8 of 17 tests failed —
@@ -204,11 +269,16 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
   path-reject), `test_config` (6), `test_msm` (5: create_project, elicit-accept,
   elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,
-  `test_transport_http` (2: list_connections + a full connect/execute/close db flow over
-  HTTP), `test_db_sessions` (7, the connection safeguards). **25 pass, ~29s.**
-- Coverage after latest run: lib/msm_functions 100, lib/server 100, lib/general 98,
-  lib/config 96, lib/db_functions 95, lib/sandbox_functions 93, server.py 85, lib/setup 84,
-  general.py 73. TOTAL 93% (605 statements, 40 missed). What is left uncovered in
+  `test_transport_http` (**3**: list_connections, a full connect/execute/close db flow over
+  HTTP, and `test_streamable_http_ignores_a_forwarded_for_header` for S1),
+  `test_db_sessions` (**10**, the connection safeguards incl. the S2/S8 additions:
+  `..._stays_bound_without_an_active_transport`, `..._is_usable_over_stdio`,
+  `test_equivalent_spellings_of_an_address_are_the_same_client`,
+  `..._is_reachable_over_either_ip_stack`). **29 pass, ~36s.**
+- Coverage after latest run: TOTAL 92% (627 statements, 48 missed); lib/server was 100 on
+  the targeted run. Earlier full-run figures: lib/msm_functions 100, lib/server 100,
+  lib/general 98, lib/config 96, lib/db_functions 95, lib/sandbox_functions 93,
+  server.py 85, lib/setup 84, general.py 73. What is left uncovered in
   db_functions is defensive only: the `session.close()` swallow, the reaper thread's own
   loop body (it sleeps 30s), `_start_idle_reaper`'s not-http return, the JSON-parse
   fallback and the `_serialize_result` `str()` guard.
@@ -251,8 +321,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
 ## Files that matter
 
 - lib/general.py -> plugin data path, async `require_allowed_path`/`_confirm_trust_path`,
-  the transport global (`set_active_transport`/`is_http_transport`), `get_client_address`
-  and `SESSION_IDLE_TIMEOUT`.
+  the transport global (`set_active_transport`/`is_http_transport`), `get_client_address`,
+  `normalize_client_address` + `LOOPBACK_ADDRESS`, and `SESSION_IDLE_TIMEOUT`.
 - lib/config.py -> connections (secrets) + allowed paths (settings.json) + `add_allowed_path`.
 - lib/db_functions.py -> db.* tools; the `_Connection` cache (`_sessions` + `use_session` +
   the idle reaper); `_serialize_result`;
@@ -261,14 +331,19 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `_OBJECT_COLUMNS_SQL`, `_OBJECT_CONSTRAINTS_SQL`, `_OBJECT_REFERENCES_SQL`).
 - lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`;
   msm_functions also holds the db-group-gated `msm.deploy_schema`.
-- lib/server.py -> build/serve; `_serve_stdio` hardening; passes function_groups to the
-  registrars.
+- lib/server.py -> build/serve; `_serve_stdio` hardening; `_serve_streamable_http`
+  (own uvicorn, `proxy_headers=False`); passes function_groups to the registrars.
 - tests/conftest.py -> ordering hook, fixtures (sandbox session, allowed_temp_dir,
   clean_config, stored_connections, non_interactive_shell).
 - tests/unit/helpers.py -> `call_tool` (has `elicitation_callback`), `mcp_session`,
   `list_tool_names` (what the server ADVERTISES, used for the group gate), `tool_payload`,
-  `find_free_port`, `server_binary_available`, `shell_binary`, plus streamable-http
-  helpers.
+  `find_free_port`, `server_binary_available`, `shell_binary`, plus the streamable-http
+  helpers: **`http_server` (subprocess + URL) and `http_client_session(url, headers=)` are
+  now separate**, so one server can be driven by several clients and a client can send
+  forged headers. `http_session` is a thin wrapper over both and is unchanged for callers.
+  Extra headers reach the transport only via a pre-built client
+  (`create_mcp_http_client(headers=...)` passed as `http_client=`) — SDK 2.0's
+  `streamable_http_client` takes no `headers` argument.
 - tests/unit/test_db_sql.py -> single `_db_flow` coroutine over ONE stdio session:
   connect -> execute_sql (incl. a DECIMAL/DATETIME serialization check) ->
   execute_sql_script (inline + file + denied) -> list_schemas -> creates one object of
@@ -284,6 +359,9 @@ silently runs against whatever `mariadb-shell` is on PATH.
   transport supplies, and `http_transport`/`stdio_transport` fixtures flip
   `general.set_active_transport` and clear `_sessions`. No time is ever waited out —
   `connection.last_used -= SESSION_IDLE_TIMEOUT + 1` then `_close_idle_sessions()` directly.
+  `CLIENT_ADDRESS`/`OTHER_ADDRESS` are TEST-NET-1 (`192.0.2.x`) on purpose: they must NOT
+  be loopback, or normalization would collapse them onto the same token and the
+  binding tests would assert nothing.
 - run_tests.py -> symlinks mcp_plugin + msm_plugin + mrs_plugin into a temp config home
   (`dot_mariadb_shell` under a `mcp_dot_mariadb_shell_*` temp dir), `pip install -r
   requirements.txt` (was an inline `pytest pytest-cov mcp` list — driving it off
@@ -293,6 +371,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Next steps
 
+0. **RESUME HERE: the user's security-review list, S3 onwards.** They will send the next
+   issue; S1/S2/S8 are done (see Current state). Working agreement established over S1 and
+   S2, follow it for the rest: (a) VERIFY the claim against the bundled SDK/uvicorn source
+   under `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/
+   site-packages`, never against upstream docs or memory; (b) fix it in code, not via an
+   env var; (c) add a test and PROVE it discriminates by reverting the fix, re-running,
+   and restoring; (d) correct any docstring/README claim the bug had made false. Also
+   still open from S2: the residual fail-closed question in Current state.
 1. **`mysqlsh.globals.util.dump_schemas` / `load_dump` do NOT exist in this mariadb-shell
    build**, so `msm.deploy_schema` / `msm_plugin` `deploy_schema` with `backup=True` raise
    `AttributeError: unknown attribute: dump_schemas`. The backup feature is unusable (and
@@ -310,13 +396,17 @@ silently runs against whatever `mariadb-shell` is on PATH.
    their rollback dump when `backup` defaulted to False. Add `backup=True` there if that
    behaviour should be preserved (sibling plugin, deliberately untouched).
 4. (Optional, connection handling) Open points deliberately NOT built, none of them asked
-   for: the 10-minute timeout is a constant, not a `mcp.startServer` option; the binding is
-   to the raw peer address only, so a reverse proxy in front of the server would collapse
-   every client onto one address (no `X-Forwarded-For` support — that would need an
-   explicit trusted-proxy setting, never a blind header read); and the session is not
-   additionally bound to the MCP session id. A cross-IP END-TO-END test also needs a
-   loopback alias (`ifconfig lo0 alias 127.0.0.2`, root on macOS) or binding 0.0.0.0 and
-   dialing the LAN IP.
+   for: the 30-minute timeout is a constant, not a `mcp.startServer` option; the binding is
+   to the raw peer address only, so a **reverse proxy in front of the server collapses
+   every client onto the proxy's address** — now stated outright in the README, since S1
+   made `proxy_headers=False` deliberate. Restoring proxy support would need an explicit
+   trusted-proxy setting feeding `forwarded_allow_ips`, NEVER a blind header read and never
+   uvicorn's loopback default. The session is also not additionally bound to the MCP session
+   id. A cross-IP END-TO-END test still needs a loopback alias
+   (`ifconfig lo0 alias 127.0.0.2`, root on macOS) or binding 0.0.0.0 and dialing the LAN
+   IP — note that with normalization in place, `127.0.0.2` folds onto the same loopback
+   token as `127.0.0.1`, so a loopback alias no longer distinguishes two clients. Use two
+   genuinely different interfaces.
 5. (Optional, open questions raised with the user and NOT yet answered)
    - `object_type` is a plain `str` + `_normalize_object_type`, not `Literal[...]`; a
      Literal would publish the 7 values as a JSON-schema enum to clients but would reject
@@ -337,6 +427,30 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 - **`/checkpoint` needs its target folder** — invoked bare it must ask, but this session
   is non-interactive; target was inferred as `mcp_plugin` from the session's work.
+- **NEVER serve streamable-http with `mcp_server.run(transport=...)` again.** It re-opens
+  S1: the SDK builds its own `uvicorn.Config` with uvicorn's `proxy_headers=True` default,
+  and `ProxyHeadersMiddleware` then rewrites the peer address from `X-Forwarded-For` for
+  every request from a trusted peer — which, on the default `127.0.0.1` bind, is every
+  request. `_serve_streamable_http` exists solely to pass `proxy_headers=False`. Equally:
+  do NOT "simplify" it to the `FORWARDED_ALLOW_IPS` env var — what an empty trust list
+  means is uvicorn-version-dependent (in 0.52.1 it happens to become `trusted_literals =
+  {""}`, matching nothing, but that is incidental), whereas `proxy_headers=False` keeps the
+  middleware from being installed at all.
+- **NEVER re-gate `_Connection.is_accessible_from` on `general.is_http_transport()`.** That
+  was S2: the global is only set by `lib.server.start()` and never reset, so the check
+  failed open for any embedder using the public `build_mcp_server`, and after any server
+  stopped. It is a plain equality and stdio falls out of it for free (None == None). The
+  transport is still consulted in exactly TWO places — `_start_idle_reaper` and
+  `db.connect`'s fail-closed branch — and `test_a_connection_stays_bound_without_an_active_transport`
+  will fail if that changes.
+- **Normalize BOTH sides of an address comparison, or don't compare at all.** With the
+  strict equality, an unnormalized side reintroduces `::1` vs `127.0.0.1` and
+  `::ffff:a.b.c.d` vs `a.b.c.d` false negatives — the same client locked out of its own
+  connection. `normalize_client_address` is therefore applied in THREE places on purpose
+  (`get_client_address`, `_Connection.__init__`, `is_accessible_from`); it is idempotent, so
+  the redundancy costs nothing and means no future caller can forget. Consequence to keep
+  in mind: **every loopback address folds onto ONE token**, so `127.0.0.2` is NOT a second
+  client any more — a loopback alias can no longer stand in for a remote client in a test.
 - **New db.* tools stay SYNC** unless they need elicitation; don't convert them to async
   "for consistency" with msm/sandbox. They do take `ctx: Context` — a new one MUST, or it
   silently skips the client-address check.
@@ -388,7 +502,22 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `shutil.which("mariadb-shell")`.
 - **Filtering tests with `-k` breaks the db/msm/sandbox tests** — they depend on
   `test_sandbox_deploy` running first (conftest ordering hook + `sandbox.deployed` flag),
-  and skip themselves if it didn't. Run the full suite to validate.
+  and skip themselves if it didn't. Run the full suite to validate. For a targeted run that
+  still needs the sandbox, `--only="'sandbox_deploy or <pattern>'"` works (the ordering hook
+  puts the deploy first), but `test_sandbox_shutdown` is then deselected and the session
+  fixture's best-effort finalizer does the teardown.
+- **`run_tests.py` interpolates `-k` into a `shell=True` STRING** (`pattern = f"-k
+  {args.only}"`, run_tests.py:130), so a pattern containing spaces is split by the shell and
+  pytest dies with `file or directory not found: or`. The pattern needs its OWN quotes:
+  `--only="'a or b'"`. Worth fixing to a proper argv list; not done yet.
+- **A non-matching glob ABORTS the whole command under zsh** (`no matches found:
+  .coverage.*`) — the shell here is zsh, not bash, so it does not pass the pattern through.
+  A run "silently doing nothing" with only that message is this, not a test failure. The
+  file to remove after a partial run is plain `.coverage` (still: never `.coverage*`, which
+  matches `.coveragerc`).
+- **`| tail -N` on a backgrounded run hides ALL output until it exits**, so polling the task
+  output file mid-run shows an empty file and looks like a hang. Wait for the notification,
+  or drop the pipe.
 - **OBSOLETE AS OF SDK 2.0 — do not act on the old note.** Under mcp 1.28.x sync tools ran
   directly on the event loop (func_metadata: `else: return fn(...)`), which is why a
   sync-tool `anyio.from_thread.run` elicitation bridge was impossible and async tools were
@@ -467,9 +596,18 @@ silently runs against whatever `mariadb-shell` is on PATH.
   mariadb-corporation/mariadb-shell-plugins; `origin` is mysql/mysql-shell-plugins and is
   NOT the push target. There is also a `local_office` remote (a NAS mirror) — not a push
   target either.
-- THIS session is one commit on that branch: the HTTP-only connection safeguards
-  (lib/general, lib/db_functions, lib/server, lib/msm_functions, README,
-  tests/unit/test_db_sessions.py, tests/unit/test_transport_http.py).
+- **The session started in DETACHED HEAD** at `mariadb/wip/AIPL-16` (ecc6bc3c) with no
+  local branch — `git checkout -b wip/AIPL-16` was needed before committing. Check
+  `git branch --show-current` before assuming there is a branch to commit onto.
+- THIS session is one commit on that branch: the S1 + S2/S8 security fixes
+  (lib/server, lib/general, lib/db_functions, README, tests/unit/helpers.py,
+  tests/unit/test_transport_http.py, tests/unit/test_db_sessions.py, this file).
+- Earlier commits on the branch: 0bba1318 (connection safeguards as first built),
+  6067fd8c (idle timeout 10 -> 30 min), ecc6bc3c (branch rename recorded here).
+- **`mcp_plugin/lib/sandbox_functions.py` carries a one-line docstring edit that is NOT
+  this session's work** (`sandbox_dir`: "Leave empty to use the default sandbox path.") and
+  was deliberately left UNSTAGED, as was
+  `.claude/skills/create-shell-plugin/SKILL.md` before it.
 - The `wip/AIPL-5` history below predates it and is already in `main`:
 - Session history: 3482634a (db introspection tools) -> the msm_plugin MariaDB/sandbox/
   backup commit -> the mcp_plugin `msm.deploy_schema` + db-group-gate commit -> 72c07ef8

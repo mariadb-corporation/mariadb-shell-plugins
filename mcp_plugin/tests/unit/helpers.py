@@ -20,7 +20,7 @@ The server is launched as a ``mariadb-shell`` subprocess running
 ``mcp start-server --transport=stdio`` and is driven with the MCP client SDK.
 """
 
-# cSpell:ignore mysqlsh MariaDB mcpserver
+# cSpell:ignore mysqlsh MariaDB mcpserver httpx
 
 import asyncio
 import json
@@ -255,27 +255,22 @@ def _wait_for_port(host, port, timeout):
 
 
 @asynccontextmanager
-async def http_session(function_groups, timeout=None):
-    """Runs the server over streamable-http and yields a per-call coroutine.
+async def http_server(function_groups, timeout=None):
+    """Runs the MCP server over streamable-http and yields its endpoint URL.
 
-    A ``mariadb-shell`` subprocess is launched with ``--transport=streamable-http`` on
-    a free port; once it is listening, an MCP streamable-http client connects to
-    ``http://127.0.0.1:<port>/mcp`` and initializes a session. Multiple tool
-    calls made through the yielded ``call`` coroutine share the same server
-    process. The subprocess is terminated on exit.
+    A ``mariadb-shell`` subprocess is launched with
+    ``--transport=streamable-http`` on a free port; once it is listening, the
+    ``http://127.0.0.1:<port>/mcp`` URL is yielded. Any number of client
+    sessions can be opened against it with :func:`http_client_session`. The
+    subprocess is terminated on exit.
 
     Args:
         function_groups (list): The function groups the server should expose.
-        timeout (float): Per-call and startup timeout in seconds.
+        timeout (float): Startup timeout in seconds.
 
     Yields:
-        An async ``call(tool_name, arguments=None)`` coroutine returning the
-        CallToolResult.
+        The MCP endpoint URL of the running server.
     """
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamable_http_client
-
-    call_timeout = timeout if timeout is not None else _MCP_TIMEOUT
     host = "127.0.0.1"
     port = find_free_port()
 
@@ -302,20 +297,9 @@ async def http_session(function_groups, timeout=None):
     )
 
     try:
-        _wait_for_port(host, port, call_timeout)
+        _wait_for_port(host, port, timeout if timeout is not None else _MCP_TIMEOUT)
 
-        url = f"http://{host}:{port}/mcp"
-        async with streamable_http_client(url) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-
-                async def call(tool_name, arguments=None):
-                    return await asyncio.wait_for(
-                        session.call_tool(tool_name, arguments or {}),
-                        timeout=call_timeout,
-                    )
-
-                yield call
+        yield f"http://{host}:{port}/mcp"
     finally:
         proc.terminate()
         try:
@@ -323,6 +307,78 @@ async def http_session(function_groups, timeout=None):
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+
+
+@asynccontextmanager
+async def http_client_session(url, timeout=None, headers=None):
+    """Opens an MCP streamable-http client session against a running server.
+
+    Args:
+        url (str): The MCP endpoint URL, as yielded by :func:`http_server`.
+        timeout (float): Per-call timeout in seconds.
+        headers (dict): Extra HTTP headers to send with every request. Used to
+            drive the header-forging tests; the transport's own headers are
+            added on top of these.
+
+    Yields:
+        An async ``call(tool_name, arguments=None)`` coroutine returning the
+        CallToolResult.
+    """
+    from contextlib import AsyncExitStack
+
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    call_timeout = timeout if timeout is not None else _MCP_TIMEOUT
+
+    async with AsyncExitStack() as stack:
+        http_client = None
+        if headers:
+            # The transport only takes extra headers via a pre-configured
+            # client; this is the same client it would build for itself.
+            from mcp.shared._httpx_utils import create_mcp_http_client
+
+            http_client = await stack.enter_async_context(
+                create_mcp_http_client(headers=headers)
+            )
+
+        read, write = await stack.enter_async_context(
+            streamable_http_client(url, http_client=http_client)
+        )
+        session = await stack.enter_async_context(ClientSession(read, write))
+        await session.initialize()
+
+        async def call(tool_name, arguments=None):
+            return await asyncio.wait_for(
+                session.call_tool(tool_name, arguments or {}),
+                timeout=call_timeout,
+            )
+
+        yield call
+
+
+@asynccontextmanager
+async def http_session(function_groups, timeout=None, headers=None):
+    """Runs the server over streamable-http and yields a per-call coroutine.
+
+    Convenience wrapper around :func:`http_server` plus one
+    :func:`http_client_session`, for tests that need only a single client.
+    Multiple tool calls made through the yielded ``call`` coroutine share the
+    same server process, which is required for stateful tools such as
+    db.connect / db.execute_sql / db.close.
+
+    Args:
+        function_groups (list): The function groups the server should expose.
+        timeout (float): Per-call and startup timeout in seconds.
+        headers (dict): Extra HTTP headers to send with every request.
+
+    Yields:
+        An async ``call(tool_name, arguments=None)`` coroutine returning the
+        CallToolResult.
+    """
+    async with http_server(function_groups, timeout=timeout) as url:
+        async with http_client_session(url, timeout=timeout, headers=headers) as call:
+            yield call
 
 
 def tool_payload(result):

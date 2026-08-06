@@ -15,10 +15,12 @@
 
 """Tests for the connection handling of the db tools.
 
-Covers the two safeguards that apply while serving over HTTP: a connection may
+Covers the two safeguards that matter while serving over HTTP: a connection may
 only be used by the client that opened it, and a connection that has been
 unused for too long has its session closed and transparently opened again when
-it is used next.
+it is used next. The first of the two is a plain address comparison that holds
+whatever the transport is - including when no transport was recorded at all -
+so it is exercised in all three of those states.
 
 These drive lib/db_functions.py in-process with a stub session, so no database
 server is needed and no time has to be waited out. The tools themselves are
@@ -130,6 +132,15 @@ def test_client_address_is_read_from_the_request():
     """The address comes from the transport's request, not from a header."""
     assert general.get_client_address(_context(CLIENT_ADDRESS)) == CLIENT_ADDRESS
 
+    # It comes back normalized, so what db.connect stores and what a later
+    # request is compared against are in the same form by construction.
+    assert (
+        general.get_client_address(_context("::ffff:192.0.2.10")) == CLIENT_ADDRESS
+    )
+    assert (
+        general.get_client_address(_context("::1")) == general.LOOPBACK_ADDRESS
+    )
+
     # A request without a peer (stdio) and no context at all both yield None,
     # rather than an address that could be mistaken for a real one.
     assert general.get_client_address(_context(None)) is None
@@ -179,11 +190,96 @@ def test_a_connection_is_bound_to_its_client_over_http(http_transport):
     assert connection.session.closed is False
 
 
-def test_a_connection_is_not_bound_to_its_client_over_stdio(stdio_transport):
-    """Over stdio there is only one client, so no address is checked."""
+def test_a_connection_is_usable_over_stdio(stdio_transport):
+    """Over stdio the single client always matches itself.
+
+    No request over stdio carries a peer address, so a connection is opened
+    with None and every later call presents None again. The address comparison
+    therefore lets the one client through without having to know it is stdio -
+    which is what keeps it from being a check that can be switched off.
+    """
     connection_id, connection = _register_connection(None)
 
-    for client_address in (None, CLIENT_ADDRESS, OTHER_ADDRESS):
+    for _ in range(2):
+        with db_functions.use_session(connection_id, None) as session:
+            assert session is connection.session
+
+    # A stdio connection is not a connection that anybody may use: an address
+    # cannot reach it either. This cannot happen while serving over stdio (no
+    # request has an address there) and is asserted only to pin that the
+    # comparison is an equality and not an "unless we are over HTTP".
+    with pytest.raises(mysqlsh.Error):
+        with db_functions.use_session(connection_id, CLIENT_ADDRESS):
+            pass
+
+
+def test_a_connection_stays_bound_without_an_active_transport():
+    """The binding does not depend on the transport having been recorded.
+
+    ``lib.server.start`` records the transport before serving, but
+    ``build_mcp_server`` is public: an embedder can register the tools and
+    serve them itself, and nothing resets the recorded transport when a server
+    stops. If the address check consulted that global it would fail open in
+    exactly those cases, with no error to notice it by. So it does not - a
+    connection bound to an address is only ever usable from that address, no
+    matter what the transport global says.
+    """
+    db_functions._sessions.clear()
+    general.set_active_transport(None)
+    try:
+        assert general.is_http_transport() is False
+
+        connection_id, connection = _register_connection(CLIENT_ADDRESS)
+
+        with db_functions.use_session(connection_id, CLIENT_ADDRESS) as session:
+            assert session is connection.session
+
+        for client_address in (OTHER_ADDRESS, None):
+            with pytest.raises(mysqlsh.Error):
+                with db_functions.use_session(connection_id, client_address):
+                    pass
+
+        assert connection.session.closed is False
+    finally:
+        db_functions._sessions.clear()
+
+
+def test_equivalent_spellings_of_an_address_are_the_same_client():
+    """A client is recognized however its address happens to be written.
+
+    The check is an equality, so every spelling of one address has to be
+    reduced to a single form first: an IPv4 client on a dual-stack socket is
+    reported as IPv4-mapped, IPv6 addresses can be written uncompressed, and a
+    local client shows up as ``127.0.0.1`` or ``::1`` depending on which stack
+    it used. Without this, the same client is refused its own connection.
+    """
+    normalize = general.normalize_client_address
+
+    # Every form of loopback is the same, local client.
+    loopback = {normalize(address) for address in ("127.0.0.1", "::1", "127.1.2.3")}
+    assert loopback == {general.LOOPBACK_ADDRESS}
+
+    # An IPv4-mapped address is the IPv4 address it maps to.
+    assert normalize("::ffff:192.0.2.10") == normalize(CLIENT_ADDRESS)
+    assert normalize("::ffff:192.0.2.10") != normalize(OTHER_ADDRESS)
+
+    # IPv6 addresses compare by value, not by spelling.
+    assert normalize("2001:0db8:0000:0000:0000:0000:0000:0001") == normalize(
+        "2001:db8::1"
+    )
+
+    # Nothing that is not an address is invented, and anything that is not an
+    # address at all is left as it is - it only gets compared with itself.
+    assert normalize(None) is None
+    assert normalize("  ") is None
+    assert normalize("/var/run/some.sock") == "/var/run/some.sock"
+
+
+def test_a_connection_is_reachable_over_either_ip_stack(http_transport):
+    """The two loopback forms of one client reach the same connection."""
+    connection_id, connection = _register_connection("127.0.0.1")
+
+    for client_address in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
         with db_functions.use_session(connection_id, client_address) as session:
             assert session is connection.session
 

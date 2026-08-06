@@ -18,10 +18,11 @@
 These complement the stdio-based tests: they launch the server with
 ``--transport=streamable-http`` and drive it with the MCP streamable-http
 client, verifying that the HTTP serving path (``lib.server.start`` ->
-``mcp_server.run(transport="streamable-http")``) works end to end.
+``lib.server._serve_streamable_http``) works end to end, and that the peer
+address the connection binding depends on cannot be forged with a header.
 """
 
-# cSpell:ignore mysqlsh MariaDB streamable
+# cSpell:ignore mysqlsh MariaDB streamable uvicorn
 
 import asyncio
 
@@ -96,5 +97,51 @@ def test_streamable_http_connect_execute_and_close(sandbox):
                 {"connection_id": connection_id, "sql": "SELECT 1"},
             )
             assert reused.is_error is True
+
+    asyncio.run(_run())
+
+
+def test_streamable_http_ignores_a_forwarded_for_header(sandbox):
+    """A client cannot choose the address its connection is bound to.
+
+    The address a connection is bound to must be the peer address of the
+    connection the request arrived on, and nothing a client can set. Uvicorn's
+    ProxyHeadersMiddleware is enabled by default and rewrites exactly that peer
+    address from ``X-Forwarded-For`` for any request coming from one of its
+    trusted addresses - which, with the default loopback bind, means every
+    request. ``lib.server._serve_streamable_http`` therefore serves the app on
+    a uvicorn server configured with ``proxy_headers=False``.
+
+    Two clients on the same (real) peer address drive one server process here:
+    the first opens the connection without the header, the second sends one
+    naming a different address and must still be recognized as the owner. With
+    the middleware left enabled the second client is seen as
+    ``10.99.99.99`` instead and its call fails.
+    """
+    pytest.importorskip("mcp")
+
+    if not sandbox.deployed:
+        pytest.skip("sandbox was not deployed")
+
+    async def _run():
+        async with helpers.http_server(function_groups=["db"]) as url:
+            async with helpers.http_client_session(url) as call:
+                connect_result = await call("db.connect", {"uri": sandbox.uri})
+                assert connect_result.is_error is False, helpers.tool_payload(
+                    connect_result
+                )
+                connection_id = helpers.tool_payload(connect_result)
+
+                async with helpers.http_client_session(
+                    url, headers={"X-Forwarded-For": "10.99.99.99"}
+                ) as forging_call:
+                    result = await forging_call(
+                        "db.execute_sql",
+                        {"connection_id": connection_id, "sql": "SELECT 1 AS one"},
+                    )
+                    assert result.is_error is False, helpers.tool_payload(result)
+                    assert helpers.tool_payload(result)["rows"] == [{"one": 1}]
+
+                await call("db.close", {"connection_id": connection_id})
 
     asyncio.run(_run())

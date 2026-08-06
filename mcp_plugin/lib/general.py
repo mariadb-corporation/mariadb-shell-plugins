@@ -13,9 +13,10 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-# cSpell:ignore mysqlsh MariaDB pydantic elicit
+# cSpell:ignore mysqlsh MariaDB pydantic elicit uvicorn
 
 # Define plugin version
+import ipaddress
 import os
 import pathlib
 from typing import Optional
@@ -69,11 +70,16 @@ def get_plugin_data_path() -> str:
 def set_active_transport(transport) -> None:
     """Records the transport the MCP server is being served with.
 
-    The transport decides whether the connection safeguards that only make
-    sense for a server reachable over the network are applied - binding a
-    database connection to the client address that opened it and closing it
-    when it has been unused for too long (see
-    :mod:`mcp_plugin.lib.db_functions`).
+    Used for the two things that only make sense for a server reachable over
+    the network: closing a database connection that has been unused for too
+    long, and refusing to open one at all when the client's address cannot be
+    determined (see :mod:`mcp_plugin.lib.db_functions`).
+
+    It is deliberately NOT what decides whether an open connection is checked
+    against the address it was opened from. That check is unconditional, so
+    that it cannot be turned off by serving without going through
+    :func:`mcp_plugin.lib.server.start`, or by a transport left recorded from a
+    server that has already stopped.
 
     Args:
         transport (str): The transport being served, or None to reset.
@@ -95,6 +101,58 @@ def is_http_transport() -> bool:
     return _active_transport == TRANSPORT_STREAMABLE_HTTP
 
 
+# The token every form of a loopback address is normalized to. A client talking
+# to a dual-stack server may be seen as ::1 on one request and 127.0.0.1 on the
+# next while being the very same client, so all loopback forms have to compare
+# equal. It is deliberately not a valid IP literal, so it can never collide with
+# an address a client really connects from.
+LOOPBACK_ADDRESS = "loopback"
+
+
+def normalize_client_address(address) -> Optional[str]:
+    """Returns a client address in the form used to compare addresses.
+
+    The same client can be reported under more than one spelling of its
+    address: an IPv4 client on a dual-stack socket arrives as the IPv4-mapped
+    ``::ffff:a.b.c.d``, an IPv6 address can be written out uncompressed, and a
+    local client shows up as either ``127.0.0.1`` or ``::1``. As the connection
+    binding compares addresses for equality, they must all be reduced to one
+    spelling first - otherwise the same client is mistaken for a different one.
+
+    Anything that is not an IP address is passed through unchanged; it is then
+    only ever compared with itself.
+
+    Args:
+        address (str): The address to normalize, or None.
+
+    Returns:
+        The normalized address, or None if there was none.
+    """
+    if address is None:
+        return None
+
+    address = address.strip()
+    if not address:
+        return None
+
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        # Not an IP address at all - a unix socket path, for instance.
+        return address
+
+    # ::ffff:a.b.c.d and a.b.c.d are the same host, addressed twice over.
+    mapped = getattr(parsed, "ipv4_mapped", None)
+    if mapped is not None:
+        parsed = mapped
+
+    if parsed.is_loopback:
+        return LOOPBACK_ADDRESS
+
+    # str() of a parsed address is its canonical (compressed) form.
+    return str(parsed)
+
+
 def get_client_address(ctx) -> Optional[str]:
     """Returns the IP address the current request was sent from.
 
@@ -102,12 +160,23 @@ def get_client_address(ctx) -> Optional[str]:
     peer address of the TCP connection the request arrived on. It is not read
     from any header, as those are client-supplied and can be forged.
 
+    That the request object really carries the peer address depends on the
+    server being run with uvicorn's proxy-header handling disabled, which
+    :func:`mcp_plugin.lib.server._serve_streamable_http` takes care of;
+    otherwise uvicorn would overwrite it with the ``X-Forwarded-For`` header for
+    every request coming from a trusted address - loopback included.
+
+    The address is normalized (see :func:`normalize_client_address`) so that
+    the one returned when a connection is opened and the one returned when it
+    is used later can be compared for equality.
+
     Args:
         ctx: The MCP request context, or None.
 
     Returns:
-        The client's IP address, or None if the transport does not have one -
-        which is the case for stdio, where the client is the parent process.
+        The client's normalized IP address, or None if the transport does not
+        have one - which is the case for stdio, where the client is the parent
+        process.
     """
     if ctx is None:
         return None
@@ -120,7 +189,9 @@ def get_client_address(ctx) -> Optional[str]:
     except Exception:  # noqa: BLE001 - no request context outside a request
         return None
 
-    return getattr(getattr(request, "client", None), "host", None)
+    return normalize_client_address(
+        getattr(getattr(request, "client", None), "host", None)
+    )
 
 
 async def require_allowed_path(ctx, path) -> None:

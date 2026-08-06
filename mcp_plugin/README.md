@@ -77,14 +77,23 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 
 Served over stdio, the server talks to a single client - the process that started
 it - for its entire lifetime. Served over HTTP it is reachable by any client that
-can reach the port, so two safeguards apply there, and there only:
+can reach the port, which is what the following two safeguards are there for:
 
 - **A connection belongs to the client that opened it.** It is bound to the IP
   address `db.connect` was called from, taken from the peer address of the
   connection the request arrived on (never from a header, which a client can
   forge). A request from any other address is answered exactly as one naming a
   connection UUID that was never handed out, so a connection cannot be taken over
-  by guessing its UUID.
+  by guessing its UUID. Addresses are compared in a normalized form, so a client
+  reaching the server over IPv4 on one call and IPv6 on the next is still the
+  same client. To keep the address trustworthy, the server is run with uvicorn's
+  proxy-header handling disabled - left at its default, uvicorn would replace the
+  peer address with the `X-Forwarded-For` header of any request from a trusted
+  address, and loopback is trusted by default. Consequently, running the server
+  behind a reverse proxy collapses every client onto the proxy's address.
+  Over stdio no request carries an address, so the connection is bound to "no
+  address" and the single client keeps matching it; the comparison itself is
+  always made, and never conditional on the transport.
 - **An unused connection is closed after 30 minutes.** A background reaper closes
   the database session of every connection that has been unused for that long,
   releasing the connection on the server. The connection UUID stays valid: the
