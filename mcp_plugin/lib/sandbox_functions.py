@@ -81,6 +81,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             port: The port the new instance will listen on.
             password: Password for the root user on the new instance.
             sandbox_dir: Path where the new instance will be deployed.
+                Leave empty to use the default sandbox path.
             allow_root_from: Host pattern for a remote root account to create.
                 Defaults to '%'. Set to an empty string to skip creating it.
             server_id: server_id value for the instance.
