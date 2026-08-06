@@ -34,13 +34,22 @@ outlives the client that opened a connection, which is what the two safeguards
 below are there for. Over stdio the server talks to a single client, its own
 parent process, for its entire lifetime, so neither has anything to do:
 
-* A connection is bound to the IP address of the client that opened it. A
-  request coming from any other address is answered as if the connection did
-  not exist, so a connection cannot be taken over by guessing its UUID. The
-  check is a plain comparison of the two addresses, not something switched on
-  by the transport: over stdio no request carries an address at all, so the one
-  client always matches itself, while over HTTP ``db.connect`` refuses to open
-  a connection it cannot bind to an address.
+* A connection is bound to the client that opened it - both its peer address
+  and its MCP session id (see
+  :class:`mcp_plugin.lib.general.ClientIdentity`). Any other client is answered
+  as if the connection did not exist, so a connection cannot be taken over by
+  guessing its UUID. The session id is the part that carries the weight: it is
+  a server-generated secret, whereas an address is shared by every client
+  behind one NAT or reverse proxy and by every process on the machine on the
+  default loopback bind. The check is a plain comparison of the two identities,
+  not something switched on by the transport: over stdio a request has neither
+  part, so the one client always matches itself, while over HTTP
+  ``db.connect`` refuses to open a connection it cannot fully identify the
+  client of.
+
+  Note that this is not authentication: it binds a connection to whoever opened
+  it, but any client that can reach the port can open one of its own on the
+  stored credentials. See the README.
 * A connection that has been unused for
   :data:`mcp_plugin.lib.general.SESSION_IDLE_TIMEOUT` seconds has its session
   closed by a background reaper, releasing the server-side connection. The
@@ -400,45 +409,52 @@ class _Connection:
     cannot run two statements at once anyway.
     """
 
-    def __init__(self, uri: str, client_address: Optional[str]):
+    def __init__(self, uri: str, client):
         self.uri = uri
-        # Normalized on the way in, so the stored address and the one a later
+        # Normalized on the way in, so the stored identity and the one a later
         # request is compared against are always in the same form.
-        self.client_address = general.normalize_client_address(client_address)
+        self.client = general.normalize_client_identity(client)
         self.session = None
         self.last_used = time.monotonic()
         self.lock = threading.RLock()
 
-    def is_accessible_from(self, client_address: Optional[str]) -> bool:
-        """Returns whether a client at the given address may use this connection.
+    def is_accessible_from(self, client) -> bool:
+        """Returns whether the given client may use this connection.
 
-        A connection may be used from the address it was opened from, and from
-        no other - a plain equality, deliberately NOT conditional on the
-        transport in use. Reading the active transport here would make the
-        check fail open in every setting that does not go through
+        A connection may be used by the client that opened it and by no other:
+        same peer address, same MCP session. That is one equality of the whole
+        :class:`mcp_plugin.lib.general.ClientIdentity`, deliberately NOT
+        conditional on the transport in use. Reading the active transport here
+        would make the check fail open in every setting that does not go through
         :func:`mcp_plugin.lib.server.start`: :func:`build_mcp_server` is public,
         so an embedder can serve the tools itself, and the transport global is
-        never reset when a server stops. Both safeguards would then be silently
+        never reset when a server stops. The safeguard would then be silently
         off with nothing reporting it.
 
-        The equality covers stdio without needing to know it is stdio. There,
-        no request carries a peer address, so a connection is opened with None
-        and every later request also presents None - the single client always
-        matches itself. And the two modes cannot bleed into each other: over
-        HTTP ``db.connect`` refuses to open a connection it cannot bind to an
-        address, so a request that carries an address never meets a connection
-        opened without one.
+        The two parts answer different attacks. The address alone is weak: it
+        is not a secret, it is shared by every client behind one NAT or reverse
+        proxy, and it is shared by every process on the machine when the server
+        is bound to loopback as it is by default. The MCP session id is a
+        server-generated secret the client must have been told, so it is what
+        actually keeps one client off another's connection - including when the
+        two are indistinguishable by address.
+
+        The equality covers stdio without needing to know it is stdio. There, a
+        request has neither a peer address nor a session id, so a connection is
+        opened with an empty identity and every later request presents an empty
+        identity too - the single client always matches itself. And the two
+        modes cannot bleed into each other: over HTTP ``db.connect`` refuses to
+        open a connection it cannot fully identify the client of, so a request
+        carrying an identity never meets a connection opened without one.
 
         Args:
-            client_address (str): The address the request came from, or None.
+            client (ClientIdentity): The identity of the requesting client, as
+                returned by :func:`mcp_plugin.lib.general.get_client_identity`.
 
         Returns:
             True if the connection may be used by that client.
         """
-        return (
-            general.normalize_client_address(client_address)
-            == self.client_address
-        )
+        return general.normalize_client_identity(client) == self.client
 
     def open_session(self):
         """Opens the session, or returns the one already open.
@@ -514,7 +530,7 @@ def _open_session(uri: str):
     return mysqlsh.globals.shell.open_session(connection_data)
 
 
-def _get_connection(connection_id: str, client_address: Optional[str]):
+def _get_connection(connection_id: str, client):
     """Looks a connection up, checking that the client may use it.
 
     A connection that exists but belongs to another client is reported exactly
@@ -523,7 +539,7 @@ def _get_connection(connection_id: str, client_address: Optional[str]):
 
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
-        client_address (str): The address the request came from, or None.
+        client (ClientIdentity): The identity of the requesting client.
 
     Returns:
         The :class:`_Connection`.
@@ -531,7 +547,7 @@ def _get_connection(connection_id: str, client_address: Optional[str]):
     with _sessions_lock:
         connection = _sessions.get(connection_id)
 
-    if connection is None or not connection.is_accessible_from(client_address):
+    if connection is None or not connection.is_accessible_from(client):
         raise mysqlsh.Error(
             f"No open connection found for id '{connection_id}'. "
             "Open one first with db.connect."
@@ -541,7 +557,7 @@ def _get_connection(connection_id: str, client_address: Optional[str]):
 
 
 @contextmanager
-def use_session(connection_id: str, client_address: Optional[str] = None):
+def use_session(connection_id: str, client=None):
     """Yields the session of a connection opened with ``db.connect``.
 
     The public entry point for the other tool modules, which work on the
@@ -551,17 +567,17 @@ def use_session(connection_id: str, client_address: Optional[str] = None):
 
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
-        client_address (str): The address the request came from, as returned by
-            :func:`mcp_plugin.lib.general.get_client_address`. It must be the
-            address the connection was opened from, or the connection is
-            reported as not existing. Over stdio that is None on both sides;
-            over HTTP a connection is never opened without an address, so
-            passing None there never reaches one.
+        client (ClientIdentity): The identity of the requesting client, as
+            returned by :func:`mcp_plugin.lib.general.get_client_identity`. It
+            must be the identity the connection was opened with, or the
+            connection is reported as not existing. Over stdio that is empty on
+            both sides; over HTTP a connection is never opened without a full
+            identity, so an empty one never reaches a connection there.
 
     Yields:
         The open shell session.
     """
-    connection = _get_connection(connection_id, client_address)
+    connection = _get_connection(connection_id, client)
 
     with connection.lock:
         session = connection.open_session()
@@ -780,18 +796,21 @@ def register_db_tools(server, function_groups=()) -> None:
                 "to list the available connections, or configure it with mcp.setup."
             )
 
-        # The connection belongs to the client that opens it. Without an
-        # address to bind it to there is no way to keep another client from
-        # using it, so serving over HTTP requires one.
-        client_address = general.get_client_address(ctx)
-        if general.is_http_transport() and client_address is None:
+        # The connection belongs to the client that opens it. Without both the
+        # peer address and the MCP session id to bind it to there is no way to
+        # keep another client from using it, so serving over HTTP requires both.
+        client = general.get_client_identity(ctx)
+        if general.is_http_transport() and (
+            client.address is None or client.session_id is None
+        ):
             raise mysqlsh.Error(
-                "The address of the client could not be determined, so the "
-                "connection cannot be bound to it. Connections can only be "
-                "opened by a client the server can identify."
+                "The client could not be identified, so the connection cannot "
+                "be bound to it. Over HTTP a connection can only be opened on "
+                "an established MCP session, by a client whose address the "
+                "server can determine."
             )
 
-        connection = _Connection(uri, client_address)
+        connection = _Connection(uri, client)
         # Opened right away, so a bad password or an unreachable server is
         # reported by db.connect rather than by the first tool using it.
         connection.open_session()
@@ -817,7 +836,7 @@ def register_db_tools(server, function_groups=()) -> None:
             comment (schema_comment). Only the schemas the connection's account
             has access to are listed.
         """
-        with use_session(connection_id, general.get_client_address(ctx)) as session:
+        with use_session(connection_id, general.get_client_identity(ctx)) as session:
             return _query_rows(session, _LIST_SCHEMAS_SQL)
 
     @server.tool(name="db.list_objects")
@@ -845,7 +864,7 @@ def register_db_tools(server, function_groups=()) -> None:
         """
         sql = _LIST_OBJECTS_SQL[_normalize_object_type(object_type)]
 
-        with use_session(connection_id, general.get_client_address(ctx)) as session:
+        with use_session(connection_id, general.get_client_identity(ctx)) as session:
             return _query_rows(session, sql, [schema_name])
 
     @server.tool(name="db.get_object_details")
@@ -887,7 +906,7 @@ def register_db_tools(server, function_groups=()) -> None:
         normalized = _normalize_object_type(object_type)
         object_id = [schema_name, object_name]
 
-        with use_session(connection_id, general.get_client_address(ctx)) as session:
+        with use_session(connection_id, general.get_client_identity(ctx)) as session:
             basic = _query_rows(session, _OBJECT_BASIC_SQL[normalized], object_id)
             if not basic:
                 raise mysqlsh.Error(
@@ -971,7 +990,7 @@ def register_db_tools(server, function_groups=()) -> None:
             A dict with the result set (columns and rows) and execution
             metadata.
         """
-        with use_session(connection_id, general.get_client_address(ctx)) as session:
+        with use_session(connection_id, general.get_client_identity(ctx)) as session:
             result = session.run_sql(sql, params if params is not None else [])
 
             return _serialize_result(result)
@@ -1017,7 +1036,7 @@ def register_db_tools(server, function_groups=()) -> None:
             with open(file_path, "r", encoding="utf-8") as script_file:
                 sql_script = script_file.read()
 
-        with use_session(connection_id, general.get_client_address(ctx)) as session:
+        with use_session(connection_id, general.get_client_identity(ctx)) as session:
             results = []
             for statement in mysqlsh.mysql.split_script(sql_script):
                 if statement.strip() == "":
@@ -1037,7 +1056,7 @@ def register_db_tools(server, function_groups=()) -> None:
             None
         """
         connection = _get_connection(
-            connection_id, general.get_client_address(ctx)
+            connection_id, general.get_client_identity(ctx)
         )
 
         with _sessions_lock:

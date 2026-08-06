@@ -255,7 +255,7 @@ def _wait_for_port(host, port, timeout):
 
 
 @asynccontextmanager
-async def http_server(function_groups, timeout=None):
+async def http_server(function_groups, timeout=None, bind_host=None):
     """Runs the MCP server over streamable-http and yields its endpoint URL.
 
     A ``mariadb-shell`` subprocess is launched with
@@ -267,11 +267,15 @@ async def http_server(function_groups, timeout=None):
     Args:
         function_groups (list): The function groups the server should expose.
         timeout (float): Startup timeout in seconds.
+        bind_host (str): The ``--host`` to start the server with. Defaults to
+            127.0.0.1. The yielded URL always dials 127.0.0.1, so this is only
+            useful for hosts that still bind loopback - which is what the
+            DNS-rebinding test needs.
 
     Yields:
         The MCP endpoint URL of the running server.
     """
-    host = "127.0.0.1"
+    host = bind_host or "127.0.0.1"
     port = find_free_port()
 
     env = os.environ.copy()
@@ -297,9 +301,13 @@ async def http_server(function_groups, timeout=None):
     )
 
     try:
-        _wait_for_port(host, port, timeout if timeout is not None else _MCP_TIMEOUT)
+        # Always dialled over 127.0.0.1: bind_host only ever names something
+        # that resolves to loopback anyway.
+        _wait_for_port(
+            "127.0.0.1", port, timeout if timeout is not None else _MCP_TIMEOUT
+        )
 
-        yield f"http://{host}:{port}/mcp"
+        yield f"http://127.0.0.1:{port}/mcp"
     finally:
         proc.terminate()
         try:
@@ -309,8 +317,29 @@ async def http_server(function_groups, timeout=None):
             proc.wait()
 
 
+def mcp_http_client(headers=None):
+    """Builds the HTTP client the streamable-http transport would build itself.
+
+    Handed to :func:`http_client_session` when a test needs to control the
+    headers the transport sends - the transport takes no ``headers`` argument of
+    its own, only a pre-configured client. The returned client is NOT entered
+    yet; ``http_client_session`` does that. Its ``headers`` mapping may be
+    changed at any point, including between calls on a live session, as httpx
+    merges them into each request as it is built.
+
+    Args:
+        headers (dict): Headers to send with every request.
+
+    Returns:
+        An httpx AsyncClient with the MCP defaults.
+    """
+    from mcp.shared._httpx_utils import create_mcp_http_client
+
+    return create_mcp_http_client(headers=headers)
+
+
 @asynccontextmanager
-async def http_client_session(url, timeout=None, headers=None):
+async def http_client_session(url, timeout=None, headers=None, http_client=None):
     """Opens an MCP streamable-http client session against a running server.
 
     Args:
@@ -318,7 +347,10 @@ async def http_client_session(url, timeout=None, headers=None):
         timeout (float): Per-call timeout in seconds.
         headers (dict): Extra HTTP headers to send with every request. Used to
             drive the header-forging tests; the transport's own headers are
-            added on top of these.
+            added on top of these. Ignored when ``http_client`` is given.
+        http_client: A client from :func:`mcp_http_client` to use instead, for
+            when the test has to keep a handle on it. It is entered and closed
+            here.
 
     Yields:
         An async ``call(tool_name, arguments=None)`` coroutine returning the
@@ -332,15 +364,11 @@ async def http_client_session(url, timeout=None, headers=None):
     call_timeout = timeout if timeout is not None else _MCP_TIMEOUT
 
     async with AsyncExitStack() as stack:
-        http_client = None
-        if headers:
-            # The transport only takes extra headers via a pre-configured
-            # client; this is the same client it would build for itself.
-            from mcp.shared._httpx_utils import create_mcp_http_client
+        if http_client is None and headers:
+            http_client = mcp_http_client(headers=headers)
 
-            http_client = await stack.enter_async_context(
-                create_mcp_http_client(headers=headers)
-            )
+        if http_client is not None:
+            http_client = await stack.enter_async_context(http_client)
 
         read, write = await stack.enter_async_context(
             streamable_http_client(url, http_client=http_client)

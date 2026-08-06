@@ -9,8 +9,8 @@ MCP-compatible clients. It registers the global `mcp` object in the shell and se
 "MariaDB plc". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
-9.1.1, uvicorn 0.52.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2). Full suite:
-**29 tests pass (~36s), 92% total coverage**. Run it with
+9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
+Full suite: **41 tests pass (~36s), 92% total coverage**. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd is not on the default PATH).
 
@@ -19,6 +19,12 @@ behave like" question — is
 `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/site-packages`.
 Read the SDK and uvicorn sources THERE, not upstream. (Ask the shell itself rather than
 `find /`: `mariadb-shell --py -f <script printing module __file__>`.)
+**There are TWO dependency trees** in the shell build: that site-packages one, which is
+what actually runs, and `build/bundled-python-deps/`, a staging copy. As of this session
+they hold the same versions (mcp 2.0.0, uvicorn 0.52.1) and the files that matter are
+byte-identical — but only the site-packages one is authoritative, so always get the path
+from the running shell rather than from a filesystem search. (`/System/Volumes/Data/...`
+hits are the same files through the macOS firmlink, not a third copy.)
 
 The shell's env vars are `MARIADB_SHELL`, `MARIADB_SHELL_USER_CONFIG_HOME` and
 `MARIADB_SHELL_TERM_COLOR_MODE` — the pre-rename `MYSQLSH*` names are GONE from all
@@ -54,10 +60,41 @@ silently runs against whatever `mariadb-shell` is on PATH.
   via `mcp_server.run(transport=...)`. Verified on the bundled SDK: 2.0.0's
   `run_streamable_http_async` builds `uvicorn.Config(app, host=, port=, log_level=)`
   internally and forwards NOTHING else, so `proxy_headers` cannot be reached through
-  `run()`. `_serve_streamable_http` does exactly what the SDK does — including passing
-  `host=` into `streamable_http_app()` so the SDK's DNS-rebinding protection still
-  auto-enables on a loopback bind, and using `settings.log_level` — plus
-  **`proxy_headers=False`**. See Gotchas: this is a security fix, not a style choice.
+  `run()`. `_serve_streamable_http` does exactly what the SDK does (same
+  `streamable_http_app`, same `settings.log_level`) plus TWO deliberate differences, both
+  security fixes and neither a style choice — see Gotchas:
+  - **`proxy_headers=False`** on the `uvicorn.Config` (S1).
+  - **an explicit `transport_security=`** built by `_transport_security_settings` (S4),
+    instead of letting `streamable_http_app` decide.
+- **DNS-rebinding / Host+Origin validation is configured HERE, never left to the SDK**
+  (`_transport_security_settings` + `_dialable_host_names`). Verified on the bundled SDK:
+  `TransportSecuritySettings.enable_dns_rebinding_protection` defaults to **True**, but
+  `TransportSecurityMiddleware.__init__` does
+  `settings or TransportSecuritySettings(enable_dns_rebinding_protection=False)` — so
+  passing None means OFF. 2.0 did NOT drop the 1.x auto-enable, it moved it into
+  `lowlevel/server.py streamable_http_app()`:
+  `if transport_security is None and host in ("127.0.0.1", "localhost", "::1")`. `host` DOES
+  reach it, so the plugin's DEFAULT bind was already protected before this change — the
+  defect is the CONDITION: a case-sensitive test over three literal strings, so `LOCALHOST`,
+  `[::1]`, `127.0.0.2` (still loopback!) and EVERY non-loopback bind served with no
+  validation at all. Now always enabled, allow list derived from the real bind host:
+  loopback bind -> all of `general.LOOPBACK_HOST_NAMES`; a single address/name -> only that
+  one (loopback deliberately NOT added, it is genuinely unreachable then), bare IPv6
+  bracketed; wildcard (`general.is_wildcard_host`) -> loopback + `socket.gethostname()` /
+  `getfqdn()` / its resolved addresses. Every name is allowed BARE and with `:{port}` — the
+  SDK's own list had only `host:*`, which 421s a Host without a port (i.e. `--port=80`).
+  Origins mirror the hosts over http+https with `:*`.
+- **`allowed_hosts` option on `mcp.startServer`** (list or comma-separated string): extra
+  Host values, for a server reached under a name that cannot be derived from the bind
+  address — a reverse proxy, a port forward, a DNS alias. NEEDED, not decoration: without
+  it, enabling the validation on a wildcard bind would 421 legitimate remote clients, which
+  is worse than the status quo it replaced.
+- **There is NO authentication.** Anyone who can reach the port can `db.list_connections` +
+  `db.connect` and get a session on the stored credentials; the connection binding stops
+  takeover, not unauthorized use. Stated outright in the README (its own section, placed
+  BEFORE the connection-handling one), and `_warn_if_reachable_from_the_network` prints a
+  stderr warning naming that risk when `--host` is not loopback
+  (`general.is_loopback_host`).
 - Transports: `streamable-http` (default) and `stdio`. **stdio hardened** (`_serve_stdio`):
   real stdout (fd 1) dup'd for the transport, then fd 1 AND `sys.stdout` redirected to
   stderr so tool/shell/C output can't corrupt JSON-RPC. Uses low-level
@@ -90,26 +127,44 @@ silently runs against whatever `mariadb-shell` is on PATH.
   module global that `lib/server.start()` sets from its `transport` arg BEFORE serving.
   It gates EXACTLY TWO THINGS and nothing else (grep it — there are only two call sites
   in `lib/`): `_start_idle_reaper` and `db.connect`'s fail-closed branch.
-  - **Address binding**: a connection may only be used from the address it was opened
-    from. **`_Connection.is_accessible_from` is a PLAIN EQUALITY, NOT gated on the
-    transport** — see Gotchas, re-gating it is a fail-open. Over stdio no request carries
-    an address, so a connection is opened with None and every later call presents None:
-    the one client matches itself and the check needs no knowledge of the transport.
-    `general.get_client_address(ctx)` = `ctx.request_context.request.client.host`
-    NORMALIZED — the TCP peer of the request, deliberately NOT `X-Forwarded-For` or any
-    other header (client-supplied, forgeable). `request` is a starlette Request on HTTP
-    and None on stdio, so the `try/except` + `getattr` chain returns None there. A
-    mismatch raises the BYTE-IDENTICAL error an unknown UUID raises, so probing cannot
-    tell a real UUID from a guessed one — keep those two messages the same. In HTTP mode
-    `db.connect` with no determinable address FAILS CLOSED.
-  - **Address normalization** (`general.normalize_client_address`, applied in
-    `get_client_address`, `_Connection.__init__` AND `is_accessible_from` — all three, so
-    no caller can forget): the equality above would otherwise inherit spelling
-    false-negatives. IPv4-mapped `::ffff:a.b.c.d` -> `a.b.c.d`; EVERY loopback form ->
-    the single `general.LOOPBACK_ADDRESS = "loopback"` token (deliberately not a valid IP
-    literal, so it cannot collide with a real client address); IPv6 canonicalized via
-    `str(ipaddress.ip_address(...))`; a non-IP string (unix socket path) passed through
-    unchanged to compare only with itself; `None`/blank -> None.
+  - **Client binding**: a connection may only be used by the client that opened it —
+    **BOTH the peer address AND the MCP session id**, held together in
+    `general.ClientIdentity(address, session_id)` (a NamedTuple) and compared as ONE tuple
+    equality. **`_Connection.is_accessible_from` is a PLAIN EQUALITY, NOT gated on the
+    transport** — see Gotchas, re-gating it is a fail-open. Over stdio a request has
+    neither part, so a connection is opened with an empty identity and every later call
+    presents an empty one: the single client matches itself and the check needs no
+    knowledge of the transport. A mismatch raises the BYTE-IDENTICAL error an unknown UUID
+    raises, so probing cannot tell a real UUID from a guessed one — keep those two
+    messages the same. In HTTP mode `db.connect` FAILS CLOSED when EITHER part is missing.
+    One `general.get_client_identity(ctx)` feeds all 9 call sites (8 db tools +
+    `msm.deploy_schema`); a single value rather than two parallel args precisely so a
+    caller cannot pass one and forget the other.
+  - **Why both parts.** The address is `ctx.request_context.request.client.host` — the TCP
+    peer, deliberately NOT `X-Forwarded-For` or any other header (client-supplied,
+    forgeable). But it is not a secret and it is SHARED: by everything behind one NAT or
+    reverse proxy, and by every process on the machine on the default loopback bind (more
+    so now that all loopback forms normalize to one token). The **MCP session id** is the
+    half that actually separates clients: `mcp-session-id` header,
+    `general.get_client_session_id`, a server-generated `uuid4().hex` the client must have
+    been told. `request` is a starlette Request on HTTP and None on stdio, so the
+    `try/except` + `getattr` chains return None there for both parts.
+  - **The SDK has its own session-owner check and it is INERT here.**
+    `streamable_http_manager.py:262` rejects a request whose session was created under a
+    different credential, but `requestor = authorization_context(user) if isinstance(user,
+    AuthenticatedUser)` — with no auth configured it is always None, `_session_owners` stays
+    empty, and it never fires. So our binding is NOT redundant with it. Also useful: an
+    UNKNOWN session id is 404'd by the manager before any tool runs, while a STOLEN one
+    routes to that client's transport — i.e. the session id genuinely is the credential.
+  - **Normalization** (`general.normalize_client_address` /
+    `normalize_client_identity`, applied on produce, on store AND on compare — all three,
+    so no caller can forget; both idempotent): the equality would otherwise inherit
+    spelling false-negatives. IPv4-mapped `::ffff:a.b.c.d` -> `a.b.c.d`; EVERY loopback
+    form -> the single `general.LOOPBACK_ADDRESS = "loopback"` token (deliberately not a
+    valid IP literal, so it cannot collide with a real client address); IPv6 canonicalized
+    via `str(ipaddress.ip_address(...))`; a non-IP string (unix socket path) passed through
+    unchanged to compare only with itself; `None`/blank -> None. The session id is compared
+    EXACTLY as issued (lowercase hex; header values are case-sensitive).
   - **30-minute idle timeout** (`general.SESSION_IDLE_TIMEOUT = 1800`, raised from the
     10 minutes it shipped with in 0bba1318): a daemon reaper
     thread (`_reap_idle_sessions`, started ONCE by the first `db.connect` via
@@ -201,11 +256,9 @@ silently runs against whatever `mariadb-shell` is on PATH.
   security-review list (S1..S8+) of the connection handling.** They send one issue at a
   time; each is to be VERIFIED against the bundled SDK/uvicorn rather than taken on faith,
   fixed, and pinned by a test PROVEN to fail without the fix (revert the one line, re-run,
-  restore). **S1 and S2 are DONE and committed. S3 onwards are NOT YET RECEIVED** — the
-  user has them and will continue "tomorrow" (i.e. after 2026-08-06). S3 was described as
-  combining with S1 into connection takeover rather than mere UUID probing; S8 was
-  described as address-normalization and was folded into the S2 commit at the user's
-  instruction ("must land together with S8").
+  restore). **S1, S2, S3, S4 and S8 are DONE. S5, S6, S7 are NOT YET RECEIVED** — the user
+  has them and sends them one at a time. S8 was address-normalization and was folded into
+  the S2 commit at the user's instruction ("must land together with S8").
   - **S1 (HIGH, header-derived peer address)**: uvicorn 0.52.1 has `proxy_headers=True`
     and `forwarded_allow_ips="127.0.0.1"` by DEFAULT (config.py:220/357), and
     `ProxyHeadersMiddleware` (config.py:526) rewrites `scope["client"]` from
@@ -222,18 +275,51 @@ silently runs against whatever `mariadb-shell` is on PATH.
     plain normalized equality. PROVEN: restoring the gate fails
     `test_a_connection_stays_bound_without_an_active_transport` and
     `test_a_connection_is_usable_over_stdio` (8 others still pass).
-  - Touched this session: `lib/server.py` (`_serve_streamable_http`), `lib/general.py`
-    (`normalize_client_address`, `LOOPBACK_ADDRESS`, `get_client_address` normalizes,
+  - **S3 (MEDIUM, IP binding is the only access control, no authentication)**: three parts,
+    all built — the README says it plainly in its own section; a non-loopback `--host`
+    prints a stderr warning naming the risk; and the connection is now bound to the
+    **`Mcp-Session-Id`** as well as the address. The user re-decided this against the old
+    "deliberate non-goal" note and was right to: the session id is the only half that
+    separates clients sharing an address. PROVEN: reverting to address-only fails
+    `test_a_connection_is_bound_to_its_mcp_session`,
+    `test_the_tools_pass_the_client_identity_on` and — end to end, a real takeover —
+    `test_streamable_http_binds_a_connection_to_its_mcp_session`, whose second client's
+    `SELECT 1` came back with rows. The S1 test still passed under that revert, correctly.
+  - **S4 (MEDIUM, DNS-rebinding / Origin validation)**: the report's premise about the
+    middleware defaulting to disabled is right; its assumption that the PLUGIN was therefore
+    unprotected is NOT — 2.0 kept the auto-enable, moved into `streamable_http_app`, and
+    `host` reaches it, so the default `127.0.0.1` bind was already protected both before and
+    after S1. The real defect is the case-sensitive three-string condition (see
+    Architecture). Now configured explicitly. PROVEN: reverting to
+    `streamable_http_app(host=host)` makes `test_streamable_http_rejects_a_foreign_host_header`
+    fail with `assert 200 == 421` — a forged `Host: evil.example.com` was SERVED a real MCP
+    initialize response. The test binds `--host=LOCALHOST` on purpose: still loopback, but
+    outside the SDK's three strings, so it isolates our settings from the SDK's guess.
+  - Touched this session: `lib/server.py` (`_serve_streamable_http`,
+    `_warn_if_reachable_from_the_network`, `_transport_security_settings`,
+    `_dialable_host_names`, `allowed_hosts` through `start`), `lib/general.py`
+    (`normalize_client_address`, `LOOPBACK_ADDRESS`, `ClientIdentity`,
+    `normalize_client_identity`, `get_client_session_id`, `get_client_identity`,
+    `MCP_SESSION_ID_HEADER`, `is_loopback_host`, `is_wildcard_host`, `LOOPBACK_HOST_NAMES`,
     `import ipaddress`), `lib/db_functions.py` (`_Connection.__init__` +
-    `is_accessible_from`), `README.md`, `tests/unit/helpers.py` (`http_session` split into
-    `http_server` + `http_client_session(headers=)`), `tests/unit/test_transport_http.py`,
-    `tests/unit/test_db_sessions.py`.
-  - **RESIDUAL flagged to the user, not yet decided**: `db.connect`'s fail-closed branch is
-    still gated on `is_http_transport()` (S2 said to keep it that way), so an embedder
-    serving over HTTP without `start()` whose transport attaches no peer address would bind
-    to None and let those clients share connections. Strictly better than before (where ALL
-    connections were unbound in that case) but it is the one path where the global can still
-    soften something. Making it unconditional would need an explicit stdio exemption.
+    `is_accessible_from` + `_get_connection`/`use_session` take an identity),
+    `lib/msm_functions.py` (one call site), `server.py` (the `allowed_hosts` option),
+    `README.md`, `tests/unit/helpers.py`, `tests/unit/test_transport_http.py`,
+    `tests/unit/test_db_sessions.py`, NEW `tests/unit/test_server_binding.py`.
+  - **RESIDUALS flagged to the user, none yet decided**:
+    - `db.connect`'s fail-closed branch is still gated on `is_http_transport()` (S2 said to
+      keep it that way), so an embedder serving over HTTP without `start()` whose transport
+      attaches no peer address would bind to an empty identity and let those clients share
+      connections. Strictly better than before (where ALL connections were unbound in that
+      case) but it is the one path where the global can still soften something. Making it
+      unconditional would need an explicit stdio exemption.
+    - **`stateless_http` would now BREAK `db.connect` over HTTP** rather than weaken it: no
+      session ids are issued in that mode, so the fail-closed branch refuses. We never enable
+      it and `mcp.startServer` does not expose it — but anyone adding that option must deal
+      with this first. The safe direction, but a hard failure.
+    - A reverse proxy still collapses the ADDRESS half onto one value for everyone, so behind
+      a proxy the binding rests on the session id alone. Acceptable (it is the strong half)
+      and now stated in the README.
 - Previous session on this branch: the two connection safeguards as originally built
   (0bba1318 + 6067fd8c) — address binding + the idle timeout, then raised to 30 minutes.
   Touched `lib/general.py` (transport global, `SESSION_IDLE_TIMEOUT`,
@@ -261,7 +347,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   reworked in 82e18c4c), msm lifecycle + streamable-http transport tests (09fa116c).
 - The three introspection tools (`db.list_schemas`, `db.list_objects`,
   `db.get_object_details`) are COMMITTED (3482634a, pushed).
-- Shell fns: `mcp.info`, `mcp.version`, `mcp.setup`, `mcp.startServer`.
+- Shell fns: `mcp.info`, `mcp.version`, `mcp.setup`, `mcp.startServer` (options: `host`,
+  `port`, `transport`, `function_groups`, **`allowed_hosts`**).
 - Tools: db.* (**8**: `list_connections`, `connect`, `list_schemas`, `list_objects`,
   `get_object_details`, `execute_sql`, `execute_sql_script`, `close`),
   msm.* (**12**, path-guarded, async — the 12th is `deploy_schema`, gated on the db group),
@@ -269,14 +356,20 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
   path-reject), `test_config` (6), `test_msm` (5: create_project, elicit-accept,
   elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,
-  `test_transport_http` (**3**: list_connections, a full connect/execute/close db flow over
-  HTTP, and `test_streamable_http_ignores_a_forwarded_for_header` for S1),
-  `test_db_sessions` (**10**, the connection safeguards incl. the S2/S8 additions:
+  `test_transport_http` (**5**: list_connections, a full connect/execute/close db flow over
+  HTTP, `..._ignores_a_forwarded_for_header` for S1,
+  `..._binds_a_connection_to_its_mcp_session` for S3, and
+  `..._rejects_a_foreign_host_header` for S4 — the last one talks raw `httpx2` rather than
+  the MCP client, because it has to forge Host/Origin and assert HTTP status codes),
+  `test_db_sessions` (**11**, the connection safeguards incl. the S2/S3/S8 additions:
   `..._stays_bound_without_an_active_transport`, `..._is_usable_over_stdio`,
   `test_equivalent_spellings_of_an_address_are_the_same_client`,
-  `..._is_reachable_over_either_ip_stack`). **29 pass, ~36s.**
-- Coverage after latest run: TOTAL 92% (627 statements, 48 missed); lib/server was 100 on
-  the targeted run. Earlier full-run figures: lib/msm_functions 100, lib/server 100,
+  `..._is_reachable_over_either_ip_stack`, `..._is_bound_to_its_mcp_session`,
+  `test_client_identity_carries_the_session_id_too`), NEW `test_server_binding` (**6**:
+  loopback vs reachable vs wildcard host classification, the no-auth warning, the default
+  staying quiet, and the derived Host/Origin allow lists). **41 pass, ~36s.**
+- Coverage after latest run: TOTAL 92% (714 statements, 54 missed). Earlier full-run
+  figures: lib/msm_functions 100, lib/server 100,
   lib/general 98, lib/config 96, lib/db_functions 95, lib/sandbox_functions 93,
   server.py 85, lib/setup 84, general.py 73. What is left uncovered in
   db_functions is defensive only: the `session.close()` swallow, the reaper thread's own
@@ -321,8 +414,11 @@ silently runs against whatever `mariadb-shell` is on PATH.
 ## Files that matter
 
 - lib/general.py -> plugin data path, async `require_allowed_path`/`_confirm_trust_path`,
-  the transport global (`set_active_transport`/`is_http_transport`), `get_client_address`,
-  `normalize_client_address` + `LOOPBACK_ADDRESS`, and `SESSION_IDLE_TIMEOUT`.
+  the transport global (`set_active_transport`/`is_http_transport`), the client identity
+  (`ClientIdentity`, `get_client_identity`, `get_client_address`, `get_client_session_id`,
+  `normalize_client_address`/`normalize_client_identity`, `LOOPBACK_ADDRESS`,
+  `MCP_SESSION_ID_HEADER`), the bind-address helpers (`is_loopback_host`,
+  `is_wildcard_host`, `LOOPBACK_HOST_NAMES`) and `SESSION_IDLE_TIMEOUT`.
 - lib/config.py -> connections (secrets) + allowed paths (settings.json) + `add_allowed_path`.
 - lib/db_functions.py -> db.* tools; the `_Connection` cache (`_sessions` + `use_session` +
   the idle reaper); `_serialize_result`;
@@ -332,7 +428,12 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`;
   msm_functions also holds the db-group-gated `msm.deploy_schema`.
 - lib/server.py -> build/serve; `_serve_stdio` hardening; `_serve_streamable_http`
-  (own uvicorn, `proxy_headers=False`); passes function_groups to the registrars.
+  (own uvicorn, `proxy_headers=False`, explicit `transport_security`);
+  `_transport_security_settings` + `_dialable_host_names` (the Host/Origin allow list);
+  `_warn_if_reachable_from_the_network`; passes function_groups to the registrars.
+- tests/unit/test_server_binding.py -> the bind address: loopback/wildcard classification,
+  the no-authentication warning, and the derived Host/Origin allow lists. Pure in-process,
+  no server started, so it is fast and needs no sandbox.
 - tests/conftest.py -> ordering hook, fixtures (sandbox session, allowed_temp_dir,
   clean_config, stored_connections, non_interactive_shell).
 - tests/unit/helpers.py -> `call_tool` (has `elicitation_callback`), `mcp_session`,
@@ -342,8 +443,13 @@ silently runs against whatever `mariadb-shell` is on PATH.
   now separate**, so one server can be driven by several clients and a client can send
   forged headers. `http_session` is a thin wrapper over both and is unchanged for callers.
   Extra headers reach the transport only via a pre-built client
-  (`create_mcp_http_client(headers=...)` passed as `http_client=`) — SDK 2.0's
-  `streamable_http_client` takes no `headers` argument.
+  (`mcp_http_client(headers=...)` -> `create_mcp_http_client`, passed as `http_client=`) —
+  SDK 2.0's `streamable_http_client` takes no `headers` argument. Passing the client in also
+  lets a test mutate `client.headers` MID-SESSION (httpx merges them per request), which is
+  how the S1 test forges a header without opening a second MCP session.
+  `http_server(bind_host=...)` starts the server with a different `--host` while the yielded
+  URL always dials 127.0.0.1 — only useful for hosts that still bind loopback, which is
+  exactly what the S4 test needs (`LOCALHOST`).
 - tests/unit/test_db_sql.py -> single `_db_flow` coroutine over ONE stdio session:
   connect -> execute_sql (incl. a DECIMAL/DATETIME serialization check) ->
   execute_sql_script (inline + file + denied) -> list_schemas -> creates one object of
@@ -371,14 +477,16 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Next steps
 
-0. **RESUME HERE: the user's security-review list, S3 onwards.** They will send the next
-   issue; S1/S2/S8 are done (see Current state). Working agreement established over S1 and
-   S2, follow it for the rest: (a) VERIFY the claim against the bundled SDK/uvicorn source
-   under `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/
-   site-packages`, never against upstream docs or memory; (b) fix it in code, not via an
-   env var; (c) add a test and PROVE it discriminates by reverting the fix, re-running,
-   and restoring; (d) correct any docstring/README claim the bug had made false. Also
-   still open from S2: the residual fail-closed question in Current state.
+0. **RESUME HERE: the user's security-review list, S5 onwards.** They will send the next
+   issue; S1/S2/S3/S4/S8 are done (see Current state). Working agreement established over
+   S1-S4, follow it for the rest: (a) VERIFY the claim against the bundled SDK/uvicorn
+   source under `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/
+   site-packages`, never against upstream docs or memory — and say so when the report's
+   premise is partly wrong, as with S4, rather than letting a fix take credit it has not
+   earned; (b) fix it in code, not via an env var; (c) add a test and PROVE it discriminates
+   by reverting the fix, re-running, and restoring; (d) correct any docstring/README claim
+   the bug had made false. Also still open: the three residuals listed under S4 in Current
+   state.
 1. **`mysqlsh.globals.util.dump_schemas` / `load_dump` do NOT exist in this mariadb-shell
    build**, so `msm.deploy_schema` / `msm_plugin` `deploy_schema` with `backup=True` raise
    `AttributeError: unknown attribute: dump_schemas`. The backup feature is unusable (and
@@ -436,13 +544,32 @@ silently runs against whatever `mariadb-shell` is on PATH.
   means is uvicorn-version-dependent (in 0.52.1 it happens to become `trusted_literals =
   {""}`, matching nothing, but that is incidental), whereas `proxy_headers=False` keeps the
   middleware from being installed at all.
+- **NEVER let the SDK decide the DNS-rebinding protection.** That was S4: pass
+  `transport_security=` explicitly. `streamable_http_app` enables it only for the exact,
+  case-sensitive strings `"127.0.0.1"`, `"localhost"`, `"::1"`, so `LOCALHOST`, `[::1]`,
+  `127.0.0.2` and every non-loopback bind serve with NO Host or Origin validation. Do not
+  "simplify" `_transport_security_settings` away because the default bind happens to be
+  covered by the SDK — the whole point is that the coverage is a string match.
+  `test_streamable_http_rejects_a_foreign_host_header` binds `--host=LOCALHOST` precisely to
+  sit outside that match; do not "fix" it to 127.0.0.1, it would then pass on the SDK's
+  behaviour and stop testing ours.
 - **NEVER re-gate `_Connection.is_accessible_from` on `general.is_http_transport()`.** That
   was S2: the global is only set by `lib.server.start()` and never reset, so the check
   failed open for any embedder using the public `build_mcp_server`, and after any server
-  stopped. It is a plain equality and stdio falls out of it for free (None == None). The
-  transport is still consulted in exactly TWO places — `_start_idle_reaper` and
-  `db.connect`'s fail-closed branch — and `test_a_connection_stays_bound_without_an_active_transport`
-  will fail if that changes.
+  stopped. It is a plain equality and stdio falls out of it for free (empty identity ==
+  empty identity). The transport is still consulted in exactly TWO places —
+  `_start_idle_reaper` and `db.connect`'s fail-closed branch — and
+  `test_a_connection_stays_bound_without_an_active_transport` will fail if that changes.
+- **The connection binding is the WHOLE `ClientIdentity`, not the address.** Dropping the
+  session id half (S3) leaves a binding that cannot separate clients sharing an address —
+  everything behind a NAT or proxy, and every local process on the default loopback bind.
+  Do not "simplify" `is_accessible_from` to compare `.address`; three tests fail, one of
+  them by performing a real takeover. Also: `use_session`/`_get_connection` take an
+  IDENTITY, not a string. A caller passing a bare address string is refused (fail-closed,
+  loudly) rather than silently matching.
+- **`CLIENT_ADDRESS`/`OTHER_ADDRESS` in the tests must stay non-loopback** (`192.0.2.x`,
+  TEST-NET-1). Every loopback form normalizes to one token, so loopback addresses cannot
+  stand in for two different clients — the binding tests would assert nothing.
 - **Normalize BOTH sides of an address comparison, or don't compare at all.** With the
   strict equality, an unnormalized side reintroduces `::1` vs `127.0.0.1` and
   `::ffff:a.b.c.d` vs `a.b.c.d` false negatives — the same client locked out of its own
@@ -599,15 +726,25 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **The session started in DETACHED HEAD** at `mariadb/wip/AIPL-16` (ecc6bc3c) with no
   local branch — `git checkout -b wip/AIPL-16` was needed before committing. Check
   `git branch --show-current` before assuming there is a branch to commit onto.
-- THIS session is one commit on that branch: the S1 + S2/S8 security fixes
-  (lib/server, lib/general, lib/db_functions, README, tests/unit/helpers.py,
-  tests/unit/test_transport_http.py, tests/unit/test_db_sessions.py, this file).
+- THIS session is three commits on that branch:
+  1. **S1 + S2/S8** (faa08b11) — the proxy-header fix and the transport-independent,
+     normalized binding.
+  2. the `sandbox.deploy` `sandbox_dir` docstring note (5b94d940) — a pre-existing edit the
+     session inherited unstaged, committed separately on the user's instruction because it
+     is not part of the security work.
+  3. **S3 + S4** — the session-id binding, the no-authentication README section and warning,
+     and the explicit Host/Origin validation.
+- **The remote branch moved mid-session and the push was rejected.** `mariadb/wip/AIPL-16`
+  had gained e9122f6d (a merge of `main`, bringing 962165d7, a CI job-name change touching
+  only `.github/workflows/shell-plugins-ci.yml`). Rebased rather than merged (one commit, no
+  file overlap) and then **re-ran the full suite on the new base before pushing** — do that
+  again rather than pushing a commit that was only ever green on the old base. Note
+  `git stash push -- <path>` was needed first: the inherited unstaged edit blocked the
+  rebase.
 - Earlier commits on the branch: 0bba1318 (connection safeguards as first built),
   6067fd8c (idle timeout 10 -> 30 min), ecc6bc3c (branch rename recorded here).
-- **`mcp_plugin/lib/sandbox_functions.py` carries a one-line docstring edit that is NOT
-  this session's work** (`sandbox_dir`: "Leave empty to use the default sandbox path.") and
-  was deliberately left UNSTAGED, as was
-  `.claude/skills/create-shell-plugin/SKILL.md` before it.
+- `.claude/skills/create-shell-plugin/SKILL.md` is still deliberately left UNSTAGED (not
+  this work).
 - The `wip/AIPL-5` history below predates it and is already in `main`:
 - Session history: 3482634a (db introspection tools) -> the msm_plugin MariaDB/sandbox/
   backup commit -> the mcp_plugin `msm.deploy_schema` + db-group-gate commit -> 72c07ef8
