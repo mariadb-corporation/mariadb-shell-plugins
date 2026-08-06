@@ -73,27 +73,93 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 | `db.execute_sql_script` | Runs a multi-statement SQL script on a connection UUID. |
 | `db.close` | Closes the connection for a UUID (`session.close()`). |
 
+#### The server has no authentication
+
+**Anyone who can reach the port can use the stored database credentials.** There
+is no authentication of any kind: no token, no password, no client certificate. A
+client that can connect may call `db.list_connections` to see which connections
+are configured and `db.connect` to open one, and the server then opens it with
+the password kept in the shell's secret store. Whoever reaches the port has, in
+effect, the access of every connection configured with `mcp.setup`.
+
+The only thing standing in for access control is **where the server listens**. It
+binds to `127.0.0.1` by default, so only clients on this machine can reach it.
+Starting it with a non-loopback `--host` prints a warning to stderr and is a
+decision to hand that database access to the network; if the server has to be
+reachable remotely, put it behind a tunnel or an authenticating reverse proxy
+rather than exposing it directly.
+
+Note also that the sandbox tools can start database servers and the `msm` tools
+can read and write files within the allowed paths, so the same reachability
+applies to those.
+
+#### Requests from a browser are refused
+
+Because there is no authentication, a page open in a browser that can reach the
+port would otherwise be able to drive the database tools. Normally the browser's
+cross-origin rules stop it from reading the answers, but a DNS-rebinding attack
+removes even that: the attacker resolves their own name to the address the server
+listens on, which makes their page same-origin with it.
+
+The server therefore validates the `Host` header of every request against the
+names it actually answers to, and refuses anything else with `421`. A page loaded
+from `evil.example.com` sends that name, which is not one of them. An `Origin`
+the server does not serve is refused with `403`, while requests carrying no
+`Origin` at all (which is every non-browser client) are unaffected.
+
+The accepted names are derived from `--host`:
+
+| `--host` | Accepted `Host` values |
+| --- | --- |
+| loopback (the default) | `127.0.0.1`, `localhost`, `[::1]`, each also with the port |
+| a single address or name | that host, with and without the port |
+| `0.0.0.0` / `::` | loopback, plus this machine's hostname, FQDN and resolved addresses |
+
+If the server is reached under a name none of those cover - through a reverse
+proxy, a port forward or a DNS alias - name it with `--allowed-hosts`, otherwise
+those requests are refused:
+
+```sh
+mariadb-shell -- mcp start-server --host=0.0.0.0 --allowed-hosts=mcp.example.com
+```
+
+This is configured explicitly rather than left to the MCP SDK, which turns the
+protection on only when the host is written exactly `127.0.0.1`, `localhost` or
+`::1` - so `LOCALHOST`, `127.0.0.2` or any non-loopback bind would otherwise be
+served with no `Host` or `Origin` validation at all.
+
 #### Connection handling over HTTP
 
 Served over stdio, the server talks to a single client - the process that started
 it - for its entire lifetime. Served over HTTP it is reachable by any client that
-can reach the port, which is what the following two safeguards are there for:
+can reach the port, which is what the following two safeguards are there for.
+They stop one client from taking over another's connection; they are not a
+substitute for the authentication described above.
 
-- **A connection belongs to the client that opened it.** It is bound to the IP
-  address `db.connect` was called from, taken from the peer address of the
-  connection the request arrived on (never from a header, which a client can
-  forge). A request from any other address is answered exactly as one naming a
-  connection UUID that was never handed out, so a connection cannot be taken over
-  by guessing its UUID. Addresses are compared in a normalized form, so a client
-  reaching the server over IPv4 on one call and IPv6 on the next is still the
-  same client. To keep the address trustworthy, the server is run with uvicorn's
-  proxy-header handling disabled - left at its default, uvicorn would replace the
-  peer address with the `X-Forwarded-For` header of any request from a trusted
-  address, and loopback is trusted by default. Consequently, running the server
-  behind a reverse proxy collapses every client onto the proxy's address.
-  Over stdio no request carries an address, so the connection is bound to "no
-  address" and the single client keeps matching it; the comparison itself is
-  always made, and never conditional on the transport.
+- **A connection belongs to the client that opened it.** It is bound to two
+  things: the MCP session `db.connect` was called on, and the IP address it was
+  called from. A request that does not match both is answered exactly as one
+  naming a connection UUID that was never handed out, so a connection cannot be
+  taken over by guessing its UUID.
+  - The **MCP session id** (`Mcp-Session-Id`) is the part that does the real work.
+    The server generates it when a client initializes, so it is a secret only that
+    client has been told, and it keeps clients apart even when their addresses are
+    identical - as they are behind one NAT or reverse proxy, and as they are for
+    every process on the machine when the server is bound to loopback.
+  - The **IP address** comes from the peer address of the connection the request
+    arrived on, never from a header (which a client can forge). To keep that
+    trustworthy the server is run with uvicorn's proxy-header handling disabled -
+    left at its default, uvicorn would replace the peer address with the
+    `X-Forwarded-For` header of any request from a trusted address, and loopback
+    is trusted by default. Consequently, running behind a reverse proxy collapses
+    every client onto the proxy's address, which is exactly why the binding does
+    not rest on the address alone. Addresses are compared in a normalized form, so
+    a client reaching the server over IPv4 on one call and IPv6 on the next is
+    still the same client.
+
+  Over stdio a request has neither a peer address nor a session id, so the
+  connection is bound to "no client" and the single client keeps matching it; the
+  comparison itself is always made, and never conditional on the transport.
 - **An unused connection is closed after 30 minutes.** A background reaper closes
   the database session of every connection that has been unused for that long,
   releasing the connection on the server. The connection UUID stays valid: the

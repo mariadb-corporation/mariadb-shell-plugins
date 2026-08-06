@@ -90,7 +90,9 @@ def build_mcp_server(function_groups):
     return server
 
 
-def start(host: str, port: int, transport: str, function_groups) -> None:
+def start(
+    host: str, port: int, transport: str, function_groups, allowed_hosts=()
+) -> None:
     """Builds and serves the MCP server using the given transport.
 
     Disables the shell's interactive mode and then serves the MCP server in the
@@ -103,6 +105,9 @@ def start(host: str, port: int, transport: str, function_groups) -> None:
             "stdio".
         function_groups (list): The function groups whose tools should be
             exposed by the server.
+        allowed_hosts: Additional Host header values to accept (streamable-http
+            only), for a server reachable under a name that cannot be derived
+            from the bind address (see :func:`_transport_security_settings`).
 
     Returns:
         None
@@ -142,14 +147,58 @@ def start(host: str, port: int, transport: str, function_groups) -> None:
     if transport == general.TRANSPORT_STDIO:
         _serve_stdio(mcp_server)
     else:
-        _serve_streamable_http(mcp_server, host, port)
+        _warn_if_reachable_from_the_network(host, port)
+        _serve_streamable_http(mcp_server, host, port, allowed_hosts)
 
 
-def _serve_streamable_http(mcp_server, host: str, port: int) -> None:
+def _warn_if_reachable_from_the_network(host: str, port: int) -> None:
+    """Warns when the server is about to be exposed beyond this machine.
+
+    The MCP server has no authentication of its own: any client that can reach
+    the port can list the configured connections and open one, using the
+    credentials kept in the shell's secret store. Binding to loopback - the
+    default - is what keeps that to clients on this machine. Binding anywhere
+    else hands the same access to the network, which is worth saying out loud
+    rather than leaving to be discovered.
+
+    Written to stderr, which is where the shell's own diagnostics go and which
+    keeps it clear of anything a client reads.
+
+    Args:
+        host (str): The host the server is about to bind to.
+        port (int): The port the server is about to listen on.
+
+    Returns:
+        None
+    """
+    if general.is_loopback_host(host):
+        return
+
+    print(
+        f"\nWARNING: the MariaDB MCP server is about to listen on {host}:{port}, "
+        "which is reachable from other machines.\n"
+        "         The server has NO AUTHENTICATION: anyone who can reach this "
+        "port can list the\n"
+        "         configured database connections and open them, using the "
+        "stored credentials.\n"
+        "         Bind to 127.0.0.1 (the default) and put a tunnel or an "
+        "authenticating proxy in\n"
+        "         front of it if it has to be reachable remotely.\n",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def _serve_streamable_http(
+    mcp_server, host: str, port: int, allowed_hosts=()
+) -> None:
     """Serves the MCP server over streamable-http on our own uvicorn server.
 
-    This is what ``MCPServer.run(transport="streamable-http")`` does, with one
-    deliberate difference: uvicorn's proxy-header handling is turned OFF.
+    This is what ``MCPServer.run(transport="streamable-http")`` does, with two
+    deliberate differences: uvicorn's proxy-header handling is turned OFF, and
+    the transport's DNS-rebinding protection is configured explicitly rather
+    than left to the SDK to guess at (see
+    :func:`_transport_security_settings`).
 
     Uvicorn enables ``ProxyHeadersMiddleware`` by default, and that middleware
     overwrites the ASGI ``client`` entry - the peer address the connection
@@ -169,6 +218,8 @@ def _serve_streamable_http(mcp_server, host: str, port: int) -> None:
         mcp_server: The MCPServer instance to serve.
         host (str): The host address to bind to.
         port (int): The TCP port to listen on.
+        allowed_hosts: Additional Host header values to accept, for a server
+            reachable under a name this cannot derive from the bind address.
 
     Returns:
         None
@@ -176,9 +227,10 @@ def _serve_streamable_http(mcp_server, host: str, port: int) -> None:
     import anyio
     import uvicorn
 
-    # Passing the host along is what auto-enables the SDK's DNS-rebinding
-    # protection for a loopback bind, exactly as run() would.
-    starlette_app = mcp_server.streamable_http_app(host=host)
+    starlette_app = mcp_server.streamable_http_app(
+        host=host,
+        transport_security=_transport_security_settings(host, port, allowed_hosts),
+    )
 
     config = uvicorn.Config(
         starlette_app,
@@ -189,6 +241,129 @@ def _serve_streamable_http(mcp_server, host: str, port: int) -> None:
     )
 
     anyio.run(uvicorn.Server(config).serve)
+
+
+def _dialable_host_names(host: str) -> list:
+    """Returns the names a client can reach a server bound to ``host`` by.
+
+    These become the allowed values of the Host header. Which spelling a client
+    dials is its own choice, so all of them have to be accepted: a loopback
+    server answers to ``127.0.0.1``, ``localhost`` and ``[::1]`` alike.
+
+    Args:
+        host (str): The host the server binds to.
+
+    Returns:
+        The list of host names, without ports.
+    """
+    if general.is_wildcard_host(host):
+        # Bound to every interface: reachable at loopback and under this
+        # machine's own name and addresses. A name that merely resolves here -
+        # a DNS alias, or the name of a proxy in front - cannot be derived and
+        # has to be named with the allowed_hosts option.
+        import socket
+
+        names = list(general.LOOPBACK_HOST_NAMES)
+        for name in (socket.gethostname(), socket.getfqdn()):
+            if name and name not in names:
+                names.append(name)
+
+        try:
+            for info in socket.getaddrinfo(socket.gethostname(), None):
+                address = info[4][0]
+                # An IPv6 address is bracketed in a Host header.
+                if ":" in address:
+                    address = f"[{address}]"
+                if address not in names:
+                    names.append(address)
+        except OSError:
+            # Unresolvable hostname: the loopback names and the hostname
+            # itself are all that can be offered.
+            pass
+
+        return names
+
+    if general.is_loopback_host(host):
+        # Every loopback spelling reaches the same server, whichever one it was
+        # bound with. This also covers the addresses beyond 127.0.0.1 in
+        # 127.0.0.0/8, which a client still reaches as one of these three.
+        return list(general.LOOPBACK_HOST_NAMES)
+
+    # A specific address or name: exactly that, bracketing a bare IPv6 address
+    # as a Host header would carry it.
+    host = host.strip()
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+
+    return [host]
+
+
+def _transport_security_settings(host: str, port: int, allowed_hosts=()):
+    """Builds the DNS-rebinding protection for the host being bound.
+
+    Without this the protection is decided by the SDK, and the way it decides
+    is worth not depending on: ``streamable_http_app`` turns it on only when no
+    settings are passed AND the host is exactly one of ``"127.0.0.1"``,
+    ``"localhost"`` or ``"::1"``. It is a case-sensitive comparison of literal
+    strings, so ``LOCALHOST``, ``[::1]`` or any other address in 127.0.0.0/8
+    silently serves with NO Host or Origin validation at all - and so does
+    every non-loopback bind, which is where it would matter most. Passing
+    settings explicitly takes that decision away from a string match.
+
+    What it protects against: the server has no authentication (see
+    :func:`_warn_if_reachable_from_the_network`), so a page in a browser that
+    can reach it could otherwise drive the database tools. It cannot read the
+    responses cross-origin, but a DNS-rebinding attack removes even that limit
+    by resolving the attacker's own name to the address the server is on, which
+    makes the page same-origin with it. Validating the Host header defeats
+    that: the browser sends the name the page was loaded from, which is not one
+    the server answers to.
+
+    Requests without an Origin header stay allowed, as that is every non-browser
+    client - a browser sets Origin on the POSTs the MCP transport makes.
+
+    Args:
+        host (str): The host the server binds to.
+        port (int): The port the server listens on.
+        allowed_hosts: Additional Host header values to accept, for a server
+            reachable under a name that cannot be derived from the bind
+            address - through a proxy, a port forward or a DNS alias.
+
+    Returns:
+        The TransportSecuritySettings to serve with.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    names = _dialable_host_names(host)
+
+    hosts = []
+    origins = []
+    for name in names:
+        # Both the bare name, as sent when the port is the scheme's default,
+        # and the name at the port actually being served.
+        for value in (name, f"{name}:{port}"):
+            if value not in hosts:
+                hosts.append(value)
+
+        # Any port, since a browser page served from this same host is as
+        # trusted as any other local client - and no more.
+        for scheme in ("http", "https"):
+            origins.extend((f"{scheme}://{name}", f"{scheme}://{name}:*"))
+
+    for name in allowed_hosts or ():
+        name = str(name).strip()
+        if not name or name in hosts:
+            continue
+        hosts.append(name)
+        # An entry may already carry a port; offer both forms as an origin.
+        for scheme in ("http", "https"):
+            origins.extend((f"{scheme}://{name}", f"{scheme}://{name}:*"))
+
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
 
 
 def _serve_stdio(mcp_server) -> None:

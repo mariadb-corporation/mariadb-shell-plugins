@@ -16,11 +16,12 @@
 """Tests for the connection handling of the db tools.
 
 Covers the two safeguards that matter while serving over HTTP: a connection may
-only be used by the client that opened it, and a connection that has been
-unused for too long has its session closed and transparently opened again when
-it is used next. The first of the two is a plain address comparison that holds
-whatever the transport is - including when no transport was recorded at all -
-so it is exercised in all three of those states.
+only be used by the client that opened it - same peer address AND same MCP
+session - and a connection that has been unused for too long has its session
+closed and transparently opened again when it is used next. The first of the two
+is a plain identity comparison that holds whatever the transport is - including
+when no transport was recorded at all - so it is exercised in all three of those
+states.
 
 These drive lib/db_functions.py in-process with a stub session, so no database
 server is needed and no time has to be waited out. The tools themselves are
@@ -42,8 +43,17 @@ pytest.importorskip("mcp")
 
 from mcp_plugin.lib import db_functions, general
 
+# Deliberately NOT loopback: every loopback form normalizes to one token, so
+# loopback addresses could not stand in for two different clients here.
 CLIENT_ADDRESS = "192.0.2.10"
 OTHER_ADDRESS = "192.0.2.20"
+
+# MCP session ids as the transport generates them (uuid4().hex).
+SESSION_ID = "0123456789abcdef0123456789abcdef"
+OTHER_SESSION_ID = "fedcba9876543210fedcba9876543210"
+
+# The identity a request over stdio presents: it has neither part.
+STDIO_CLIENT = general.ClientIdentity()
 
 
 class _StubSession:
@@ -70,25 +80,39 @@ class _ToolRecorder:
         return decorator
 
 
-def _context(client_address):
-    """Builds a request context reporting the given client address.
+def _identity(client_address, session_id=SESSION_ID):
+    """Builds the identity a client at the given address on that session has."""
+    return general.ClientIdentity(client_address, session_id)
+
+
+def _context(client_address, session_id=SESSION_ID):
+    """Builds a request context reporting the given client address and session.
 
     Mirrors what the HTTP transports attach to the context: the request they
-    received, whose ``client`` carries the peer address. ``None`` produces a
-    context without a request, which is what a tool sees over stdio.
+    received, whose ``client`` carries the peer address and whose headers carry
+    the MCP session id. Both being None produces a context without a request at
+    all, which is what a tool sees over stdio; either one alone produces a
+    request missing that part, which is what the fail-closed branch of
+    db.connect is there for.
     """
     request = None
-    if client_address is not None:
-        request = SimpleNamespace(
-            client=SimpleNamespace(host=client_address, port=54321)
-        )
+    if client_address is not None or session_id is not None:
+        client = None
+        if client_address is not None:
+            client = SimpleNamespace(host=client_address, port=54321)
+
+        headers = {}
+        if session_id is not None:
+            headers[general.MCP_SESSION_ID_HEADER] = session_id
+
+        request = SimpleNamespace(client=client, headers=headers)
 
     return SimpleNamespace(request_context=SimpleNamespace(request=request))
 
 
-def _register_connection(client_address, session=None):
+def _register_connection(client, session=None):
     """Registers a connection with a stub session and returns its id."""
-    connection = db_functions._Connection("root@127.0.0.1:3306", client_address)
+    connection = db_functions._Connection("root@127.0.0.1:3306", client)
     connection.session = session if session is not None else _StubSession()
 
     connection_id = "test-connection-id"
@@ -125,7 +149,7 @@ def stdio_transport():
         db_functions._sessions.clear()
 
 
-# --- the client address ---------------------------------------------------
+# --- the identity of the requesting client ---------------------------------
 
 
 def test_client_address_is_read_from_the_request():
@@ -143,7 +167,7 @@ def test_client_address_is_read_from_the_request():
 
     # A request without a peer (stdio) and no context at all both yield None,
     # rather than an address that could be mistaken for a real one.
-    assert general.get_client_address(_context(None)) is None
+    assert general.get_client_address(_context(None, None)) is None
     assert general.get_client_address(None) is None
 
     # Outside of a request the context has no request context to read.
@@ -155,26 +179,62 @@ def test_client_address_is_read_from_the_request():
     assert general.get_client_address(_NoRequestContext()) is None
 
 
+def test_client_identity_carries_the_session_id_too():
+    """The identity is the peer address plus the MCP session id.
+
+    The session id is what an address cannot be: a secret. It is generated by
+    the server when the client initializes and echoed back in the
+    Mcp-Session-Id header, so it distinguishes clients that share an address -
+    everything behind one NAT or reverse proxy, and every process on the
+    machine on the default loopback bind.
+    """
+    assert general.get_client_identity(_context(CLIENT_ADDRESS)) == _identity(
+        CLIENT_ADDRESS
+    )
+
+    # The address half is normalized inside the identity, the session id is
+    # compared exactly as the transport issued it.
+    assert general.get_client_identity(
+        _context("::ffff:192.0.2.10", SESSION_ID)
+    ) == _identity(CLIENT_ADDRESS)
+
+    # Over stdio a request has neither part, and neither has a call made
+    # outside of a request.
+    assert general.get_client_identity(_context(None, None)) == STDIO_CLIENT
+    assert general.get_client_identity(None) == STDIO_CLIENT
+
+    # Half an identity stays half an identity - db.connect refuses those over
+    # HTTP rather than binding a connection to something incomplete.
+    assert general.get_client_identity(_context(CLIENT_ADDRESS, None)) == _identity(
+        CLIENT_ADDRESS, None
+    )
+    assert general.get_client_identity(_context(None, SESSION_ID)) == _identity(
+        None, SESSION_ID
+    )
+
+
 # --- binding a connection to the client that opened it --------------------
 
 
 def test_a_connection_is_bound_to_its_client_over_http(http_transport):
     """Only the client that opened a connection can use it."""
-    connection_id, connection = _register_connection(CLIENT_ADDRESS)
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
 
     # The client that opened it gets its session back.
-    with db_functions.use_session(connection_id, CLIENT_ADDRESS) as session:
+    with db_functions.use_session(connection_id, _identity(CLIENT_ADDRESS)) as session:
         assert session is connection.session
 
     # Another client is told the connection does not exist, exactly as it is
     # told for an id that was never handed out - so guessing a UUID reveals
     # nothing about whether it is a real one.
     with pytest.raises(mysqlsh.Error) as taken_over:
-        with db_functions.use_session(connection_id, OTHER_ADDRESS):
+        with db_functions.use_session(connection_id, _identity(OTHER_ADDRESS)):
             pass
 
     with pytest.raises(mysqlsh.Error) as unknown:
-        with db_functions.use_session("no-such-connection-id", CLIENT_ADDRESS):
+        with db_functions.use_session(
+            "no-such-connection-id", _identity(CLIENT_ADDRESS)
+        ):
             pass
 
     assert str(taken_over.value).replace(connection_id, "") == str(
@@ -182,34 +242,73 @@ def test_a_connection_is_bound_to_its_client_over_http(http_transport):
     ).replace("no-such-connection-id", "")
 
     # A request the server cannot attribute to any client is refused as well.
-    with pytest.raises(mysqlsh.Error):
-        with db_functions.use_session(connection_id, None):
-            pass
+    for client in (STDIO_CLIENT, None):
+        with pytest.raises(mysqlsh.Error):
+            with db_functions.use_session(connection_id, client):
+                pass
 
     # The session was left alone by the refused attempts.
+    assert connection.session.closed is False
+
+
+def test_a_connection_is_bound_to_its_mcp_session(http_transport):
+    """The same address on a different MCP session is a different client.
+
+    This is the half of the binding that is worth anything when addresses do
+    not distinguish clients - behind a NAT or a reverse proxy, or between two
+    processes on the machine talking to a loopback-bound server. The session id
+    is server-generated, so a client cannot present one it was not given.
+    """
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
+
+    # Same address, another session: refused.
+    with pytest.raises(mysqlsh.Error):
+        with db_functions.use_session(
+            connection_id, _identity(CLIENT_ADDRESS, OTHER_SESSION_ID)
+        ):
+            pass
+
+    # Same address, no session at all: refused.
+    with pytest.raises(mysqlsh.Error):
+        with db_functions.use_session(
+            connection_id, _identity(CLIENT_ADDRESS, None)
+        ):
+            pass
+
+    # The right session from the wrong address is refused too, so neither half
+    # of the identity is sufficient on its own.
+    with pytest.raises(mysqlsh.Error):
+        with db_functions.use_session(connection_id, _identity(OTHER_ADDRESS)):
+            pass
+
+    # Both parts matching is what gets the session back.
+    with db_functions.use_session(connection_id, _identity(CLIENT_ADDRESS)) as session:
+        assert session is connection.session
+
     assert connection.session.closed is False
 
 
 def test_a_connection_is_usable_over_stdio(stdio_transport):
     """Over stdio the single client always matches itself.
 
-    No request over stdio carries a peer address, so a connection is opened
-    with None and every later call presents None again. The address comparison
-    therefore lets the one client through without having to know it is stdio -
-    which is what keeps it from being a check that can be switched off.
+    No request over stdio carries a peer address or a session id, so a
+    connection is opened with an empty identity and every later call presents an
+    empty identity again. The comparison therefore lets the one client through
+    without having to know it is stdio - which is what keeps it from being a
+    check that can be switched off.
     """
-    connection_id, connection = _register_connection(None)
+    connection_id, connection = _register_connection(STDIO_CLIENT)
 
     for _ in range(2):
-        with db_functions.use_session(connection_id, None) as session:
+        with db_functions.use_session(connection_id, STDIO_CLIENT) as session:
             assert session is connection.session
 
-    # A stdio connection is not a connection that anybody may use: an address
+    # A stdio connection is not a connection that anybody may use: an identity
     # cannot reach it either. This cannot happen while serving over stdio (no
-    # request has an address there) and is asserted only to pin that the
-    # comparison is an equality and not an "unless we are over HTTP".
+    # request has one there) and is asserted only to pin that the comparison is
+    # an equality and not an "unless we are over HTTP".
     with pytest.raises(mysqlsh.Error):
-        with db_functions.use_session(connection_id, CLIENT_ADDRESS):
+        with db_functions.use_session(connection_id, _identity(CLIENT_ADDRESS)):
             pass
 
 
@@ -219,24 +318,31 @@ def test_a_connection_stays_bound_without_an_active_transport():
     ``lib.server.start`` records the transport before serving, but
     ``build_mcp_server`` is public: an embedder can register the tools and
     serve them itself, and nothing resets the recorded transport when a server
-    stops. If the address check consulted that global it would fail open in
-    exactly those cases, with no error to notice it by. So it does not - a
-    connection bound to an address is only ever usable from that address, no
-    matter what the transport global says.
+    stops. If the check consulted that global it would fail open in exactly
+    those cases, with no error to notice it by. So it does not - a connection
+    bound to a client is only ever usable by that client, no matter what the
+    transport global says.
     """
     db_functions._sessions.clear()
     general.set_active_transport(None)
     try:
         assert general.is_http_transport() is False
 
-        connection_id, connection = _register_connection(CLIENT_ADDRESS)
+        connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
 
-        with db_functions.use_session(connection_id, CLIENT_ADDRESS) as session:
+        with db_functions.use_session(
+            connection_id, _identity(CLIENT_ADDRESS)
+        ) as session:
             assert session is connection.session
 
-        for client_address in (OTHER_ADDRESS, None):
+        for client in (
+            _identity(OTHER_ADDRESS),
+            _identity(CLIENT_ADDRESS, OTHER_SESSION_ID),
+            STDIO_CLIENT,
+            None,
+        ):
             with pytest.raises(mysqlsh.Error):
-                with db_functions.use_session(connection_id, client_address):
+                with db_functions.use_session(connection_id, client):
                     pass
 
         assert connection.session.closed is False
@@ -277,14 +383,16 @@ def test_equivalent_spellings_of_an_address_are_the_same_client():
 
 def test_a_connection_is_reachable_over_either_ip_stack(http_transport):
     """The two loopback forms of one client reach the same connection."""
-    connection_id, connection = _register_connection("127.0.0.1")
+    connection_id, connection = _register_connection(_identity("127.0.0.1"))
 
     for client_address in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
-        with db_functions.use_session(connection_id, client_address) as session:
+        with db_functions.use_session(
+            connection_id, _identity(client_address)
+        ) as session:
             assert session is connection.session
 
 
-def test_the_tools_pass_the_client_address_on(http_transport, monkeypatch):
+def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
     """db.connect binds to the caller and the db tools check the binding."""
     opened = []
 
@@ -303,39 +411,51 @@ def test_the_tools_pass_the_client_address_on(http_transport, monkeypatch):
 
     connection_id = tools.tools["db.connect"](_context(CLIENT_ADDRESS), uri)
     assert opened == [uri]
-    assert db_functions._sessions[connection_id].client_address == CLIENT_ADDRESS
+    assert db_functions._sessions[connection_id].client == _identity(CLIENT_ADDRESS)
 
     # Opening a connection over HTTP starts the reaper that closes the idle
     # sessions - once, however many connections are opened.
     reaper = db_functions._idle_reaper
     assert reaper is not None and reaper.is_alive()
 
-    second_id = tools.tools["db.connect"](_context(OTHER_ADDRESS), uri)
+    second_id = tools.tools["db.connect"](
+        _context(OTHER_ADDRESS, OTHER_SESSION_ID), uri
+    )
     assert db_functions._idle_reaper is reaper
     assert opened == [uri, uri]
 
     # Each connection is bound to its own client, so the second one is no way
     # into the first.
+    other = _context(OTHER_ADDRESS, OTHER_SESSION_ID)
     with pytest.raises(mysqlsh.Error):
-        tools.tools["db.execute_sql"](
-            _context(OTHER_ADDRESS), connection_id, "SELECT 1"
-        )
-    tools.tools["db.close"](_context(OTHER_ADDRESS), second_id)
+        tools.tools["db.execute_sql"](other, connection_id, "SELECT 1")
+    tools.tools["db.close"](other, second_id)
 
     # A tool called by another client does not reach the connection.
     with pytest.raises(mysqlsh.Error):
+        tools.tools["db.execute_sql"](other, connection_id, "SELECT 1")
+
+    # Nor does one sharing the address but not the MCP session, which is the
+    # case that an address alone cannot tell apart.
+    with pytest.raises(mysqlsh.Error):
         tools.tools["db.execute_sql"](
-            _context(OTHER_ADDRESS), connection_id, "SELECT 1"
+            _context(CLIENT_ADDRESS, OTHER_SESSION_ID), connection_id, "SELECT 1"
         )
 
     # Nor can another client close it.
     with pytest.raises(mysqlsh.Error):
-        tools.tools["db.close"](_context(OTHER_ADDRESS), connection_id)
+        tools.tools["db.close"](other, connection_id)
     assert connection_id in db_functions._sessions
 
-    # Without a client address to bind it to, no connection is opened at all.
-    with pytest.raises(mysqlsh.Error):
-        tools.tools["db.connect"](_context(None), uri)
+    # Half an identity is not enough to bind a connection to, so over HTTP
+    # db.connect refuses it: no address, no MCP session, and neither.
+    for context in (
+        _context(None, SESSION_ID),
+        _context(CLIENT_ADDRESS, None),
+        _context(None, None),
+    ):
+        with pytest.raises(mysqlsh.Error):
+            tools.tools["db.connect"](context, uri)
     assert opened == [uri, uri]
 
     # The client that opened the connection closes it.
@@ -349,7 +469,7 @@ def test_the_tools_pass_the_client_address_on(http_transport, monkeypatch):
 def test_an_idle_session_is_closed_and_opened_again(http_transport, monkeypatch):
     """An unused session is closed; using the connection opens a new one."""
     first_session = _StubSession()
-    connection_id, connection = _register_connection(CLIENT_ADDRESS, first_session)
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS), first_session)
 
     # A connection that has just been used is left alone.
     assert db_functions._close_idle_sessions() == 0
@@ -372,7 +492,7 @@ def test_an_idle_session_is_closed_and_opened_again(http_transport, monkeypatch)
     )
 
     # Using the connection opens a new session, transparently to the caller.
-    with db_functions.use_session(connection_id, CLIENT_ADDRESS) as session:
+    with db_functions.use_session(connection_id, _identity(CLIENT_ADDRESS)) as session:
         assert session is second_session
     assert connection.session is second_session
 
@@ -384,10 +504,10 @@ def test_an_idle_session_is_closed_and_opened_again(http_transport, monkeypatch)
 def test_a_session_in_use_is_not_closed(http_transport):
     """The reaper never closes a session another thread is working with."""
     session = _StubSession()
-    connection_id, connection = _register_connection(CLIENT_ADDRESS, session)
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS), session)
 
     closed = []
-    with db_functions.use_session(connection_id, CLIENT_ADDRESS):
+    with db_functions.use_session(connection_id, _identity(CLIENT_ADDRESS)):
         # Idle for long enough on paper - a statement running longer than the
         # timeout must still not have its session pulled away.
         connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
@@ -411,7 +531,7 @@ def test_a_session_in_use_is_not_closed(http_transport):
 def test_close_does_not_open_an_idle_session_again(http_transport, monkeypatch):
     """db.close on a connection whose session was closed opens nothing."""
     session = _StubSession()
-    connection_id, connection = _register_connection(CLIENT_ADDRESS, session)
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS), session)
 
     connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
     assert db_functions._close_idle_sessions() == 1
