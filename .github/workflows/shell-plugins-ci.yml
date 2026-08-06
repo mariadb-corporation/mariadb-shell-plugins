@@ -15,6 +15,7 @@ on:
 
 jobs:
   build:
+    name: Shell-Plugins-CI-Verification
     runs-on: self-linux-x64
 
     env:
