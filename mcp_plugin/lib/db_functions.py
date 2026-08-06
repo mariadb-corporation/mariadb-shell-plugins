@@ -30,13 +30,17 @@ returns. That UUID identifies the connection for the ``db.execute_sql`` and
 are independent of the shell's global session.
 
 When the server is served over HTTP it is reachable by more than one client and
-outlives the client that opened a connection, so two safeguards apply there
-(and only there - over stdio the server talks to a single client, its own
-parent process, for its entire lifetime):
+outlives the client that opened a connection, which is what the two safeguards
+below are there for. Over stdio the server talks to a single client, its own
+parent process, for its entire lifetime, so neither has anything to do:
 
 * A connection is bound to the IP address of the client that opened it. A
   request coming from any other address is answered as if the connection did
-  not exist, so a connection cannot be taken over by guessing its UUID.
+  not exist, so a connection cannot be taken over by guessing its UUID. The
+  check is a plain comparison of the two addresses, not something switched on
+  by the transport: over stdio no request carries an address at all, so the one
+  client always matches itself, while over HTTP ``db.connect`` refuses to open
+  a connection it cannot bind to an address.
 * A connection that has been unused for
   :data:`mcp_plugin.lib.general.SESSION_IDLE_TIMEOUT` seconds has its session
   closed by a background reaper, releasing the server-side connection. The
@@ -398,7 +402,9 @@ class _Connection:
 
     def __init__(self, uri: str, client_address: Optional[str]):
         self.uri = uri
-        self.client_address = client_address
+        # Normalized on the way in, so the stored address and the one a later
+        # request is compared against are always in the same form.
+        self.client_address = general.normalize_client_address(client_address)
         self.session = None
         self.last_used = time.monotonic()
         self.lock = threading.RLock()
@@ -406,9 +412,22 @@ class _Connection:
     def is_accessible_from(self, client_address: Optional[str]) -> bool:
         """Returns whether a client at the given address may use this connection.
 
-        Over stdio there is only ever one client, so the address is not
-        checked. Over HTTP the connection belongs to the client that opened it
-        and to no one else.
+        A connection may be used from the address it was opened from, and from
+        no other - a plain equality, deliberately NOT conditional on the
+        transport in use. Reading the active transport here would make the
+        check fail open in every setting that does not go through
+        :func:`mcp_plugin.lib.server.start`: :func:`build_mcp_server` is public,
+        so an embedder can serve the tools itself, and the transport global is
+        never reset when a server stops. Both safeguards would then be silently
+        off with nothing reporting it.
+
+        The equality covers stdio without needing to know it is stdio. There,
+        no request carries a peer address, so a connection is opened with None
+        and every later request also presents None - the single client always
+        matches itself. And the two modes cannot bleed into each other: over
+        HTTP ``db.connect`` refuses to open a connection it cannot bind to an
+        address, so a request that carries an address never meets a connection
+        opened without one.
 
         Args:
             client_address (str): The address the request came from, or None.
@@ -416,11 +435,9 @@ class _Connection:
         Returns:
             True if the connection may be used by that client.
         """
-        if not general.is_http_transport():
-            return True
-
         return (
-            client_address is not None and client_address == self.client_address
+            general.normalize_client_address(client_address)
+            == self.client_address
         )
 
     def open_session(self):
@@ -535,9 +552,11 @@ def use_session(connection_id: str, client_address: Optional[str] = None):
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
         client_address (str): The address the request came from, as returned by
-            :func:`mcp_plugin.lib.general.get_client_address`. Required while
-            serving over HTTP, where a connection may only be used by the
-            client that opened it.
+            :func:`mcp_plugin.lib.general.get_client_address`. It must be the
+            address the connection was opened from, or the connection is
+            reported as not existing. Over stdio that is None on both sides;
+            over HTTP a connection is never opened without an address, so
+            passing None there never reaches one.
 
     Yields:
         The open shell session.

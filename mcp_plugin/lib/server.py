@@ -25,23 +25,28 @@ Schema Management tools (see :mod:`mcp_plugin.lib.msm_functions`), which can be
 loaded independently - and serves it in the foreground using one of two
 transports:
 
-* ``streamable-http`` (default): served over HTTP on the configured host/port.
+* ``streamable-http`` (default): served over HTTP on the configured host/port,
+  on a uvicorn server configured here rather than by the SDK, so that the
+  proxy-header handling that would let a client choose the peer address it is
+  seen as stays off (see :func:`_serve_streamable_http`).
 * ``stdio``: communicates over stdin/stdout; its lifetime is driven by the
   client. The real stdout is reserved for the JSON-RPC protocol and all other
   output is redirected to stderr (see :func:`_serve_stdio`).
 
 The transport in use is recorded via
 :func:`mcp_plugin.lib.general.set_active_transport` before serving starts. Over
-HTTP the server is reachable by more than one client, so the database
-connections are bound to the client that opened them and closed once they fall
-idle (see :mod:`mcp_plugin.lib.db_functions`); over stdio, where there is only
-ever the one client that owns the server process, neither applies.
+HTTP the server is reachable by more than one client, so a database connection
+is only opened for a client whose address can be determined, and is closed once
+it falls idle (see :mod:`mcp_plugin.lib.db_functions`); over stdio, where there
+is only ever the one client that owns the server process, neither applies. That
+an open connection may only be used from the address it was opened from is not
+tied to the recorded transport - it holds either way.
 
 The shell's interactive mode is disabled before serving, so the wrapped ``msm``
 plugin functions return their results instead of prompting for input.
 """
 
-# cSpell:ignore mysqlsh MariaDB mcpserver streamable fdopen dup2
+# cSpell:ignore mysqlsh MariaDB mcpserver streamable fdopen dup2 uvicorn starlette
 
 import os
 import sys
@@ -137,7 +142,53 @@ def start(host: str, port: int, transport: str, function_groups) -> None:
     if transport == general.TRANSPORT_STDIO:
         _serve_stdio(mcp_server)
     else:
-        mcp_server.run(transport=transport, host=host, port=port)
+        _serve_streamable_http(mcp_server, host, port)
+
+
+def _serve_streamable_http(mcp_server, host: str, port: int) -> None:
+    """Serves the MCP server over streamable-http on our own uvicorn server.
+
+    This is what ``MCPServer.run(transport="streamable-http")`` does, with one
+    deliberate difference: uvicorn's proxy-header handling is turned OFF.
+
+    Uvicorn enables ``ProxyHeadersMiddleware`` by default, and that middleware
+    overwrites the ASGI ``client`` entry - the peer address the connection
+    binding in :mod:`mcp_plugin.lib.db_functions` relies on - with the value of
+    the ``X-Forwarded-For`` header whenever the immediate peer is one of
+    ``forwarded_allow_ips`` (``127.0.0.1`` by default). As this server binds to
+    loopback by default, every request would qualify, and any client could pick
+    the address it is seen as simply by sending the header. The SDK's own
+    ``run()`` builds its ``uvicorn.Config`` internally and exposes no way to
+    turn that off, so the app is served here instead.
+
+    Do not swap this for the ``FORWARDED_ALLOW_IPS`` environment variable: what
+    an empty trust list means is uvicorn-version-dependent, whereas
+    ``proxy_headers=False`` keeps the middleware from being installed at all.
+
+    Args:
+        mcp_server: The MCPServer instance to serve.
+        host (str): The host address to bind to.
+        port (int): The TCP port to listen on.
+
+    Returns:
+        None
+    """
+    import anyio
+    import uvicorn
+
+    # Passing the host along is what auto-enables the SDK's DNS-rebinding
+    # protection for a loopback bind, exactly as run() would.
+    starlette_app = mcp_server.streamable_http_app(host=host)
+
+    config = uvicorn.Config(
+        starlette_app,
+        host=host,
+        port=port,
+        log_level=mcp_server.settings.log_level.lower(),
+        proxy_headers=False,
+    )
+
+    anyio.run(uvicorn.Server(config).serve)
 
 
 def _serve_stdio(mcp_server) -> None:
