@@ -36,11 +36,17 @@ transports:
 The transport in use is recorded via
 :func:`mcp_plugin.lib.general.set_active_transport` before serving starts. Over
 HTTP the server is reachable by more than one client, so a database connection
-is only opened for a client whose address can be determined, and is closed once
-it falls idle (see :mod:`mcp_plugin.lib.db_functions`); over stdio, where there
-is only ever the one client that owns the server process, neither applies. That
-an open connection may only be used from the address it was opened from is not
-tied to the recorded transport - it holds either way.
+is only opened for a client whose address can be determined (see
+:mod:`mcp_plugin.lib.db_functions`); over stdio, where there is only ever the one
+client that owns the server process, that does not apply. That an open connection
+may only be used from the address it was opened from is not tied to the recorded
+transport - it holds either way.
+
+Serving over HTTP also owns the lifetime of the connection reaper, which closes
+sessions that have fallen idle and drops connections that have reached their
+maximum lifetime: :func:`start` starts it before serving and stops it when
+serving ends, so the thread belongs to the server rather than to whichever tool
+call happened to be the first to need it.
 
 The shell's interactive mode is disabled before serving, so the wrapped ``msm``
 plugin functions return their results instead of prompting for input.
@@ -148,7 +154,16 @@ def start(
         _serve_stdio(mcp_server)
     else:
         _warn_if_reachable_from_the_network(host, port)
-        _serve_streamable_http(mcp_server, host, port, allowed_hosts)
+
+        # The reaper that closes idle sessions and drops expired connections
+        # belongs to the server, and this is where a server begins and ends. It
+        # used to be started by the first db.connect, which made a thread nobody
+        # stopped the side effect of a tool call.
+        db_functions.start_connection_reaper()
+        try:
+            _serve_streamable_http(mcp_server, host, port, allowed_hosts)
+        finally:
+            db_functions.stop_connection_reaper()
 
 
 def _warn_if_reachable_from_the_network(host: str, port: int) -> None:

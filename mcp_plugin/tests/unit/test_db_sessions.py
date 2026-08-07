@@ -33,6 +33,10 @@ and in total, and it is checked and claimed in one step - a burst of concurrent
 calls must not be able to overshoot it between them, and a call that is going to
 be refused must not cost the database a connection first.
 
+Where the work happens matters too: a connection's lock is a thread lock held for
+a whole tool call, so taking it on the thread that runs the event loop would stop
+the server answering anybody until the call finished. That is refused outright.
+
 A connection that reopens its session tells the call that triggered it, and only
 that call: everything which lived in the old session is gone, and the client
 cannot see that by itself. Whether the flag is per-call is the whole of it - one
@@ -467,16 +471,14 @@ def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
     assert opened == [uri]
     assert db_functions._sessions[connection_id].client == _identity(CLIENT_ADDRESS)
 
-    # Opening a connection over HTTP starts the reaper that drops the expired
-    # connections and closes the idle sessions - once, however many connections
-    # are opened.
-    reaper = db_functions._reaper
-    assert reaper is not None and reaper.is_alive()
+    # Opening a connection starts no threads: the reaper belongs to the server
+    # that is serving, not to whichever tool call came first (see
+    # test_server_binding).
+    assert db_functions._reaper is None
 
     second_id = tools.tools["db.connect"](
         _context(OTHER_ADDRESS, OTHER_SESSION_ID), uri
     )
-    assert db_functions._reaper is reaper
     assert opened == [uri, uri]
 
     # Each connection is bound to its own client, so the second one is no way
@@ -1074,6 +1076,89 @@ def test_an_expired_connection_does_not_hold_a_slot(
 
     assert tools["db.connect"](context, uri) in db_functions._sessions
     assert len(opened) == 2
+
+
+# --- the reaper's lifetime --------------------------------------------------
+
+
+def test_the_reaper_can_be_started_and_stopped():
+    """A reaper belongs to the server that started it, not to the process.
+
+    It used to be started by the first db.connect and never stopped: a second
+    server in the same process silently kept the first one's thread, and a
+    stopped server left one waking every interval for nothing.
+    """
+    assert db_functions._reaper is None
+
+    db_functions.start_connection_reaper()
+    first = db_functions._reaper
+    assert first is not None and first.is_alive()
+
+    # Idempotent: asking again while one runs does not start a second.
+    db_functions.start_connection_reaper()
+    assert db_functions._reaper is first
+
+    db_functions.stop_connection_reaper()
+    assert db_functions._reaper is None
+    # It waits on the stop signal rather than sleeping through its interval, so
+    # it is gone long before the 30 seconds it would otherwise have been in.
+    assert first.is_alive() is False
+
+    # Stopping again is harmless, and a new server gets a NEW thread rather than
+    # the dead one.
+    db_functions.stop_connection_reaper()
+    db_functions.start_connection_reaper()
+    second = db_functions._reaper
+    try:
+        assert second is not None and second.is_alive()
+        assert second is not first
+    finally:
+        db_functions.stop_connection_reaper()
+
+    assert db_functions._reaper is None
+
+
+# --- where a session may be worked with -------------------------------------
+
+
+def test_a_session_cannot_be_taken_on_the_event_loop_thread(http_transport):
+    """Session work is refused on the thread that runs the event loop.
+
+    Holding a connection's lock there is not a private cost: while the thread
+    waits, the server answers nobody, on any transport. Measured on this
+    runtime - a coroutine blocking on a lock a worker thread held for 0.6s let
+    zero other tasks run - which is why async tool code hands the work to a
+    worker thread and why this is refused rather than merely discouraged.
+    """
+    import anyio
+    import anyio.to_thread
+
+    connection_id, connection = _register_connection(STDIO_CLIENT)
+
+    async def from_the_event_loop():
+        with db_functions.use_session(connection_id, STDIO_CLIENT):
+            pass
+
+    with pytest.raises(RuntimeError, match="event loop"):
+        anyio.run(from_the_event_loop)
+
+    # Nothing was handed out, and the connection is untouched.
+    assert connection.session_restarted is False
+
+    # A worker thread is exactly where it belongs, which is how the sync db
+    # tools already run and where the async ones now put this work.
+    async def from_a_worker_thread():
+        def _work():
+            with db_functions.use_session(connection_id, STDIO_CLIENT) as session:
+                return session
+
+        return await anyio.to_thread.run_sync(_work)
+
+    assert anyio.run(from_a_worker_thread) is connection.session
+
+    # And an ordinary synchronous caller, with no loop anywhere, is fine.
+    with db_functions.use_session(connection_id, STDIO_CLIENT) as session:
+        assert session is connection.session
 
 
 # --- telling the caller its session was replaced ----------------------------

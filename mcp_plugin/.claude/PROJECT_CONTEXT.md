@@ -125,8 +125,10 @@ silently runs against whatever `mariadb-shell` is on PATH.
   an `RLock` of its own.
 - **Connection safeguards.** `general.is_http_transport()` reads the `_active_transport`
   module global that `lib/server.start()` sets from its `transport` arg BEFORE serving.
-  It gates EXACTLY TWO THINGS and nothing else (grep it — there are only two call sites
-  in `lib/`): `_start_connection_reaper` and `db.connect`'s fail-closed branch.
+  Since T6 it gates EXACTLY ONE THING and nothing else (grep it — there is one call site in
+  `lib/`): `db.connect`'s fail-closed branch. The reaper used to be the second reader; it is
+  now started and stopped by `server.start()`, which knows the transport from its own argument
+  rather than from a global that outlives the server.
   - **Client binding**: a connection may only be used by the client that opened it —
     **BOTH the peer address AND the MCP session id**, held together in
     `general.ClientIdentity(address, session_id)` (a NamedTuple) and compared as ONE tuple
@@ -167,8 +169,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
     EXACTLY as issued (lowercase hex; header values are case-sensitive).
   - **30-minute idle timeout** (`general.SESSION_IDLE_TIMEOUT = 1800`, raised from the
     10 minutes it shipped with in 0bba1318): a daemon reaper
-    thread (`_reap_connections`, started ONCE by the first `db.connect` via
-    `_start_connection_reaper`, wakes every `_REAP_INTERVAL = 30`s) closes the SESSION of
+    thread (`_reap_connections`, started by `server.start()` before it serves over HTTP and
+    stopped in its `finally`, waits `_REAP_INTERVAL = 30`s per pass) closes the SESSION of
     every idle connection but KEEPS the `_Connection`, so the UUID stays valid and the next
     tool call reopens transparently. `db.close` is the documented exception: it drops the
     entry and closes only an already-open session, it never reopens one to close it.
@@ -328,8 +330,9 @@ silently runs against whatever `mariadb-shell` is on PATH.
     matters: caps removed → all 3 new tests fail with `DID NOT RAISE Error`; claiming the
     slot AFTER `open_session()` → all 3 fail on the session count (`assert 4 == 3`,
     `assert 3 == 2` x2), i.e. the refused call had already cost the database a connection.
-- **A SECOND list started after S1..S8: T-numbered items. T1..T4 are DONE** (T2 by
-  verification alone: it needed no code change; T3 needed half of what it asked for).
+- **A SECOND list started after S1..S8: T-numbered items. T1..T6 are DONE** (T2 by
+  verification alone: it needed no code change; T3 and T5 each needed something different from
+  what was asked for - see each).
   - **T1 (HIGH, `db.close` racing a call leaks a session)**: PRE-EXISTING since 0bba1318, not
     introduced by S5..S7 — the report said so and it is true. `use_session` resolves the
     connection under `_sessions_lock`, RELEASES it, and only then takes `connection.lock`, so
@@ -453,6 +456,62 @@ silently runs against whatever `mariadb-shell` is on PATH.
       reset it. The test now asserts `connection.session_restarted is False` IMMEDIATELY after
       the reopening call, and the probe then fails `assert True is False`. Same lesson as T3,
       earned again: assert the invariant where it can actually be violated.
+  - **T5 (LOW "latent deadlock", the lock is held across the yield)**: the CONCERN is real, the
+    REPORTED MECHANISM is not. Both halves measured on this runtime:
+    - **An RLock held across an await does NOT block the next coroutine - it lets it in.** The
+      lock is owned by a THREAD and every coroutine on the server shares one. Measured: A
+      acquires and awaits; B's `acquire(timeout=1)` returns `True`. So the failure mode would
+      not be a deadlock but the silent loss of the mutual exclusion the lock exists for - two
+      tool calls on ONE shell session at once, i.e. interleaved statements on one connection.
+    - **A present-day problem the report did not name**: `msm.deploy_schema` is `async def`, so
+      its body ran on the event-loop thread, where it both waited for the connection's lock and
+      then ran a WHOLE DEPLOYMENT. Measured: a coroutine blocking on a lock a worker thread held
+      for 0.6s let **zero** other tasks run - the entire server, every transport, frozen for
+      the duration of somebody else's slow statement. No future code change needed for that.
+    - Fixed at both ends: `msm.deploy_schema` runs its `use_session` block on a worker thread
+      (`anyio.to_thread.run_sync`, with the client identity read BEFORE the hand-off - a worker
+      thread has no request context to read it from), and `use_session` begins with
+      `_refuse_on_the_event_loop()`, which raises when an asyncio loop is running on the calling
+      thread. That makes the constraint executable instead of a comment, and makes the
+      await-inside-the-block hazard unreachable for the only async caller.
+    - NOT done: the timeout-and-"connection busy" option. Waiting for a connection another call
+      is using IS the documented behaviour of the lock ("serializes the tool calls that share a
+      connection"); a timeout would turn a legitimately slow statement into a spurious error.
+      With the work off the loop thread a blocked wait costs one worker thread, not the server.
+    - The guard sees only an **asyncio** loop (this build has no `sniffio`); nothing here uses
+      trio. Residual: many queued calls on one connection still tie up worker threads (anyio's
+      default limiter is 40).
+    - PROVEN with two probes: guard disabled ->
+      `test_a_session_cannot_be_taken_on_the_event_loop_thread` fails `DID NOT RAISE
+      RuntimeError`; the msm deploy put back inline -> `test_stdio_msm_project_lifecycle` fails
+      END TO END with the guard's own message. The second one is the one that matters: the
+      guard catches the real caller, not just a synthetic one.
+  - **T6 (LOW, reaper lifecycle)**: all three complaints were accurate - started lazily by the
+    first `db.connect`, never stopped, and spawned while holding `_sessions_lock` (the very lock
+    the new thread then wants). Now `lib/server.start()` owns it: `start_connection_reaper()`
+    before serving over HTTP and `stop_connection_reaper()` in a `finally` after, both PUBLIC
+    (no leading underscore) because `server.py` calls them. `_start_connection_reaper` is GONE
+    and `db.connect` starts nothing.
+    - The thread is spawned under `_reaper_lock`, a lock of its own, and asked to finish through
+      `_reaper_stop` (a `threading.Event`): `_reap_connections` now does
+      `while not _reaper_stop.wait(_REAP_INTERVAL)` instead of `time.sleep`, so stopping does
+      not have to wait out the interval it is in. The event is cleared both after a join and
+      before a start, so a reaper that once outlived its join cannot leave the next one
+      pre-stopped.
+    - **`general.is_http_transport()` now has EXACTLY ONE reader**: `db.connect`'s fail-closed
+      branch. The reaper's start knows the transport from `server.start`'s own argument instead
+      of from a global that outlives the server. Update the S2 gotcha if that changes again.
+    - Not a regression for embedders: an embedder serving `build_mcp_server` itself got no
+      reaper before either (the old lazy start required `is_http_transport()`, which is only set
+      by `server.start`), and the maximum lifetime is applied when a connection is USED, in
+      every transport, so nothing safety-relevant depends on the thread.
+    - The "first sweep is 30s late" point is real and immaterial: the interval is 30s against
+      timeouts of 1800s and 43200s. Loop order left as wait-then-sweep; sweeping at t=0 would
+      find nothing.
+    - PROVEN: `test_the_reaper_can_be_started_and_stopped` (start, idempotent re-start, stop,
+      a NEW thread for the next server) and `test_serving_over_http_owns_the_connection_reaper`
+      in test_server_binding (asserts the exact order `["start", "served", "stop"]`, that a
+      serve which RAISES still stops it, and that stdio starts nothing).
   - **S1 (HIGH, header-derived peer address)**: uvicorn 0.52.1 has `proxy_headers=True`
     and `forwarded_allow_ips="127.0.0.1"` by DEFAULT (config.py:220/357), and
     `ProxyHeadersMiddleware` (config.py:526) rewrites `scope["client"]` from
@@ -580,7 +639,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `..._binds_a_connection_to_its_mcp_session` for S3, and
   `..._rejects_a_foreign_host_header` for S4 — the last one talks raw `httpx2` rather than
   the MCP client, because it has to forge Host/Origin and assert HTTP status codes),
-  `test_db_sessions` (**32** — the whole connection lifecycle, in seven sections: the client
+  `test_db_sessions` (**34** — the whole connection lifecycle, in nine sections: the client
   identity, the binding (S2/S3/S8: `..._stays_bound_without_an_active_transport`,
   `..._is_usable_over_stdio`, `test_equivalent_spellings_of_an_address_are_the_same_client`,
   `..._is_reachable_over_either_ip_stack`, `..._is_bound_to_its_mcp_session`,
@@ -597,16 +656,28 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `test_closing_a_connection_beats_a_call_that_races_it` and
   `test_a_session_being_closed_is_not_replaced_underneath`), `test_server_binding` (**6**:
   loopback vs reachable vs wildcard host classification, the no-auth warning, the default
-  staying quiet, and the derived Host/Origin allow lists), NEW `test_db_threading` (**1**,
+  staying quiet, the derived Host/Origin allow lists, and that serving over HTTP starts and
+  stops the connection reaper), NEW `test_db_threading` (**1**,
   T2: a real session opened, used and closed across three threads), NEW `test_db_recovery`
   (**1**, T3: a real session KILLed from a second session and replaced on the next call).
-  **64 pass, ~32s.**
-- Coverage after latest run: TOTAL 96% (823 statements, 32 missed). Per module:
-  **lib/general 100**, lib/msm_functions 100, lib/db_functions 99, lib/server 98,
-  lib/config 96, lib/sandbox_functions 96, server.py 94, lib/setup 84, general.py 73.
-  What is left uncovered in db_functions is defensive only: the reaper thread's own loop
-  body (it sleeps 30s), `_start_connection_reaper`'s not-http return, the JSON-parse
-  fallback and the `_serialize_result` `str()` guard.
+  **67 pass, ~34s.**
+- **Coverage: TOTAL 94% (845 statements, 52 missed) — measured on a run with `.coverage`
+  DELETED first.** Per module: lib/msm_functions 100, lib/general 98, lib/db_functions 96,
+  lib/config 96, lib/server 95, lib/sandbox_functions 87, lib/setup 84, server.py 81,
+  general.py 73.
+  **CORRECTION, and a trap to avoid repeating**: earlier figures in this file and in the
+  T-series commit messages (up to "db_functions 100%, TOTAL 97%") were INFLATED.
+  `run_tests.py` passes `--cov-append`, so `.coverage` ACCUMULATES across runs - including the
+  revert-probe runs, which execute the suite against DELIBERATELY MODIFIED code and so light up
+  branches the real code never takes. Pass counts were never affected; only coverage.
+  **Delete `.coverage` before any run whose number you intend to write down** (plain
+  `.coverage`, never the `.coverage*` glob - that matches `.coveragerc`).
+  What is uncovered in db_functions is defensive, and two of the gaps are worth closing when
+  somebody is in there: `db.connect`'s slot giveback when the first open fails (1426-1432, added
+  in S7 with no test) and its "not a configured connection" raise (1390); the rest are the
+  bytes->hex branch, the JSON-parse fallback, `_drop_connection`'s already-gone return and a
+  blank statement in a script. In lib/server.py the three validation raises in `start()`
+  (unsupported transport, no function groups, unknown groups) have no test either.
 - **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass
   — see the invocation note in Gotchas):
   - MySQL -> MariaDB rebrand of all PROSE/branding. Legal notices were NOT word-substituted;
@@ -729,8 +800,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
 ## Next steps
 
 0. **The security-review list S1..S8 is COMPLETE, committed and pushed; a T-numbered list
-   started after it; T1..T4 are done, committed and pushed.** If the user sends more items,
-   follow the working agreement that has held for all twelve: (a) VERIFY the
+   started after it; T1..T6 are all done, committed and pushed.** If the user sends more
+   items, follow the working agreement that has held for all fourteen: (a) VERIFY the
    claim against the bundled SDK/uvicorn source under
    `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/site-packages`
    or against the real shell, never against upstream docs or memory — and say plainly when
@@ -812,8 +883,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   was S2: the global is only set by `lib.server.start()` and never reset, so the check
   failed open for any embedder using the public `build_mcp_server`, and after any server
   stopped. It is a plain equality and stdio falls out of it for free (empty identity ==
-  empty identity). The transport is still consulted in exactly TWO places —
-  `_start_connection_reaper` and `db.connect`'s fail-closed branch — and
+  empty identity). Since T6 the transport is consulted in exactly ONE place —
+  `db.connect`'s fail-closed branch — and
   `test_a_connection_stays_bound_without_an_active_transport` will fail if that changes.
   The same reasoning is why S6's hard TTL is applied in `_get_connection` and not left to the
   reaper (which only runs over HTTP).
@@ -906,6 +977,17 @@ silently runs against whatever `mariadb-shell` is on PATH.
   (`_CONNECTION_LOST_ERRORS`: 2013 first, then 2006 on every later call), and an ordinary SQL
   error is the same exception type with a server-side code — so match on the code, and keep
   the list to the codes that really mean it.
+- **Never take a database session on the event-loop thread**, and never `await` inside a
+  `use_session` block. `use_session` refuses the first outright
+  (`_refuse_on_the_event_loop`), because the connection's lock is a THREAD lock held for the
+  whole block: waiting for it on the loop thread freezes the entire server (measured: zero
+  other tasks ran during a 0.6s wait), and running the work there does the same. Async tool
+  code hands the block to `anyio.to_thread.run_sync` — `msm.deploy_schema` is the pattern, and
+  it reads the client identity BEFORE the hand-off since a worker thread has no request
+  context. The second rule is the mirror image: an RLock is owned by a thread, not a task, so
+  awaiting inside the block would NOT keep another coroutine out — measured, it walks straight
+  in reentrantly and two calls then share one session. Anything that awaits (an elicitation)
+  goes before the block.
 - **`session_restarted` must never outlive the call it describes.** It is per-CALL state kept
   on the `_Connection` only because the tools have no other channel: `use_session` assigns it
   on entry and clears it in `finally`. A flag left standing tells the next caller its
@@ -924,14 +1006,21 @@ silently runs against whatever `mariadb-shell` is on PATH.
   **negative-control test needs its own probe in the OPPOSITE direction**:
   `test_an_ordinary_sql_error_keeps_the_session` cannot fail when T3's fix is removed, only
   when its predicate is made too broad — so that one took two probes.
-- **The connection reaper is a module-global daemon thread started once** (`_reaper`; renamed
-  from `_idle_reaper` in S6, along with `_reap_connections` (was `_reap_idle_sessions`),
-  `_start_connection_reaper` (was `_start_idle_reaper`) and `_REAP_INTERVAL` (was
-  `_IDLE_CHECK_INTERVAL`) — it does two jobs now, so the old names lied). The in-process test
-  that calls `db.connect` really does start it, and it then lives for the rest of the pytest
-  run, waking every 30s. That is harmless (it only ever touches `_sessions`, which the
-  fixtures clear), but don't be surprised by it, and don't reset `_reaper` to None in a
-  fixture — that would start a second one.
+- **The reaper belongs to the SERVER, not to the process or to a tool call.**
+  `lib/server.start()` calls `db_functions.start_connection_reaper()` before serving over HTTP
+  and `stop_connection_reaper()` in a `finally`. Do not put the start back into `db.connect`
+  (T6: nothing then stopped it, a second server in one process kept the first one's thread, and
+  it spawned a thread while holding `_sessions_lock` — the lock that thread wants). The handle
+  is guarded by `_reaper_lock`, never `_sessions_lock`, and the thread waits on `_reaper_stop`
+  rather than sleeping, so a stop does not have to wait out an interval.
+- **Reaper naming history** (so the old names in older commits still make sense): S6 renamed
+  `_idle_reaper` -> `_reaper`, `_reap_idle_sessions` -> `_reap_connections`,
+  `_start_idle_reaper` -> `_start_connection_reaper` and `_IDLE_CHECK_INTERVAL` ->
+  `_REAP_INTERVAL` (it does two jobs now, so the old names lied); T6 then replaced
+  `_start_connection_reaper` with the public `start_connection_reaper` /
+  `stop_connection_reaper` pair. **No test leaves a reaper running any more** - only
+  `test_the_reaper_can_be_started_and_stopped` starts one, and it stops it again - so the old
+  warning about a thread living for the rest of the pytest run no longer applies.
 - **The shell already returns DECIMAL and DATETIME as STRINGS.** Verified: a
   `CAST(2 AS DECIMAL(10,2))` arrives as `'2.00'`, and I_S.SEQUENCES `START_VALUE` /
   `INCREMENT` as `'1'`. So `_serialize_result` needs NO numeric conversion — a
@@ -1068,11 +1157,18 @@ silently runs against whatever `mariadb-shell` is on PATH.
      and warning, and the explicit Host/Origin validation.
   4. **S5 + S6 + S7** (b86b0541) — the audit trail, the hard TTL + URI re-validation, and
      the caps.
-  5. **T1 + T2 + T3 + T4** (the T-list commit, HEAD when this was written) — the close/use
-     race, the cross-thread verification and its regression test, dead-session detection, and
-     the session_restarted signal. ONE commit again, for the same reason: T3 and T4 both build
-     on paths T1 changed, and all four touch `use_session`, `_Connection` and the same
-     docstrings, so any split would have committed states that were never run green.
+  5. **T1 + T2 + T3 + T4** (f80673ce) — the close/use race, the cross-thread verification and
+     its regression test, dead-session detection, and the session_restarted signal. ONE commit
+     again, for the same reason: T3 and T4 both build on paths T1 changed, and all four touch
+     `use_session`, `_Connection` and the same docstrings, so any split would have committed
+     states that were never run green. **Its coverage claim (100% / 97%) is WRONG** — see the
+     Coverage bullet under Current state.
+  6. **T5 + T6** (HEAD when this was written) — session work off the event-loop thread, and the
+     reaper's lifetime moved to `server.start()`. Together because T6's wiring test asserts the
+     order `start`/`served`/`stop` around the same `server.start()` branch T5 left alone, and
+     both land in `use_session`/`server.py`. Also carries the README change from
+     `mariadb-shell --py -e "mcp.setup()"` to `mariadb-shell -- mcp setup` (the user's own
+     wording) and the corrected coverage figure.
      ONE commit, not three: S6 and S7 both call S5's `log_event` and all three interleave
      inside the same functions and docstrings, so splitting them would have meant committing
      intermediate states that were never run green. The user asked for the commit without

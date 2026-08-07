@@ -117,6 +117,7 @@ the log is the only place the attempt can be seen at all.
 # cSpell:ignore mysqlsh MariaDB mcpserver uuid SCHEMATA datatype
 # cSpell:ignore ISNULL IFNULL ARRAYAGG utf8mb3 kcu ORDINAL DTD
 
+import asyncio
 import json
 import threading
 import time
@@ -137,9 +138,14 @@ _sessions_lock = threading.Lock()
 # How often the reaper looks for connections to drop or sessions to close.
 _REAP_INTERVAL = 30
 
-# The thread dropping expired connections and closing idle sessions, started
-# with the first connection opened over HTTP.
+# The thread dropping expired connections and closing idle sessions. It belongs
+# to the server: lib/server.start() starts it before serving over HTTP and stops
+# it when serving ends. _reaper_lock guards the handle - deliberately not the
+# cache lock, which the thread itself needs - and _reaper_stop is how it is asked
+# to finish without waiting out the interval it is in.
 _reaper = None
+_reaper_lock = threading.Lock()
+_reaper_stop = threading.Event()
 
 # The client-side error codes that mean the connection to the server is gone
 # rather than that a statement was wrong: CR_SERVER_GONE_ERROR,
@@ -892,6 +898,46 @@ def _get_connection(connection_id: str, client):
     return connection
 
 
+def _refuse_on_the_event_loop() -> None:
+    """Refuses to hand out a session on the thread that runs the event loop.
+
+    Working with a connection means holding its lock for as long as the work
+    takes, and that lock is a plain thread lock. On a worker thread - which is
+    where the SDK runs every synchronous tool body - waiting for it costs the
+    caller its own turn and nobody else anything. On the thread driving the
+    event loop it costs everybody: the whole server stops answering, on every
+    transport, until the statement holding the lock finishes. Measured, not
+    supposed: a coroutine blocking on a lock a worker thread held for 0.6s let
+    zero other tasks run in that time.
+
+    So async tool code must hand session work to a worker thread
+    (``anyio.to_thread.run_sync``) rather than do it inline, and this makes that
+    a rule instead of a comment - the failure it prevents is invisible until a
+    statement happens to be slow and a second call happens to want the same
+    connection.
+
+    The check asks whether an asyncio loop is running on THIS thread, which is
+    what the MCP server and uvicorn run on. It would not recognize a trio
+    backend; nothing here uses one.
+
+    Returns:
+        None
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop on this thread: a worker thread, or an ordinary synchronous
+        # caller such as the tests. Both are exactly right.
+        return
+
+    raise RuntimeError(
+        "A database session was requested on the thread running the MCP "
+        "server's event loop. Session work blocks, and blocking here stops "
+        "the server answering every other client, so async tool code has to "
+        "run it on a worker thread with anyio.to_thread.run_sync."
+    )
+
+
 @contextmanager
 def use_session(connection_id: str, client=None):
     """Yields the session of a connection opened with ``db.connect``.
@@ -908,6 +954,21 @@ def use_session(connection_id: str, client=None):
     connection recovers on the next call rather than failing on the same dead
     session until it is closed.
 
+    Two rules for callers, both about the connection's lock, which is held for
+    the whole ``with`` block:
+
+    * **Never enter it on the event-loop thread.** Async tool code has to hand
+      the block to a worker thread; entering it here is refused outright (see
+      :func:`_refuse_on_the_event_loop`).
+    * **Never await inside the block.** The lock belongs to a THREAD, not to a
+      task, so it would not stop a second coroutine on that same thread - it
+      would let it straight in (measured: an RLock held across an await is
+      re-acquired by the next coroutine, reentrantly). Two tool calls would then
+      work with one shell session at the same time, which is the one thing the
+      lock exists to prevent. Anything that has to await - an elicitation, say -
+      belongs before the block, as ``msm.deploy_schema`` does with its path
+      checks.
+
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
         client (ClientIdentity): The identity of the requesting client, as
@@ -920,6 +981,8 @@ def use_session(connection_id: str, client=None):
     Yields:
         The open shell session.
     """
+    _refuse_on_the_event_loop()
+
     connection = _get_connection(connection_id, client)
 
     with connection.lock:
@@ -1054,8 +1117,9 @@ def _reap_connections() -> None:
     Returns:
         None
     """
-    while True:
-        time.sleep(_REAP_INTERVAL)
+    # Waiting on the stop signal rather than sleeping, so that stopping the
+    # reaper does not have to wait out an interval it is in the middle of.
+    while not _reaper_stop.wait(_REAP_INTERVAL):
         try:
             _drop_expired_connections()
             _close_idle_sessions()
@@ -1069,35 +1133,74 @@ def _reap_connections() -> None:
             )
 
 
-def _start_connection_reaper() -> None:
-    """Starts the connection reaper, once, when serving over HTTP.
+def start_connection_reaper() -> None:
+    """Starts the connection reaper.
 
-    Over stdio there is nothing for it to do that matters: the one client owns
-    the server process, so a connection it abandons outlives it by nothing. The
-    maximum lifetime itself does not depend on the reaper - it is applied
-    whenever a connection is used, in every transport (see
-    :func:`_get_connection`).
+    Called by :func:`mcp_plugin.lib.server.start` when it is about to serve over
+    HTTP, which is the only place that knows a server is beginning. It used to be
+    started by the first ``db.connect`` instead, which made a server-lifetime
+    thread the side effect of a tool call: nothing ever stopped it, a second
+    server in the same process silently kept the first one's thread, and the
+    thread was spawned while the connection cache's own lock was held - the lock
+    the new thread then wants.
+
+    Over stdio it is not started at all. The one client owns the server process,
+    so a connection it abandons outlives it by nothing, and the maximum lifetime
+    does not depend on the reaper anyway: it is applied whenever a connection is
+    used, in every transport (see :func:`_get_connection`). An embedder serving
+    the tools itself without going through ``server.start`` gets no reaper, which
+    is what it got before this too.
 
     Returns:
         None
     """
     global _reaper
 
-    if not general.is_http_transport():
-        return
-
-    with _sessions_lock:
-        if _reaper is not None:
+    with _reaper_lock:
+        if _reaper is not None and _reaper.is_alive():
             return
+
+        # Cleared before starting as well as after stopping, so a reaper that
+        # once outlived its join cannot leave the next one told to stop.
+        _reaper_stop.clear()
 
         # A daemon thread: it only ever closes sessions and drops connection
         # records, so it must not keep the process alive when the server stops.
+        # Spawned under a lock of its own, not the cache lock - the thread wants
+        # the cache lock, and starting it while holding that was an oddity worth
+        # not having.
         _reaper = threading.Thread(
             target=_reap_connections,
             name="mcp-db-connection-reaper",
             daemon=True,
         )
         _reaper.start()
+
+
+def stop_connection_reaper() -> None:
+    """Stops the connection reaper, if one is running.
+
+    Called when serving ends, so the thread belongs to the server that started
+    it rather than to the process. Without this, a shell that serves twice keeps
+    the first server's thread for the life of the shell, and a stopped server
+    leaves something waking every interval for nothing.
+
+    Returns:
+        None
+    """
+    global _reaper
+
+    with _reaper_lock:
+        reaper, _reaper = _reaper, None
+
+    if reaper is None:
+        return
+
+    _reaper_stop.set()
+    # It waits on the signal, so this returns as soon as it notices, rather
+    # than at the end of the interval it happened to be in.
+    reaper.join(timeout=_REAP_INTERVAL)
+    _reaper_stop.clear()
 
 
 def _session_was_restarted(connection_id: str) -> bool:
@@ -1334,8 +1437,6 @@ def register_db_tools(server, function_groups=()) -> None:
             f"db.connect: opened connection {general.log_id_prefix(connection_id)} "
             f"on '{uri}' for {general.describe_client(client)}"
         )
-
-        _start_connection_reaper()
 
         return connection_id
 

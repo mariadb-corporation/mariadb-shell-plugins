@@ -26,13 +26,13 @@ the wrapped functions return their results instead of prompting for input.
 | `mcp.setup()` | Interactively configures the allowed connections and paths. |
 | `mcp.start_server(options)` | Starts the MCP server; blocks until terminated (`host`, `port` options). |
 
-## Configuration (`mcp.setup`)
+## Configuration (`mcp.setup()`)
 
-Before starting the server, run `mcp.setup` from an interactive shell to configure
-what the MCP server is allowed to access:
+Before starting the server, run `mcp.setup()` from an interactive shell to configure
+what the MCP server is allowed to access, or run the following command on the terminal:
 
 ```bash
-mariadb-shell --py -e "mcp.setup()"
+mariadb-shell -- mcp setup
 ```
 
 - **Connections**: enter a MariaDB connection URI (e.g. `user@host:3306`). The
