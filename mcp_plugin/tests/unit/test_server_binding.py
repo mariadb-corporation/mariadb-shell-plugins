@@ -156,3 +156,56 @@ def test_extra_allowed_hosts_are_added():
     # A wildcard bind is reachable at loopback as well as under this machine's
     # own name, so those stay accepted alongside the extra names.
     assert "127.0.0.1:8080" in settings.allowed_hosts
+
+
+def test_serving_over_http_owns_the_connection_reaper(monkeypatch):
+    """start() starts the reaper before serving and stops it afterwards.
+
+    It used to be started by the first db.connect, which made a thread nobody
+    ever stopped the side effect of a tool call, and left a second server in the
+    same process running on the first one's thread. Serving is where a server
+    begins and ends, so that is where the thread does too.
+    """
+    pytest.importorskip("mcp")
+
+    from mcp_plugin.lib import db_functions
+
+    events = []
+    monkeypatch.setattr(
+        db_functions, "start_connection_reaper", lambda: events.append("start")
+    )
+    monkeypatch.setattr(
+        db_functions, "stop_connection_reaper", lambda: events.append("stop")
+    )
+    monkeypatch.setattr(
+        server,
+        "_serve_streamable_http",
+        lambda *arguments, **keywords: events.append("served"),
+    )
+    monkeypatch.setattr(server, "_serve_stdio", lambda *arguments: events.append("stdio"))
+
+    try:
+        server.start("127.0.0.1", 8080, general.TRANSPORT_STREAMABLE_HTTP, ["db"])
+
+        assert events == ["start", "served", "stop"]
+
+        # Even when serving ends by raising: a server that fell over must not
+        # leave its reaper behind.
+        events.clear()
+        monkeypatch.setattr(
+            server,
+            "_serve_streamable_http",
+            lambda *arguments, **keywords: (_ for _ in ()).throw(KeyboardInterrupt),
+        )
+        with pytest.raises(KeyboardInterrupt):
+            server.start("127.0.0.1", 8080, general.TRANSPORT_STREAMABLE_HTTP, ["db"])
+
+        assert events == ["start", "stop"]
+
+        # Over stdio there is nothing to reap: one client owns the process.
+        events.clear()
+        server.start("127.0.0.1", 8080, general.TRANSPORT_STDIO, ["db"])
+
+        assert events == ["stdio"]
+    finally:
+        general.set_active_transport(None)

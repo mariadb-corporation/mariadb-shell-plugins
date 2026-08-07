@@ -48,6 +48,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     Returns:
         None
     """
+    import anyio.to_thread
     from mcp.server.mcpserver import Context
     from msm_plugin import management as msm
 
@@ -338,15 +339,28 @@ def register_msm_tools(server, function_groups=()) -> None:
             """
             await general.require_allowed_path(ctx, schema_project_path)
             await general.require_allowed_path(ctx, backup_directory)
-            with db_functions.use_session(
-                connection_id, general.get_client_identity(ctx)
-            ) as session:
-                return msm.deploy_schema(
-                    session=session,
-                    **_kwargs(
-                        version=version,
-                        schema_project_path=schema_project_path,
-                        backup_directory=backup_directory,
-                        backup=backup,
-                    ),
-                )
+
+            # Read here, while this is still the request's own context; the
+            # worker thread below has no request context to read it from.
+            client = general.get_client_identity(ctx)
+
+            def _deploy():
+                with db_functions.use_session(connection_id, client) as session:
+                    return msm.deploy_schema(
+                        session=session,
+                        **_kwargs(
+                            version=version,
+                            schema_project_path=schema_project_path,
+                            backup_directory=backup_directory,
+                            backup=backup,
+                        ),
+                    )
+
+            # On a worker thread, not here. This function is a coroutine, so its
+            # body runs on the thread driving the event loop, and everything in
+            # _deploy blocks: waiting for the connection's lock, and then running
+            # a whole deployment script on it. Inline, that would stop the server
+            # answering any client at all for as long as it took. The sync db
+            # tools get this for free - the SDK already runs them on a worker
+            # thread - and use_session now refuses to be entered anywhere else.
+            return await anyio.to_thread.run_sync(_deploy)

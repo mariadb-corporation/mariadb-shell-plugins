@@ -107,10 +107,13 @@ def get_plugin_data_path() -> str:
 def set_active_transport(transport) -> None:
     """Records the transport the MCP server is being served with.
 
-    Used for the two things that only make sense for a server reachable over
-    the network: closing a database connection that has been unused for too
-    long, and refusing to open one at all when the client's address cannot be
-    determined (see :mod:`mcp_plugin.lib.db_functions`).
+    Read in exactly ONE place: ``db.connect`` refusing to open a connection at
+    all when it cannot identify the client it would belong to, which only makes
+    sense for a server reachable by more than one (see
+    :mod:`mcp_plugin.lib.db_functions`). The idle-session reaper used to be the
+    second reader; it is now started and stopped by
+    :func:`mcp_plugin.lib.server.start`, which knows the transport from its own
+    argument rather than from a global that outlives the server.
 
     It is deliberately NOT what decides whether an open connection is checked
     against the address it was opened from. That check is unconditional, so
