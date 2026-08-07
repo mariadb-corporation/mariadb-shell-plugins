@@ -30,9 +30,10 @@ returns. That UUID identifies the connection for the ``db.execute_sql`` and
 are independent of the shell's global session.
 
 When the server is served over HTTP it is reachable by more than one client and
-outlives the client that opened a connection, which is what the two safeguards
-below are there for. Over stdio the server talks to a single client, its own
-parent process, for its entire lifetime, so neither has anything to do:
+outlives the client that opened a connection, which is what the safeguards below
+are there for. Over stdio the server talks to a single client, its own parent
+process, for its entire lifetime, so the first two have little to do there - but
+the third holds in both, and says so:
 
 * A connection is bound to the client that opened it - both its peer address
   and its MCP session id (see
@@ -58,6 +59,39 @@ parent process, for its entire lifetime, so neither has anything to do:
   anything. As the session is a new one, anything that only lived in the old
   session - temporary tables, session variables, the current schema, an open
   transaction - is gone.
+* A connection stops existing altogether once it is
+  :data:`mcp_plugin.lib.general.CONNECTION_MAX_LIFETIME` seconds old, however
+  much it has been used in between. Recycling the session alone would leave the
+  UUID valid for as long as the server runs: worth guessing indefinitely, and
+  worth using indefinitely even after the connection it was opened on had been
+  taken away. This one is applied when a connection is used, so it holds over
+  stdio too, and by the reaper, so it also reaches the connections nobody comes
+  back to. Both an expired connection and one that never existed are reported
+  the same way, and the client's move is the same in either case: call
+  ``db.connect`` again.
+
+* There are only so many connections to be had:
+  :data:`mcp_plugin.lib.general.MAX_CONNECTIONS_PER_CLIENT` for one client and
+  :data:`mcp_plugin.lib.general.MAX_CONNECTIONS_TOTAL` altogether. Opening one
+  costs a client one tool call and the server a database session, so without a
+  limit a loop of ``db.connect`` calls would take the server's connections and
+  this process's memory with it. Room is claimed before the session is opened,
+  and under the lock that counts it, so a refused call costs the database
+  nothing and a burst of concurrent calls cannot collectively overshoot.
+
+Removing a connection with ``mcp.setup``, or deleting the sandbox that
+registered one with ``sandbox.delete``, therefore does revoke it: the URI is
+checked again every time a session is opened - a first open and a reopen alike -
+and no connection outlives its maximum lifetime.
+
+What these safeguards do is written to stderr as it happens (see
+:func:`mcp_plugin.lib.general.log_event`): a connection opened and the client it
+was bound to, a use refused, a session closed for being idle, a connection
+dropped, and any failure while closing one or during a reaper pass. The refusals
+are the reason this
+exists rather than being left to whoever reads the tool errors: a client using
+somebody else's connection is answered as if that connection did not exist, so
+the log is the only place the attempt can be seen at all.
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver uuid SCHEMATA datatype
@@ -80,12 +114,12 @@ _sessions = {}
 # Guards the _sessions dict itself; each connection has a lock of its own.
 _sessions_lock = threading.Lock()
 
-# How often the reaper looks for connections that have been idle for too long.
-_IDLE_CHECK_INTERVAL = 30
+# How often the reaper looks for connections to drop or sessions to close.
+_REAP_INTERVAL = 30
 
-# The thread closing idle connections, started with the first connection opened
-# over HTTP.
-_idle_reaper = None
+# The thread dropping expired connections and closing idle sessions, started
+# with the first connection opened over HTTP.
+_reaper = None
 
 # Lists the schemas of a server, classified into system and user schemas.
 _LIST_SCHEMAS_SQL = """
@@ -400,8 +434,9 @@ class _Connection:
 
     Holds the open shell session together with what is needed to police its
     use: the URI it was opened from, so a session closed for being idle can be
-    opened again, the address of the client that opened it, and the time it was
-    last used.
+    opened again, the address of the client that opened it, the time it was last
+    used and the time it was opened - the first bounding the life of its
+    session, the second the life of the connection itself.
 
     The lock is held for as long as a tool works with the session. That keeps
     the idle reaper from closing a session out from under a running statement,
@@ -415,7 +450,8 @@ class _Connection:
         # request is compared against are always in the same form.
         self.client = general.normalize_client_identity(client)
         self.session = None
-        self.last_used = time.monotonic()
+        self.opened_at = time.monotonic()
+        self.last_used = self.opened_at
         self.lock = threading.RLock()
 
     def is_accessible_from(self, client) -> bool:
@@ -456,6 +492,25 @@ class _Connection:
         """
         return general.normalize_client_identity(client) == self.client
 
+    def has_expired(self, max_lifetime: float) -> bool:
+        """Returns whether this connection has reached the end of its life.
+
+        Counted from when the connection was opened and not affected by use:
+        that is the point of it. An idle connection has its session recycled and
+        goes on living, so without a limit that use cannot postpone, a UUID
+        handed out once would stay worth guessing, and worth using, for as long
+        as the server runs - including after the connection it was opened on was
+        removed with ``mcp.setup``.
+
+        Args:
+            max_lifetime (float): The lifetime after which a connection is over,
+                in seconds.
+
+        Returns:
+            True if the connection may no longer be used.
+        """
+        return time.monotonic() - self.opened_at >= max_lifetime
+
     def open_session(self):
         """Opens the session, or returns the one already open.
 
@@ -481,8 +536,15 @@ class _Connection:
         if session is not None:
             try:
                 session.close()
-            except Exception:  # noqa: BLE001 - the connection may be gone
-                pass
+            except Exception as error:  # noqa: BLE001 - connection may be gone
+                # The session is dropped either way - it is of no use to anyone
+                # once it is out of the connection - but a server-side session
+                # that could not be closed is worth knowing about rather than
+                # swallowing.
+                general.log_event(
+                    f"db: closing the session of '{self.uri}' failed, dropping "
+                    f"it anyway: {error}"
+                )
 
     def close_session_if_idle(self, timeout: float) -> bool:
         """Closes the session if it has not been used for ``timeout`` seconds.
@@ -516,12 +578,30 @@ class _Connection:
 def _open_session(uri: str):
     """Opens a shell session for one of the configured connection URIs.
 
+    The URI is checked against the configured connections here, on every open
+    and not only in ``db.connect``, because a connection can be taken away while
+    a UUID for it is still live: an operator can remove it with ``mcp.setup``,
+    and ``sandbox.delete`` removes the one its ``sandbox.deploy`` registered.
+    Without this check, a session reopened after an idle period would come back
+    on a URI that is no longer configured - the stored password is read again on
+    every open, so the connection would keep working and removing it would not
+    revoke anything.
+
     Args:
         uri (str): The connection URI, as configured via ``mcp.setup``.
 
     Returns:
         The open shell session.
     """
+    # The list is read from the secret store on each call, so it reflects what
+    # is configured now rather than what was configured when db.connect ran.
+    if uri not in config.list_connection_uris():
+        raise mysqlsh.Error(
+            f"'{uri}' is no longer a configured connection. Use "
+            "db.list_connections to see the configured connections and "
+            "db.connect to open one of them."
+        )
+
     # Read the stored password back and open the session with it. The session
     # is independent of the shell's global session.
     connection_data = mysqlsh.globals.shell.parse_uri(uri)
@@ -530,12 +610,139 @@ def _open_session(uri: str):
     return mysqlsh.globals.shell.open_session(connection_data)
 
 
+def _no_such_connection(connection_id: str) -> mysqlsh.Error:
+    """Returns the error a client gets for a connection it may not use.
+
+    The same error for both cases - an id that was never handed out, and one
+    that belongs to another client - built in one place so the two answers
+    cannot drift apart. A client able to tell them apart could use the
+    difference to find out which UUIDs are live connections.
+
+    Args:
+        connection_id (str): The UUID the client named.
+
+    Returns:
+        The error to raise.
+    """
+    return mysqlsh.Error(
+        f"No open connection found for id '{connection_id}'. "
+        "Open one first with db.connect."
+    )
+
+
+def _drop_connection(connection_id: str, reason: str) -> None:
+    """Ends a connection for good: out of the cache, session closed.
+
+    The lock order is the one used everywhere else - the cache lock is taken and
+    released before the connection's own lock is - so this can be called from
+    the reaper thread and from a tool call alike.
+
+    Args:
+        connection_id (str): The UUID of the connection to drop.
+        reason (str): What is being recorded as the reason, for the log.
+
+    Returns:
+        None
+    """
+    with _sessions_lock:
+        connection = _sessions.pop(connection_id, None)
+
+    if connection is None:
+        return
+
+    general.log_event(
+        f"db: dropped connection {general.log_id_prefix(connection_id)} "
+        f"({general.describe_client(connection.client)}) - {reason}"
+    )
+
+    # Waits for a tool call that is still running on the session, unlike the
+    # idle pass: the connection is already out of the cache, so nothing new can
+    # reach it and there is nothing to be gained by leaving its session open.
+    connection.close_session()
+
+
+def _claim_connection_slot(connection_id: str, connection) -> None:
+    """Puts a new connection into the cache, if there is room for one.
+
+    The counting and the insertion happen under one hold of the cache lock, and
+    before the session behind the connection is opened. Both matter: a check made
+    and then released would let a burst of concurrent ``db.connect`` calls each
+    see room and collectively overshoot the limits, and a slot claimed only after
+    the session was opened would mean the server had already paid for a
+    connection it is about to refuse.
+
+    Connections that have reached their maximum lifetime are not counted. They
+    are on their way out - the reaper drops them, and so does using one - so they
+    must not keep a client out of a slot they no longer hold.
+
+    Args:
+        connection_id (str): The UUID the new connection is to be known by.
+        connection (_Connection): The connection to make room for.
+
+    Returns:
+        None
+    """
+    total_limit = general.MAX_CONNECTIONS_TOTAL
+    client_limit = general.MAX_CONNECTIONS_PER_CLIENT
+    lifetime = general.CONNECTION_MAX_LIFETIME
+
+    with _sessions_lock:
+        total = 0
+        for_client = 0
+        for existing in _sessions.values():
+            if existing.has_expired(lifetime):
+                continue
+
+            total += 1
+            if existing.client == connection.client:
+                for_client += 1
+
+        if for_client < client_limit and total < total_limit:
+            _sessions[connection_id] = connection
+
+            return
+
+    # Refused, which is logged, so it is done with the lock released.
+    if for_client >= client_limit:
+        general.log_event(
+            f"db.connect: REFUSED - {general.describe_client(connection.client)} "
+            f"already holds the maximum of {client_limit} open connections"
+        )
+
+        raise mysqlsh.Error(
+            f"There are already {for_client} open connections for this client, "
+            f"which is the maximum of {client_limit}. Close the ones that are "
+            "no longer needed with db.close before opening another."
+        )
+
+    general.log_event(
+        f"db.connect: REFUSED - the server holds the maximum of {total_limit} "
+        f"open connections ({general.describe_client(connection.client)} asked "
+        "for another)"
+    )
+
+    raise mysqlsh.Error(
+        f"The server already has {total} open database connections, which is "
+        f"the maximum of {total_limit}. Close the ones that are no longer "
+        "needed with db.close, or try again later."
+    )
+
+
 def _get_connection(connection_id: str, client):
-    """Looks a connection up, checking that the client may use it.
+    """Looks a connection up, checking that it is still valid and whose it is.
 
     A connection that exists but belongs to another client is reported exactly
     like one that does not exist, so the error cannot be used to tell valid
-    connection ids from invalid ones.
+    connection ids from invalid ones. Because of that, the refusal is recorded
+    on the server: the client is told nothing, so the log is the only place an
+    attempt to use somebody else's connection is visible.
+
+    A connection past :data:`mcp_plugin.lib.general.CONNECTION_MAX_LIFETIME` is
+    dropped here and reported as not existing, which is exactly what it is from
+    that moment on. Enforcing it here rather than only in the reaper is what
+    makes the lifetime hold in every mode the tools can be served in: the reaper
+    only runs over HTTP, while ``sandbox.delete`` can revoke a connection over
+    stdio just as well.
 
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
@@ -547,11 +754,28 @@ def _get_connection(connection_id: str, client):
     with _sessions_lock:
         connection = _sessions.get(connection_id)
 
-    if connection is None or not connection.is_accessible_from(client):
-        raise mysqlsh.Error(
-            f"No open connection found for id '{connection_id}'. "
-            "Open one first with db.connect."
+    if connection is not None and connection.has_expired(
+        general.CONNECTION_MAX_LIFETIME
+    ):
+        _drop_connection(
+            connection_id,
+            f"reached its maximum lifetime of "
+            f"{general.CONNECTION_MAX_LIFETIME:g}s",
         )
+        connection = None
+
+    if connection is None:
+        raise _no_such_connection(connection_id)
+
+    if not connection.is_accessible_from(client):
+        general.log_event(
+            "db: REFUSED use of connection "
+            f"{general.log_id_prefix(connection_id)} bound to "
+            f"{general.describe_client(connection.client)} by a request from "
+            f"{general.describe_client(client)}"
+        )
+
+        raise _no_such_connection(connection_id)
 
     return connection
 
@@ -562,8 +786,10 @@ def use_session(connection_id: str, client=None):
 
     The public entry point for the other tool modules, which work on the
     connections this one hands out but have no cache of their own. The session
-    is opened again if it had been closed for being idle, and stays reserved
-    for the caller for the duration of the ``with`` block.
+    is opened again if it had been closed for being idle - which re-checks that
+    its URI is still a configured connection - and stays reserved for the caller
+    for the duration of the ``with`` block. A connection past its maximum
+    lifetime is reported as not existing, whoever asks for it.
 
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
@@ -598,52 +824,109 @@ def _close_idle_sessions() -> int:
     """
     timeout = general.SESSION_IDLE_TIMEOUT
     with _sessions_lock:
-        connections = list(_sessions.values())
+        connections = list(_sessions.items())
 
-    return sum(
-        1
-        for connection in connections
-        if connection.close_session_if_idle(timeout)
-    )
+    closed = 0
+    for connection_id, connection in connections:
+        if not connection.close_session_if_idle(timeout):
+            continue
+
+        closed += 1
+        # Recorded because the connection outlives its session: a later tool
+        # call on it runs on a new server session, and this line is what says
+        # when the old one went away.
+        general.log_event(
+            "db: closed the idle session of connection "
+            f"{general.log_id_prefix(connection_id)} "
+            f"({general.describe_client(connection.client)}) after "
+            f"{timeout:g}s unused; the connection stays valid and opens a new "
+            "session when it is used again"
+        )
+
+    return closed
 
 
-def _reap_idle_sessions() -> None:
-    """Closes idle sessions for as long as the server runs.
+def _drop_expired_connections() -> int:
+    """Drops every connection that has reached its maximum lifetime.
+
+    The counterpart of the check made when a connection is used: this one
+    reaches the connections nobody comes back to, so an abandoned one does not
+    hold its record - and, until the idle pass gets to it, a server-side
+    connection - for the rest of the server's life.
+
+    Returns:
+        The number of connections that were dropped.
+    """
+    lifetime = general.CONNECTION_MAX_LIFETIME
+    with _sessions_lock:
+        expired = [
+            connection_id
+            for connection_id, connection in _sessions.items()
+            if connection.has_expired(lifetime)
+        ]
+
+    for connection_id in expired:
+        _drop_connection(
+            connection_id, f"reached its maximum lifetime of {lifetime:g}s"
+        )
+
+    return len(expired)
+
+
+def _reap_connections() -> None:
+    """Ends what has outlived its welcome, for as long as the server runs.
+
+    Two limits, on two different things: a connection past its maximum lifetime
+    is dropped altogether, and one whose session has merely been idle for too
+    long keeps its place and loses its session.
 
     Returns:
         None
     """
     while True:
-        time.sleep(_IDLE_CHECK_INTERVAL)
+        time.sleep(_REAP_INTERVAL)
         try:
+            _drop_expired_connections()
             _close_idle_sessions()
-        except Exception:  # noqa: BLE001 - the reaper must never die
-            pass
+        except Exception as error:  # noqa: BLE001 - reaper must never die
+            # Swallowed, so one bad pass cannot end the thread and leave the
+            # two limits quietly not being applied any more - but reported, for
+            # the same reason.
+            general.log_event(
+                "db: a connection reaper pass failed, the reaper keeps "
+                f"running: {type(error).__name__}: {error}"
+            )
 
 
-def _start_idle_reaper() -> None:
-    """Starts the idle-session reaper, once, when serving over HTTP.
+def _start_connection_reaper() -> None:
+    """Starts the connection reaper, once, when serving over HTTP.
+
+    Over stdio there is nothing for it to do that matters: the one client owns
+    the server process, so a connection it abandons outlives it by nothing. The
+    maximum lifetime itself does not depend on the reaper - it is applied
+    whenever a connection is used, in every transport (see
+    :func:`_get_connection`).
 
     Returns:
         None
     """
-    global _idle_reaper
+    global _reaper
 
     if not general.is_http_transport():
         return
 
     with _sessions_lock:
-        if _idle_reaper is not None:
+        if _reaper is not None:
             return
 
-        # A daemon thread: it only ever closes idle sessions, so it must not
-        # keep the process alive when the server stops serving.
-        _idle_reaper = threading.Thread(
-            target=_reap_idle_sessions,
-            name="mcp-db-idle-session-reaper",
+        # A daemon thread: it only ever closes sessions and drops connection
+        # records, so it must not keep the process alive when the server stops.
+        _reaper = threading.Thread(
+            target=_reap_connections,
+            name="mcp-db-connection-reaper",
             daemon=True,
         )
-        _idle_reaper.start()
+        _reaper.start()
 
 
 def _serialize_result(result) -> dict:
@@ -775,13 +1058,25 @@ def register_db_tools(server, function_groups=()) -> None:
     def connect(ctx: Context, uri: str) -> str:
         """Opens a configured database connection and caches it.
 
-        The connection remains usable until it is closed with db.close. When
-        the server is served over HTTP it can only be used by the client that
-        opened it, and its database session is closed once it has been unused
-        for a while. The next call using the connection opens a new session
-        automatically, so no state that only lived in the previous session -
-        temporary tables, session variables, the current schema or an open
-        transaction - survives an idle period.
+        The connection is usable until it is closed with db.close, or until it
+        expires - a few hours after it was opened, whichever comes first. Once
+        it has expired the UUID no longer works and this tool has to be called
+        again for a new one; the URI is checked against the configured
+        connections each time, so a connection that has been removed in the
+        meantime is not opened again.
+
+        Its database session is also closed whenever it has been unused for a
+        while, but that leaves the connection itself usable: the next call opens
+        a new session automatically, so no state that only lived in the previous
+        session - temporary tables, session variables, the current schema or an
+        open transaction - survives an idle period.
+
+        When the server is served over HTTP the connection can only be used by
+        the client that opened it.
+
+        Only a limited number of connections can be open at a time, so close the
+        ones that are no longer needed with db.close rather than opening another
+        for every task.
 
         Args:
             uri: A connection URI, as returned by db.list_connections.
@@ -803,6 +1098,11 @@ def register_db_tools(server, function_groups=()) -> None:
         if general.is_http_transport() and (
             client.address is None or client.session_id is None
         ):
+            general.log_event(
+                "db.connect: REFUSED to open a connection for a request that "
+                f"could not be fully identified ({general.describe_client(client)})"
+            )
+
             raise mysqlsh.Error(
                 "The client could not be identified, so the connection cannot "
                 "be bound to it. Over HTTP a connection can only be opened on "
@@ -811,15 +1111,33 @@ def register_db_tools(server, function_groups=()) -> None:
             )
 
         connection = _Connection(uri, client)
-        # Opened right away, so a bad password or an unreachable server is
-        # reported by db.connect rather than by the first tool using it.
-        connection.open_session()
-
         connection_id = str(uuid.uuid4())
-        with _sessions_lock:
-            _sessions[connection_id] = connection
 
-        _start_idle_reaper()
+        # Room is claimed before the session is opened, so a call that is going
+        # to be refused for being over the limit does not cost the database a
+        # connection on the way to being told so.
+        _claim_connection_slot(connection_id, connection)
+
+        try:
+            # Opened right away, so a bad password or an unreachable server is
+            # reported by db.connect rather than by the first tool using it.
+            connection.open_session()
+        except Exception:
+            # The slot goes back: nothing was handed out, so nothing may be left
+            # holding a place in the cache.
+            with _sessions_lock:
+                _sessions.pop(connection_id, None)
+
+            raise
+
+        # The line every later one about this connection refers back to: which
+        # client it was bound to, and which stored credentials it was opened on.
+        general.log_event(
+            f"db.connect: opened connection {general.log_id_prefix(connection_id)} "
+            f"on '{uri}' for {general.describe_client(client)}"
+        )
+
+        _start_connection_reaper()
 
         return connection_id
 

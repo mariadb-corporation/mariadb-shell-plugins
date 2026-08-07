@@ -15,13 +15,28 @@
 
 """Tests for the connection handling of the db tools.
 
-Covers the two safeguards that matter while serving over HTTP: a connection may
-only be used by the client that opened it - same peer address AND same MCP
-session - and a connection that has been unused for too long has its session
-closed and transparently opened again when it is used next. The first of the two
-is a plain identity comparison that holds whatever the transport is - including
-when no transport was recorded at all - so it is exercised in all three of those
-states.
+Covers the safeguards that matter while serving over HTTP: a connection may only
+be used by the client that opened it - same peer address AND same MCP session -
+a connection that has been unused for too long has its session closed and
+transparently opened again when it is used next, and no connection lives past its
+maximum lifetime, however much it is used in the meantime. The first and the last
+of those hold whatever the transport is - including when no transport was
+recorded at all - so they are exercised in those states too.
+
+The end of a connection's life is also what makes removing one take effect: the
+URI is checked against the configured connections on every open, so a session
+reopened after an idle period cannot come back on a connection that has been
+taken away.
+
+There is also a limit on how many connections there can be at once, per client
+and in total, and it is checked and claimed in one step - a burst of concurrent
+calls must not be able to overshoot it between them, and a call that is going to
+be refused must not cost the database a connection first.
+
+Also covers what these leave behind on stderr: a refused use is invisible to
+the client by design, so the log line is the only evidence of an attempted
+takeover there is - and it must carry enough to act on without writing out the
+connection id or the MCP session id that would let its reader use the connection.
 
 These drive lib/db_functions.py in-process with a stub session, so no database
 server is needed and no time has to be waited out. The tools themselves are
@@ -64,6 +79,13 @@ class _StubSession:
 
     def close(self):
         self.closed = True
+
+
+class _UnclosableSession(_StubSession):
+    """A session whose close() fails, as one on a dead connection would."""
+
+    def close(self):
+        raise RuntimeError("the server went away")
 
 
 class _ToolRecorder:
@@ -110,12 +132,11 @@ def _context(client_address, session_id=SESSION_ID):
     return SimpleNamespace(request_context=SimpleNamespace(request=request))
 
 
-def _register_connection(client, session=None):
+def _register_connection(client, session=None, connection_id="test-connection-id"):
     """Registers a connection with a stub session and returns its id."""
     connection = db_functions._Connection("root@127.0.0.1:3306", client)
     connection.session = session if session is not None else _StubSession()
 
-    connection_id = "test-connection-id"
     db_functions._sessions[connection_id] = connection
 
     return connection_id, connection
@@ -413,15 +434,16 @@ def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
     assert opened == [uri]
     assert db_functions._sessions[connection_id].client == _identity(CLIENT_ADDRESS)
 
-    # Opening a connection over HTTP starts the reaper that closes the idle
-    # sessions - once, however many connections are opened.
-    reaper = db_functions._idle_reaper
+    # Opening a connection over HTTP starts the reaper that drops the expired
+    # connections and closes the idle sessions - once, however many connections
+    # are opened.
+    reaper = db_functions._reaper
     assert reaper is not None and reaper.is_alive()
 
     second_id = tools.tools["db.connect"](
         _context(OTHER_ADDRESS, OTHER_SESSION_ID), uri
     )
-    assert db_functions._idle_reaper is reaper
+    assert db_functions._reaper is reaper
     assert opened == [uri, uri]
 
     # Each connection is bound to its own client, so the second one is no way
@@ -547,3 +569,471 @@ def test_close_does_not_open_an_idle_session_again(http_transport, monkeypatch):
 
     assert connection_id not in db_functions._sessions
     assert session.closed is True
+
+
+# --- what the connection handling records ----------------------------------
+
+
+def test_opening_a_connection_is_logged(http_transport, monkeypatch, capsys):
+    """db.connect records which client a connection was bound to.
+
+    The line every later one about the connection refers back to. It carries
+    only a prefix of the connection id and of the MCP session id: both are
+    credentials - whoever has one can use the connection - so the log must not
+    be a place to read them out of.
+    """
+    uri = "root@127.0.0.1:3306"
+    monkeypatch.setattr(db_functions, "_open_session", lambda _uri: _StubSession())
+    monkeypatch.setattr(db_functions.config, "list_connection_uris", lambda: [uri])
+
+    tools = _ToolRecorder()
+    db_functions.register_db_tools(tools)
+    connection_id = tools.tools["db.connect"](_context(CLIENT_ADDRESS), uri)
+
+    logged = capsys.readouterr().err
+    assert "db.connect: opened connection" in logged
+    assert general.log_id_prefix(connection_id) in logged
+    assert uri in logged
+    assert f"address={CLIENT_ADDRESS}" in logged
+    assert general.log_id_prefix(SESSION_ID) in logged
+
+    # Neither of the two secrets is written out in full.
+    assert connection_id not in logged
+    assert SESSION_ID not in logged
+
+    # A request that cannot be attributed to a client is refused, and that is
+    # recorded too - it is a client trying to open a connection the server
+    # would not be able to keep anybody else off.
+    with pytest.raises(mysqlsh.Error):
+        tools.tools["db.connect"](_context(CLIENT_ADDRESS, None), uri)
+
+    logged = capsys.readouterr().err
+    assert "db.connect: REFUSED" in logged
+
+
+def test_a_refused_connection_use_is_logged(http_transport, capsys):
+    """A client using somebody else's connection leaves a trace.
+
+    This is the whole point of the log: the client is told the connection does
+    not exist, exactly as it is told for an id that was never handed out, so
+    nothing about the attempt reaches whoever is reading tool errors.
+    """
+    connection_id, _ = _register_connection(_identity(CLIENT_ADDRESS))
+    capsys.readouterr()
+
+    with pytest.raises(mysqlsh.Error):
+        with db_functions.use_session(
+            connection_id, _identity(OTHER_ADDRESS, OTHER_SESSION_ID)
+        ):
+            pass
+
+    logged = capsys.readouterr().err
+    assert "db: REFUSED use of connection" in logged
+    assert general.log_id_prefix(connection_id) in logged
+    # Both sides of the comparison, which is what makes the line worth having:
+    # who the connection belongs to and who asked for it.
+    assert f"bound to address={CLIENT_ADDRESS}" in logged
+    assert f"request from address={OTHER_ADDRESS}" in logged
+    assert general.log_id_prefix(OTHER_SESSION_ID) in logged
+    assert OTHER_SESSION_ID not in logged
+
+    # An id that was never handed out is a stale connection id, not an attempt
+    # to use one that exists - the client cannot tell the two answers apart, but
+    # the log deliberately does.
+    with pytest.raises(mysqlsh.Error):
+        with db_functions.use_session(
+            "no-such-connection-id", _identity(CLIENT_ADDRESS)
+        ):
+            pass
+
+    assert "REFUSED" not in capsys.readouterr().err
+
+
+def test_closing_an_idle_session_is_logged(http_transport, capsys):
+    """The reaper says which connection it closed the session of, and why."""
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
+    connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
+    capsys.readouterr()
+
+    assert db_functions._close_idle_sessions() == 1
+
+    logged = capsys.readouterr().err
+    assert "db: closed the idle session of connection" in logged
+    assert general.log_id_prefix(connection_id) in logged
+    assert f"{general.SESSION_IDLE_TIMEOUT:g}s unused" in logged
+    # The connection is kept, and the line says so - a reader must not take
+    # this for the connection having been closed.
+    assert "stays valid" in logged
+
+    # Nothing to close, nothing to say.
+    assert db_functions._close_idle_sessions() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_a_session_that_fails_to_close_is_logged(http_transport, capsys):
+    """A session that cannot be closed is dropped, but not silently."""
+    _, connection = _register_connection(
+        _identity(CLIENT_ADDRESS), _UnclosableSession()
+    )
+    capsys.readouterr()
+
+    # The failure is contained: the caller is not made to deal with a session
+    # that is being thrown away anyway.
+    connection.close_session()
+    assert connection.session is None
+
+    logged = capsys.readouterr().err
+    assert "db: closing the session of 'root@127.0.0.1:3306' failed" in logged
+    assert "the server went away" in logged
+
+
+def test_a_failed_reaper_pass_is_logged(monkeypatch, capsys):
+    """The reaper survives a failing pass and reports it.
+
+    A pass that raises must not end the thread - the idle timeout and the
+    maximum lifetime would then quietly stop being applied for the rest of the
+    server's life - and it must not be swallowed either. The reaper is driven for
+    two passes here, the second of which leaves its endless loop.
+    """
+    passes = []
+
+    def _failing_pass():
+        passes.append(1)
+        if len(passes) > 1:
+            # Not an Exception, so it passes through the reaper's own handler
+            # and ends the loop this test is driving.
+            raise KeyboardInterrupt
+
+        raise RuntimeError("no connection cache today")
+
+    monkeypatch.setattr(db_functions, "_REAP_INTERVAL", 0)
+    monkeypatch.setattr(db_functions, "_close_idle_sessions", _failing_pass)
+
+    with pytest.raises(KeyboardInterrupt):
+        db_functions._reap_connections()
+
+    # Two passes: the first one failed and the reaper came back for another.
+    assert len(passes) == 2
+
+    logged = capsys.readouterr().err
+    assert "db: a connection reaper pass failed" in logged
+    assert "RuntimeError: no connection cache today" in logged
+
+
+def test_logging_never_breaks_its_caller(monkeypatch, capsys):
+    """A log line that cannot be written is not worth an exception.
+
+    The reaper logs from inside its own except block, where a raise would end
+    the thread, and every other call site is in the middle of a tool call.
+    """
+
+    class _BrokenStream:
+        def write(self, _text):
+            raise OSError("stderr is gone")
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(general.sys, "stderr", _BrokenStream())
+
+    general.log_event("this cannot be written anywhere")
+
+
+# --- the end of a connection's life ----------------------------------------
+
+
+def _age(connection, seconds):
+    """Moves a connection's clocks back, as if it had been open that long."""
+    connection.opened_at -= seconds
+    connection.last_used -= seconds
+
+
+def test_a_connection_does_not_live_for_ever(http_transport, capsys):
+    """Past its maximum lifetime a connection is gone, however much it is used.
+
+    The session idle timeout only recycles the session behind a connection, so
+    on its own it leaves the UUID valid for as long as the server runs - and a
+    UUID that never expires is one that stays worth guessing, and stays usable
+    after the connection it was opened on has been taken away.
+    """
+    open_session = _StubSession()
+    connection_id, connection = _register_connection(
+        _identity(CLIENT_ADDRESS), open_session
+    )
+    client = _identity(CLIENT_ADDRESS)
+
+    # Just short of the limit, and used the whole time: still the same
+    # connection.
+    _age(connection, general.CONNECTION_MAX_LIFETIME - 1)
+    with db_functions.use_session(connection_id, client) as session:
+        assert session is open_session
+    capsys.readouterr()
+
+    # Using it does not buy it any more time - the lifetime runs from when the
+    # connection was opened, which is the whole point of it. The call above
+    # stamped last_used, so this leaves a connection used a second ago that is
+    # nevertheless over its lifetime.
+    _age(connection, 1)
+
+    with pytest.raises(mysqlsh.Error) as expired:
+        with db_functions.use_session(connection_id, client):
+            pass
+
+    # Reported exactly as an id that was never handed out, which is what it is
+    # from now on - and the client's move is the same either way: db.connect.
+    with pytest.raises(mysqlsh.Error) as unknown:
+        with db_functions.use_session("no-such-connection-id", client):
+            pass
+
+    assert str(expired.value).replace(connection_id, "") == str(
+        unknown.value
+    ).replace("no-such-connection-id", "")
+
+    # It is not merely refused, it is gone: its record is out of the cache and
+    # its session closed, so it holds nothing on the server either.
+    assert connection_id not in db_functions._sessions
+    assert connection.session is None
+    assert open_session.closed is True
+
+    logged = capsys.readouterr().err
+    assert "db: dropped connection" in logged
+    assert general.log_id_prefix(connection_id) in logged
+    assert f"maximum lifetime of {general.CONNECTION_MAX_LIFETIME:g}s" in logged
+
+
+def test_the_lifetime_holds_without_a_reaper(stdio_transport):
+    """The maximum lifetime does not depend on the reaper having been started.
+
+    The reaper only runs over HTTP, but a connection can be revoked over stdio
+    too - sandbox.delete removes the connection its sandbox.deploy registered -
+    so the limit is applied whenever a connection is used, whatever the
+    transport. A limit that only the reaper enforced would not be one here.
+    """
+    assert general.is_http_transport() is False
+
+    open_session = _StubSession()
+    connection_id, connection = _register_connection(STDIO_CLIENT, open_session)
+    _age(connection, general.CONNECTION_MAX_LIFETIME)
+
+    with pytest.raises(mysqlsh.Error):
+        with db_functions.use_session(connection_id, STDIO_CLIENT):
+            pass
+
+    assert connection_id not in db_functions._sessions
+    assert open_session.closed is True
+
+
+def test_the_reaper_drops_a_connection_nobody_comes_back_to(http_transport, capsys):
+    """An abandoned connection does not keep its place for ever.
+
+    Nothing calls db.close for a client that simply went away, and checking the
+    lifetime when a connection is used never reaches a connection that is not
+    used again - so the reaper has to sweep them.
+    """
+    live_session = _StubSession()
+    abandoned_session = _StubSession()
+    live_id, live = _register_connection(
+        _identity(CLIENT_ADDRESS), live_session, "live-connection-id"
+    )
+    abandoned_id, abandoned = _register_connection(
+        _identity(OTHER_ADDRESS), abandoned_session, "abandoned-connection-id"
+    )
+
+    _age(abandoned, general.CONNECTION_MAX_LIFETIME)
+    capsys.readouterr()
+
+    assert db_functions._drop_expired_connections() == 1
+
+    # The expired one is gone, session and all; the other is untouched.
+    assert abandoned_id not in db_functions._sessions
+    assert abandoned_session.closed is True
+    assert db_functions._sessions[live_id] is live
+    assert live_session.closed is False
+
+    logged = capsys.readouterr().err
+    assert "db: dropped connection" in logged
+    assert general.log_id_prefix(abandoned_id) in logged
+
+    # Nothing left to expire, and a second pass says nothing.
+    assert db_functions._drop_expired_connections() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_removing_a_connection_revokes_it(http_transport, monkeypatch):
+    """A connection removed from the configuration cannot be opened again.
+
+    The password is read from the secret store on every open, so a session
+    reopened after an idle period would otherwise come back on a URI that is no
+    longer configured: mcp.setup would appear to remove a connection while every
+    live UUID for it went on working. db.connect's check is not enough - it only
+    ever runs before the UUID exists.
+    """
+    # The real _open_session runs here - stubbing it out would take the check
+    # under test with it - so only the configured list is stood in for. It is
+    # consulted before anything touches the secret store or the network, which
+    # is what lets this run without either.
+    uri = "root@127.0.0.1:3306"
+    configured = [uri]
+    monkeypatch.setattr(
+        db_functions.config, "list_connection_uris", lambda: list(configured)
+    )
+
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
+    client = _identity(CLIENT_ADDRESS)
+
+    # The connection falls idle, so its session is closed and the next use has
+    # to open a new one.
+    connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
+    assert db_functions._close_idle_sessions() == 1
+    assert connection.session is None
+
+    # Now the connection is removed with mcp.setup. The stored password would
+    # still be read on the reopen, so this is the only thing standing between a
+    # removed connection and a UUID that goes on working.
+    configured.clear()
+
+    with pytest.raises(mysqlsh.Error) as revoked:
+        with db_functions.use_session(connection_id, client):
+            pass
+
+    # And it says what happened, rather than failing somewhere down in the
+    # secret store, which is what a missing password read looks like.
+    assert "no longer a configured connection" in str(revoked.value)
+    assert connection.session is None
+
+
+def test_a_first_open_is_validated_too(http_transport, monkeypatch):
+    """The check sits in the one place every open goes through.
+
+    db.connect keeps its own check for the better error message, but the one in
+    _open_session is what covers every path - a first open and a reopen alike -
+    so a caller reaching the cache another way cannot open an unconfigured URI.
+    """
+    monkeypatch.setattr(db_functions.config, "list_connection_uris", lambda: [])
+
+    with pytest.raises(mysqlsh.Error) as refused:
+        db_functions._open_session("root@192.0.2.99:3306")
+
+    assert "no longer a configured connection" in str(refused.value)
+
+
+# --- how many connections there can be -------------------------------------
+
+
+def _registered_tools(monkeypatch, opened):
+    """Registers the db tools with a stubbed-out session factory.
+
+    Returns the tools by name and the one configured URI; ``opened`` collects an
+    entry per session actually opened, which is how the tests tell a call that
+    was refused from one that cost the database a connection.
+    """
+    uri = "root@127.0.0.1:3306"
+
+    def _fake_open_session(session_uri):
+        opened.append(session_uri)
+        return _StubSession()
+
+    monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
+    monkeypatch.setattr(
+        db_functions.config, "list_connection_uris", lambda: [uri]
+    )
+
+    tools = _ToolRecorder()
+    db_functions.register_db_tools(tools)
+
+    return tools.tools, uri
+
+
+def test_one_client_cannot_open_connections_without_end(
+    http_transport, monkeypatch, capsys
+):
+    """A client gets a limited number of connections, and is told the limit.
+
+    Nothing about db.connect costs the caller anything, while each call costs the
+    server a database session for as long as the connection lives - so a loop of
+    them is a way to use up the database's connections and this process's memory
+    at no cost at all.
+    """
+    monkeypatch.setattr(general, "MAX_CONNECTIONS_PER_CLIENT", 3)
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+    context = _context(CLIENT_ADDRESS)
+
+    ids = [tools["db.connect"](context, uri) for _ in range(3)]
+    assert len(opened) == 3
+    capsys.readouterr()
+
+    with pytest.raises(mysqlsh.Error) as refused:
+        tools["db.connect"](context, uri)
+
+    assert "maximum of 3" in str(refused.value)
+    assert "db.close" in str(refused.value)
+
+    # Refused before the database was asked for anything: a call that is going to
+    # be turned away must not be the reason a connection was taken.
+    assert len(opened) == 3
+    assert len(db_functions._sessions) == 3
+
+    logged = capsys.readouterr().err
+    assert "db.connect: REFUSED" in logged
+    assert f"address={CLIENT_ADDRESS}" in logged
+
+    # It is the client's own limit, not the server's: another client is
+    # unaffected by the first one having used up its share.
+    other_id = tools["db.connect"](
+        _context(OTHER_ADDRESS, OTHER_SESSION_ID), uri
+    )
+    assert other_id in db_functions._sessions
+
+    # And closing one gives the first client its slot back.
+    tools["db.close"](context, ids[0])
+    assert tools["db.connect"](context, uri) in db_functions._sessions
+
+
+def test_the_server_as_a_whole_has_a_limit_too(http_transport, monkeypatch):
+    """Several clients cannot do together what one of them may not do alone.
+
+    The per-client limit rests on the client identity, and a server with no
+    authentication cannot insist that two identities are two people: one client
+    behind a changing address, or simply on a new MCP session, is a new client as
+    far as that limit is concerned.
+    """
+    monkeypatch.setattr(general, "MAX_CONNECTIONS_TOTAL", 2)
+    monkeypatch.setattr(general, "MAX_CONNECTIONS_PER_CLIENT", 1)
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+
+    for session_id in (SESSION_ID, OTHER_SESSION_ID):
+        tools["db.connect"](_context(CLIENT_ADDRESS, session_id), uri)
+
+    # A third client is within its own limit and still refused.
+    with pytest.raises(mysqlsh.Error) as refused:
+        tools["db.connect"](_context(OTHER_ADDRESS, "0" * 32), uri)
+
+    assert "maximum of 2" in str(refused.value)
+    assert len(opened) == 2
+    assert len(db_functions._sessions) == 2
+
+
+def test_an_expired_connection_does_not_hold_a_slot(
+    http_transport, monkeypatch
+):
+    """A connection past its lifetime no longer counts against the limits.
+
+    It is already gone in every way that matters - the reaper drops it, and so
+    does using it - so counting it would keep a client out of a slot that nothing
+    holds any more.
+    """
+    monkeypatch.setattr(general, "MAX_CONNECTIONS_PER_CLIENT", 1)
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+    context = _context(CLIENT_ADDRESS)
+
+    connection_id = tools["db.connect"](context, uri)
+    with pytest.raises(mysqlsh.Error):
+        tools["db.connect"](context, uri)
+
+    _age(db_functions._sessions[connection_id], general.CONNECTION_MAX_LIFETIME)
+
+    assert tools["db.connect"](context, uri) in db_functions._sessions
+    assert len(opened) == 2
