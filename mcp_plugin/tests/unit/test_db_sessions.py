@@ -1134,6 +1134,102 @@ def test_an_expired_connection_does_not_hold_a_slot(
     assert len(opened) == 2
 
 
+# --- serializing a result ---------------------------------------------------
+
+
+class _StubColumn:
+    """Stands in for a column's metadata, which is only asked for its label."""
+
+    def __init__(self, label):
+        self._label = label
+
+    def get_column_label(self):
+        return self._label
+
+
+class _StubRow(list):
+    """A row read by position, as the shell's rows are."""
+
+    def get_field(self, label):  # pragma: no cover - here to be NOT used
+        raise AssertionError(
+            "values must be read by position: a label cannot reach the second "
+            "of two columns that share it"
+        )
+
+
+class _StubDataResult:
+    """A result with data, built from labels and rows of values."""
+
+    affected_items_count = 0
+    warnings_count = 0
+
+    def __init__(self, labels, rows):
+        self._labels = labels
+        self._rows = rows
+
+    def has_data(self):
+        return True
+
+    def get_columns(self):
+        return [_StubColumn(label) for label in self._labels]
+
+    def fetch_all(self):
+        return [_StubRow(values) for values in self._rows]
+
+
+def test_two_columns_with_one_label_both_survive():
+    """A row is a dict, so columns sharing a label have to be keyed apart.
+
+    SELECT a.id, b.id FROM a JOIN b is ordinary SQL and a client can send
+    anything. Keying both on "id" dropped one of them while still listing two
+    columns, which made the server's data loss look like the client's bug.
+    """
+    result = _StubDataResult(["id", "id", "other"], [[1, 2, 3]])
+
+    output = db_functions._serialize_result(result)
+
+    # Every column is reported, and the keys are exactly what columns says.
+    assert output["columns"] == ["id", "id_2", "other"]
+    assert output["rows"] == [{"id": 1, "id_2": 2, "other": 3}]
+    assert list(output["rows"][0]) == output["columns"]
+
+
+def test_a_made_up_label_never_collides_with_a_real_one():
+    """The suffix is checked against every label already used.
+
+    Otherwise a query selecting id, id and a column genuinely called id_2 would
+    have the invented key land on the real one - losing a column while fixing a
+    column.
+    """
+    result = db_functions._serialize_result(
+        _StubDataResult(["id", "id", "id_2", "id"], [[1, 2, 3, 4]])
+    )
+
+    assert result["columns"] == ["id", "id_2", "id_2_2", "id_3"]
+    assert result["rows"] == [{"id": 1, "id_2": 2, "id_2_2": 3, "id_3": 4}]
+
+    # The other way round, the column that is really called id_2 comes first and
+    # keeps its name; the duplicate takes the next free suffix.
+    result = db_functions._serialize_result(
+        _StubDataResult(["id_2", "id", "id"], [[1, 2, 3]])
+    )
+
+    assert result["columns"] == ["id_2", "id", "id_3"]
+
+
+def test_distinct_labels_are_left_exactly_as_they_are():
+    """The ordinary case is untouched: no renaming, no suffixes."""
+    result = db_functions._serialize_result(
+        _StubDataResult(["id", "name", "comment"], [[1, "a", None], [2, "b", "x"]])
+    )
+
+    assert result["columns"] == ["id", "name", "comment"]
+    assert result["rows"] == [
+        {"id": 1, "name": "a", "comment": None},
+        {"id": 2, "name": "b", "comment": "x"},
+    ]
+
+
 # --- the reaper's lifetime --------------------------------------------------
 
 
