@@ -126,7 +126,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **Connection safeguards.** `general.is_http_transport()` reads the `_active_transport`
   module global that `lib/server.start()` sets from its `transport` arg BEFORE serving.
   It gates EXACTLY TWO THINGS and nothing else (grep it — there are only two call sites
-  in `lib/`): `_start_idle_reaper` and `db.connect`'s fail-closed branch.
+  in `lib/`): `_start_connection_reaper` and `db.connect`'s fail-closed branch.
   - **Client binding**: a connection may only be used by the client that opened it —
     **BOTH the peer address AND the MCP session id**, held together in
     `general.ClientIdentity(address, session_id)` (a NamedTuple) and compared as ONE tuple
@@ -167,14 +167,41 @@ silently runs against whatever `mariadb-shell` is on PATH.
     EXACTLY as issued (lowercase hex; header values are case-sensitive).
   - **30-minute idle timeout** (`general.SESSION_IDLE_TIMEOUT = 1800`, raised from the
     10 minutes it shipped with in 0bba1318): a daemon reaper
-    thread (`_reap_idle_sessions`, started ONCE by the first `db.connect` via
-    `_start_idle_reaper`, wakes every `_IDLE_CHECK_INTERVAL = 30`s) closes the SESSION of
+    thread (`_reap_connections`, started ONCE by the first `db.connect` via
+    `_start_connection_reaper`, wakes every `_REAP_INTERVAL = 30`s) closes the SESSION of
     every idle connection but KEEPS the `_Connection`, so the UUID stays valid and the next
     tool call reopens transparently. `db.close` is the documented exception: it drops the
     entry and closes only an already-open session, it never reopens one to close it.
   - The reopened session is a NEW server session: temp tables, session vars, current
     schema and open transactions do NOT survive an idle period. Documented in the
     `db.connect` tool description (which clients see), the module docstring and the README.
+  - **12-hour hard TTL** (`general.CONNECTION_MAX_LIFETIME = 43200`, S6 — the user chose 12h
+    over the 4h first proposed): counted from `_Connection.opened_at`, NOT reset by use.
+    `has_expired(max_lifetime)`. Enforced in TWO places on purpose: in `_get_connection`
+    (so it holds in EVERY transport — the reaper is HTTP-only, and `sandbox.delete` can
+    revoke a connection over stdio) and by the reaper's `_drop_expired_connections` pass (so
+    it also reaches connections nobody comes back to). Both go through `_drop_connection(id,
+    reason)` — pop under `_sessions_lock`, log, THEN `close_session()` (which WAITS for a
+    running statement, unlike the idle pass's non-blocking acquire). An expired connection
+    gets the byte-identical unknown-UUID error, so it still tells a guesser nothing.
+  - **URI re-validation on EVERY open** (S6): `_open_session` itself checks
+    `config.list_connection_uris()` before reading the password, so a reopen after an idle
+    period cannot come back on a connection removed with `mcp.setup` or `sandbox.delete`.
+    `db.connect` keeps its own check for the nicer first-time message. Error text differs
+    deliberately ("is no longer a configured connection" vs "is not a configured
+    connection") — the reopen only ever happens for the connection's own owner, after the
+    identity check, so a distinct message leaks nothing.
+  - **Connection caps** (S7): `general.MAX_CONNECTIONS_PER_CLIENT = 16`,
+    `MAX_CONNECTIONS_TOTAL = 64`. `_claim_connection_slot(id, connection)` counts AND
+    inserts under ONE hold of `_sessions_lock`, and is called BEFORE
+    `connection.open_session()`; a failed open pops the entry again. Expired connections are
+    not counted. Over stdio every request has the same empty identity, so the per-client cap
+    is the one that binds there.
+  - **stderr audit trail** (S5): `general.log_event` (+ `describe_client`, `log_id_prefix`,
+    `LOG_ID_PREFIX_LENGTH = 8`). Records: connection opened, a use REFUSED, a `db.connect`
+    refused as unidentifiable or over a cap, an idle session closed, a connection dropped, a
+    failing `session.close()`, a failing reaper pass. Connection UUIDs and MCP session ids
+    are TRUNCATED to 8 chars — both are credentials.
 - **All db.\* tools now take a leading `ctx: Context`** (same `from mcp.server.mcpserver
   import Context` inside the registrar as msm/sandbox; the server strips it from the
   client-facing schema) purely to reach the client address — they are still SYNC and still
@@ -252,13 +279,49 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Current state
 
-- **THIS session (branch `wip/AIPL-16`): the user is working through a numbered
-  security-review list (S1..S8+) of the connection handling.** They send one issue at a
-  time; each is to be VERIFIED against the bundled SDK/uvicorn rather than taken on faith,
-  fixed, and pinned by a test PROVEN to fail without the fix (revert the one line, re-run,
-  restore). **S1, S2, S3, S4 and S8 are DONE. S5, S6, S7 are NOT YET RECEIVED** — the user
-  has them and sends them one at a time. S8 was address-normalization and was folded into
-  the S2 commit at the user's instruction ("must land together with S8").
+- **The user worked through a numbered security-review list (S1..S8) of the connection
+  handling, one issue at a time.** Each was to be VERIFIED against the bundled SDK/uvicorn
+  (or the real shell) rather than taken on faith, fixed, and pinned by a test PROVEN to fail
+  without the fix (revert the one line, re-run, restore). **ALL OF S1..S8 ARE NOW DONE.**
+  S1/S2/S8 in faa08b11, S3/S4 in 9c877f37, S5/S6/S7 in the commit this checkpoint describes.
+  S8 (address normalization) was folded into the S2 commit at the user's instruction ("must
+  land together with S8"); when the user later sent S8 as its own item it was VERIFIED as
+  already in the tree and re-reported, not re-implemented — do the same if a list item
+  arrives that is already built.
+  - **S5 (MEDIUM, no audit trail)**: refused cross-address use, a failing `session.close()`
+    and any reaper exception were all swallowed, so a hijack attempt left no trace. Added
+    `general.log_event` and the call sites listed under Architecture. Verified BEFORE coding
+    that stderr is the right stream in both transports: bundled `uvicorn/config.py:100` sends
+    uvicorn's own diagnostics to `ext://sys.stderr` (only its ACCESS log goes to stdout, and
+    HTTP mode does not care), and `mcp/client/stdio.py:345` passes the child `stderr=errlog`
+    — an INHERITED fd, defaulting to the parent's stderr, not an undrained pipe. Deliberately
+    NOT the `logging` module: under uvicorn an unconfigured logger drops INFO lines.
+    `_get_connection` was split so ONLY the mismatch branch logs (a stale id is a client bug,
+    a mismatch is an attempt), with both raising a shared `_no_such_connection()` factory so
+    the two texts cannot drift. PROVEN twice: `log_event` neutered to `return` fails all 5
+    log tests, each on its own message, while the 12 older tests still pass (so the
+    `_get_connection` split is behaviour-preserving); `log_id_prefix` returning ids in full
+    fails the two "no secrets in the log" assertions.
+  - **S6 (MEDIUM, a UUID never expires and revocation does not reach it)**: report right on
+    the substance, ONE detail over-stated and worth remembering — for a connection whose
+    session had been idle-CLOSED, the reopen already failed before the fix, by accident,
+    because `config.get_connection_password` is a `read_secret` on a deleted key. Confirmed
+    against the real shell: `RuntimeError: Failed to read the secret: Could not find the
+    secret`. So the pre-fix behaviour was "revocation reaches one narrow case, as an opaque
+    secret-store error, and nothing else"; a connection with a live session was never
+    re-checked at all. ALSO FOUND: `sandbox.delete` is a SECOND revocation path
+    (`sandbox_functions.py:223`) and unlike `mcp.setup` it is reachable OVER MCP, including
+    stdio — which is why the TTL is not left to the HTTP-only reaper. Fixed with the hard TTL
+    plus the re-validation (see Architecture). PROVEN: `has_expired` → `return False` fails the
+    3 lifetime tests (`DID NOT RAISE Error` x2, `assert 0 == 1`); disabling the
+    `_open_session` check fails both revocation tests with that same secret-store
+    `RuntimeError`.
+  - **S7 (LOW, unbounded connections)**: no per-client or global cap, so a loop of
+    `db.connect` calls cost the caller nothing and the server a real session each. Fixed with
+    the two caps (see Architecture). PROVEN twice, and the second probe is the one that
+    matters: caps removed → all 3 new tests fail with `DID NOT RAISE Error`; claiming the
+    slot AFTER `open_session()` → all 3 fail on the session count (`assert 4 == 3`,
+    `assert 3 == 2` x2), i.e. the refused call had already cost the database a connection.
   - **S1 (HIGH, header-derived peer address)**: uvicorn 0.52.1 has `proxy_headers=True`
     and `forwarded_allow_ips="127.0.0.1"` by DEFAULT (config.py:220/357), and
     `ProxyHeadersMiddleware` (config.py:526) rewrites `scope["client"]` from
@@ -295,7 +358,17 @@ silently runs against whatever `mariadb-shell` is on PATH.
     fail with `assert 200 == 421` — a forged `Host: evil.example.com` was SERVED a real MCP
     initialize response. The test binds `--host=LOCALHOST` on purpose: still loopback, but
     outside the SDK's three strings, so it isolates our settings from the SDK's guess.
-  - Touched this session: `lib/server.py` (`_serve_streamable_http`,
+  - Touched by S5/S6/S7: `lib/general.py` (`log_event`, `describe_client`,
+    `log_id_prefix`, `LOG_ID_PREFIX_LENGTH`, `CONNECTION_MAX_LIFETIME`,
+    `MAX_CONNECTIONS_TOTAL`, `MAX_CONNECTIONS_PER_CLIENT`, `import sys`/`time`),
+    `lib/db_functions.py` (`_Connection.opened_at`/`has_expired`, `_no_such_connection`,
+    `_drop_connection`, `_drop_expired_connections`, `_claim_connection_slot`, the URI check
+    in `_open_session`, the reaper renames, log calls at 8 sites, module + `db.connect` +
+    `use_session` docstrings), `README.md` (**What the server logs** and **Removing a
+    connection revokes it** sections, the lifetime and cap bullets),
+    `tests/unit/test_db_sessions.py` (14 new tests, `_UnclosableSession`, `_age`,
+    `_registered_tools`, `_register_connection` gained a `connection_id` arg).
+  - Touched by S1..S4: `lib/server.py` (`_serve_streamable_http`,
     `_warn_if_reachable_from_the_network`, `_transport_security_settings`,
     `_dialable_host_names`, `allowed_hosts` through `start`), `lib/general.py`
     (`normalize_client_address`, `LOOPBACK_ADDRESS`, `ClientIdentity`,
@@ -320,6 +393,20 @@ silently runs against whatever `mariadb-shell` is on PATH.
     - A reverse proxy still collapses the ADDRESS half onto one value for everyone, so behind
       a proxy the binding rests on the session id alone. Acceptable (it is the strong half)
       and now stated in the README.
+    - **A connection in continuous use is NOT re-validated per statement** — that would be a
+      secret-store (macOS Keychain) lookup per SQL statement. So revoking a busy connection
+      takes effect only when its session is next reopened or when its 12h TTL runs out.
+      Stated in the README, with "restart the server if a removal has to take effect at once".
+    - **The three limits and the caps are CONSTANTS, not `mcp.startServer` options**, which is
+      the same call as for the idle timeout. The user picked 12h for the TTL (over the 4h
+      proposed); 16/64 for the caps are MY numbers and were flagged as such.
+    - S6's long TTL and S7's per-client cap COMPOSE: a client that never calls `db.close`
+      keeps countable records for 12h, so it hits the wall after 16 `db.connect` calls in a
+      day rather than 16 concurrent ones. Sized generously for exactly that, and the refusal
+      error names `db.close` so a leaking client is nudged, not cut off.
+    - Over stdio, expired records are only dropped when their UUID is used again (no reaper
+      there), so a client that abandons them leaves them in the dict. Bounded by the caps,
+      and the client owns the process anyway.
 - Previous session on this branch: the two connection safeguards as originally built
   (0bba1318 + 6067fd8c) — address binding + the idle timeout, then raised to 30 minutes.
   Touched `lib/general.py` (transport global, `SESSION_IDLE_TIMEOUT`,
@@ -361,19 +448,27 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `..._binds_a_connection_to_its_mcp_session` for S3, and
   `..._rejects_a_foreign_host_header` for S4 — the last one talks raw `httpx2` rather than
   the MCP client, because it has to forge Host/Origin and assert HTTP status codes),
-  `test_db_sessions` (**11**, the connection safeguards incl. the S2/S3/S8 additions:
-  `..._stays_bound_without_an_active_transport`, `..._is_usable_over_stdio`,
-  `test_equivalent_spellings_of_an_address_are_the_same_client`,
+  `test_db_sessions` (**25** — the whole connection lifecycle, in four sections: the client
+  identity, the binding (S2/S3/S8: `..._stays_bound_without_an_active_transport`,
+  `..._is_usable_over_stdio`, `test_equivalent_spellings_of_an_address_are_the_same_client`,
   `..._is_reachable_over_either_ip_stack`, `..._is_bound_to_its_mcp_session`,
-  `test_client_identity_carries_the_session_id_too`), NEW `test_server_binding` (**6**:
+  `test_client_identity_carries_the_session_id_too`), the idle timeout, then S5's
+  `test_opening_a_connection_is_logged`, `..._refused_connection_use_is_logged`,
+  `test_closing_an_idle_session_is_logged`, `..._session_that_fails_to_close_is_logged`,
+  `test_a_failed_reaper_pass_is_logged`, `test_logging_never_breaks_its_caller`; S6's
+  `test_a_connection_does_not_live_for_ever`, `test_the_lifetime_holds_without_a_reaper`,
+  `test_the_reaper_drops_a_connection_nobody_comes_back_to`,
+  `test_removing_a_connection_revokes_it`, `test_a_first_open_is_validated_too`; S7's
+  `test_one_client_cannot_open_connections_without_end`,
+  `test_the_server_as_a_whole_has_a_limit_too`,
+  `test_an_expired_connection_does_not_hold_a_slot`), `test_server_binding` (**6**:
   loopback vs reachable vs wildcard host classification, the no-auth warning, the default
-  staying quiet, and the derived Host/Origin allow lists). **41 pass, ~36s.**
-- Coverage after latest run: TOTAL 92% (714 statements, 54 missed). Earlier full-run
-  figures: lib/msm_functions 100, lib/server 100,
-  lib/general 98, lib/config 96, lib/db_functions 95, lib/sandbox_functions 93,
-  server.py 85, lib/setup 84, general.py 73. What is left uncovered in
-  db_functions is defensive only: the `session.close()` swallow, the reaper thread's own
-  loop body (it sleeps 30s), `_start_idle_reaper`'s not-http return, the JSON-parse
+  staying quiet, and the derived Host/Origin allow lists). **55 pass, ~32s.**
+- Coverage after latest run: TOTAL 96% (793 statements, 32 missed). Per module:
+  **lib/general 100**, lib/msm_functions 100, lib/db_functions 99, lib/server 98,
+  lib/config 96, lib/sandbox_functions 96, server.py 94, lib/setup 84, general.py 73.
+  What is left uncovered in db_functions is defensive only: the reaper thread's own loop
+  body (it sleeps 30s), `_start_connection_reaper`'s not-http return, the JSON-parse
   fallback and the `_serialize_result` `str()` guard.
 - **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass
   — see the invocation note in Gotchas):
@@ -418,10 +513,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
   (`ClientIdentity`, `get_client_identity`, `get_client_address`, `get_client_session_id`,
   `normalize_client_address`/`normalize_client_identity`, `LOOPBACK_ADDRESS`,
   `MCP_SESSION_ID_HEADER`), the bind-address helpers (`is_loopback_host`,
-  `is_wildcard_host`, `LOOPBACK_HOST_NAMES`) and `SESSION_IDLE_TIMEOUT`.
+  `is_wildcard_host`, `LOOPBACK_HOST_NAMES`), the stderr audit log (`log_event`,
+  `describe_client`, `log_id_prefix`, `LOG_ID_PREFIX_LENGTH`) and every connection limit
+  (`SESSION_IDLE_TIMEOUT`, `CONNECTION_MAX_LIFETIME`, `MAX_CONNECTIONS_TOTAL`,
+  `MAX_CONNECTIONS_PER_CLIENT`). **100% covered — keep it that way.**
 - lib/config.py -> connections (secrets) + allowed paths (settings.json) + `add_allowed_path`.
 - lib/db_functions.py -> db.* tools; the `_Connection` cache (`_sessions` + `use_session` +
-  the idle reaper); `_serialize_result`;
+  the reaper + `_claim_connection_slot`/`_drop_connection`/`_no_such_connection`);
+  `_serialize_result`;
   the introspection SQL constants (`_LIST_SCHEMAS_SQL`, `_LIST_OBJECTS_SQL`,
   `_OBJECT_BASIC_SQL`, `_OBJECT_DETAILS_SQL`, `_ROUTINE_PARAMETERS_SQL`,
   `_OBJECT_COLUMNS_SQL`, `_OBJECT_CONSTRAINTS_SQL`, `_OBJECT_REFERENCES_SQL`).
@@ -464,10 +563,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `_context(address)` builds the `request_context.request.client.host` chain the HTTP
   transport supplies, and `http_transport`/`stdio_transport` fixtures flip
   `general.set_active_transport` and clear `_sessions`. No time is ever waited out —
-  `connection.last_used -= SESSION_IDLE_TIMEOUT + 1` then `_close_idle_sessions()` directly.
+  `connection.last_used -= SESSION_IDLE_TIMEOUT + 1` then `_close_idle_sessions()` directly,
+  and `_age(connection, seconds)` moves BOTH clocks back for the TTL tests.
   `CLIENT_ADDRESS`/`OTHER_ADDRESS` are TEST-NET-1 (`192.0.2.x`) on purpose: they must NOT
   be loopback, or normalization would collapse them onto the same token and the
-  binding tests would assert nothing.
+  binding tests would assert nothing. The log assertions use `capsys` (`log_event` prints to
+  `sys.stderr`, resolved at call time). `_registered_tools(monkeypatch, opened)` registers
+  the tools with a stubbed `_open_session` and an `opened` list — asserting on its LENGTH is
+  what proves a refused `db.connect` cost the database nothing.
 - run_tests.py -> symlinks mcp_plugin + msm_plugin + mrs_plugin into a temp config home
   (`dot_mariadb_shell` under a `mcp_dot_mariadb_shell_*` temp dir), `pip install -r
   requirements.txt` (was an inline `pytest pytest-cov mcp` list — driving it off
@@ -477,16 +580,17 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Next steps
 
-0. **RESUME HERE: the user's security-review list, S5 onwards.** They will send the next
-   issue; S1/S2/S3/S4/S8 are done (see Current state). Working agreement established over
-   S1-S4, follow it for the rest: (a) VERIFY the claim against the bundled SDK/uvicorn
-   source under `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/
-   site-packages`, never against upstream docs or memory — and say so when the report's
-   premise is partly wrong, as with S4, rather than letting a fix take credit it has not
-   earned; (b) fix it in code, not via an env var; (c) add a test and PROVE it discriminates
-   by reverting the fix, re-running, and restoring; (d) correct any docstring/README claim
-   the bug had made false. Also still open: the three residuals listed under S4 in Current
-   state.
+0. **The security-review list S1..S8 is COMPLETE, committed and pushed.** If the user sends
+   more items (S9+), follow the working agreement that held for all eight: (a) VERIFY the
+   claim against the bundled SDK/uvicorn source under
+   `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/site-packages`
+   or against the real shell, never against upstream docs or memory — and say plainly when
+   the report's premise is partly wrong (S4, S6) instead of letting a fix take credit it has
+   not earned; (b) fix it in code, not via an env var; (c) add a test and PROVE it
+   discriminates by reverting the fix, re-running, and restoring — for S7 the SECOND probe
+   (the ORDERING, not the existence of the cap) was the one that mattered; (d) correct any
+   docstring/README claim the bug had made false. Also still open: the residuals listed at
+   the end of the S1..S8 block in Current state.
 1. **`mysqlsh.globals.util.dump_schemas` / `load_dump` do NOT exist in this mariadb-shell
    build**, so `msm.deploy_schema` / `msm_plugin` `deploy_schema` with `backup=True` raise
    `AttributeError: unknown attribute: dump_schemas`. The backup feature is unusable (and
@@ -558,8 +662,10 @@ silently runs against whatever `mariadb-shell` is on PATH.
   failed open for any embedder using the public `build_mcp_server`, and after any server
   stopped. It is a plain equality and stdio falls out of it for free (empty identity ==
   empty identity). The transport is still consulted in exactly TWO places —
-  `_start_idle_reaper` and `db.connect`'s fail-closed branch — and
+  `_start_connection_reaper` and `db.connect`'s fail-closed branch — and
   `test_a_connection_stays_bound_without_an_active_transport` will fail if that changes.
+  The same reasoning is why S6's hard TTL is applied in `_get_connection` and not left to the
+  reaper (which only runs over HTTP).
 - **The connection binding is the WHOLE `ClientIdentity`, not the address.** Dropping the
   session id half (S3) leaves a binding that cannot separate clients sharing an address —
   everything behind a NAT or proxy, and every local process on the default loopback bind.
@@ -594,12 +700,54 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **Don't make the wrong-client error more helpful.** It is byte-identical to the
   unknown-UUID error on purpose, so a probing client cannot tell a live connection id from
   a made-up one. `test_a_connection_is_bound_to_its_client_over_http` compares the two
-  strings with the ids masked out and will fail if they drift apart.
-- **The idle reaper is a module-global daemon thread started once** (`_idle_reaper`). The
-  in-process test that calls `db.connect` really does start it, and it then lives for the
-  rest of the pytest run, waking every 30s. That is harmless (it only ever touches
-  `_sessions`, which the fixtures clear), but don't be surprised by it, and don't reset
-  `_idle_reaper` to None in a fixture — that would start a second one.
+  strings with the ids masked out and will fail if they drift apart. Since S5/S6 there is one
+  factory, `_no_such_connection(connection_id)`, and THREE callers (unknown id, wrong client,
+  expired) — build the error there, never inline, or the three drift.
+- **Never log a connection UUID or an MCP session id in full.** Both are credentials: with
+  either, a client can use a connection. Everything goes through
+  `general.log_id_prefix` (8 chars + `...`) and `general.describe_client`. Two tests assert
+  the full values are ABSENT from the log; writing them out fails them.
+- **`general.log_event` must never raise.** The idle reaper calls it from inside its own
+  `except` block, where an exception would end the thread and silently stop the idle timeout
+  and the TTL from being applied. Its `try/except Exception: pass` around the `print` is that
+  guarantee, and `test_logging_never_breaks_its_caller` pins it. Do not "clean up" the bare
+  except, and do not switch to the `logging` module: under uvicorn an unconfigured logger
+  drops INFO lines, which is how this would quietly stop recording anything.
+- **`_claim_connection_slot` counts AND inserts under one hold of `_sessions_lock`, and runs
+  BEFORE `open_session()`.** Both properties are load-bearing. Releasing the lock between
+  count and insert lets a burst of concurrent `db.connect` calls each see room and overshoot
+  the caps (real: SDK 2.0 runs sync tools via `anyio.to_thread`). Claiming the slot after the
+  session is open means a refused call has already cost the database a connection — that is
+  the revert probe the three S7 tests catch (`assert 4 == 3`). A failed open must pop the
+  entry again.
+- **The hard TTL is enforced in `_get_connection`, not only by the reaper** — the reaper is
+  HTTP-only, and `sandbox.delete` can revoke a connection over stdio. Same lesson as S2: a
+  safeguard that only runs when the transport global says so is one that can be off.
+  `test_the_lifetime_holds_without_a_reaper` runs under `stdio_transport` for exactly this.
+- **Expired connections must NOT count against the caps** and must not be revived by
+  anything. `_claim_connection_slot` skips them; `_get_connection` drops them.
+- **`_drop_connection` pops under `_sessions_lock`, then closes the session with the lock
+  RELEASED** (and `close_session` then WAITS for any running statement, deliberately, unlike
+  the idle pass's non-blocking acquire). Do not "optimize" the close inside the dict lock —
+  that inverts the documented lock order and blocks every other tool call behind a long
+  statement.
+- **Do not stub `_open_session` in a test meant to exercise the revoked-URI check** — that
+  takes the check under test with it. Patch `config.list_connection_uris` instead and let the
+  real `_open_session` run; it consults the list before touching the secret store or the
+  network, so no server is needed. (First draft of `test_removing_a_connection_revokes_it`
+  got this wrong and passed for the wrong reason.)
+- **After `close_session()` the `_Connection.session` is None**, so a test cannot assert
+  `connection.session.closed` afterwards — hold the `_StubSession` reference itself
+  (`_register_connection(client, session)`). Three tests were written wrong this way first
+  and failed with `AttributeError: 'NoneType' object has no attribute 'closed'`.
+- **The connection reaper is a module-global daemon thread started once** (`_reaper`; renamed
+  from `_idle_reaper` in S6, along with `_reap_connections` (was `_reap_idle_sessions`),
+  `_start_connection_reaper` (was `_start_idle_reaper`) and `_REAP_INTERVAL` (was
+  `_IDLE_CHECK_INTERVAL`) — it does two jobs now, so the old names lied). The in-process test
+  that calls `db.connect` really does start it, and it then lives for the rest of the pytest
+  run, waking every 30s. That is harmless (it only ever touches `_sessions`, which the
+  fixtures clear), but don't be surprised by it, and don't reset `_reaper` to None in a
+  fixture — that would start a second one.
 - **The shell already returns DECIMAL and DATETIME as STRINGS.** Verified: a
   `CAST(2 AS DECIMAL(10,2))` arrives as `'2.00'`, and I_S.SEQUENCES `START_VALUE` /
   `INCREMENT` as `'1'`. So `_serialize_result` needs NO numeric conversion — a
@@ -726,14 +874,19 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **The session started in DETACHED HEAD** at `mariadb/wip/AIPL-16` (ecc6bc3c) with no
   local branch — `git checkout -b wip/AIPL-16` was needed before committing. Check
   `git branch --show-current` before assuming there is a branch to commit onto.
-- THIS session is three commits on that branch:
+- The security work is four commits on that branch:
   1. **S1 + S2/S8** (faa08b11) — the proxy-header fix and the transport-independent,
      normalized binding.
   2. the `sandbox.deploy` `sandbox_dir` docstring note (5b94d940) — a pre-existing edit the
      session inherited unstaged, committed separately on the user's instruction because it
      is not part of the security work.
-  3. **S3 + S4** — the session-id binding, the no-authentication README section and warning,
-     and the explicit Host/Origin validation.
+  3. **S3 + S4** (9c877f37) — the session-id binding, the no-authentication README section
+     and warning, and the explicit Host/Origin validation.
+  4. **S5 + S6 + S7** — the audit trail, the hard TTL + URI re-validation, and the caps.
+     ONE commit, not three: S6 and S7 both call S5's `log_event` and all three interleave
+     inside the same functions and docstrings, so splitting them would have meant committing
+     intermediate states that were never run green. The user asked for the commit without
+     specifying granularity after that reasoning was put to them.
 - **The remote branch moved mid-session and the push was rejected.** `mariadb/wip/AIPL-16`
   had gained e9122f6d (a merge of `main`, bringing 962165d7, a CI job-name change touching
   only `.github/workflows/shell-plugins-ci.yml`). Rebased rather than merged (one commit, no

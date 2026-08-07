@@ -167,6 +167,66 @@ substitute for the authentication described above.
   simply drops it without opening anything. As it is a new session, nothing that
   only lived in the previous one - temporary tables, session variables, the
   current schema, an open transaction - survives an idle period.
+- **No connection lives longer than 12 hours.** This is a different limit from the
+  one above and applies to the connection rather than to its session: twelve hours
+  after `db.connect` returned it, the UUID stops working however much it has been
+  used in between, and the client has to call `db.connect` again. Expiring is
+  reported exactly like a UUID that was never handed out, and it is applied both
+  when a connection is used - so it holds over stdio as well - and by the reaper,
+  so a connection whose client simply went away does not sit in the server for
+  the rest of its life.
+- **At most 16 connections per client, and 64 in total.** Opening one costs the
+  client a single tool call and the server a real database session, so a loop of
+  `db.connect` calls would otherwise be able to use up the database's
+  `max_connections` and grow this process's memory unchecked. A call over either
+  limit is refused with an error naming `db.close`, before the database is asked
+  for anything - the refusal costs no connection. Both limits are well above what
+  a client needs in practice; over stdio, where every request looks like the same
+  client, the per-client limit is the one that applies.
+
+#### Removing a connection revokes it
+
+Deleting a connection with `mcp.setup` - or deleting the sandbox that registered
+one, with `sandbox.delete` - also invalidates the UUIDs that are open on it. The
+URI is checked against the configured connections **every time a session is
+opened**, not only by `db.connect`: since the stored password is read again on
+each open, a session reopened after an idle period would otherwise come back on a
+connection that had been taken away, and a UUID that never expired would go on
+working for as long as the server ran.
+
+The two limits are what bound the rest of it: a connection whose session is still
+open is not re-checked on every statement (that would mean a secret-store lookup
+per SQL statement), so a connection in continuous use can outlive its removal by
+up to its 12-hour lifetime. Restart the server if a removal has to take effect at
+once.
+
+#### What the server logs
+
+Because a refused request is answered exactly like one naming a connection that
+does not exist, nothing about an attempted takeover reaches the client - so the
+server writes what happens to its connections to **stderr**, one line per event,
+whichever transport is in use:
+
+```text
+2026-08-07T14:03:11+0200 [mcp] db.connect: opened connection 6f2a91c4... on 'root@127.0.0.1:3306' for address=192.0.2.10 session=0123abcd...
+2026-08-07T14:07:44+0200 [mcp] db: REFUSED use of connection 6f2a91c4... bound to address=192.0.2.10 session=0123abcd... by a request from address=192.0.2.20 session=fedc4321...
+2026-08-07T14:37:44+0200 [mcp] db: closed the idle session of connection 6f2a91c4... (address=192.0.2.10 session=0123abcd...) after 1800s unused; the connection stays valid and opens a new session when it is used again
+```
+
+Recorded are: a connection opened (with the client it is bound to and the URI it
+was opened on), a use refused, a `db.connect` refused because the client could
+not be fully identified, a session closed for being idle, a session that failed
+to close, and a failing pass of the idle reaper. Redirect stderr to a file to
+keep the trail:
+
+```sh
+mariadb-shell -- mcp start-server --port=8080 2>> ~/mcp-server.log
+```
+
+Connection UUIDs and MCP session ids appear **truncated to their first eight
+characters**: both are credentials - holding one is what lets a client use a
+connection - so the log is not a place they can be read out of. Nothing else
+about a request is logged; the SQL statements a client runs are not.
 
 ### Schema management tools (`msm`)
 
