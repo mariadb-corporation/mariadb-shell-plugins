@@ -26,7 +26,37 @@ from driving the tools, which is what the Host/Origin validation is for.
 
 import pytest
 
+import mysqlsh
+
 from mcp_plugin.lib import general, server
+
+
+def test_start_refuses_a_configuration_it_cannot_serve():
+    """Bad arguments are refused before anything is built or recorded.
+
+    All three checks come before the shell's interactive mode is turned off, the
+    transport is recorded and the server is built, so a rejected call leaves
+    nothing behind - which is why these can be made against the real start().
+    """
+    for arguments, expected in (
+        # A transport that does not exist, rather than a silent default.
+        (("127.0.0.1", 8080, "carrier-pigeon", ["db"]), "Unsupported transport"),
+        # A server with no tools at all would answer nothing.
+        (
+            ("127.0.0.1", 8080, general.TRANSPORT_STDIO, []),
+            "At least one function group",
+        ),
+        # A misspelt group is refused rather than quietly not served.
+        (
+            ("127.0.0.1", 8080, general.TRANSPORT_STDIO, ["db", "dbb"]),
+            "Unknown function group",
+        ),
+    ):
+        with pytest.raises(mysqlsh.Error, match=expected):
+            server.start(*arguments)
+
+        # Nothing was recorded on the way out.
+        assert general.is_http_transport() is False
 
 
 def test_loopback_hosts_are_told_apart_from_reachable_ones():

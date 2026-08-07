@@ -1054,6 +1054,62 @@ def test_the_server_as_a_whole_has_a_limit_too(http_transport, monkeypatch):
     assert len(db_functions._sessions) == 2
 
 
+def test_a_connection_that_fails_to_open_gives_its_slot_back(
+    http_transport, monkeypatch
+):
+    """A refused server, a wrong password: the attempt costs the client nothing.
+
+    Room is claimed before the session is opened, so that a call over the limit
+    does not take a database connection on its way to being refused. The other
+    side of that has to hold too: an attempt that then fails to open must give
+    the slot back, or a client whose database is briefly unreachable spends its
+    allowance on connections it never got and cannot try again until they expire.
+    """
+    monkeypatch.setattr(general, "MAX_CONNECTIONS_PER_CLIENT", 1)
+
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+    context = _context(CLIENT_ADDRESS)
+
+    def _fail_to_open(_uri):
+        raise mysqlsh.DBError(2003, "Can't connect to MariaDB server")
+
+    monkeypatch.setattr(db_functions, "_open_session", _fail_to_open)
+
+    # The error reaches the client rather than being turned into a connection
+    # that does not work.
+    with pytest.raises(mysqlsh.DBError) as failed:
+        tools["db.connect"](context, uri)
+
+    assert failed.value.code == 2003
+    # And nothing is left holding the client's one slot.
+    assert db_functions._sessions == {}
+
+    # Which is what lets it try again once the server is back.
+    monkeypatch.setattr(db_functions, "_open_session", lambda _uri: _StubSession())
+    assert tools["db.connect"](context, uri) in db_functions._sessions
+
+
+def test_db_connect_refuses_a_uri_that_is_not_configured(
+    http_transport, monkeypatch
+):
+    """Only the connections configured with mcp.setup can be opened.
+
+    The first thing db.connect does, and the reason the tool cannot be used to
+    reach an arbitrary server with the shell's credentials.
+    """
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+
+    with pytest.raises(mysqlsh.Error) as refused:
+        tools["db.connect"](_context(CLIENT_ADDRESS), "root@192.0.2.99:3306")
+
+    assert "is not a configured connection" in str(refused.value)
+    # Refused before anything was opened or recorded.
+    assert opened == []
+    assert db_functions._sessions == {}
+
+
 def test_an_expired_connection_does_not_hold_a_slot(
     http_transport, monkeypatch
 ):

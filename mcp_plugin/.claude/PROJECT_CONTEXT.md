@@ -639,7 +639,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `..._binds_a_connection_to_its_mcp_session` for S3, and
   `..._rejects_a_foreign_host_header` for S4 — the last one talks raw `httpx2` rather than
   the MCP client, because it has to forge Host/Origin and assert HTTP status codes),
-  `test_db_sessions` (**34** — the whole connection lifecycle, in nine sections: the client
+  `test_db_sessions` (**36** — the whole connection lifecycle, in nine sections: the client
   identity, the binding (S2/S3/S8: `..._stays_bound_without_an_active_transport`,
   `..._is_usable_over_stdio`, `test_equivalent_spellings_of_an_address_are_the_same_client`,
   `..._is_reachable_over_either_ip_stack`, `..._is_bound_to_its_mcp_session`,
@@ -652,18 +652,21 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `test_removing_a_connection_revokes_it`, `test_a_first_open_is_validated_too`; S7's
   `test_one_client_cannot_open_connections_without_end`,
   `test_the_server_as_a_whole_has_a_limit_too`,
-  `test_an_expired_connection_does_not_hold_a_slot`; T1's
+  `test_an_expired_connection_does_not_hold_a_slot`,
+  `test_a_connection_that_fails_to_open_gives_its_slot_back`,
+  `test_db_connect_refuses_a_uri_that_is_not_configured`; T1's
   `test_closing_a_connection_beats_a_call_that_races_it` and
   `test_a_session_being_closed_is_not_replaced_underneath`), `test_server_binding` (**6**:
   loopback vs reachable vs wildcard host classification, the no-auth warning, the default
   staying quiet, the derived Host/Origin allow lists, and that serving over HTTP starts and
-  stops the connection reaper), NEW `test_db_threading` (**1**,
+  stops the connection reaper, and that `start()` refuses a configuration it cannot serve),
+  NEW `test_db_threading` (**1**,
   T2: a real session opened, used and closed across three threads), NEW `test_db_recovery`
   (**1**, T3: a real session KILLed from a second session and replaced on the next call).
-  **67 pass, ~34s.**
-- **Coverage: TOTAL 94% (845 statements, 52 missed) — measured on a run with `.coverage`
-  DELETED first.** Per module: lib/msm_functions 100, lib/general 98, lib/db_functions 96,
-  lib/config 96, lib/server 95, lib/sandbox_functions 87, lib/setup 84, server.py 81,
+  **70 pass, ~33s.**
+- **Coverage: TOTAL 95% (845 statements, 44 missed) — measured on a run with `.coverage`
+  DELETED first.** Per module: lib/msm_functions 100, lib/db_functions 98, lib/general 98,
+  lib/server 98, lib/config 96, lib/sandbox_functions 87, lib/setup 84, server.py 81,
   general.py 73.
   **CORRECTION, and a trap to avoid repeating**: earlier figures in this file and in the
   T-series commit messages (up to "db_functions 100%, TOTAL 97%") were INFLATED.
@@ -672,12 +675,16 @@ silently runs against whatever `mariadb-shell` is on PATH.
   branches the real code never takes. Pass counts were never affected; only coverage.
   **Delete `.coverage` before any run whose number you intend to write down** (plain
   `.coverage`, never the `.coverage*` glob - that matches `.coveragerc`).
-  What is uncovered in db_functions is defensive, and two of the gaps are worth closing when
-  somebody is in there: `db.connect`'s slot giveback when the first open fails (1426-1432, added
-  in S7 with no test) and its "not a configured connection" raise (1390); the rest are the
-  bytes->hex branch, the JSON-parse fallback, `_drop_connection`'s already-gone return and a
-  blank statement in a script. In lib/server.py the three validation raises in `start()`
-  (unsupported transport, no function groups, unknown groups) have no test either.
+  The two gaps that mattered are now CLOSED (they were: `db.connect`'s slot giveback when the
+  first open fails, added in S7 with no test, and its "not a configured connection" raise; plus
+  `server.start`'s three validation raises) - see the three tests named below. What is left is
+  defensive and small: the bytes->hex branch, the JSON-parse fallback, `_drop_connection`'s
+  already-gone return, `execute_sql_script`'s "exactly one of sql_script/file_path" raise, a
+  blank statement in a script, and `_dialable_host_names`' unresolvable-hostname except.
+  Note that subprocess coverage IS captured (`.coveragerc` sets `parallel`/`sigterm` and
+  `run_tests.py` sets `COVERAGE_PROCESS_START`), so the stdio- and HTTP-driven tests DO count -
+  the figure is not under-reporting for that reason. pytest-cov combines and removes the
+  `.coverage.*` data files, so deleting plain `.coverage` really does give a clean run.
 - **Sibling `msm_plugin` was changed in an EARLIER session** (own commit, own suite: 9 pass
   — see the invocation note in Gotchas):
   - MySQL -> MariaDB rebrand of all PROSE/branding. Legal notices were NOT word-substituted;
