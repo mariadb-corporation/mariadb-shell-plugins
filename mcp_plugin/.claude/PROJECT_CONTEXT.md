@@ -191,6 +191,12 @@ silently runs against whatever `mariadb-shell` is on PATH.
     deliberately ("is no longer a configured connection" vs "is not a configured
     connection") — the reopen only ever happens for the connection's own owner, after the
     identity check, so a distinct message leaks nothing.
+  - **Closing is FINAL, and a flag is what makes it so** (T1): `_Connection.closed`, set
+    under `connection.lock` by `_Connection.close()`, checked by `open_session()` which
+    raises the module-private `_ConnectionClosed`; `use_session` translates that into
+    `_no_such_connection(connection_id)`. The TERMINAL paths (`db.close`, `_drop_connection`)
+    call `close()`; the IDLE path still calls `close_session()` and must NOT raise the flag,
+    or an idle connection could never be reopened.
   - **Connection caps** (S7): `general.MAX_CONNECTIONS_PER_CLIENT = 16`,
     `MAX_CONNECTIONS_TOTAL = 64`. `_claim_connection_slot(id, connection)` counts AND
     inserts under ONE hold of `_sessions_lock`, and is called BEFORE
@@ -322,6 +328,131 @@ silently runs against whatever `mariadb-shell` is on PATH.
     matters: caps removed → all 3 new tests fail with `DID NOT RAISE Error`; claiming the
     slot AFTER `open_session()` → all 3 fail on the session count (`assert 4 == 3`,
     `assert 3 == 2` x2), i.e. the refused call had already cost the database a connection.
+- **A SECOND list started after S1..S8: T-numbered items. T1..T4 are DONE** (T2 by
+  verification alone: it needed no code change; T3 needed half of what it asked for).
+  - **T1 (HIGH, `db.close` racing a call leaks a session)**: PRE-EXISTING since 0bba1318, not
+    introduced by S5..S7 — the report said so and it is true. `use_session` resolves the
+    connection under `_sessions_lock`, RELEASES it, and only then takes `connection.lock`, so
+    a whole `db.close` fits in between: it pops the record and closes the session, and
+    `open_session()` then found `session is None` and opened a NEW one on a record no longer
+    in `_sessions` — unreachable by `db.close` and by the reaper, so nothing would ever close
+    it, while the caller went on working on a connection its client had been told was closed.
+    Same shape a second time INSIDE `close_session()`, which takes the session out under the
+    lock, releases, and only then calls `session.close()`. Fixed with the `closed` flag (see
+    Architecture). **Holding the lock across `session.close()` would NOT have fixed it** — the
+    racer would just open its session after the close finished; the report was right about
+    that and `test_closing_a_connection_beats_a_call_that_races_it` would still fail under
+    that "fix", since its closer thread is joined before the racing call takes the lock.
+    PROVEN: with the flag check disabled, `..._beats_a_call_that_races_it` fails
+    `DID NOT RAISE Error` (the racing `db.execute_sql` ran to completion on the leaked
+    session) and `test_a_session_being_closed_is_not_replaced_underneath` fails
+    `assert [<_StubSession object>] == ['refused']` — the racer was handed a second session
+    while the first was being closed.
+    - **The first version of both tests failed for the WRONG reason** under the probe (an
+      `AttributeError: '_StubSession' object has no attribute 'run_sql'`, and an unrelated
+      `mysqlsh.Error` from S6's URI check that `close_session`'s own `except` then swallowed).
+      A probe that fails accidentally proves nothing, so `_StubSession` gained `run_sql` +
+      `_StubResult` and the second test stubs `_open_session`. **Check WHY a revert probe
+      fails, not just THAT it fails.**
+  - **T2 (MEDIUM "verify", the reaper closes shell sessions from a foreign thread)**: asked
+    for an authoritative answer on cross-thread `session.close()`, with a
+    hand-it-back-to-the-event-loop mitigation if the answer was no or unobtainable. **The
+    answer is YES, it is supported, and the mitigation was deliberately NOT built** — the user
+    was told so with the evidence rather than being given a defensive change that would have
+    made things worse. Do not "fix" this again without new evidence:
+    - **`mysql_thread_init()` and `mysql_thread_end()` are EMPTY FUNCTIONS** in the MariaDB
+      Connector/C this shell statically links
+      (`/Users/mzinner/git/mariadb-server/libmariadb/libmariadb/mariadb_lib.c:4515`; the
+      library is `MARIADB_CLIENT_LIBRARY` in `build/CMakeCache.txt` ->
+      `mariadb-server/bld/libmariadb/libmariadb/libmariadbclient.a`). There is no per-thread
+      client state to be missing. The shell's `Mysql_thread` RAII helper and its
+      "initialization ... when connecting from threads" comment
+      (`mysqlshdk/include/shellcore/shell_init.h:52`) are libmysqlclient heritage from the
+      MySQL Shell this is ported from; its ONLY in-tree user is `kill_query`.
+    - `Session_impl::close()` (`mysqlshdk/libs/db/mysql/session.cc:628`) = reset the previous
+      result, `mysql_close()`, null the pointer. **No `thread_local` anywhere under
+      `mysqlshdk/libs/db/`.**
+    - **The report's premise that sessions are created on the event-loop thread is WRONG**,
+      and this matters more than the rest: SDK 2.0 dispatches a sync tool body through
+      `anyio.to_thread.run_sync` (`mcp/server/mcpserver/resolve.py:556`). MEASURED in this
+      runtime: the loop runs on `MainThread`, every sync tool body on an `AnyIO worker
+      thread`. So EVERY `db.connect`/`db.execute_sql`/`db.close` already opens, uses and
+      closes sessions off the loop thread, on threads the shell did not create. The reaper is
+      doing nothing the tools do not do on every call.
+    - Empirically: 60 rounds of open-on-one-thread / query-on-a-second / close-on-a-brand-new
+      daemon thread named `mcp-db-connection-reaper`, against a real 12.3.2 sandbox — no
+      crash, clean `RuntimeError` on use-after-close, server connection ids incrementing one
+      per round.
+    - **Why the proposed mitigation would have been worse**: it would move ~1 close per 30
+      minutes onto the loop thread while leaving every tool call on a worker thread (fixing
+      the least-exposed instance); it would put a blocking `mysql_close()` network round trip
+      ON the event loop, stalling the whole server; and it needs a loop reference captured at
+      serve time plus a fallback for stdio, embedders using `build_mcp_server`, and the
+      in-process tests — new machinery and a new failure mode for no reduction in exposure.
+    - Built instead: **`tests/unit/test_db_threading.py`** (one test, uses the shared
+      sandbox), which pins the finding against a real server and checks
+      `information_schema.PROCESSLIST` so a close that silently did nothing would fail it. A
+      future shell build that made sessions thread-affine breaks a test run instead of a
+      production server. The finding is also written into `_reap_connections`'s docstring.
+    - The invariant that IS load-bearing is unchanged: **one thread at a time per session**,
+      via `_Connection.lock`, pinned by `test_a_session_in_use_is_not_closed`. Connector/C is
+      thread-safe for distinct connections, not for concurrent use of one.
+  - **T3 (MEDIUM, a dead session is never detected)**: real bug, real fix, but HALF the
+    proposed fix was verified USELESS and deliberately left out:
+    - **`session.is_open()` is NOT a liveness check.** It exists (`ClassicSession` exposes
+      `isOpen` -> `is_open()` in Python, `modules/mod_mysql_session.cc:92`) but it is
+      `return _mysql ? true : false` (`mysqlshdk/libs/db/mysql/session.h:220`) - a check that
+      a client-side handle exists. MEASURED against a real server: it returns **True** after
+      the connection is KILLed, True after the statement that failed on it, and True after
+      the whole server has been stopped. So `if not session.is_open(): reopen` would catch
+      NOTHING in any of the three cases T3 names, while reading as a safety net. Not added.
+      Do not add it later either.
+    - What works is the error: a lost connection arrives as **`mysqlsh.DBError` with `.code`
+      2013** (CR_SERVER_LOST, "Lost connection to server during query"), and **2006**
+      (CR_SERVER_GONE_ERROR, "Server has gone away") on every call after it. An ordinary SQL
+      error is the SAME exception type with a server-side code (e.g. 1146), so the code is
+      the only thing that tells them apart -> `_CONNECTION_LOST_ERRORS = (2006, 2013, 2055)`
+      and `_is_connection_lost(error)`, applied around the `yield` in `use_session` (the
+      choke point all 9 call sites go through). The session is discarded via
+      `close_session()`, so the connection lives on and the NEXT call opens a new session.
+    - The failed call is NOT retried: it may have run in part, and any transaction died with
+      the connection. The client gets the DBError and decides. Stated in the README.
+    - The code list is deliberately SHORT, and that is safe because a lost connection that
+      first surfaces under some other code is caught on the next call, which is always 2006.
+    - PROVEN with TWO probes, because one direction is not enough here:
+      `_is_connection_lost` -> `return False` fails the two positive tests (`assert
+      <shell.Object ...> is None` - the corpse still cached - and `assert False is True` on
+      `_StubSession.closed`); `-> return True` fails
+      `test_an_ordinary_sql_error_keeps_the_session`, which the first probe CANNOT fail by
+      construction. A negative-control test needs its own probe in the opposite direction.
+    - NOT built, mentioned to the user: a pre-flight `SELECT 1`/ping on the first call after
+      a long idle period, which would turn the one failed call into a silent reconnect at the
+      cost of a round trip. The error-driven discard already makes it self-healing.
+  - **T4 (MEDIUM, silent state loss with no runtime signal)**: a reopen discards temp tables,
+    session vars, the current schema and - the dangerous one - an open transaction, so a
+    `COMMIT` on the new session succeeds having committed NOTHING. Documented but invisible at
+    runtime. Now the call that opens the session reports `session_restarted: true` in its
+    result metadata: `_Connection.session_restarted` (assigned on the way into `use_session`,
+    cleared in its `finally`), read via `_session_was_restarted(connection_id)` inside the
+    block, and rendered by `_serialize_result(result, session_restarted=...)`.
+    - Present ONLY when true - a field that is nearly always false is one clients learn to
+      skip - and on `db.execute_sql_script` only on the FIRST entry (`restarted and not
+      results`), since one session is opened once, before the script starts. The
+      introspection tools return bare row lists with no envelope and do not carry it; they do
+      not depend on session state.
+    - Covers T3's discard too: session dropped -> next call reopens -> that call reports it.
+    - The flag is PER CALL, which is the whole point (the report said so). TWO mechanisms,
+      deliberately redundant: the entry does `connection.session_restarted = restarted` (an
+      assignment, so a later call cannot inherit a True), and the `finally` clears it (so a
+      reader OUTSIDE a call - there is none today - cannot find a stale True). Either alone
+      covers the sequential case.
+    - **PROVEN, and the second probe exposed a WEAK TEST rather than a weak fix**: with the
+      field suppressed, all 3 new tests fail with `KeyError: 'session_restarted'`. But the
+      first version of the per-call assertion (checking the flag after making ANOTHER call)
+      PASSED the per-connection probe, because the next call's entry assignment had already
+      reset it. The test now asserts `connection.session_restarted is False` IMMEDIATELY after
+      the reopening call, and the probe then fails `assert True is False`. Same lesson as T3,
+      earned again: assert the invariant where it can actually be violated.
   - **S1 (HIGH, header-derived peer address)**: uvicorn 0.52.1 has `proxy_headers=True`
     and `forwarded_allow_ips="127.0.0.1"` by DEFAULT (config.py:220/357), and
     `ProxyHeadersMiddleware` (config.py:526) rewrites `scope["client"]` from
@@ -362,7 +493,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
     `log_id_prefix`, `LOG_ID_PREFIX_LENGTH`, `CONNECTION_MAX_LIFETIME`,
     `MAX_CONNECTIONS_TOTAL`, `MAX_CONNECTIONS_PER_CLIENT`, `import sys`/`time`),
     `lib/db_functions.py` (`_Connection.opened_at`/`has_expired`, `_no_such_connection`,
-    `_drop_connection`, `_drop_expired_connections`, `_claim_connection_slot`, the URI check
+    `_drop_connection`, `_drop_expired_connections`, `_claim_connection_slot`, and T1's
+    `_ConnectionClosed`/`closed`/`close()`, the URI check
     in `_open_session`, the reaper renames, log calls at 8 sites, module + `db.connect` +
     `use_session` docstrings), `README.md` (**What the server logs** and **Removing a
     connection revokes it** sections, the lifetime and cap bullets),
@@ -448,7 +580,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `..._binds_a_connection_to_its_mcp_session` for S3, and
   `..._rejects_a_foreign_host_header` for S4 — the last one talks raw `httpx2` rather than
   the MCP client, because it has to forge Host/Origin and assert HTTP status codes),
-  `test_db_sessions` (**25** — the whole connection lifecycle, in four sections: the client
+  `test_db_sessions` (**32** — the whole connection lifecycle, in seven sections: the client
   identity, the binding (S2/S3/S8: `..._stays_bound_without_an_active_transport`,
   `..._is_usable_over_stdio`, `test_equivalent_spellings_of_an_address_are_the_same_client`,
   `..._is_reachable_over_either_ip_stack`, `..._is_bound_to_its_mcp_session`,
@@ -461,10 +593,15 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `test_removing_a_connection_revokes_it`, `test_a_first_open_is_validated_too`; S7's
   `test_one_client_cannot_open_connections_without_end`,
   `test_the_server_as_a_whole_has_a_limit_too`,
-  `test_an_expired_connection_does_not_hold_a_slot`), `test_server_binding` (**6**:
+  `test_an_expired_connection_does_not_hold_a_slot`; T1's
+  `test_closing_a_connection_beats_a_call_that_races_it` and
+  `test_a_session_being_closed_is_not_replaced_underneath`), `test_server_binding` (**6**:
   loopback vs reachable vs wildcard host classification, the no-auth warning, the default
-  staying quiet, and the derived Host/Origin allow lists). **55 pass, ~32s.**
-- Coverage after latest run: TOTAL 96% (793 statements, 32 missed). Per module:
+  staying quiet, and the derived Host/Origin allow lists), NEW `test_db_threading` (**1**,
+  T2: a real session opened, used and closed across three threads), NEW `test_db_recovery`
+  (**1**, T3: a real session KILLed from a second session and replaced on the next call).
+  **64 pass, ~32s.**
+- Coverage after latest run: TOTAL 96% (823 statements, 32 missed). Per module:
   **lib/general 100**, lib/msm_functions 100, lib/db_functions 99, lib/server 98,
   lib/config 96, lib/sandbox_functions 96, server.py 94, lib/setup 84, general.py 73.
   What is left uncovered in db_functions is defensive only: the reaper thread's own loop
@@ -519,7 +656,9 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `MAX_CONNECTIONS_PER_CLIENT`). **100% covered — keep it that way.**
 - lib/config.py -> connections (secrets) + allowed paths (settings.json) + `add_allowed_path`.
 - lib/db_functions.py -> db.* tools; the `_Connection` cache (`_sessions` + `use_session` +
-  the reaper + `_claim_connection_slot`/`_drop_connection`/`_no_such_connection`);
+  the reaper + `_claim_connection_slot`/`_drop_connection`/`_no_such_connection` +
+  `_ConnectionClosed` and the `closed` flag + `_CONNECTION_LOST_ERRORS`/
+  `_is_connection_lost`);
   `_serialize_result`;
   the introspection SQL constants (`_LIST_SCHEMAS_SQL`, `_LIST_OBJECTS_SQL`,
   `_OBJECT_BASIC_SQL`, `_OBJECT_DETAILS_SQL`, `_ROUTINE_PARAMETERS_SQL`,
@@ -530,6 +669,15 @@ silently runs against whatever `mariadb-shell` is on PATH.
   (own uvicorn, `proxy_headers=False`, explicit `transport_security`);
   `_transport_security_settings` + `_dialable_host_names` (the Host/Origin allow list);
   `_warn_if_reachable_from_the_network`; passes function_groups to the registrars.
+- tests/unit/test_db_recovery.py -> T3: a real session, KILLed from a second session, is
+  discarded and replaced on the next call. Needs the shared sandbox (and relies on
+  sandbox.deploy having registered its URI, since every open re-validates it). Cannot be done
+  with a stub: only the real client library produces the 2013/2006 codes the fix reads.
+- tests/unit/test_db_threading.py -> T2: proves a shell session can be opened on one
+  thread, used from another and closed from a third (named after the reaper), and that the
+  server really drops the connection. Needs the shared sandbox. Its module docstring carries
+  the Connector/C and Session_impl evidence - read it before believing any future claim that
+  cross-thread session use is unsafe here.
 - tests/unit/test_server_binding.py -> the bind address: loopback/wildcard classification,
   the no-authentication warning, and the derived Host/Origin allow lists. Pure in-process,
   no server started, so it is fast and needs no sandbox.
@@ -580,15 +728,18 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Next steps
 
-0. **The security-review list S1..S8 is COMPLETE, committed and pushed.** If the user sends
-   more items (S9+), follow the working agreement that held for all eight: (a) VERIFY the
+0. **The security-review list S1..S8 is COMPLETE, committed and pushed; a T-numbered list
+   started after it; T1..T4 are done, committed and pushed.** If the user sends more items,
+   follow the working agreement that has held for all twelve: (a) VERIFY the
    claim against the bundled SDK/uvicorn source under
    `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/site-packages`
    or against the real shell, never against upstream docs or memory — and say plainly when
    the report's premise is partly wrong (S4, S6) instead of letting a fix take credit it has
    not earned; (b) fix it in code, not via an env var; (c) add a test and PROVE it
    discriminates by reverting the fix, re-running, and restoring — for S7 the SECOND probe
-   (the ORDERING, not the existence of the cap) was the one that mattered; (d) correct any
+   (the ORDERING, not the existence of the cap) was the one that mattered, and for T1 the
+   first probe failed for the wrong reason and the tests had to be fixed before it proved
+   anything; (d) correct any
    docstring/README claim the bug had made false. Also still open: the residuals listed at
    the end of the S1..S8 block in Current state.
 1. **`mysqlsh.globals.util.dump_schemas` / `load_dump` do NOT exist in this mariadb-shell
@@ -740,6 +891,39 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `connection.session.closed` afterwards — hold the `_StubSession` reference itself
   (`_register_connection(client, session)`). Three tests were written wrong this way first
   and failed with `AttributeError: 'NoneType' object has no attribute 'closed'`.
+- **`_Connection.closed` is a one-way flag and `close_session()` must not touch it.** Setting
+  it there would make an IDLE close terminal, so an idle connection could never be reopened —
+  `test_an_idle_session_is_closed_and_opened_again` asserts `connection.closed is False` after
+  an idle pass for exactly that. Terminal paths (`db.close`, `_drop_connection`) use
+  `close()`; the idle path uses `close_session()`. And do not "simplify" the flag away in
+  favour of holding `connection.lock` across `session.close()`: the racing caller would just
+  open its new session once the close finished. That is T1, and it leaked a server-side
+  connection every time under ordinary concurrent use.
+- **`session.is_open()` tells you NOTHING about whether the connection is alive.** It is
+  `_mysql ? true : false` — a local handle check that stays True after a KILL, after the
+  failing statement, and after the server has been stopped (all three measured). Never write
+  a liveness check on it. A dead session is recognized ONLY from the DBError code
+  (`_CONNECTION_LOST_ERRORS`: 2013 first, then 2006 on every later call), and an ordinary SQL
+  error is the same exception type with a server-side code — so match on the code, and keep
+  the list to the codes that really mean it.
+- **`session_restarted` must never outlive the call it describes.** It is per-CALL state kept
+  on the `_Connection` only because the tools have no other channel: `use_session` assigns it
+  on entry and clears it in `finally`. A flag left standing tells the next caller its
+  transaction was lost when it was not, which is worse than saying nothing. Assert it right
+  after the reopening call, not after the following one - the following call's entry assignment
+  hides the bug.
+- **A failed statement is never retried behind the client's back.** It may have run in part
+  and any transaction died with the connection; the session is discarded so the NEXT call
+  works, and the client gets the error. Do not "improve" this into an automatic retry.
+- **A revert probe has to fail for the RIGHT reason** — read the failure text, never just the
+  pass/fail count. Both T1 tests first failed under the probe on an `AttributeError:
+  '_StubSession' object has no attribute 'run_sql'` and on an unrelated `mysqlsh.Error` that
+  `close_session`'s own `except` swallowed, which would have "proven" the fix while testing
+  nothing; `_StubSession` therefore has `run_sql` + `_StubResult`, so a call that is NOT
+  refused runs to completion and the probe fails with `DID NOT RAISE`. And a
+  **negative-control test needs its own probe in the OPPOSITE direction**:
+  `test_an_ordinary_sql_error_keeps_the_session` cannot fail when T3's fix is removed, only
+  when its predicate is made too broad — so that one took two probes.
 - **The connection reaper is a module-global daemon thread started once** (`_reaper`; renamed
   from `_idle_reaper` in S6, along with `_reap_connections` (was `_reap_idle_sessions`),
   `_start_connection_reaper` (was `_start_idle_reaper`) and `_REAP_INTERVAL` (was
@@ -882,7 +1066,13 @@ silently runs against whatever `mariadb-shell` is on PATH.
      is not part of the security work.
   3. **S3 + S4** (9c877f37) — the session-id binding, the no-authentication README section
      and warning, and the explicit Host/Origin validation.
-  4. **S5 + S6 + S7** — the audit trail, the hard TTL + URI re-validation, and the caps.
+  4. **S5 + S6 + S7** (b86b0541) — the audit trail, the hard TTL + URI re-validation, and
+     the caps.
+  5. **T1 + T2 + T3 + T4** (the T-list commit, HEAD when this was written) — the close/use
+     race, the cross-thread verification and its regression test, dead-session detection, and
+     the session_restarted signal. ONE commit again, for the same reason: T3 and T4 both build
+     on paths T1 changed, and all four touch `use_session`, `_Connection` and the same
+     docstrings, so any split would have committed states that were never run green.
      ONE commit, not three: S6 and S7 both call S5's `log_event` and all three interleave
      inside the same functions and docstrings, so splitting them would have meant committing
      intermediate states that were never run green. The user asked for the commit without

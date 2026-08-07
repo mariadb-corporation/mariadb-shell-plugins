@@ -166,7 +166,12 @@ substitute for the authentication described above.
   next tool call using it opens a new session transparently, while `db.close`
   simply drops it without opening anything. As it is a new session, nothing that
   only lived in the previous one - temporary tables, session variables, the
-  current schema, an open transaction - survives an idle period.
+  current schema, an open transaction - survives an idle period. The call that
+  opens the new session says so: its result carries **`session_restarted: true`**
+  (on the first entry, for `db.execute_sql_script`). That matters most for the
+  case a client cannot otherwise detect - a `COMMIT` on a session that never saw
+  the `START TRANSACTION` succeeds and commits nothing. The flag describes that
+  one call, and is absent from every other result.
 - **No connection lives longer than 12 hours.** This is a different limit from the
   one above and applies to the connection rather than to its session: twelve hours
   after `db.connect` returned it, the UUID stops working however much it has been
@@ -199,6 +204,22 @@ open is not re-checked on every statement (that would mean a secret-store lookup
 per SQL statement), so a connection in continuous use can outlive its removal by
 up to its 12-hour lifetime. Restart the server if a removal has to take effect at
 once.
+
+#### A connection whose session dies recovers by itself
+
+A database session can be taken away without anyone closing it: the server is
+restarted, an administrator `KILL`s the connection, or a firewall or load
+balancer between the two drops it for being idle sooner than the 30 minutes
+above. The shell cannot tell such a connection from a live one - it only knows
+whether it still holds a handle locally - so the failure surfaces as the statement
+that hits it: `MySQL Error (2013): Lost connection to server during query`.
+
+That statement fails and the error is reported as it is; it is not retried, since
+it may have run in part and anything it had open (a transaction above all) went
+with the connection. But the dead session is thrown away, so the **next** call on
+that connection UUID opens a new session and works. The connection does not have
+to be closed and reopened, and a client that simply retries its statement will
+succeed.
 
 #### What the server logs
 

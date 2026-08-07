@@ -33,6 +33,17 @@ and in total, and it is checked and claimed in one step - a burst of concurrent
 calls must not be able to overshoot it between them, and a call that is going to
 be refused must not cost the database a connection first.
 
+A connection that reopens its session tells the call that triggered it, and only
+that call: everything which lived in the old session is gone, and the client
+cannot see that by itself. Whether the flag is per-call is the whole of it - one
+left standing would tell later callers their transaction had been lost.
+
+Closing a connection is final, which two tests pin by reproducing the windows a
+concurrent call can fall into: between resolving a connection and locking it, and
+between a session being taken out of a connection and being closed. A call that
+loses either race must be refused, not handed a new session on a connection that
+has left the cache - that session would never be closed by anything.
+
 Also covers what these leave behind on stderr: a refused use is invisible to
 the client by design, so the log line is the only evidence of an attempted
 takeover there is - and it must carry enough to act on without writing out the
@@ -71,11 +82,33 @@ OTHER_SESSION_ID = "fedcba9876543210fedcba9876543210"
 STDIO_CLIENT = general.ClientIdentity()
 
 
+class _StubResult:
+    """The least a shell SQL result has to be for _serialize_result."""
+
+    affected_items_count = 0
+    warnings_count = 0
+
+    def has_data(self):
+        return False
+
+
 class _StubSession:
-    """Stands in for an open shell session, recording that it was closed."""
+    """Stands in for an open shell session, recording what happened to it."""
 
     def __init__(self):
         self.closed = False
+        self.statements = []
+
+    def run_sql(self, sql, _params=None):
+        """Accepts any statement without looking at it.
+
+        Here so that a tool call which reaches a session runs to completion: a
+        test asserting that a call was REFUSED has to be able to tell that from a
+        call that failed for some other reason on its way through.
+        """
+        self.statements.append(sql)
+
+        return _StubResult()
 
     def close(self):
         self.closed = True
@@ -507,6 +540,10 @@ def test_an_idle_session_is_closed_and_opened_again(http_transport, monkeypatch)
 
     # With no session left there is nothing to close on the next pass.
     assert db_functions._close_idle_sessions() == 0
+
+    # An idle close is not the end of the connection: closing its session must
+    # not raise the flag that would keep it from ever opening another.
+    assert connection.closed is False
 
     second_session = _StubSession()
     monkeypatch.setattr(
@@ -1037,3 +1074,262 @@ def test_an_expired_connection_does_not_hold_a_slot(
 
     assert tools["db.connect"](context, uri) in db_functions._sessions
     assert len(opened) == 2
+
+
+# --- telling the caller its session was replaced ----------------------------
+
+
+def test_a_call_that_opens_a_new_session_says_so(http_transport, monkeypatch):
+    """The call that reopens reports it; the calls around it do not.
+
+    Without the flag the loss is silent, and the silent case is the dangerous
+    one: a COMMIT that arrives on a session which never saw the START
+    TRANSACTION succeeds and commits nothing at all.
+    """
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+    context = _context(CLIENT_ADDRESS)
+
+    connection_id = tools["db.connect"](context, uri)
+    connection = db_functions._sessions[connection_id]
+
+    # An ordinary call has nothing to report.
+    result = tools["db.execute_sql"](context, connection_id, "START TRANSACTION")
+    assert "session_restarted" not in result
+
+    # The session is closed for being idle. The connection stays valid, which is
+    # exactly why the client needs telling.
+    connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
+    assert db_functions._close_idle_sessions() == 1
+
+    result = tools["db.execute_sql"](context, connection_id, "COMMIT")
+    assert result["session_restarted"] is True
+
+    # It belongs to that call and stops existing with it. Asserted here, before
+    # another call is made: a flag left standing on the connection is a flag
+    # that lies to whoever reads it next, and the assignment made when the next
+    # call starts would hide that.
+    assert connection.session_restarted is False
+
+    # And the next call does not repeat it.
+    result = tools["db.execute_sql"](context, connection_id, "SELECT 1")
+    assert "session_restarted" not in result
+
+
+def test_a_script_reports_the_restart_on_its_first_statement(
+    http_transport, monkeypatch
+):
+    """One session is opened per call, so one statement reports it."""
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+    context = _context(CLIENT_ADDRESS)
+
+    connection_id = tools["db.connect"](context, uri)
+    connection = db_functions._sessions[connection_id]
+    connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
+    assert db_functions._close_idle_sessions() == 1
+
+    results = tools["db.execute_sql_script"](
+        context, connection_id, "SELECT 1; SELECT 2; SELECT 3"
+    )
+
+    assert len(results) == 3
+    assert results[0]["session_restarted"] is True
+    assert all("session_restarted" not in result for result in results[1:])
+
+
+def test_a_session_lost_mid_flight_is_reported_on_the_next_call(
+    http_transport, monkeypatch
+):
+    """The report covers a session discarded for being dead, not just idle."""
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+    context = _context(CLIENT_ADDRESS)
+
+    connection_id = tools["db.connect"](context, uri)
+    client = _identity(CLIENT_ADDRESS)
+
+    with pytest.raises(mysqlsh.DBError):
+        with db_functions.use_session(connection_id, client):
+            raise mysqlsh.DBError(2013, "Lost connection to server during query")
+
+    result = tools["db.execute_sql"](context, connection_id, "SELECT 1")
+    assert result["session_restarted"] is True
+
+
+# --- a session that has died -----------------------------------------------
+
+
+def test_a_lost_connection_throws_the_session_away(http_transport, monkeypatch):
+    """A statement that reports the connection is gone discards the session.
+
+    The shell cannot tell a dead connection from a live one - its is_open() only
+    says whether a handle exists on this side, and that stays true after the
+    server has dropped the connection - so the error code is the only signal
+    there is. Without acting on it, every call on the connection fails on the
+    same corpse until somebody closes it.
+    """
+    sessions = []
+
+    def _open(_uri):
+        sessions.append(_StubSession())
+        return sessions[-1]
+
+    monkeypatch.setattr(db_functions, "_open_session", _open)
+    monkeypatch.setattr(
+        db_functions.config,
+        "list_connection_uris",
+        lambda: ["root@127.0.0.1:3306"],
+    )
+
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
+    first_session = connection.session
+    client = _identity(CLIENT_ADDRESS)
+
+    # CR_SERVER_LOST, as the shell reports it for a killed connection.
+    lost = mysqlsh.DBError(2013, "Lost connection to server during query")
+
+    with pytest.raises(mysqlsh.DBError) as reported:
+        with db_functions.use_session(connection_id, client):
+            raise lost
+
+    # The caller is told what happened - the call is not retried behind its
+    # back, since a statement may have run in part and any transaction is gone.
+    assert reported.value.code == 2013
+
+    # The session is gone, the connection is not.
+    assert first_session.closed is True
+    assert connection.session is None
+    assert connection.closed is False
+    assert connection_id in db_functions._sessions
+
+    # And the next call gets a working session again.
+    with db_functions.use_session(connection_id, client) as session:
+        assert session is sessions[-1]
+        assert session is not first_session
+
+
+def test_an_ordinary_sql_error_keeps_the_session(http_transport, monkeypatch):
+    """A statement that merely failed does not cost the caller its session.
+
+    This is the other half of reading the error code: reconnecting on every
+    failed statement would throw away a perfectly good session - and with it the
+    temporary tables, session variables and open transaction on it - because of a
+    typo.
+    """
+    monkeypatch.setattr(db_functions, "_open_session", lambda _uri: _StubSession())
+
+    connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
+    session_before = connection.session
+    client = _identity(CLIENT_ADDRESS)
+
+    for error in (
+        # A server-side error: the table is not there.
+        mysqlsh.DBError(1146, "Table 'db.nope' doesn't exist"),
+        # A shell-side error, which carries no DB error code at all.
+        mysqlsh.Error("something else went wrong"),
+        RuntimeError("and something with no code either"),
+    ):
+        with pytest.raises(type(error)):
+            with db_functions.use_session(connection_id, client):
+                raise error
+
+        assert connection.session is session_before
+        assert session_before.closed is False
+
+
+# --- closing a connection while a call is using it -------------------------
+
+
+def test_closing_a_connection_beats_a_call_that_races_it(
+    http_transport, monkeypatch
+):
+    """A call that loses the race to db.close does not get a new session.
+
+    use_session resolves its connection out of the cache and only then takes the
+    connection's lock, so a db.close can run entirely in between: it takes the
+    record out of the cache and closes the session. What must not happen then is
+    the losing call opening a fresh session - the record is unreachable by then,
+    so nothing would ever close that session again, and the caller would go on
+    working on a connection its client had been told was closed.
+
+    The window is hit deliberately here, by closing the connection from inside
+    the lookup: threads make this rare, not impossible, and the SDK does run the
+    sync db tools in worker threads.
+    """
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+    context = _context(CLIENT_ADDRESS)
+
+    connection_id = tools["db.connect"](context, uri)
+    first_session = db_functions._sessions[connection_id].session
+
+    real_get_connection = db_functions._get_connection
+    raced = []
+
+    def _close_it_in_the_window(*args, **kwargs):
+        connection = real_get_connection(*args, **kwargs)
+        if not raced:
+            raced.append(True)
+            # A whole db.close, start to finish, in the window between the
+            # lookup and the lock. In its own thread, so the connection lock is
+            # not held by this one - which is the situation being reproduced.
+            closer = threading.Thread(
+                target=lambda: tools["db.close"](context, connection_id)
+            )
+            closer.start()
+            closer.join(timeout=10)
+
+        return connection
+
+    monkeypatch.setattr(db_functions, "_get_connection", _close_it_in_the_window)
+
+    with pytest.raises(mysqlsh.Error):
+        tools["db.execute_sql"](context, connection_id, "SELECT 1")
+
+    # The leak, measured: no second session was ever opened.
+    assert len(opened) == 1
+    assert first_session.closed is True
+    assert connection_id not in db_functions._sessions
+
+
+def test_a_session_being_closed_is_not_replaced_underneath(
+    http_transport, monkeypatch
+):
+    """The second window: close_session lets go of the lock before closing.
+
+    _Connection.close_session takes the session out of the connection, releases
+    the lock and only then closes it, so for that moment the connection holds no
+    session and its lock is free - exactly what a call needs to open one. The
+    flag is what refuses it; keeping the lock for the whole close would not,
+    since the racing call would simply open its session afterwards.
+
+    Driven from inside session.close() rather than from a second thread, because
+    that IS the window. The connection lock is genuinely not held at that point,
+    so this stands in for a thread that acquires it right there.
+    """
+    # A stand-in session factory, so that a racer which is NOT refused really
+    # does end up holding a second session - that leaked session is the whole
+    # point, and the test has to be able to see it.
+    monkeypatch.setattr(db_functions, "_open_session", lambda _uri: _StubSession())
+
+    attempted = []
+    connection = db_functions._Connection("root@127.0.0.1:3306", STDIO_CLIENT)
+
+    class _RacedSession(_StubSession):
+        def close(self):
+            try:
+                attempted.append(connection.open_session())
+            except db_functions._ConnectionClosed:
+                attempted.append("refused")
+
+            super().close()
+
+    session = _RacedSession()
+    connection.session = session
+
+    connection.close()
+
+    assert attempted == ["refused"]
+    assert session.closed is True
+    assert connection.session is None

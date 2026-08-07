@@ -58,7 +58,10 @@ the third holds in both, and says so:
   opens a new session, whereas ``db.close`` just drops it without reopening
   anything. As the session is a new one, anything that only lived in the old
   session - temporary tables, session variables, the current schema, an open
-  transaction - is gone.
+  transaction - is gone. The call that opens it says so: its result carries
+  ``session_restarted: true``, because a client cannot otherwise tell, and the
+  case that matters is silent - a ``COMMIT`` arriving on a session that never saw
+  the ``START TRANSACTION`` succeeds and commits nothing at all.
 * A connection stops existing altogether once it is
   :data:`mcp_plugin.lib.general.CONNECTION_MAX_LIFETIME` seconds old, however
   much it has been used in between. Recycling the session alone would leave the
@@ -78,6 +81,23 @@ the third holds in both, and says so:
   this process's memory with it. Room is claimed before the session is opened,
   and under the lock that counts it, so a refused call costs the database
   nothing and a burst of concurrent calls cannot collectively overshoot.
+
+A session can also die without anybody closing it: the server is restarted, the
+connection is KILLed, or something between the two has an idle timeout shorter
+than ours. The shell cannot tell - its ``is_open()`` reports whether a connection
+handle exists on this side, which stays true for a connection the server has long
+since dropped - so the failure has to be recognized from the error a statement
+raises (see :data:`_CONNECTION_LOST_ERRORS`). The session is then discarded and
+the next call opens a new one, which is what keeps a connection from failing every
+call until it is closed.
+
+Closing a connection - with ``db.close`` or by its expiring - is final, and that
+takes a flag rather than a lock. A tool call resolves its connection out of the
+cache and only then locks it, so a close can run entirely in between; without the
+flag the call would find no session, open a fresh one on a record that is no
+longer in the cache, and leave a server-side connection nothing can ever close
+again. Tool calls do run concurrently: the SDK runs the sync db tools in worker
+threads, and ``msm.deploy_schema`` awaits before working with its session.
 
 Removing a connection with ``mcp.setup``, or deleting the sandbox that
 registered one with ``sandbox.delete``, therefore does revoke it: the URI is
@@ -120,6 +140,18 @@ _REAP_INTERVAL = 30
 # The thread dropping expired connections and closing idle sessions, started
 # with the first connection opened over HTTP.
 _reaper = None
+
+# The client-side error codes that mean the connection to the server is gone
+# rather than that a statement was wrong: CR_SERVER_GONE_ERROR,
+# CR_SERVER_LOST and CR_SERVER_LOST_EXTENDED. A session that reports one of
+# these is finished - nothing else can be run on it - so it is thrown away and
+# the next call opens a new one (see use_session).
+#
+# Deliberately a short list of exactly the codes that mean this, not "any client
+# error": throwing a working session away costs a reconnect, and a lost
+# connection that first surfaces under some other code is caught on the next
+# call anyway, which always reports CR_SERVER_GONE_ERROR.
+_CONNECTION_LOST_ERRORS = (2006, 2013, 2055)
 
 # Lists the schemas of a server, classified into system and user schemas.
 _LIST_SCHEMAS_SQL = """
@@ -429,6 +461,16 @@ _OBJECT_REFERENCES_SQL = """
 """
 
 
+class _ConnectionClosed(Exception):
+    """Raised when a connection is asked for a session after it was closed.
+
+    Internal to this module. :func:`use_session` turns it into the error an
+    unknown connection id gets, which is what a closed connection is by then -
+    the caller lost a race with ``db.close`` or with the connection expiring, and
+    the answer is the same as if the id had never been handed out.
+    """
+
+
 class _Connection:
     """A database connection opened with ``db.connect``.
 
@@ -452,6 +494,16 @@ class _Connection:
         self.session = None
         self.opened_at = time.monotonic()
         self.last_used = self.opened_at
+        # Set once the connection is over, and never unset. Not the same as
+        # having no session: a session closed for being idle is opened again,
+        # while a closed connection is never usable again. See close().
+        self.closed = False
+        # True only while a tool call that had to open a new session is running,
+        # so that the call can report it. Belongs to the CALL, not to the
+        # connection: use_session assigns it on the way in and clears it on the
+        # way out, under the lock, so a later call cannot read it and report a
+        # restart of its own that never happened.
+        self.session_restarted = False
         self.lock = threading.RLock()
 
     def is_accessible_from(self, client) -> bool:
@@ -514,17 +566,56 @@ class _Connection:
     def open_session(self):
         """Opens the session, or returns the one already open.
 
+        The closed flag is checked here, under the lock, and that is what makes
+        closing a connection final. A caller resolves a connection out of the
+        cache and only then takes its lock, so a ``db.close`` (or an expiry drop)
+        can run entirely in between: it takes the record out of the cache and
+        closes the session, and this method would otherwise find no session and
+        open a fresh one - on a record nothing can reach any more, so nothing
+        would ever close it again, while the caller went on working on a
+        connection its client had been told was closed.
+
+        Raises:
+            _ConnectionClosed: If the connection has been closed. Holding the
+                lock across the close would not be enough on its own; the racing
+                caller would simply open its new session afterwards.
+
         Returns:
             The open shell session.
         """
         with self.lock:
+            if self.closed:
+                raise _ConnectionClosed()
+
             if self.session is None:
                 self.session = _open_session(self.uri)
 
             return self.session
 
+    def close(self) -> None:
+        """Ends the connection for good, closing its session.
+
+        The flag goes up first and under the lock, so that from this moment on
+        nothing can open a session on this connection - including a call that
+        already holds the record and is waiting for the lock. The session is then
+        closed outside the lock, as closing it is a round trip to the server and
+        nobody has anything to wait for: every use of this connection from here
+        on is refused.
+
+        Returns:
+            None
+        """
+        with self.lock:
+            self.closed = True
+
+        self.close_session()
+
     def close_session(self) -> None:
         """Closes the session, if one is open.
+
+        Leaves the connection itself usable, unless :meth:`close` has ended it:
+        this is also how a session that has merely been idle for too long is
+        recycled.
 
         Returns:
             None
@@ -610,6 +701,24 @@ def _open_session(uri: str):
     return mysqlsh.globals.shell.open_session(connection_data)
 
 
+def _is_connection_lost(error) -> bool:
+    """Returns whether an error means the session's server connection is gone.
+
+    Told apart from an ordinary SQL error by the error code, which is the only
+    thing that distinguishes them: both arrive as a ``mysqlsh.DBError``, one
+    carrying a client-side code from :data:`_CONNECTION_LOST_ERRORS` and the
+    other a server-side one. Anything without a code at all - an error raised on
+    our own side of the call - is not one of these.
+
+    Args:
+        error (BaseException): The error a tool call raised.
+
+    Returns:
+        True if the session it was raised on cannot be used again.
+    """
+    return getattr(error, "code", None) in _CONNECTION_LOST_ERRORS
+
+
 def _no_such_connection(connection_id: str) -> mysqlsh.Error:
     """Returns the error a client gets for a connection it may not use.
 
@@ -658,7 +767,10 @@ def _drop_connection(connection_id: str, reason: str) -> None:
     # Waits for a tool call that is still running on the session, unlike the
     # idle pass: the connection is already out of the cache, so nothing new can
     # reach it and there is nothing to be gained by leaving its session open.
-    connection.close_session()
+    # close() rather than close_session(): this connection is over, and a call
+    # that resolved it just before it left the cache must be refused rather than
+    # served with a new session nothing would ever close.
+    connection.close()
 
 
 def _claim_connection_slot(connection_id: str, connection) -> None:
@@ -791,6 +903,11 @@ def use_session(connection_id: str, client=None):
     for the duration of the ``with`` block. A connection past its maximum
     lifetime is reported as not existing, whoever asks for it.
 
+    This is also where a session that has died is noticed: a statement failing
+    because the connection to the server is gone throws the session away, so the
+    connection recovers on the next call rather than failing on the same dead
+    session until it is closed.
+
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
         client (ClientIdentity): The identity of the requesting client, as
@@ -806,10 +923,52 @@ def use_session(connection_id: str, client=None):
     connection = _get_connection(connection_id, client)
 
     with connection.lock:
-        session = connection.open_session()
+        # Whether THIS call is the one that has to open a new session, which is
+        # what the caller needs to be told: everything that only lived in the
+        # previous session is gone, and a COMMIT arriving on the new one would
+        # otherwise report success having committed nothing.
+        restarted = connection.session is None
+
+        try:
+            session = connection.open_session()
+        except _ConnectionClosed:
+            # Closed between being looked up and being locked: by then it is a
+            # connection that does not exist, and it is answered as one.
+            raise _no_such_connection(connection_id) from None
+
+        connection.session_restarted = restarted
+
         try:
             yield session
+        except Exception as error:  # noqa: BLE001 - re-raised below
+            if _is_connection_lost(error):
+                # The session is finished: a restarted server, a KILL, or a
+                # network device with an idle timeout shorter than ours has
+                # taken the connection away, and the shell has no way of
+                # noticing by itself - its is_open() only reports whether a
+                # handle exists locally, and that stays true for a dead
+                # connection. Throwing it away here is what keeps the
+                # connection usable: the next call opens a new session, instead
+                # of every call until db.close failing on the same corpse.
+                #
+                # The failed call is NOT retried. It may have run in part, and
+                # anything it had open - a transaction above all - is gone with
+                # the connection, so the client is told and decides.
+                general.log_event(
+                    "db: the server connection of "
+                    f"{general.log_id_prefix(connection_id)} was lost "
+                    f"({getattr(error, 'code', '?')}); its session is "
+                    "discarded and the next call opens a new one"
+                )
+                connection.close_session()
+
+            raise
         finally:
+            # Cleared here, and assigned (not just set) on the way in: either
+            # alone would keep the next CALL from reading a restart of its own,
+            # and clearing it is what also keeps a reader outside a call - a
+            # future one; there is none today - from finding a stale True.
+            connection.session_restarted = False
             connection.last_used = time.monotonic()
 
 
@@ -880,6 +1039,18 @@ def _reap_connections() -> None:
     is dropped altogether, and one whose session has merely been idle for too
     long keeps its place and loses its session.
 
+    Closing a session from this thread is safe, and not the special case it looks
+    like. The MCP SDK runs a sync tool body with ``anyio.to_thread.run_sync``, so
+    a session is opened on an anyio worker thread and used from whichever worker
+    thread the next call lands on - the event-loop thread never touches it. What
+    makes it safe rather than merely usual is that the MariaDB Connector/C the
+    shell links has ``mysql_thread_init()`` and ``mysql_thread_end()`` as empty
+    functions, so there is no per-thread client state to be missing, and
+    ``Session_impl::close()`` is a ``mysql_close()`` with no thread-affine state
+    of its own. The invariant that does matter is one thread at a time per
+    session, which is what the connection's lock is for. See
+    ``tests/unit/test_db_threading.py``, which pins this against a real server.
+
     Returns:
         None
     """
@@ -929,11 +1100,33 @@ def _start_connection_reaper() -> None:
         _reaper.start()
 
 
-def _serialize_result(result) -> dict:
+def _session_was_restarted(connection_id: str) -> bool:
+    """Returns whether the tool call in progress had to open a new session.
+
+    Only meaningful inside a :func:`use_session` block, which is where it is
+    read: outside one it is False, so a caller that asks at the wrong moment is
+    told nothing rather than something untrue.
+
+    Args:
+        connection_id (str): The UUID of the connection being used.
+
+    Returns:
+        True if this call opened a new session for the connection.
+    """
+    with _sessions_lock:
+        connection = _sessions.get(connection_id)
+
+    return connection is not None and connection.session_restarted
+
+
+def _serialize_result(result, session_restarted: bool = False) -> dict:
     """Serializes a shell SQL result into a JSON-friendly dict.
 
     Args:
         result: The result object returned by ``session.run_sql``.
+        session_restarted (bool): Whether this statement ran on a session that
+            had to be opened for it, which the caller is told about because
+            nothing that only lived in the previous session survived.
 
     Returns:
         A dict with the result set (columns and rows) and execution metadata.
@@ -942,6 +1135,11 @@ def _serialize_result(result) -> dict:
         "affected_items_count": result.affected_items_count,
         "warnings_count": result.warnings_count,
     }
+
+    # Present only when it happened. A field that is almost always false is a
+    # field a client learns to skip.
+    if session_restarted:
+        output["session_restarted"] = True
 
     if result.has_data():
         columns = [col.get_column_label() for col in result.get_columns()]
@@ -1307,11 +1505,22 @@ def register_db_tools(server, function_groups=()) -> None:
         Returns:
             A dict with the result set (columns and rows) and execution
             metadata.
+
+            If it contains session_restarted: true, this statement ran on a
+            newly opened database session, because the previous one had been
+            closed for being idle or lost. Nothing that only lived in that
+            session is still there: no temporary tables, no session variables,
+            no current schema - and no open transaction. A COMMIT or ROLLBACK
+            reported as successful alongside this flag committed or rolled back
+            nothing, and any statements of that transaction are gone. Start the
+            work again on this connection.
         """
         with use_session(connection_id, general.get_client_identity(ctx)) as session:
             result = session.run_sql(sql, params if params is not None else [])
 
-            return _serialize_result(result)
+            return _serialize_result(
+                result, _session_was_restarted(connection_id)
+            )
 
     @server.tool(name="db.execute_sql_script")
     def execute_sql_script(
@@ -1339,6 +1548,15 @@ def register_db_tools(server, function_groups=()) -> None:
         Returns:
             A list with one entry per executed statement, each a dict with the
             result set (columns and rows) and execution metadata.
+
+            If the FIRST entry contains session_restarted: true, the script ran
+            on a newly opened database session, because the previous one had
+            been closed for being idle or lost. Nothing that only lived in that
+            session is still there - temporary tables, session variables, the
+            current schema, and any open transaction are all gone, so a COMMIT
+            in this script committed nothing that came before it. The flag is on
+            the first entry only, as the session is opened once, before the
+            script starts.
         """
         if (sql_script is None) == (file_path is None):
             raise mysqlsh.Error(
@@ -1355,11 +1573,19 @@ def register_db_tools(server, function_groups=()) -> None:
                 sql_script = script_file.read()
 
         with use_session(connection_id, general.get_client_identity(ctx)) as session:
+            restarted = _session_was_restarted(connection_id)
             results = []
             for statement in mysqlsh.mysql.split_script(sql_script):
                 if statement.strip() == "":
                     continue
-                results.append(_serialize_result(session.run_sql(statement, [])))
+                results.append(
+                    _serialize_result(
+                        session.run_sql(statement, []),
+                        # On the first result only: one session was opened, once,
+                        # before any of these statements ran.
+                        session_restarted=restarted and not results,
+                    )
+                )
 
             return results
 
@@ -1380,6 +1606,10 @@ def register_db_tools(server, function_groups=()) -> None:
         with _sessions_lock:
             _sessions.pop(connection_id, None)
 
-        # Closes the session if one is open. A session that was already closed
-        # for being idle is not opened again just to close it.
-        connection.close_session()
+        # Ends the connection, closing its session if one is open - a session
+        # already closed for being idle is not opened again just to close it.
+        # This also settles what happens to a tool call that resolved this
+        # connection a moment ago and is about to lock it: it is refused, rather
+        # than opening a new session on a connection that is no longer in the
+        # cache and that nothing would ever close.
+        connection.close()
