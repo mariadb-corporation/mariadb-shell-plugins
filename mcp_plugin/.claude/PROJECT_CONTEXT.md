@@ -269,8 +269,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
     `SELECT NULL as comment` in `_OBJECT_BASIC_SQL["trigger"]`.
   - Existence check is "no `_OBJECT_BASIC_SQL` row" (works for all 7 types and catches a
     type mismatch, e.g. asking for a table as a sequence), NOT "no columns".
-- **Two deliberate FIXES to the user's supplied SQL** (both flagged to and left standing
-  by the user):
+- **Deliberate changes to the user's supplied SQL** (each flagged to and left standing by the
+  user):
   - constraints query needed `AND tc.TABLE_NAME = kcu.TABLE_NAME` — constraint names are
     unique per TABLE, not per schema, so joining on schema alone makes every table's
     `PRIMARY` match every other table's PK columns. Test pins this (two PK tables in the
@@ -279,6 +279,10 @@ silently runs against whatever `mariadb-shell` is on PATH.
     selected from it and it can duplicate a column that sits in two FKs. Restore with
     DISTINCT if fields from it are ever needed.
   - also added `ORDER BY tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION` for determinism.
+  - **T9: the four aggregates in `_OBJECT_REFERENCES_SQL` are ordered by
+    `k.ORDINAL_POSITION`** — the column's place in the FOREIGN KEY. The user asked for
+    `c.ORDINAL_POSITION` (its place in the TABLE); that was flagged as the wrong ordinal, with
+    the measurement below, and the user said commit. Do not switch it back.
 - **REST SQL** (commit 0e97c9e9): `db.execute_sql` can run MRS REST SQL (e.g.
   `CONFIGURE REST METADATA`) because `mrs_plugin` registers a shell SQL handler
   (`@sql_handler("MRS", prefixes=...)`, prefixes incl. "CONFIGURE REST ") that intercepts
@@ -330,7 +334,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
     matters: caps removed → all 3 new tests fail with `DID NOT RAISE Error`; claiming the
     slot AFTER `open_session()` → all 3 fail on the session count (`assert 4 == 3`,
     `assert 3 == 2` x2), i.e. the refused call had already cost the database a connection.
-- **A SECOND list started after S1..S8: T-numbered items. T1..T6 are DONE** (T2 by
+- **A SECOND list started after S1..S8: T-numbered items. T1..T6, T8 and T9 are DONE** (no T7
+  was sent) (T2 by
   verification alone: it needed no code change; T3 and T5 each needed something different from
   what was asked for - see each).
   - **T1 (HIGH, `db.close` racing a call leaks a session)**: PRE-EXISTING since 0bba1318, not
@@ -486,6 +491,54 @@ silently runs against whatever `mariadb-shell` is on PATH.
       RuntimeError`; the msm deploy put back inline -> `test_stdio_msm_project_lifecycle` fails
       END TO END with the guard's own message. The second one is the one that matters: the
       guard catches the real caller, not just a synthetic one.
+  - **T8 (LOW, duplicate column labels silently drop data)**: confirmed against a real server
+    before touching anything - `SELECT 1 AS id, 2 AS id, 3 AS other` reported
+    `columns: ['id','id','other']` and produced the row `{'id': 1, 'other': 3}`: **3 columns
+    in, 2 out**, and the value 2 never even read, because `row.get_field('id')` answers with
+    the FIRST match every time. `columns` still listed both, so the loss looked like the
+    client's bug. Ordinary SQL reaches this through `db.execute_sql` (`SELECT a.id, b.id FROM a
+    JOIN b`).
+    - Fixed in `_serialize_result` with `_unique_column_labels`: first column of a label keeps
+      it, later ones become `label_2`, `_3`, ... checked against every label already emitted so
+      an invented key cannot land on a column genuinely named `id_2`. `columns` reports the
+      keys actually used, so the two can no longer disagree.
+    - **Values are now read BY POSITION (`row[index]`)**, which is the half that actually
+      recovers the data - a label cannot address the second of two columns that share it.
+      Verified the shell's Row supports it: `row[0..n]`, `len(row)`, `row.get_length()`.
+    - A qualified name (`a.id`) was considered and rejected: `get_table_name()`,
+      `get_table_label()` and `get_column_name()` all return `''` for aliased or computed
+      columns (measured), so the rule would hold for some queries and not others.
+    - PROVEN: restoring raw labels + `get_field(label)` fails four tests - the three unit tests
+      (one via a stub row whose `get_field` raises "values must be read by position") and
+      `test_db_connect_execute_and_close` END TO END with
+      `assert ['id', 'id', 'other'] == ['id', 'id_2', 'other']`.
+  - **T9 (LOW, non-deterministic column order in the FK reference mapping)**: real, and the
+    prescribed fix would not have fixed it. `GROUP_CONCAT` and `JSON_ARRAYAGG` in both halves of
+    `_OBJECT_REFERENCES_SQL` had no ORDER BY, so a composite key's column sequence was whatever
+    the plan produced.
+    - **Which ordinal is the point.** `c.ORDINAL_POSITION` is the column's place in the TABLE;
+      `k.ORDINAL_POSITION` is its place in the FOREIGN KEY, and they differ whenever a key is
+      not declared in table order. MEASURED on a real 12.3.2 with `child (id, a, b)` and
+      `FOREIGN KEY (b, a) REFERENCES parent (x, y)`: unordered -> `'a, b'` /
+      `[{a->y},{b->x}]`; `ORDER BY c.ORDINAL_POSITION` -> **the same**; `ORDER BY
+      k.ORDINAL_POSITION` -> `'b, a'` / `[{b->x},{a->y}]`, which is the declared key. So the
+      prescribed ordinal would have added a guarantee to the WRONG sequence, and on this plan
+      changed nothing at all.
+    - `JSON_ARRAYAGG(... ORDER BY ...)` is invalid in MySQL and VALID in MariaDB; checked on
+      this build before relying on it. `GROUP_CONCAT` takes `ORDER BY` before `SEPARATOR`.
+    - The TWO OTHER unordered `JSON_ARRAYAGG`s, in the second half's PK subqueries, are left
+      alone ON PURPOSE: they are only compared with `JSON_CONTAINS`, which ignores array order
+      (verified: `'["a","b"]'` contains `'["b","a"]'` -> 1). The reasoning is a comment in the
+      SQL so it is not re-opened as an unexamined worry.
+    - PROVEN with two probes, and the second is the interesting one: unordered ->
+      `test_db_connect_execute_and_close` fails `assert 'second, first' == 'first, second'`;
+      `ORDER BY c.ORDINAL_POSITION` -> fails IDENTICALLY. The test discriminates against the
+      status quo AND against the prescribed variant.
+    - The test creates `pairs` + `pair_refs` in the shared flow (`pair_refs (id, second, first)`
+      with `FOREIGN KEY (first, second)`) and asserts the mapping from BOTH directions of the
+      UNION. It forced two incidental updates: the object script is 11 statements now, not 9,
+      and the table listing order is `... orders, pairs, pair_refs, versioned` — the server's
+      own collation puts `pairs` FIRST, which is not what sorting the underscore first would do.
   - **T6 (LOW, reaper lifecycle)**: all three complaints were accurate - started lazily by the
     first `db.connect`, never stopped, and spawned while holding `_sessions_lock` (the very lock
     the new thread then wants). Now `lib/server.start()` owns it: `start_connection_reaper()`
@@ -639,7 +692,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `..._binds_a_connection_to_its_mcp_session` for S3, and
   `..._rejects_a_foreign_host_header` for S4 — the last one talks raw `httpx2` rather than
   the MCP client, because it has to forge Host/Origin and assert HTTP status codes),
-  `test_db_sessions` (**36** — the whole connection lifecycle, in nine sections: the client
+  `test_db_sessions` (**39** — the connection lifecycle and result serialization, in ten
+  sections: the client
   identity, the binding (S2/S3/S8: `..._stays_bound_without_an_active_transport`,
   `..._is_usable_over_stdio`, `test_equivalent_spellings_of_an_address_are_the_same_client`,
   `..._is_reachable_over_either_ip_stack`, `..._is_bound_to_its_mcp_session`,
@@ -663,8 +717,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   NEW `test_db_threading` (**1**,
   T2: a real session opened, used and closed across three threads), NEW `test_db_recovery`
   (**1**, T3: a real session KILLed from a second session and replaced on the next call).
-  **70 pass, ~33s.**
-- **Coverage: TOTAL 95% (845 statements, 44 missed) — measured on a run with `.coverage`
+  **73 pass, ~33s.**
+- **Coverage: TOTAL 95% (858 statements, 44 missed) — measured on a run with `.coverage`
   DELETED first.** Per module: lib/msm_functions 100, lib/db_functions 98, lib/general 98,
   lib/server 98, lib/config 96, lib/sandbox_functions 87, lib/setup 84, server.py 81,
   general.py 73.
@@ -736,7 +790,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - lib/db_functions.py -> db.* tools; the `_Connection` cache (`_sessions` + `use_session` +
   the reaper + `_claim_connection_slot`/`_drop_connection`/`_no_such_connection` +
   `_ConnectionClosed` and the `closed` flag + `_CONNECTION_LOST_ERRORS`/
-  `_is_connection_lost`);
+  `_is_connection_lost`); `_serialize_result` + `_unique_column_labels`;
   `_serialize_result`;
   the introspection SQL constants (`_LIST_SCHEMAS_SQL`, `_LIST_OBJECTS_SQL`,
   `_OBJECT_BASIC_SQL`, `_OBJECT_DETAILS_SQL`, `_ROUTINE_PARAMETERS_SQL`,
@@ -776,13 +830,17 @@ silently runs against whatever `mariadb-shell` is on PATH.
   URL always dials 127.0.0.1 — only useful for hosts that still bind loopback, which is
   exactly what the S4 test needs (`LOCALHOST`).
 - tests/unit/test_db_sql.py -> single `_db_flow` coroutine over ONE stdio session:
-  connect -> execute_sql (incl. a DECIMAL/DATETIME serialization check) ->
-  execute_sql_script (inline + file + denied) -> list_schemas -> creates one object of
-  EVERY type in a throwaway schema (incl. a system-versioned table, a sequence, a
-  trigger, an event, and an `orders` table with an FK to `items`) -> list_objects (all 7
-  types + default + case-insensitivity + bad type + unknown schema) ->
-  get_object_details (table both FK directions, view, function, procedure, sequence,
-  trigger, event, plus not-found errors) -> DROP SCHEMA -> close.
+  connect -> execute_sql (incl. a DECIMAL/DATETIME serialization check and T8's two
+  columns sharing one label) -> execute_sql_script (inline + file + denied) ->
+  list_schemas -> creates one object of EVERY type in a throwaway schema (incl. a
+  system-versioned table, a sequence, a trigger, an event, an `orders` table with an FK
+  to `items`, and T9's `pairs`/`pair_refs` whose composite FK is declared out of table
+  order) -> list_objects (all 7 types + default + case-insensitivity + bad type +
+  unknown schema) -> get_object_details (table both FK directions incl. the composite
+  key's column order from both sides, view, function, procedure, sequence, trigger,
+  event, plus not-found errors) -> DROP SCHEMA -> close. **The object script's statement
+  count and the table-listing order are asserted, so adding a table to the flow means
+  updating both.**
 - tests/unit/test_db_sessions.py -> the connection safeguards, driven IN-PROCESS with a
   `_StubSession` and a `_ToolRecorder` (a fake server whose `.tool(name=)` decorator just
   collects the tool functions, so they can be called directly, `ctx` positionally). Its
@@ -807,8 +865,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
 ## Next steps
 
 0. **The security-review list S1..S8 is COMPLETE, committed and pushed; a T-numbered list
-   started after it; T1..T6 are all done, committed and pushed.** If the user sends more
-   items, follow the working agreement that has held for all fourteen: (a) VERIFY the
+   started after it; T1..T6, T8 and T9 are all done, committed and pushed.** If the user sends
+   more items, follow the working agreement that has held for all sixteen: (a) VERIFY the
    claim against the bundled SDK/uvicorn source under
    `/Users/mzinner/git/mariadb-shell/build/lib/mariadb-shell/lib/python3.14/site-packages`
    or against the real shell, never against upstream docs or memory — and say plainly when
@@ -1154,7 +1212,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **The session started in DETACHED HEAD** at `mariadb/wip/AIPL-16` (ecc6bc3c) with no
   local branch — `git checkout -b wip/AIPL-16` was needed before committing. Check
   `git branch --show-current` before assuming there is a branch to commit onto.
-- The security work is four commits on that branch:
+- The security work is eight commits on that branch:
   1. **S1 + S2/S8** (faa08b11) — the proxy-header fix and the transport-independent,
      normalized binding.
   2. the `sandbox.deploy` `sandbox_dir` docstring note (5b94d940) — a pre-existing edit the
@@ -1162,24 +1220,30 @@ silently runs against whatever `mariadb-shell` is on PATH.
      is not part of the security work.
   3. **S3 + S4** (9c877f37) — the session-id binding, the no-authentication README section
      and warning, and the explicit Host/Origin validation.
-  4. **S5 + S6 + S7** (b86b0541) — the audit trail, the hard TTL + URI re-validation, and
-     the caps.
+  4. **S5 + S6 + S7** (b86b0541) — the audit trail, the hard TTL + URI re-validation, and the
+     caps. ONE commit, not three: S6 and S7 both call S5's `log_event` and all three interleave
+     inside the same functions and docstrings, so splitting them would have meant committing
+     intermediate states that were never run green. The user asked for the commit without
+     specifying granularity after that reasoning was put to them, and the same reasoning (and
+     the same answer) applied to every commit after it.
   5. **T1 + T2 + T3 + T4** (f80673ce) — the close/use race, the cross-thread verification and
      its regression test, dead-session detection, and the session_restarted signal. ONE commit
      again, for the same reason: T3 and T4 both build on paths T1 changed, and all four touch
      `use_session`, `_Connection` and the same docstrings, so any split would have committed
      states that were never run green. **Its coverage claim (100% / 97%) is WRONG** — see the
      Coverage bullet under Current state.
-  6. **T5 + T6** (HEAD when this was written) — session work off the event-loop thread, and the
-     reaper's lifetime moved to `server.start()`. Together because T6's wiring test asserts the
-     order `start`/`served`/`stop` around the same `server.start()` branch T5 left alone, and
-     both land in `use_session`/`server.py`. Also carries the README change from
+  6. **T5 + T6** (542c0d79) — session work off the event-loop thread, and the reaper's lifetime
+     moved to `server.start()`. Together because T6's wiring test asserts the order
+     `start`/`served`/`stop` around the same `server.start()` branch T5 left alone, and both
+     land in `use_session`/`server.py`. Also carries the README change from
      `mariadb-shell --py -e "mcp.setup()"` to `mariadb-shell -- mcp setup` (the user's own
      wording) and the corrected coverage figure.
-     ONE commit, not three: S6 and S7 both call S5's `log_event` and all three interleave
-     inside the same functions and docstrings, so splitting them would have meant committing
-     intermediate states that were never run green. The user asked for the commit without
-     specifying granularity after that reasoning was put to them.
+  7. **the three untested paths** (17a3408d) — `db.connect`'s slot giveback and its
+     unconfigured-URI refusal, and `server.start`'s three validation raises. Tests only.
+  8. **T8 + T9** (HEAD when this was written) — duplicate column labels keyed apart and read by
+     position, and the FK reference mapping ordered by the key's own ordinal. Together because
+     both are `_serialize_result`/introspection output and both are pinned in the same
+     `test_db_sql` flow.
 - **The remote branch moved mid-session and the push was rejected.** `mariadb/wip/AIPL-16`
   had gained e9122f6d (a merge of `main`, bringing 962165d7, a CI job-name change touching
   only `.github/workflows/shell-plugins-ci.yml`). Rebased rather than merged (one commit, no

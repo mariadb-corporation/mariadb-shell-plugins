@@ -379,10 +379,24 @@ _OBJECT_CONSTRAINTS_SQL = """
 # the UNION: the first half are the references pointing from this table to
 # other tables (n:1), the second half those pointing from other tables to this
 # one (1:1 or 1:n, depending on whether the primary keys line up).
+#
+# The aggregates that build ref_column_names and column_mapping are ordered by
+# k.ORDINAL_POSITION - the column's place in the FOREIGN KEY, not in the table.
+# Without an ORDER BY the sequence of a composite key's columns is whatever the
+# plan produces, and the key's order is the one that means something: for
+# FOREIGN KEY (b, a) REFERENCES parent (x, y), the table's order reports
+# "a, b" with the mapping a->y, b->x, so a reader reconstructing the key from
+# that sequence gets it back inside out. Each pair is correct either way, being
+# one row.
+#
+# The two JSON_ARRAYAGGs in the PK subqueries below are deliberately left
+# unordered: they are only ever compared with JSON_CONTAINS, which ignores array
+# order (verified), so ordering them would buy nothing.
 _OBJECT_REFERENCES_SQL = """
     SELECT MAX(c.ORDINAL_POSITION) + 100 AS position,
         MAX(k.REFERENCED_TABLE_NAME) AS name,
-        GROUP_CONCAT(c.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+        GROUP_CONCAT(c.COLUMN_NAME ORDER BY k.ORDINAL_POSITION
+            SEPARATOR ', ') AS ref_column_names,
         JSON_MERGE_PRESERVE(
             JSON_OBJECT('kind', 'n:1'),
             JSON_OBJECT('constraint',
@@ -393,7 +407,8 @@ _OBJECT_REFERENCES_SQL = """
             JSON_OBJECT('column_mapping',
                 JSON_ARRAYAGG(JSON_OBJECT(
                     'base', c.COLUMN_NAME,
-                    'ref', k.REFERENCED_COLUMN_NAME)))
+                    'ref', k.REFERENCED_COLUMN_NAME)
+                    ORDER BY k.ORDINAL_POSITION))
         ) AS reference_mapping,
         MAX(c.TABLE_SCHEMA) AS table_schema, MAX(c.TABLE_NAME) AS table_name
     FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
@@ -409,7 +424,8 @@ _OBJECT_REFERENCES_SQL = """
     -- (1:1 and 1:n)
     SELECT MAX(c.ORDINAL_POSITION) + 1000 AS position,
         MAX(c.TABLE_NAME) AS name,
-        GROUP_CONCAT(k.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+        GROUP_CONCAT(k.COLUMN_NAME ORDER BY k.ORDINAL_POSITION
+            SEPARATOR ', ') AS ref_column_names,
         JSON_MERGE_PRESERVE(
             -- If the PKs of the table and the referred table are exactly the
             -- same, this is a 1:1 relationship, otherwise an 1:n
@@ -423,7 +439,8 @@ _OBJECT_REFERENCES_SQL = """
             JSON_OBJECT('column_mapping',
                 JSON_ARRAYAGG(JSON_OBJECT(
                     'base', k.REFERENCED_COLUMN_NAME,
-                    'ref', c.COLUMN_NAME)))
+                    'ref', c.COLUMN_NAME)
+                    ORDER BY k.ORDINAL_POSITION))
         ) AS reference_mapping,
         MAX(k.REFERENCED_TABLE_SCHEMA) AS table_schema,
         MAX(k.REFERENCED_TABLE_NAME) AS table_name
@@ -1222,6 +1239,51 @@ def _session_was_restarted(connection_id: str) -> bool:
     return connection is not None and connection.session_restarted
 
 
+def _unique_column_labels(columns) -> list:
+    """Returns the labels of a result's columns, made unique.
+
+    Two columns can perfectly well carry the same label - ``SELECT a.id, b.id
+    FROM a JOIN b``, or any query that aliases two expressions the same way - and
+    a row is handed to the client as a dict. Without this the second column would
+    land on the first one's key: its value dropped, and the ``columns`` list
+    still naming both, so the loss looks like something the client did.
+
+    The first column with a label keeps it; a later one gets ``_2``, ``_3`` and so
+    on, checked against every label already emitted, so the suffix cannot land on
+    a column that really is called ``id_2``. Where a duplicate label comes before
+    a column genuinely named that way round, the genuine one is the one that
+    moves - first come, first served, and deterministic either way.
+
+    A qualified name would read better than a suffix, but there is nothing to
+    build one from: ``get_table_name()``, ``get_table_label()`` and
+    ``get_column_name()`` all come back empty for an aliased or computed column
+    (measured on this build), so the rule would hold for some queries and not
+    others.
+
+    Args:
+        columns: The column metadata objects from ``result.get_columns()``.
+
+    Returns:
+        One label per column, in order, no two the same.
+    """
+    labels = []
+    taken = set()
+
+    for column in columns:
+        label = column.get_column_label()
+
+        if label in taken:
+            suffix = 2
+            while f"{label}_{suffix}" in taken:
+                suffix += 1
+            label = f"{label}_{suffix}"
+
+        taken.add(label)
+        labels.append(label)
+
+    return labels
+
+
 def _serialize_result(result, session_restarted: bool = False) -> dict:
     """Serializes a shell SQL result into a JSON-friendly dict.
 
@@ -1245,12 +1307,16 @@ def _serialize_result(result, session_restarted: bool = False) -> dict:
         output["session_restarted"] = True
 
     if result.has_data():
-        columns = [col.get_column_label() for col in result.get_columns()]
+        columns = _unique_column_labels(result.get_columns())
         rows = []
         for row in result.fetch_all():
             item = {}
-            for column in columns:
-                value = row.get_field(column)
+            # Read by POSITION, not by label. Asking for a field by name cannot
+            # reach the second of two columns that share one - it answers with
+            # the first every time - so a value would be lost before there was
+            # anything to key it on.
+            for index, column in enumerate(columns):
+                value = row[index]
                 # Values that are not natively JSON-serializable have to be
                 # converted, as the tool result is returned as JSON. The shell
                 # hands the types that have no JSON equivalent of their own -
@@ -1605,7 +1671,10 @@ def register_db_tools(server, function_groups=()) -> None:
 
         Returns:
             A dict with the result set (columns and rows) and execution
-            metadata.
+            metadata. Each row is keyed by the column labels listed in columns.
+            Where a query selects two columns with the same label - joining two
+            tables that both have an id, say - the later one is listed and keyed
+            as label_2 (then _3, and so on), so that no column is lost.
 
             If it contains session_restarted: true, this statement ran on a
             newly opened database session, because the previous one had been
@@ -1648,7 +1717,9 @@ def register_db_tools(server, function_groups=()) -> None:
 
         Returns:
             A list with one entry per executed statement, each a dict with the
-            result set (columns and rows) and execution metadata.
+            result set (columns and rows) and execution metadata. Two columns
+            sharing one label are keyed apart as label and label_2, as for
+            db.execute_sql.
 
             If the FIRST entry contains session_restarted: true, the script ran
             on a newly opened database session, because the previous one had

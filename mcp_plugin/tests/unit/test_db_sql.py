@@ -79,6 +79,21 @@ async def _db_flow(uri, script_dir):
         assert typed_row["fraction"] == "1.50"
         assert typed_row["moment"].startswith("2026-07-29")
 
+        # Two columns can share a label - joining two tables that both have an
+        # id is the everyday case - and a row is a dict, so they have to be
+        # keyed apart or one of them is lost on the way out.
+        duplicate_result = await call(
+            "db.execute_sql",
+            {
+                "connection_id": connection_id,
+                "sql": "SELECT 1 AS id, 2 AS id, 3 AS other",
+            },
+        )
+        assert duplicate_result.is_error is False
+        duplicate_payload = helpers.tool_payload(duplicate_result)
+        assert duplicate_payload["columns"] == ["id", "id_2", "other"]
+        assert duplicate_payload["rows"] == [{"id": 1, "id_2": 2, "other": 3}]
+
         # Multi-statement script: create schema, table and insert rows in one
         # call, exercising db.execute_sql_script.
         schema = "mcp_test_" + uuid.uuid4().hex
@@ -126,6 +141,15 @@ async def _db_flow(uri, script_dir):
             f"(id INT PRIMARY KEY, item_id INT NOT NULL, "
             f"CONSTRAINT fk_orders_item FOREIGN KEY (item_id) "
             f"REFERENCES `{schema}`.`items` (id));"
+            # A composite foreign key whose columns are declared in an order
+            # other than the table's own, so that the two candidate orderings of
+            # the reference mapping can be told apart at all.
+            f"CREATE TABLE `{schema}`.`pairs` "
+            f"(low INT, high INT, PRIMARY KEY (low, high));"
+            f"CREATE TABLE `{schema}`.`pair_refs` "
+            f"(id INT PRIMARY KEY, second INT NOT NULL, first INT NOT NULL, "
+            f"CONSTRAINT fk_pair FOREIGN KEY (first, second) "
+            f"REFERENCES `{schema}`.`pairs` (low, high));"
             f"CREATE VIEW `{schema}`.`item_ids` AS "
             f"SELECT id FROM `{schema}`.`items`;"
             f"CREATE FUNCTION `{schema}`.`answer`(bonus INT) RETURNS INT "
@@ -143,7 +167,7 @@ async def _db_flow(uri, script_dir):
             {"connection_id": connection_id, "sql_script": objects_script},
         )
         assert objects_result.is_error is False
-        assert len(helpers.tool_payload(objects_result)) == 9
+        assert len(helpers.tool_payload(objects_result)) == 11
 
         async def list_objects(object_type=None):
             """Calls db.list_objects, omitting object_type when not given.
@@ -168,6 +192,10 @@ async def _db_flow(uri, script_dir):
             "items",
             "noted",
             "orders",
+            # The server's own collation order, which puts `pairs` before
+            # `pair_refs` rather than sorting the underscore first.
+            "pairs",
+            "pair_refs",
             "versioned",
         ]
         assert default_tables == await list_objects("table")
@@ -286,6 +314,40 @@ async def _db_flow(uri, script_dir):
             (entry["constraint_type"], entry["column_name"])
             for entry in orders_details["constraints"]
         } == {("PRIMARY KEY", "id"), ("FOREIGN KEY", "item_id")}
+
+        # A composite foreign key is reported in the order the KEY declares, not
+        # the order the columns happen to sit in the table. `pair_refs` is
+        # (id, second, first) with FOREIGN KEY (first, second) REFERENCES
+        # pairs (low, high), so the two orders disagree and only the key's makes
+        # the mapping reconstructable: first->low, second->high. Ordered by the
+        # table instead, it would read second->high, first->low; unordered, it is
+        # whatever the plan produced.
+        pair_refs_details = await get_details("pair_refs", "table")
+        composite = [
+            entry
+            for entry in pair_refs_details["references"]
+            if entry["reference_mapping"]["kind"] == "n:1"
+        ]
+        assert len(composite) == 1
+        assert composite[0]["ref_column_names"] == "first, second"
+        assert composite[0]["reference_mapping"]["column_mapping"] == [
+            {"base": "first", "ref": "low"},
+            {"base": "second", "ref": "high"},
+        ]
+
+        # And the same key seen from the referenced side keeps that order too.
+        pairs_details = await get_details("pairs", "table")
+        incoming_composite = [
+            entry
+            for entry in pairs_details["references"]
+            if entry["name"] == "pair_refs"
+        ]
+        assert len(incoming_composite) == 1
+        assert incoming_composite[0]["ref_column_names"] == "first, second"
+        assert incoming_composite[0]["reference_mapping"]["column_mapping"] == [
+            {"base": "low", "ref": "first"},
+            {"base": "high", "ref": "second"},
+        ]
 
         # A view is described by its columns alone: no constraints, no
         # references.
