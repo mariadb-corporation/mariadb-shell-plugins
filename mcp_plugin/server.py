@@ -49,6 +49,14 @@ def start_server(**options) -> None:
         function_groups (list): The function groups to expose, allowing them to
             be loaded independently. Supported groups are "db", "sandbox" and
             "msm". Defaults to all groups.
+        allowed_hosts (list): Additional values of the HTTP Host header to
+            accept, for a server reached under a name that cannot be derived
+            from the host it binds to - through a reverse proxy, a port forward
+            or a DNS alias. Only used by the streamable-http transport. The
+            names the bind address itself implies are always accepted, so this
+            is only needed for those extra names; a request whose Host is none
+            of them is refused, which is what protects an unauthenticated
+            server from being driven by a page in a browser.
 
     Returns:
         None
@@ -65,9 +73,17 @@ def start_server(**options) -> None:
             group.strip() for group in function_groups.split(",") if group.strip()
         ]
 
+    # Accepted as a list or, as the CLI passes it, a comma-separated string.
+    allowed_hosts = options.get("allowed_hosts", None) or []
+    if isinstance(allowed_hosts, str):
+        allowed_hosts = [
+            name.strip() for name in allowed_hosts.split(",") if name.strip()
+        ]
+
     lib.server.start(
         host=host,
         port=port,
         transport=transport,
         function_groups=function_groups,
+        allowed_hosts=allowed_hosts,
     )
