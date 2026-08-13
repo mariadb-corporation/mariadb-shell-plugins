@@ -3,20 +3,22 @@
 <!-- Copyright (c) 2022, 2026, Oracle and/or its affiliates.-->
 <!-- Copyright (c) 2026, MariaDB plc.-->
 
+     SPDX-License-Identifier: GPL-2.0-only
+
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MySQL REST Service - Core REST APIs</title>
     <link rel="shortcut icon" href="images/favicon.png" type="image/x-icon">
-        <link rel="stylesheet" href="style/style.css">
-                <!-- cSpell:ignore pagetitle -->
+    <link rel="stylesheet" href="style/style.css">
+    <!-- cSpell:ignore pagetitle -->
     <title>MySQL REST Service - Core REST APIs</title>
     <style type="text/css">
         code {
             white-space: pre;
         }
     </style>
-        <script>
+    <script>
         window.addEventListener('DOMContentLoaded', () => {
             window.visibleItems = [];
             window.lastVisible = null;
@@ -155,228 +157,171 @@
                     <div class="bookToc">
                         <br>
                         <h3>MySQL REST Service - Core REST
-APIs 2026.5.0+9.7.0</h3>
-                                                <ul>
-                                                <li><a
-                                                href="#mrs-core-rest-apis"
-                                                id="toc-mrs-core-rest-apis"><span
-                                                class="toc-section-number">1</span>
-                                                MRS Core REST APIs</a>
-                                                <ul>
-                                                <li><a
-                                                href="#about-mrs-restful-web-services"
-                                                id="toc-about-mrs-restful-web-services"><span
+                            APIs 2026.5.0+9.7.0</h3>
+                        <ul>
+                            <li><a href="#mrs-core-rest-apis" id="toc-mrs-core-rest-apis"><span
+                                        class="toc-section-number">1</span>
+                                    MRS Core REST APIs</a>
+                                <ul>
+                                    <li><a href="#about-mrs-restful-web-services"
+                                            id="toc-about-mrs-restful-web-services"><span
                                                 class="toc-section-number">1.1</span>
-                                                About MRS RESTful Web
-                                                Services</a></li>
-                                                <li><a
-                                                href="#about-request-path-syntax-requirements"
-                                                id="toc-about-request-path-syntax-requirements"><span
+                                            About MRS RESTful Web
+                                            Services</a></li>
+                                    <li><a href="#about-request-path-syntax-requirements"
+                                            id="toc-about-request-path-syntax-requirements"><span
                                                 class="toc-section-number">1.2</span>
-                                                About Request Path
-                                                Syntax
-                                                Requirements</a></li>
-                                                <li><a
-                                                href="#about-curl-and-testing-restful-services"
-                                                id="toc-about-curl-and-testing-restful-services"><span
+                                            About Request Path
+                                            Syntax
+                                            Requirements</a></li>
+                                    <li><a href="#about-curl-and-testing-restful-services"
+                                            id="toc-about-curl-and-testing-restful-services"><span
                                                 class="toc-section-number">1.3</span>
-                                                About cURL and Testing
-                                                RESTful
-                                                Services</a></li>
-                                                </ul></li>
-                                                <li><a
-                                                href="#mrs-rest-queries"
-                                                id="toc-mrs-rest-queries"><span
-                                                class="toc-section-number">2</span>
-                                                MRS REST Queries</a>
-                                                <ul>
-                                                <li><a
-                                                href="#get-schema-metadata"
-                                                id="toc-get-schema-metadata"><span
+                                            About cURL and Testing
+                                            RESTful
+                                            Services</a></li>
+                                </ul>
+                            </li>
+                            <li><a href="#mrs-rest-queries" id="toc-mrs-rest-queries"><span
+                                        class="toc-section-number">2</span>
+                                    MRS REST Queries</a>
+                                <ul>
+                                    <li><a href="#get-schema-metadata" id="toc-get-schema-metadata"><span
                                                 class="toc-section-number">2.1</span>
-                                                Get Schema
-                                                Metadata</a></li>
-                                                <li><a
-                                                href="#get-object-metadata"
-                                                id="toc-get-object-metadata"><span
+                                            Get Schema
+                                            Metadata</a></li>
+                                    <li><a href="#get-object-metadata" id="toc-get-object-metadata"><span
                                                 class="toc-section-number">2.2</span>
-                                                Get Object
-                                                Metadata</a></li>
-                                                <li><a
-                                                href="#get-object-data"
-                                                id="toc-get-object-data"><span
+                                            Get Object
+                                            Metadata</a></li>
+                                    <li><a href="#get-object-data" id="toc-get-object-data"><span
                                                 class="toc-section-number">2.3</span>
-                                                Get Object Data</a></li>
-                                                <li><a
-                                                href="#insert-table-row"
-                                                id="toc-insert-table-row"><span
+                                            Get Object Data</a></li>
+                                    <li><a href="#insert-table-row" id="toc-insert-table-row"><span
                                                 class="toc-section-number">2.4</span>
-                                                Insert Table
-                                                Row</a></li>
-                                                <li><a
-                                                href="#updateinsert-table-row"
-                                                id="toc-updateinsert-table-row"><span
+                                            Insert Table
+                                            Row</a></li>
+                                    <li><a href="#updateinsert-table-row" id="toc-updateinsert-table-row"><span
                                                 class="toc-section-number">2.5</span>
-                                                Update/Insert Table
-                                                Row</a></li>
-                                                <li><a
-                                                href="#delete-using-filter"
-                                                id="toc-delete-using-filter"><span
+                                            Update/Insert Table
+                                            Row</a></li>
+                                    <li><a href="#delete-using-filter" id="toc-delete-using-filter"><span
                                                 class="toc-section-number">2.6</span>
-                                                Delete Using
-                                                Filter</a></li>
-                                                </ul></li>
-                                                <li><a
-                                                href="#filtering-in-rest-queries"
-                                                id="toc-filtering-in-rest-queries"><span
-                                                class="toc-section-number">3</span>
-                                                Filtering in REST
-                                                Queries</a>
-                                                <ul>
-                                                <li><a
-                                                href="#filterobject-grammar"
-                                                id="toc-filterobject-grammar"><span
+                                            Delete Using
+                                            Filter</a></li>
+                                </ul>
+                            </li>
+                            <li><a href="#filtering-in-rest-queries" id="toc-filtering-in-rest-queries"><span
+                                        class="toc-section-number">3</span>
+                                    Filtering in REST
+                                    Queries</a>
+                                <ul>
+                                    <li><a href="#filterobject-grammar" id="toc-filterobject-grammar"><span
                                                 class="toc-section-number">3.1</span>
-                                                FilterObject
-                                                Grammar</a></li>
-                                                </ul></li>
-                                                <li><a
-                                                href="#filterobject-grammar-examples"
-                                                id="toc-filterobject-grammar-examples"><span
-                                                class="toc-section-number">4</span>
-                                                FilterObject Grammar
-                                                Examples</a>
-                                                <ul>
-                                                <li><a
-                                                href="#order-by-property-orderby"
-                                                id="toc-order-by-property-orderby"><span
+                                            FilterObject
+                                            Grammar</a></li>
+                                </ul>
+                            </li>
+                            <li><a href="#filterobject-grammar-examples" id="toc-filterobject-grammar-examples"><span
+                                        class="toc-section-number">4</span>
+                                    FilterObject Grammar
+                                    Examples</a>
+                                <ul>
+                                    <li><a href="#order-by-property-orderby" id="toc-order-by-property-orderby"><span
                                                 class="toc-section-number">4.1</span>
-                                                ORDER BY property
-                                                ($orderby)</a></li>
-                                                <li><a
-                                                href="#asof-property-asof"
-                                                id="toc-asof-property-asof"><span
+                                            ORDER BY property
+                                            ($orderby)</a></li>
+                                    <li><a href="#asof-property-asof" id="toc-asof-property-asof"><span
                                                 class="toc-section-number">4.2</span>
-                                                ASOF property
-                                                ($asof)</a></li>
-                                                <li><a
-                                                href="#equals-operator-eq"
-                                                id="toc-equals-operator-eq"><span
+                                            ASOF property
+                                            ($asof)</a></li>
+                                    <li><a href="#equals-operator-eq" id="toc-equals-operator-eq"><span
                                                 class="toc-section-number">4.3</span>
-                                                EQUALS operator
-                                                ($eq)</a></li>
-                                                <li><a
-                                                href="#not-equals-operator-ne"
-                                                id="toc-not-equals-operator-ne"><span
+                                            EQUALS operator
+                                            ($eq)</a></li>
+                                    <li><a href="#not-equals-operator-ne" id="toc-not-equals-operator-ne"><span
                                                 class="toc-section-number">4.4</span>
-                                                NOT EQUALS operator
-                                                ($ne)</a></li>
-                                                <li><a
-                                                href="#less-than-operator-lt"
-                                                id="toc-less-than-operator-lt"><span
+                                            NOT EQUALS operator
+                                            ($ne)</a></li>
+                                    <li><a href="#less-than-operator-lt" id="toc-less-than-operator-lt"><span
                                                 class="toc-section-number">4.5</span>
-                                                LESS THAN operator
-                                                ($lt)</a></li>
-                                                <li><a
-                                                href="#less-than-or-equals-operator-lte"
-                                                id="toc-less-than-or-equals-operator-lte"><span
+                                            LESS THAN operator
+                                            ($lt)</a></li>
+                                    <li><a href="#less-than-or-equals-operator-lte"
+                                            id="toc-less-than-or-equals-operator-lte"><span
                                                 class="toc-section-number">4.6</span>
-                                                LESS THAN OR EQUALS
-                                                operator ($lte)</a></li>
-                                                <li><a
-                                                href="#greater-than-operator-gt"
-                                                id="toc-greater-than-operator-gt"><span
+                                            LESS THAN OR EQUALS
+                                            operator ($lte)</a></li>
+                                    <li><a href="#greater-than-operator-gt" id="toc-greater-than-operator-gt"><span
                                                 class="toc-section-number">4.7</span>
-                                                GREATER THAN operator
-                                                ($gt)</a></li>
-                                                <li><a
-                                                href="#greater-than-or-equals-operator-gte"
-                                                id="toc-greater-than-or-equals-operator-gte"><span
+                                            GREATER THAN operator
+                                            ($gt)</a></li>
+                                    <li><a href="#greater-than-or-equals-operator-gte"
+                                            id="toc-greater-than-or-equals-operator-gte"><span
                                                 class="toc-section-number">4.8</span>
-                                                GREATER THAN OR EQUALS
-                                                operator ($gte)</a></li>
-                                                <li><a
-                                                href="#in-string-operator-instr"
-                                                id="toc-in-string-operator-instr"><span
+                                            GREATER THAN OR EQUALS
+                                            operator ($gte)</a></li>
+                                    <li><a href="#in-string-operator-instr" id="toc-in-string-operator-instr"><span
                                                 class="toc-section-number">4.9</span>
-                                                In string operator
-                                                ($instr)</a></li>
-                                                <li><a
-                                                href="#not-in-string-operator-ninstr"
-                                                id="toc-not-in-string-operator-ninstr"><span
+                                            In string operator
+                                            ($instr)</a></li>
+                                    <li><a href="#not-in-string-operator-ninstr"
+                                            id="toc-not-in-string-operator-ninstr"><span
                                                 class="toc-section-number">4.10</span>
-                                                Not in string operator
-                                                ($ninstr)</a></li>
-                                                <li><a
-                                                href="#like-operator-like"
-                                                id="toc-like-operator-like"><span
+                                            Not in string operator
+                                            ($ninstr)</a></li>
+                                    <li><a href="#like-operator-like" id="toc-like-operator-like"><span
                                                 class="toc-section-number">4.11</span>
-                                                LIKE operator
-                                                ($like)</a></li>
-                                                <li><a
-                                                href="#between-operator-between"
-                                                id="toc-between-operator-between"><span
+                                            LIKE operator
+                                            ($like)</a></li>
+                                    <li><a href="#between-operator-between" id="toc-between-operator-between"><span
                                                 class="toc-section-number">4.12</span>
-                                                BETWEEN operator
-                                                ($between)</a></li>
-                                                <li><a
-                                                href="#null-operator-null"
-                                                id="toc-null-operator-null"><span
+                                            BETWEEN operator
+                                            ($between)</a></li>
+                                    <li><a href="#null-operator-null" id="toc-null-operator-null"><span
                                                 class="toc-section-number">4.13</span>
-                                                NULL operator
-                                                ($null)</a></li>
-                                                <li><a
-                                                href="#not-null-operator-notnull"
-                                                id="toc-not-null-operator-notnull"><span
+                                            NULL operator
+                                            ($null)</a></li>
+                                    <li><a href="#not-null-operator-notnull" id="toc-not-null-operator-notnull"><span
                                                 class="toc-section-number">4.14</span>
-                                                NOT NULL operator
-                                                ($notnull)</a></li>
-                                                <li><a
-                                                href="#and-operator-and"
-                                                id="toc-and-operator-and"><span
+                                            NOT NULL operator
+                                            ($notnull)</a></li>
+                                    <li><a href="#and-operator-and" id="toc-and-operator-and"><span
                                                 class="toc-section-number">4.15</span>
-                                                AND operator
-                                                ($and)</a></li>
-                                                <li><a
-                                                href="#or-operator-or"
-                                                id="toc-or-operator-or"><span
+                                            AND operator
+                                            ($and)</a></li>
+                                    <li><a href="#or-operator-or" id="toc-or-operator-or"><span
                                                 class="toc-section-number">4.16</span>
-                                                OR operator
-                                                ($or)</a></li>
-                                                </ul></li>
-                                                <li><a
-                                                href="#authenticate-a-rest-user"
-                                                id="toc-authenticate-a-rest-user"><span
-                                                class="toc-section-number">5</span>
-                                                Authenticate a REST
-                                                User</a>
-                                                <ul>
-                                                <li><a
-                                                href="#mysql-internal-authentication"
-                                                id="toc-mysql-internal-authentication"><span
+                                            OR operator
+                                            ($or)</a></li>
+                                </ul>
+                            </li>
+                            <li><a href="#authenticate-a-rest-user" id="toc-authenticate-a-rest-user"><span
+                                        class="toc-section-number">5</span>
+                                    Authenticate a REST
+                                    User</a>
+                                <ul>
+                                    <li><a href="#mysql-internal-authentication"
+                                            id="toc-mysql-internal-authentication"><span
                                                 class="toc-section-number">5.1</span>
-                                                MySQL Internal
-                                                Authentication</a></li>
-                                                <li><a
-                                                href="#mrs-authentication"
-                                                id="toc-mrs-authentication"><span
+                                            MySQL Internal
+                                            Authentication</a></li>
+                                    <li><a href="#mrs-authentication" id="toc-mrs-authentication"><span
                                                 class="toc-section-number">5.2</span>
-                                                MRS
-                                                Authentication</a></li>
-                                                <li><a href="#oauth"
-                                                id="toc-oauth"><span
-                                                class="toc-section-number">5.3</span>
-                                                OAuth</a></li>
-                                                <li><a
-                                                href="#executing-crud-operations-on-a-rest-object"
-                                                id="toc-executing-crud-operations-on-a-rest-object"><span
+                                            MRS
+                                            Authentication</a></li>
+                                    <li><a href="#oauth" id="toc-oauth"><span class="toc-section-number">5.3</span>
+                                            OAuth</a></li>
+                                    <li><a href="#executing-crud-operations-on-a-rest-object"
+                                            id="toc-executing-crud-operations-on-a-rest-object"><span
                                                 class="toc-section-number">5.4</span>
-                                                Executing CRUD
-                                                Operations on a REST
-                                                Object</a></li>
-                                                </ul></li>
-                                                </ul>
-                                            </div>
+                                            Executing CRUD
+                                            Operations on a REST
+                                            Object</a></li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
                 </nav>
             </div>
         </div>
@@ -384,51 +329,51 @@ APIs 2026.5.0+9.7.0</h3>
             <div class="header" id="document-top">
                 <h1>
                     <div class="iconBig bookIcon"></div>&nbsp;MySQL REST
-Service - Core REST APIs
+                    Service - Core REST APIs
                 </h1>
             </div>
             <div class="main">
                 <p>This book provides examples of using the MySQL REST
-                Service queries and other operations against tables and
-                views after you have REST-enabled them.</p>
+                    Service queries and other operations against tables and
+                    views after you have REST-enabled them.</p>
                 <p><strong>Chapter Overview</strong></p>
                 <ul>
-                <li><a href="#about-mrs-restful-web-services">About MRS
-                RESTful Web Services</a></li>
-                <li><a href="#get-schema-metadata">Get Schema
-                Metadata</a></li>
-                <li><a href="#get-object-metadata">Get Object
-                Metadata</a></li>
-                <li><a href="#get-object-data">Get Object Data</a></li>
-                <li><a href="#insert-table-row">Insert Table
-                Row</a></li>
-                <li><a href="#delete-using-filter">Delete Using
-                Filter</a></li>
-                <li><a href="#authenticate-a-rest-user">Authenticate a
-                REST User</a></li>
-                <li><a href="#filterobject-grammar">FilterObject
-                Grammar</a></li>
-                <li><a href="#filterobject-grammar-examples">Examples:
-                FilterObject Specifications</a></li>
+                    <li><a href="#about-mrs-restful-web-services">About MRS
+                            RESTful Web Services</a></li>
+                    <li><a href="#get-schema-metadata">Get Schema
+                            Metadata</a></li>
+                    <li><a href="#get-object-metadata">Get Object
+                            Metadata</a></li>
+                    <li><a href="#get-object-data">Get Object Data</a></li>
+                    <li><a href="#insert-table-row">Insert Table
+                            Row</a></li>
+                    <li><a href="#delete-using-filter">Delete Using
+                            Filter</a></li>
+                    <li><a href="#authenticate-a-rest-user">Authenticate a
+                            REST User</a></li>
+                    <li><a href="#filterobject-grammar">FilterObject
+                            Grammar</a></li>
+                    <li><a href="#filterobject-grammar-examples">Examples:
+                            FilterObject Specifications</a></li>
                 </ul>
                 <hr />
                 <p>Please also see</p>
                 <ul>
-                <li><strong><a href="index.html">MySQL REST Service -
-                Developer’s Guide</a></strong> - This book explains how
-                to install and configure the MySQL REST Service (MRS) as
-                well as how to access the data through REST calls.</li>
-                <li><strong><a href="quickstart.html">MySQL REST Service
-                - Quickstart Guide</a></strong> - This book provides a
-                hands-on approach to learning how to use the MySQL REST
-                service.</li>
-                <li><strong><a href="sdk.html">MySQL REST Service - SDK
-                Reference</a></strong> - This book explains how to work
-                with the MRS Software Development Kit and discusses the
-                Client APIs.</li>
-                <li><strong><a href="sql.html">MySQL REST Service - SQL
-                Reference</a></strong> - This book discusses the MySQL
-                REST Service SQL Extension.</li>
+                    <li><strong><a href="index.html">MySQL REST Service -
+                                Developer’s Guide</a></strong> - This book explains how
+                        to install and configure the MySQL REST Service (MRS) as
+                        well as how to access the data through REST calls.</li>
+                    <li><strong><a href="quickstart.html">MySQL REST Service
+                                - Quickstart Guide</a></strong> - This book provides a
+                        hands-on approach to learning how to use the MySQL REST
+                        service.</li>
+                    <li><strong><a href="sdk.html">MySQL REST Service - SDK
+                                Reference</a></strong> - This book explains how to work
+                        with the MRS Software Development Kit and discusses the
+                        Client APIs.</li>
+                    <li><strong><a href="sql.html">MySQL REST Service - SQL
+                                Reference</a></strong> - This book discusses the MySQL
+                        REST Service SQL Extension.</li>
                 </ul>
                 <hr />
                 <!-- Copyright (c) 2022, 2026, Oracle and/or its affiliates.
@@ -453,99 +398,94 @@ Service - Core REST APIs
                 You should have received a copy of the GNU General Public License
                 along with this program; if not, write to the Free Software Foundation, Inc.,
                 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA -->
-                <h1 data-number="1" id="mrs-core-rest-apis"><span
-                class="header-section-number">1</span> MRS Core REST
-                APIs</h1>
+                <h1 data-number="1" id="mrs-core-rest-apis"><span class="header-section-number">1</span> MRS Core REST
+                    APIs</h1>
                 <p>This section provides examples of using the MySQL
-                REST Service queries and other operations against tables
-                and views after you have REST-enabled them.</p>
+                    REST Service queries and other operations against tables
+                    and views after you have REST-enabled them.</p>
                 <p>The examples in this section provide an insight into
-                the direct, low-level REST API calls that can be made
-                against the MySQL REST Service. They can be used to gain
-                a deep understanding of how MRS works.</p>
+                    the direct, low-level REST API calls that can be made
+                    against the MySQL REST Service. They can be used to gain
+                    a deep understanding of how MRS works.</p>
                 <p>When developing an application with MRS, it is
-                recommended to use a higher-level MRS Software
-                Development Kit (SDK) instead. Please check if a <a
-                href="sdk.html#document-top">SDK</a> has already been
-                made available for your programming language and
-                platform.</p>
-                <h2 data-number="1.1"
-                id="about-mrs-restful-web-services"><span
-                class="header-section-number">1.1</span> About MRS
-                RESTful Web Services</h2>
+                    recommended to use a higher-level MRS Software
+                    Development Kit (SDK) instead. Please check if a <a href="sdk.html#document-top">SDK</a> has already
+                    been
+                    made available for your programming language and
+                    platform.</p>
+                <h2 data-number="1.1" id="about-mrs-restful-web-services"><span class="header-section-number">1.1</span>
+                    About MRS
+                    RESTful Web Services</h2>
                 <p>MRS supports the creation of an unlimited amount of
-                distinct RESTful Web Services. You can also refer to
-                them as MRS services. Each of those MRS services usually
-                maps to one (or more) web applications.</p>
+                    distinct RESTful Web Services. You can also refer to
+                    them as MRS services. Each of those MRS services usually
+                    maps to one (or more) web applications.</p>
                 <p>After you create a RESTful Web Service, you can
-                access it by navigating to the following URL.</p>
+                    access it by navigating to the following URL.</p>
                 <p>Pattern:</p>
                 <pre><code>https://&lt;HOSTNAME:PORT&gt;/&lt;MRS_SERVICE_PATH&gt;/&lt;MRS_DATABASE_SCHEMA_PATH&gt;/&lt;MRS_DATABASE_OBJECT_PATH&gt;/</code></pre>
                 <ul>
-                <li><code>HOSTNAME:PORT/MRS_SERVICE_PATH</code>:
-                Specifies the address at which the given MRS service is
-                running. You can also refer to it as the MRS service
-                URI.</li>
-                <li><code>MRS_DATABASE_SCHEMA_PATH</code>: Specifies the
-                path that you provided while REST-enabling your database
-                schema. By default, it is the name of the schema.</li>
-                <li><code>MRS_DATABASE_OBJECT_PATH</code>: Specifies the
-                path that you provided while REST-enabling your database
-                object (TABLE, VIEW or PROCEDURE).</li>
+                    <li><code>HOSTNAME:PORT/MRS_SERVICE_PATH</code>:
+                        Specifies the address at which the given MRS service is
+                        running. You can also refer to it as the MRS service
+                        URI.</li>
+                    <li><code>MRS_DATABASE_SCHEMA_PATH</code>: Specifies the
+                        path that you provided while REST-enabling your database
+                        schema. By default, it is the name of the schema.</li>
+                    <li><code>MRS_DATABASE_OBJECT_PATH</code>: Specifies the
+                        path that you provided while REST-enabling your database
+                        object (TABLE, VIEW or PROCEDURE).</li>
                 </ul>
                 <p>Together, these values comprise the MRS endpoint
-                URL.</p>
+                    URL.</p>
                 <p>Example:</p>
                 <pre><code>https://localhost:8000/mrs/sakila/actor</code></pre>
-                <h2 data-number="1.2"
-                id="about-request-path-syntax-requirements"><span
-                class="header-section-number">1.2</span> About Request
-                Path Syntax Requirements</h2>
+                <h2 data-number="1.2" id="about-request-path-syntax-requirements"><span
+                        class="header-section-number">1.2</span> About Request
+                    Path Syntax Requirements</h2>
                 <p>To prevent path-based attacks, MRS requires the
-                syntax of the path element of each request URL to
-                conform to the following rules:</p>
+                    syntax of the path element of each request URL to
+                    conform to the following rules:</p>
                 <ul>
-                <li>Is not empty or whitespace-only</li>
-                <li>Does not contain any of the following characters: ?,
-                #, ;, %</li>
-                <li>Does not contain the null character (000)</li>
-                <li>Does not contain characters in the range:
-                001-031</li>
-                <li>Does not end with white space or a period (.)</li>
-                <li>Does not contain double forward slash (//) or double
-                back slash(\)</li>
-                <li>Does not contain two or more periods in sequence
-                (.., …, and so on)</li>
-                <li>Total length is {<span class="citation"
-                data-cites="value">@value</span> #MAX_PATH_LENGTH}
-                characters or less</li>
-                <li>Does not match any of the following names (case
-                insensitive), with or without file extensions: CON, PRN,
-                AUX, CLOCK$, NUL, COM0, COM1, COM2, COM3, COM4, COM5,
-                COM6, COM7, COM8, COM9, LPT0, LPT1, LPT2, LPT3, LPT4,
-                LPT5, LPT6, LPT7, LPT8, LPT9</li>
+                    <li>Is not empty or whitespace-only</li>
+                    <li>Does not contain any of the following characters: ?,
+                        #, ;, %</li>
+                    <li>Does not contain the null character (000)</li>
+                    <li>Does not contain characters in the range:
+                        001-031</li>
+                    <li>Does not end with white space or a period (.)</li>
+                    <li>Does not contain double forward slash (//) or double
+                        back slash(\)</li>
+                    <li>Does not contain two or more periods in sequence
+                        (.., …, and so on)</li>
+                    <li>Total length is {<span class="citation" data-cites="value">@value</span> #MAX_PATH_LENGTH}
+                        characters or less</li>
+                    <li>Does not match any of the following names (case
+                        insensitive), with or without file extensions: CON, PRN,
+                        AUX, CLOCK$, NUL, COM0, COM1, COM2, COM3, COM4, COM5,
+                        COM6, COM7, COM8, COM9, LPT0, LPT1, LPT2, LPT3, LPT4,
+                        LPT5, LPT6, LPT7, LPT8, LPT9</li>
                 </ul>
                 <p>If you intend to enable REST endpoints for database
-                objects, then avoid object names that do not comply with
-                these requirements. For example, do not create a table
-                named #EMPS. If you do want to auto-REST enable objects
-                that have non-compliant names, then you must use an
-                alias that complies with the requirements.</p>
+                    objects, then avoid object names that do not comply with
+                    these requirements. For example, do not create a table
+                    named #EMPS. If you do want to auto-REST enable objects
+                    that have non-compliant names, then you must use an
+                    alias that complies with the requirements.</p>
                 <p>These requirements are applied to the URL decoded
-                form of the URL, to prevent attempted circumvention of
-                percent encodings.</p>
-                <h2 data-number="1.3"
-                id="about-curl-and-testing-restful-services"><span
-                class="header-section-number">1.3</span> About cURL and
-                Testing RESTful Services</h2>
+                    form of the URL, to prevent attempted circumvention of
+                    percent encodings.</p>
+                <h2 data-number="1.3" id="about-curl-and-testing-restful-services"><span
+                        class="header-section-number">1.3</span> About cURL and
+                    Testing RESTful Services</h2>
                 <p>Usually you can navigate to a URL of a RESTful
-                service using a web browser. However, another way to
-                test it is by using a command line tool like cURL.</p>
+                    service using a web browser. However, another way to
+                    test it is by using a command line tool like cURL.</p>
                 <p>cURL enables you to see and control what data is
-                being sent to and received from a RESTful service.</p>
+                    being sent to and received from a RESTful service.</p>
                 <pre><code>curl -i https://localhost:8000/mrs/sakila/actor/2</code></pre>
                 <p>This example produces a response like the
-                following:</p>
+                    following:</p>
                 <pre><code>{
     &quot;links&quot;: [
         {
@@ -559,7 +499,7 @@ Service - Core REST APIs
     &quot;last_update&quot;: &quot;2006-02-15 03:34:33.000000&quot;
 }</code></pre>
                 <p>The -i option tells cURL to display the HTTP headers
-                returned by the server.</p>
+                    returned by the server.</p>
                 <!-- Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 
                 This program is free software; you can redistribute it and/or modify
@@ -582,20 +522,18 @@ Service - Core REST APIs
                 You should have received a copy of the GNU General Public License
                 along with this program; if not, write to the Free Software Foundation, Inc.,
                 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA -->
-                <h1 data-number="2" id="mrs-rest-queries"><span
-                class="header-section-number">2</span> MRS REST
-                Queries</h1>
+                <h1 data-number="2" id="mrs-rest-queries"><span class="header-section-number">2</span> MRS REST
+                    Queries</h1>
                 <p>A MRS REST service provides access to one or more
-                schemas (and their metadata) as well as their comprising
-                database objects such as tables, views and procedures
-                (and their metadata).</p>
-                <h2 data-number="2.1" id="get-schema-metadata"><span
-                class="header-section-number">2.1</span> Get Schema
-                Metadata</h2>
+                    schemas (and their metadata) as well as their comprising
+                    database objects such as tables, views and procedures
+                    (and their metadata).</p>
+                <h2 data-number="2.1" id="get-schema-metadata"><span class="header-section-number">2.1</span> Get Schema
+                    Metadata</h2>
                 <p>This example retrieves a list of resources available
-                through the specified schema alias. It shows RESTful
-                services that are created by enabling a table, view or
-                procedure.</p>
+                    through the specified schema alias. It shows RESTful
+                    services that are created by enabling a table, view or
+                    procedure.</p>
                 <p>Pattern:</p>
                 <pre><code>GET http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/metadata-catalog/</code></pre>
                 <p>Example:</p>
@@ -643,18 +581,17 @@ Service - Core REST APIs
 }</code></pre>
                 <p>Each available resource has two hyperlinks:</p>
                 <ul>
-                <li>The link with a “describes” relation points to the
-                actual resource</li>
-                <li>The link with a “canonical” relation points to the
-                resource metadata</li>
+                    <li>The link with a “describes” relation points to the
+                        actual resource</li>
+                    <li>The link with a “canonical” relation points to the
+                        resource metadata</li>
                 </ul>
-                <h2 data-number="2.2" id="get-object-metadata"><span
-                class="header-section-number">2.2</span> Get Object
-                Metadata</h2>
+                <h2 data-number="2.2" id="get-object-metadata"><span class="header-section-number">2.2</span> Get Object
+                    Metadata</h2>
                 <p>This example retrieves the metadata (which describes
-                the object) of an individual object. The location of the
-                metadata is specified by the canonical link
-                relation.</p>
+                    the object) of an individual object. The location of the
+                    metadata is specified by the canonical link
+                    relation.</p>
                 <p>Pattern:</p>
                 <pre><code>GET http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/metadata-catalog/&lt;ObjectAlias&gt;/</code></pre>
                 <p>Example:</p>
@@ -699,12 +636,11 @@ Service - Core REST APIs
         }
     ]
 }</code></pre>
-                <h2 data-number="2.3" id="get-object-data"><span
-                class="header-section-number">2.3</span> Get Object
-                Data</h2>
+                <h2 data-number="2.3" id="get-object-data"><span class="header-section-number">2.3</span> Get Object
+                    Data</h2>
                 <p>This example retrieves the data in the object. Each
-                row in the object corresponds to a JSON object embedded
-                within the JSON array</p>
+                    row in the object corresponds to a JSON object embedded
+                    within the JSON array</p>
                 <p>Pattern:</p>
                 <pre><code>GET http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/&lt;ObjectAlias&gt;/</code></pre>
                 <p>Example:</p>
@@ -751,12 +687,11 @@ Service - Core REST APIs
         ...
     ]
 }</code></pre>
-                <h3 data-number="2.3.1"
-                id="get-table-data-using-pagination"><span
-                class="header-section-number">2.3.1</span> Get Table
-                Data Using Pagination</h3>
+                <h3 data-number="2.3.1" id="get-table-data-using-pagination"><span
+                        class="header-section-number">2.3.1</span> Get Table
+                    Data Using Pagination</h3>
                 <p>We can specify offset and limit parameters which are
-                used for result data pagination.</p>
+                    used for result data pagination.</p>
                 <p>Pattern:</p>
                 <pre><code>GET http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/&lt;ObjectAlias&gt;/?offset=&lt;Offset&gt;&amp;limit=&lt;Limit&gt;</code></pre>
                 <p>Example:</p>
@@ -812,12 +747,11 @@ Service - Core REST APIs
         }
     ]
 }</code></pre>
-                <h3 data-number="2.3.2"
-                id="get-table-data-using-query"><span
-                class="header-section-number">2.3.2</span> Get Table
-                Data Using Query</h3>
+                <h3 data-number="2.3.2" id="get-table-data-using-query"><span class="header-section-number">2.3.2</span>
+                    Get Table
+                    Data Using Query</h3>
                 <p>We can use a filter clause to restrict the set of
-                objects that are returned.</p>
+                    objects that are returned.</p>
                 <p>Pattern:</p>
                 <pre><code>GET http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/&lt;ObjectAlias&gt;/?q=&lt;FilterClause&gt;</code></pre>
                 <p>Example:</p>
@@ -849,18 +783,17 @@ Service - Core REST APIs
         }
     ]
 }</code></pre>
-                <h3 data-number="2.3.3"
-                id="get-table-row-using-primary-key"><span
-                class="header-section-number">2.3.3</span> Get Table Row
-                Using Primary Key</h3>
+                <h3 data-number="2.3.3" id="get-table-row-using-primary-key"><span
+                        class="header-section-number">2.3.3</span> Get Table Row
+                    Using Primary Key</h3>
                 <p>This example retrieves an object by specifying its
-                identifying key values.</p>
+                    identifying key values.</p>
                 <p>Note: A table requires a primary key to be part of a
-                REST service.</p>
+                    REST service.</p>
                 <p>Pattern:</p>
                 <pre><code>GET http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/&lt;ObjectAlias&gt;/&lt;KeyValues&gt;</code></pre>
                 <p>Where <code>&lt;KeyValues&gt;</code> is a
-                comma-separated list of key values (in key order).</p>
+                    comma-separated list of key values (in key order).</p>
                 <p>Example:</p>
                 <pre><code>GET http://localhost:8000/mrs/sakila/actor/53</code></pre>
                 <p>Result:</p>
@@ -876,16 +809,15 @@ Service - Core REST APIs
     &quot;first_name&quot;: &quot;MENA&quot;,
     &quot;last_update&quot;: &quot;2006-02-15 03:34:33.000000&quot;
 }</code></pre>
-                <h2 data-number="2.4" id="insert-table-row"><span
-                class="header-section-number">2.4</span> Insert Table
-                Row</h2>
+                <h2 data-number="2.4" id="insert-table-row"><span class="header-section-number">2.4</span> Insert Table
+                    Row</h2>
                 <p>To insert data into a table, the request body should
-                be a JSON object that contains the data to be
-                inserted.</p>
+                    be a JSON object that contains the data to be
+                    inserted.</p>
                 <p>If the object has a primary key, then the POST
-                request can include the primary key value in the body.
-                If the table has an AUTO_INCREMENT column then the
-                primary key column may be omitted.</p>
+                    request can include the primary key value in the body.
+                    If the table has an AUTO_INCREMENT column then the
+                    primary key column may be omitted.</p>
                 <p>Pattern:</p>
                 <pre><code>POST http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/&lt;ObjectAlias&gt;/</code></pre>
                 <p>Example:</p>
@@ -903,13 +835,13 @@ Service - Core REST APIs
     &quot;first_name&quot;: &quot;MIKE&quot;,
     &quot;last_update&quot;: &quot;2022-11-29 15:35:17.000000&quot;
 }</code></pre>
-                <h2 data-number="2.5" id="updateinsert-table-row"><span
-                class="header-section-number">2.5</span> Update/Insert
-                Table Row</h2>
+                <h2 data-number="2.5" id="updateinsert-table-row"><span class="header-section-number">2.5</span>
+                    Update/Insert
+                    Table Row</h2>
                 <p>To insert, update or “upsert” (update if exists,
-                insert if not) data into a table, we can send a request
-                where the body contains a JSON object with the data to
-                insert or update.</p>
+                    insert if not) data into a table, we can send a request
+                    where the body contains a JSON object with the data to
+                    insert or update.</p>
                 <p>Pattern:</p>
                 <pre><code>PUT http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/&lt;ObjectAlias&gt;/&lt;KeyValues&gt;</code></pre>
                 <p>Example:</p>
@@ -927,12 +859,12 @@ Service - Core REST APIs
     &quot;first_name&quot;: &quot;JACK&quot;,
     &quot;last_update&quot;: &quot;2022-11-29 15:45:10.000000&quot;
 }</code></pre>
-                <h2 data-number="2.6" id="delete-using-filter"><span
-                class="header-section-number">2.6</span> Delete Using
-                Filter</h2>
+                <h2 data-number="2.6" id="delete-using-filter"><span class="header-section-number">2.6</span> Delete
+                    Using
+                    Filter</h2>
                 <p>Deleting a object or other database object can be
-                done by specifying a filter clause that identifies the
-                object to delete.</p>
+                    done by specifying a filter clause that identifies the
+                    object to delete.</p>
                 <p>Pattern:</p>
                 <pre><code>DELETE http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;SchemaAlias&gt;/&lt;ObjectAlias&gt;/?q=&lt;FilterClause&gt;</code></pre>
                 <p>Example:</p>
@@ -963,45 +895,53 @@ Service - Core REST APIs
                 You should have received a copy of the GNU General Public License
                 along with this program; if not, write to the Free Software Foundation, Inc.,
                 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA -->
-                <h1 data-number="3" id="filtering-in-rest-queries"><span
-                class="header-section-number">3</span> Filtering in REST
-                Queries</h1>
+                <h1 data-number="3" id="filtering-in-rest-queries"><span class="header-section-number">3</span>
+                    Filtering in REST
+                    Queries</h1>
                 <p>This section details the process of filtering in
-                queries against REST-enabled tables and views. The next
-                section offers practical examples to illustrate the
-                concepts.</p>
+                    queries against REST-enabled tables and views. The next
+                    section offers practical examples to illustrate the
+                    concepts.</p>
                 <p>Filtering involves the process of limiting a
-                collection resource by using a per-request dynamic
-                filter definition across multiple page resources. Each
-                page contains a subset of items found in the complete
-                collection. Filtering enables efficient traversal of
-                large collections.</p>
+                    collection resource by using a per-request dynamic
+                    filter definition across multiple page resources. Each
+                    page contains a subset of items found in the complete
+                    collection. Filtering enables efficient traversal of
+                    large collections.</p>
                 <p>To implement filtering in a query, incorporate the
-                parameter q=FilterObject, where FilterObject is a JSON
-                object specifying the custom selection and sorting to be
-                applied to the resource. To illustrate, consider the
-                following example:</p>
-                <div class="sourceCode" id="cb32"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>https://example.com/myService/sakila/actor/</span></code></pre></div>
+                    parameter q=FilterObject, where FilterObject is a JSON
+                    object specifying the custom selection and sorting to be
+                    applied to the resource. To illustrate, consider the
+                    following example:</p>
+                <div class="sourceCode" id="cb32">
+                    <pre
+                        class="sourceCode txt"><code class="sourceCode default"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>https://example.com/myService/sakila/actor/</span></code></pre>
+                </div>
                 <p>The following query contains a filter that restricts
-                the <code>first_name</code> column to “BRUCE”. Note that
-                the REST object was created using the default JSON field
-                mapping, which translates the database column
-                <code>first_name</code> (snake_case) to the JSON field
-                <code>firstName</code> (camelCase).</p>
-                <div class="sourceCode" id="cb33"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>https://example.com/myService/sakila/actor/?q={&quot;firstName&quot;:&quot;BRUCE&quot;}</span></code></pre></div>
-                <h2 data-number="3.1" id="filterobject-grammar"><span
-                class="header-section-number">3.1</span> FilterObject
-                Grammar</h2>
+                    the <code>first_name</code> column to “BRUCE”. Note that
+                    the REST object was created using the default JSON field
+                    mapping, which translates the database column
+                    <code>first_name</code> (snake_case) to the JSON field
+                    <code>firstName</code> (camelCase).
+                </p>
+                <div class="sourceCode" id="cb33">
+                    <pre
+                        class="sourceCode txt"><code class="sourceCode default"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>https://example.com/myService/sakila/actor/?q={&quot;firstName&quot;:&quot;BRUCE&quot;}</span></code></pre>
+                </div>
+                <h2 data-number="3.1" id="filterobject-grammar"><span class="header-section-number">3.1</span>
+                    FilterObject
+                    Grammar</h2>
                 <p>The FilterObject must be a JSON object that complies
-                with the following syntax:</p>
-                <div class="sourceCode" id="cb34"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>    FilterObject { orderby , asof, wmembers }</span></code></pre></div>
+                    with the following syntax:</p>
+                <div class="sourceCode" id="cb34">
+                    <pre
+                        class="sourceCode txt"><code class="sourceCode default"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>    FilterObject { orderby , asof, wmembers }</span></code></pre>
+                </div>
                 <p>The orderby, asof, and wmembers attributes are
-                optional, and their definitions are as follows:</p>
-                <div class="sourceCode" id="cb35"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>orderby</span>
+                    optional, and their definitions are as follows:</p>
+                <div class="sourceCode" id="cb35">
+                    <pre
+                        class="sourceCode txt"><code class="sourceCode default"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>orderby</span>
 <span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>    &quot;$orderby&quot;: {orderByMembers}</span>
 <span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>orderByMembers</span>
@@ -1100,10 +1040,12 @@ Service - Core REST APIs
 <span id="cb35-97"><a href="#cb35-97" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb35-98"><a href="#cb35-98" aria-hidden="true" tabindex="-1"></a>fullTextSearch</span>
 <span id="cb35-99"><a href="#cb35-99" aria-hidden="true" tabindex="-1"></a>    {&quot;$params&quot;:[fieldList], &quot;$against&quot;:{&quot;$expr&quot;:fullTextExpr}}</span>
-<span id="cb35-100"><a href="#cb35-100" aria-hidden="true" tabindex="-1"></a>    {&quot;$params&quot;:[fieldList], &quot;$against&quot;:{&quot;$expr&quot;:fullTextExpr, &quot;$modifier&quot;:fullTextMod}}</span></code></pre></div>
+<span id="cb35-100"><a href="#cb35-100" aria-hidden="true" tabindex="-1"></a>    {&quot;$params&quot;:[fieldList], &quot;$against&quot;:{&quot;$expr&quot;:fullTextExpr, &quot;$modifier&quot;:fullTextMod}}</span></code></pre>
+                </div>
                 <p>Data type definitions include the following:</p>
-                <div class="sourceCode" id="cb36"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>string</span>
+                <div class="sourceCode" id="cb36">
+                    <pre
+                        class="sourceCode txt"><code class="sourceCode default"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>string</span>
 <span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>    JSONString</span>
 <span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>number</span>
@@ -1135,10 +1077,11 @@ Service - Core REST APIs
 <span id="cb36-30"><a href="#cb36-30" aria-hidden="true" tabindex="-1"></a>    &quot;IN NATURAL LANGUAGE MODE&quot;</span>
 <span id="cb36-31"><a href="#cb36-31" aria-hidden="true" tabindex="-1"></a>    &quot;IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION&quot;</span>
 <span id="cb36-32"><a href="#cb36-32" aria-hidden="true" tabindex="-1"></a>    &quot;IN BOOLEAN MODE&quot;</span>
-<span id="cb36-33"><a href="#cb36-33" aria-hidden="true" tabindex="-1"></a>    &quot;WITH QUERY EXPANSION&quot;</span></code></pre></div>
+<span id="cb36-33"><a href="#cb36-33" aria-hidden="true" tabindex="-1"></a>    &quot;WITH QUERY EXPANSION&quot;</span></code></pre>
+                </div>
                 <p>Where:</p>
-                <div class="sourceCode" id="cb37"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>datechars is an RFC3339 date format in UTC (Z)</span>
+                <div class="sourceCode" id="cb37">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>datechars is an RFC3339 date format in UTC (Z)</span>
 <span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>JSONString</span>
@@ -1183,9 +1126,10 @@ Service - Core REST APIs
 <span id="cb37-43"><a href="#cb37-43" aria-hidden="true" tabindex="-1"></a>    e-</span>
 <span id="cb37-44"><a href="#cb37-44" aria-hidden="true" tabindex="-1"></a>    E</span>
 <span id="cb37-45"><a href="#cb37-45" aria-hidden="true" tabindex="-1"></a>    E+</span>
-<span id="cb37-46"><a href="#cb37-46" aria-hidden="true" tabindex="-1"></a>    E-</span></code></pre></div>
+<span id="cb37-46"><a href="#cb37-46" aria-hidden="true" tabindex="-1"></a>    E-</span></code></pre>
+                </div>
                 <p>The FilterObject must be encoded according to Section
-                2.1 of RFC3986.</p>
+                    2.1 of RFC3986.</p>
                 <!-- Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 
                 This program is free software; you can redistribute it and/or modify
@@ -1208,16 +1152,14 @@ Service - Core REST APIs
                 You should have received a copy of the GNU General Public License
                 along with this program; if not, write to the Free Software Foundation, Inc.,
                 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA -->
-                <h1 data-number="4"
-                id="filterobject-grammar-examples"><span
-                class="header-section-number">4</span> FilterObject
-                Grammar Examples</h1>
-                <h2 data-number="4.1"
-                id="order-by-property-orderby"><span
-                class="header-section-number">4.1</span> ORDER BY
-                property ($orderby)</h2>
-                <div class="sourceCode" id="cb38"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>Order by with literals</span>
+                <h1 data-number="4" id="filterobject-grammar-examples"><span class="header-section-number">4</span>
+                    FilterObject
+                    Grammar Examples</h1>
+                <h2 data-number="4.1" id="order-by-property-orderby"><span class="header-section-number">4.1</span>
+                    ORDER BY
+                    property ($orderby)</h2>
+                <div class="sourceCode" id="cb38">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>Order by with literals</span>
 <span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a>  &quot;$orderby&quot;: {&quot;SALARY&quot;:  &quot;ASC&quot;,&quot;ENAME&quot;:&quot;DESC&quot;}</span>
@@ -1227,12 +1169,13 @@ Service - Core REST APIs
 <span id="cb38-8"><a href="#cb38-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb38-9"><a href="#cb38-9" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb38-10"><a href="#cb38-10" aria-hidden="true" tabindex="-1"></a>  &quot;$orderby&quot;: {&quot;SALARY&quot;:  -1,&quot;ENAME&quot;:  1}</span>
-<span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.2" id="asof-property-asof"><span
-                class="header-section-number">4.2</span> ASOF property
-                ($asof)</h2>
-                <div class="sourceCode" id="cb39"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>With SCN (Implicit)</span>
+<span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.2" id="asof-property-asof"><span class="header-section-number">4.2</span> ASOF
+                    property
+                    ($asof)</h2>
+                <div class="sourceCode" id="cb39">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>With SCN (Implicit)</span>
 <span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a>  &quot;$asof&quot;: 1273919</span>
@@ -1254,12 +1197,13 @@ Service - Core REST APIs
 <span id="cb39-20"><a href="#cb39-20" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb39-21"><a href="#cb39-21" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb39-22"><a href="#cb39-22" aria-hidden="true" tabindex="-1"></a>  &quot;$asof&quot;: {&quot;$date&quot;: &quot;2014-06-30T00:00:00Z&quot;}</span>
-<span id="cb39-23"><a href="#cb39-23" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.3" id="equals-operator-eq"><span
-                class="header-section-number">4.3</span> EQUALS operator
-                ($eq)</h2>
-                <div class="sourceCode" id="cb40"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>Implicit (Support String and Dates too)</span>
+<span id="cb39-23"><a href="#cb39-23" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.3" id="equals-operator-eq"><span class="header-section-number">4.3</span> EQUALS
+                    operator
+                    ($eq)</h2>
+                <div class="sourceCode" id="cb40">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>Implicit (Support String and Dates too)</span>
 <span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: 1000</span>
@@ -1281,12 +1225,13 @@ Service - Core REST APIs
 <span id="cb40-20"><a href="#cb40-20" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb40-21"><a href="#cb40-21" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb40-22"><a href="#cb40-22" aria-hidden="true" tabindex="-1"></a>  &quot;HIREDATE&quot;: {&quot;$date&quot;: &quot;1981-11-17T08:00:00Z&quot;}</span>
-<span id="cb40-23"><a href="#cb40-23" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.4" id="not-equals-operator-ne"><span
-                class="header-section-number">4.4</span> NOT EQUALS
-                operator ($ne)</h2>
-                <div class="sourceCode" id="cb41"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>Number</span>
+<span id="cb40-23"><a href="#cb40-23" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.4" id="not-equals-operator-ne"><span class="header-section-number">4.4</span> NOT
+                    EQUALS
+                    operator ($ne)</h2>
+                <div class="sourceCode" id="cb41">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>Number</span>
 <span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$ne&quot;: 1000}</span>
@@ -1302,13 +1247,14 @@ Service - Core REST APIs
 <span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a>  &quot;HIREDATE&quot;: {&quot;$ne&quot;: {&quot;$date&quot;:&quot;1981-11-17T08:00:00Z&quot;}}</span>
-<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.5" id="less-than-operator-lt"><span
-                class="header-section-number">4.5</span> LESS THAN
-                operator ($lt)</h2>
+<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.5" id="less-than-operator-lt"><span class="header-section-number">4.5</span> LESS
+                    THAN
+                    operator ($lt)</h2>
                 <p>(Supports dates and numbers only)</p>
-                <div class="sourceCode" id="cb42"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
+                <div class="sourceCode" id="cb42">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
 <span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$lt&quot;: 10000}</span>
@@ -1318,14 +1264,14 @@ Service - Core REST APIs
 <span id="cb42-8"><a href="#cb42-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb42-9"><a href="#cb42-9" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb42-10"><a href="#cb42-10" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$lt&quot;: {&quot;$date&quot;:&quot;1999-12-17T08:00:00Z&quot;}}</span>
-<span id="cb42-11"><a href="#cb42-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.6"
-                id="less-than-or-equals-operator-lte"><span
-                class="header-section-number">4.6</span> LESS THAN OR
-                EQUALS operator ($lte)</h2>
+<span id="cb42-11"><a href="#cb42-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.6" id="less-than-or-equals-operator-lte"><span
+                        class="header-section-number">4.6</span> LESS THAN OR
+                    EQUALS operator ($lte)</h2>
                 <p>(Supports dates and numbers only)</p>
-                <div class="sourceCode" id="cb43"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
+                <div class="sourceCode" id="cb43">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
 <span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$lte&quot;: 10000}</span>
@@ -1335,14 +1281,14 @@ Service - Core REST APIs
 <span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>  &quot;HIREDATE&quot;: {&quot;$lte&quot;: {&quot;$date&quot;:&quot;1999-12-17T08:00:00Z&quot;}}</span>
-<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.7"
-                id="greater-than-operator-gt"><span
-                class="header-section-number">4.7</span> GREATER THAN
-                operator ($gt)</h2>
+<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.7" id="greater-than-operator-gt"><span class="header-section-number">4.7</span>
+                    GREATER THAN
+                    operator ($gt)</h2>
                 <p>(Supports dates and numbers only)</p>
-                <div class="sourceCode" id="cb44"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
+                <div class="sourceCode" id="cb44">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
 <span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$gt&quot;: 10000}</span>
@@ -1352,14 +1298,14 @@ Service - Core REST APIs
 <span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$gt&quot;: {&quot;$date&quot;:&quot;1999-12-17T08:00:00Z&quot;}}</span>
-<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.8"
-                id="greater-than-or-equals-operator-gte"><span
-                class="header-section-number">4.8</span> GREATER THAN OR
-                EQUALS operator ($gte)</h2>
+<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.8" id="greater-than-or-equals-operator-gte"><span
+                        class="header-section-number">4.8</span> GREATER THAN OR
+                    EQUALS operator ($gte)</h2>
                 <p>(Supports dates and numbers only)</p>
-                <div class="sourceCode" id="cb45"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
+                <div class="sourceCode" id="cb45">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
 <span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$gte&quot;: 10000}</span>
@@ -1369,41 +1315,42 @@ Service - Core REST APIs
 <span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a>  &quot;HIREDATE&quot;: {&quot;$gte&quot;: {&quot;$date&quot;:&quot;1999-12-17T08:00:00Z&quot;}}</span>
-<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.9"
-                id="in-string-operator-instr"><span
-                class="header-section-number">4.9</span> In string
-                operator ($instr)</h2>
+<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.9" id="in-string-operator-instr"><span class="header-section-number">4.9</span> In
+                    string
+                    operator ($instr)</h2>
                 <p>(Supports strings only)</p>
-                <div class="sourceCode" id="cb46"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>{</span>
+                <div class="sourceCode" id="cb46">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a>  &quot;ENAME&quot;: {&quot;$instr&quot;:&quot;MC&quot;}</span>
-<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.10"
-                id="not-in-string-operator-ninstr"><span
-                class="header-section-number">4.10</span> Not in string
-                operator ($ninstr)</h2>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.10" id="not-in-string-operator-ninstr"><span
+                        class="header-section-number">4.10</span> Not in string
+                    operator ($ninstr)</h2>
                 <p>(Supports strings only)</p>
-                <div class="sourceCode" id="cb47"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>{</span>
+                <div class="sourceCode" id="cb47">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>  &quot;ENAME&quot;: {&quot;$ninstr&quot;:&quot;MC&quot;}</span>
-<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.11" id="like-operator-like"><span
-                class="header-section-number">4.11</span> LIKE operator
-                ($like)</h2>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.11" id="like-operator-like"><span class="header-section-number">4.11</span> LIKE
+                    operator
+                    ($like)</h2>
                 <p>(Supports strings. Eescape character not supported to
-                try to match expressions with _ or % characters.)</p>
-                <div class="sourceCode" id="cb48"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>{</span>
+                    try to match expressions with _ or % characters.)</p>
+                <div class="sourceCode" id="cb48">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a>  &quot;ENAME&quot;: {&quot;$like&quot;:&quot;AX%&quot;}</span>
-<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.12"
-                id="between-operator-between"><span
-                class="header-section-number">4.12</span> BETWEEN
-                operator ($between)</h2>
+<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.12" id="between-operator-between"><span class="header-section-number">4.12</span>
+                    BETWEEN
+                    operator ($between)</h2>
                 <p>(Supports string, dates, and numbers)</p>
-                <div class="sourceCode" id="cb49"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
+                <div class="sourceCode" id="cb49">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>Numbers</span>
 <span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$between&quot;: [1000,2000]}</span>
@@ -1433,28 +1380,30 @@ Service - Core REST APIs
 <span id="cb49-28"><a href="#cb49-28" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb49-29"><a href="#cb49-29" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb49-30"><a href="#cb49-30" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$between&quot;: [1000,null]}</span>
-<span id="cb49-31"><a href="#cb49-31" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.13" id="null-operator-null"><span
-                class="header-section-number">4.13</span> NULL operator
-                ($null)</h2>
-                <div class="sourceCode" id="cb50"><pre
-                class="sourceCode json"><code class="sourceCode json"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb49-31"><a href="#cb49-31" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.13" id="null-operator-null"><span class="header-section-number">4.13</span> NULL
+                    operator
+                    ($null)</h2>
+                <div class="sourceCode" id="cb50">
+                    <pre class="sourceCode json"><code class="sourceCode json"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
 <span id="cb50-2"><a href="#cb50-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ENAME&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;$null&quot;</span><span class="fu">:</span> <span class="kw">null</span><span class="fu">}</span></span>
-<span id="cb50-3"><a href="#cb50-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
-                <h2 data-number="4.14"
-                id="not-null-operator-notnull"><span
-                class="header-section-number">4.14</span> NOT NULL
-                operator ($notnull)</h2>
-                <div class="sourceCode" id="cb51"><pre
-                class="sourceCode json"><code class="sourceCode json"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb50-3"><a href="#cb50-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre>
+                </div>
+                <h2 data-number="4.14" id="not-null-operator-notnull"><span class="header-section-number">4.14</span>
+                    NOT NULL
+                    operator ($notnull)</h2>
+                <div class="sourceCode" id="cb51">
+                    <pre class="sourceCode json"><code class="sourceCode json"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
 <span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ENAME&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;$notnull&quot;</span><span class="fu">:</span> <span class="kw">null</span><span class="fu">}</span></span>
-<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
-                <h2 data-number="4.15" id="and-operator-and"><span
-                class="header-section-number">4.15</span> AND operator
-                ($and)</h2>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre>
+                </div>
+                <h2 data-number="4.15" id="and-operator-and"><span class="header-section-number">4.15</span> AND
+                    operator
+                    ($and)</h2>
                 <p>(Supports all operators, including $and and $or)</p>
-                <div class="sourceCode" id="cb52"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>(Example: Salary greater than 1000 and name starts with S or T)</span>
+                <div class="sourceCode" id="cb52">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>(Example: Salary greater than 1000 and name starts with S or T)</span>
 <span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb52-4"><a href="#cb52-4" aria-hidden="true" tabindex="-1"></a>  &quot;SALARY&quot;: {&quot;$gt&quot;: 1000},</span>
@@ -1471,18 +1420,19 @@ Service - Core REST APIs
 <span id="cb52-15"><a href="#cb52-15" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb52-16"><a href="#cb52-16" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb52-17"><a href="#cb52-17" aria-hidden="true" tabindex="-1"></a>  &quot;$and&quot;: [{&quot;SALARY&quot;: {&quot;$lt&quot;: 5000}}, {&quot;SALARY&quot;: {&quot;$gt&quot;: 1000}}]</span>
-<span id="cb52-18"><a href="#cb52-18" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-                <h2 data-number="4.16" id="or-operator-or"><span
-                class="header-section-number">4.16</span> OR operator
-                ($or)</h2>
+<span id="cb52-18"><a href="#cb52-18" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
+                <h2 data-number="4.16" id="or-operator-or"><span class="header-section-number">4.16</span> OR operator
+                    ($or)</h2>
                 <p>(Supports all operators including $and and $or.
-                Similar to High order AND)</p>
-                <div class="sourceCode" id="cb53"><pre
-                class="sourceCode txt"><code class="sourceCode default"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>(Example: name starts with S or salary greater than 1000)</span>
+                    Similar to High order AND)</p>
+                <div class="sourceCode" id="cb53">
+                    <pre class="sourceCode txt"><code class="sourceCode default"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>(Example: name starts with S or salary greater than 1000)</span>
 <span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a>{</span>
 <span id="cb53-4"><a href="#cb53-4" aria-hidden="true" tabindex="-1"></a>  &quot;$or&quot;: [{&quot;SALARY&quot;:{&quot;$gt&quot;: 1000}},{&quot;ENAME&quot;: {&quot;$like&quot;:&quot;S%&quot;}}]</span>
-<span id="cb53-5"><a href="#cb53-5" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<span id="cb53-5"><a href="#cb53-5" aria-hidden="true" tabindex="-1"></a>}</span></code></pre>
+                </div>
                 <!-- Copyright (c) 2025, 2026, Oracle and/or its affiliates.
 
                 This program is free software; you can redistribute it and/or modify
@@ -1505,25 +1455,25 @@ Service - Core REST APIs
                 You should have received a copy of the GNU General Public License
                 along with this program; if not, write to the Free Software Foundation, Inc.,
                 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA -->
-                <h1 data-number="5" id="authenticate-a-rest-user"><span
-                class="header-section-number">5</span> Authenticate a
-                REST User</h1>
+                <h1 data-number="5" id="authenticate-a-rest-user"><span class="header-section-number">5</span>
+                    Authenticate a
+                    REST User</h1>
                 <p>When executing CRUD operations on a REST object that
-                requires authentication, one must first authenticate a
-                REST user via the corresponding linked authentication
-                app.</p>
-                <h2 data-number="5.1"
-                id="mysql-internal-authentication"><span
-                class="header-section-number">5.1</span> MySQL Internal
-                Authentication</h2>
+                    requires authentication, one must first authenticate a
+                    REST user via the corresponding linked authentication
+                    app.</p>
+                <h2 data-number="5.1" id="mysql-internal-authentication"><span class="header-section-number">5.1</span>
+                    MySQL Internal
+                    Authentication</h2>
                 <p>In the case of a MySQL Internal auth app, the
-                workflow is as follows. First the client must send the
-                credentials to the <code>/login</code> path at the
-                corresponding authentication endpoint, by omission
-                <code>/${service}/authentication/login</code>. The
-                client specifies the auth mechanism to use (cookie or
-                bearer token). By default, the authentication mechanism
-                used is based on a cookie.</p>
+                    workflow is as follows. First the client must send the
+                    credentials to the <code>/login</code> path at the
+                    corresponding authentication endpoint, by omission
+                    <code>/${service}/authentication/login</code>. The
+                    client specifies the auth mechanism to use (cookie or
+                    bearer token). By default, the authentication mechanism
+                    used is based on a cookie.
+                </p>
                 <p>Pattern:</p>
                 <pre><code>POST http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;AuthPath&gt;/login
 {
@@ -1533,18 +1483,19 @@ Service - Core REST APIs
     &quot;sessionType&quot;: &quot;cookie | bearer&quot;
 }</code></pre>
                 <p>If the client requests a cookie and the
-                authentication succeeds, the MRS backend server
-                immediately sends back a response containing the
-                corresponding <code>Set-Cookie</code> header:</p>
+                    authentication succeeds, the MRS backend server
+                    immediately sends back a response containing the
+                    corresponding <code>Set-Cookie</code> header:</p>
                 <p>Example:</p>
                 <pre><code>curl -i -X POST -d \{\&quot;username\&quot;:\&quot;...\&quot;,\&quot;password\&quot;:\&quot;...\&quot;,\&quot;authApp\&quot;:\&quot;MySQL\&quot;,\&quot;sessionType\&quot;:\&quot;cookie\&quot;} https://localhost:8000/mrs/authentication/login
 HTTP/1.1 200 Ok
 ...
 Set-Cookie: session_31000000000000000000000000000000=XXXXXXXXXXXXXXXXXXX; Path=/; SameSite=None; Secure; HttpOnly</code></pre>
                 <p>If the client requests a bearer token, instead of the
-                <code>Set-Cookie</code> header the response includes a
-                JSON object in the body with an <code>accessToken</code>
-                property whose value matches the generated JWT.</p>
+                    <code>Set-Cookie</code> header the response includes a
+                    JSON object in the body with an <code>accessToken</code>
+                    property whose value matches the generated JWT.
+                </p>
                 <p>Example:</p>
                 <pre><code>curl -i POST -d \{\&quot;username\&quot;:\&quot;...\&quot;,\&quot;password\&quot;:\&quot;...\&quot;,\&quot;authApp\&quot;:\&quot;MySQL\&quot;,\&quot;sessionType\&quot;:\&quot;bearer\&quot;\} &quot;https://localhost:8443/mrs/authentication/login&quot;
 HTTP/1.1 200 Ok
@@ -1553,21 +1504,19 @@ Content-Type: application/json
 ...
 
 {&quot;accessToken&quot;:&quot;...&quot;}</code></pre>
-                <h2 data-number="5.2" id="mrs-authentication"><span
-                class="header-section-number">5.2</span> MRS
-                Authentication</h2>
+                <h2 data-number="5.2" id="mrs-authentication"><span class="header-section-number">5.2</span> MRS
+                    Authentication</h2>
                 <p>In the case of an MRS auth app, the workflow follows
-                a <a
-                href="https://datatracker.ietf.org/doc/html/rfc5802">SCRAM</a>-style
-                negotiation. First the client must send the credentials
-                to the authentication endpoint. In this case, instead of
-                the original password, the client generates and sends
-                the initial nonce (a random hex string). Similarly, the
-                client also specifies the auth mechanism to use (cookie
-                or bearer token). Then the MRS backend server sends back
-                a response containing a JSON object in the body which
-                includes the value of all variables required to
-                calculate the SCRAM client proof.</p>
+                    a <a href="https://datatracker.ietf.org/doc/html/rfc5802">SCRAM</a>-style
+                    negotiation. First the client must send the credentials
+                    to the authentication endpoint. In this case, instead of
+                    the original password, the client generates and sends
+                    the initial nonce (a random hex string). Similarly, the
+                    client also specifies the auth mechanism to use (cookie
+                    or bearer token). Then the MRS backend server sends back
+                    a response containing a JSON object in the body which
+                    includes the value of all variables required to
+                    calculate the SCRAM client proof.</p>
                 <p>Pattern:</p>
                 <pre><code>POST http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;AuthPath&gt;/login
 {
@@ -1588,45 +1537,46 @@ POST http://&lt;HOST&gt;:&lt;PORT&gt;/&lt;ServiceAlias&gt;/&lt;AuthPath&gt;/logi
 ...
 {&quot;session&quot;:&quot;...&quot;,&quot;iterations&quot;:5000,&quot;nonce&quot;:&quot;...&quot;,&quot;salt&quot;:[...]}</code></pre>
                 <p>To finish the SCRAM negotiation, the client needs to
-                calculate the corresponding client proof send another
-                request to the same endpoint containing that value,
-                alongside the server-generated nonce and an additional
-                <code>state</code> flag set to <code>response</code>. If
-                the authentication succeeds, the MRS backend server
-                sends back a response containing the
-                <code>Set-Cookie</code> header.</p>
+                    calculate the corresponding client proof send another
+                    request to the same endpoint containing that value,
+                    alongside the server-generated nonce and an additional
+                    <code>state</code> flag set to <code>response</code>. If
+                    the authentication succeeds, the MRS backend server
+                    sends back a response containing the
+                    <code>Set-Cookie</code> header.
+                </p>
                 <p>Example:</p>
                 <pre><code>curl -i -X POST -d \{\&quot;clientProof\&quot;:[...],\&quot;nonce\&quot;:\&quot;...\&quot;,\&quot;state\&quot;:\&quot;response\&quot;\} https://localhost:8000/mrs/authentication/login
 HTTP/1.1 200 Ok
 ...
 Set-Cookie: session_30000000000000000000000000000000=XXXXXXXXXXXXXXXXXXX; Path=/; SameSite=None; Secure; HttpOnly</code></pre>
                 <p>If the client requests a bearer token instead, the
-                process is exactly the same apart from the last step
-                where, the backend server sends back a response
-                containing JSON object in the body with an
-                <code>accessToken</code> property whose value matches
-                the generated JWT.</p>
-                <h2 data-number="5.3" id="oauth"><span
-                class="header-section-number">5.3</span> OAuth</h2>
+                    process is exactly the same apart from the last step
+                    where, the backend server sends back a response
+                    containing JSON object in the body with an
+                    <code>accessToken</code> property whose value matches
+                    the generated JWT.
+                </p>
+                <h2 data-number="5.3" id="oauth"><span class="header-section-number">5.3</span> OAuth</h2>
                 <p>In the case of an OAuth auth app, an hypermedia
-                client like a web-browser is required, because in the
-                initial step, the client is redirected by the MRS
-                backend server to the authentication web page of the
-                actual auth provider (OCI, Google or Facebook).
-                Currently, only cookie-based authentication is
-                supported.</p>
+                    client like a web-browser is required, because in the
+                    initial step, the client is redirected by the MRS
+                    backend server to the authentication web page of the
+                    actual auth provider (OCI, Google or Facebook).
+                    Currently, only cookie-based authentication is
+                    supported.</p>
                 <p>Example:</p>
                 <pre><code>curl -iG https://localhost:8443/mrs/authentication/login --data-urlencode &#39;authApp=Facebook&#39;
 HTTP/1.1 307 Temporary Redirect
 ...
 Location: https://www.facebook.com/v12.0/dialog/oauth?response_type=code&amp;state=first&amp;client_id=XXXXXXXXXXXXX&amp;redirect_uri=https://localhost:8443/mrs/authentication/login?authApp=Facebook</code></pre>
                 <p>If the authentication succeeds, the auth provider
-                redirects the client to the corresponding callback url
-                sending the authorization code to the MRS backend
-                server. The MRS backend server redirects the client to a
-                different URL under its control and then sends back a
-                response containing the <code>Set-Cookie</code>
-                header.</p>
+                    redirects the client to the corresponding callback url
+                    sending the authorization code to the MRS backend
+                    server. The MRS backend server redirects the client to a
+                    different URL under its control and then sends back a
+                    response containing the <code>Set-Cookie</code>
+                    header.</p>
                 <p>Example:</p>
                 <pre><code>curl -i https://localhost:8443/mrs/authentication/login --data-urlencode &#39;access_token=YYYYYYYYYYYY&#39; --data-urlencode &#39;redirect_url=https://localhost:8443/mrs/success&#39;
 HTTP/1.1 307 Temporary Redirect
@@ -1639,53 +1589,53 @@ HTTP/1.1 200 Ok
 ...
 Set-Cookie: session_32000000000000000000000000000000=XXXXXXXXXXXXXXXXXXX; Path=/; SameSite=None; Secure; HttpOnly</code></pre>
                 <blockquote>
-                <p>The examples are for illustrative purposes only, the
-                workflow is entirely handled by the hypermedia client
-                (web browser).</p>
+                    <p>The examples are for illustrative purposes only, the
+                        workflow is entirely handled by the hypermedia client
+                        (web browser).</p>
                 </blockquote>
-                <h2 data-number="5.4"
-                id="executing-crud-operations-on-a-rest-object"><span
-                class="header-section-number">5.4</span> Executing CRUD
-                Operations on a REST Object</h2>
+                <h2 data-number="5.4" id="executing-crud-operations-on-a-rest-object"><span
+                        class="header-section-number">5.4</span> Executing CRUD
+                    Operations on a REST Object</h2>
                 <p>Once the authentication succeeds, one can execute the
-                CRUD operations enabled for a specific REST object that
-                requires authentication, by including an additional
-                header in the corresponding HTTP request. In the case of
-                cookie-based authentication, the value of the
-                <code>Set-Cookie</code> response header should be used
-                in the <code>Cookie</code> request header.</p>
+                    CRUD operations enabled for a specific REST object that
+                    requires authentication, by including an additional
+                    header in the corresponding HTTP request. In the case of
+                    cookie-based authentication, the value of the
+                    <code>Set-Cookie</code> response header should be used
+                    in the <code>Cookie</code> request header.
+                </p>
                 <p>Pattern:</p>
                 <pre><code>Cookie: &lt;Set-Cookie&gt;</code></pre>
                 <p>Example:</p>
                 <pre><code>curl -H &quot;Cookie: session_31000000000000000000000000000000=XXXXXXXXXXXXXXXXXXX; Path=/; SameSite=None; Secure; HttpOnly&quot; https://localhost:8443/mrs/sakila/actor</code></pre>
                 <p>In the case of token-based authentication, the JWT
-                should be encoded in the <code>Authorization</code>
-                request header as follows:</p>
+                    should be encoded in the <code>Authorization</code>
+                    request header as follows:</p>
                 <p>Pattern:</p>
                 <pre><code>Authorization: Bearer XXXXXXXXXXXXXXXXX</code></pre>
                 <p>Example:</p>
                 <pre><code>curl -H &quot;Authorization: Bearer XXXXXXXXXXXXXXXXX&quot; https://localhost:8443/mrs/sakila/actor</code></pre>
-                <h3 data-number="5.4.1" id="full-workflow-example"><span
-                class="header-section-number">5.4.1</span> Full Workflow
-                Example</h3>
+                <h3 data-number="5.4.1" id="full-workflow-example"><span class="header-section-number">5.4.1</span> Full
+                    Workflow
+                    Example</h3>
                 <p>In the worst-case scenario, when the user is not yet
-                authenticated, executing a CRUD operation on a protected
-                REST object requires two steps which should share some
-                kind of state, i.e. either the cookie or the bearer
-                token need to be saved somewhere in between.</p>
+                    authenticated, executing a CRUD operation on a protected
+                    REST object requires two steps which should share some
+                    kind of state, i.e. either the cookie or the bearer
+                    token need to be saved somewhere in between.</p>
                 <p>When requesting a cookie, the value of the
-                <code>Set-Cookie</code> header can be extracted using
-                <code>curl</code>:</p>
+                    <code>Set-Cookie</code> header can be extracted using
+                    <code>curl</code>:
+                </p>
                 <pre><code>$ cookie=$(curl -X POST -s -o /dev/null -w &#39;%header{set-cookie}&#39; -d \{\&quot;username\&quot;:\&quot;...\&quot;,\&quot;password\&quot;:\&quot;...\&quot;,\&quot;authApp\&quot;:\&quot;MySQL\&quot;,\&quot;sessionType\&quot;:\&quot;cookie\&quot;\} &quot;https://localhost:8443/mrs/authentication/login&quot;)
 $ curl -H &quot;Cookie: $cookie&quot; https://localhost:8443/mrs/sakila/actor</code></pre>
                 <p>When requesting a bearer token, since the JWT is sent
-                in a JSON object in the response body, it can be
-                extracted using a tool like <a
-                href="https://jqlang.org/"><code>jq</code></a>:</p>
+                    in a JSON object in the response body, it can be
+                    extracted using a tool like <a href="https://jqlang.org/"><code>jq</code></a>:</p>
                 <pre><code>$ jwt=$(curl -X POST -s -d \{\&quot;username\&quot;:\&quot;...\&quot;,\&quot;password\&quot;:\&quot;...\&quot;,\&quot;authApp\&quot;:\&quot;MySQL\&quot;,\&quot;sessionType\&quot;:\&quot;bearer\&quot;\} &quot;https://localhost:8443/mrs/authentication/login&quot; | jq -r .accessToken)
 $ curl -H &quot;Authorization: Bearer $jwt&quot; https://localhost:8443/mrs/sakila/actor</code></pre>
                 <p>Copyright (c) 2022, 2025, Oracle and/or its
-                affiliates.</p>
+                    affiliates.</p>
             </div>
         </div>
     </div>

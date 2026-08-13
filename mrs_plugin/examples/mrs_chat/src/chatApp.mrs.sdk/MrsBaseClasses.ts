@@ -2,6 +2,8 @@
  * Copyright (c) 2023, 2025, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
+ * SPDX-License-Identifier: GPL-2.0-only
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
  * as published by the Free Software Foundation.
@@ -222,7 +224,8 @@ export class MrsBaseSession {
     };
 
     public readonly verifyCredentials = async ({ username, password = "", authApp }: {
-        username: string, password: string, authApp: string }): Promise<IMrsLoginResult> => {
+        username: string, password: string, authApp: string
+    }): Promise<IMrsLoginResult> => {
         try {
             const response = await this.doFetch({
                 input: this.authPath,
@@ -401,7 +404,7 @@ export class MrsBaseSession {
     };
 
     private readonly calculateHmac = async (secret: Uint8Array<ArrayBuffer>, data: Uint8Array<ArrayBuffer>):
-    Promise<Uint8Array<ArrayBuffer>> => {
+        Promise<Uint8Array<ArrayBuffer>> => {
         const key = await globalThis.crypto.subtle.importKey(
             "raw", secret, { name: "HMAC", hash: { name: "SHA-256" } }, true, ["sign", "verify"]);
         const signature = await globalThis.crypto.subtle.sign("HMAC", key, data);
@@ -795,7 +798,7 @@ interface IMrsViewMetadata<PrimaryKeyFieldNames extends string[] = never, BigInt
 
 interface IMrsRoutineMetadata<BigIntParameterNames extends string[] = never,
     FixedPointParameterNames extends string[] = never> extends IMrsObjectMetadata<BigIntParameterNames,
-        FixedPointParameterNames> {}
+        FixedPointParameterNames> { }
 
 // authenticate() API
 
@@ -855,19 +858,19 @@ type CursorEnabledOptions<Item, Filterable, Iterable> = [Iterable] extends [neve
 
 /** Options available to find the first document that optionally matches a given filter. */
 export type IFindFirstOptions<Item, Filterable, Sortable extends string[] = never, Iterable = never> =
-CursorEnabledOptions<Item, Filterable, Iterable> & {
-    /* Return the first or last document depending on the specified order clause. */
-    orderBy?: ColumnOrder<Sortable>;
-    /** Skip a given number of document that match the same filter. */
-    skip?: number;
-};
+    CursorEnabledOptions<Item, Filterable, Iterable> & {
+        /* Return the first or last document depending on the specified order clause. */
+        orderBy?: ColumnOrder<Sortable>;
+        /** Skip a given number of document that match the same filter. */
+        skip?: number;
+    };
 
 /** Options available to find multiple documents that optionally match a given filter. */
 export type IFindManyOptions<Item, Filterable, Sortable extends string[] = never, Iterable = never> =
-IFindFirstOptions<Item, Filterable, Sortable, Iterable> & {
-    /** Set the maximum number of documents in the result set. */
-    take?: number;
-};
+    IFindFirstOptions<Item, Filterable, Sortable, Iterable> & {
+        /** Set the maximum number of documents in the result set. */
+        take?: number;
+    };
 
 /**
  * When retrieving a range of documents, once can specify the total number of documents to retrieve.
@@ -966,7 +969,8 @@ export type IUpdateOptions<Type> = ICreateOptions<Type>;
  * Top-level operators available for a query filter in MRS.
  */
 type MrsQueryFilter<Sortable extends string[]> = {
-    $orderby?: ColumnOrder<Sortable>, $asof?: string } & Record<string, unknown>;
+    $orderby?: ColumnOrder<Sortable>, $asof?: string
+} & Record<string, unknown>;
 
 /**
  * JSON utilities with MRS-specific glue code.
@@ -1059,7 +1063,7 @@ class MrsDocument<Doc extends IPojo, PrimaryKeyFieldNames extends string[], BigI
     FixedPointFieldNames extends string[] = never> {
     #hypermediaProperties = ["_metadata", "links"];
 
-    public constructor (
+    public constructor(
         private readonly json: Doc,
         private readonly schema: MrsBaseSchema,
         private readonly requestPath: string,
@@ -1073,7 +1077,7 @@ class MrsDocument<Doc extends IPojo, PrimaryKeyFieldNames extends string[], BigI
      * @see {MrsDownstreamDocumentData}
      * @returns An MRS Document without hypermedia-related properties.
      */
-    public createProxy () {
+    public createProxy() {
         return new Proxy(this.json, {
             deleteProperty: (target, p) => {
                 const property = String(p); // convert symbols to strings
@@ -1181,7 +1185,7 @@ class MrsDocument<Doc extends IPojo, PrimaryKeyFieldNames extends string[], BigI
  */
 class MrsDocumentList<Doc, PrimaryKeyFieldNames extends string[], BigIntFieldNames extends string[] = never,
     FixedPointFieldNames extends string[] = never> {
-    public constructor (
+    public constructor(
         private readonly json: MrsDownstreamDocumentListData<Doc>,
         private readonly schema: MrsBaseSchema,
         private readonly requestPath: string,
@@ -1195,7 +1199,7 @@ class MrsDocumentList<Doc, PrimaryKeyFieldNames extends string[], BigIntFieldNam
      * @see {MrsDownstreamDocumentListData}
      * @returns A list of MRS Documents without hypermedia-related properties.
      */
-    public createProxy () {
+    public createProxy() {
         return new Proxy(this.json, {
             deleteProperty: (_, p) => {
                 throw new Error(`The "${String(p)}" property cannot be deleted.`); // convert symbols to strings
@@ -1269,7 +1273,7 @@ export class MrsBaseObjectQuery<Doc, Filterable, Sortable extends string[] = nev
         }
 
         const { cursor, orderBy, readOwnWrites, select, skip, take, where } =
-        args as IFindManyOptions<Doc, Filterable, Sortable, Iterable> & { cursor?: Cursor<Iterable> };
+            args as IFindManyOptions<Doc, Filterable, Sortable, Iterable> & { cursor?: Cursor<Iterable> };
 
         if (where !== undefined) {
             this.where = where;
@@ -1668,7 +1672,7 @@ export class MrsBaseService {
         }
     }
 
-    public async authenticate (options: IAuthenticateOptions): Promise<IMrsLoginResult> {
+    public async authenticate(options: IAuthenticateOptions): Promise<IMrsLoginResult> {
         const { app, username, password, vendor } = options;
         const request = new MrsAuthenticate(this, app, username, password, vendor);
         const response = await request.submit();
@@ -1676,11 +1680,11 @@ export class MrsBaseService {
         return response;
     }
 
-    public async deauthenticate (): Promise<void> {
+    public async deauthenticate(): Promise<void> {
         return this.session.logout();
     }
 
-    public async getMetadata (): Promise<JsonObject> {
+    public async getMetadata(): Promise<JsonObject> {
         const response = await this.session.doFetch({ input: `/_metadata` });
         const metadata = await response.json() as JsonObject;
 
@@ -1699,7 +1703,7 @@ export class MrsBaseSchema {
         public requestPath: string) {
     }
 
-    public async getMetadata (): Promise<JsonObject> {
+    public async getMetadata(): Promise<JsonObject> {
         const response = await this.service.session.doFetch({ input: `${this.requestPath}/_metadata` });
         const metadata = await response.json() as JsonObject;
 
@@ -1713,7 +1717,7 @@ export class MrsBaseObject {
         protected requestPath: string) {
     }
 
-    public async getMetadata (): Promise<JsonObject> {
+    public async getMetadata(): Promise<JsonObject> {
         const requestPath = `${this.schema.requestPath}${this.requestPath}/_metadata`;
         const response = await this.schema.service.session.doFetch({ input: requestPath });
         const metadata = await response.json() as JsonObject;
