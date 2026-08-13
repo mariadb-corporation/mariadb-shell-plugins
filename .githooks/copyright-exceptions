@@ -1,0 +1,18 @@
+# Files the pre-commit copyright hook must leave alone, for this repository.
+#
+# One Python regular expression per line, matched with re.match() against the
+# repository relative path of every staged file ("^" is implicit, "$" is not).
+# Blank lines and lines starting with "#" are ignored; an invalid pattern
+# aborts the commit rather than being skipped.
+#
+# Binary formats that are always excluded (.mwb, .ico, .png, .ttf) are built
+# into the hook and need no entry here.
+
+# Python files under any unittest/ directory are test fixtures and must not
+# get a copyright notice.
+
+# MSM project section scripts are generated/versioned schema fragments.
+.*\.msm\.project/development/sections/.*
+
+# MSM template scripts are copied verbatim into generated projects.
+msm_plugin/templates/scripts/.*
