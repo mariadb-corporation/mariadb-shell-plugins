@@ -164,3 +164,5 @@ This document explains how to work with the MRS Software Development Kit and dis
 
 Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB plc.
+
+SPDX-License-Identifier: GPL-2.0-only

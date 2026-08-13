@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import sys
+import subprocess
+
+import datetime
+year = str(datetime.date.today().year)
+
+result = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], capture_output=True)
+if result.returncode != 0 or not result.stdout.decode('utf-8').startswith("true"):
+    raise Exception("Script must be executed inside a git repo")
+
+while not (os.path.isfile(".git") or os.path.isdir(".git")):
+    os.chdir("..")
+    path = os.getcwd()
+    if os.path.dirname(path) == path:
+        raise Exception("Reached the root dir without finding the git root")
+
+# --- MariaDB copyright handling -------------------------------------------
+#
+# The shell sources originate from Oracle but this tree is maintained by
+# MariaDB plc. The Oracle copyright notices are left untouched (Oracle no longer
+# maintains this fork); instead we keep a MariaDB copyright notice up to date,
+# tracking the creation year and, when the file is modified in a later year, the
+# last-update year:
+#
+#   Copyright (c) <creation-year>, MariaDB plc.
+#   Copyright (c) <creation-year>, <last-update-year> MariaDB plc.
+#
+# One blank line below that notice sits the SPDX tag:
+#
+#   SPDX-License-Identifier: GPL-2.0-only
+#
+# Rules applied to every modified (non-deleted) file in the commit:
+#   * Oracle notice present, MariaDB notice absent -> Oracle is left as-is and a
+#     single MariaDB copyright line (current year as creation) is inserted on
+#     the line right below the Oracle copyright line, reusing its comment style.
+#   * Oracle and MariaDB notices present -> the MariaDB last-update year is set
+#     to the current year (dropped again when it equals the creation year).
+#   * MariaDB notice present, no Oracle notice -> same update of the MariaDB
+#     years as above.
+#   * Notices naming the former entity ("MariaDB Corporation.") are recognised
+#     and rewritten in place to "MariaDB plc." keeping their years, so no
+#     duplicate line is inserted.
+#   * In every case the SPDX tag is added below the MariaDB notice unless the
+#     file already carries an SPDX-License-Identifier line.
+#   * Neither notice present (a brand new file) -> the full MariaDB license
+#     block is inserted, using the C/C++ (/* */) or hash (#) comment style
+#     according to the file extension; other file types are left untouched.
+
+# Matches a MariaDB copyright line, capturing the creation year and the
+# optional last-update year. Single year form:  "... 2026, MariaDB ..."
+# Two year form:                                "... 2023, 2026 MariaDB ..."
+# The former entity name is still matched so old notices are migrated instead of
+# being mistaken for a missing notice.
+mariadb_re = re.compile(
+    r"Copyright \(c\) (\d{4}),(?: (\d{4}))? MariaDB (?:plc|Corporation)\.")
+
+# The SPDX tag kept one blank line below the MariaDB copyright line. Any
+# existing SPDX-License-Identifier (whatever license it names) counts as "already
+# there", so a file never ends up with two conflicting tags.
+spdx_id = "SPDX-License-Identifier: GPL-2.0-only"
+spdx_re = re.compile(r"SPDX-License-Identifier:")
+
+# Matches an Oracle copyright line, capturing the text that precedes
+# "Copyright" so the same comment prefix can be reused for the MariaDB line.
+oracle_re = re.compile(r"^(.*?)Copyright \(c\) \d{4}(?:, \d{4})?, Oracle")
+
+# Comment openers that may show up in the captured Oracle prefix when the
+# notice sits on the very first line of the comment block.
+comment_openers = ("/*", "<!--", "{-")
+
+cpp_exts = (".c", ".cc", ".cpp", ".cxx", ".c++", ".cp",
+            ".h", ".hh", ".hpp", ".hxx", ".h++",
+            ".cu", ".cuh", ".inl", ".ic", ".ipp", ".tcc")
+hash_exts = (".py", ".cmake", ".sh")
+
+
+def mariadb_copyright(creation, update):
+    """Return the MariaDB copyright text for the given years.
+
+    The last-update year is only shown when it differs from the creation
+    year."""
+    if update and update != creation:
+        return "Copyright (c) %s, %s MariaDB plc." % (creation, update)
+    return "Copyright (c) %s, MariaDB plc." % creation
+
+
+def continuation_prefix(prefix):
+    """Turn an Oracle line prefix into one usable *inside* the comment block.
+
+    The Oracle notice frequently sits on the line that opens the comment:
+
+        /* Copyright (c) 2000, 2026, Oracle and/or its affiliates.
+
+    Reusing that prefix verbatim for the MariaDB line would open a nested
+    comment ("/* Copyright (c) 2026, MariaDB plc.") which both breaks
+    the formatting and trips -Wcomment. Blanking out the opener keeps the
+    inserted text aligned under the Oracle notice and preserves any
+    continuation marker that follows it (e.g. "/**" -> "  *")."""
+    for opener in comment_openers:
+        if opener in prefix:
+            return prefix.replace(opener, " " * len(opener), 1)
+    return prefix
+
+
+def spdx_block(prefix, nl):
+    """Return the blank + SPDX lines that follow a MariaDB copyright line.
+
+    The blank separator reuses the comment prefix with its trailing padding
+    removed, so a hash header keeps its "#" spacer and a C block comment gets a
+    genuinely empty line."""
+    return [prefix.rstrip() + nl, prefix + spdx_id + nl]
+
+
+def comment_style(file):
+    """Return 'cpp', 'hash' or None depending on the file type."""
+    name = os.path.basename(file)
+    if (name == "CMakeLists.txt" or name.endswith(".cmake.in") or
+            name.endswith(".py.in") or name.endswith(".sh.in")):
+        return "hash"
+    _, ext = os.path.splitext(name)
+    ext = ext.lower()
+    if ext in cpp_exts:
+        return "cpp"
+    if ext in hash_exts:
+        return "hash"
+    return None
+
+
+def full_block(style, creation, nl, spdx=True):
+    """Return the full MariaDB license block as a list of terminated lines."""
+    copyright = mariadb_copyright(creation, None)
+    if style == "cpp":
+        lines = [
+            "/*",
+            "  %s" % copyright,
+        ]
+        if spdx:
+            lines += ["", "  %s" % spdx_id]
+        lines += [
+            "",
+            "  This program is free software; you can redistribute it and/or modify",
+            "  it under the terms of the GNU General Public License as published by",
+            "  the Free Software Foundation; version 2 of the License.",
+            "",
+            "  This program is distributed in the hope that it will be useful,",
+            "  but WITHOUT ANY WARRANTY; without even the implied warranty of",
+            "  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+            "  GNU General Public License for more details.",
+            "",
+            "  You should have received a copy of the GNU General Public License",
+            "  along with this program; if not, write to the Free Software",
+            "  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1335 USA",
+            "*/",
+        ]
+    else:
+        lines = [
+            "# %s" % copyright,
+        ]
+        if spdx:
+            lines += ["#", "# %s" % spdx_id]
+        lines += [
+            "#",
+            "# This program is free software; you can redistribute it and/or modify",
+            "# it under the terms of the GNU General Public License as published by",
+            "# the Free Software Foundation; version 2 of the License.",
+            "#",
+            "# This program is distributed in the hope that it will be useful,",
+            "# but WITHOUT ANY WARRANTY; without even the implied warranty of",
+            "# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
+            "# GNU General Public License for more details.",
+            "#",
+            "# You should have received a copy of the GNU General Public License",
+            "# along with this program; if not, write to the Free Software",
+            "# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1335 USA",
+        ]
+    return [line + nl for line in lines]
+
+
+def header_insert_pos(lines):
+    """Skip leading shebang / encoding lines so the block goes after them."""
+    pos = 0
+    for idx in range(min(2, len(lines))):
+        s = lines[idx].strip()
+        if s.startswith("#!") or "coding:" in s or "coding=" in s or "-*-" in s:
+            pos = idx + 1
+        else:
+            break
+    return pos
+
+
+def fix_copyright(file):
+    try:
+        with open(file, encoding="utf8", newline="") as f:
+            lines = f.readlines()
+    except (UnicodeDecodeError, OSError):
+        return False
+
+    if lines and lines[0].endswith("\r\n"):
+        nl = "\r\n"
+    elif lines and lines[0].endswith("\r"):
+        nl = "\r"
+    else:
+        nl = "\n"
+
+    changed = False
+    has_spdx = any(spdx_re.search(line) for line in lines)
+
+    mariadb_idx = None
+    mariadb_prefix = None
+    for i, line in enumerate(lines):
+        m = mariadb_re.search(line)
+        if m:
+            mariadb_idx = i
+            mariadb_prefix = continuation_prefix(line[:m.start()])
+            break
+
+    if mariadb_idx is not None:
+        # A MariaDB notice already exists: refresh its last-update year to the
+        # current year and normalise the entity name to "MariaDB plc." (this
+        # covers both the Oracle+MariaDB and MariaDB-only cases).
+        def repl(m):
+            return mariadb_copyright(m.group(1), year)
+
+        for i, line in enumerate(lines):
+            new_line = mariadb_re.sub(repl, line)
+            if new_line != line:
+                lines[i] = new_line
+                changed = True
+
+        if not has_spdx:
+            # Insert below the first notice, keeping whatever followed it (a "#"
+            # spacer or the rest of the block) after the tag.
+            block = spdx_block(mariadb_prefix, nl)
+            lines[mariadb_idx + 1:mariadb_idx + 1] = block
+            changed = True
+    else:
+        oracle_idx = None
+        oracle_prefix = None
+        for i, line in enumerate(lines):
+            m = oracle_re.match(line)
+            if m:
+                oracle_idx = i
+                oracle_prefix = m.group(1)
+                break
+
+        if oracle_idx is not None:
+            # Oracle notice but no MariaDB notice: insert a single MariaDB
+            # copyright line right below the Oracle one, reusing its prefix,
+            # followed by the SPDX tag.
+            prefix = continuation_prefix(oracle_prefix)
+            block = [prefix + mariadb_copyright(year, None) + nl]
+            if not has_spdx:
+                block += spdx_block(prefix, nl)
+            lines[oracle_idx + 1:oracle_idx + 1] = block
+            changed = True
+        else:
+            # Brand new file with no copyright at all: insert the full MariaDB
+            # license block when we know how to comment the file.
+            style = comment_style(file)
+            if style is not None:
+                pos = header_insert_pos(lines)
+                block = full_block(style, year, nl, spdx=not has_spdx)
+                if pos < len(lines) and lines[pos].strip() != "":
+                    block = block + [nl]
+                lines[pos:pos] = block
+                changed = True
+
+    if changed:
+        with open(file, "w", encoding="utf8", newline="") as out:
+            out.writelines(lines)
+
+    return changed
+
+
+# --- Exception list --------------------------------------------------------
+#
+# Files that must never receive a copyright notice. The hook itself is shared
+# between repositories, so it only carries a baseline of universally binary
+# formats; everything repository specific belongs in
+# .githooks/copyright-exceptions (one Python regex per line, "#" comments and
+# blank lines ignored, matched with re.match against the repo relative path).
+default_exceptions = [r".*\.mwb$", r".*\.ico$", r".*\.png$", r".*\.ttf$"]
+
+exceptions_file = os.path.join(".githooks", "copyright-exceptions")
+
+
+def load_exceptions(path):
+    """Return the baseline patterns plus the ones listed in `path`.
+
+    A missing file simply means "no repository specific exceptions". A
+    malformed one aborts the commit instead of being silently ignored, since
+    dropping a pattern would let the hook rewrite files it must not touch."""
+    patterns = list(default_exceptions)
+    try:
+        with open(path, encoding="utf8") as f:
+            raw = f.readlines()
+    except FileNotFoundError:
+        return patterns
+    except OSError as err:
+        sys.stderr.write("*** COMMIT ABORTED: cannot read %s: %s\n" % (path, err))
+        sys.exit(1)
+
+    for lineno, line in enumerate(raw, 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            re.compile(line)
+        except re.error as err:
+            sys.stderr.write("*** COMMIT ABORTED: %s:%d: invalid pattern %s (%s)\n"
+                             % (path, lineno, line, err))
+            sys.exit(1)
+        patterns.append(line)
+    return patterns
+
+
+exceptions = [re.compile(p) for p in load_exceptions(exceptions_file)]
+
+stream = os.popen("git diff --cached --name-status | awk '$1 != \"D\" { print $2 }'")
+all_files = stream.read()
+
+modified = []
+for file_name in all_files.split("\n"):
+    if file_name != '':
+        if not any(exception.match(file_name) for exception in exceptions):
+            if fix_copyright(file_name):
+                modified.append(file_name)
+
+if modified:
+    line = "*" * 78
+    sys.stderr.write("\n" + line + "\n")
+    sys.stderr.write("*** COMMIT ABORTED: MariaDB copyright notices were updated in the working\n")
+    sys.stderr.write("*** tree. Review the changes below, re-stage them (git add) and commit again.\n")
+    sys.stderr.write(line + "\n")
+    for f in modified:
+        sys.stderr.write("    modified: %s\n" % f)
+    sys.stderr.write(line + "\n\n")
+    sys.exit(1)

@@ -1,5 +1,7 @@
 # Copyright (c) 2023, 2026, Oracle and/or its affiliates.
 # Copyright (c) 2026, MariaDB plc.
+#
+# SPDX-License-Identifier: GPL-2.0-only
 # MySQL Workbench Plugin
 # Module with Audit Log Trigger function
 # Written in MySQL Workbench 8.0.26

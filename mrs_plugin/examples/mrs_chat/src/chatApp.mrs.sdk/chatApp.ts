@@ -1,6 +1,8 @@
 /* Copyright (c) 2023, 2025, Oracle and/or its affiliates. */
 /* Copyright (c) 2026, MariaDB plc. */
 
+   SPDX-License-Identifier: GPL-2.0-only
+
 /* eslint-disable max-len */
 /* eslint-disable @typescript-eslint/no-unnecessary-type-arguments */
 /* eslint-disable @stylistic/no-multiple-empty-lines */
