@@ -11,8 +11,9 @@
 # Python files under any unittest/ directory are test fixtures and must not
 # get a copyright notice.
 
-# MSM project section scripts are generated/versioned schema fragments.
-.*\.msm\.project/development/sections/.*
+# MSM project SQL scripts (sections, releases, deployment, updates, ...) are
+# generated/versioned schema fragments, anywhere under a *.msm.project folder.
+.*\.msm\.project/.*\.sql$
 
 # MSM template scripts are copied verbatim into generated projects.
 msm_plugin/templates/scripts/.*
