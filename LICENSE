@@ -5,7 +5,7 @@ MariaDB Shell
 
 Introduction
 
-   This License Information User Manual contains MariaDB Shells's product license
+   This License Information User Manual contains MariaDB Shell's product license
    and other licensing information, including licensing information for
    third-party software which may be included in this distribution of
    MariaDB Shell.
@@ -121,7 +121,7 @@ modification follow.
                     GNU GENERAL PUBLIC LICENSE
    TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
 
-  1. This License applies to any program or other work which contains
+  0. This License applies to any program or other work which contains
 a notice placed by the copyright holder saying it may be distributed
 under the terms of this General Public License.  The "Program", below,
 refers to any such program or work, and a "work based on the Program"
@@ -440,34 +440,6 @@ be found in the 'Standard Licenses' section
    ======================================================================
    ======================================================================
 
-anser
-
-The MIT License (MIT)
-
-Copyright (c) 2012-22 Ionică Bizău <bizauionica@gmail.com> (https://ionicabizau.
-net
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-   ======================================================================
-   ======================================================================
-
 ANTLR
 
 Copyright (c) 2012-2022 The ANTLR Project. All rights reserved.
@@ -583,210 +555,45 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
    ======================================================================
    ======================================================================
 
-antlr4ng
+bzip2
 
-Copyright (c) 2012-2023 The ANTLR Project. All rights reserved.
+This program, "bzip2", the associated library "libbzip2", and all
+documentation, are copyright (C) 1996-2019 Julian R Seward.  All
+rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions
 are met:
 
 1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
+   notice, this list of conditions and the following disclaimer.
 
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
+2. The origin of this software must not be misrepresented; you must
+   not claim that you wrote the original software.  If you use this
+   software in a product, an acknowledgment in the product
+   documentation would be appreciated but is not required.
 
-3. Neither name of copyright holders nor the names of its contributors
-may be used to endorse or promote products derived from this software
-without specific prior written permission.
+3. Altered source versions must be plainly marked as such, and must
+   not be misrepresented as being the original software.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+4. The name of the author may not be used to endorse or promote
+   products derived from this software without specific prior written
+   permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-   ======================================================================
-   ======================================================================
-
-classnames
-
-Copyright (c) 2018 Jed Watson
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-   ======================================================================
-   ======================================================================
-
-color
-
-Copyright (c) 2012 Heather Arthur
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
----------------------------- Fourth-party information ----------------------
-
-== color-convert
-
-Copyright (c) 2011-2016 Heather Arthur <fayearthur@gmail.com>.
-Copyright (c) 2016-2021 Josh Junon <josh@junon.me>.
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-
---------------------------------(separator)---------------------------------
-== color-name
-
-Copyright (c) 2015 Dmitry Ivanov
-
-Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be included
-in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
---------------------------------(separator)---------------------------------
-
-== color-string
-
-Copyright (c) 2011 Heather Arthur <fayearthur@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
---------------------------------(separator)---------------------------------
-== simple-swizzle
-
-Copyright (c) 2015 Josh Junon
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
---------------------------------(separator)---------------------------------
-== is-arrayish
-
-Copyright (c) 2015 JD Ballard
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
---------------------------------(separator)---------------------------------
+Julian Seward, jseward@acm.org
+bzip2/libbzip2 version 1.0.8 of 13 July 2019
 
    ======================================================================
    ======================================================================
@@ -818,48 +625,6 @@ Except as contained in this notice, the name of a copyright holder shall not
 be used in advertising or otherwise to promote the sale, use or other
 dealings in this Software without prior written authorization of the copyright
 holder.
-
-   ======================================================================
-   ======================================================================
-
-GTK+ (GIMP Toolkit)
-
-This component is licensed under
-GNU Lesser General Public License v2.1, February 1999.
-See the 'Standard Licenses' section for license text.
-
-   ======================================================================
-   ======================================================================
-
-Highlight-js
-
-Copyright (c) 2006, Ivan Sagalaev.
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-* Neither the name of the copyright holder nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
    ======================================================================
    ======================================================================
@@ -2195,17 +1960,54 @@ The following notice applies to
    ======================================================================
    ======================================================================
 
+libffi
+
+libffi - Copyright (c) 1996-2022  Anthony Green, Red Hat, Inc and others.
+See source files for details.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+``Software''), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED ``AS IS'', WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Copyright (C) 2007-2010  Free Software Foundation, Inc
+Copyright (C) 1996-2014  Red Hat, Inc.
+Copyright (C) 2009-2012 ARM Ltd.
+Copyright (C) 2011 Plausible Labs Cooperative, Inc.
+Copyright (C) 2002  Ranjit Mathew
+Copyright (C) 2002  Bo Thorsen
+Copyright (C) 2002  Roger Sayle
+Copyright (C) 2013  The Written Word, Inc.
+Copyright (C) 2002-2007  Bo Thorsen <bo@suse.de>
+
+   ======================================================================
+   ======================================================================
+
 libssh
 
-You are receiving a copy of libssh as part of MySQL Workbench in object code
-form. The terms of the Oracle license do NOT apply to libssh; libssh is licensed
-under the LGPLv2.1 license, separate from MySQL. If you do not wish to install
-this library, you may remove it, but the Oracle program might not operate
-properly or at all without it. Depending on the operating system the library can
-be found in the following locations:
+You are receiving a copy of libssh as part of MariaDB Shell in object code
+form. The terms of the MariaDB Shell license do NOT apply to libssh; libssh is
+licensed under the LGPLv2.1 license, separate from MariaDB Shell. If you do not
+wish to install this library, you may remove it, but MariaDB Shell might not
+operate properly or at all without it. Depending on the operating system the
+library can be found in the following locations:
 
-  - Linux: <librarydir-prefix>/mysql-shell/libssh.so
-  - OSX: <librarydir-prefix>/mysql-shell/libssh.dylib
+  - Linux: <librarydir-prefix>/mariadb-shell/libssh.so
+  - OSX: <librarydir-prefix>/mariadb-shell/libssh.dylib
   - Windows: <installation-path>\bin\libssh.dll
 
  * Copyright (c) 2004-2013 by Aris Adamantiadis
@@ -2316,31 +2118,6 @@ supplied in this file in the creation of products supporting the
 Unicode Standard, and to make copies of this file in any form
 for internal or external distribution as long as this notice
 remains attached.
-
-   ======================================================================
-   ======================================================================
-
-monaco-editor
-
-Copyright (c) 2016 - present Microsoft Corporation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 
    ======================================================================
    ======================================================================
@@ -2618,25 +2395,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 certifi
 
-The MIT License (MIT)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+MPL-2.0
 
 This package contains a modified version of ca-bundle.crt:
 
@@ -2725,127 +2484,35 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
    ======================================================================
    ======================================================================
 
-pixi-viewport
+Bundled Python packages
 
-The MIT License (MIT)
+The shell bundles a Python runtime, and the following third-party packages
+are installed into it. certifi, PyYAML, antlr4-python3-runtime and Typing
+Extensions are listed separately above; cryptography, cffi and pycparser
+appear with Paramiko.
 
-Copyright (c) 2017 YOPEY YOPEY LLC
+MIT License
+-----------
+The following packages are licensed under the MIT License, whose text is
+reproduced below. The copyright notice for each is given beside its name:
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-   ======================================================================
-   ======================================================================
-
-pixi.js
-
-The MIT License
-
-Copyright (c) 2013-2023 Mathew Groves, Chad Engler
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
----------------------------- Fourth-party information ----------------------
-
-@pixi/colord
-------------
-Copyright (c) 2020 Vlad Shilov omgovich@ya.ru
-License: MIT
-
-@types/css-font-loading-module
-------------------------------
-Copyrights are respective of each contributor listed at the
-beginning of each definition file.
-License: MIT
-
-@types/earcut
--------------
-Copyrights are respective of each contributor listed at the
-beginning of each definition file.
-License: MIT
-
-@webgpu/types
--------------
-Copyright 2022 WebGPU Developers
-License: BSD-3-Clause
-
-@xmldom/xmldom
---------------
-Copyright 2019 - present Christopher J. Brody and other contributors,
-as listed in: https://github.com/xmldom/xmldom/graphs/contributors
-
-Copyright 2012 - 2017 @jindw <jindw@xidea.org> and other contributors,
-as listed in: https://github.com/jindw/xmldom/graphs/contributors
-
-License: MIT
-
-earcut
-------
-Copyright (c) 2024, Mapbox
-License: ISC
-
-eventemitter3
--------------
-Copyright (c) 2014 Arnout Kazemier
-License: MIT
-
-gifuct-js
----------
-Copyright (c) 2015 Matt Way
-License: MIT
-
-js-binary-schema-parser
------------------------
-Copyright (c) 2015 Matt Way
-License: MIT
-
-ismobilejs
-----------
-Copyright (c) 2019 Kai Mallea
-License: MIT
-
-parse-svg-path
---------------
-Copyright (c) 2013 Jake Rosoman <jkroso@gmail.com>
-License: MIT
-
-
-   ======================================================================
-   ======================================================================
-
-preact
-
-Copyright (c) 2015-present Jason Miller
+  annotated-types            Copyright (c) 2022 the contributors
+  anyio                      Copyright (c) 2018 Alex Grönholm
+  attrs                      Copyright (c) 2015 Hynek Schlawack and the attrs contributors
+  h11                        Copyright (c) 2016 Nathaniel J. Smith <njs@pobox.com> and other
+                             contributors
+  jsonschema                 Copyright (c) 2013 Julian Berman
+  jsonschema-specifications  Copyright (c) 2022 Julian Berman
+  mcp                        Copyright (c) 2024 Anthropic, PBC
+  mcp-types                  Copyright (c) 2024 Anthropic, PBC
+  pydantic                   Copyright (c) 2017 to present Pydantic Services Inc. and
+                             individual contributors
+  pydantic-core              Copyright (c) 2022 Samuel Colvin
+  PyJWT                      Copyright (c) 2015-2022 José Padilla
+  referencing                Copyright (c) 2022 Julian Berman
+  rpds-py                    Copyright (c) 2023 Julian Berman
+  truststore                 Copyright (c) 2022 Seth Michael Larson
+  typing-inspection          Copyright (c) Pydantic Services Inc. 2025 to present
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -2864,6 +2531,59 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+BSD 3-Clause License
+--------------------
+The following packages are licensed under the BSD 3-Clause License, whose
+text is reproduced below. The copyright notice for each is given beside its
+name:
+
+  click                      Copyright 2014 Pallets
+  httpcore2                  Copyright © 2026 to present Pydantic Services Inc. and
+                             individual contributors.
+                             Copyright © 2020, Encode OSS Ltd (https://www.encode.io/).
+  httpx2                     Copyright © 2026 to present Pydantic Services Inc. and
+                             individual contributors.
+                             Copyright © 2019, Encode OSS Ltd (https://www.encode.io/).
+  idna                       Copyright (c) 2013-2026, Kim Davies and contributors.
+  sse-starlette              Copyright © 2020, sysid (https://sysid.github.io/).
+  starlette                  Copyright © 2018, Encode OSS Ltd (https://www.encode.io/).
+  uvicorn                    Copyright © 2017-present, Encode OSS Ltd (https://www.encode.io/).
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Apache License 2.0
+------------------
+The following packages are licensed under the Apache License, Version 2.0.
+See the 'Standard Licenses' section for license text.
+
+  opentelemetry-api
+  python-multipart
 
    ======================================================================
    ======================================================================
@@ -4042,393 +3762,6 @@ SOFTWARE.
    ======================================================================
    ======================================================================
 
-Regedit
-
-The MIT License (MIT)
-
-Copyright (c) 2014 ironSource
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-=== ========================================================================
-
-------------------------------- Copyright notices --------------------------
-Copyright (c) 2014 ironSource
-=== ========================================================================
-
----------------------------- Fourth-party information ----------------------
-
-== debug (MIT)
-
-== License
-(The MIT License)
-
-Copyright (c) 2014-2017 TJ Holowaychuk <tj@vision-media.ca>
-Copyright (c) 2018-2021 Josh Junon
-
-Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the
-'Software'), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-== Copyright Notices
-Copyright (c) 2014-2017 TJ Holowaychuk <tj@vision-media.ca>
-Copyright (c) 2018-2021 Josh Junon
-
---------------------------------(separator)---------------------------------
-== ms (MIT)
-
-== License
-The MIT License (MIT)
-
-Copyright (c) 2020 Vercel, Inc.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-== Copyright Notices
-Copyright (c) 2020 Vercel, Inc.
-
---------------------------------(separator)---------------------------------
-== if-async (MIT)
-
-== License
-The MIT License (MIT)
-
-Copyright (c) 2014 Yaniv Kessler
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-== Copyright Notices
-Copyright (c) 2014 Yaniv Kessler
-
---------------------------------(separator)---------------------------------
-== stream-slicer (MIT)
-
-== License
-The MIT License (MIT)
-
-Copyright (c) 2013 Yaniv Kessler
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-== Copyright Notices
-Copyright (c) 2013 Yaniv Kessler
-
---------------------------------(separator)---------------------------------
-== through2 (MIT)
-
-== License
-The MIT License (MIT)
-Copyright (c) Rod Vagg (the "Original Author") and additional contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-== Copyright Notices
-Copyright (c) Rod Vagg (the "Original Author") and additional contributors
-
---------------------------------(separator)---------------------------------
-== readable-stream (MIT)
-
-== License
-Copyright Joyent, Inc. and other Node contributors. All rights reserved.
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to
-deal in the Software without restriction, including without limitation the
-rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-sell copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-IN THE SOFTWARE.
-
-== Copyright Notices
-Copyright Joyent, Inc. and other Node contributors.
-
---------------------------------(separator)---------------------------------
-== inherits (ISC)
-
-== License
-The ISC License
-
-Copyright (c) 2011-2022 Isaac Z. Schlueter
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-== Copyright Notices
-Copyright (c) 2011-2022 Isaac Z. Schlueter
-
---------------------------------(separator)---------------------------------
-== string_decoder (MIT)
-
-== License
-Copyright Joyent, Inc. and other Node contributors. All rights reserved.
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to
-deal in the Software without restriction, including without limitation the
-rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-sell copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-IN THE SOFTWARE.
-
-== Copyright Notices
-Copyright Joyent, Inc. and other Node contributors.
-
---------------------------------(separator)---------------------------------
-== safe-buffer (MIT)
-
-== License
-The MIT License (MIT)
-
-Copyright (c) Feross Aboukhadijeh
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-== Copyright Notices
-Copyright (c) Feross Aboukhadijeh
-
---------------------------------(separator)---------------------------------
-== util-deprecate (MIT)
-
-== License
-(The MIT License)
-
-Copyright (c) 2014 Nathan Rajlich <nathan@tootallnate.net>
-
-Permission is hereby granted, free of charge, to any person
-obtaining a copy of this software and associated documentation
-files (the "Software"), to deal in the Software without
-restriction, including without limitation the rights to use,
-copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the
-Software is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
-
-== Copyright Notices
-Copyright (c) 2014 Nathan Rajlich <nathan@tootallnate.net>
-
-   ======================================================================
-   ======================================================================
-
-set-interval-async
-
-Copyright (c) 2019 Emilio Almansi
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
----------------------------- Fourth-party information ----------------------
-
-== @babel/runtime
-
-== License
-MIT License
-
-== Copyright Notices
-Copyright (c) 2014-present Sebastian McKenzie and other contributors
-
---------------------------------(separator)---------------------------------
-== regenerator-runtime
-
-== License
-MIT License
-
-== Copyright Notices
-Copyright (c) 2014-present, Facebook, Inc.
-
---------------------------------(separator)---------------------------------
-
-   ======================================================================
-   ======================================================================
-
-tabulator-tables
-
-Copyright (c) 2015-2022 Oli Folkerd
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-   ======================================================================
-   ======================================================================
-
 TinyXML2
 
 Original code by Lee Thomason (www.grinninglizard.com)
@@ -4712,33 +4045,6 @@ FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-   ======================================================================
-   ======================================================================
-
-ws
-
-Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
-Copyright (c) 2013 Arnout Kazemier and contributors
-Copyright (c) 2016 Luigi Pinca and contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 
    ======================================================================
    ======================================================================
@@ -5234,1189 +4540,6 @@ proprietary programs.  If your program is a subroutine library, you may
 consider it more useful to permit linking proprietary applications with the
 library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
-
-   ======================================================================
-   ======================================================================
-
-|| Additional third-party components
-
-================
-
-pthreadpool
-
-BSD-2-Clause License
-Copyright 2019 Google LLC
-Copyright (c) 2017 Facebook Inc.
-Copyright (c) 2015-2017 Georgia Institute of Technology
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-======================
-
-pytorch_cpuinfo
-BSD-2-Clause License as listed above
-Copyright (c) 2019 Google LLC
-Copyright (c) 2017-2018 Facebook Inc.
-Copyright (C) 2012-2017 Georgia Institute of Technology
-Copyright (C) 2010-2012 Marat Dukhan
-======================
-
-re2
-BSD-3-Clause License same as listed above
-=======================
-tensorboard
-Copyright 2017 The TensorFlow Authors.  All rights reserved.
-Apache License v2.0, January 2004.
-See the 'Standard Licenses' section for license text.
-
-AUTHORS file
-Google Inc.
-Yuan Tang terrytangyuan@gmail.com
-========================
-
-wil
-Copyright (c) Microsoft Corporation. All rights reserved.
-MIT License as listed above
-========================
-
-zlib
-Copyright notice:
-
- (C) 1995-2022 Jean-loup Gailly and Mark Adler
-
-  This software is provided 'as-is', without any express or implied
-  warranty.  In no event will the authors be held liable for any damages
-  arising from the use of this software.
-
-  Permission is granted to anyone to use this software for any purpose,
-  including commercial applications, and to alter it and redistribute it
-  freely, subject to the following restrictions:
-
-  1. The origin of this software must not be misrepresented; you must not
-     claim that you wrote the original software. If you use this software
-     in a product, an acknowledgment in the product documentation would be
-     appreciated but is not required.
-  2. Altered source versions must be plainly marked as such, and must not be
-     misrepresented as being the original software.
-  3. This notice may not be removed or altered from any source distribution.
-
-  Jean-loup Gailly        Mark Adler
-  jloup@gzip.org          madler@alumni.caltech.edu
-
-   Musl-libc
-
-musl as a whole is licensed under the following standard MIT license:
-
-----------------------------------------------------------------------
-Copyright (c) 2005-2019 Rich Felker, et al.
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-----------------------------------------------------------------------
-
-Authors/contributors include:
-
-A. Wilcox
-Alex Dowad
-Alex Suykov
-Alexander Monakov
-Andre McCurdy
-Andrew Kelley
-Anthony G. Basile
-Aric Belsito
-Arvid Picciani
-Bartosz Brachaczek
-Benjamin Peterson
-Bobby Bingham
-Boris Brezillon
-Brent Cook
-Chris Spiegel
-Clément Vasseur
-Daniel Micay
-Daniel Sabogal
-Daurnimator
-David Carlier
-David Edelsohn
-Denys Vlasenko
-Dmitry Ivanov
-Dmitry V. Levin
-Drew DeVault
-Emil Renner Berthing
-Fangrui Song
-Felix Fietkau
-Felix Janda
-Gianluca Anzolin
-Hauke Mehrtens
-He X
-Hiltjo Posthuma
-Isaac Dunham
-Jaydeep Patil
-Jens Gustedt
-Jeremy Huntwork
-Jo-Philipp Wich
-Joakim Sindholt
-John Spencer
-Josiah Worcester
-Julien Ramseier
-Justin Cormack
-Kaarle Ritvanen
-Khem Raj
-Kylie McClain
-Leah Neukirchen
-Luca Barbato
-Luka Perkov
-M Farkas-Dyck (Strake)
-Mahesh Bodapati
-Markus Wichmann
-Masanori Ogino
-Michael Clark
-Michael Forney
-Mikhail Kremnyov
-Natanael Copa
-Nicholas J. Kain
-orc
-Pascal Cuoq
-Patrick Oppenlander
-Petr Hosek
-Petr Skocik
-Pierre Carrier
-Reini Urban
-Rich Felker
-Richard Pennington
-Ryan Fairfax
-Samuel Holland
-Segev Finer
-Shiz
-sin
-Solar Designer
-Stefan Kristiansson
-Stefan O'Rear
-Szabolcs Nagy
-Timo Teräs
-Trutz Behn
-Valentin Ochs
-Will Dietz
-William Haddon
-William Pitcock
-
-Portions of this software are derived from third-party works licensed
-under terms compatible with the above MIT license:
-
-The TRE regular expression implementation (src/regex/reg* and
-src/regex/tre*) is Copyright (c) 2001-2008 Ville Laurikari and licensed
-under a 2-clause BSD license (license text in the source files). The
-included version has been heavily modified by Rich Felker in 2012, in
-the interests of size, simplicity, and namespace cleanliness.
-
-Much of the math library code (src/math/* and src/complex/*) is
-Copyright (c) 1993,2004 Sun Microsystems or
-Copyright (c) 2003-2011 David Schultz or
-Copyright (c) 2003-2009 Steven G. Kargl or
-Copyright (c) 2003-2009 Bruce D. Evans or
-Copyright (c) 2008 Stephen L. Moshier or
-Copyright (c) 2017-2018 Arm Limited
-and labelled as such in comments in the individual source files. All
-have been licensed under extremely permissive terms.
-
-The ARM memcpy code (src/string/arm/memcpy_el.S) is Copyright (c) 2008
-The Android Open Source Project and is licensed under a two-clause BSD
-license. It was taken from Bionic libc, used on Android.
-
-The implementation of DES for crypt (src/crypt/crypt_des.c) is
-Copyright (c) 1994 David Burren. It is licensed under a BSD license.
-
-The implementation of blowfish crypt (src/crypt/crypt_blowfish.c) was
-originally written by Solar Designer and placed into the public
-domain. The code also comes with a fallback permissive license for use
-in jurisdictions that may not recognize the public domain.
-
-The smoothsort implementation (src/stdlib/qsort.c) is Copyright (c) 2011
-Valentin Ochs and is licensed under an MIT-style license.
-
-The x86_64 port was written by Nicholas J. Kain and is licensed under
-the standard MIT terms.
-
-The mips and microblaze ports were originally written by Richard
-Pennington for use in the ellcc project. The original code was adapted
-by Rich Felker for build system and code conventions during upstream
-integration. It is licensed under the standard MIT terms.
-
-The mips64 port was contributed by Imagination Technologies and is
-licensed under the standard MIT terms.
-
-The powerpc port was also originally written by Richard Pennington,
-and later supplemented and integrated by John Spencer. It is licensed
-under the standard MIT terms.
-
-All other files which have no copyright comments are original works
-produced specifically for use as part of this library, written either
-by Rich Felker, the main author of the library, or by one or more
-contibutors listed above. Details on authorship of individual files
-can be found in the git version control history of the project. The
-omission of copyright and license comments in each file is in the
-interest of source tree size.
-
-In addition, permission is hereby granted for all public header files
-(include/* and arch/*/bits/*) and crt files intended to be linked into
-applications (crt/*, ldso/dlstart.c, and arch/*/crt_arch.h) to omit
-the copyright notice and permission notice otherwise required by the
-license, and to use these files without any requirement of
-attribution. These files include substantial contributions from:
-
-Bobby Bingham
-John Spencer
-Nicholas J. Kain
-Rich Felker
-Richard Pennington
-Stefan Kristiansson
-Szabolcs Nagy
-
-all of whom have explicitly granted such permission.
-
-This file previously contained text expressing a belief that most of
-the files covered by the above exception were sufficiently trivial not
-to be subject to copyright, resulting in confusion over whether it
-negated the permissions granted in the license. In the spirit of
-permissive licensing, and of not having licensing issues being an
-obstacle to adoption, that text has been removed.
-
-   ANTLR4
-
-antlr4
-COPYRIGHT and LICENSE:
-
-[The "BSD 3-clause license"]
-Copyright (c) 2012-2022 The ANTLR Project. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither name of copyright holders nor the names of its contributors
-may be used to endorse or promote products derived from this software
-without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-===========================
-4th Party Dependencies:
-
-com.ibm.icu » icu4j
-COPYRIGHT and LICENSE:
-UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE
-
-See Terms of Use <https://www.unicode.org/copyright.html>
-for definitions of Unicode Inc.'s Data Files and Software.
-
-NOTICE TO USER: Carefully read the following legal agreement.
-BY DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING UNICODE INC.'S
-DATA FILES ("DATA FILES"), AND/OR SOFTWARE ("SOFTWARE"),
-YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
-TERMS AND CONDITIONS OF THIS AGREEMENT.
-IF YOU DO NOT AGREE, DO NOT DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE
-THE DATA FILES OR SOFTWARE.
-
-COPYRIGHT AND PERMISSION NOTICE
-
-Copyright (c) 1991-2022 Unicode, Inc. All rights reserved.
-Distributed under the Terms of Use in https://www.unicode.org/copyright.html.
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of the Unicode data files and any associated documentation
-(the "Data Files") or Unicode software and any associated documentation
-(the "Software") to deal in the Data Files or Software
-without restriction, including without limitation the rights to use,
-copy, modify, merge, publish, distribute, and/or sell copies of
-the Data Files or Software, and to permit persons to whom the Data Files
-or Software are furnished to do so, provided that either
-(a) this copyright and permission notice appear with all copies
-of the Data Files or Software, or
-(b) this copyright and permission notice appear in associated
-Documentation.
-
-THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT OF THIRD PARTY RIGHTS.
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
-NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
-DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
-DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THE DATA FILES OR SOFTWARE.
-
-Except as contained in this notice, the name of a copyright holder
-shall not be used in advertising or otherwise to promote the sale,
-use or other dealings in these Data Files or Software without prior
-written authorization of the copyright holder.
-
-=============================================================================
-org.abego.treelayout » org.abego.treelayout.core
-COPYRIGHT and LICENSE:
-BSD 3-Clause License
-
-Copyright (c) 2011, abego Software GmbH, Germany (http://www.abego.org)
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-* Neither the name of the copyright holder nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-=============================================================================
-org.antlr » antlr4-runtime
-org.antlr » antlr-runtime
-COPYRIGHT and LICENSE:
-[The "BSD 3-clause license"]
-Copyright (c) 2012-2022 The ANTLR Project. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither name of copyright holders nor the names of its contributors
-may be used to endorse or promote products derived from this software
-without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-=============================================================================
-org.antlr » ST4
-COPYRIGHT and LICENSE:
-[The "BSD license"]
-Copyright (c) 2011-2022 Terence Parr
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
- 1. Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
- 2. Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in the
-    documentation and/or other materials provided with the distribution.
- 3. The name of the author may not be used to endorse or promote products
-    derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
-IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
-INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-   JSON in Java
-
-Public Domain.
-
-   JLine
-
-************************************************************
-***************** Copied from BA Public License *****************
-
-Copyright (c) 2002-2018, the original author or authors.
-All rights reserved.
-https://opensource.org/licenses/BSD-3-Clause
-Redistribution and use in source and binary forms, with or
-without modification, are permitted provided that the following
-conditions are met:
-Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer
-in the documentation and/or other materials provided with
-the distribution.
-Neither the name of JLine nor the names of its contributors
-may be used to endorse or promote products derived from this
-software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING,
-BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
-AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
-EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
-OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
-AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
-OF THE POSSIBILITY OF SUCH DAMAGE.
-
-   LibFFI Library
-
-### LibFFI License
-```
-libffi - Copyright (c) 1996-2022  Anthony Green, Red Hat, Inc and others.
-See source files for details.
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-``Software''), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED ``AS IS'', WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-Copyright (C) 2007-2010  Free Software Foundation, Inc
-Copyright (C) 1996-2014  Red Hat, Inc.
-Copyright (C) 2009-2012 ARM Ltd.
-Copyright (C) 2011 Plausible Labs Cooperative, Inc.
-Copyright (C) 2002  Ranjit Mathew
-Copyright (C) 2002  Bo Thorsen
-Copyright (C) 2002  Roger Sayle
-Copyright (C) 2013  The Written Word, Inc.
-Copyright (C) 2002-2007  Bo Thorsen <bo@suse.de>
-
-```
-### AUTHORS File Information
-```
-
-libffi was originally written by Anthony Green <green@moxielogic.com>.
-
-The developers of the GNU Compiler Collection project have made
-innumerable valuable contributions.  See the ChangeLog file for
-details.
-
-Some of the ideas behind libffi were inspired by Gianni Mariani's free
-gencall library for Silicon Graphics machines.
-
-The closure mechanism was designed and implemented by Kresten Krab
-Thorup.
-
-Major processor architecture ports were contributed by the following
-developers:
-
-    aarch64             Marcus Shawcroft, James Greenhalgh
-    x86                 Anthony Green, Jon Beniston
-    x86-64              Bo Thorsen
-
-Jesper Skov and Andrew Haley both did more than their fair share of
-stepping through the code and tracking down bugs.
-
-Thanks also to Tom Tromey for bug fixes, documentation and
-configuration help.
-
-Thanks to Jim Blandy, who provided some useful feedback on the libffi
-interface.
-
-Alex Oliva solved the executable page problem for SElinux.
-
-   Java-WebSocket
-
-Copyright (c) 2010-2020 Nathan Rajlich
-
- Permission is hereby granted, free of charge, to any person
- obtaining a copy of this software and associated documentation
- files (the "Software"), to deal in the Software without
- restriction, including without limitation the rights to use,
- copy, modify, merge, publish, distribute, sublicense, and/or sell
- copies of the Software, and to permit persons to whom the
- Software is furnished to do so, subject to the following
- conditions:
-
- The above copyright notice and this permission notice shall be
- included in all copies or substantial portions of the Software.
-
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
- HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
- OTHER DEALINGS IN THE SOFTWARE.
-
-   ASM
-
-https://gitlab.ow2.org/asm/asm/blob/master/LICENSE.txt
-
-ASM: a very small and fast Java bytecode manipulation framework
- Copyright (c) 2000-2011 INRIA, France Telecom
- All rights reserved.
-
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions
- are met:
- 1. Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
- 2. Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in the
-    documentation and/or other materials provided with the distribution.
- 3. Neither the name of the copyright holders nor the names of its
-    contributors may be used to endorse or promote products derived from
-    this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
-OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-   ICU4J
-
-UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE
-
-See Terms of Use <https://www.unicode.org/copyright.html>
-for definitions of Unicode Inc.'s Data Files and Software.
-
-NOTICE TO USER: Carefully read the following legal agreement.
-BY DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING UNICODE INC.'S
-DATA FILES ("DATA FILES"), AND/OR SOFTWARE ("SOFTWARE"),
-YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
-TERMS AND CONDITIONS OF THIS AGREEMENT.
-IF YOU DO NOT AGREE, DO NOT DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE
-THE DATA FILES OR SOFTWARE.
-
-COPYRIGHT AND PERMISSION NOTICE
-
-Copyright (c) 1991-2022 Unicode, Inc. All rights reserved.
-Distributed under the Terms of Use in https://www.unicode.org/copyright.html.
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of the Unicode data files and any associated documentation
-(the "Data Files") or Unicode software and any associated documentation
-(the "Software") to deal in the Data Files or Software
-without restriction, including without limitation the rights to use,
-copy, modify, merge, publish, distribute, and/or sell copies of
-the Data Files or Software, and to permit persons to whom the Data Files
-or Software are furnished to do so, provided that either
-(a) this copyright and permission notice appear with all copies
-of the Data Files or Software, or
-(b) this copyright and permission notice appear in associated
-Documentation.
-
-THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT OF THIRD PARTY RIGHTS.
-IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
-NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
-DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
-DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THE DATA FILES OR SOFTWARE.
-
-Except as contained in this notice, the name of a copyright holder
-shall not be used in advertising or otherwise to promote the sale,
-use or other dealings in these Data Files or Software without prior
-written authorization of the copyright holder.
-
----------------------
-
-Third-Party Software Licenses
-
-This section contains third-party software notices and/or additional
-terms for licensed third-party software components included within ICU
-libraries.
-
-1. ICU License - ICU 1.8.1 to ICU 57.1
-
-COPYRIGHT AND PERMISSION NOTICE
-
-Copyright (c) 1995-2016 International Business Machines Corporation and others
-All rights reserved.
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, and/or sell copies of the Software, and to permit persons
-to whom the Software is furnished to do so, provided that the above
-copyright notice(s) and this permission notice appear in all copies of
-the Software and that both the above copyright notice(s) and this
-permission notice appear in supporting documentation.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-OF THIRD PARTY RIGHTS. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
-HOLDERS INCLUDED IN THIS NOTICE BE LIABLE FOR ANY CLAIM, OR ANY
-SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER
-RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
-CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
-CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-Except as contained in this notice, the name of a copyright holder
-shall not be used in advertising or otherwise to promote the sale, use
-or other dealings in this Software without prior written authorization
-of the copyright holder.
-
-All trademarks and registered trademarks mentioned herein are the
-property of their respective owners.
-
-2. Chinese/Japanese Word Break Dictionary Data (cjdict.txt)
-
- #     The Google Chrome software developed by Google is licensed under
- # the BSD license. Other software included in this distribution is
- # provided under other licenses, as set forth below.
- #
- #  The BSD License
- #  http://opensource.org/licenses/bsd-license.php
- #  Copyright (C) 2006-2008, Google Inc.
- #
- #  All rights reserved.
- #
- #  Redistribution and use in source and binary forms, with or without
- # modification, are permitted provided that the following conditions are met:
- #
- #  Redistributions of source code must retain the above copyright notice,
- # this list of conditions and the following disclaimer.
- #  Redistributions in binary form must reproduce the above
- # copyright notice, this list of conditions and the following
- # disclaimer in the documentation and/or other materials provided with
- # the distribution.
- #  Neither the name of  Google Inc. nor the names of its
- # contributors may be used to endorse or promote products derived from
- # this software without specific prior written permission.
- #
- #
- #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- # CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- # INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- # MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- # DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- # LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- # CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- # SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- # BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- # LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- #
- #
- #  The word list in cjdict.txt are generated by combining three word lists
- # listed below with further processing for compound word breaking. The
- # frequency is generated with an iterative training against Google web
- # corpora.
- #
- #  * Libtabe (Chinese)
- #    - https://sourceforge.net/project/?group_id=1519
- #    - Its license terms and conditions are shown below.
- #
- #  * IPADIC (Japanese)
- #    - http://chasen.aist-nara.ac.jp/chasen/distribution.html
- #    - Its license terms and conditions are shown below.
- #
- #  ---------COPYING.libtabe ---- BEGIN--------------------
- #
- #  /*
- #   * Copyright (c) 1999 TaBE Project.
- #   * Copyright (c) 1999 Pai-Hsiang Hsiao.
- #   * All rights reserved.
- #   *
- #   * Redistribution and use in source and binary forms, with or without
- #   * modification, are permitted provided that the following conditions
- #   * are met:
- #   *
- #   * . Redistributions of source code must retain the above copyright
- #   *   notice, this list of conditions and the following disclaimer.
- #   * . Redistributions in binary form must reproduce the above copyright
- #   *   notice, this list of conditions and the following disclaimer in
- #   *   the documentation and/or other materials provided with the
- #   *   distribution.
- #   * . Neither the name of the TaBE Project nor the names of its
- #   *   contributors may be used to endorse or promote products derived
- #   *   from this software without specific prior written permission.
- #   *
- #   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- #   * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- #   * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- #   * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- #   * REGENTS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- #   * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- #   * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- #   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- #   * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- #   * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- #   * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
- #   * OF THE POSSIBILITY OF SUCH DAMAGE.
- #   */
- #
- #  /*
- #   * Copyright (c) 1999 Computer Systems and Communication Lab,
- #   *                    Institute of Information Science, Academia
- #       *                    Sinica. All rights reserved.
- #   *
- #   * Redistribution and use in source and binary forms, with or without
- #   * modification, are permitted provided that the following conditions
- #   * are met:
- #   *
- #   * . Redistributions of source code must retain the above copyright
- #   *   notice, this list of conditions and the following disclaimer.
- #   * . Redistributions in binary form must reproduce the above copyright
- #   *   notice, this list of conditions and the following disclaimer in
- #   *   the documentation and/or other materials provided with the
- #   *   distribution.
- #   * . Neither the name of the Computer Systems and Communication Lab
- #   *   nor the names of its contributors may be used to endorse or
- #   *   promote products derived from this software without specific
- #   *   prior written permission.
- #   *
- #   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- #   * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- #   * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- #   * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- #   * REGENTS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- #   * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- #   * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- #   * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- #   * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- #   * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- #   * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
- #   * OF THE POSSIBILITY OF SUCH DAMAGE.
- #   */
- #
- #  Copyright 1996 Chih-Hao Tsai @ Beckman Institute,
- #      University of Illinois
- #  c-tsai4@uiuc.edu  http://casper.beckman.uiuc.edu/~c-tsai4
- #
- #  ---------------COPYING.libtabe-----END--------------------------------
- #
- #
- #  ---------------COPYING.ipadic-----BEGIN-------------------------------
- #
- #  Copyright 2000, 2001, 2002, 2003 Nara Institute of Science
- #  and Technology.  All Rights Reserved.
- #
- #  Use, reproduction, and distribution of this software is permitted.
- #  Any copy of this software, whether in its original form or modified,
- #  must include both the above copyright notice and the following
- #  paragraphs.
- #
- #  Nara Institute of Science and Technology (NAIST),
- #  the copyright holders, disclaims all warranties with regard to this
- #  software, including all implied warranties of merchantability and
- #  fitness, in no event shall NAIST be liable for
- #  any special, indirect or consequential damages or any damages
- #  whatsoever resulting from loss of use, data or profits, whether in an
- #  action of contract, negligence or other tortuous action, arising out
- #  of or in connection with the use or performance of this software.
- #
- #  A large portion of the dictionary entries
- #  originate from ICOT Free Software.  The following conditions for ICOT
- #  Free Software applies to the current dictionary as well.
- #
- #  Each User may also freely distribute the Program, whether in its
- #  original form or modified, to any third party or parties, PROVIDED
- #  that the provisions of Section 3 ("NO WARRANTY") will ALWAYS appear
- #  on, or be attached to, the Program, which is distributed substantially
- #  in the same form as set out herein and that such intended
- #  distribution, if actually made, will neither violate or otherwise
- #  contravene any of the laws and regulations of the countries having
- #  jurisdiction over the User or the intended distribution itself.
- #
- #  NO WARRANTY
- #
- #  The program was produced on an experimental basis in the course of the
- #  research and development conducted during the project and is provided
- #  to users as so produced on an experimental basis.  Accordingly, the
- #  program is provided without any warranty whatsoever, whether express,
- #  implied, statutory or otherwise.  The term "warranty" used herein
- #  includes, but is not limited to, any warranty of the quality,
- #  performance, merchantability and fitness for a particular purpose of
- #  the program and the nonexistence of any infringement or violation of
- #  any right of any third party.
- #
- #  Each user of the program will agree and understand, and be deemed to
- #  have agreed and understood, that there is no warranty whatsoever for
- #  the program and, accordingly, the entire risk arising from or
- #  otherwise connected with the program is assumed by the user.
- #
- #  Therefore, neither ICOT, the copyright holder, or any other
- #  organization that participated in or was otherwise related to the
- #  development of the program and their respective officials, directors,
- #  officers and other employees shall be held liable for any and all
- #  damages, including, without limitation, general, special, incidental
- #  and consequential damages, arising out of or otherwise in connection
- #  with the use or inability to use the program or any product, material
- #  or result produced or otherwise obtained by using the program,
- #  regardless of whether they have been advised of, or otherwise had
- #  knowledge of, the possibility of such damages at any time during the
- #  project or thereafter.  Each user will be deemed to have agreed to the
- #  foregoing by his or her commencement of use of the program.  The term
- #  "use" as used herein includes, but is not limited to, the use,
- #  modification, copying and distribution of the program and the
- #  production of secondary products from the program.
- #
- #  In the case where the program, whether in its original form or
- #  modified, was distributed or delivered to or received by a user from
- #  any person, organization or entity other than ICOT, unless it makes or
- #  grants independently of ICOT any specific warranty to the user in
- #  writing, such person, organization or entity, will also be exempted
- #  from and not be held liable to the user for any such damages as noted
- #  above as far as the program is concerned.
- #
- #  ---------------COPYING.ipadic-----END----------------------------------
-
-3. Lao Word Break Dictionary Data (laodict.txt)
-
- # Copyright (C) 2016 and later: Unicode, Inc. and others.
- # License & terms of use: http://www.unicode.org/copyright.html
- # Copyright (c) 2015 International Business Machines Corporation
- # and others. All Rights Reserved.
- #
- # Project: https://github.com/rober42539/lao-dictionary
- # Dictionary: https://github.com/rober42539/lao-dictionary/laodict.txt
- # License: https://github.com/rober42539/lao-dictionary/LICENSE.txt
- #          (copied below)
- #
- #      This file is derived from the above dictionary version of Nov 22, 2020
- #  ----------------------------------------------------------------------
- #  Copyright (C) 2013 Brian Eugene Wilson, Robert Martin Campbell.
- #  All rights reserved.
- #
- #  Redistribution and use in source and binary forms, with or without
- #  modification, are permitted provided that the following conditions are met:
- #
- #  Redistributions of source code must retain the above copyright notice, this
- #  list of conditions and the following disclaimer. Redistributions in binary
- #  form must reproduce the above copyright notice, this list of conditions and
- #  the following disclaimer in the documentation and/or ther materials
- #  provided with the distribution.
- #
- # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- # "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- # LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- # FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- # COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
- # INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- # (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- # SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- # HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- # STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
- # OF THE POSSIBILITY OF SUCH DAMAGE.
- #  --------------------------------------------------------------------------
-
-4. Burmese Word Break Dictionary Data (burmesedict.txt)
-
- #  Copyright (c) 2014 International Business Machines Corporation
- #  and others. All Rights Reserved.
- #
- #  This list is part of a project hosted at:
- #    github.com/kanyawtech/myanmar-karen-word-lists
- #
- #  --------------------------------------------------------------------------
- #  Copyright (c) 2013, LeRoy Benjamin Sharon
- #  All rights reserved.
- #
- #  Redistribution and use in source and binary forms, with or without
- #  modification, are permitted provided that the following conditions
- #  are met: Redistributions of source code must retain the above
- #  copyright notice, this list of conditions and the following
- #  disclaimer.  Redistributions in binary form must reproduce the
- #  above copyright notice, this list of conditions and the following
- #  disclaimer in the documentation and/or other materials provided
- #  with the distribution.
- #
- #    Neither the name Myanmar Karen Word Lists, nor the names of its
- #    contributors may be used to endorse or promote products derived
- #    from this software without specific prior written permission.
- #
- #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- #  CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- #  INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- #  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- #  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
- #  BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- #  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
- #  TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- #  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- #  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
- #  TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
- #  THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- #  SUCH DAMAGE.
- #  --------------------------------------------------------------------------
-
-5. Time Zone Database
-
-  ICU uses the public domain data and code derived from Time Zone
-Database for its time zone support. The ownership of the TZ database
-is explained in BCP 175: Procedure for Maintaining the Time Zone
-Database section 7.
-
- # 7.  Database Ownership
- #
- #    The TZ database itself is not an IETF Contribution or an IETF
- #    document.  Rather it is a pre-existing and regularly updated work
- #    that is in the public domain, and is intended to remain in the
- #    public domain.  Therefore, BCPs 78 [RFC5378] and 79 [RFC3979] do
- #    not apply to the TZ Database or contributions that individuals make
- #    to it.  Should any claims be made and substantiated against the TZ
- #    Database, the organization that is providing the IANA
- #    Considerations defined in this RFC, under the memorandum of
- #    understanding with the IETF, currently ICANN, may act in accordance
- #    with all competent court orders.  No ownership claims will be made
- #    by ICANN or the IETF Trust on the database or the code.  Any person
- #    making a contribution to the database or code waives all rights to
- #    future claims in that contribution or in the TZ Database.
-
-6. Google double-conversion
-
-Copyright 2006-2011, the V8 project authors. All rights reserved.
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above
-      copyright notice, this list of conditions and the following
-      disclaimer in the documentation and/or other materials provided
-      with the distribution.
-    * Neither the name of Google Inc. nor the names of its
-      contributors may be used to endorse or promote products derived
-      from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-====================================================
-
-Unicode(R) Copyright and Terms of Use
-For the general privacy policy governing access to this site, see the
-Unicode Privacy Policy.
-
-Unicode Copyright
-Copyright (c) 1991-2022 Unicode, Inc. All rights reserved.
-Definitions
-Unicode Data Files ("DATA FILES") include all data files under the directories:
-https://www.unicode.org/Public/
-https://www.unicode.org/reports/
-https://www.unicode.org/ivd/data/
-
-Unicode Data Files do not include PDF online code charts under the directory:
-https://www.unicode.org/Public/
-
-Unicode Software ("SOFTWARE") includes any source code published in the
-Unicode Standard or any source code or compiled code under the directories:
-https://www.unicode.org/Public/PROGRAMS/
-https://www.unicode.org/Public/cldr/
-http://site.icu-project.org/download/
-
-Terms of Use
-Certain documents and files on this website contain a legend indicating
-that "Modification is permitted." Any person is hereby authorized,
-without fee, to modify such documents and files to create derivative
-works conforming to the Unicode(R) Standard, subject to Terms and
-Conditions herein.
-Any person is hereby authorized, without fee, to view, use, reproduce,
-and distribute all documents and files, subject to the Terms and
-Conditions herein.
-Further specifications of rights and restrictions pertaining to the use
-of the Unicode DATA FILES and SOFTWARE can be found in the Unicode Data
-Files and Software License.
-Each version of the Unicode Standard has further specifications of
-rights and restrictions of use. For the book editions (Unicode 5.0 and
-earlier), these are found on the back of the title page.
-The Unicode PDF online code charts carry specific restrictions. Those
-restrictions are incorporated as the first page of each PDF code chart.
-All other files, including online documentation of the core
-specification for Unicode 6.0 and later, are covered under these general
-Terms of Use.
-No license is granted to "mirror" the Unicode website where a fee is
-charged for access to the "mirror" site.
-Modification is not permitted with respect to this document.
-All copies of this document must be verbatim.
-Restricted Rights Legend
-Any technical data or software which is licensed to the United States of
-America, its agencies and/or instrumentalities under this Agreement is
-commercial technical data or commercial computer software developed
-exclusively at private expense as defined in FAR 2.101, or DFARS
-252.227-7014 (June 1995), as applicable. For technical data, use,
-duplication, or disclosure by the Government is subject to restrictions
-as set forth in DFARS 202.227-7015 Technical Data, Commercial and Items
-(Nov 1995) and this Agreement. For Software, in accordance with FAR
-12-212 or DFARS 227-7202, as applicable, use, duplication or disclosure
-by the Government is subject to the restrictions set forth in this
-Agreement.
-Warranties and Disclaimers
-This publication and/or website may include technical or typographical
-errors or other inaccuracies. Changes are periodically added to the
-information herein; these changes will be incorporated in new editions
-of the publication and/or website. Unicode, Inc. may make improvements
-and/or changes in the product(s) and/or program(s) described in this
-publication and/or website at any time.
-If this file has been purchased on magnetic or optical media from
-Unicode, Inc. the sole and exclusive remedy for any claim will be
-exchange of the defective media within ninety (90) days of original
-purchase.
-EXCEPT AS PROVIDED IN SECTION E.2, THIS PUBLICATION AND/OR SOFTWARE IS
-PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND EITHER EXPRESS, IMPLIED,
-OR STATUTORY, INCLUDING, BUT NOT LIMITED TO, ANY WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT.
-UNICODE, INC. AND ITS LICENSORS ASSUME NO RESPONSIBILITY FOR ERRORS OR
-OMISSIONS IN THIS PUBLICATION AND/OR SOFTWARE OR OTHER DOCUMENTS WHICH
-ARE REFERENCED BY OR LINKED TO THIS PUBLICATION OR THE UNICODE WEBSITE.
-Waiver of Damages
-In no event shall Unicode, Inc. or its licensors be liable for any
-special, incidental, indirect or consequential damages of any kind, or
-any damages whatsoever, whether or not Unicode, Inc. was advised of the
-possibility of the damage, including, without limitation, those
-resulting from the following: loss of use, data or profits, in
-connection with the use, modification or distribution of this
-information or its derivatives.
-Trademarks & Logos
-The Unicode Word Mark and the Unicode Logo are trademarks of Unicode,
-Inc. "The Unicode Consortium" and "Unicode, Inc." are trade names of
-Unicode, Inc. Use of the information and materials found on this website
-indicates your acknowledgement of Unicode, Inc.'s exclusive worldwide
-rights in the Unicode Word Mark, the Unicode Logo, and the Unicode trade
-names.
-The Unicode Consortium Name and Trademark Usage Policy ("Trademark
-Policy") are incorporated herein by reference and you agree to abide by
-the provisions of the Trademark Policy, which may be changed from time
-to time in the sole discretion of Unicode, Inc.
-All third party trademarks referenced herein are the property of their
-respective owners.
-Miscellaneous
-Jurisdiction and Venue. This website is operated from a location in the
-State of California, United States of America. Unicode, Inc. makes no
-representation that the materials are appropriate for use in other
-locations. If you access this website from other locations, you are
-responsible for compliance with local laws. This Agreement, all use of
-this website and any claims and damages resulting from use of this
-website are governed solely by the laws of the State of California
-without regard to any principles which would apply the laws of a
-different jurisdiction. The user agrees that any disputes regarding this
-website shall be resolved solely in the courts located in Santa Clara
-County, California. The user agrees said courts have personal
-jurisdiction and agree to waive any right to transfer the dispute to any
-other forum.
-Modification by Unicode, Inc. Unicode, Inc. shall have the right to
-modify this Agreement at any time by posting it to this website. The
-user may not assign any part of this Agreement without Unicode, Inc.'s
-prior written consent.
-Taxes. The user agrees to pay any taxes arising from access to this
-website or use of the information herein, except for those based on
-Unicode's net income.
-Severability. If any provision of this Agreement is declared invalid or
-unenforceable, the remaining provisions of this Agreement shall remain
-in effect.
-Entire Agreement. This Agreement constitutes the entire agreement
-between the parties.
 
    ======================================================================
    ======================================================================
