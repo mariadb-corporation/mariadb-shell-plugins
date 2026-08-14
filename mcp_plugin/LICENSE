@@ -632,13 +632,12 @@ holder.
 Kerberos5
 
 You may be receiving a copy of the kerberos documentation as part of this
-product. The terms of the Oracle license do NOT apply to Kerberos documentation.
-
-Kerberos documentation is licensed under the CC-BY-SA 3.0 license, separate from
-
-the Oracle product.
+product. The terms of the MariaDB Shell license do NOT apply to Kerberos
+documentation.
+Kerberos documentation is licensed under the CC-BY-SA 3.0 license, separate
+from MariaDB Shell.
 If you do not wish to install this library, you may remove it, but
-the Oracle program might not operate properly or at all without it.
+MariaDB Shell might not operate properly or at all without it.
 
 Copyright (C) 1985-2019 by the Massachusetts Institute of Technology.
 
@@ -2122,19 +2121,21 @@ remains attached.
    ======================================================================
    ======================================================================
 
-OpenSSL 3.0
+OpenSSL 3.6
 
-You may be receiving a copy of OpenSSL 3.0 as part of this product in
+You may be receiving a copy of OpenSSL 3.6 as part of this product in
 object code form.
-The terms of the Oracle license do NOT apply to OpenSSL 3.0.
-OpenSSL 3.0 is licensed under the Apache 2.0 license, separate from
-the Oracle product.
+The terms of the MariaDB Shell license do NOT apply to OpenSSL.
+OpenSSL is licensed under the Apache 2.0 license, separate from
+MariaDB Shell.
 If you do not wish to install this library, you may remove it, but
-the Oracle program might not operate properly or at all without it.
+MariaDB Shell might not operate properly or at all without it.
+
+Copyright (c) 1998-2026 The OpenSSL Project Authors
+Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson
+All rights reserved.
 
 /*
- * Copyright 2003-2022 The OpenSSL Project Authors. All Rights Reserved.
- *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
@@ -2242,7 +2243,8 @@ Bundled Python packages
 
 The shell bundles a Python runtime, and the following third-party packages
 are installed into it. certifi, PyYAML, antlr4-python3-runtime and Typing
-Extensions are listed separately above.
+Extensions are listed separately above; cryptography is listed separately
+below.
 
 MIT License
 -----------
@@ -2299,6 +2301,7 @@ name:
                              individual contributors.
                              Copyright © 2019, Encode OSS Ltd (https://www.encode.io/).
   idna                       Copyright (c) 2013-2026, Kim Davies and contributors.
+  pycparser                  Copyright (c) 2008-2022, Eli Bendersky
   sse-starlette              Copyright © 2020, sysid (https://sysid.github.io/).
   starlette                  Copyright © 2018, Encode OSS Ltd (https://www.encode.io/).
   uvicorn                    Copyright © 2017-present, Encode OSS Ltd (https://www.encode.io/).
@@ -2337,6 +2340,104 @@ See the 'Standard Licenses' section for license text.
 
   opentelemetry-api
   python-multipart
+
+MIT No Attribution
+------------------
+The following package is licensed under the MIT No Attribution license
+(MIT-0), whose text is reproduced below. MIT-0 is the MIT License without
+its attribution requirement. The copyright notice is given beside the name:
+
+  cffi                       Copyright (c) 2012-2018, Armin Rigo,
+                             Maciej Fijalkowski
+
+Except when otherwise stated (look for LICENSE files in directories or
+information at the beginning of each file) all cffi software and
+documentation is licensed as follows:
+
+    MIT No Attribution
+
+    Permission is hereby granted, free of charge, to any person
+    obtaining a copy of this software and associated documentation
+    files (the "Software"), to deal in the Software without
+    restriction, including without limitation the rights to use,
+    copy, modify, merge, publish, distribute, sublicense, and/or
+    sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+On platforms where cffi's extension module incorporates a bundled copy of
+libffi, the following copyright notices apply to that code. libffi is
+licensed under the MIT License, whose text is reproduced above.
+
+   Copyright (c) 2011, 2014, 2019, 2021 Anthony Green
+   Copyright (c) 1996-2003, 2007, 2008 Red Hat, Inc.
+   Copyright (c) 2009, 2010, 2011, 2012 ARM Ltd.
+   Copyright (c) 1996, 1998, 1999, 2001  Red Hat, Inc.
+   Copyright (c) 2002  Ranjit Mathew
+   Copyright (c) 2002  Bo Thorsen
+   Copyright (c) 2002  Roger Sayle
+   Copyright (c) 1996-2003  Red Hat, Inc.
+   Copyright (c) 1996  Red Hat, Inc.
+   Copyright (c) 1996, 1998  Red Hat, Inc.
+   Copyright (c) 1996, 1998, 2001, 2002  Red Hat, Inc.
+   Copyright (c) 2001  John Beniton
+
+   ======================================================================
+   ======================================================================
+
+cryptography
+
+A further dependency of the packages listed above, installed into the bundled
+Python runtime.
+
+This software is made available under the terms of *either* of the licenses
+found in LICENSE.APACHE or LICENSE.BSD. Contributions to cryptography are made
+under the terms of *both* these licenses.
+
+Copyright (c) Individual contributors.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    1. Redistributions of source code must retain the above copyright notice,
+       this list of conditions and the following disclaimer.
+
+    2. Redistributions in binary form must reproduce the above copyright
+       notice, this list of conditions and the following disclaimer in the
+       documentation and/or other materials provided with the distribution.
+
+    3. Neither the name of PyCA Cryptography nor the names of its contributors
+       may be used to endorse or promote products derived from this software
+       without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+                              Apache License
+                        Version 2.0, January 2004
+                     http://www.apache.org/licenses/
+
+
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+A copy of the Apache License v2.0, January 2004 license can be found
+in the 'Standard Licenses' section.
 
    ======================================================================
    ======================================================================
