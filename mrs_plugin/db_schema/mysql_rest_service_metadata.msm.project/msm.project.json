@@ -1,5 +1,17 @@
 {
-    "copyrightHolder": "Oracle and/or its affiliates.\n * Copyright (c) 2026, MariaDB plc",
+    "copyrights": [
+        {
+            "holder": "Oracle and/or its affiliates.",
+            "yearOfCreation": "2025",
+            "tracksUpdates": false
+        },
+        {
+            "holder": "MariaDB plc.",
+            "yearOfCreation": "2026",
+            "tracksUpdates": true
+        }
+    ],
+    "copyrightHolder": "Oracle and/or its affiliates.",
     "customLicense": "",
     "license": "GPL-2.0",
     "schemaDependencies": [],

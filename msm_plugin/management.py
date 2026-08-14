@@ -52,6 +52,9 @@ def create_new_project_folder(
         allow_special_chars (bool): If set to True, allows all characters
         license (str): The license to use for the project.
         enforce_target_path (bool): If set to true, the target_path is created if it does not yet exist.
+        copyrights (list): The copyright notices of the project, for a project held
+            by more than one copyright holder. When given, it takes the place of
+            copyright_holder.
 
     Returns:
         None
@@ -61,6 +64,7 @@ def create_new_project_folder(
     allow_special_chars = kwargs.get("allow_special_chars", False)
     license = kwargs.get("license", None)
     enforce_target_path = kwargs.get("enforce_target_path", False)
+    copyrights = kwargs.get("copyrights", None)
 
     if schema_name is None and lib.core.get_interactive_default():
         schema_name = lib.core.prompt("Enter the database schema name: ")
@@ -74,7 +78,11 @@ def create_new_project_folder(
             "Enter the path the project folder should be created in: "
         )
 
-    if copyright_holder is None and lib.core.get_interactive_default():
+    if (
+        copyright_holder is None
+        and not copyrights
+        and lib.core.get_interactive_default()
+    ):
         copyright_holder = lib.core.prompt("Enter the name of the copyright holder: ")
 
     if (
@@ -97,6 +105,7 @@ def create_new_project_folder(
             overwrite_existing=overwrite_existing,
             allow_special_chars=allow_special_chars,
             enforce_target_path=enforce_target_path,
+            copyrights=copyrights,
         )
 
         if lib.core.get_interactive_default():

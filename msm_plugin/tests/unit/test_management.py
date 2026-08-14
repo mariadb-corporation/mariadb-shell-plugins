@@ -1,4 +1,5 @@
 # Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -133,10 +134,158 @@ def test_create_new_project_folder():
         project_settings = get_project_settings(schema_project_path=project_path)
         assert project_settings.get("copyrightHolder", None) == COPYRIGHT_HOLDER
 
+        # The notices are held as a list, with the single holder field kept as a
+        # mirror of the first entry for readers of the earlier format.
+        year_of_creation = project_settings.get("yearOfCreation")
+        assert project_settings.get("copyrights") == [
+            {
+                "holder": COPYRIGHT_HOLDER,
+                "yearOfCreation": year_of_creation,
+                "tracksUpdates": True,
+            }
+        ]
+
+        # The generated files carry the notice of the project, so the notices of
+        # this repository that the templates hold must be gone. Exactly one is
+        # left, rather than one per notice the template carried.
+        readme = Path(os.path.join(project_path, "README.md")).read_text()
+        assert readme.count("Copyright") == 1
+        assert "MariaDB plc" not in readme
+        assert readme.rstrip().endswith(
+            f"Copyright (c) {year_of_creation}, {COPYRIGHT_HOLDER}"
+        )
+
         project_info = get_project_information(schema_project_path=project_path)
 
         current_dev_version = project_info.get("currentDevelopmentVersion", None)
         assert current_dev_version == "0.0.1"
+
+
+def test_render_copyright_notices():
+    # A single holder, whose year of creation is the only year shown
+    single = {"copyrights": [{"holder": "ACME Corp.", "yearOfCreation": "2025"}]}
+    assert (
+        lib.management.render_copyright_notices(single, current_year="2027")
+        == "Copyright (c) 2025, ACME Corp."
+    )
+
+    # A holder stored without the trailing period gets exactly one, so a notice
+    # never ends up with two
+    assert lib.management.render_copyright_notices(
+        {"copyrights": [{"holder": "ACME Corp", "yearOfCreation": "2026"}]},
+        current_year="2026",
+    ) == "Copyright (c) 2026, ACME Corp."
+
+    # The holder that tracks updates follows the current year, the inherited one
+    # stays frozen at the years it carries, and the prefix goes on every line
+    two_holders = {
+        "copyrights": [
+            {
+                "holder": "Upstream Inc.",
+                "yearOfCreation": "2021",
+                "yearOfLastUpdate": "2024",
+                "tracksUpdates": False,
+            },
+            {"holder": "MariaDB plc.", "yearOfCreation": "2026", "tracksUpdates": True},
+        ]
+    }
+    assert lib.management.render_copyright_notices(
+        two_holders, prefix=" * ", current_year="2030"
+    ) == (
+        " * Copyright (c) 2021, 2024, Upstream Inc.\n"
+        " * Copyright (c) 2026, 2030, MariaDB plc."
+    )
+
+
+def test_copyright_settings_migration():
+    # The single holder format of projects created before the copyrights list
+    legacy = {"copyrightHolder": "ACME Corp.", "yearOfCreation": "2025"}
+    assert lib.management.get_project_copyrights(legacy) == [
+        {"holder": "ACME Corp.", "yearOfCreation": "2025", "tracksUpdates": True}
+    ]
+
+    # A second notice that had been squeezed into the copyrightHolder field,
+    # comment prefix included, is taken apart into its own entry again
+    squeezed = {
+        "copyrightHolder": (
+            "Oracle and/or its affiliates.\n * Copyright (c) 2026, MariaDB plc"
+        ),
+        "yearOfCreation": "2025",
+    }
+    assert lib.management.get_project_copyrights(squeezed) == [
+        {
+            "holder": "Oracle and/or its affiliates.",
+            "yearOfCreation": "2025",
+            "tracksUpdates": False,
+        },
+        {"holder": "MariaDB plc", "yearOfCreation": "2026", "tracksUpdates": True},
+    ]
+
+    # Only the holder added last follows the current year
+    assert lib.management.render_copyright_notices(squeezed, current_year="2030") == (
+        "Copyright (c) 2025, Oracle and/or its affiliates.\n"
+        "Copyright (c) 2026, 2030, MariaDB plc."
+    )
+
+
+def test_license_text_holds_every_notice():
+    project_settings = {
+        "license": "GPL-2.0",
+        "customLicense": "",
+        "copyrights": [
+            {
+                "holder": "Upstream Inc.",
+                "yearOfCreation": "2021",
+                "tracksUpdates": False,
+            },
+            {"holder": "ACME Corp.", "yearOfCreation": "2026", "tracksUpdates": True},
+        ],
+    }
+
+    license_text = lib.management.get_license_text(project_settings=project_settings)
+
+    assert " * Copyright (c) 2021, Upstream Inc." in license_text
+    assert " * Copyright (c) 2026" in license_text
+    assert "ACME Corp." in license_text
+    # The notices of this repository, which the license template carries on its
+    # first lines, are stripped rather than being handed to the project
+    assert "Oracle" not in license_text
+    assert "MariaDB plc" not in license_text
+    # No placeholder is left unsubstituted
+    assert "${" not in license_text
+
+
+def test_create_new_project_folder_with_multiple_copyrights():
+    copyrights = [
+        {"holder": "Upstream Inc.", "yearOfCreation": "2021", "tracksUpdates": False},
+        {"holder": "ACME Corp.", "yearOfCreation": "2026", "tracksUpdates": True},
+    ]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        project_path = create_new_project_folder(
+            schema_name=SCHEMA_NAME,
+            target_path=temp_dir,
+            copyrights=copyrights,
+            license="GPL-2.0",
+        )
+
+        project_settings = get_project_settings(schema_project_path=project_path)
+        assert project_settings.get("copyrights") == copyrights
+        assert project_settings.get("copyrightHolder") == "Upstream Inc."
+
+        # Both notices reach the markdown files
+        readme = Path(os.path.join(project_path, "README.md")).read_text()
+        assert "Copyright (c) 2021, Upstream Inc." in readme
+        assert "ACME Corp." in readme
+
+        # ... and the license block of the development script
+        dev_file_path = lib.management.get_schema_development_file_path(
+            schema_project_path=project_path
+        )
+        dev_script = Path(dev_file_path).read_text()
+        assert " * Copyright (c) 2021, Upstream Inc." in dev_script
+        assert "ACME Corp." in dev_script
+        assert "${" not in dev_script
 
 
 def test_set_development_version():
