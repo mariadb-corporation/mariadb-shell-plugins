@@ -27,7 +27,7 @@ while not (os.path.isfile(".git") or os.path.isdir(".git")):
 # last-update year:
 #
 #   Copyright (c) <creation-year>, MariaDB plc.
-#   Copyright (c) <creation-year>, <last-update-year> MariaDB plc.
+#   Copyright (c) <creation-year>, <last-update-year>, MariaDB plc.
 #
 # Rules applied to every modified (non-deleted) file in the commit:
 #   * Oracle notice present, MariaDB notice absent -> Oracle is left as-is and a
@@ -46,11 +46,13 @@ while not (os.path.isfile(".git") or os.path.isdir(".git")):
 
 # Matches a MariaDB copyright line, capturing the creation year and the
 # optional last-update year. Single year form:  "... 2026, MariaDB ..."
-# Two year form:                                "... 2023, 2026 MariaDB ..."
-# The former entity name is still matched so old notices are migrated instead of
-# being mistaken for a missing notice.
+# Two year form:                                "... 2023, 2026, MariaDB ..."
+# The comma after the last-update year is optional so notices written in the
+# earlier style ("2023, 2026 MariaDB plc.") are still recognised and get
+# rewritten rather than being mistaken for a missing notice. The former entity
+# name is matched for the same reason.
 mariadb_re = re.compile(
-    r"Copyright \(c\) (\d{4}),(?: (\d{4}))? MariaDB (?:plc|Corporation)\.")
+    r"Copyright \(c\) (\d{4}),(?: (\d{4}),?)? MariaDB (?:plc|Corporation)\.")
 
 # Matches an Oracle copyright line, capturing the text that precedes
 # "Copyright" so the same comment prefix can be reused for the MariaDB line.
@@ -72,7 +74,7 @@ def mariadb_copyright(creation, update):
     The last-update year is only shown when it differs from the creation
     year."""
     if update and update != creation:
-        return "Copyright (c) %s, %s MariaDB plc." % (creation, update)
+        return "Copyright (c) %s, %s, MariaDB plc." % (creation, update)
     return "Copyright (c) %s, MariaDB plc." % creation
 
 
