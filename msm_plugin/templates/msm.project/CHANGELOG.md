@@ -5,3 +5,4 @@
 - Initial version of the database schema
 
 Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.

@@ -1,4 +1,4 @@
--- Copyright (c) 2025, 2026 Oracle and/or its affiliates.
+-- Copyright (c) 2025, Oracle and/or its affiliates.
 -- Copyright (c) 2026, MariaDB plc.
 -- -----------------------------------------------------
 -- Create audit_log triggers

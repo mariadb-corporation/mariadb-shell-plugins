@@ -30,3 +30,4 @@ Once the work on the SQL update file has been completed, a deployment, an SQL de
 This SQL deployment file will contain the full definition of the database schema as well as the update logic to update any previously released version of the database schema to the version of the SQL deployment file.
 
 Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.

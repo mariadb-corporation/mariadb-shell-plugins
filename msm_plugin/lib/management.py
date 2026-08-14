@@ -532,7 +532,11 @@ def create_schema_project_folder(
                 }
             )
 
-        r = re.compile(r"Copyright.*$", re.MULTILINE)
+        # The templates carry this repository's own notices (Oracle plus
+        # MariaDB); a generated project must name its own copyright holder
+        # instead. The whole run of consecutive notices is matched so it
+        # collapses into a single line rather than being rewritten one by one.
+        r = re.compile(r"Copyright.*(?:\nCopyright.*)*$", re.MULTILINE)
         script = r.sub(f"Copyright (c) {year_of_creation}, {copyright_holder}.", script)
 
         with open(file, "w") as f:
@@ -1241,7 +1245,7 @@ def generate_deployment_script(
         )
     with open(schema_deployment_template_file_path, "r") as f:
         # Remove copyright line and replace placeholders
-        schema_deployment_script = Template("".join(f.readlines()[1:]))
+        schema_deployment_script = Template("".join(f.readlines()[2:]))
     schema_deployment_script = schema_deployment_script.safe_substitute(
         {
             "license": get_license_text(project_settings=project_settings),

@@ -17,3 +17,4 @@ The database schema development file consists of 3 components.
 Note that the current development version is not part of the filename. The version information is only added when a release is prepared.
 
 Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.
