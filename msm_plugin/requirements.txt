@@ -1,7 +1,5 @@
 # Copyright (c) 2025, Oracle and/or its affiliates.
 # Copyright (c) 2026, MariaDB plc.
-#
-# SPDX-License-Identifier: GPL-2.0-only
 
 # Run the following command to install the dependencies in the local MariaDB Shell
 # mariadb-shell --pym pip install -r msm_plugin/requirements.txt
