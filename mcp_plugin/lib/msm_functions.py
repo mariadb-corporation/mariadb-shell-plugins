@@ -66,6 +66,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         overwrite_existing: bool = False,
         allow_special_chars: bool = False,
         enforce_target_path: bool = False,
+        copyrights: Optional[list] = None,
     ) -> Optional[str]:
         """Creates a new database schema project folder.
 
@@ -77,6 +78,11 @@ def register_msm_tools(server, function_groups=()) -> None:
             overwrite_existing: Overwrite the project folder if it exists.
             allow_special_chars: Allow all characters in the schema name.
             enforce_target_path: Create the target_path if it does not exist.
+            copyrights: The copyright notices of the project, for a project held
+                by more than one copyright holder. Each entry takes a holder, a
+                yearOfCreation, an optional yearOfLastUpdate and a tracksUpdates
+                flag marking the holders whose year follows the current one.
+                When given, it takes the place of copyright_holder.
 
         Returns:
             The path of the created project folder.
@@ -91,6 +97,7 @@ def register_msm_tools(server, function_groups=()) -> None:
                 overwrite_existing=overwrite_existing,
                 allow_special_chars=allow_special_chars,
                 enforce_target_path=enforce_target_path,
+                copyrights=copyrights,
             ),
         )
 

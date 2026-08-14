@@ -36,11 +36,20 @@ import mysqlsh
 from mysqlsh.globals import sandbox
 
 
+@pytest.fixture(scope="session", autouse=True)
+def non_interactive_shell():
+    """Turns the shell wizards off for the whole test session.
+
+    The plugin functions only return their result when they are not running
+    interactively, and the interactive default follows this option. Turning it
+    off here rather than in the sandbox_session fixture keeps the tests that ask
+    for no sandbox from depending on one of the sandbox tests running first.
+    """
+    mysqlsh.globals.shell.options.set("useWizards", False)
+
+
 @pytest.fixture(scope="session")
 def sandbox_session() -> mysqlsh.globals.session:
-
-    shell = mysqlsh.globals.shell
-    shell.options.set("useWizards", False)
 
     connection_data = helpers.get_connection_data()
 

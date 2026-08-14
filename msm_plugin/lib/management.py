@@ -54,6 +54,44 @@ REMOVE_LEADING_COMMENTS_AND_EMPTY_LINES = r"((^--.*?\n)+(^\s*\n)*)"
 # Regex to match all empty lines, including whitespace, at the end of the file
 REMOVE_TRAILING_EMPTY_LINES = r"(\s*\Z)"
 
+# --- Copyright notices -----------------------------------------------------
+#
+# A project records its copyright notices in the `copyrights` list of its
+# msm.project.json file, one entry per holder:
+#
+#   { "holder": "MariaDB plc.",
+#     "yearOfCreation": "2026",
+#     "yearOfLastUpdate": "2027",
+#     "tracksUpdates": true }
+#
+# `tracksUpdates` marks the holders that maintain the project: their last-update
+# year advances to the current year every time a file is generated. Notices
+# inherited from an upstream project are left frozen at the years they carry, as
+# a change made downstream does not extend the copyright of the upstream holder.
+#
+# Projects created before this list existed hold a single `copyrightHolder`
+# string and a single `yearOfCreation` instead. Those are still read and turned
+# into a one entry list, so existing project folders keep working untouched.
+
+# Regex to match a copyright notice, capturing the year of creation, the
+# optional year of the last update and the holder. Used to take notices apart
+# again, be it in a template file or in a `copyrightHolder` value that had a
+# second notice squeezed into it.
+COPYRIGHT_NOTICE_REGEX = re.compile(
+    r"Copyright\s+(?:\(c\)|&copy;|©)\s+(\d{4})(?:\s*,\s*(\d{4}))?\s*,?\s*(.*?)\s*$",
+    re.IGNORECASE,
+)
+
+# Regex to match a run of consecutive copyright notice lines, so a whole notice
+# block can be replaced in one go instead of line by line.
+COPYRIGHT_BLOCK_REGEX = re.compile(r"Copyright.*(?:\nCopyright.*)*$", re.MULTILINE)
+
+# Regex to match the comment tokens a notice line may carry when it was taken
+# from a source file, either in front of it ("-- ", " * ", "# ", "<!-- ") or
+# behind it ("*/", "-->").
+COPYRIGHT_COMMENT_PREFIX_REGEX = re.compile(r"^[\s*#/<!-]*")
+COPYRIGHT_COMMENT_SUFFIX_REGEX = re.compile(r"(\*/|-->)\s*$")
+
 MSM_SCHEMA_VERSION_VIEW_VALUES = (
     r"CREATE.*?VIEW.*?`msm_schema_version`.*?"
     r"\(.*?`major`.*?`minor`.*?`patch`.*?\).*?AS.*?SELECT.*?"
@@ -355,6 +393,135 @@ def check_mysql_identifier(identifier: str, must_be_usable_when_unquoted: bool =
             )
 
 
+def get_project_copyrights(project_settings: dict) -> list:
+    """Returns the copyright notices of a project.
+
+    Projects that predate the `copyrights` list only hold a single
+    `copyrightHolder` string. In some of them a second notice was squeezed into
+    that string, complete with the comment prefix of the file it was written
+    for, so the value is taken apart again here.
+
+    Args:
+        project_settings: The settings of the project.
+
+    Returns:
+        The list of copyright entries. When the list had to be derived, the last
+        entry is the one tracking updates, as the holder added most recently is
+        taken to be the one maintaining the project.
+    """
+    copyrights = project_settings.get("copyrights")
+    if copyrights:
+        return copyrights
+
+    year_of_creation = project_settings.get("yearOfCreation") or date.today().strftime(
+        "%Y"
+    )
+
+    copyrights = []
+    for line in str(project_settings.get("copyrightHolder") or "").splitlines():
+        line = COPYRIGHT_COMMENT_PREFIX_REGEX.sub("", line)
+        line = COPYRIGHT_COMMENT_SUFFIX_REGEX.sub("", line).strip()
+        if line == "":
+            continue
+
+        notice = COPYRIGHT_NOTICE_REGEX.search(line)
+        if notice is None:
+            # A plain holder name, the common case, taking its year from the
+            # project settings.
+            copyrights.append({"holder": line, "yearOfCreation": year_of_creation})
+            continue
+
+        creation, update, holder = notice.groups()
+        copyright = {"holder": holder.strip(), "yearOfCreation": creation}
+        if update:
+            copyright["yearOfLastUpdate"] = update
+        copyrights.append(copyright)
+
+    if not copyrights:
+        copyrights = [{"holder": "", "yearOfCreation": year_of_creation}]
+
+    for pos, copyright in enumerate(copyrights):
+        copyright["tracksUpdates"] = pos == len(copyrights) - 1
+
+    return copyrights
+
+
+def get_copyright_years(copyright: dict, current_year: str) -> str:
+    """Returns the year part of a copyright notice.
+
+    A holder that tracks updates has the current year as the year of the last
+    update. The last-update year is only shown when it differs from the year of
+    creation.
+
+    Args:
+        copyright: A single copyright entry.
+        current_year: The year the notice is rendered for.
+
+    Returns:
+        Either "<creation>" or "<creation>, <last update>".
+    """
+    creation = str(copyright.get("yearOfCreation") or current_year)
+    update = copyright.get("yearOfLastUpdate")
+    if copyright.get("tracksUpdates"):
+        update = max(str(update or creation), current_year)
+
+    if not update or str(update) == creation:
+        return creation
+    return f"{creation}, {update}"
+
+
+def render_copyright_notices(
+    project_settings: dict, prefix: str = "", current_year: str = None
+) -> str:
+    """Renders the copyright notices of a project.
+
+    Args:
+        project_settings: The settings of the project.
+        prefix: The comment prefix to put in front of every line, e.g. " * ".
+        current_year: The year to render the notices for, defaulting to the
+            current one. Only holders that track updates use it.
+
+    Returns:
+        One notice per line, without a trailing line break.
+    """
+    if current_year is None:
+        current_year = date.today().strftime("%Y")
+
+    lines = []
+    for copyright in get_project_copyrights(project_settings):
+        # The holder is stored without a trailing period, but one is tolerated
+        # so that a notice never ends up with two.
+        holder = str(copyright.get("holder") or "").strip().rstrip(".")
+        years = get_copyright_years(copyright, current_year)
+        lines.append(f"{prefix}Copyright (c) {years}, {holder}.")
+
+    return "\n".join(lines)
+
+
+def strip_template_copyright_header(lines: list) -> str:
+    """Removes the copyright header from the lines of a template file.
+
+    The template files carry this repository's own notices. A file generated
+    from a template must not inherit them, it gets the notices of the project's
+    own copyright holders instead.
+
+    Only the leading run of notice lines is dropped, so a notice further down
+    the file is kept: the license templates hold the repository notices on their
+    first lines and the project's own notices a few lines below, and the latter
+    have to survive.
+
+    Args:
+        lines: The lines of the template file, as returned by readlines()
+
+    Returns:
+        The template text without its copyright header.
+    """
+    pos = 0
+    while pos < len(lines) and COPYRIGHT_NOTICE_REGEX.search(lines[pos]):
+        pos += 1
+    return "".join(lines[pos:])
+
+
 def get_license_text(
     schema_project_path: str = None, project_settings: dict = None
 ) -> str:
@@ -376,13 +543,12 @@ def get_license_text(
         raise ValueError("No schema_project_path nor project_settings parameter given.")
 
     try:
-        copyright_holder = project_settings.get("copyrightHolder")
         license = project_settings.get("license")
         custom_license = project_settings.get("customLicense")
-        year_of_creation = project_settings.get("yearOfCreation")
+        copyrights = get_project_copyrights(project_settings)
     except Exception as e:
         raise ValueError(
-            f"The project settings must include copyrightHolder, license, customLicense and yearOfCreation. {e}"
+            f"The project settings must include copyrights or copyrightHolder, license and customLicense. {e}"
         )
 
     license_template = None
@@ -399,23 +565,27 @@ def get_license_text(
                 f"No license stored under the given license name `{license}`. Please use a custom license text."
             )
         with open(license_file_path) as f:
-            license_template = Template("".join(f.readlines()[1:]))
+            license_template = Template(strip_template_copyright_header(f.readlines()))
 
     current_year = date.today().strftime("%Y")
     try:
         license_text = license_template.substitute(
             {
-                "copyright_holder": copyright_holder,
-                "year": (
-                    year_of_creation
-                    if year_of_creation == current_year
-                    else f"{year_of_creation}, {current_year}"
+                # The notices of all copyright holders, as a block sitting
+                # inside the /* */ comment the license templates open.
+                "copyright_notices": render_copyright_notices(
+                    project_settings, prefix=" * ", current_year=current_year
                 ),
+                # The first holder on its own, so a custom license text written
+                # against the single holder form keeps working.
+                "copyright_holder": str(copyrights[0].get("holder") or "").rstrip("."),
+                "year": get_copyright_years(copyrights[0], current_year),
             }
         )
     except:
         raise ValueError(
-            "The license template is either missing the ${year} or ${copyright_holder} placeholders."
+            "The license template uses a placeholder other than ${copyright_notices}, "
+            "${year} or ${copyright_holder}."
         )
 
     return license_text
@@ -436,8 +606,8 @@ def copy_template_file_and_substitute(
     """
     # Create schema development script
     with open(source_file_path, "r") as f:
-        # Remove copyright line and replace placeholders
-        script = Template("".join(f.readlines()[2:]))
+        # Remove the copyright header and replace placeholders
+        script = Template(strip_template_copyright_header(f.readlines()))
         script = script.substitute(substitutions)
 
     with open(target_file_path, "w") as f:
@@ -452,6 +622,7 @@ def create_schema_project_folder(
     overwrite_existing: bool = False,
     allow_special_chars: bool = False,
     enforce_target_path: bool = False,
+    copyrights: list = None,
 ) -> str:
     """Creates a new schema project folder.
 
@@ -464,6 +635,10 @@ def create_schema_project_folder(
         allow_special_chars (bool): If set to True, allows all characters
         overwrite_existing (bool): If the project folder already exists, overwrite it.
         enforce_target_path (bool): If set to true, the target_path is created if it does not yet exist.
+        copyrights (list): The copyright notices of the project, for a project
+            held by more than one copyright holder. When given, it takes the
+            place of copyright_holder. See the copyright notices section at the
+            top of this file for the format of an entry.
 
     Returns:
         The path of the project folder that was created.
@@ -507,14 +682,27 @@ def create_schema_project_folder(
     # Get current year
     year_of_creation = date.today().strftime("%Y")
 
+    if not copyrights:
+        copyrights = [
+            {
+                "holder": copyright_holder,
+                "yearOfCreation": year_of_creation,
+                "tracksUpdates": True,
+            }
+        ]
+
     project_settings = {
-        "copyrightHolder": copyright_holder,
+        "copyrights": copyrights,
+        # A mirror of the first holder, kept so tools written against the
+        # earlier single holder format keep reading the project. The
+        # `copyrights` list above is the authoritative one.
+        "copyrightHolder": copyrights[0].get("holder"),
         "customLicense": "",
         "license": license,
         "schemaDependencies": [],
         "schemaName": schema_name,
         "schemaFileName": schema_file_name,
-        "yearOfCreation": year_of_creation,
+        "yearOfCreation": copyrights[0].get("yearOfCreation", year_of_creation),
     }
 
     # Write the msm.project.json file
@@ -532,12 +720,14 @@ def create_schema_project_folder(
                 }
             )
 
-        # The templates carry this repository's own notices (Oracle plus
-        # MariaDB); a generated project must name its own copyright holder
-        # instead. The whole run of consecutive notices is matched so it
-        # collapses into a single line rather than being rewritten one by one.
-        r = re.compile(r"Copyright.*(?:\nCopyright.*)*$", re.MULTILINE)
-        script = r.sub(f"Copyright (c) {year_of_creation}, {copyright_holder}.", script)
+        # The templates carry this repository's own notices; a generated project
+        # gets the notices of its own copyright holders instead. The whole run of
+        # notice lines is replaced at once, so the number of notices in the
+        # template and in the project do not have to match. A function is used
+        # as the replacement, as the holder names are data and must not be read
+        # as backreferences.
+        notices = render_copyright_notices(project_settings)
+        script = COPYRIGHT_BLOCK_REGEX.sub(lambda _: notices, script)
 
         with open(file, "w") as f:
             f.write(script)
@@ -736,6 +926,10 @@ def get_project_settings(schema_project_path: str) -> dict:
             raise ValueError(
                 f"The contents of the MSM project settings file `{project_settings_file}` is corrupted."
             )
+
+    # Projects written before the `copyrights` list existed only hold a single
+    # copyrightHolder, so the list is derived here and every reader gets it.
+    project_settings["copyrights"] = get_project_copyrights(project_settings)
 
     return project_settings
 
@@ -1071,8 +1265,8 @@ def prepare_release(
             f"The schema release version template file `{schema_version_template_file_path}` does not exist."
         )
     with open(schema_version_template_file_path, "r") as f:
-        # Remove copyright line and replace placeholders
-        schema_version_script = Template("".join(f.readlines()[2:]))
+        # Remove the copyright header and replace placeholders
+        schema_version_script = Template(strip_template_copyright_header(f.readlines()))
     schema_version_script = schema_version_script.substitute(
         {
             # get_license_text(project_settings=project_settings),
@@ -1244,8 +1438,10 @@ def generate_deployment_script(
             f"The schema release version template file `{schema_deployment_template_file_path}` does not exist."
         )
     with open(schema_deployment_template_file_path, "r") as f:
-        # Remove copyright line and replace placeholders
-        schema_deployment_script = Template("".join(f.readlines()[2:]))
+        # Remove the copyright header and replace placeholders
+        schema_deployment_script = Template(
+            strip_template_copyright_header(f.readlines())
+        )
     schema_deployment_script = schema_deployment_script.safe_substitute(
         {
             "license": get_license_text(project_settings=project_settings),
