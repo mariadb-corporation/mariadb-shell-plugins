@@ -23,7 +23,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 # MRS Examples
 
-The MRS Shell Plugin ships with a set of example projects that showcase the possibilities of the MySQL REST Service.
+The MRS Shell Plugin ships with a set of example projects that showcase the possibilities of the MariaDB REST Service.
 
 The MRS Notes example implements as simple [Progressive Web Apps (PWA)](https://en.wikipedia.org/wiki/Progressive_web_app) to showcase the features offered by MRS.
 

@@ -36,12 +36,12 @@ The MRS Scripts Example project implements a set of simple MRS scripts, includin
 
 To quickly get the MRS Notes Examples working, please feel free to follow this guide. If you want to learn more about the examples, please continue reading the chapters below.
 
-The following steps need to be taken to setup, build and deploy the MRS Scripts Example project on the MySQL REST Service.
+The following steps need to be taken to setup, build and deploy the MRS Scripts Example project on the MariaDB REST Service.
 
 1. Save the MRS Notes Example project to disk and open it with VS Code `VSCodeProject:examples/mrs_scripts`
-2. [Configure](#configuring-mysql-rest-service) the MySQL REST Service.
+2. [Configure](#configuring-mysql-rest-service) the MariaDB REST Service.
 3. Create a new MRS service (e.g. `/myService`).
-4. Ensure a bootstrapped MySQL Router instance is running (if not, start it).
+4. Ensure a bootstrapped MariaDB REST Daemon instance is running (if not, start it).
 5. Build and deploy the MRS Scripts by following the steps below.
 
 #### Deploying the MRS Scripts Examples
@@ -51,7 +51,7 @@ The MRS Script Examples are written in TypeScript and need to be built before th
 1. If you have not done so in the previous section, save the following project to disk and open it with VS Code `VSCodeProject:examples/mrs_scripts`
 2. After the project folder has been opened in VS Code, navigate to the `NPM SCRIPTS` View in the sidebar and right-click on `package.json` to select `Run Install`. Alternatively, set the focus to the TERMINAL tab and enter `npm install` to install the required node modules
 3. In the `NPM SCRIPTS` View, run the `package.json/build` command that will create a folder called `build` that contains all files needed for deployment.
-4. Right click on the background below the last file in the Folders view and select `Upload Folder to MySQL REST Service` from the popup menu.
+4. Right click on the background below the last file in the Folders view and select `Upload Folder to MariaDB REST Service` from the popup menu.
 5. In the REST Content Set dialog make sure that the `Enable MRS Scripts` checkbox is checked and click `OK` to upload the files to the MRS service.
 6. Open a web browser and access the full path specified in the previous step to open the app, e.g. `https://localhost:8443/myService/testScripts/preactTestPage.html`
 
@@ -60,5 +60,5 @@ The MRS Script Examples are written in TypeScript and need to be built before th
 Apart from using the MariaDB Shell for VS Code extension it is also possible to use the MariaDB Shell to upload the MRS Scripts to MRS.
 
 ```bash
-~/.mysqlsh-gui/mysqlsh dba@localhost --sql -e 'CREATE OR REPLACE REST CONTENT SET /mrsScriptsContent ON SERVICE /myService FROM "~/path_to_project_folder/mrs_scripts" LOAD SCRIPTS'
+mariadb-shell dba@localhost --sql -e 'CREATE OR REPLACE REST CONTENT SET /mrsScriptsContent ON SERVICE /myService FROM "~/path_to_project_folder/mrs_scripts" LOAD SCRIPTS'
 ```

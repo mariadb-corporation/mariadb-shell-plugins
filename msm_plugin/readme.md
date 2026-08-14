@@ -36,5 +36,3 @@ mariadb-shell --log-level=debug3 --verbose=4 --py -f run_tests.py -k test_plugin
 
 Copyright &copy; 2025, 2026, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB plc.
-
-SPDX-License-Identifier: GPL-2.0-only

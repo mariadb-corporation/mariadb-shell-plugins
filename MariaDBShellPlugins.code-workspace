@@ -18,10 +18,6 @@
             "path": "mrs_plugin/examples/mrs_scripts"
         },
         {
-            "name": "MRS HeatWave Chat",
-            "path": "mrs_plugin/examples/mrs_chat"
-        },
-        {
             "name": "MySQL Schema Management Plugin",
             "path": "msm_plugin"
         },
