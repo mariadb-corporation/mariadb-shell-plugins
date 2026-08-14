@@ -16,5 +16,3 @@ To generate the required Python lexer/parser files, run the npm script `update-m
 
 Copyright (c) 2023, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB plc.
-
-SPDX-License-Identifier: GPL-2.0-only

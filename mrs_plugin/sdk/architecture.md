@@ -48,5 +48,3 @@ For instance, if the user enables just READ operations, only the `find*()` comma
 
 Copyright &copy; 2024, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB plc.
-
-SPDX-License-Identifier: GPL-2.0-only

@@ -29,10 +29,6 @@ while not (os.path.isfile(".git") or os.path.isdir(".git")):
 #   Copyright (c) <creation-year>, MariaDB plc.
 #   Copyright (c) <creation-year>, <last-update-year> MariaDB plc.
 #
-# One blank line below that notice sits the SPDX tag:
-#
-#   SPDX-License-Identifier: GPL-2.0-only
-#
 # Rules applied to every modified (non-deleted) file in the commit:
 #   * Oracle notice present, MariaDB notice absent -> Oracle is left as-is and a
 #     single MariaDB copyright line (current year as creation) is inserted on
@@ -44,8 +40,6 @@ while not (os.path.isfile(".git") or os.path.isdir(".git")):
 #   * Notices naming the former entity ("MariaDB Corporation.") are recognised
 #     and rewritten in place to "MariaDB plc." keeping their years, so no
 #     duplicate line is inserted.
-#   * In every case the SPDX tag is added below the MariaDB notice unless the
-#     file already carries an SPDX-License-Identifier line.
 #   * Neither notice present (a brand new file) -> the full MariaDB license
 #     block is inserted, using the C/C++ (/* */) or hash (#) comment style
 #     according to the file extension; other file types are left untouched.
@@ -57,12 +51,6 @@ while not (os.path.isfile(".git") or os.path.isdir(".git")):
 # being mistaken for a missing notice.
 mariadb_re = re.compile(
     r"Copyright \(c\) (\d{4}),(?: (\d{4}))? MariaDB (?:plc|Corporation)\.")
-
-# The SPDX tag kept one blank line below the MariaDB copyright line. Any
-# existing SPDX-License-Identifier (whatever license it names) counts as "already
-# there", so a file never ends up with two conflicting tags.
-spdx_id = "SPDX-License-Identifier: GPL-2.0-only"
-spdx_re = re.compile(r"SPDX-License-Identifier:")
 
 # Matches an Oracle copyright line, capturing the text that precedes
 # "Copyright" so the same comment prefix can be reused for the MariaDB line.
@@ -106,15 +94,6 @@ def continuation_prefix(prefix):
     return prefix
 
 
-def spdx_block(prefix, nl):
-    """Return the blank + SPDX lines that follow a MariaDB copyright line.
-
-    The blank separator reuses the comment prefix with its trailing padding
-    removed, so a hash header keeps its "#" spacer and a C block comment gets a
-    genuinely empty line."""
-    return [prefix.rstrip() + nl, prefix + spdx_id + nl]
-
-
 def comment_style(file):
     """Return 'cpp', 'hash' or None depending on the file type."""
     name = os.path.basename(file)
@@ -130,17 +109,13 @@ def comment_style(file):
     return None
 
 
-def full_block(style, creation, nl, spdx=True):
+def full_block(style, creation, nl):
     """Return the full MariaDB license block as a list of terminated lines."""
     copyright = mariadb_copyright(creation, None)
     if style == "cpp":
         lines = [
             "/*",
             "  %s" % copyright,
-        ]
-        if spdx:
-            lines += ["", "  %s" % spdx_id]
-        lines += [
             "",
             "  This program is free software; you can redistribute it and/or modify",
             "  it under the terms of the GNU General Public License as published by",
@@ -159,10 +134,6 @@ def full_block(style, creation, nl, spdx=True):
     else:
         lines = [
             "# %s" % copyright,
-        ]
-        if spdx:
-            lines += ["#", "# %s" % spdx_id]
-        lines += [
             "#",
             "# This program is free software; you can redistribute it and/or modify",
             "# it under the terms of the GNU General Public License as published by",
@@ -207,15 +178,11 @@ def fix_copyright(file):
         nl = "\n"
 
     changed = False
-    has_spdx = any(spdx_re.search(line) for line in lines)
 
     mariadb_idx = None
-    mariadb_prefix = None
     for i, line in enumerate(lines):
-        m = mariadb_re.search(line)
-        if m:
+        if mariadb_re.search(line):
             mariadb_idx = i
-            mariadb_prefix = continuation_prefix(line[:m.start()])
             break
 
     if mariadb_idx is not None:
@@ -230,13 +197,6 @@ def fix_copyright(file):
             if new_line != line:
                 lines[i] = new_line
                 changed = True
-
-        if not has_spdx:
-            # Insert below the first notice, keeping whatever followed it (a "#"
-            # spacer or the rest of the block) after the tag.
-            block = spdx_block(mariadb_prefix, nl)
-            lines[mariadb_idx + 1:mariadb_idx + 1] = block
-            changed = True
     else:
         oracle_idx = None
         oracle_prefix = None
@@ -249,12 +209,9 @@ def fix_copyright(file):
 
         if oracle_idx is not None:
             # Oracle notice but no MariaDB notice: insert a single MariaDB
-            # copyright line right below the Oracle one, reusing its prefix,
-            # followed by the SPDX tag.
+            # copyright line right below the Oracle one, reusing its prefix.
             prefix = continuation_prefix(oracle_prefix)
             block = [prefix + mariadb_copyright(year, None) + nl]
-            if not has_spdx:
-                block += spdx_block(prefix, nl)
             lines[oracle_idx + 1:oracle_idx + 1] = block
             changed = True
         else:
@@ -263,7 +220,7 @@ def fix_copyright(file):
             style = comment_style(file)
             if style is not None:
                 pos = header_insert_pos(lines)
-                block = full_block(style, year, nl, spdx=not has_spdx)
+                block = full_block(style, year, nl)
                 if pos < len(lines) and lines[pos].strip() != "":
                     block = block + [nl]
                 lines[pos:pos] = block
