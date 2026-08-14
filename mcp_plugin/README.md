@@ -73,14 +73,101 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 | `db.execute_sql_script` | Runs a multi-statement SQL script on a connection UUID. |
 | `db.close` | Closes the connection for a UUID (`session.close()`). |
 
-#### The server has no authentication
+### Schema management tools (`msm`)
 
-**Anyone who can reach the port can use the stored database credentials.** There
-is no authentication of any kind: no token, no password, no client certificate. A
-client that can connect may call `db.list_connections` to see which connections
-are configured and `db.connect` to open one, and the server then opens it with
-the password kept in the shell's secret store. Whoever reaches the port has, in
-effect, the access of every connection configured with `mcp.setup`.
+The following tools wrap the corresponding functions of the MariaDB Schema
+Management (`msm`) plugin:
+
+| MCP tool | Wraps (`msm_plugin/management.py`) |
+| --- | --- |
+| `msm.create_project` | `create_new_project_folder` |
+| `msm.get_project_information` | `get_project_information` |
+| `msm.set_development_version` | `set_development_version` |
+| `msm.get_released_versions` | `get_released_versions` |
+| `msm.get_last_released_version` | `get_last_released_version` |
+| `msm.get_last_deployment_version` | `get_last_deployment_version` |
+| `msm.prepare_release` | `prepare_release` |
+| `msm.get_sql_content_from_section` | `get_sql_content_from_section` |
+| `msm.set_section_sql_content` | `set_section_sql_content` |
+| `msm.generate_deployment_script` | `generate_deployment_script` |
+| `msm.get_deployment_script_versions` | `get_deployment_script_versions` |
+| `msm.deploy_schema` | `deploy_schema` |
+
+Because the server is only started from a non-interactive shell, the wrapped `msm`
+functions run in non-interactive mode and return their results directly instead of
+prompting for input.
+
+`msm.deploy_schema` deploys onto a connection opened with `db.connect`, so it is only
+registered when the `db` function group is served as well. All other `msm` tools work
+on a schema project on disk and are always available.
+
+### Sandbox tools (`sandbox`)
+
+Tools for deploying and managing local MariaDB/MySQL sandbox instances, wrapping the
+shell's `sandbox` global object. Sandbox instances are only meant for local testing.
+
+> Note: A `mariadbd` server binary needs to be in the PATH. Install the
+> MariaDB Server on your developer machine before using the sandbox tools.
+
+| MCP tool | Wraps |
+| --- | --- |
+| `sandbox.deploy` | `sandbox.deploy` |
+| `sandbox.start` | `sandbox.start` |
+| `sandbox.stop` | `sandbox.stop` |
+| `sandbox.kill` | `sandbox.kill` |
+| `sandbox.delete` | `sandbox.delete` |
+| `sandbox.vendor` | `sandbox.vendor` |
+| `sandbox.version` | `sandbox.version` |
+
+## Installation
+
+The MCP server plugin ships with the MariaDB Shell 26.8.0 and later. No manual
+installation is required.
+
+## Usage
+
+The server is started from the command line and runs until terminated:
+
+```bash
+# streamable-HTTP transport (default)
+mariadb-shell -- mcp start-server --port=8080
+
+# stdio transport
+mariadb-shell -- mcp start-server --transport=stdio
+```
+
+The `mcp.info()` and `mcp.version()` functions can be called from an interactive
+shell:
+
+```bash
+mariadb-shell --py
+> mcp.info()
+> mcp.version()
+```
+
+Show the built-in help for the plugin with:
+
+```text
+\? mcp
+```
+
+## Database connection behavior
+
+To understand the MCP server database connection behavior, please read the
+sections below.
+
+### The MCP server has no authentication
+
+This MCP server implementation is designed for agent-based development on a
+local developer's machine.
+
+**Anyone who can reach the MCP server's port can use the stored database
+credentials.** There is no authentication of any kind: no token, no password,
+no client certificate. A client that can connect may call `db.list_connections`
+to see which connections are configured and `db.connect` to open one, and the
+server then opens it with the password kept in the shell's secret store. Whoever
+reaches the port has, in effect, the access of every connection configured with
+`mcp.setup`.
 
 The only thing standing in for access control is **where the server listens**. It
 binds to `127.0.0.1` by default, so only clients on this machine can reach it.
@@ -93,7 +180,7 @@ Note also that the sandbox tools can start database servers and the `msm` tools
 can read and write files within the allowed paths, so the same reachability
 applies to those.
 
-#### Requests from a browser are refused
+### Requests from a browser are refused
 
 Because there is no authentication, a page open in a browser that can reach the
 port would otherwise be able to drive the database tools. Normally the browser's
@@ -128,7 +215,7 @@ protection on only when the host is written exactly `127.0.0.1`, `localhost` or
 `::1` - so `LOCALHOST`, `127.0.0.2` or any non-loopback bind would otherwise be
 served with no `Host` or `Origin` validation at all.
 
-#### Connection handling over HTTP
+### Connection handling over HTTP
 
 Served over stdio, the server talks to a single client - the process that started
 it - for its entire lifetime. Served over HTTP it is reachable by any client that
@@ -189,7 +276,7 @@ substitute for the authentication described above.
   a client needs in practice; over stdio, where every request looks like the same
   client, the per-client limit is the one that applies.
 
-#### Removing a connection revokes it
+### Removing a connection revokes it
 
 Deleting a connection with `mcp.setup` - or deleting the sandbox that registered
 one, with `sandbox.delete` - also invalidates the UUIDs that are open on it. The
@@ -205,7 +292,7 @@ per SQL statement), so a connection in continuous use can outlive its removal by
 up to its 12-hour lifetime. Restart the server if a removal has to take effect at
 once.
 
-#### A connection whose session dies recovers by itself
+### A connection whose session dies recovers by itself
 
 A database session can be taken away without anyone closing it: the server is
 restarted, an administrator `KILL`s the connection, or a firewall or load
@@ -221,7 +308,7 @@ that connection UUID opens a new session and works. The connection does not have
 to be closed and reopened, and a client that simply retries its statement will
 succeed.
 
-#### What the server logs
+### What the server logs
 
 Because a refused request is answered exactly like one naming a connection that
 does not exist, nothing about an attempted takeover reaches the client - so the
@@ -248,96 +335,6 @@ Connection UUIDs and MCP session ids appear **truncated to their first eight
 characters**: both are credentials - holding one is what lets a client use a
 connection - so the log is not a place they can be read out of. Nothing else
 about a request is logged; the SQL statements a client runs are not.
-
-### Schema management tools (`msm`)
-
-The following tools wrap the corresponding functions of the MariaDB Schema
-Management (`msm`) plugin:
-
-| MCP tool | Wraps (`msm_plugin/management.py`) |
-| --- | --- |
-| `msm.create_project` | `create_new_project_folder` |
-| `msm.get_project_information` | `get_project_information` |
-| `msm.set_development_version` | `set_development_version` |
-| `msm.get_released_versions` | `get_released_versions` |
-| `msm.get_last_released_version` | `get_last_released_version` |
-| `msm.get_last_deployment_version` | `get_last_deployment_version` |
-| `msm.prepare_release` | `prepare_release` |
-| `msm.get_sql_content_from_section` | `get_sql_content_from_section` |
-| `msm.set_section_sql_content` | `set_section_sql_content` |
-| `msm.generate_deployment_script` | `generate_deployment_script` |
-| `msm.get_deployment_script_versions` | `get_deployment_script_versions` |
-| `msm.deploy_schema` | `deploy_schema` |
-
-Because the server is only started from a non-interactive shell, the wrapped `msm`
-functions run in non-interactive mode and return their results directly instead of
-prompting for input.
-
-`msm.deploy_schema` deploys onto a connection opened with `db.connect`, so it is only
-registered when the `db` function group is served as well. All other `msm` tools work
-on a schema project on disk and are always available.
-
-### Sandbox tools (`sandbox`)
-
-Tools for deploying and managing local MariaDB/MySQL sandbox instances, wrapping the
-shell's `sandbox` global object. Sandbox instances are only meant for local testing.
-
-| MCP tool | Wraps |
-| --- | --- |
-| `sandbox.deploy` | `sandbox.deploy` |
-| `sandbox.start` | `sandbox.start` |
-| `sandbox.stop` | `sandbox.stop` |
-| `sandbox.kill` | `sandbox.kill` |
-| `sandbox.delete` | `sandbox.delete` |
-| `sandbox.vendor` | `sandbox.vendor` |
-| `sandbox.version` | `sandbox.version` |
-
-## Installation
-
-The plugin is installed by copying the `mcp_plugin` folder into the MariaDB Shell
-plugins directory:
-
-- Windows: `%AppData%\MariaDB\mariadb-shell\plugins`
-- Others: `~/.mariadb-shell/plugins`
-
-The plugin is loaded automatically the next time the shell starts. It depends on the
-[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) and on the
-sibling `msm_plugin`.
-
-### Installing the Python Requirements
-
-When inside the repository root, run the following command in the terminal.
-
-```bash
-mariadb-shell --pym pip install -r mcp_plugin/requirements.txt
-```
-
-## Usage
-
-The server is started from the command line and runs until terminated:
-
-```bash
-# streamable-HTTP transport (default)
-mariadb-shell -- mcp start-server --port=8080
-
-# stdio transport
-mariadb-shell -- mcp start-server --transport=stdio
-```
-
-The `mcp.info()` and `mcp.version()` functions can be called from an interactive
-shell:
-
-```bash
-mariadb-shell --py
-> mcp.info()
-> mcp.version()
-```
-
-Show the built-in help for the plugin with:
-
-```text
-\? mcp
-```
 
 ## Running the tests
 

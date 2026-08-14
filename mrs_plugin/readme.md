@@ -1,8 +1,8 @@
-# MySQL REST Service Plugin for MariaDB Shell
+# MariaDB REST Service Plugin for MariaDB Shell
 
-This folder contains the code for the MySQL REST Service (short: MRS) Plugin. It is part of the [MariaDB Shell Plugins](../readme.md) repository.
+This folder contains the code for the MariaDB REST Service (short: MRS) Plugin. It is part of the [MariaDB Shell Plugins](../readme.md) repository.
 
-# Contributing to MySQL REST Service Plugin
+# Contributing to MariaDB REST Service Plugin
 
 No installation is necessary for this plugin, beside the setup of Visual Studio Code to be able to work on the code.
 
@@ -49,5 +49,3 @@ Include the following settings in your VS Code settings.json file in order to al
 
 Copyright &copy; 2020, 2026, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB plc.
-
-SPDX-License-Identifier: GPL-2.0-only

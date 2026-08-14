@@ -49,11 +49,11 @@ To quickly get the MRS Notes Examples working, please feel free to follow this g
 The following steps need to be taken to setup, build and deploy the MRS Notes example project on the MySQL REST Service.
 
 1. Save the MRS Notes Example project to disk and open it with VS Code `VSCodeProject:examples/mrs_notes`
-2. [Configure](#configuring-mysql-rest-service) the MySQL REST Service.
+2. [Configure](#configuring-mysql-rest-service) the MariaDB REST Service.
 3. Create a new MRS service (e.g. `/myService`).
-4. Deploy the mrs_notes MySQL database schema `examples/mrs_notes/db_schema/mrs_notes.sql`
+4. Deploy the mrs_notes MariaDB database schema `examples/mrs_notes/db_schema/mrs_notes.sql`
 5. Load the MRS schema dump into the MRS service `examples/mrs_notes/mrs_schema/mrsNotes.mrs.json`
-6. Ensure a bootstrapped MySQL Router instance is running (if not, start it).
+6. Ensure a bootstrapped MariaDB REST Daemon instance is running (if not, start it).
 7. Build and deploy the app by following the steps below.
 
 #### Deploying the TypeScript Example
@@ -63,7 +63,7 @@ The MrsNotes project implements a TypeScript demo app that allows to create, man
 1. If you have not done so in the previous section, save the following project to disk and open it with VS Code `VSCodeProject:examples/mrs_notes`
 2. After the project folder has been opened in VS Code, navigate to the `NPM SCRIPTS` View in the sidebar and right-click on `package.json` to select `Run Install`. Alternatively, set the focus to the TERMINAL tab and enter `npm install` to install the required node modules
 3. In the `NPM SCRIPTS` View, run the `package.json/build` command that will create a folder called `dist` that contains all files needed for deployment.
-4. Right click on the `dist` folder in the Folders view and select `Upload Folder to MySQL REST Service` from the popup menu.
+4. Right click on the `dist` folder in the Folders view and select `Upload Folder to MariaDB REST Service` from the popup menu.
 5. In the REST Content Set dialog set the `Request Path` the app should be using, e.g. `/app` and click `OK` to upload the files to the MRS service.
 6. Open a web browser and access the full path specified in the previous step to open the app, e.g. `https://localhost:8443/myService/app/index.html`
 
@@ -88,7 +88,7 @@ To create the mrsNotes schema the corresponding SQL script file needs to be exec
 
 The following diagram shows all components of the mrsNotes schema.
 
-![mrsNotes MySQL Database Schema](../../docs/images/examples-mrs_notes_schema.svg "mrsNotes MySQL Database Schema")
+![mrsNotes MariaDB Database Schema](../../docs/images/examples-mrs_notes_schema.svg "mrsNotes MariaDB Database Schema")
 
 The most important database table is the `note` table. It stores all notes that are created by the users.
 
