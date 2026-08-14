@@ -20,3 +20,4 @@ For each version of the database schema file, there is a dedicated upgrade scrip
 It is strongly advised to use semantic versioning for the version string, as discussed at <https://semver.org/>.
 
 Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.

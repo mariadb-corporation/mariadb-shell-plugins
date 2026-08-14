@@ -1,6 +1,6 @@
 {
     "name": "mcp-shell-plugin",
-    "version": "2026.5.0",
+    "version": "26.8.0",
     "description": "MariaDB MCP Server plugin for MariaDB Shell",
     "scripts": {
         "run-pytest": "clear; mariadb-shell --log-level=debug3 --verbose=4 --py -f run_tests.py"

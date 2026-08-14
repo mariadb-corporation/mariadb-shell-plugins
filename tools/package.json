@@ -6,6 +6,5 @@
     "devDependencies": {
     },
     "scripts": {
-        "update-package-year": "mysqlsh --disable-builtin-plugins --py -f ./src/year_handler.py"
     }
 }
