@@ -201,8 +201,7 @@ def configure(
         # the underlying connection.
         management_session = (
             # On vanilla Shell, we can just duplicate the existing session.
-            ## TODO: Add session.clone() function in order to properly work on a separate management session
-            session
+            session.clone()
             # The Shell GUI plugin wraps the regular Shell session and adds new properties like session.connection_options
             if "shell.Object" in str(type(session))
             # On Shell GUI, there is no global shell session, so we can create one using the same connection options.
@@ -263,8 +262,7 @@ def configure(
                 info_msg = "MRS metadata version update available, but update skipped."
 
         finally:
-            if session != management_session:
-                management_session.close()
+            management_session.close()
 
         if enable_mrs is not None:
             lib.core.update(
