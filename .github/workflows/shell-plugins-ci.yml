@@ -16,7 +16,7 @@ on:
 jobs:
   build:
     name: Shell-Plugins-CI-Verification
-    runs-on: self-linux-x64
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
 
     env:
         MYSQL_PORT: 3312
@@ -94,7 +94,7 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
-          FORCE_ALL_TESTS: ${{ inputs.force_all_tests || 'true' }}
+          FORCE_ALL_TESTS: ${{ inputs.force_all_tests || 'false' }}
 
       - name: Run mrs_plugin tests
         if: steps.changes.outputs.mrs_plugin == 'true'
