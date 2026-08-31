@@ -27,7 +27,7 @@ import msm_plugin.lib.management as schema_management
 import mysqlsh
 
 # Define plugin version
-VERSION = "26.8.0"
+VERSION = "26.8.1"
 
 DB_VERSION = [4, 1, 6]
 REQUIRED_ROUTER_VERSION = [8, 1, 0]
