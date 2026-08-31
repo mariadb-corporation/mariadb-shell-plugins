@@ -49,15 +49,19 @@ def setup() -> None:
     """Interactively configures the MariaDB MCP server.
 
     Guides the user through configuring the MariaDB connections and the local
-    directories the MCP server is allowed to access.
+    directories the MCP server is allowed to access, and can install the
+    MySQL-to-MariaDB migration tooling.
 
     On the first run it walks through adding connections and allowed paths. On
-    subsequent runs it presents a menu to add or delete connections and paths.
+    subsequent runs it presents a menu to add or delete connections and paths
+    and to download or remove the migration tooling.
 
     For each connection, the URI is entered, the password is prompted for and
     the connection is verified before the password is stored in the shell's
     secret store. The allowed directories are stored in a settings.json file in
-    the plugin data directory.
+    the plugin data directory. The migration tooling is a menu-only step: the
+    configured release is downloaded from GitHub and extracted into a
+    'mariadb-migrator' directory beside that file.
 
     Returns:
         None

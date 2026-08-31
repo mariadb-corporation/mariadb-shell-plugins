@@ -104,6 +104,38 @@ def get_plugin_data_path() -> str:
     return mcm_plugin_data_path
 
 
+# Name of the directory inside the plugin data path that the MySQL-to-MariaDB
+# migration tooling is installed into (see
+# :func:`mcp_plugin.lib.setup.download_migrator`). One fixed location, so that
+# whatever comes to drive the tooling does not have to be told where it is.
+MIGRATOR_DIR_NAME = "mariadb-migrator"
+
+# The release of the MySQL-to-MariaDB migration tooling that mcp.setup installs.
+# It is the name of a release TAG in the tooling's repository, which is what the
+# source archive is built from, so bumping this to a newer tag is all there is to
+# installing a newer release.
+#
+# A pinned release rather than the main branch: what an installation contains is
+# then a property of this plugin's version and not of the day it was set up, so
+# two installations of the same plugin drive the same tooling, and a release that
+# turns out to break something can be answered by pinning the one before it.
+MIGRATOR_VERSION = "v1.4.0-beta"
+
+
+def get_migrator_path() -> str:
+    """Returns the directory the MySQL-to-MariaDB migration tooling lives in.
+
+    Unlike :func:`get_plugin_data_path` this does NOT create the directory: it
+    is the directory's existence that says whether the tooling has been
+    downloaded at all.
+
+    Returns:
+        The absolute path of the migration tooling directory, whether or not it
+        exists yet.
+    """
+    return os.path.join(get_plugin_data_path(), MIGRATOR_DIR_NAME)
+
+
 def set_active_transport(transport) -> None:
     """Records the transport the MCP server is being served with.
 

@@ -23,7 +23,7 @@ the wrapped functions return their results instead of prompting for input.
 | --- | --- |
 | `mcp.info()` | Returns basic information about the plugin. |
 | `mcp.version()` | Returns the version number of the plugin. |
-| `mcp.setup()` | Interactively configures the allowed connections and paths. |
+| `mcp.setup()` | Interactively configures the allowed connections and paths, and installs the migration tooling. |
 | `mcp.start_server(options)` | Starts the MCP server; blocks until terminated (`host`, `port` options). |
 
 ## Configuration (`mcp.setup()`)
@@ -44,6 +44,10 @@ mariadb-shell -- mcp setup
 - **Allowed paths**: choose the local directories the server may access (the current
   directory is suggested as the default, shown as a full path). These are stored in a
   `settings.json` file in the plugin data directory.
+- **Migration tooling** (menu only): downloads the
+  [MySQL-to-MariaDB migration tooling](https://github.com/mariadb-corporation/Mysql-to-MariaDB-Migration)
+  and extracts it into a `mariadb-migrator` directory in the plugin data directory.
+  See [Migration tooling](#migration-tooling) below.
 
 > Note: The MariaDB connections configured during the setup procedure are stored
 > separately from the regular MariaDB Shell connections. Otherwise, the LLM would
@@ -53,7 +57,31 @@ mariadb-shell -- mcp setup
 > `MCP:Connection:` prefix and call `shell.read_secret()` for the given entry.
 
 On the first run, `mcp.setup` walks through adding connections and then paths. On
-subsequent runs it presents a menu to add or delete connections and paths.
+subsequent runs it presents a menu to add or delete connections and paths and to manage
+the migration tooling. The tooling is not part of the first-run walkthrough - it is a
+download nothing else here depends on, so it is only ever installed by asking for it
+from the menu.
+
+That menu entry offers whichever of the two steps applies: **Download** when nothing is
+installed, and **Remove** when something is - there is no update step, so installing a
+different release means removing the installed one and downloading again. Removal is the
+one step the setup does not suggest going ahead with, and it takes any leftovers of an
+interrupted download with it.
+
+### Migration tooling
+
+The release configured as `MIGRATOR_VERSION` in `lib/general.py` (currently
+`v1.4.0-beta`) is downloaded from GitHub as a source archive and extracted into
+`mariadb-migrator` in the plugin data directory, with the archive's own top-level
+directory stripped, so the tooling's `mariadb-migrator` entry point sits at
+`<plugin data dir>/mariadb-migrator/mariadb-migrator`. The recorded file modes are
+restored, so the entry point and the `scripts/*.sh` remain executable. To install a
+newer release, change `MIGRATOR_VERSION` to its tag and download again; the installed
+release is recorded in `mariadb-migrator/.migrator-version` and shown in the menu.
+
+Downloading replaces the installed copy rather than merging the two. The new copy is
+extracted beside the old one and only swapped in once it is complete, so a download
+that fails part-way through leaves an installed copy exactly as it was.
 
 ## Exposed MCP tools
 

@@ -231,7 +231,7 @@ def test_setup_first_run(clean_config, tmp_path, monkeypatch):
     assert os.path.abspath(str(tmp_path)) in config.get_allowed_paths()
 
 
-def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch):
+def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
     """Subsequent run (settings exist): add then delete a connection and path."""
     _clear_config()
     # A settings file makes run_setup use the management menu instead of the
@@ -249,7 +249,7 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch):
         "1",                       # select first path
         "2",                       # menu: delete a connection
         "1",                       # select first connection
-        "5",                       # menu: finish
+        "6",                       # menu: finish
     ]
     fake_shell = _FakeShell(answers)
     monkeypatch.setattr(setup, "_shell", lambda: fake_shell)
@@ -259,6 +259,12 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch):
     # Both the added connection and path were removed again.
     assert "setup_b@127.0.0.1:3306" not in config.list_connection_uris()
     assert os.path.abspath(path) not in config.get_allowed_paths()
+
+    # The migration tooling entry offers whatever applies to what is installed,
+    # rather than a fixed "download" (see tests/unit/test_migrator.py). Compared
+    # against the label itself so this holds whatever happens to be installed.
+    menu = capsys.readouterr().out
+    assert f"5. {setup._migrator_menu_label()}" in menu
 
 
 def test_setup_stores_a_connection_under_one_spelling(clean_config, monkeypatch):
@@ -278,7 +284,7 @@ def test_setup_stores_a_connection_under_one_spelling(clean_config, monkeypatch)
         "1",                                # menu: add a connection
         "  mariadb://setup_c@127.0.0.1  ",  # the same connection, spelled out
         "pw",                               # password
-        "5",                                # menu: finish
+        "6",                                # menu: finish
     ]
     fake_shell = _FakeShell(answers)
     monkeypatch.setattr(setup, "_shell", lambda: fake_shell)
