@@ -121,7 +121,7 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 
 ## Installation
 
-The MCP server plugin ships with the MariaDB Shell 26.8.0 and later. No manual
+The MCP server plugin ships with the MariaDB Shell 26.8.1 and later. No manual
 installation is required.
 
 ## Usage
