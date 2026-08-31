@@ -14,6 +14,10 @@ on:
         default: false
 
 jobs:
+  ensure-runner:
+      uses: ./.github/workflows/devtools-ci-start.yml
+      secrets: inherit
+
   build:
     name: Shell-Plugins-CI-Verification
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}

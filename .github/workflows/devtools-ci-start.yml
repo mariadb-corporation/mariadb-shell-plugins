@@ -1,0 +1,48 @@
+name: Reusable Start GCP VM
+
+on:
+  workflow_call:
+    # Inputs allow calling workflows to pass custom VM parameters if needed
+    inputs:
+      vm_name:
+        required: false
+        type: string
+        default: "devtools-ci"
+      vm_zone:
+        required: false
+        type: string
+        default: "us-central1-a"
+      project_id:
+        required: false
+        type: string
+        default: "mariadb-devtools"
+
+jobs:
+  start-vm:
+    name: Start GCE Instance
+    runs-on: ubuntu-latest
+    
+    # Restrict execution to internal PRs or non-PR events (pushes, dispatches)
+    if: |
+      github.event_name != 'pull_request' || 
+      github.event.pull_request.head.repo.full_name == github.repository
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Start VM (Instant if already running)
+        run: |
+          gcloud compute instances start ${{ inputs.vm_name }} \
+            --project=${{ inputs.project_id }} \
+            --zone=${{ inputs.vm_zone }}
