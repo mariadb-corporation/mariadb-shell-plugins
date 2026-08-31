@@ -128,6 +128,7 @@ from typing import Optional
 import mysqlsh
 
 from mcp_plugin.lib import config, general
+from mcp_plugin.lib.tool_registrar import tool_registrar
 
 # Maps a connection UUID to its _Connection.
 _sessions = {}
@@ -1411,7 +1412,9 @@ def register_db_tools(server, function_groups=()) -> None:
     """
     from mcp.server.mcpserver import Context
 
-    @server.tool(name="db.list_connections")
+    tool = tool_registrar(server)
+
+    @tool(name="db.list_connections")
     def list_connections() -> list:
         """Lists the configured database connection URIs.
 
@@ -1421,7 +1424,7 @@ def register_db_tools(server, function_groups=()) -> None:
         """
         return config.list_connection_uris()
 
-    @server.tool(name="db.connect")
+    @tool(name="db.connect")
     def connect(ctx: Context, uri: str) -> str:
         """Opens a configured database connection and caches it.
 
@@ -1506,7 +1509,7 @@ def register_db_tools(server, function_groups=()) -> None:
 
         return connection_id
 
-    @server.tool(name="db.list_schemas")
+    @tool(name="db.list_schemas")
     def list_schemas(ctx: Context, connection_id: str) -> list:
         """Lists the database schemas available on an open connection.
 
@@ -1522,7 +1525,7 @@ def register_db_tools(server, function_groups=()) -> None:
         with use_session(connection_id, general.get_client_identity(ctx)) as session:
             return _query_rows(session, _LIST_SCHEMAS_SQL)
 
-    @server.tool(name="db.list_objects")
+    @tool(name="db.list_objects")
     def list_objects(
         ctx: Context,
         connection_id: str,
@@ -1550,7 +1553,7 @@ def register_db_tools(server, function_groups=()) -> None:
         with use_session(connection_id, general.get_client_identity(ctx)) as session:
             return _query_rows(session, sql, [schema_name])
 
-    @server.tool(name="db.get_object_details")
+    @tool(name="db.get_object_details")
     def get_object_details(
         ctx: Context,
         connection_id: str,
@@ -1655,7 +1658,7 @@ def register_db_tools(server, function_groups=()) -> None:
 
             return details
 
-    @server.tool(name="db.execute_sql")
+    @tool(name="db.execute_sql")
     def execute_sql(
         ctx: Context,
         connection_id: str,
@@ -1692,7 +1695,7 @@ def register_db_tools(server, function_groups=()) -> None:
                 result, _session_was_restarted(connection_id)
             )
 
-    @server.tool(name="db.execute_sql_script")
+    @tool(name="db.execute_sql_script")
     def execute_sql_script(
         ctx: Context,
         connection_id: str,
@@ -1761,7 +1764,7 @@ def register_db_tools(server, function_groups=()) -> None:
 
             return results
 
-    @server.tool(name="db.close")
+    @tool(name="db.close")
     def close(ctx: Context, connection_id: str) -> None:
         """Closes an open database connection.
 

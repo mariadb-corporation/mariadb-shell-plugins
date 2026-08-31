@@ -31,6 +31,7 @@ MCP elicitation - to trust a path that is not yet allowed.
 from typing import Optional
 
 from mcp_plugin.lib import db_functions, general
+from mcp_plugin.lib.tool_registrar import tool_registrar
 
 
 def register_msm_tools(server, function_groups=()) -> None:
@@ -52,11 +53,13 @@ def register_msm_tools(server, function_groups=()) -> None:
     from mcp.server.mcpserver import Context
     from msm_plugin import management as msm
 
+    tool = tool_registrar(server)
+
     def _kwargs(**pairs) -> dict:
         """Builds a kwargs dict, dropping keys whose value is None."""
         return {key: value for key, value in pairs.items() if value is not None}
 
-    @server.tool(name="msm.create_project")
+    @tool(name="msm.create_project")
     async def create_project(
         ctx: Context,
         schema_name: str,
@@ -101,7 +104,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             ),
         )
 
-    @server.tool(name="msm.get_project_information")
+    @tool(name="msm.get_project_information")
     async def get_project_information(
         ctx: Context,
         schema_project_path: Optional[str] = None,
@@ -118,7 +121,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         await general.require_allowed_path(ctx, schema_project_path)
         return msm.get_project_information(**_kwargs(schema_project_path=schema_project_path))
 
-    @server.tool(name="msm.set_development_version")
+    @tool(name="msm.set_development_version")
     async def set_development_version(
         ctx: Context,
         version: str,
@@ -139,7 +142,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             **_kwargs(version=version, schema_project_path=schema_project_path)
         )
 
-    @server.tool(name="msm.get_released_versions")
+    @tool(name="msm.get_released_versions")
     async def get_released_versions(
         ctx: Context,
         schema_project_path: Optional[str] = None,
@@ -156,7 +159,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         await general.require_allowed_path(ctx, schema_project_path)
         return msm.get_released_versions(**_kwargs(schema_project_path=schema_project_path))
 
-    @server.tool(name="msm.get_last_released_version")
+    @tool(name="msm.get_last_released_version")
     async def get_last_released_version(
         ctx: Context,
         schema_project_path: Optional[str] = None,
@@ -173,7 +176,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         await general.require_allowed_path(ctx, schema_project_path)
         return msm.get_last_released_version(**_kwargs(schema_project_path=schema_project_path))
 
-    @server.tool(name="msm.get_last_deployment_version")
+    @tool(name="msm.get_last_deployment_version")
     async def get_last_deployment_version(
         ctx: Context,
         schema_project_path: Optional[str] = None,
@@ -192,7 +195,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             **_kwargs(schema_project_path=schema_project_path)
         )
 
-    @server.tool(name="msm.prepare_release")
+    @tool(name="msm.prepare_release")
     async def prepare_release(
         ctx: Context,
         version: str,
@@ -226,7 +229,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             )
         )
 
-    @server.tool(name="msm.get_sql_content_from_section")
+    @tool(name="msm.get_sql_content_from_section")
     async def get_sql_content_from_section(
         ctx: Context, file_path: str, section_id: str
     ) -> Optional[str]:
@@ -242,7 +245,7 @@ def register_msm_tools(server, function_groups=()) -> None:
         await general.require_allowed_path(ctx, file_path)
         return msm.get_sql_content_from_section(file_path=file_path, section_id=section_id)
 
-    @server.tool(name="msm.set_section_sql_content")
+    @tool(name="msm.set_section_sql_content")
     async def set_section_sql_content(
         ctx: Context, file_path: str, section_id: str, sql_content: str
     ) -> None:
@@ -261,7 +264,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             file_path=file_path, section_id=section_id, sql_content=sql_content
         )
 
-    @server.tool(name="msm.generate_deployment_script")
+    @tool(name="msm.generate_deployment_script")
     async def generate_deployment_script(
         ctx: Context,
         version: str,
@@ -288,7 +291,7 @@ def register_msm_tools(server, function_groups=()) -> None:
             )
         )
 
-    @server.tool(name="msm.get_deployment_script_versions")
+    @tool(name="msm.get_deployment_script_versions")
     async def get_deployment_script_versions(
         ctx: Context,
         schema_project_path: Optional[str] = None,
@@ -313,7 +316,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     # that cannot succeed.
     if general.FUNCTION_GROUP_DB in function_groups:
 
-        @server.tool(name="msm.deploy_schema")
+        @tool(name="msm.deploy_schema")
         async def deploy_schema(
             ctx: Context,
             connection_id: str,

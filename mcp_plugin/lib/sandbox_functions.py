@@ -32,6 +32,7 @@ MCP elicitation - to trust a path that is not yet allowed.
 from typing import Optional
 
 from mcp_plugin.lib import config, general
+from mcp_plugin.lib.tool_registrar import tool_registrar
 
 
 def register_sandbox_tools(server, function_groups=()) -> None:
@@ -48,6 +49,8 @@ def register_sandbox_tools(server, function_groups=()) -> None:
     from mcp.server.mcpserver import Context
     from mysqlsh.globals import sandbox
 
+    tool = tool_registrar(server)
+
     def _options(**pairs) -> dict:
         """Builds an options dict, dropping keys whose value is None."""
         return {key: value for key, value in pairs.items() if value is not None}
@@ -56,7 +59,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """Returns the connection URI for the root account of a sandbox."""
         return f"root@127.0.0.1:{port}"
 
-    @server.tool(name="sandbox.deploy")
+    @tool(name="sandbox.deploy")
     async def deploy(
         ctx: Context,
         port: int,
@@ -124,7 +127,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
 
         return f"Sandbox instance deployed and started on port {port}."
 
-    @server.tool(name="sandbox.start")
+    @tool(name="sandbox.start")
     async def start(
         ctx: Context,
         port: int,
@@ -155,7 +158,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         )
         return f"Sandbox instance on port {port} started."
 
-    @server.tool(name="sandbox.stop")
+    @tool(name="sandbox.stop")
     async def stop(
         ctx: Context,
         port: int,
@@ -185,7 +188,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         )
         return f"Sandbox instance on port {port} stopped."
 
-    @server.tool(name="sandbox.kill")
+    @tool(name="sandbox.kill")
     async def kill(ctx: Context, port: int, sandbox_dir: Optional[str] = None) -> str:
         """Forcefully kills the process of a running sandbox instance.
 
@@ -202,7 +205,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         sandbox.kill(port, _options(sandboxDir=sandbox_dir))
         return f"Sandbox instance on port {port} killed."
 
-    @server.tool(name="sandbox.delete")
+    @tool(name="sandbox.delete")
     async def delete(ctx: Context, port: int, sandbox_dir: Optional[str] = None) -> str:
         """Deletes an existing sandbox instance on localhost.
 
@@ -225,7 +228,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
 
         return f"Sandbox instance on port {port} deleted."
 
-    @server.tool(name="sandbox.vendor")
+    @tool(name="sandbox.vendor")
     async def vendor(
         ctx: Context,
         port: int,
@@ -249,7 +252,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             _options(sandboxDir=sandbox_dir, mariadbdPath=mariadbd_path),
         )
 
-    @server.tool(name="sandbox.version")
+    @tool(name="sandbox.version")
     async def version(
         ctx: Context,
         port: int,
