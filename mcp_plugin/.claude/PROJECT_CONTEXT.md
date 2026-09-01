@@ -1229,13 +1229,19 @@ silently runs against whatever `mariadb-shell` is on PATH.
   and in `mcp.setup`'s add-connection flow, documented in the README's new "Which URI names
   which connection" section, and pinned by 5 tests. Both fixes were PROVEN to discriminate
   by reverting them: without the `db.connect` one the test fails with the reported error
-  verbatim, without the `mcp.setup` one `not a uri` is stored as a connection. NOT COMMITTED
-  as of this checkpoint.
-- Branch: **`wip/AIPL-16`**, cut from `main` (which is at 8da59831 and tracks
-  `mariadb`) and pushed to `mariadb/wip/AIPL-16`. Remote `mariadb` =
-  mariadb-corporation/mariadb-shell-plugins; `origin` is mysql/mysql-shell-plugins and is
-  NOT the push target. There is also a `local_office` remote (a NAS mirror) — not a push
-  target either.
+  verbatim, without the `mcp.setup` one `not a uri` is stored as a connection. **COMMITTED
+  as 612cd05e (one commit, 7 files, +426/-23), pushed to `origin/wip/MCP-CONN-HANDLING`, PR
+  #16 open against `main`.** The user hand-edited the README section before the commit
+  (dropped the "not even a scheme the parser accepts" aside and the `mysqlx://` sentence);
+  that wording is theirs, leave it alone.
+- **Remotes (CORRECTED, verified with `git remote -v`): there is exactly ONE remote,
+  `origin` = mariadb-corporation/mariadb-shell-plugins, and it IS the push target.** `main`
+  tracks it. The earlier claim in this file — `mariadb` as the push target, `origin` as
+  mysql/mysql-shell-plugins, plus a `local_office` NAS mirror — no longer holds for this
+  checkout; every `mariadb/<branch>` reference in the bullets below means what is now
+  `origin/<branch>`. Check `git remote` rather than trusting a remembered name.
+- Branch: **`wip/AIPL-16`**, cut from `main` (which was at 8da59831) and pushed to
+  `wip/AIPL-16` on that remote.
 - **The session started in DETACHED HEAD** at `mariadb/wip/AIPL-16` (ecc6bc3c) with no
   local branch — `git checkout -b wip/AIPL-16` was needed before committing. Check
   `git branch --show-current` before assuming there is a branch to commit onto.
