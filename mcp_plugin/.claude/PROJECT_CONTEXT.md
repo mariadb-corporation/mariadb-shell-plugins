@@ -10,7 +10,7 @@ MCP-compatible clients. It registers the global `mcp` object in the shell and se
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Full suite: **41 tests pass (~36s), 92% total coverage**. Run it with
+Full suite: **78 tests pass (~38s), 95% total coverage**. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd is not on the default PATH).
 
@@ -118,7 +118,21 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `last_used` on exit. `msm.deploy_schema` goes through it too — otherwise it would be a
   bypass of the address check.
 - **Connections**: shell secrets keyed `MCP:Connection:<uri>`. `db.connect` only allows
-  configured URIs; opens via `_open_session()` = `parse_uri`+password ->
+  configured URIs, but NOT by string equality: `config.resolve_connection_uri()` maps what
+  the client sent to the spelling it is stored under, and everything from there on uses the
+  configured one (the password key, `_Connection.uri`, the log line, the re-validation on
+  reopen). `config.normalize_connection_uri()` is the comparison form: a `mariadb://` or
+  `mysql://` prefix stripped (`parse_uri` REJECTS `mariadb://` outright — that was the
+  bug), then `parse_uri` -> drop the password, lowercase the host, spell out port 3306 when
+  the URI left it out -> `unparse_uri` (which also fixes option order, percent-encoding and
+  a trailing slash). It is a fixed point, so stored and incoming URIs go through the same
+  function. Everything ELSE in the URI is kept and must match — a schema (`/db`) or an
+  option (`?ssl-mode=REQUIRED`) the configured connection does not have makes it a
+  different connection, refused rather than silently answered with a session that does not
+  do that; `mysqlx://` likewise stays distinct. `mcp.setup` stores the normalized URI, so
+  one connection has one key; the same connection configured under two spellings is the one
+  case resolution cannot settle and it raises instead of guessing. Opens via
+  `_open_session()` = `parse_uri`+password ->
   `shell.open_session` (independent of the shell's global session). `_sessions` maps the
   UUID to a **`_Connection`** record (uri, `client_address`, `session`, `last_used`,
   `lock`), NOT to a bare session; `_sessions_lock` guards the dict, each `_Connection` has
@@ -685,14 +699,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
   msm.* (**12**, path-guarded, async — the 12th is `deploy_schema`, gated on the db group),
   sandbox.* (7, `sandbox_dir`-guarded, async, port required).
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
-  path-reject), `test_config` (6), `test_msm` (5: create_project, elicit-accept,
+  path-reject), `test_config` (9), `test_msm` (5: create_project, elicit-accept,
   elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,
   `test_transport_http` (**5**: list_connections, a full connect/execute/close db flow over
   HTTP, `..._ignores_a_forwarded_for_header` for S1,
   `..._binds_a_connection_to_its_mcp_session` for S3, and
   `..._rejects_a_foreign_host_header` for S4 — the last one talks raw `httpx2` rather than
   the MCP client, because it has to forge Host/Origin and assert HTTP status codes),
-  `test_db_sessions` (**39** — the connection lifecycle and result serialization, in ten
+  `test_db_sessions` (**41** — the connection lifecycle and result serialization, in ten
   sections: the client
   identity, the binding (S2/S3/S8: `..._stays_bound_without_an_active_transport`,
   `..._is_usable_over_stdio`, `test_equivalent_spellings_of_an_address_are_the_same_client`,
@@ -708,7 +722,9 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `test_the_server_as_a_whole_has_a_limit_too`,
   `test_an_expired_connection_does_not_hold_a_slot`,
   `test_a_connection_that_fails_to_open_gives_its_slot_back`,
-  `test_db_connect_refuses_a_uri_that_is_not_configured`; T1's
+  `test_db_connect_refuses_a_uri_that_is_not_configured`; the URI-spelling pair
+  `test_db_connect_takes_a_uri_however_the_client_spelled_it` and
+  `test_db_connect_refuses_a_uri_asking_for_more_than_is_configured`; T1's
   `test_closing_a_connection_beats_a_call_that_races_it` and
   `test_a_session_being_closed_is_not_replaced_underneath`), `test_server_binding` (**6**:
   loopback vs reachable vs wildcard host classification, the no-auth warning, the default
@@ -717,11 +733,11 @@ silently runs against whatever `mariadb-shell` is on PATH.
   NEW `test_db_threading` (**1**,
   T2: a real session opened, used and closed across three threads), NEW `test_db_recovery`
   (**1**, T3: a real session KILLed from a second session and replaced on the next call).
-  **73 pass, ~33s.**
-- **Coverage: TOTAL 95% (858 statements, 44 missed) — measured on a run with `.coverage`
+  **78 pass, ~38s.**
+- **Coverage: TOTAL 95% (936 statements, 47 missed) — measured on a run with `.coverage`
   DELETED first.** Per module: lib/msm_functions 100, lib/db_functions 98, lib/general 98,
-  lib/server 98, lib/config 96, lib/sandbox_functions 87, lib/setup 84, server.py 81,
-  general.py 73.
+  lib/config 98, lib/server 97, lib/tool_registrar 93, lib/sandbox_functions 88,
+  lib/setup 85, server.py 81, general.py 73.
   **CORRECTION, and a trap to avoid repeating**: earlier figures in this file and in the
   T-series commit messages (up to "db_functions 100%, TOTAL 97%") were INFLATED.
   `run_tests.py` passes `--cov-append`, so `.coverage` ACCUMULATES across runs - including the
@@ -1204,11 +1220,28 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Git state
 
-- Branch: **`wip/AIPL-16`**, cut from `main` (which is at 8da59831 and tracks
-  `mariadb`) and pushed to `mariadb/wip/AIPL-16`. Remote `mariadb` =
-  mariadb-corporation/mariadb-shell-plugins; `origin` is mysql/mysql-shell-plugins and is
-  NOT the push target. There is also a `local_office` remote (a NAS mirror) — not a push
-  target either.
+- **A NEW branch `wip/MCP-CONN-HANDLING` was cut from `main` (1d6a9c37) after the AIPL-16
+  work below was merged**, for one reported bug: `db.connect` compared the URI it was given
+  with the configured ones as STRINGS, so `mariadb://root@127.0.0.1:PORT` — the form a
+  client naturally writes, and one `shell.parse_uri` rejects as an invalid scheme — never
+  matched the stored `root@127.0.0.1:PORT`. Fixed with URI normalization/resolution in
+  `lib/config.py` (see the Connections bullet under Architecture), applied in `db.connect`
+  and in `mcp.setup`'s add-connection flow, documented in the README's new "Which URI names
+  which connection" section, and pinned by 5 tests. Both fixes were PROVEN to discriminate
+  by reverting them: without the `db.connect` one the test fails with the reported error
+  verbatim, without the `mcp.setup` one `not a uri` is stored as a connection. **COMMITTED
+  as 612cd05e (one commit, 7 files, +426/-23), pushed to `origin/wip/MCP-CONN-HANDLING`, PR
+  #16 open against `main`.** The user hand-edited the README section before the commit
+  (dropped the "not even a scheme the parser accepts" aside and the `mysqlx://` sentence);
+  that wording is theirs, leave it alone.
+- **Remotes (CORRECTED, verified with `git remote -v`): there is exactly ONE remote,
+  `origin` = mariadb-corporation/mariadb-shell-plugins, and it IS the push target.** `main`
+  tracks it. The earlier claim in this file — `mariadb` as the push target, `origin` as
+  mysql/mysql-shell-plugins, plus a `local_office` NAS mirror — no longer holds for this
+  checkout; every `mariadb/<branch>` reference in the bullets below means what is now
+  `origin/<branch>`. Check `git remote` rather than trusting a remembered name.
+- Branch: **`wip/AIPL-16`**, cut from `main` (which was at 8da59831) and pushed to
+  `wip/AIPL-16` on that remote.
 - **The session started in DETACHED HEAD** at `mariadb/wip/AIPL-16` (ecc6bc3c) with no
   local branch — `git checkout -b wip/AIPL-16` was needed before committing. Check
   `git branch --show-current` before assuming there is a branch to commit onto.
