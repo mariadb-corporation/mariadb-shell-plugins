@@ -22,7 +22,10 @@ running SQL statements on it and closing it again.
 
 Only the connections configured via ``mcp.setup`` can be opened. Their URIs are
 listed from, and their passwords read back from, the shell secret store (see
-:mod:`mcp_plugin.lib.config`).
+:mod:`mcp_plugin.lib.config`). The URI ``db.connect`` is called with is resolved
+to the spelling it is configured under, so a client is not held to the exact one
+- it only has to name the same connection (see
+:func:`mcp_plugin.lib.config.normalize_connection_uri`).
 
 Open sessions are cached in-process, keyed by a UUID that ``db.connect``
 returns. That UUID identifies the connection for the ``db.execute_sql`` and
@@ -1449,13 +1452,23 @@ def register_db_tools(server, function_groups=()) -> None:
         for every task.
 
         Args:
-            uri: A connection URI, as returned by db.list_connections.
+            uri: A connection URI, as returned by db.list_connections. It does
+                not have to be spelled exactly as it is listed: a mariadb:// or
+                mysql:// prefix and a left-out default port name the same
+                connection. Anything the configured connection does not name -
+                a default schema, a connection option - does not, as it would
+                not be applied.
 
         Returns:
             The UUID identifying the open connection. Pass it to
             db.execute_sql and db.close.
         """
-        if uri not in config.list_connection_uris():
+        # Resolved to the spelling the connection is configured under, which is
+        # the key the password is read under and the URI everything from here on
+        # works with: the session is opened on it, it is re-validated against
+        # the configuration on every open, and it is what the log says.
+        configured_uri = config.resolve_connection_uri(uri)
+        if configured_uri is None:
             raise mysqlsh.Error(
                 f"'{uri}' is not a configured connection. Use db.list_connections "
                 "to list the available connections, or configure it with mcp.setup."
@@ -1480,7 +1493,7 @@ def register_db_tools(server, function_groups=()) -> None:
                 "server can determine."
             )
 
-        connection = _Connection(uri, client)
+        connection = _Connection(configured_uri, client)
         connection_id = str(uuid.uuid4())
 
         # Room is claimed before the session is opened, so a call that is going
@@ -1504,7 +1517,7 @@ def register_db_tools(server, function_groups=()) -> None:
         # client it was bound to, and which stored credentials it was opened on.
         general.log_event(
             f"db.connect: opened connection {general.log_id_prefix(connection_id)} "
-            f"on '{uri}' for {general.describe_client(client)}"
+            f"on '{configured_uri}' for {general.describe_client(client)}"
         )
 
         return connection_id
