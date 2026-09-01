@@ -38,7 +38,9 @@ mariadb-shell -- mcp setup
 - **Connections**: enter a MariaDB connection URI (e.g. `user@host:3306`). The
   password is prompted for and the connection is verified with `shell.open_session()`
   before the password is stored in the shell secret store under the key
-  `MCP:Connection:<uri>`. The `db.*` tools only allow the connections configured here.
+  `MCP:Connection:<uri>`, with the URI normalized first (see below), so that one
+  connection is configured under one spelling. The `db.*` tools only allow the
+  connections configured here.
 - **Allowed paths**: choose the local directories the server may access (the current
   directory is suggested as the default, shown as a full path). These are stored in a
   `settings.json` file in the plugin data directory.
@@ -65,7 +67,7 @@ with `db.connect` are cached in-process and identified by the returned UUID:
 | MCP tool | Description |
 | --- | --- |
 | `db.list_connections` | Lists the configured connection URIs. |
-| `db.connect` | Opens a configured connection (`shell.open_session()`) and returns a connection UUID. |
+| `db.connect` | Opens a configured connection (`shell.open_session()`) and returns a connection UUID. The URI need not be spelled exactly as listed (see [Which URI names which connection](#which-uri-names-which-connection)). |
 | `db.list_schemas` | Lists the schemas available on a connection UUID, with their type (system or user) and comment. |
 | `db.list_objects` | Lists the objects of one type (`table`, `view`, `function`, `procedure`, `sequence`, `trigger`, `event`; defaults to `table`) in a schema. |
 | `db.get_object_details` | Describes one object in detail: columns, constraints, foreign keys in both directions, parameters, or type-specific properties. |
@@ -275,6 +277,24 @@ substitute for the authentication described above.
   for anything - the refusal costs no connection. Both limits are well above what
   a client needs in practice; over stdio, where every request looks like the same
   client, the per-client limit is the one that applies.
+
+### Which URI names which connection
+
+`db.list_connections` hands out the configured URIs as `user@host:port`, but a
+client that composes a URI itself tends to write a scheme in front of it or leave
+out the default port. `db.connect` therefore resolves the URI it is given to the
+one the connection is configured under, rather than comparing the two as strings:
+a `mariadb://` or `mysql://` prefix, a missing port, the case of the host and a password written
+into the URI make no difference.
+
+What the URI says beyond that does, and has to match: a URI naming a default
+schema or a connection option the configured connection does not name is refused
+rather than answered with the configured connection, which would quietly not do
+what it asked for - `?ssl-mode=REQUIRED` on a session opened without TLS being
+the case that matters.
+
+What is opened, logged and re-checked against the configuration is always the
+configured URI.
 
 ### Removing a connection revokes it
 

@@ -97,12 +97,27 @@ def _print_connections() -> list:
 
 
 def _add_connection() -> None:
-    """Prompts for a connection URI and password, verifies and stores it."""
-    uri = _prompt(
+    """Prompts for a connection URI and password, verifies and stores it.
+
+    What is stored is the normalized URI rather than what was typed: it is the
+    key the connection is then looked up under, and one canonical spelling per
+    connection is what keeps the same connection from being configured twice
+    over (see :func:`mcp_plugin.lib.config.normalize_connection_uri`).
+    """
+    entered_uri = _prompt(
         "Enter the MariaDB connection URI (e.g. user@host:3306): "
     )
-    if uri == "":
+    if entered_uri == "":
         return
+
+    uri = config.normalize_connection_uri(entered_uri)
+    if uri is None:
+        print(f"'{entered_uri}' is not a valid connection URI.")
+        print("The connection was not stored.")
+        return
+
+    if uri != entered_uri:
+        print(f"The connection will be stored as '{uri}'.")
 
     password = _prompt_password(f"Enter the password for '{uri}': ")
 

@@ -18,9 +18,14 @@
 Covers lib/config.py (secret-backed connections and settings.json allowed
 paths) directly, the db.list_connections tool over stdio, and lib/setup.py's
 interactive first-run and menu flows with a scripted fake shell.
+
+Also covers how a connection URI is compared: a connection is looked up by its
+URI, and the spelling a client sends is not the one it was configured under, so
+the spellings that name the same connection have to reduce to one - while the
+ones that ask for more than the configured connection gives must not.
 """
 
-# cSpell:ignore mysqlsh MariaDB
+# cSpell:ignore mysqlsh MariaDB mysqlx
 
 import os
 from types import SimpleNamespace
@@ -85,6 +90,89 @@ def test_config_connection_secrets(clean_config):
 
     config.delete_connection(uri)
     assert uri not in config.list_connection_uris()
+
+
+def test_connection_uris_reduce_to_one_spelling():
+    """Every way of writing one connection normalizes to the same URI.
+
+    db.list_connections hands out the stored spelling, but a client writing a
+    URI itself puts a scheme in front of it, leaves out the default port or
+    cases the host differently - and would be told a connection it can see
+    listed is not configured.
+    """
+    normalize = config.normalize_connection_uri
+    bare = "root@127.0.0.1:3306"
+
+    # mariadb:// is not a scheme the shell's own parser even accepts, which is
+    # why it has to be taken off before the URI is parsed.
+    assert normalize(bare) == bare
+    assert normalize("mariadb://" + bare) == bare
+    assert normalize("mysql://" + bare) == bare
+    assert normalize("MariaDB://root@127.0.0.1") == bare
+    # The password is read from the secret store, so one in the URI says nothing
+    # about which connection is meant; a trailing slash and padding say nothing
+    # at all.
+    assert normalize("  root:ignored@127.0.0.1:3306/  ") == bare
+    # Host names are case-insensitive - user names are not.
+    assert normalize("root@LOCALHOST") == "root@localhost:3306"
+
+    # Kept apart: another server, another user, another protocol, and a URI
+    # asking for something the configured connection would not give it.
+    assert normalize("root@127.0.0.1:3307") != bare
+    assert normalize("admin@127.0.0.1:3306") != bare
+    assert normalize("mysqlx://" + bare) != bare
+    assert normalize(bare + "/mysql") != bare
+    assert normalize(bare + "?ssl-mode=REQUIRED") != bare
+
+    # Normalizing a normalized URI changes nothing: both the stored URIs and the
+    # ones passed in go through this, so it has to be a fixed point.
+    assert normalize(normalize("mariadb://root@127.0.0.1")) == bare
+
+    # Not a URI at all, so not something that could be opened either.
+    for not_a_uri in ("", "   ", "mariadb://", "not a uri", None, 3306):
+        assert normalize(not_a_uri) is None
+
+
+def test_a_connection_uri_resolves_to_the_configured_one(clean_config):
+    """A URI naming a configured connection resolves to its stored spelling.
+
+    That spelling is the key everything else works with: the password is read
+    under it and the session is opened, logged and re-validated on it.
+    """
+    import mysqlsh
+
+    stored = "res_pytest@127.0.0.1:3306"
+    config.store_connection(stored, "s3cret")
+
+    assert config.resolve_connection_uri(stored) == stored
+    assert config.resolve_connection_uri("mariadb://" + stored) == stored
+    assert config.resolve_connection_uri("res_pytest@127.0.0.1") == stored
+
+    # No configured connection names any of these.
+    assert config.resolve_connection_uri("res_pytest@127.0.0.1:3307") is None
+    assert config.resolve_connection_uri("other@127.0.0.1:3306") is None
+    assert config.resolve_connection_uri(stored + "/mysql") is None
+    assert config.resolve_connection_uri("not a uri") is None
+
+    # The same connection configured twice, under two spellings: they can hold
+    # different passwords, so which one was meant is not for this to guess.
+    duplicate = "mysql://" + stored
+    config.store_connection(duplicate, "another")
+
+    with pytest.raises(mysqlsh.Error) as ambiguous:
+        config.resolve_connection_uri("mariadb://" + stored)
+
+    assert "more than one configured connection" in str(ambiguous.value)
+
+    # Each of the two still resolves to itself, spelled as it is stored - an
+    # exact match is never ambiguous.
+    assert config.resolve_connection_uri(stored) == stored
+    assert config.resolve_connection_uri(duplicate) == duplicate
+
+    # And with the duplicate gone it resolves again: the ambiguity was in the
+    # configuration, not in the URI.
+    config.delete_connection(duplicate)
+    assert config.resolve_connection_uri("mariadb://" + stored) == stored
 
 
 # --- lib/setup.py (interactive flows) -------------------------------------
@@ -171,6 +259,37 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch):
     # Both the added connection and path were removed again.
     assert "setup_b@127.0.0.1:3306" not in config.list_connection_uris()
     assert os.path.abspath(path) not in config.get_allowed_paths()
+
+
+def test_setup_stores_a_connection_under_one_spelling(clean_config, monkeypatch):
+    """What is typed is stored normalized, and only if it is a URI at all.
+
+    The stored URI is the key a connection is looked up under, so one spelling
+    per connection is what keeps the same connection from being configured
+    twice - the one case db.connect cannot resolve for itself.
+    """
+    _clear_config()
+    # A settings file makes run_setup use the management menu.
+    config.set_allowed_paths([])
+
+    answers = [
+        "1",                                # menu: add a connection
+        "not a uri",                        # refused, and no password asked for
+        "1",                                # menu: add a connection
+        "  mariadb://setup_c@127.0.0.1  ",  # the same connection, spelled out
+        "pw",                               # password
+        "5",                                # menu: finish
+    ]
+    fake_shell = _FakeShell(answers)
+    monkeypatch.setattr(setup, "_shell", lambda: fake_shell)
+
+    setup.run_setup()
+
+    # Stored under the normalized URI rather than what was typed - and the
+    # unparsable entry never reached the password prompt, which the scripted
+    # answers are what prove: _FakeShell asserts on an unexpected prompt.
+    assert config.list_connection_uris() == ["setup_c@127.0.0.1:3306"]
+    assert config.get_connection_password("setup_c@127.0.0.1:3306") == "pw"
 
 
 def test_setup_requires_interactive_shell(clean_config, monkeypatch):

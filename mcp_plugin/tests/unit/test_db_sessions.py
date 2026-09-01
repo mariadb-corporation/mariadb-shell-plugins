@@ -28,6 +28,10 @@ URI is checked against the configured connections on every open, so a session
 reopened after an idle period cannot come back on a connection that has been
 taken away.
 
+Which connection a URI names, on the other hand, is not a matter of its
+spelling: a client is not held to the one the connection is configured under, as
+long as its URI names that connection and nothing besides.
+
 There is also a limit on how many connections there can be at once, per client
 and in total, and it is checked and claimed in one step - a burst of concurrent
 calls must not be able to overshoot it between them, and a call that is going to
@@ -59,7 +63,7 @@ registered on a recorder standing in for the MCPServer, which makes the tool
 functions callable directly.
 """
 
-# cSpell:ignore mysqlsh MariaDB mcpserver
+# cSpell:ignore mysqlsh MariaDB mcpserver mysqlx
 
 import threading
 from types import SimpleNamespace
@@ -1107,6 +1111,67 @@ def test_db_connect_refuses_a_uri_that_is_not_configured(
 
     assert "is not a configured connection" in str(refused.value)
     # Refused before anything was opened or recorded.
+    assert opened == []
+    assert db_functions._sessions == {}
+
+
+def test_db_connect_takes_a_uri_however_the_client_spelled_it(
+    http_transport, monkeypatch
+):
+    """A URI naming the configured connection opens it, however it is written.
+
+    db.list_connections hands out `user@host:port`, but a client composing a URI
+    of its own writes a scheme in front of it - `mariadb://`, which the shell's
+    parser does not even accept - or leaves the default port out. Those all name
+    the one configured connection, and a client told that a connection it can
+    see listed is not configured has nowhere to go from there.
+    """
+    opened = []
+    tools, uri = _registered_tools(monkeypatch, opened)
+    context = _context(CLIENT_ADDRESS)
+
+    for spelling in (
+        "mariadb://root@127.0.0.1:3306",
+        "mysql://root@127.0.0.1:3306",
+        "MariaDB://root@127.0.0.1",
+        "root@127.0.0.1",
+        "root:ignored@127.0.0.1:3306/",
+    ):
+        connection_id = tools["db.connect"](context, spelling)
+
+        # Opened on the configured spelling rather than the one that was asked
+        # for: that is the key the password is stored under, the URI checked
+        # against the configuration on every reopen, and what the log says.
+        assert opened[-1] == uri
+        assert db_functions._sessions[connection_id].uri == uri
+
+
+def test_db_connect_refuses_a_uri_asking_for_more_than_is_configured(
+    http_transport, monkeypatch
+):
+    """Only spellings of the same connection are accepted, not near misses.
+
+    A URI naming a default schema, a connection option or another protocol is
+    not the configured connection: opening that one instead would answer the
+    call with a connection quietly not doing what it asked for - an option like
+    `ssl-mode=REQUIRED` on a session opened without TLS being the case that
+    matters.
+    """
+    opened = []
+    tools, _ = _registered_tools(monkeypatch, opened)
+
+    for spelling in (
+        "root@127.0.0.1:3306/mysql",
+        "mariadb://root@127.0.0.1:3306?ssl-mode=REQUIRED",
+        "mysqlx://root@127.0.0.1:3306",
+        "root@127.0.0.1:3307",
+        "admin@127.0.0.1:3306",
+    ):
+        with pytest.raises(ToolError) as refused:
+            tools["db.connect"](_context(CLIENT_ADDRESS), spelling)
+
+        assert "is not a configured connection" in str(refused.value)
+
     assert opened == []
     assert db_functions._sessions == {}
 

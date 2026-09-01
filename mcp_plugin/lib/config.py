@@ -20,16 +20,19 @@ Two kinds of configuration are persisted:
 * **Connections**: the MariaDB connection URIs the MCP server is allowed to
   use, together with their passwords. These are stored as shell secrets, keyed
   by ``MCP:Connection:<uri>``, so that passwords are kept in the operating
-  system's secret store rather than in a plain file.
+  system's secret store rather than in a plain file. A connection is looked up
+  by its URI, and a client need not spell it exactly as it was configured (see
+  :func:`normalize_connection_uri`).
 * **Allowed paths**: the local directories the MCP server is allowed to
   access. These are stored in a ``settings.json`` file inside the plugin data
   directory (see :func:`mcp_plugin.lib.general.get_mcp_plugin_data_path`).
 """
 
-# cSpell:ignore mysqlsh MariaDB
+# cSpell:ignore mysqlsh MariaDB mysqlx unparse
 
 import json
 import os
+from typing import Optional
 
 import mysqlsh
 
@@ -37,6 +40,20 @@ from mcp_plugin.lib import general
 
 # Prefix used for the shell secrets that store MCP connection passwords.
 CONNECTION_SECRET_PREFIX = "MCP:Connection:"
+
+# URI scheme prefixes that mean the same thing as a bare ``user@host:port``:
+# the MariaDB client-server protocol. A client writing a URI of its own tends to
+# put one in front of it - ``mariadb://`` is not even a scheme the shell's own
+# parser accepts - so they are stripped before parsing and all three spellings
+# of one connection compare equal. ``mysqlx://`` is deliberately NOT among
+# them: it names a different protocol on a different port. Compared
+# case-insensitively.
+PROTOCOL_SCHEME_PREFIXES = ("mariadb://", "mysql://")
+
+# The TCP port a connection without one is opened on. Named here because a URI
+# that leaves the port out and one that spells out the default name the same
+# server, and the two have to compare equal.
+DEFAULT_PORT = 3306
 
 # Name of the settings file inside the plugin data directory.
 SETTINGS_FILE_NAME = "settings.json"
@@ -64,6 +81,133 @@ def list_connection_uris() -> list:
         for key in _shell().list_secrets()
         if key.startswith(CONNECTION_SECRET_PREFIX)
     )
+
+
+def normalize_connection_uri(uri) -> Optional[str]:
+    """Returns a connection URI in the form used to compare connection URIs.
+
+    One connection can be written down in more than one way, and the spelling a
+    connection is configured under is not the one a client necessarily sends:
+    ``db.list_connections`` hands out the stored key, but a client composing a
+    URI itself tends to put a scheme in front of it, leave out the default port
+    or case the host differently. As connections are looked up by their URI,
+    those spellings must be reduced to one first - otherwise a client is told a
+    connection it can see listed is not configured.
+
+    Only spellings that name the very same connection are folded together: a
+    ``mariadb://`` or ``mysql://`` prefix (see
+    :data:`PROTOCOL_SCHEME_PREFIXES`), a missing port, the case of the host, and
+    a password written into the URI, which is never used - the stored one is.
+    Anything a URI says over and above that is kept and has to match, so a URI
+    naming a default schema or a connection option is NOT the same connection as
+    one that does not: it would otherwise be answered with a connection that
+    quietly does not do what it asked for, an option like ``ssl-mode=REQUIRED``
+    included.
+
+    Args:
+        uri: The connection URI to normalize.
+
+    Returns:
+        The normalized URI, or None if it is not a URI the shell can parse - in
+        which case it does not name a connection that could be opened either.
+    """
+    if not isinstance(uri, str):
+        return None
+
+    uri = uri.strip()
+    if not uri:
+        return None
+
+    for prefix in PROTOCOL_SCHEME_PREFIXES:
+        if uri[:len(prefix)].lower() == prefix:
+            uri = uri[len(prefix):]
+            break
+
+    # Guarded as a whole: whatever the shell cannot take apart and put back
+    # together is not a URI that could be opened either, so it names no
+    # connection and there is nothing to compare.
+    try:
+        # A plain dict, so that what was parsed can be adjusted.
+        connection_data = dict(_shell().parse_uri(uri))
+
+        # The password of a configured connection comes from the secret store,
+        # so one written into the URI says nothing about which one is meant.
+        connection_data.pop("password", None)
+
+        host = connection_data.get("host")
+        if host is not None:
+            # Host names are case-insensitive; user names are not.
+            connection_data["host"] = host.lower()
+
+        if (
+            host
+            and "port" not in connection_data
+            and "socket" not in connection_data
+            and "scheme" not in connection_data
+        ):
+            # Left to the shell this would default to the same port; spelled
+            # out, a URI with and one without the default port compare equal.
+            # Only for the protocol above - another scheme has its own default.
+            connection_data["port"] = DEFAULT_PORT
+
+        # The shell's own rendering of the parsed URI: options in a fixed
+        # order, percent-encoding and a trailing slash normalized.
+        return _shell().unparse_uri(connection_data)
+    except Exception:  # noqa: BLE001 - not a URI, so not a connection either
+        return None
+
+
+def resolve_connection_uri(uri) -> Optional[str]:
+    """Returns the configured connection URI that the given URI names.
+
+    The URI a client passes to ``db.connect`` does not have to be spelled
+    exactly like the configured one, only name the same connection (see
+    :func:`normalize_connection_uri`). What comes back is the configured URI,
+    which is the key everything else uses: the password is read under it and the
+    connection is opened, logged and re-validated on it.
+
+    Args:
+        uri: The connection URI to resolve.
+
+    Returns:
+        The configured connection URI, or None if no configured connection is
+        the one named.
+
+    Raises:
+        mysqlsh.Error: If more than one configured connection is - the same
+            connection configured twice, under two spellings.
+    """
+    configured_uris = list_connection_uris()
+
+    # The spelling that was stored is a match for itself whatever it looks
+    # like, including one no longer parsable by this shell.
+    if uri in configured_uris:
+        return uri
+
+    normalized = normalize_connection_uri(uri)
+    if normalized is None:
+        return None
+
+    matches = [
+        configured_uri
+        for configured_uri in configured_uris
+        if normalize_connection_uri(configured_uri) == normalized
+    ]
+
+    if not matches:
+        return None
+
+    if len(matches) > 1:
+        # Two configured connections naming the same one: they may well hold
+        # different passwords, so which was meant is for whoever configured
+        # them to say, not for this to guess.
+        raise mysqlsh.Error(
+            f"'{uri}' names more than one configured connection "
+            f"({', '.join(matches)}). Pass one of them as it is listed by "
+            "db.list_connections, or remove the duplicate with mcp.setup."
+        )
+
+    return matches[0]
 
 
 def get_connection_password(uri: str) -> str:
