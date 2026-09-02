@@ -2,9 +2,9 @@
 
 The MariaDB Shell Plugins Repository is a collection of plugins for the [MariaDB Shell](https://github.com/mariadb-corporation/mariadb-shell). It covers currently these plugins:
 
-- **MCP plugin**: implements [MariaDB MCP Server](mcp_plugin/readme.md)
-- **MRS plugin**: implements [MariaDB REST Service](mrs_plugin/readme.md) support
-- **MSM plugin**: implements [MariaDB Schema Management operations](msm_plugin/readme.md)
+- **MCP plugin**: implements [MariaDB MCP Server](mcp_plugin/README.md)
+- **MRS plugin**: implements [MariaDB REST Service](mrs_plugin/README.md) support
+- **MSM plugin**: implements [MariaDB Schema Management operations](msm_plugin/README.md)
 
 ## Installation
 

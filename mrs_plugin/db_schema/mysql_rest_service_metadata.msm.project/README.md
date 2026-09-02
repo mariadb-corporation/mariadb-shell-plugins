@@ -12,7 +12,7 @@ Instead of adding a specific version to the file, the `_next` suffix indicates t
 
 This script is modified during the development process as database schema objects - such as TABLEs, VIEWs, PROCEDURES, etc. - are added to and removed from the script.
 
-For more information on the development process, see the readme.md in the Documents folder.
+For more information on the development process, see the README.md in the Documents folder.
 
 ### Preparing a Database Schema Release
 
@@ -21,7 +21,7 @@ Once all the changes for a release (or release candidate) have been applied to t
 - This step takes a snapshot of the current SQL development file and places it in the `releases/versions` folder, using a filename that contains the specific version number for that release.
 - An SQL update file is also created in the `releases/updates` folder. This SQL update file must be edited to contain the SQL statements required to update the database schema from the previously released version to the version to be released.
 
-Please refer to the `releases/updates/readme.md` file for details of how to add the necessary SQL statements for the update.
+Please refer to the `releases/updates/README.md` file for details of how to add the necessary SQL statements for the update.
 
 ### Generating a Deployment Script
 

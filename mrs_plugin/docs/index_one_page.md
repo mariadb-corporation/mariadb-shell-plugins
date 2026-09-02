@@ -96,7 +96,7 @@ This document explains how to work with the MRS Software Development Kit and dis
 
 !include sections/devGuide/Auth.md
 
-!include ../examples/readme.md
+!include ../examples/README.md
 
 ---
 

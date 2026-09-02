@@ -1,6 +1,6 @@
 # MariaDB Schema Management Plugin for MariaDB Shell
 
-This folder contains the code for the MariaDB Schema Management Plugin. It is part of the [MariaDB Shell Plugins](../readme.md) repository.
+This folder contains the code for the MariaDB Schema Management Plugin. It is part of the [MariaDB Shell Plugins](../README.md) repository.
 
 ## Contributing to MariaDB Schema Management Plugin
 

@@ -43,6 +43,6 @@ Please also see
 
 !include sections/devGuide/Auth.md
 
-!include ../examples/readme.md
+!include ../examples/README.md
 
 Copyright (c) 2022, 2025, Oracle and/or its affiliates.
