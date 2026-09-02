@@ -45,6 +45,12 @@ mariadb-shell -- mcp setup
   directory is suggested as the default, shown as a full path). These are stored in a
   `settings.json` file in the plugin data directory.
 
+> Note: The MariaDB connections configured during the setup procedure are stored
+> separately from the regular MariaDB Shell connections. Otherwise, the LLM would
+> have full access to all of the user's stored connections, which would be a security
+> issue. The password stored for an MCP connection can be retrieved by calling
+> `shell.list_secrets()` and `shell.read_secret()`.
+
 On the first run, `mcp.setup` walks through adding connections and then paths. On
 subsequent runs it presents a menu to add or delete connections and paths.
 
