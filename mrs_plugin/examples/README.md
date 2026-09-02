@@ -1,4 +1,5 @@
-<!-- Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+<!-- Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB plc.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -21,8 +22,14 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA -->
 
-# Default Static Content
+# MRS Examples
 
-The MySQL REST Service ships with a default landing page that shows a greeting and can also handle login redirection requests from web apps.
+The MRS Shell Plugin ships with a set of example projects that showcase the possibilities of the MariaDB REST Service.
 
-Please see the `../readme.md` file for more details.
+The MRS Notes example implements as simple [Progressive Web Apps (PWA)](https://en.wikipedia.org/wiki/Progressive_web_app) to showcase the features offered by MRS.
+
+The MRS Scripts example includes a set of examples that showcase server side rendering of HTML pages.
+
+!include mrs_notes/README.md
+
+!include mrs_scripts/README.md
