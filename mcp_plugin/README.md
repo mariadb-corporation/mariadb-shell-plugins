@@ -47,9 +47,10 @@ mariadb-shell -- mcp setup
 
 > Note: The MariaDB connections configured during the setup procedure are stored
 > separately from the regular MariaDB Shell connections. Otherwise, the LLM would
-> have full access to all of the user's stored connections, which would be a security
-> issue. The password stored for an MCP connection can be retrieved by calling
-> `shell.list_secrets()` and `shell.read_secret()`.
+> have full access to all of the user's stored connections, which would pose a
+> security risk. To retrieve the password stored for an MCP connection, call the
+> `shell.list_secrets()` function to list all secrets. Then, look for the
+> `MCP:Connection:` prefix and call `shell.read_secret()` for the given entry.
 
 On the first run, `mcp.setup` walks through adding connections and then paths. On
 subsequent runs it presents a menu to add or delete connections and paths.
