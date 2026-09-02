@@ -23,4 +23,4 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 # Define plugin version
-VERSION = "26.8.1"
+VERSION = "26.9.0"
