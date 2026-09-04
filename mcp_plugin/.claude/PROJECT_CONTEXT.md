@@ -483,6 +483,22 @@ silently runs against whatever `mariadb-shell` is on PATH.
     3. `install_wrapper()` — `~/.local/bin/mariadb-migrator`.
     A failure in 2 or 3 leaves the extracted copy in place and SAYS which step stopped —
     it is a complete install, just not yet a runnable one.
+  - **`venv.EnvBuilder(..., symlinks=True)` is MANDATORY, and is NOT the constructor's
+    default** (`python -m venv`'s CLI passes it on POSIX; `EnvBuilder()` does not). The
+    shell's interpreter is built with `Py_ENABLE_SHARED` and finds `libpython` through a
+    loader path relative to its own location (macOS rpath `@executable_path/..`, Linux
+    `$ORIGIN`), so a COPY of it inside the venv looks for that library beside the copy,
+    does not find it, and dies before running anything with the loader's **exit status
+    127**. A symlink leaves the resolved location, and the library, where the interpreter
+    expects them.
+    **This broke CI on Linux while passing locally**, and the reason it passed locally is
+    worth knowing: the interpreter also carries a STALE ABSOLUTE rpath from the machine it
+    was built on (`/Users/mzinner/git/Python-3.14.6/lib`), which resolves on that machine
+    and nowhere else. Never take "the venv interpreter runs here" as evidence that it is
+    built correctly.
+    Pinned by a test asserting the interpreter is a SYMLINK resolving to
+    `sys._base_executable` — a structural assertion on purpose, so a platform where the
+    copy happens to run still catches the regression.
   - **The venv is built by the interpreter running this code**, i.e. the shell's bundled
     CPython at `<shell>/lib/mariadb-shell/bin/python3.14`. `venv`, `ensurepip` and `pip`
     are all bundled. `pip` is given **`--require-virtualenv`** so a wrong venv path can
@@ -584,6 +600,11 @@ silently runs against whatever `mariadb-shell` is on PATH.
   excluded; `command -v python3` -> NONE). The orchestrator itself
   (`python3 -m orchestrator.migrationctl --help`) also ran in that environment, resolving
   python3 to `<install>/.venv/bin/python3`.
+- **THEN: CI failed on Linux and the cause was a real bug** (run 33866466116, PR #19).
+  3 tests failed, all `subprocess.CalledProcessError ... '-m', 'ensurepip' ... exit status
+  127` out of `venv.EnvBuilder`. Diagnosis and fix: `symlinks=True` — see the
+  EnvBuilder bullet under Architecture. The local install was rebuilt with
+  `--removeMigrator --installMigrator` so its venv interpreter is a symlink too.
 - **THEN, same session: `migration.*` was renamed to `migrator.*`** (user's instruction),
   and the rename carried further than asked because a partial one would have been
   incoherent:
@@ -1418,6 +1439,10 @@ silently runs against whatever `mariadb-shell` is on PATH.
   hand-run CLI experiment writes into the DEVELOPER's real connections. One such probe
   did exactly that this session and had to be cleaned up with `--deleteConnections`.
   Use `clean_config` in tests, and clean up by hand after any live experiment.
+- **"It runs on my machine" is NOT evidence a venv is built correctly.** The shell's
+  interpreter carries a stale absolute rpath from its build tree, so on the build machine
+  a mis-built venv (copied interpreter) runs anyway and only fails on Linux CI. Assert the
+  STRUCTURE (symlink to `sys._base_executable`), not just that a probe subprocess exits 0.
 - **There is NO async pytest plugin in mcp_plugin.** `async def test_...` is skipped with
   "async def functions are not natively supported". Wrap coroutines in `asyncio.run(...)`
   inside a SYNC test, which is what `test_msm.py` already does. This cost two failing tests.

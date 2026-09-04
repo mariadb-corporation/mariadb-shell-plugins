@@ -115,9 +115,15 @@ def provision(target_dir: str) -> str:
     """
     venv_dir = os.path.join(target_dir, MIGRATOR_VENV_DIR)
 
-    # clear=True so that provisioning an install twice rebuilds rather than
-    # layering a new environment over whatever an interrupted run left.
-    venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
+    # symlinks=True is NOT optional, and is not EnvBuilder's default the way it
+    # is `python -m venv`'s on POSIX. The shell's interpreter is built with
+    # Py_ENABLE_SHARED and finds libpython through a loader path relative to
+    # its own location, so a COPY of it inside the venv looks for that library
+    # beside the copy and does not find it - the interpreter then dies before
+    # it runs anything, with the loader's exit status 127. A symlink leaves the
+    # resolved location, and therefore the library, where the interpreter
+    # expects them.
+    venv.EnvBuilder(with_pip=True, clear=True, symlinks=True).create(venv_dir)
 
     requirements = os.path.join(target_dir, MIGRATOR_REQUIREMENTS)
     if not os.path.isfile(requirements):

@@ -599,6 +599,19 @@ def test_provisioning_builds_a_working_venv_and_installs_nothing_extra(
     )
     assert probe.returncode == 0, probe.stderr
     assert probe.stdout.strip() == "True"
+    # A SYMLINK to the shell's own interpreter, not a copy of it. The shell's
+    # interpreter is built with Py_ENABLE_SHARED and resolves libpython through
+    # a loader path relative to itself, so a copy inside the venv cannot find
+    # that library and dies with the loader's exit status 127 before running
+    # anything. This is exactly what broke CI on Linux while passing on the
+    # machine the shell was built on, where a stale absolute rpath from the
+    # build tree happened to still resolve.
+    assert os.path.islink(venv_python) or os.path.islink(
+        os.path.join(venv_dir, "bin", os.path.basename(sys._base_executable))
+    ), "the venv interpreter must be a symlink, not a copy"
+    linked = os.path.join(venv_dir, "bin", os.path.basename(sys._base_executable))
+    assert os.path.realpath(linked) == os.path.realpath(sys._base_executable)
+
     # Built by the interpreter running this code - the one the shell bundles -
     # so no system python3 was involved.
     assert os.path.isfile(os.path.join(venv_dir, "pyvenv.cfg"))
