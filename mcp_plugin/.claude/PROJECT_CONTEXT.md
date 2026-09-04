@@ -11,7 +11,7 @@ additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21). GPLv2,
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Full suite: **148 tests pass (~48s), 96% total coverage** (1349 statements, 48 missed;
+Full suite: **192 tests pass (~62s), 97% total coverage** (1530 statements, 50 missed;
 measured on a run with `.coverage` DELETED first — see the coverage trap in Gotchas).
 Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
@@ -363,6 +363,41 @@ silently runs against whatever `mariadb-shell` is on PATH.
     `yaml.safe_dump(..., sort_keys=False)` rather than hand-built.
   - Values are stringified (`_stringify`): booleans become the tooling's `"1"`/`"0"`, None
     becomes `""`, and a list/dict is REFUSED rather than silently flattened.
+- **`mcp.setup` is fully non-interactive-able: `lib/setup_cli.py`.** Every menu item is a
+  command-line option. `setup()` became `setup(**options)`; `run_setup(**options)`
+  dispatches on `setup_cli.has_options()`. Decisions:
+  - **`has_options()` returns `bool(options)`, deliberately including UNKNOWN names.** A
+    misspelled option must reach `_reject_unknown` and be refused; treating it as "no
+    options" would start the walkthrough, which in a terminal-less script is a confusing
+    way to learn about a typo. (The shell's own CLI parser refuses unknown options first,
+    so `_reject_unknown` really guards the PYTHON API path, `mcp.setup(addPathz=...)`.)
+  - **Four password sources, at most ONE per call**: `--passwordStdin` (first line;
+    refused when stdin is a TTY), `--passwordEnv=<VARNAME>` (the NAME, so no secret in
+    the command line; unset is an error, empty is an empty password), `--password`
+    (discouraged), and a prompt. Giving two is refused rather than resolved by
+    precedence. `--nonInteractive` turns the prompt case into an error, which is what
+    keeps a CI job from waiting forever.
+  - **A URI carrying a password is REFUSED**, not used and not dropped: normalization
+    strips it (see `config.normalize_connection_uri`), so accepting it would store a
+    connection with no password at all.
+  - **Order is fixed**: deletions -> additions -> migrator. So delete+re-add in one call
+    ends up added, and `--removeMigrator --installMigrator` is the REINSTALL idiom rather
+    than a contradiction. Fail-fast, leaving what succeeded in place.
+  - **Adding an already-configured connection UPDATES its password** and says "updated" —
+    a provisioning script has to be safe to run twice.
+  - `--show` is exclusive of the action options; `--json` only applies to `--show` and
+    prints nothing else on stdout so the whole of it parses.
+  - **`_cli_name()` renders option names as the generated help spells them** (camelCase:
+    `--addPaths`). The shell accepts snake/kebab/camel alike, but the help lists only
+    camelCase, so a message naming `--add_paths` sends the reader looking for something
+    the help does not mention.
+  - **`verify_connection()` lives in `setup_cli.py`, NOT `config.py`.** Moving it to
+    config broke 3 tests: the interactive path verifies through the
+    `setup_prompts.shell()` seam the tests fake, whereas `config._shell()` is the REAL
+    shell there (config needs the real `parse_uri`/`unparse_uri`). Both setup paths must
+    share the seam the tests patch.
+  - `--migratorVersion` was deliberately NOT added (user's call): the pin being a code
+    constant is what makes an install a property of the plugin version.
 - **The interactive setup is THREE modules, not one** (refactored after the AIPL-21
   commit): `lib/setup.py` (connections, allowed paths, the menu, `run_setup`),
   `lib/setup_migration.py` (everything migration) and `lib/setup_prompts.py` (the prompt
@@ -543,6 +578,15 @@ silently runs against whatever `mariadb-shell` is on PATH.
   excluded; `command -v python3` -> NONE). The orchestrator itself
   (`python3 -m orchestrator.migrationctl --help`) also ran in that environment, resolving
   python3 to `<install>/.venv/bin/python3`.
+- **THEN, same session: every mcp.setup item became a CLI option** (`lib/setup_cli.py`,
+  514 lines; see Architecture). **COMMITTED as `2f335a6c`.** **192 pass, 97% TOTAL** (1530 stmts / 50 missed, clean
+  `.coverage`); `lib/setup_cli.py` **100%**. New `tests/unit/test_setup_cli.py` (44
+  tests). SIX revert probes, all discriminating: `has_options` narrowed to known names,
+  password sources made non-exclusive, `--noVerify` ignored, URI-password accepted,
+  additions before deletions, `--nonInteractive` still prompting.
+  Also verified LIVE against the real config, with cleanup afterwards: `--passwordEnv`,
+  `--passwordStdin`, `--password`, `--deleteConnections`, `--show`, `--show --json`
+  (piped through a JSON parser), and every combination guard.
 - **THEN, same session: the four migration MCP tools were added**
   (`lib/migrator_functions.py`, 599 lines; see Architecture). **141 pass, 96% TOTAL**
   (1325 stmts / 48 missed, clean `.coverage`), and **`lib/migrator_functions.py` is at
@@ -1038,17 +1082,18 @@ silently runs against whatever `mariadb-shell` is on PATH.
   NEW `test_db_threading` (**1**,
   T2: a real session opened, used and closed across three threads), NEW `test_db_recovery`
   (**1**, T3: a real session KILLed from a second session and replaced on the next call).
-  Plus NEW `test_migration_tools` (**37**: registration gating, config writing/merging/
+  Plus NEW `test_setup_cli` (**44**: the option surface, the four password sources, the
+  combination guards, ordering and `--show`/`--json`) and NEW `test_migration_tools` (**37**: registration gating, config writing/merging/
   refusals, the configured-connections-only validation, password confinement, and the
   orchestrator invocation's shape) and NEW
   `test_migrator` (**33**: AIPL-21's 14 reworked for the versioned path, the
   platform predicate, the menu-renumbering test, the XDG data-home test, the
   side-by-side-releases test, and 15 for the venv/dependency/wrapper work) and one more in
-  `test_config` (the Windows menu end-to-end). **148 pass, ~48s** — the venv builds make
-  it slower than the old ~39s.
-- **Coverage: TOTAL 96% (1349 statements, 48 missed) — measured on a run with `.coverage`
-  DELETED first.** Per module: lib/migrator_functions **100**, lib/msm_functions 100,
-  lib/setup_migration 99,
+  `test_config` (the Windows menu end-to-end). **192 pass, ~62s** — the venv builds and
+  the CLI tests make it slower than the old ~39s.
+- **Coverage: TOTAL 97% (1530 statements, 50 missed) — measured on a run with `.coverage`
+  DELETED first.** Per module: lib/migrator_functions **100**, lib/setup_cli **100**,
+  lib/msm_functions 100, lib/setup_migration 99,
   lib/db_functions 98, lib/general 98, lib/config 98, lib/server 97, lib/tool_registrar 93,
   lib/sandbox_functions 88, lib/setup 87, server.py 81, lib/setup_prompts 81,
   general.py 73.
@@ -1128,6 +1173,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - lib/setup.py -> the interactive `mcp.setup`: connections, allowed paths, `_first_run`,
   `_menu_entries` / `_menu` (built, not written out — see Architecture) and `run_setup`.
   Needs `import os` for the paths section. 87% covered.
+- lib/setup_cli.py -> the non-interactive `mcp.setup`: `apply()` (the fixed-order
+  dispatcher), `has_options`, `_reject_unknown`, `_check_combination`, `_resolve_password`
+  and the three sources, `_add_connection`/`_delete_connections`/`_add_paths`/
+  `_delete_paths`, `_install_migrator`/`_remove_migrator`, `configuration()`/`_show`,
+  `_cli_name`, and `verify_connection` (shared with the interactive path).
+  ACTION_OPTIONS / PASSWORD_OPTIONS / MODIFIER_OPTIONS / KNOWN_OPTIONS. **100% covered.**
+- tests/unit/test_setup_cli.py -> the 44 CLI tests. Uses the `clean_config` fixture for
+  anything that really stores a connection or a path.
 - lib/migrator_functions.py -> the `migration` function group: `write_config` (the
   module-level body of `migration.set_config`), `validate_connections` (the
   configured-connections-only gate, called from BOTH the write and the run path),
@@ -1327,6 +1380,16 @@ silently runs against whatever `mariadb-shell` is on PATH.
   fixture**, or `validate_connections` queries the developer's REAL connections and the
   test both fails and prints them. This bit
   `test_a_failed_write_leaves_no_staged_file_behind` the moment validation was added.
+- **`clean_config` BACKS UP AND RESTORES, it does not CLEAR.** The developer's own
+  connections and the sandbox's `root@127.0.0.1:PORT`, plus the sandbox's allowed path,
+  are all still present during a test using it. Assertions must be RELATIVE (membership,
+  or a before/after snapshot), never `== []` or `== [mine]`. This cost 4 failing tests.
+  `test_config.py` gets away with equality only because it calls its own `_clear_config()`.
+- **`MARIADB_SHELL_USER_CONFIG_HOME` does NOT isolate the secret store.** Only
+  settings.json follows it; connections are secrets and go to the shared store, so a
+  hand-run CLI experiment writes into the DEVELOPER's real connections. One such probe
+  did exactly that this session and had to be cleaned up with `--deleteConnections`.
+  Use `clean_config` in tests, and clean up by hand after any live experiment.
 - **There is NO async pytest plugin in mcp_plugin.** `async def test_...` is skipped with
   "async def functions are not natively supported". Wrap coroutines in `asyncio.run(...)`
   inside a SYNC test, which is what `test_msm.py` already does. This cost two failing tests.
@@ -1651,6 +1714,10 @@ silently runs against whatever `mariadb-shell` is on PATH.
      `~/.local/bin` wrapper.
   3. `8b7a73f4` "AIPL-21: Add the migration MCP tools" (5 files, +1617/-3) — the
      `migration` function group.
+  4. `377d48da` "AIPL-21: Update the mcp_plugin project context".
+  5. `2f335a6c` "AIPL-21: Make every mcp.setup item available as a command-line option"
+     (6 files, +1329/-46) — `lib/setup_cli.py`, the four password sources and
+     `--show`/`--json`.
   **Split into 2 rather than 5 deliberately, and each was PROVEN green on its own tree**:
   the module split, the Windows gate, the relocation and the provisioning all interleave in
   `lib/setup_migration.py` and its tests, so splitting them further would have meant
