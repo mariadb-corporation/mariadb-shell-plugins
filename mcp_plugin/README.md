@@ -35,6 +35,9 @@ what the MCP server is allowed to access, or run the following command on the te
 mariadb-shell -- mcp setup
 ```
 
+Everything below can also be given as command-line options instead, for use where there
+is no terminal — see [Non-interactive setup](#non-interactive-setup).
+
 - **Connections**: enter a MariaDB connection URI (e.g. `user@host:3306`). The
   password is prompted for and the connection is verified with `shell.open_session()`
   before the password is stored in the shell secret store under the key
@@ -75,6 +78,60 @@ scripts, so there would be nothing to run what a download installed.
 **No system Python is required.** The MariaDB Shell bundles a complete CPython, and the
 download uses it to build the tooling's virtual environment - so the tooling runs on a
 machine that has no `python3` of its own at all.
+
+### Non-interactive setup
+
+Every menu item is also a command-line option, so a provisioning script or a CI job can
+configure the server without a terminal. With **no** options `mcp setup` is the
+walkthrough above; with **any** option it does exactly what the options say and asks
+nothing else. Run `mariadb-shell -- mcp setup --help` for the generated list.
+
+| Option | What it does |
+| ------ | ------------ |
+| `--addConnection=<uri>` | Verify and store one connection. |
+| `--password=<str>` | Its password. **Discouraged** — a command line is visible in `ps` and lands in shell history. |
+| `--passwordEnv=<VARNAME>` | Read it from the *named* environment variable, so the password itself is never in the command line. |
+| `--passwordStdin` | Read it from the first line of stdin, for piping from a secret manager. |
+| `--noVerify` | Store without opening a session first, for a server that is not up yet. |
+| `--deleteConnections=<list>` | Delete connections, by URI in any spelling that names them. |
+| `--addPaths=<list>` | Allow directories (each must already exist). |
+| `--deletePaths=<list>` | Stop allowing directories. |
+| `--installMigrator` | Download, provision and wrap the migration tooling. |
+| `--removeMigrator` | Remove every installed release, and the wrapper. |
+| `--nonInteractive` | Never prompt; a missing password is an error, not a question. |
+| `--show` | Print the configuration and do nothing else. |
+| `--json` | Print what `--show` reports as JSON. Only applies to `--show`. |
+
+Lists are comma-separated. Repeating an option is **not** a supported way to build one.
+`--addConnection` is the exception to the list rule: it takes one connection, because
+each needs its own password.
+
+```bash
+# CI: from a secret the runner injected
+mariadb-shell -- mcp setup --addConnection=mig@source-db:3306 --passwordEnv=SRC_PW --nonInteractive
+
+# From a secret manager
+vault read -field=pw db/src | mariadb-shell -- mcp setup --addConnection=mig@source-db:3306 --passwordStdin
+
+# Paths and the tooling in one call
+mariadb-shell -- mcp setup --addPaths=/srv/projects,/tmp/work --installMigrator
+
+# Reinstall the tooling: removal runs first, so this is the idiom rather than a conflict
+mariadb-shell -- mcp setup --removeMigrator --installMigrator
+
+# Machine-readable state
+mariadb-shell -- mcp setup --show --json
+```
+
+At most **one** password source may be given — which one was meant is not guessed at —
+and a URI carrying a password (`user:pw@host`) is refused rather than used, since
+normalization strips it and the connection would end up stored with no password at all.
+
+Deletions are carried out **before** additions, and the migration tooling last, so
+deleting and re-adding the same connection in one call ends up with it added. Anything
+that fails stops the run, leaving what already succeeded in place and reported, so a
+script can tell how far it got. Storing a connection that is already configured updates
+its password, so a provisioning script is safe to run twice.
 
 ### Migration tooling
 

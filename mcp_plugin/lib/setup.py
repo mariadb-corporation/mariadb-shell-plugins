@@ -25,6 +25,10 @@ lives in :mod:`mcp_plugin.lib.setup_migration`: it is a menu-only step, never
 part of the first run, and it is left out altogether on platforms the tooling
 does not run on. The prompt primitives are in
 :mod:`mcp_plugin.lib.setup_prompts`, shared with that module.
+
+Everything the menu offers can also be given as an option instead, which turns
+the whole thing declarative and terminal-free; that lives in
+:mod:`mcp_plugin.lib.setup_cli`.
 """
 
 # cSpell:ignore mysqlsh MariaDB
@@ -33,7 +37,7 @@ import os
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_migration
+from mcp_plugin.lib import config, general, setup_cli, setup_migration
 from mcp_plugin.lib import setup_prompts as prompts
 
 
@@ -79,10 +83,7 @@ def _add_connection() -> None:
 
     # Verify the credentials by opening (and immediately closing) a session.
     try:
-        connection_data = prompts.shell().parse_uri(uri)
-        connection_data["password"] = password
-        session = prompts.shell().open_session(connection_data)
-        session.close()
+        setup_cli.verify_connection(uri, password)
     except Exception as error:  # noqa: BLE001 - surface any connection failure
         print(f"Could not connect to '{uri}': {error}")
         print("The connection was not stored.")
@@ -234,15 +235,30 @@ def _menu() -> None:
         entries[int(choice) - 1][1]()
 
 
-def run_setup() -> None:
-    """Runs the interactive MCP server setup.
+def run_setup(**options) -> None:
+    """Runs the MCP server setup, interactively or from the given options.
+
+    With no options this is the walkthrough it has always been. With any option
+    it is declarative instead and asks nothing it was not obliged to
+    (:func:`mcp_plugin.lib.setup_cli.apply`), which is what lets it run where
+    there is no terminal - the interactive-session requirement below applies
+    only to the walkthrough, since that is the only part that cannot proceed
+    without one.
+
+    Args:
+        **options (dict): See ``mcp.setup``.
 
     Returns:
         None
     """
+    if setup_cli.has_options(options):
+        setup_cli.apply(options)
+        return
+
     if not prompts.shell().options.useWizards:
         raise mysqlsh.Error(
-            "mcp.setup must be run from an interactive shell session."
+            "mcp.setup must be run from an interactive shell session, or with "
+            "options - run 'mariadb-shell -- mcp setup --help' for those."
         )
 
     print("=== MariaDB MCP Server setup ===")
