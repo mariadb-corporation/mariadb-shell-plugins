@@ -87,10 +87,15 @@ _active_transport = None
 FUNCTION_GROUP_DB = "db"
 FUNCTION_GROUP_MSM = "msm"
 FUNCTION_GROUP_SANDBOX = "sandbox"
+# The migration group is supported wherever the group list is concerned, but its
+# tools register only where the migration tooling is actually installed - see
+# mcp_plugin.lib.migrator_functions.register_migration_tools.
+FUNCTION_GROUP_MIGRATION = "migration"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
     FUNCTION_GROUP_SANDBOX,
+    FUNCTION_GROUP_MIGRATION,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 

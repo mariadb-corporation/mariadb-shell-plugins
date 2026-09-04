@@ -153,8 +153,8 @@ primitives in `lib/setup_prompts.py`).
 ## Exposed MCP tools
 
 The tools are grouped into function groups that can be loaded independently via the
-`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`; defaults to
-all):
+`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migration`;
+defaults to all):
 
 ```bash
 # expose only the database tools
@@ -222,6 +222,52 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 | `sandbox.delete` | `sandbox.delete` |
 | `sandbox.vendor` | `sandbox.vendor` |
 | `sandbox.version` | `sandbox.version` |
+
+### Migration tools (`migration`)
+
+| MCP tool | Purpose |
+| -------- | ------- |
+| `migration.set_config` | Writes the tooling's `config/migration.yaml`. |
+| `migration.plan` | Generates a migration plan; executes nothing. |
+| `migration.run` | Executes the migration steps. |
+| `migration.resume` | Resumes a failed run from its `state.json`. |
+
+These are registered **only where the migration tooling is installed** (see
+[Migration tooling](#migration-tooling)). On a server that never ran the download step
+the group registers nothing rather than advertising tools whose every call would fail,
+so installing the tooling takes effect on the next server start.
+
+Three things are deliberately not in the client's hands:
+
+- **Which servers can be reached at all.** A configuration may only name accounts that
+  are among the connections `mcp.setup` configured. `migration.set_config` composes the
+  connection URI from the configuration's own fields - `SRC_ADMIN_USER` at
+  `SRC_HOST`:`SRC_PORT`, `TGT_ADMIN_USER` at `TGT_HOST`:`TGT_PORT`, `REPL_USER` on the
+  source - and **refuses to write the file at all** if any of them is not a configured
+  connection. A client therefore cannot point a migration at a server it was never
+  given, not even to have the attempt fail later. A side that names a host must also
+  name the account to reach it by, since otherwise there would be nothing to check
+  against. The check is applied to the *merged* result, so two individually harmless
+  `merge` calls cannot add up to a forbidden connection; and it runs **again before
+  every migration**, so removing a connection with `mcp.setup` stops the runs already
+  configured against it.
+- **Passwords.** `migration.set_config` refuses `SRC_PASS`, `SRC_ADMIN_PASS`, `TGT_PASS`,
+  `TGT_ADMIN_PASS` and `REPL_PASS`, so no password is ever written to disk by this
+  plugin. Each is read from the shell's secret store when a migration runs, under the
+  matching configured connection. The result reports which connection answered, never
+  the secret.
+- **The working directory.** Every run happens in the install directory, so `out` must be
+  relative to it; an absolute path is refused.
+
+Each run returns its exit code, the tail of the orchestrator's output, the artifacts
+directory and that run's `report.json` when it wrote one. Every invocation is given a
+closed stdin: the orchestrator prompts for anything missing from the configuration - and
+`plan` has no `--non-interactive` flag at all - so without that an incomplete
+configuration would hang a tool call instead of reporting what was absent.
+
+A migration can outlast any client's patience. `timeout` defaults to an hour, and
+because the artifacts directory comes back either way, a run that outlives its timeout
+can still be followed from its own files and picked up with `migration.resume`.
 
 ## Installation
 
