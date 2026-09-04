@@ -73,7 +73,7 @@ _FUNCTION_GROUP_REGISTRARS = {
     general.FUNCTION_GROUP_DB: db_functions.register_db_tools,
     general.FUNCTION_GROUP_MSM: msm_functions.register_msm_tools,
     general.FUNCTION_GROUP_SANDBOX: sandbox_functions.register_sandbox_tools,
-    general.FUNCTION_GROUP_MIGRATION: migrator_functions.register_migration_tools,
+    general.FUNCTION_GROUP_MIGRATOR: migrator_functions.register_migrator_tools,
 }
 
 

@@ -21,7 +21,7 @@ directories the MCP server is allowed to access. Connections are verified with
 :mod:`mcp_plugin.lib.config`).
 
 The management menu also offers the MySQL-to-MariaDB migration tooling, which
-lives in :mod:`mcp_plugin.lib.setup_migration`: it is a menu-only step, never
+lives in :mod:`mcp_plugin.lib.setup_migrator`: it is a menu-only step, never
 part of the first run, and it is left out altogether on platforms the tooling
 does not run on. The prompt primitives are in
 :mod:`mcp_plugin.lib.setup_prompts`, shared with that module.
@@ -37,7 +37,7 @@ import os
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_cli, setup_migration
+from mcp_plugin.lib import config, general, setup_cli, setup_migrator
 from mcp_plugin.lib import setup_prompts as prompts
 
 
@@ -188,7 +188,7 @@ def _menu_entries() -> list:
     """Returns the management menu's (label, action) pairs, in order.
 
     The migration tooling is appended only where it runs (see
-    :func:`mcp_plugin.lib.setup_migration.is_supported`), which is why the menu
+    :func:`mcp_plugin.lib.setup_migrator.is_supported`), which is why the menu
     is built rather than written out: on Windows the entry is absent and every
     number after it - "Finish" included - shifts up by one on its own.
 
@@ -201,8 +201,8 @@ def _menu_entries() -> list:
         ("Add an allowed path", _add_path),
         ("Delete an allowed path", _delete_path),
     ]
-    if setup_migration.is_supported():
-        entries.append((setup_migration.menu_label(), setup_migration.manage))
+    if setup_migrator.is_supported():
+        entries.append((setup_migrator.menu_label(), setup_migrator.manage))
 
     return entries
 
@@ -212,8 +212,8 @@ def _menu() -> None:
     while True:
         _print_connections()
         _print_paths()
-        if setup_migration.is_supported():
-            setup_migration.print_status()
+        if setup_migrator.is_supported():
+            setup_migrator.print_status()
 
         # Rebuilt every round: the migration entry's label follows what is
         # installed, which the previous round may have just changed.

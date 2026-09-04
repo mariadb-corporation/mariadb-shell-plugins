@@ -203,14 +203,14 @@ anything is installed - including a release older than the configured one - and
 
 The tooling runs on **Linux and macOS** only. `mcp.setup` therefore leaves the step out
 of the menu on Windows rather than installing something that cannot be run there; the
-plugin's own features do not depend on it. The code lives in `lib/setup_migration.py`,
+plugin's own features do not depend on it. The code lives in `lib/setup_migrator.py`,
 separate from the rest of the interactive setup in `lib/setup.py` (both share the prompt
 primitives in `lib/setup_prompts.py`).
 
 ## Exposed MCP tools
 
 The tools are grouped into function groups that can be loaded independently via the
-`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migration`;
+`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migrator`;
 defaults to all):
 
 ```bash
@@ -280,14 +280,14 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 | `sandbox.vendor` | `sandbox.vendor` |
 | `sandbox.version` | `sandbox.version` |
 
-### Migration tools (`migration`)
+### Migrator tools (`migrator`)
 
 | MCP tool | Purpose |
 | -------- | ------- |
-| `migration.set_config` | Writes the tooling's `config/migration.yaml`. |
-| `migration.plan` | Generates a migration plan; executes nothing. |
-| `migration.run` | Executes the migration steps. |
-| `migration.resume` | Resumes a failed run from its `state.json`. |
+| `migrator.set_config` | Writes the tooling's `config/migration.yaml`. |
+| `migrator.plan` | Generates a migration plan; executes nothing. |
+| `migrator.run` | Executes the migration steps. |
+| `migrator.resume` | Resumes a failed run from its `state.json`. |
 
 These are registered **only where the migration tooling is installed** (see
 [Migration tooling](#migration-tooling)). On a server that never ran the download step
@@ -297,7 +297,7 @@ so installing the tooling takes effect on the next server start.
 Three things are deliberately not in the client's hands:
 
 - **Which servers can be reached at all.** A configuration may only name accounts that
-  are among the connections `mcp.setup` configured. `migration.set_config` composes the
+  are among the connections `mcp.setup` configured. `migrator.set_config` composes the
   connection URI from the configuration's own fields - `SRC_ADMIN_USER` at
   `SRC_HOST`:`SRC_PORT`, `TGT_ADMIN_USER` at `TGT_HOST`:`TGT_PORT`, `REPL_USER` on the
   source - and **refuses to write the file at all** if any of them is not a configured
@@ -308,7 +308,7 @@ Three things are deliberately not in the client's hands:
   `merge` calls cannot add up to a forbidden connection; and it runs **again before
   every migration**, so removing a connection with `mcp.setup` stops the runs already
   configured against it.
-- **Passwords.** `migration.set_config` refuses `SRC_PASS`, `SRC_ADMIN_PASS`, `TGT_PASS`,
+- **Passwords.** `migrator.set_config` refuses `SRC_PASS`, `SRC_ADMIN_PASS`, `TGT_PASS`,
   `TGT_ADMIN_PASS` and `REPL_PASS`, so no password is ever written to disk by this
   plugin. Each is read from the shell's secret store when a migration runs, under the
   matching configured connection. The result reports which connection answered, never
@@ -324,7 +324,7 @@ configuration would hang a tool call instead of reporting what was absent.
 
 A migration can outlast any client's patience. `timeout` defaults to an hour, and
 because the artifacts directory comes back either way, a run that outlives its timeout
-can still be followed from its own files and picked up with `migration.resume`.
+can still be followed from its own files and picked up with `migrator.resume`.
 
 ## Installation
 

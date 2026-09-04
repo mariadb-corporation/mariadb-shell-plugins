@@ -32,7 +32,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_plugin.lib import config, setup, setup_migration, setup_prompts
+from mcp_plugin.lib import config, setup, setup_migrator, setup_prompts
 import mcp_plugin.tests.unit.helpers as helpers
 
 
@@ -261,19 +261,19 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
     assert os.path.abspath(path) not in config.get_allowed_paths()
 
     # The migration tooling entry offers whatever applies to what is installed,
-    # rather than a fixed "download" (see tests/unit/test_migrator.py). Compared
+    # rather than a fixed "download" (see tests/unit/test_setup_migrator.py). Compared
     # against the label itself so this holds whatever happens to be installed.
     menu = capsys.readouterr().out
-    assert f"5. {setup_migration.menu_label()}" in menu
+    assert f"5. {setup_migrator.menu_label()}" in menu
 
 
-def test_setup_menu_hides_the_migration_tooling_where_it_is_unsupported(
+def test_setup_menu_hides_the_migrator_where_it_is_unsupported(
     clean_config, tmp_path, monkeypatch, capsys
 ):
     """On Windows the whole migration step is absent from the interactive setup.
 
     Driven through run_setup rather than through _menu_entries (see
-    tests/unit/test_migrator.py) because "not shown" covers the status line the
+    tests/unit/test_setup_migrator.py) because "not shown" covers the status line the
     menu prints above itself as well as the entry itself - and because the
     scripted answers are what prove the renumbering: "5" has to be Finish, so a
     menu that still had six choices would leave a prompt unanswered and
@@ -281,7 +281,7 @@ def test_setup_menu_hides_the_migration_tooling_where_it_is_unsupported(
     """
     _clear_config()
     config.set_allowed_paths([])
-    monkeypatch.setattr(setup_migration, "is_supported", lambda: False)
+    monkeypatch.setattr(setup_migrator, "is_supported", lambda: False)
 
     fake_shell = _FakeShell(["5"])  # menu: finish, which is 5 without the entry
     monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)

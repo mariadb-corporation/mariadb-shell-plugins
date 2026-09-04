@@ -41,7 +41,7 @@ import sys
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_migration
+from mcp_plugin.lib import config, general, setup_migrator
 from mcp_plugin.lib import setup_prompts as prompts
 
 # Options that change something. Their presence is what switches mcp.setup from
@@ -387,27 +387,27 @@ def _delete_paths(options: dict) -> None:
 
 def _remove_migrator() -> None:
     """Removes every installed release of the migration tooling."""
-    removed_dir = setup_migration.remove()
+    removed_dir = setup_migrator.remove()
     print(f"Migration tooling removed from '{removed_dir}'.")
 
 
 def _install_migrator() -> None:
     """Downloads, provisions and wraps the configured migration tooling release."""
-    if not setup_migration.is_supported():
+    if not setup_migrator.is_supported():
         raise mysqlsh.Error(
             "The migration tooling is a POSIX shell program and does not run "
             "on this platform, so there is nothing to install."
         )
 
-    print(f"Downloading {setup_migration.archive_url()} ...")
-    target_dir = setup_migration.download()
+    print(f"Downloading {setup_migrator.archive_url()} ...")
+    target_dir = setup_migrator.download()
     print(f"Migration tooling {general.MIGRATOR_VERSION} installed in '{target_dir}'.")
 
     print("Creating the virtual environment and installing dependencies ...")
-    venv_dir = setup_migration.provision(target_dir)
+    venv_dir = setup_migrator.provision(target_dir)
     print(f"Virtual environment ready in '{venv_dir}'.")
 
-    wrapper = setup_migration.install_wrapper(target_dir)
+    wrapper = setup_migrator.install_wrapper(target_dir)
     print(f"'{general.MIGRATOR_DIR_NAME}' wrapper installed as '{wrapper}'.")
 
 
@@ -422,12 +422,12 @@ def configuration() -> dict:
         "config_path": general.get_plugin_data_path(),
         "connections": config.list_connection_uris(),
         "allowed_paths": config.get_allowed_paths(),
-        "migration_tooling": {
-            "supported": setup_migration.is_supported(),
+        "migrator": {
+            "supported": setup_migrator.is_supported(),
             "configured_release": general.MIGRATOR_VERSION,
-            "installed_releases": setup_migration.installed_versions(),
+            "installed_releases": setup_migrator.installed_versions(),
             "install_path": general.get_migrator_path(),
-            "wrapper_path": setup_migration.wrapper_path(),
+            "wrapper_path": setup_migrator.wrapper_path(),
         },
     }
 
@@ -456,7 +456,7 @@ def _show(options: dict) -> None:
     if not current["allowed_paths"]:
         print("  (none)")
 
-    tooling = current["migration_tooling"]
+    tooling = current["migrator"]
     print("\nMigration tooling:")
     if not tooling["supported"]:
         print("  not supported on this platform")

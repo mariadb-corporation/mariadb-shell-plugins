@@ -17,7 +17,7 @@
 
 The tools here write the tooling's configuration and run its orchestrator. They
 are registered only when the tooling is actually installed (see
-:func:`register_migration_tools`), so a server on a machine that never ran the
+:func:`register_migrator_tools`), so a server on a machine that never ran the
 download step does not advertise tools that could not do anything.
 
 Two things are deliberately NOT in the client's hands:
@@ -29,7 +29,7 @@ Two things are deliberately NOT in the client's hands:
   a server it was never given - not even to have the attempt fail later. The
   check runs again before every migration, so removing a connection stops the
   runs already configured against it.
-* **Passwords.** The configuration written by ``migration.set_config`` never
+* **Passwords.** The configuration written by ``migrator.set_config`` never
   carries one. Each is read from the shell's secret store at run time, under the
   connection URI the configuration's own host/port/user fields compose. A client
   can therefore run a migration against a configured server without ever being
@@ -56,7 +56,7 @@ from typing import Optional
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_migration
+from mcp_plugin.lib import config, general, setup_migrator
 from mcp_plugin.lib.tool_registrar import tool_registrar
 
 # The tooling's configuration and the template it follows, both relative to the
@@ -101,7 +101,7 @@ _CONNECTION_SIDES = (
 
 def _install_dir() -> str:
     """Returns the install the tools operate on, refusing if there is none."""
-    if not setup_migration.is_installed():
+    if not setup_migrator.is_installed():
         raise mysqlsh.Error(
             "The MySQL-to-MariaDB migration tooling is not installed. Run "
             "'mariadb-shell -- mcp setup' and choose the download step."
@@ -307,7 +307,7 @@ def _load_config_env() -> dict:
     if not os.path.isfile(path):
         raise mysqlsh.Error(
             f"No migration configuration at '{path}'. Write one with "
-            "migration.set_config first."
+            "migrator.set_config first."
         )
 
     try:
@@ -401,7 +401,7 @@ def _run_orchestrator(command: str, arguments: list, timeout: int) -> dict:
 
     passwords, resolved = _connection_passwords(env_mapping)
 
-    venv_dir = os.path.join(install_dir, setup_migration.MIGRATOR_VENV_DIR)
+    venv_dir = os.path.join(install_dir, setup_migrator.MIGRATOR_VENV_DIR)
     child_env = dict(os.environ)
     child_env.update(passwords)
     # What `activate` does, without needing a shell to do it.
@@ -412,14 +412,14 @@ def _run_orchestrator(command: str, arguments: list, timeout: int) -> dict:
     child_env.pop("PYTHONHOME", None)
 
     general.log_event(
-        f"migration.{command} in '{install_dir}' with passwords for "
+        f"migrator.{command} in '{install_dir}' with passwords for "
         f"{sorted(resolved.values()) or 'no configured connection'}"
     )
 
     try:
         result = subprocess.run(
             [
-                setup_migration._venv_python(install_dir),
+                setup_migrator._venv_python(install_dir),
                 "-m", ORCHESTRATOR_MODULE, command,
                 *arguments,
             ],
@@ -436,7 +436,7 @@ def _run_orchestrator(command: str, arguments: list, timeout: int) -> dict:
         )
     except subprocess.TimeoutExpired as error:
         raise mysqlsh.Error(
-            f"migration.{command} did not finish within {timeout}s and was "
+            f"migrator.{command} did not finish within {timeout}s and was "
             "stopped. Its artifacts directory holds whatever it had written by "
             "then."
         ) from error
@@ -454,7 +454,7 @@ def _run_orchestrator(command: str, arguments: list, timeout: int) -> dict:
 
 
 def write_config(mode: str, env: dict, merge: bool = False) -> dict:
-    """Writes the tooling's config/migration.yaml. See ``migration.set_config``.
+    """Writes the tooling's config/migration.yaml. See ``migrator.set_config``.
 
     Args:
         mode (str): The default execution mode to record.
@@ -528,7 +528,7 @@ def write_config(mode: str, env: dict, merge: bool = False) -> dict:
     }
 
 
-def register_migration_tools(server, function_groups=()) -> None:
+def register_migrator_tools(server, function_groups=()) -> None:
     """Registers the migration tools, but only where the tooling is installed.
 
     The tools drive a program that has to be on disk to be driven, so a server
@@ -544,7 +544,7 @@ def register_migration_tools(server, function_groups=()) -> None:
     Returns:
         None
     """
-    if not setup_migration.is_installed():
+    if not setup_migrator.is_installed():
         general.log_event(
             "migration tools not registered: the MySQL-to-MariaDB migration "
             f"tooling ({general.MIGRATOR_VERSION}) is not installed in "
@@ -557,7 +557,7 @@ def register_migration_tools(server, function_groups=()) -> None:
 
     tool = tool_registrar(server)
 
-    @tool(name="migration.set_config")
+    @tool(name="migrator.set_config")
     async def set_config(
         ctx: Context,
         mode: str,
@@ -604,7 +604,7 @@ def register_migration_tools(server, function_groups=()) -> None:
             lambda: write_config(mode, env, merge)
         )
 
-    @tool(name="migration.plan")
+    @tool(name="migrator.plan")
     async def plan(
         ctx: Context,
         mode: str,
@@ -628,7 +628,7 @@ def register_migration_tools(server, function_groups=()) -> None:
             lambda: _invoke("plan", mode, out, timeout, non_interactive=False)
         )
 
-    @tool(name="migration.run")
+    @tool(name="migrator.run")
     async def run(
         ctx: Context,
         mode: str,
@@ -638,19 +638,19 @@ def register_migration_tools(server, function_groups=()) -> None:
         """Executes the migration steps for the configured source and target.
 
         This CHANGES the target server, and depending on the mode the source as
-        well. Run migration.plan first and read its report.
+        well. Run migrator.plan first and read its report.
 
         Args:
             mode: The execution mode to run (for example one_step, two_step,
                 staged, binlog, inplace, replace_slave).
             out: The artifacts directory, relative to the install directory.
                 Defaults to a fresh artifacts/run_<mode>_<timestamp>. Keep it:
-                migration.resume needs the state.json written there.
+                migrator.resume needs the state.json written there.
             timeout: Seconds to allow before the invocation is stopped. A
                 migration can take far longer than the default hour; the
                 artifacts directory is returned either way, so a run that
                 outlasts its timeout can still be followed from its own files
-                and picked up with migration.resume.
+                and picked up with migrator.resume.
 
         Returns:
             A dict with the outcome, the artifacts directory and the run's own
@@ -660,7 +660,7 @@ def register_migration_tools(server, function_groups=()) -> None:
             lambda: _invoke("run", mode, out, timeout, non_interactive=True)
         )
 
-    @tool(name="migration.resume")
+    @tool(name="migrator.resume")
     async def resume(
         ctx: Context,
         mode: str,
@@ -673,7 +673,7 @@ def register_migration_tools(server, function_groups=()) -> None:
             mode: The execution mode to resume with.
             out: The artifacts directory of the run to resume, relative to the
                 install directory - the one holding its state.json, as returned
-                by migration.run.
+                by migrator.run.
             timeout: Seconds to allow before the invocation is stopped.
 
         Returns:

@@ -36,7 +36,7 @@ import pytest
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup, setup_cli, setup_migration
+from mcp_plugin.lib import config, general, setup, setup_cli, setup_migrator
 from mcp_plugin.lib import setup_prompts as prompts
 
 
@@ -428,19 +428,19 @@ def test_deleting_a_path_that_is_not_allowed_is_an_error(clean_config, tmp_path)
 # --- The migration tooling -------------------------------------------------
 
 
-def test_the_migration_tooling_is_installed_in_three_steps(clean_config, monkeypatch):
+def test_the_migrator_is_installed_in_three_steps(clean_config, monkeypatch):
     """Download, provision, wrap - the same three the menu drives."""
     calls = []
-    monkeypatch.setattr(setup_migration, "is_supported", lambda: True)
+    monkeypatch.setattr(setup_migrator, "is_supported", lambda: True)
     monkeypatch.setattr(
-        setup_migration, "download", lambda: calls.append("download") or "/dir"
+        setup_migrator, "download", lambda: calls.append("download") or "/dir"
     )
     monkeypatch.setattr(
-        setup_migration, "provision",
+        setup_migrator, "provision",
         lambda target: calls.append(("provision", target)) or "/dir/.venv",
     )
     monkeypatch.setattr(
-        setup_migration, "install_wrapper",
+        setup_migrator, "install_wrapper",
         lambda target: calls.append(("wrapper", target)) or "/bin/mariadb-migrator",
     )
 
@@ -453,9 +453,9 @@ def test_installing_the_tooling_where_it_does_not_run_is_refused(
     clean_config, monkeypatch
 ):
     """Windows gets the same answer here as it gets from the menu: nothing."""
-    monkeypatch.setattr(setup_migration, "is_supported", lambda: False)
+    monkeypatch.setattr(setup_migrator, "is_supported", lambda: False)
     monkeypatch.setattr(
-        setup_migration, "download",
+        setup_migrator, "download",
         lambda: (_ for _ in ()).throw(AssertionError("downloaded anyway")),
     )
 
@@ -466,8 +466,8 @@ def test_installing_the_tooling_where_it_does_not_run_is_refused(
 
 
 def test_removing_the_tooling_reports_what_went(clean_config, monkeypatch):
-    """One step, and it takes the wrapper with it (see setup_migration)."""
-    monkeypatch.setattr(setup_migration, "remove", lambda: "/root")
+    """One step, and it takes the wrapper with it (see setup_migrator)."""
+    monkeypatch.setattr(setup_migrator, "remove", lambda: "/root")
 
     setup_cli.apply({"remove_migrator": True})
 
@@ -475,11 +475,11 @@ def test_removing_the_tooling_reports_what_went(clean_config, monkeypatch):
 def test_remove_and_install_together_is_the_reinstall_idiom(clean_config, monkeypatch):
     """Removal runs first, so the pair reinstalls rather than contradicting."""
     calls = []
-    monkeypatch.setattr(setup_migration, "is_supported", lambda: True)
-    monkeypatch.setattr(setup_migration, "remove", lambda: calls.append("remove") or "/root")
-    monkeypatch.setattr(setup_migration, "download", lambda: calls.append("download") or "/dir")
-    monkeypatch.setattr(setup_migration, "provision", lambda target: "/dir/.venv")
-    monkeypatch.setattr(setup_migration, "install_wrapper", lambda target: "/bin/m")
+    monkeypatch.setattr(setup_migrator, "is_supported", lambda: True)
+    monkeypatch.setattr(setup_migrator, "remove", lambda: calls.append("remove") or "/root")
+    monkeypatch.setattr(setup_migrator, "download", lambda: calls.append("download") or "/dir")
+    monkeypatch.setattr(setup_migrator, "provision", lambda target: "/dir/.venv")
+    monkeypatch.setattr(setup_migrator, "install_wrapper", lambda target: "/bin/m")
 
     setup_cli.apply({"install_migrator": True, "remove_migrator": True})
 
@@ -581,18 +581,18 @@ def test_show_with_json_prints_one_parsable_document(clean_config, tmp_path, cap
     assert str(tmp_path) in reported["allowed_paths"]
     assert reported["allowed_paths"] == config.get_allowed_paths()
     assert reported["connections"] == config.list_connection_uris()
-    tooling = reported["migration_tooling"]
+    tooling = reported["migrator"]
     assert tooling["configured_release"] == general.MIGRATOR_VERSION
-    assert tooling["supported"] is setup_migration.is_supported()
-    assert tooling["installed_releases"] == setup_migration.installed_versions()
-    assert tooling["wrapper_path"] == setup_migration.wrapper_path()
+    assert tooling["supported"] is setup_migrator.is_supported()
+    assert tooling["installed_releases"] == setup_migrator.installed_versions()
+    assert tooling["wrapper_path"] == setup_migrator.wrapper_path()
 
 
 def test_show_on_a_platform_without_the_tooling_says_so(
     clean_config, monkeypatch, capsys
 ):
     """No install path to report where the tooling cannot run."""
-    monkeypatch.setattr(setup_migration, "is_supported", lambda: False)
+    monkeypatch.setattr(setup_migrator, "is_supported", lambda: False)
 
     setup_cli.apply({"show": True})
 

@@ -47,8 +47,10 @@ def start_server(**options) -> None:
         transport (str): The MCP transport to use, either "streamable-http" or
             "stdio". Defaults to streamable-http.
         function_groups (list): The function groups to expose, allowing them to
-            be loaded independently. Supported groups are "db", "sandbox" and
-            "msm". Defaults to all groups.
+            be loaded independently. Supported groups are "db", "msm",
+            "sandbox" and "migrator". Defaults to all groups. The "migrator"
+            group registers its tools only where the MySQL-to-MariaDB
+            migration tooling is installed (see mcp.setup).
         allowed_hosts (list): Additional values of the HTTP Host header to
             accept, for a server reached under a name that cannot be derived
             from the host it binds to - through a reverse proxy, a port forward

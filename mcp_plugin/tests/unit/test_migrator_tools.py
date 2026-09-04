@@ -34,7 +34,7 @@ import pytest
 import mysqlsh
 import yaml
 
-from mcp_plugin.lib import config, general, migrator_functions, setup_migration
+from mcp_plugin.lib import config, general, migrator_functions, setup_migrator
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def fake_install(tmp_path, monkeypatch):
     (install_dir / "config" / "migration.yaml.example").write_text(
         'mode: "one_step"\nenv:\n  SRC_HOST: "source-db-host"\n', encoding="utf-8"
     )
-    venv_bin = install_dir / setup_migration.MIGRATOR_VENV_DIR / "bin"
+    venv_bin = install_dir / setup_migrator.MIGRATOR_VENV_DIR / "bin"
     venv_bin.mkdir(parents=True)
     (venv_bin / "python3").write_text("#!/bin/sh\n", encoding="utf-8")
 
@@ -120,7 +120,7 @@ def test_no_tools_are_registered_without_an_install(tmp_path, monkeypatch, capsy
     monkeypatch.setattr(general, "get_data_home", lambda: str(tmp_path / "empty"))
     server = _FakeServer()
 
-    migrator_functions.register_migration_tools(server)
+    migrator_functions.register_migrator_tools(server)
 
     assert server.registered == []
     # Said out loud, so a client missing the tools can find out why.
@@ -128,16 +128,16 @@ def test_no_tools_are_registered_without_an_install(tmp_path, monkeypatch, capsy
 
 
 def test_all_four_tools_are_registered_with_an_install(fake_install):
-    """With the tooling installed, the four migration tools are registered."""
+    """With the tooling installed, the four migrator tools are registered."""
     server = _FakeServer()
 
-    migrator_functions.register_migration_tools(server)
+    migrator_functions.register_migrator_tools(server)
 
     assert server.registered == [
-        "migration.set_config",
-        "migration.plan",
-        "migration.run",
-        "migration.resume",
+        "migrator.set_config",
+        "migrator.plan",
+        "migrator.run",
+        "migrator.resume",
     ]
 
 
@@ -355,7 +355,7 @@ def test_the_invocation_runs_in_the_install_with_the_venv_interpreter(
     outcome = migrator_functions._invoke("run", "two_step", None, 900, True)
 
     command, kwargs = recorded_run[0]
-    assert command[0] == setup_migration._venv_python(fake_install)
+    assert command[0] == setup_migrator._venv_python(fake_install)
     assert command[1:4] == ["-m", "orchestrator.migrationctl", "run"]
     assert kwargs["cwd"] == fake_install
     # stdin closed: the orchestrator prompts for what it lacks, and plan has no
@@ -364,7 +364,7 @@ def test_the_invocation_runs_in_the_install_with_the_venv_interpreter(
     assert kwargs["timeout"] == 900
 
     child_env = kwargs["env"]
-    venv_dir = os.path.join(fake_install, setup_migration.MIGRATOR_VENV_DIR)
+    venv_dir = os.path.join(fake_install, setup_migrator.MIGRATOR_VENV_DIR)
     assert child_env["VIRTUAL_ENV"] == venv_dir
     assert child_env["PATH"].startswith(os.path.join(venv_dir, "bin") + os.pathsep)
     assert "PYTHONHOME" not in child_env
@@ -440,7 +440,7 @@ def test_a_missing_configuration_is_reported_before_anything_runs(
         migrator_functions._invoke("plan", "one_step", None, 60, False)
 
     assert "No migration configuration at" in str(error.value)
-    assert "migration.set_config" in str(error.value)
+    assert "migrator.set_config" in str(error.value)
     assert recorded_run == []
 
 
@@ -546,9 +546,9 @@ def test_the_set_config_tool_writes_and_reports(
     this suite runs coroutines - there is no async pytest plugin here.
     """
     server = _CapturingServer()
-    migrator_functions.register_migration_tools(server)
+    migrator_functions.register_migrator_tools(server)
 
-    result = asyncio.run(server.tools["migration.set_config"](
+    result = asyncio.run(server.tools["migrator.set_config"](
         None, "two_step", {**_SOURCE_AND_TARGET, "REPL_USER": "repl"}
     ))
 
@@ -564,16 +564,16 @@ def test_the_plan_run_and_resume_tools_reach_the_orchestrator(
     """Each tool invokes its own subcommand, with resume's directory required."""
     _write_valid_config()
     server = _CapturingServer()
-    migrator_functions.register_migration_tools(server)
+    migrator_functions.register_migrator_tools(server)
 
-    asyncio.run(server.tools["migration.plan"](None, "one_step"))
+    asyncio.run(server.tools["migrator.plan"](None, "one_step"))
     assert recorded_run[-1][0][3] == "plan"
 
-    asyncio.run(server.tools["migration.run"](None, "two_step"))
+    asyncio.run(server.tools["migrator.run"](None, "two_step"))
     assert recorded_run[-1][0][3] == "run"
 
     asyncio.run(
-        server.tools["migration.resume"](None, "two_step", "artifacts/earlier")
+        server.tools["migrator.resume"](None, "two_step", "artifacts/earlier")
     )
     command = recorded_run[-1][0]
     assert command[3] == "resume"
@@ -586,7 +586,7 @@ def test_the_plan_run_and_resume_tools_reach_the_orchestrator(
     from mcp.server.mcpserver.exceptions import ToolError
 
     with pytest.raises(ToolError) as error:
-        asyncio.run(server.tools["migration.resume"](None, "two_step", "  "))
+        asyncio.run(server.tools["migrator.resume"](None, "two_step", "  "))
     assert "must name the artifacts directory" in str(error.value)
 
 
@@ -596,12 +596,12 @@ def test_a_blank_mode_is_refused_by_the_run_tools(
     """The mode drives everything the orchestrator does, so it cannot be blank."""
     _write_valid_config()
     server = _CapturingServer()
-    migrator_functions.register_migration_tools(server)
+    migrator_functions.register_migrator_tools(server)
 
     from mcp.server.mcpserver.exceptions import ToolError
 
     with pytest.raises(ToolError) as error:
-        asyncio.run(server.tools["migration.run"](None, "   "))
+        asyncio.run(server.tools["migrator.run"](None, "   "))
 
     assert "must name an execution mode" in str(error.value)
     assert recorded_run == []

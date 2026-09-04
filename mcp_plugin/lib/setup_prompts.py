@@ -15,9 +15,9 @@
 
 """Interactive prompt primitives shared by the mcp.setup flows.
 
-Both :mod:`mcp_plugin.lib.setup` and :mod:`mcp_plugin.lib.setup_migration` ask
+Both :mod:`mcp_plugin.lib.setup` and :mod:`mcp_plugin.lib.setup_migrator` ask
 the user questions, so the primitives live here rather than in either of them:
-`setup` imports `setup_migration` to build its menu, so anything `setup_migration`
+`setup` imports `setup_migrator` to build its menu, so anything `setup_migrator`
 needed back from `setup` would be an import cycle.
 
 Everything goes through :func:`shell`, which is looked up per call rather than

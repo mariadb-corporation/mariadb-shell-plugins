@@ -305,10 +305,16 @@ silently runs against whatever `mariadb-shell` is on PATH.
   (`@sql_handler("MRS", prefixes=...)`, prefixes incl. "CONFIGURE REST ") that intercepts
   `session.run_sql`. Requires mrs_plugin loaded in the server subprocess (symlinked by
   run_tests). antlr4 (MRS parser dep) is bundled in mariadb-shell.
-- **The migration MCP tools live in `lib/migrator_functions.py`** (function group
-  `migration`, registered in `lib/server.py` like the other three). Four tools:
-  `migration.set_config`, `.plan`, `.run`, `.resume`. Decisions that matter:
-  - **Registration is GATED on `setup_migration.is_installed()`.** No install -> the group
+- **The naming rule, applied throughout: `migrator` is the TOOL, `migration` is what it
+  performs.** So the module, the install, the MCP group and its tools, and the CLI options
+  are all `migrator`; and the things that stay `migration` are the tool's OWN external
+  names — `config/migration.yaml` (`MIGRATION_CONFIG`, `MIGRATION_CONFIG_EXAMPLE`) and
+  `orchestrator.migrationctl` (`ORCHESTRATOR_MODULE`) — plus prose about a migration run.
+  Renaming those two would break the tooling, so do not "finish the job" on them.
+- **The migrator MCP tools live in `lib/migrator_functions.py`** (function group
+  `migrator`, registered in `lib/server.py` like the other three). Four tools:
+  `migrator.set_config`, `.plan`, `.run`, `.resume`. Decisions that matter:
+  - **Registration is GATED on `setup_migrator.is_installed()`.** No install -> the group
     registers NOTHING and says so via `log_event`, rather than advertising four tools whose
     every call would fail. Consequence: installing the tooling takes effect on the NEXT
     server start, not the current one.
@@ -400,14 +406,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
     constant is what makes an install a property of the plugin version.
 - **The interactive setup is THREE modules, not one** (refactored after the AIPL-21
   commit): `lib/setup.py` (connections, allowed paths, the menu, `run_setup`),
-  `lib/setup_migration.py` (everything migration) and `lib/setup_prompts.py` (the prompt
+  `lib/setup_migrator.py` (everything migration) and `lib/setup_prompts.py` (the prompt
   primitives). The prompts module exists to break a cycle: `setup` imports
-  `setup_migration` to build its menu, so anything `setup_migration` needed back from
+  `setup_migrator` to build its menu, so anything `setup_migrator` needed back from
   `setup` — and it needs `yes_no` — would have been circular. Injecting the prompt
   function into `manage()` was the alternative and was rejected: a shared primitive is the
   honest structure, and it also collapses the tests' patch points to ONE
   (`setup_prompts.shell`) instead of one per module.
-  - Public names in `setup_migration` dropped the now-redundant `migrator` prefix:
+  - Public names in `setup_migrator` dropped the now-redundant `migrator` prefix:
     `download`, `remove`, `archive_url`, `installed_version`, `is_installed`, `menu_label`,
     `print_status`, `manage`, plus the new `is_supported`. The private extraction helpers
     (`_download_archive`, `_archive_prefix`, `_archive_destination`, `_extract_archive`)
@@ -420,7 +426,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   - `setup.py` still needs `import os` for the allowed-paths section. Dropping it while
     moving the migration code out was the refactor's one real breakage (4 tests, all
     `NameError: name 'os' is not defined`).
-- **The migration tooling is NOT offered on Windows** (`setup_migration.is_supported()`,
+- **The migration tooling is NOT offered on Windows** (`setup_migrator.is_supported()`,
   `os.name != "nt"`). It is a POSIX shell entry point driving a directory of shell
   scripts, so an install on Windows would be a menu entry that only ever disappoints, and
   nothing else in the plugin depends on it. Two deliberate choices here:
@@ -537,8 +543,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   implemented.** NO code changed at that point; only this file.
 - **THEN, same session: the setup was REFACTORED and the Windows gate added** (see
   Architecture for the shape and the reasoning). `lib/setup.py` 623 -> 254 lines; new
-  `lib/setup_migration.py` (390) and `lib/setup_prompts.py` (81). **95 pass, 96% TOTAL**
-  (1083 stmts / 48 missed, clean `.coverage`): lib/setup_migration **99**, lib/setup 87,
+  `lib/setup_migrator.py` (390) and `lib/setup_prompts.py` (81). **95 pass, 96% TOTAL**
+  (1083 stmts / 48 missed, clean `.coverage`): lib/setup_migrator **99**, lib/setup 87,
   lib/setup_prompts 81. The missed-line count did not move (20 before, 20 across the three
   modules after) — setup.py's percentage fell from 92 only because the denominator
   shrank, NOT because coverage was lost. **THREE revert probes, each against its own
@@ -549,7 +555,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   2. `_menu_entries` appends the entry unconditionally:
      `test_the_windows_menu_leaves_the_entry_out_and_renumbers` failed (`assert 5 == 4`).
   3. `print_status()` un-gated in `_menu`:
-     `test_setup_menu_hides_the_migration_tooling_where_it_is_unsupported` failed on the
+     `test_setup_menu_hides_the_migrator_where_it_is_unsupported` failed on the
      status line leaking into the output. Probe 3's own output also confirmed the Windows
      menu renders as `1..4` + `5. Finish`, with no migration line.
   **This work is COMMITTED** — see Git state.
@@ -558,7 +564,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   Architecture for the six decisions). Two of them were the user's answers to a direct
   question rather than mine: **remove clears the whole tree**, and **the
   `.migrator-version` file is dropped**. **97 pass, 96%** (1089 stmts / 48 missed, clean
-  `.coverage`); lib/setup_migration 99, lib/general 98. THREE more revert probes, one per
+  `.coverage`); lib/setup_migrator 99, lib/general 98. THREE more revert probes, one per
   new behaviour:
   1. `get_migrator_path()` -> the root (release dropped from the path): **15 tests failed**.
   2. `remove()` scoped to the configured release only: 2 failed, including the removal test
@@ -569,7 +575,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   self-contained**, on the user's instruction after the feasibility work below. `mcp.setup`
   now builds the venv and installs dependencies into the downloaded folder, and installs a
   wrapper at `~/.local/bin/mariadb-migrator` that overwrites an older one of ours.
-  **111 pass, 96%** (1168 stmts / 48 missed, clean `.coverage`), lib/setup_migration 99.
+  **111 pass, 96%** (1168 stmts / 48 missed, clean `.coverage`), lib/setup_migrator 99.
   **VERIFIED FOR REAL, not just in tests**: `printf '5\ny\n5\ny\n6\n' | mariadb-shell
   --py -e "mcp.setup()"` removed and reinstalled the tooling with a live GitHub fetch and a
   live PyPI install (typer 0.12.3, click 8.1.7, rich 13.7.1, PyYAML 6.0.2), then
@@ -578,6 +584,28 @@ silently runs against whatever `mariadb-shell` is on PATH.
   excluded; `command -v python3` -> NONE). The orchestrator itself
   (`python3 -m orchestrator.migrationctl --help`) also ran in that environment, resolving
   python3 to `<install>/.venv/bin/python3`.
+- **THEN, same session: `migration.*` was renamed to `migrator.*`** (user's instruction),
+  and the rename carried further than asked because a partial one would have been
+  incoherent:
+  - `lib/setup_migration.py` -> **`lib/setup_migrator.py`** (asked for).
+  - The four MCP tools `migration.*` -> **`migrator.*`** (asked for).
+  - **`FUNCTION_GROUP_MIGRATION = "migration"` -> `FUNCTION_GROUP_MIGRATOR = "migrator"`**
+    — REQUIRED, not cosmetic: every other group name mirrors its tool prefix
+    (`db.*`/`db`), so `--functionGroups=migration` enabling `migrator.*` tools would have
+    been incoherent. **This is a user-visible CLI change**: `--functionGroups=migration`
+    is now rejected.
+  - `register_migration_tools` -> `register_migrator_tools` (matches `register_db_tools`).
+  - `tests/unit/test_migration_tools.py` -> `test_migrator_tools.py`, and
+    `tests/unit/test_migrator.py` -> **`test_setup_migrator.py`** so each test file names
+    the module it tests, as `test_setup_cli.py` already did — otherwise
+    `test_migrator.py` and `test_migrator_tools.py` would have sat side by side testing
+    different modules.
+  - The `--show`/`--json` key `"migration_tooling"` -> **`"migrator"`**.
+  - Fixed along the way: `mcp.startServer`'s docstring still listed the groups as
+    `"db", "sandbox" and "msm"`, so the CLI help for `--functionGroups` had never
+    mentioned the new group at all. A pre-existing bug the rename surfaced.
+  Verified against the real shell: 31 tools, all four `migrator.*` present, no
+  `migration.*` left, and `--functionGroups=migration` now refused.
 - **THEN, same session: every mcp.setup item became a CLI option** (`lib/setup_cli.py`,
   514 lines; see Architecture). **COMMITTED as `2f335a6c`.** **192 pass, 97% TOTAL** (1530 stmts / 50 missed, clean
   `.coverage`); `lib/setup_cli.py` **100%**. New `tests/unit/test_setup_cli.py` (44
@@ -587,12 +615,12 @@ silently runs against whatever `mariadb-shell` is on PATH.
   Also verified LIVE against the real config, with cleanup afterwards: `--passwordEnv`,
   `--passwordStdin`, `--password`, `--deleteConnections`, `--show`, `--show --json`
   (piped through a JSON parser), and every combination guard.
-- **THEN, same session: the four migration MCP tools were added**
+- **THEN, same session: the four migrator MCP tools were added**
   (`lib/migrator_functions.py`, 599 lines; see Architecture). **141 pass, 96% TOTAL**
   (1325 stmts / 48 missed, clean `.coverage`), and **`lib/migrator_functions.py` is at
-  100%**. New test file `tests/unit/test_migration_tools.py` (30 tests). Verified against
+  100%**. New test file `tests/unit/test_migrator_tools.py` (30 tests). Verified against
   the REAL install: `server.build_mcp_server(DEFAULT_FUNCTION_GROUPS)` lists **31 tools**
-  including all four `migration.*`. FOUR revert probes, one per property that matters:
+  including all four `migrator.*`. FOUR revert probes, one per property that matters:
   1. confinement removed (`configured_uri = uri`) ->
      `test_an_unconfigured_host_yields_no_password` failed with
      `KeyError: 'admin@some-host-nobody-allowed:3306'`.
@@ -1041,7 +1069,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `db.get_object_details`) are COMMITTED (3482634a, pushed).
 - Shell fns: `mcp.info`, `mcp.version`, `mcp.setup`, `mcp.startServer` (options: `host`,
   `port`, `transport`, `function_groups`, **`allowed_hosts`**).
-- Tools: **31 total**, in 4 groups. migration.* (**4**: `set_config`, `plan`, `run`,
+- Tools: **31 total**, in 4 groups. migrator.* (**4**: `set_config`, `plan`, `run`,
   `resume`) — registered ONLY where the tooling is installed, see the migration bullet
   under Architecture. db.* (**8**: `list_connections`, `connect`, `list_schemas`, `list_objects`,
   `get_object_details`, `execute_sql`, `execute_sql_script`, `close`),
@@ -1083,7 +1111,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   T2: a real session opened, used and closed across three threads), NEW `test_db_recovery`
   (**1**, T3: a real session KILLed from a second session and replaced on the next call).
   Plus NEW `test_setup_cli` (**44**: the option surface, the four password sources, the
-  combination guards, ordering and `--show`/`--json`) and NEW `test_migration_tools` (**37**: registration gating, config writing/merging/
+  combination guards, ordering and `--show`/`--json`) and NEW `test_migrator_tools` (**37**: registration gating, config writing/merging/
   refusals, the configured-connections-only validation, password confinement, and the
   orchestrator invocation's shape) and NEW
   `test_migrator` (**33**: AIPL-21's 14 reworked for the versioned path, the
@@ -1093,7 +1121,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   the CLI tests make it slower than the old ~39s.
 - **Coverage: TOTAL 97% (1530 statements, 50 missed) — measured on a run with `.coverage`
   DELETED first.** Per module: lib/migrator_functions **100**, lib/setup_cli **100**,
-  lib/msm_functions 100, lib/setup_migration 99,
+  lib/msm_functions 100, lib/setup_migrator 99,
   lib/db_functions 98, lib/general 98, lib/config 98, lib/server 97, lib/tool_registrar 93,
   lib/sandbox_functions 88, lib/setup 87, server.py 81, lib/setup_prompts 81,
   general.py 73.
@@ -1181,14 +1209,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
   ACTION_OPTIONS / PASSWORD_OPTIONS / MODIFIER_OPTIONS / KNOWN_OPTIONS. **100% covered.**
 - tests/unit/test_setup_cli.py -> the 44 CLI tests. Uses the `clean_config` fixture for
   anything that really stores a connection or a path.
-- lib/migrator_functions.py -> the `migration` function group: `write_config` (the
-  module-level body of `migration.set_config`), `validate_connections` (the
+- lib/migrator_functions.py -> the `migrator` function group: `write_config` (the
+  module-level body of `migrator.set_config`), `validate_connections` (the
   configured-connections-only gate, called from BOTH the write and the run path),
   `_named_connections`, `_connection_passwords`, `_invoke` / `_run_orchestrator`,
   `_load_config_env`, `_stringify`, `_render_config`, `_artifacts_dir`, `_read_report`,
-  `_tail`, `register_migration_tools`, `_PASSWORD_SOURCES`, `_CONNECTION_SIDES`.
+  `_tail`, `register_migrator_tools`, `_PASSWORD_SOURCES`, `_CONNECTION_SIDES`.
   **100% covered — keep it that way.**
-- tests/unit/test_migration_tools.py -> the 30 migration-tool tests. The orchestrator is
+- tests/unit/test_migrator_tools.py -> the 30 migrator-tool tests. The orchestrator is
   NEVER run: `recorded_run` stubs `subprocess.run` and the assertions are on the command,
   cwd, env and stdin. `fake_install` builds a stand-in install (config/, the example, a
   stub venv python); `configured_connections` PATCHES `config.resolve_connection_uri`,
@@ -1196,7 +1224,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   suite never writes to the developer's real secret store. **All three patches matter**:
   missing `list_connection_uris` let one test read and PRINT the developer's real
   connections into the failure output.
-- lib/setup_migration.py -> ALL migration-tooling code: `is_supported` (the Windows gate),
+- lib/setup_migrator.py -> ALL migration-tooling code: `is_supported` (the Windows gate),
   `archive_url`, `installed_versions`, `_download_archive`, `_archive_prefix`,
   `_archive_destination`, `_extract_archive`, `download`, `remove`, `is_installed`,
   `menu_label`, `print_status`, `manage`, `MIGRATOR_WORK_PREFIX`, plus the provisioning
@@ -1220,7 +1248,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   (own uvicorn, `proxy_headers=False`, explicit `transport_security`);
   `_transport_security_settings` + `_dialable_host_names` (the Host/Origin allow list);
   `_warn_if_reachable_from_the_network`; passes function_groups to the registrars.
-- tests/unit/test_migrator.py -> the 17 migration tests, driven with a monkeypatched
+- tests/unit/test_setup_migrator.py -> the 17 install tests, driven with a monkeypatched
   `urlopen` and a `migrator_data_path` fixture — NO network, so they are fast and need no
   sandbox. Weighted toward the FAILURE paths: a failed download keeps the installed copy, a
   failed swap puts it back, only ONE wrapping directory is stripped, an archive cannot write
@@ -1295,11 +1323,11 @@ silently runs against whatever `mariadb-shell` is on PATH.
    ("We will write a skill covering how to write that later") and it is the one piece of
    the migration feature deliberately left out. It has to teach an LLM: the shape
    (top-level `mode`, then `env` of STRING values), that only accounts among the
-   configured MCP connections may be named (`migration.set_config` refuses anything else),
+   configured MCP connections may be named (`migrator.set_config` refuses anything else),
    that the five password keys are refused and resolved from the secret store instead, and
    which keys each mode needs. The tooling's own
    `config/migration.yaml.example` is the template and
-   `migration.set_config` returns its path.
+   `migrator.set_config` returns its path.
 1. **The PR is OPEN** (see Git state) — the user asked for it once the migration tools
    landed, lifting the earlier "wait with the PR" instruction. Review comments on it are
    the next thing to expect.
@@ -1720,11 +1748,11 @@ silently runs against whatever `mariadb-shell` is on PATH.
      `--show`/`--json`.
   **Split into 2 rather than 5 deliberately, and each was PROVEN green on its own tree**:
   the module split, the Windows gate, the relocation and the provisioning all interleave in
-  `lib/setup_migration.py` and its tests, so splitting them further would have meant
+  `lib/setup_migrator.py` and its tests, so splitting them further would have meant
   committing states that were never run green (the same reasoning as the S5/S6/S7 and
   T1..T4 commits). The MCP tools ARE separable, so they are their own commit — built by
-  moving `lib/migrator_functions.py` and `tests/unit/test_migration_tools.py` out of the
-  tree, reverting `lib/server.py` and holding back the `FUNCTION_GROUP_MIGRATION` and
+  moving `lib/migrator_functions.py` and `tests/unit/test_migrator_tools.py` out of the
+  tree, reverting `lib/server.py` and holding back the `FUNCTION_GROUP_MIGRATOR` and
   README-tools regions, running the suite (**111 pass**), committing, then restoring
   (**148 pass**). Do that again rather than eyeballing whether a split commit builds.
   **IN SYNC with `origin/wip/AIPL-21` (divergence 0/0).** The rebase was force-pushed

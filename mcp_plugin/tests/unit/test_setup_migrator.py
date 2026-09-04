@@ -15,7 +15,7 @@
 
 """Tests for installing the MySQL-to-MariaDB migration tooling.
 
-Covers lib/setup_migration.py's download/extract path and lib/general.py's
+Covers lib/setup_migrator.py's download/extract path and lib/general.py's
 data-home and ``get_migrator_path`` helpers. The tooling installs into
 ``<data home>/mariadb-migrator/<version>``, so the release is part of the path
 and there is no version file inside an install; the fixture below points the
@@ -41,7 +41,7 @@ import pytest
 
 import mysqlsh
 
-from mcp_plugin.lib import general, setup_migration, setup_prompts
+from mcp_plugin.lib import general, setup_migrator, setup_prompts
 
 
 def _write_archive(archive_path, entries):
@@ -108,7 +108,7 @@ def _stub_download(monkeypatch, entries):
     def fake_download(url, archive_path):
         _write_archive(archive_path, entries)
 
-    monkeypatch.setattr(setup_migration, "_download_archive", fake_download)
+    monkeypatch.setattr(setup_migrator, "_download_archive", fake_download)
 
 
 def test_the_install_path_is_the_data_home_the_dir_and_the_release(migrator_data_path):
@@ -134,7 +134,7 @@ def test_downloading_installs_the_tooling(migrator_data_path, monkeypatch):
     """The archive lands in mariadb-migrator, unwrapped and still executable."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
 
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     assert target_dir == general.get_migrator_path()
     assert os.path.basename(target_dir) == general.MIGRATOR_VERSION
@@ -154,8 +154,8 @@ def test_downloading_installs_the_tooling(migrator_data_path, monkeypatch):
 
     # The directory name is the record of which release this is - there is no
     # version file inside the install to disagree with it.
-    assert setup_migration.installed_versions() == [general.MIGRATOR_VERSION]
-    assert setup_migration.is_installed() is True
+    assert setup_migrator.installed_versions() == [general.MIGRATOR_VERSION]
+    assert setup_migrator.is_installed() is True
 
     # What was executable in the archive is executable on disk - extractall()
     # would have dropped this, and the tooling is scripts.
@@ -179,7 +179,7 @@ def test_only_a_single_wrapping_directory_is_stripped(migrator_data_path, monkey
     """
     _stub_download(monkeypatch, (("mariadb-migrator", "#!/bin/sh\n", 0o755),))
 
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
     assert os.path.isfile(os.path.join(target_dir, "mariadb-migrator"))
 
     _stub_download(
@@ -190,7 +190,7 @@ def test_only_a_single_wrapping_directory_is_stripped(migrator_data_path, monkey
         ),
     )
 
-    setup_migration.download()
+    setup_migrator.download()
     assert os.path.isfile(os.path.join(target_dir, "scripts", "00_precheck.sh"))
     assert os.path.isfile(os.path.join(target_dir, "sql", "precheck.sql"))
 
@@ -198,7 +198,7 @@ def test_only_a_single_wrapping_directory_is_stripped(migrator_data_path, monkey
 def test_downloading_again_replaces_the_installed_copy(migrator_data_path, monkeypatch):
     """A second download is the new version, not the two versions merged."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     _stub_download(
         monkeypatch,
@@ -207,7 +207,7 @@ def test_downloading_again_replaces_the_installed_copy(migrator_data_path, monke
             ("Mysql-to-MariaDB-Migration-1.4.0-beta/scripts/00_precheck.sh", "#!/bin/sh\n", 0o755),
         ),
     )
-    setup_migration.download()
+    setup_migrator.download()
 
     with open(os.path.join(target_dir, "mariadb-migrator"), encoding="utf-8") as script:
         assert "# v2" in script.read()
@@ -223,7 +223,7 @@ def test_downloading_again_replaces_the_installed_copy(migrator_data_path, monke
 def test_a_failed_download_keeps_the_installed_copy(migrator_data_path, monkeypatch):
     """An install that was working is not lost to a download that fails."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     def failing_download(url, archive_path):
         # Write a partial archive first, so the failure is one that happens with
@@ -231,10 +231,10 @@ def test_a_failed_download_keeps_the_installed_copy(migrator_data_path, monkeypa
         _write_archive(archive_path, _SOURCE_ARCHIVE[:2])
         raise OSError("the network went away")
 
-    monkeypatch.setattr(setup_migration, "_download_archive", failing_download)
+    monkeypatch.setattr(setup_migrator, "_download_archive", failing_download)
 
     with pytest.raises(OSError):
-        setup_migration.download()
+        setup_migrator.download()
 
     assert os.path.isfile(os.path.join(target_dir, "mariadb-migrator"))
     assert os.path.isfile(os.path.join(target_dir, "sql", "precheck.sql"))
@@ -243,13 +243,13 @@ def test_a_failed_download_keeps_the_installed_copy(migrator_data_path, monkeypa
 
 def test_the_url_names_the_configured_release(monkeypatch):
     """The download URL is built from the version configured in lib/general.py."""
-    assert general.MIGRATOR_VERSION in setup_migration.archive_url()
-    assert setup_migration.archive_url().endswith(f"{general.MIGRATOR_VERSION}.zip")
+    assert general.MIGRATOR_VERSION in setup_migrator.archive_url()
+    assert setup_migrator.archive_url().endswith(f"{general.MIGRATOR_VERSION}.zip")
 
     # Bumping the setting is all there is to installing another release, so the
     # URL has to follow it rather than having been fixed at import time.
     monkeypatch.setattr(general, "MIGRATOR_VERSION", "v9.9.9")
-    assert setup_migration.archive_url().endswith("/refs/tags/v9.9.9.zip")
+    assert setup_migrator.archive_url().endswith("/refs/tags/v9.9.9.zip")
 
 
 def test_the_archive_is_really_fetched_from_the_configured_url(
@@ -264,10 +264,10 @@ def test_the_archive_is_really_fetched_from_the_configured_url(
     """
     archive_path = _write_archive(tmp_path / "source.zip", _SOURCE_ARCHIVE)
     monkeypatch.setattr(
-        setup_migration, "archive_url", lambda: pathlib.Path(archive_path).as_uri()
+        setup_migrator, "archive_url", lambda: pathlib.Path(archive_path).as_uri()
     )
 
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     assert os.path.isfile(os.path.join(target_dir, "mariadb-migrator"))
     assert os.path.isfile(os.path.join(target_dir, "scripts", "00_precheck.sh"))
@@ -278,7 +278,7 @@ def test_the_archive_is_really_fetched_from_the_configured_url(
 def test_a_failed_swap_puts_the_installed_copy_back(migrator_data_path, monkeypatch):
     """Failing to move the new copy into place restores the old one."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     real_rename = os.rename
 
@@ -292,7 +292,7 @@ def test_a_failed_swap_puts_the_installed_copy_back(migrator_data_path, monkeypa
     monkeypatch.setattr(os, "rename", failing_rename)
 
     with pytest.raises(OSError):
-        setup_migration.download()
+        setup_migrator.download()
 
     assert os.path.isfile(os.path.join(target_dir, "mariadb-migrator"))
     assert os.path.isfile(os.path.join(target_dir, "sql", "precheck.sql"))
@@ -314,22 +314,22 @@ def test_the_setup_option_follows_what_is_installed(migrator_data_path, monkeypa
 
     # Nothing installed: a download is offered, and declining it downloads
     # nothing.
-    assert "Download" in setup_migration.menu_label()
+    assert "Download" in setup_migrator.menu_label()
     answers.append(False)
-    setup_migration.manage()
+    setup_migrator.manage()
     assert not os.path.exists(target_dir)
     assert "Download" in asked[-1][0] and asked[-1][1] is True
 
     answers.append(True)
-    setup_migration.manage()
+    setup_migrator.manage()
     assert os.path.isfile(os.path.join(target_dir, "mariadb-migrator"))
 
     # Something installed: there is nothing left to download and what is offered
     # instead is removing it - and, being the one step that running the setup
     # again cannot undo, offered without suggesting it.
-    assert setup_migration.menu_label() == "Remove the MySQL-to-MariaDB migration tooling"
+    assert setup_migrator.menu_label() == "Remove the MySQL-to-MariaDB migration tooling"
     answers.append(False)
-    setup_migration.manage()
+    setup_migrator.manage()
     assert "Remove" in asked[-1][0] and asked[-1][1] is False
     # Declined, so it is still installed.
     assert os.path.isfile(os.path.join(target_dir, "mariadb-migrator"))
@@ -337,9 +337,9 @@ def test_the_setup_option_follows_what_is_installed(migrator_data_path, monkeypa
     # Another release being configured does NOT turn the option into an update:
     # a different release is removed and downloaded again.
     monkeypatch.setattr(general, "MIGRATOR_VERSION", "v9.9.9")
-    assert setup_migration.menu_label() == "Remove the MySQL-to-MariaDB migration tooling"
+    assert setup_migrator.menu_label() == "Remove the MySQL-to-MariaDB migration tooling"
     answers.append(True)
-    setup_migration.manage()
+    setup_migrator.manage()
     assert "Remove" in asked[-1][0]
     # Removing leaves the data home as it was before any of this.
     assert not os.path.exists(target_dir)
@@ -347,9 +347,9 @@ def test_the_setup_option_follows_what_is_installed(migrator_data_path, monkeypa
 
     # And with it gone, the configured release is what a download installs.
     answers.append(True)
-    setup_migration.manage()
+    setup_migrator.manage()
     assert "v9.9.9" in asked[-1][0]
-    assert setup_migration.installed_versions() == ["v9.9.9"]
+    assert setup_migrator.installed_versions() == ["v9.9.9"]
 
 
 def test_removing_the_tooling_takes_every_release_and_any_leftovers(
@@ -357,21 +357,21 @@ def test_removing_the_tooling_takes_every_release_and_any_leftovers(
 ):
     """Removal clears the whole root: other releases and download leftovers too."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    setup_migration.download()
+    setup_migrator.download()
     root_dir = general.get_migrator_root()
     # A release the pin has moved past, and what an interrupted download leaves.
     os.makedirs(os.path.join(root_dir, "v1.3.0-beta"))
     os.makedirs(os.path.join(root_dir, ".v1.4.0-beta.new"))
     os.makedirs(os.path.join(root_dir, ".v1.4.0-beta.old"))
 
-    assert setup_migration.remove() == root_dir
+    assert setup_migrator.remove() == root_dir
     # The root itself goes, so the data home is as it was before any of this.
     assert not os.path.exists(root_dir)
     assert os.listdir(migrator_data_path) == []
 
     # Removing what is not there is not an error - the setup only offers it for
     # an installed copy, but nothing about it depends on that.
-    assert setup_migration.remove() == root_dir
+    assert setup_migrator.remove() == root_dir
 
 
 def test_a_failed_download_is_reported_and_not_raised(
@@ -381,10 +381,10 @@ def test_a_failed_download_is_reported_and_not_raised(
     def failing_download(url, archive_path):
         raise OSError("the network went away")
 
-    monkeypatch.setattr(setup_migration, "_download_archive", failing_download)
+    monkeypatch.setattr(setup_migrator, "_download_archive", failing_download)
     monkeypatch.setattr(setup_prompts, "yes_no", lambda message, default=True: True)
 
-    setup_migration.manage()
+    setup_migrator.manage()
 
     output = capsys.readouterr().out
     assert "Could not install the migration tooling" in output
@@ -397,15 +397,15 @@ def test_a_failed_removal_is_reported_and_not_raised(
 ):
     """Nor must a removal that fails - the rest of the setup is still reachable."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    setup_migration.download()
+    setup_migrator.download()
 
     def failing_remove():
         raise OSError("permission denied")
 
-    monkeypatch.setattr(setup_migration, "remove", failing_remove)
+    monkeypatch.setattr(setup_migrator, "remove", failing_remove)
     monkeypatch.setattr(setup_prompts, "yes_no", lambda message, default=True: True)
 
-    setup_migration.manage()
+    setup_migrator.manage()
 
     output = capsys.readouterr().out
     assert "Could not remove the migration tooling" in output
@@ -424,10 +424,10 @@ def test_a_release_the_pin_moved_past_is_named_and_still_removable(
     # Download working directories are dot-prefixed and are not releases.
     os.makedirs(os.path.join(general.get_migrator_root(), ".v1.4.0-beta.new"))
 
-    assert setup_migration.installed_versions() == ["v1.3.0-beta"]
+    assert setup_migrator.installed_versions() == ["v1.3.0-beta"]
     # The CONFIGURED release is not installed, so this is False ...
-    assert setup_migration.is_installed() is False
-    assert setup_migration.print_status() is False
+    assert setup_migrator.is_installed() is False
+    assert setup_migrator.print_status() is False
     output = capsys.readouterr().out
     assert "not downloaded yet" in output
     assert "Other releases installed: v1.3.0-beta" in output
@@ -435,7 +435,7 @@ def test_a_release_the_pin_moved_past_is_named_and_still_removable(
     # ... but something IS installed, so the step on offer is removing it: with
     # removal being all-or-nothing, offering a download would leave the old
     # release with no way of ever being removed.
-    assert "Remove" in setup_migration.menu_label()
+    assert "Remove" in setup_migrator.menu_label()
 
 
 def test_an_archive_cannot_write_outside_the_target_directory(
@@ -443,7 +443,7 @@ def test_an_archive_cannot_write_outside_the_target_directory(
 ):
     """A path-traversal entry is refused, and refused before anything is replaced."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     _stub_download(
         monkeypatch,
@@ -454,7 +454,7 @@ def test_an_archive_cannot_write_outside_the_target_directory(
     )
 
     with pytest.raises(mysqlsh.Error):
-        setup_migration.download()
+        setup_migrator.download()
 
     assert not os.path.exists(os.path.join(migrator_data_path, "escaped.txt"))
     # The copy that was installed is untouched, and no half-extracted one is left.
@@ -470,10 +470,10 @@ def test_the_tooling_is_not_offered_on_windows(migrator_data_path, monkeypatch):
     it is not Windows) supports it, and ``os.name == "nt"`` does not.
     """
     assert os.name != "nt", "this test assumes the suite does not run on Windows"
-    assert setup_migration.is_supported() is True
+    assert setup_migrator.is_supported() is True
 
     monkeypatch.setattr(os, "name", "nt")
-    assert setup_migration.is_supported() is False
+    assert setup_migrator.is_supported() is False
 
 
 def test_the_windows_menu_leaves_the_entry_out_and_renumbers(monkeypatch):
@@ -489,7 +489,7 @@ def test_the_windows_menu_leaves_the_entry_out_and_renumbers(monkeypatch):
     assert len(supported) == 5
     assert "migration tooling" in supported[-1][0]
 
-    monkeypatch.setattr(setup_migration, "is_supported", lambda: False)
+    monkeypatch.setattr(setup_migrator, "is_supported", lambda: False)
     unsupported = setup._menu_entries()
     assert len(unsupported) == 4
     assert not any("migration" in label for label, _ in unsupported)
@@ -537,15 +537,15 @@ def test_releases_install_side_by_side(migrator_data_path, monkeypatch):
     the function that has to be right about it either way.
     """
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    first = setup_migration.download()
+    first = setup_migrator.download()
 
     monkeypatch.setattr(general, "MIGRATOR_VERSION", "v9.9.9")
-    second = setup_migration.download()
+    second = setup_migrator.download()
 
     assert first != second
     assert os.path.isfile(os.path.join(first, "mariadb-migrator"))
     assert os.path.isfile(os.path.join(second, "mariadb-migrator"))
-    assert setup_migration.installed_versions() == ["v1.4.0-beta", "v9.9.9"]
+    assert setup_migrator.installed_versions() == ["v1.4.0-beta", "v9.9.9"]
 
     # No working directories left behind by either download.
     assert sorted(os.listdir(general.get_migrator_root())) == [
@@ -581,14 +581,14 @@ def test_provisioning_builds_a_working_venv_and_installs_nothing_extra(
     be reached. A release whose manifest is absent must still leave a venv.
     """
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     # _SOURCE_ARCHIVE ships no orchestrator/requirements.txt, so this exercises
     # the no-manifest path - the venv still has to come out of it.
-    venv_dir = setup_migration.provision(target_dir)
+    venv_dir = setup_migrator.provision(target_dir)
 
-    assert venv_dir == os.path.join(target_dir, setup_migration.MIGRATOR_VENV_DIR)
-    venv_python = setup_migration._venv_python(target_dir)
+    assert venv_dir == os.path.join(target_dir, setup_migrator.MIGRATOR_VENV_DIR)
+    venv_python = setup_migrator._venv_python(target_dir)
     assert os.path.exists(venv_python)
     assert os.access(venv_python, os.X_OK)
     # A real venv, and one that knows it is one: prefix moves, base_prefix does
@@ -619,7 +619,7 @@ def test_provisioning_installs_the_manifest_into_the_venv(
         ),
     )
     _stub_download(monkeypatch, archive)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     calls = []
     real_run = subprocess.run
@@ -628,9 +628,9 @@ def test_provisioning_installs_the_manifest_into_the_venv(
         calls.append((command, kwargs))
         return real_run(command, **kwargs)
 
-    monkeypatch.setattr(setup_migration.subprocess, "run", recording_run)
+    monkeypatch.setattr(setup_migrator.subprocess, "run", recording_run)
 
-    setup_migration.provision(target_dir)
+    setup_migrator.provision(target_dir)
 
     # EnvBuilder(with_pip=True) shells out to ensurepip first, so the dependency
     # install is selected rather than assumed to be the only subprocess.
@@ -641,10 +641,10 @@ def test_provisioning_installs_the_manifest_into_the_venv(
     assert len(installs) == 1
     command, kwargs = installs[0]
     # The venv's interpreter, not this one and not a system python3.
-    assert command[0] == setup_migration._venv_python(target_dir)
+    assert command[0] == setup_migrator._venv_python(target_dir)
     assert command[1:4] == ["-m", "pip", "install"]
     assert command[-2:] == ["-r", os.path.join(
-        target_dir, setup_migration.MIGRATOR_REQUIREMENTS
+        target_dir, setup_migrator.MIGRATOR_REQUIREMENTS
     )]
     # --require-virtualenv so a broken venv path can never install into the
     # shell's own site-packages.
@@ -665,17 +665,17 @@ def test_a_failed_dependency_install_is_reported_with_pips_own_words(
         ),
     )
     _stub_download(monkeypatch, archive)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     def failing_run(command, **kwargs):
         return subprocess.CompletedProcess(
             command, 1, stdout="", stderr="ERROR: No matching distribution found"
         )
 
-    monkeypatch.setattr(setup_migration.subprocess, "run", failing_run)
+    monkeypatch.setattr(setup_migrator.subprocess, "run", failing_run)
 
     with pytest.raises(mysqlsh.Error) as error:
-        setup_migration.provision(target_dir)
+        setup_migrator.provision(target_dir)
 
     assert "No matching distribution found" in str(error.value)
 
@@ -685,19 +685,19 @@ def test_the_wrapper_runs_the_install_from_its_own_directory(
 ):
     """The generated wrapper cds in, activates the venv, and execs the launcher."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
-    path = setup_migration.install_wrapper(target_dir)
+    path = setup_migrator.install_wrapper(target_dir)
 
     assert path == os.path.join(migrator_bin_home, general.MIGRATOR_DIR_NAME)
     assert os.access(path, os.X_OK)
     script = open(path, encoding="utf-8").read()
 
     assert script.startswith("#!/bin/sh\n")
-    assert setup_migration.MIGRATOR_WRAPPER_MARKER in script
+    assert setup_migrator.MIGRATOR_WRAPPER_MARKER in script
     # The three things the wrapper exists to do.
     assert f'cd "$MIGRATOR_HOME"' in script
-    assert f"{setup_migration.MIGRATOR_VENV_DIR}/bin/activate" in script
+    assert f"{setup_migrator.MIGRATOR_VENV_DIR}/bin/activate" in script
     assert 'exec "$MIGRATOR_HOME/mariadb-migrator" "$@"' in script
     # It names the release it points at, and the install it points into.
     assert general.MIGRATOR_VERSION in script
@@ -721,9 +721,9 @@ def test_the_wrapper_is_actually_runnable(
         for name, body, mode in _SOURCE_ARCHIVE
     )
     _stub_download(monkeypatch, archive)
-    target_dir = setup_migration.download()
-    setup_migration.provision(target_dir)
-    path = setup_migration.install_wrapper(target_dir)
+    target_dir = setup_migrator.download()
+    setup_migrator.provision(target_dir)
+    path = setup_migrator.install_wrapper(target_dir)
 
     result = subprocess.run(
         [path, "plan", "--mode", "one_step"],
@@ -743,16 +743,16 @@ def test_the_wrapper_replaces_one_pointing_at_an_older_release(
 ):
     """A wrapper of ours is overwritten, not duplicated or left stale."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    old_target = setup_migration.download()
-    path = setup_migration.install_wrapper(old_target)
+    old_target = setup_migrator.download()
+    path = setup_migrator.install_wrapper(old_target)
     assert general.MIGRATOR_VERSION in open(path, encoding="utf-8").read()
 
     # The pin moves on, and the new release is installed and wrapped.
     monkeypatch.setattr(general, "MIGRATOR_VERSION", "v9.9.9")
-    new_target = setup_migration.download()
+    new_target = setup_migrator.download()
     assert new_target != old_target
 
-    new_path = setup_migration.install_wrapper(new_target)
+    new_path = setup_migrator.install_wrapper(new_target)
 
     assert new_path == path
     script = open(path, encoding="utf-8").read()
@@ -768,7 +768,7 @@ def test_a_foreign_file_of_the_same_name_is_never_overwritten(
 ):
     """Somebody else's mariadb-migrator on PATH is left exactly as it was."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
 
     os.makedirs(migrator_bin_home, exist_ok=True)
     foreign = os.path.join(migrator_bin_home, general.MIGRATOR_DIR_NAME)
@@ -777,14 +777,14 @@ def test_a_foreign_file_of_the_same_name_is_never_overwritten(
     os.chmod(foreign, 0o755)
 
     with pytest.raises(mysqlsh.Error) as error:
-        setup_migration.install_wrapper(target_dir)
+        setup_migrator.install_wrapper(target_dir)
 
     assert "was not created by mcp.setup" in str(error.value)
     # Untouched, contents and all.
     assert "somebody's own build" in open(foreign, encoding="utf-8").read()
 
     # And removal leaves it alone too, rather than deleting a stranger's file.
-    assert setup_migration.remove_wrapper() == ""
+    assert setup_migrator.remove_wrapper() == ""
     assert os.path.exists(foreign)
 
 
@@ -793,11 +793,11 @@ def test_removing_the_tooling_takes_the_wrapper_with_it(
 ):
     """A wrapper pointing at a tree that is gone would be worse than none."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
-    path = setup_migration.install_wrapper(target_dir)
+    target_dir = setup_migrator.download()
+    path = setup_migrator.install_wrapper(target_dir)
     assert os.path.exists(path)
 
-    setup_migration.remove()
+    setup_migrator.remove()
 
     assert not os.path.exists(path)
     assert not os.path.exists(general.get_migrator_root())
@@ -808,17 +808,17 @@ def test_a_symlink_left_by_an_earlier_install_counts_as_ours(
 ):
     """A symlink into the tooling root is replaced; one pointing away is not."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
-    target_dir = setup_migration.download()
+    target_dir = setup_migrator.download()
     os.makedirs(migrator_bin_home, exist_ok=True)
     path = os.path.join(migrator_bin_home, general.MIGRATOR_DIR_NAME)
 
     # The other shape an earlier install could plausibly have left behind.
     os.symlink(os.path.join(target_dir, "mariadb-migrator"), path)
-    assert setup_migration._wrapper_is_ours(path) is True
-    replaced = setup_migration.install_wrapper(target_dir)
+    assert setup_migrator._wrapper_is_ours(path) is True
+    replaced = setup_migrator.install_wrapper(target_dir)
     assert replaced == path
     assert not os.path.islink(path)
-    assert setup_migration.MIGRATOR_WRAPPER_MARKER in open(path, encoding="utf-8").read()
+    assert setup_migrator.MIGRATOR_WRAPPER_MARKER in open(path, encoding="utf-8").read()
 
     # A symlink to something outside the tooling root is somebody else's.
     os.remove(path)
@@ -826,9 +826,9 @@ def test_a_symlink_left_by_an_earlier_install_counts_as_ours(
     with open(outside, "w", encoding="utf-8") as handle:
         handle.write("#!/bin/sh\n")
     os.symlink(outside, path)
-    assert setup_migration._wrapper_is_ours(path) is False
+    assert setup_migrator._wrapper_is_ours(path) is False
     with pytest.raises(mysqlsh.Error):
-        setup_migration.install_wrapper(target_dir)
+        setup_migrator.install_wrapper(target_dir)
 
 
 def test_an_unreadable_file_is_not_treated_as_ours(migrator_bin_home):
@@ -839,7 +839,7 @@ def test_an_unreadable_file_is_not_treated_as_ours(migrator_bin_home):
     path = os.path.join(migrator_bin_home, general.MIGRATOR_DIR_NAME)
     os.makedirs(path)
 
-    assert setup_migration._wrapper_is_ours(path) is False
+    assert setup_migrator._wrapper_is_ours(path) is False
 
 
 def test_the_path_hint_appears_only_when_the_bin_dir_is_not_on_path(
@@ -847,13 +847,13 @@ def test_the_path_hint_appears_only_when_the_bin_dir_is_not_on_path(
 ):
     """Installed but unreachable by name looks like a failure unless it is said."""
     monkeypatch.setenv("PATH", migrator_bin_home)
-    setup_migration._print_path_hint()
+    setup_migrator._print_path_hint()
     output = capsys.readouterr().out
     assert "is not on your PATH" not in output
     assert f"Run it as '{general.MIGRATOR_DIR_NAME}'." in output
 
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
-    setup_migration._print_path_hint()
+    setup_migrator._print_path_hint()
     output = capsys.readouterr().out
     assert "is not on your PATH" in output
     assert f'export PATH="{migrator_bin_home}:$PATH"' in output
@@ -869,9 +869,9 @@ def test_a_provisioning_failure_leaves_the_extracted_copy_and_says_so(
     def failing_provision(target_dir):
         raise mysqlsh.Error("no space left on device")
 
-    monkeypatch.setattr(setup_migration, "provision", failing_provision)
+    monkeypatch.setattr(setup_migrator, "provision", failing_provision)
 
-    setup_migration.manage()
+    setup_migrator.manage()
 
     output = capsys.readouterr().out
     # mysqlsh.Error stringifies with a "Shell Error: " prefix, hence the split.
@@ -883,7 +883,7 @@ def test_a_provisioning_failure_leaves_the_extracted_copy_and_says_so(
         os.path.join(general.get_migrator_path(), "mariadb-migrator")
     )
     # And no wrapper was installed pointing at an unprovisioned copy.
-    assert not os.path.exists(setup_migration.wrapper_path())
+    assert not os.path.exists(setup_migrator.wrapper_path())
 
 
 def test_a_wrapper_failure_still_leaves_a_usable_install(
@@ -892,14 +892,14 @@ def test_a_wrapper_failure_still_leaves_a_usable_install(
     """Without the wrapper the tooling is still runnable, and the way is given."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
     monkeypatch.setattr(setup_prompts, "yes_no", lambda message, default=True: True)
-    monkeypatch.setattr(setup_migration, "provision", lambda target_dir: "venv")
+    monkeypatch.setattr(setup_migrator, "provision", lambda target_dir: "venv")
 
     def failing_wrapper(target_dir):
         raise mysqlsh.Error("permission denied")
 
-    monkeypatch.setattr(setup_migration, "install_wrapper", failing_wrapper)
+    monkeypatch.setattr(setup_migrator, "install_wrapper", failing_wrapper)
 
-    setup_migration.manage()
+    setup_migrator.manage()
 
     output = capsys.readouterr().out
     assert "Could not install the wrapper:" in output
@@ -913,11 +913,11 @@ def test_a_successful_download_reports_every_step(
     """Download, venv and wrapper are each reported, in that order."""
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
     monkeypatch.setattr(setup_prompts, "yes_no", lambda message, default=True: True)
-    monkeypatch.setattr(setup_migration, "provision", lambda target_dir: "the-venv")
+    monkeypatch.setattr(setup_migrator, "provision", lambda target_dir: "the-venv")
 
-    setup_migration.manage()
+    setup_migrator.manage()
 
     output = capsys.readouterr().out
     assert output.index("installed in") < output.index("Virtual environment ready")
     assert output.index("Virtual environment ready") < output.index("wrapper installed as")
-    assert os.path.exists(setup_migration.wrapper_path())
+    assert os.path.exists(setup_migrator.wrapper_path())

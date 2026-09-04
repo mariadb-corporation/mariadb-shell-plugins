@@ -87,15 +87,15 @@ _active_transport = None
 FUNCTION_GROUP_DB = "db"
 FUNCTION_GROUP_MSM = "msm"
 FUNCTION_GROUP_SANDBOX = "sandbox"
-# The migration group is supported wherever the group list is concerned, but its
+# The migrator group is supported wherever the group list is concerned, but its
 # tools register only where the migration tooling is actually installed - see
-# mcp_plugin.lib.migrator_functions.register_migration_tools.
-FUNCTION_GROUP_MIGRATION = "migration"
+# mcp_plugin.lib.migrator_functions.register_migrator_tools.
+FUNCTION_GROUP_MIGRATOR = "migrator"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
     FUNCTION_GROUP_SANDBOX,
-    FUNCTION_GROUP_MIGRATION,
+    FUNCTION_GROUP_MIGRATOR,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
@@ -110,7 +110,7 @@ def get_plugin_data_path() -> str:
 
 
 # Name of the directory the MySQL-to-MariaDB migration tooling is installed
-# under (see :func:`mcp_plugin.lib.setup_migration.download`). It sits in the
+# under (see :func:`mcp_plugin.lib.setup_migrator.download`). It sits in the
 # user's data home rather than in this plugin's data directory: the tooling is a
 # standalone program that outlives any one plugin install and that things other
 # than this plugin may want to run, so it is installed where such a program
