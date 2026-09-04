@@ -577,6 +577,26 @@ launch the MCP server as a stdio subprocess and drive it with the MCP client SDK
 stored connections, allowed paths and any created project folders are removed
 afterwards.
 
+### End-to-end tests
+
+Tests marked `e2e` are **not part of a standard run** and are reported as skipped.
+Each one deploys its own source and target servers, reaches the network and installs
+the migration tooling, which is more than a routine test run should do. Add `--e2e`
+to run them as well:
+
+```bash
+mariadb-shell --py -f run_tests.py --e2e
+```
+
+There is one at present, `tests/unit/test_migration_e2e.py`: it deploys a MySQL
+source and a MariaDB target with `sandbox.deploy`, registers both through the
+`mcp setup` command line, creates a schema on the source with the `db.*` tools,
+installs the migration tooling with `mcp setup --installMigrator`, migrates with
+`migrator.set_config` / `migrator.run`, and then checks every migrated object and
+row on the target. It skips itself when the machine cannot run a migration - no
+MySQL server to deploy the source from being the usual reason; see the module
+docstring for the rest.
+
 ## License
 
 This plugin is released under the terms of the GNU General Public License,

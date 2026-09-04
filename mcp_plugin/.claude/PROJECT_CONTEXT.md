@@ -11,11 +11,13 @@ additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21). GPLv2,
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Full suite: **192 tests pass (~62s), 97% total coverage** (1530 statements, 50 missed;
-measured on a run with `.coverage` DELETED first — see the coverage trap in Gotchas).
-Run it with
+Standard suite: **192 tests pass, 1 SKIPPED (~56s), 97% total coverage** (1530 statements,
+50 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
+Gotchas). The skipped one is the OPT-IN end-to-end migration test: with `--e2e` the run is
+**193 pass (~76s)** at the SAME coverage, since everything it touches is already covered by
+the unit tests. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
-on PATH (mariadbd is not on the default PATH).
+on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
 
 The shell's bundled Python — the one that matters for every "which version does this
 behave like" question — is
@@ -369,6 +371,34 @@ silently runs against whatever `mariadb-shell` is on PATH.
     `yaml.safe_dump(..., sort_keys=False)` rather than hand-built.
   - Values are stringified (`_stringify`): booleans become the tooling's `"1"`/`"0"`, None
     becomes `""`, and a list/dict is REFUSED rather than silently flattened.
+- **There is ONE end-to-end migration test and it is OPT-IN**
+  (`tests/unit/test_migration_e2e.py`, marked `e2e`). It deploys a MySQL source and a
+  MariaDB target with `sandbox.deploy`, registers both through the `mcp setup` COMMAND
+  LINE, creates a schema on the source with the `db.*` tools, installs the tooling with
+  `mcp setup --installMigrator`, migrates with `migrator.set_config` + `migrator.run`, and
+  checks every migrated object and row on the target. Decisions:
+  - **Opt-in via a marker, SKIPPED rather than deselected.** `pytestmark =
+    pytest.mark.e2e` on the module; `tests/conftest.py` adds a `--e2e` option and skips
+    anything carrying the mark when it is absent (inside the EXISTING
+    `pytest_collection_modifyitems`, which now takes `config` as well as `items`);
+    `run_tests.py` grew `-e/--e2e`; the marker is registered in `pytest-coverage.ini` so
+    there is no `PytestUnknownMarkWarning`. Skipped, not deselected, so a standard run
+    still says the test exists and why it did not run. **`--only=migration_e2e` alone does
+    NOT opt in** — the mark is checked independently of `-k`, which is the point: nothing
+    but `--e2e` runs it.
+  - **Why it is not in the standard suite at all**: it deploys two servers, reaches GitHub
+    and PyPI, and installs software into `~/.local`. CI calls `run_tests.py` with no flags,
+    so it is skipped there.
+  - **It covers MODE 1 (`one_step`) only.** Mode 3 (`staged`) cannot run on macOS at all:
+    `scripts/25_staged_dump.sh` uses `declare -A` (bash 4.0+) and `wait -n` (bash 4.3+),
+    and macOS ships bash 3.2. Not a configuration that can be worked around — see Gotchas.
+  - **Three things about the tooling are configured for, not rediscovered**: an upstream
+    `mysqldump` via `MARIADB_DUMP_BIN`, `ALLOW_ROOT_USERS=1`, and `pv` being present. Each
+    is a real defect or requirement, documented at its own call site in the test and in
+    Gotchas.
+  - **It reuses an existing install and removes one it made itself**, and restores the
+    tooling's `config/migration.yaml` either way. `clean_config` restores the connections
+    and allowed paths. A developer's install is not this test's to replace.
 - **`mcp.setup` is fully non-interactive-able: `lib/setup_cli.py`.** Every menu item is a
   command-line option. `setup()` became `setup(**options)`; `run_setup(**options)`
   dispatches on `setup_cli.has_options()`. Decisions:
@@ -662,6 +692,33 @@ silently runs against whatever `mariadb-shell` is on PATH.
      `test_a_host_named_without_an_account_is_refused` failed.
   **COMMITTED** — see Git state. Still to come per the user: a SKILL covering how to
   write `config/migration.yaml`.
+- **THIS SESSION (2026-09-04, a NEW one): PR #19 was checked out and the end-to-end
+  migration test was built, then made opt-in.** In order: `gh pr checkout 19` ->
+  `wip/AIPL-21` at `90fb6405`; read this file; then built
+  `tests/unit/test_migration_e2e.py` (the user's spec: two sandboxes, the source from
+  `/usr/local/mysql/bin/mysqld`, connections via the setup CLI, schema via the db tools,
+  install via the CLI, `set_config` per `config/migration.yaml.example`, `run`, verify).
+  **The feature works end to end against real servers**: MySQL 26.7.0 -> MariaDB 12.3.2,
+  all 7 orchestrator steps DONE, exit 0, in ~3s of actual migration and ~20s of test.
+  - **Built by PROBING first, not by writing the test and iterating on it.** Five
+    hand-driven runs in the scratchpad found five separate blockers (all in Gotchas), each
+    identified from the tooling's own `report.json` and `run.log` rather than guessed at.
+    Do that again: a failing 20s pytest run tells you far less than the report does.
+  - **`pv` was installed with Homebrew** to get past the last blocker. It is a documented
+    (optional) dependency of the tooling; it was flagged to the user as a change to their
+    machine.
+  - **PROVEN to discriminate, in BOTH halves, and the two probes are different tests**:
+    pointing `SRC_DBS` at another schema fails the RUN assertion (`exited 3`), while
+    removing the trigger from the source schema fails the TARGET assertion (`triggers on
+    the target: []`) with the run still green. The first probe alone would not have shown
+    the verification works — it never reaches it, because the run-level assertions come
+    first. Same lesson as S7 and the Windows gate: probe the layer each assertion covers.
+  - A third discriminating failure came for free: an earlier run left a `state.json` and
+    the next run reported every step `SKIPPED` with exit 0. That is now prevented (see
+    Gotchas) AND the report-status assertion catches it.
+  - **THEN, on the user's instruction, it was made opt-in** (see Architecture):
+    192 pass + 1 skipped by default, 193 pass with `--e2e`, both measured. Also documented
+    in the README's new "End-to-end tests" section.
 - **Feasibility findings about the shell's bundled Python** (established by experiment
   before any of the above was written):
   - The shell ships a REAL CPython binary at
@@ -1237,6 +1294,12 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `_load_config_env`, `_stringify`, `_render_config`, `_artifacts_dir`, `_read_report`,
   `_tail`, `register_migrator_tools`, `_PASSWORD_SOURCES`, `_CONNECTION_SIDES`.
   **100% covered — keep it that way.**
+- tests/unit/test_migration_e2e.py -> the ONE opt-in end-to-end test (marked `e2e`; see
+  Architecture). Nothing is stubbed: two real sandboxes, the real setup CLI in a
+  subprocess, a real install, a real migration. Named `migration_` and not `migrator_`
+  per the naming rule — it exercises a MIGRATION. `MYSQL_SERVER_BINARY` is overridable
+  with `MCP_TEST_MYSQLD`; `_unsupported_reason()` holds every skip condition in one place,
+  so a machine that cannot run a migration says WHICH part is missing.
 - tests/unit/test_migrator_tools.py -> the 30 migrator-tool tests. The orchestrator is
   NEVER run: `recorded_run` stubs `subprocess.run` and the assertions are on the command,
   cwd, env and stdin. `fake_install` builds a stand-in install (config/, the example, a
@@ -1289,8 +1352,11 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - tests/unit/test_server_binding.py -> the bind address: loopback/wildcard classification,
   the no-authentication warning, and the derived Host/Origin allow lists. Pure in-process,
   no server started, so it is fast and needs no sandbox.
-- tests/conftest.py -> ordering hook, fixtures (sandbox session, allowed_temp_dir,
-  clean_config, stored_connections, non_interactive_shell).
+- tests/conftest.py -> `pytest_addoption` (`--e2e`), the ordering-AND-e2e-skip hook
+  (`pytest_collection_modifyitems(config, items)` — it takes `config` now, do not drop it
+  back to `items` alone), fixtures (sandbox session, allowed_temp_dir, clean_config,
+  stored_connections, non_interactive_shell).
+- pytest-coverage.ini -> `addopts` plus the `markers` registration for `e2e`.
 - tests/unit/helpers.py -> `call_tool` (has `elicitation_callback`), `mcp_session`,
   `list_tool_names` (what the server ADVERTISES, used for the group gate), `tool_payload`,
   `find_free_port`, `server_binary_available`, `shell_binary`, plus the streamable-http
@@ -1336,6 +1402,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   requirements.txt` (was an inline `pytest pytest-cov mcp` list — driving it off
   requirements.txt is what makes the `mcp < 3.0.0` pin actually bind), then runs pytest.
   Exits early if the install fails. `-k/--only` to filter, `-s/--shell`, `-u/--userhome`.
+  `-e/--e2e` opts into the `e2e`-marked tests (it just forwards `--e2e` to pytest).
   .coveragerc omits msm/mrs/shell/site-pkgs.
 
 ## Next steps
@@ -1349,9 +1416,21 @@ silently runs against whatever `mariadb-shell` is on PATH.
    which keys each mode needs. The tooling's own
    `config/migration.yaml.example` is the template and
    `migrator.set_config` returns its path.
-1. **The PR is OPEN** (see Git state) — the user asked for it once the migration tools
-   landed, lifting the earlier "wait with the PR" instruction. Review comments on it are
-   the next thing to expect.
+1. **The PR is OPEN as #19** (see Git state) — the user asked for it once the migration
+   tools landed, lifting the earlier "wait with the PR" instruction. Review comments on it
+   are the next thing to expect.
+1. **Mode 3 (`staged`) has NO end-to-end coverage and cannot get any on macOS.** It needs
+   bash 4.0 (`declare -A`) and 4.3 (`wait -n`); macOS ships 3.2. Options if the user wants
+   it: `brew install bash` (bash 5 lands on the PATH ahead of /bin, and the tooling's
+   scripts are `#!/usr/bin/env bash`, so it would also make the other two bash-3.2 defects
+   disappear), or run the test on Linux — where `/usr/local/mysql/bin/mysqld` is not
+   present either, so the source would need a different binary via `MCP_TEST_MYSQLD`. A
+   mode-3 test gated on `bash >= 4.0` was considered and NOT written: it could not be run
+   here, and an unverified test in the suite is a liability.
+1. **The three tooling defects the e2e test works around are worth REPORTING upstream**
+   (Mysql-to-MariaDB-Migration): the two bash-3.2 breakages in mode 1 and mode 3, and the
+   `mariadb-dump`-against-MySQL failure that the preflight warns about but the default
+   configuration walks straight into. Not done — no issue was filed.
 1. **The security-review list S1..S8 is COMPLETE, committed and pushed; a T-numbered list
    started after it; T1..T6, T8 and T9 are all done, committed and pushed.** If the user sends
    more items, follow the working agreement that has held for all sixteen: (a) VERIFY the
@@ -1420,6 +1499,61 @@ silently runs against whatever `mariadb-shell` is on PATH.
   summary would destroy the S1..S8 / T1..T9 record, the architecture rationale and these
   gotchas. Update the stale parts and ADD the new material instead. This session did exactly
   that, on purpose.
+- **The migration tooling has THREE bash-3.2 / MySQL-source defects, and the e2e test
+  configures around all of them.** Every one was found by running the tooling and reading
+  its own `report.json`, not by reading its source first. Do not "simplify" the
+  configuration in `_migration_env` by dropping any of these:
+  - **`mariadb-dump` CANNOT dump a MySQL 8.4+ source**: it issues `SHOW PACKAGE STATUS`
+    (an Oracle-mode MariaDB feature) and MySQL answers 1064. The tooling's own preflight
+    prints a WARNING naming the fix and then proceeds to fail anyway, so the warning is
+    the whole diagnosis. Fix: `MARIADB_DUMP_BIN=<mysql install>/bin/mysqldump`. This
+    ALSO happens to sidestep the next one, because the upstream branch composes
+    `--ssl-mode=<value>` rather than an empty array.
+  - **`"${SRC_SSL_ARGS[@]}"` on an EMPTY array is an unbound-variable error under
+    `set -u` in bash 3.2** (fine from bash 4.4 on). With `mariadb-dump` and
+    `SRC_SSL_MODE=DISABLED` — or with `SRC_SSL_MODE` unset — the array is empty and
+    `10_one_step_migration.sh:226` dies. So mode 1 with the DEFAULT dump tool cannot work
+    on macOS at all, whatever the SSL mode.
+  - **Without `pv`, mode 1 reports a SUCCESSFUL migration as FAILED on bash 3.2.** The
+    no-pv fallback starts a background heartbeat and kills it from an `EXIT` trap whose
+    `wait` both holds the script's stdout open for a further 60s and (bash 3.2 only) makes
+    the script exit **143**. The data is all correctly copied; the verdict is wrong. `pv`
+    is documented as OPTIONAL, so this is the documented path being broken. The test skips
+    when `pv` is missing AND bash < 4 — deliberately that conjunction, not "no pv", so a
+    Linux box without pv is not skipped for a bug it does not have.
+- **Mode 3 (`staged`) needs bash 4 and there is no way around it.**
+  `25_staged_dump.sh:345` uses `declare -A` (4.0+) and the parallel paths use `wait -n`
+  (4.3+). `STAGED_PARALLEL=1` does not help: `declare -A` is reached first. macOS ships
+  bash 3.2, so mode 3 is untestable here — do not spend another probe on it.
+- **The tooling refuses to migrate as `root` unless `ALLOW_ROOT_USERS=1`.** A sandbox has
+  no other account, so every e2e migration needs it. The refusal is a `typer.BadParameter`
+  out of `migrationctl run`, i.e. it looks like a configuration error, not a policy.
+- **A migration run into a REUSED artifacts directory migrates NOTHING and says it
+  succeeded.** The orchestrator is resume-safe: a `state.json` left by an earlier run makes
+  the next one report every step `SKIPPED` with exit 0. The e2e fixture therefore clears
+  the out dir BEFORE the run as well as after, and the test asserts every step is `DONE`
+  rather than just that the run exited 0 — either alone would have missed it. This was
+  observed for real, as the second run of a passing test.
+- **`--non-interactive` skips the orchestrator's `_prompt_required_env` ENTIRELY**, and
+  that function is also where the "align migration creds with admin creds"
+  (`SRC_USER = SRC_ADMIN_USER`, and so on) assignment lives. `run` does its own
+  `setdefault` for those four, so they survive — but `plan` does NOT, and it has no
+  `--non-interactive` flag either. Set `SRC_USER`/`TGT_USER` explicitly rather than
+  relying on the derivation; the e2e config does, which is also what makes
+  `_connection_passwords` supply `SRC_PASS`/`TGT_PASS` and not just the admin pair.
+- **`db.get_object_details` does NOT return a `constraint_name` on a reference row.** The
+  constraint is `reference_mapping["constraint"]`, and it is `<schema>.<name>`, not the
+  bare name. The row's own keys are `position`, `name`, `ref_column_names`,
+  `reference_mapping`, `table_schema`, `table_name`. Cost one failing assertion in the e2e
+  test, on a `KeyError`.
+- **A pytest mark is NOT a `-k` pattern.** `run_tests.py --only=migration_e2e` selects the
+  e2e test and it is then SKIPPED anyway, because the mark is checked in
+  `pytest_collection_modifyitems` independently of `-k`. That is deliberate — only `--e2e`
+  runs it — but it does mean "I filtered to it and it still did not run" is the expected
+  behaviour, not a bug. Combine the two: `--only=migration_e2e --e2e`.
+- **Registering the `e2e` marker in `pytest-coverage.ini` is not optional bookkeeping** —
+  without the `markers =` entry every run prints a `PytestUnknownMarkWarning`, and the
+  suite is otherwise warning-free, so it would be noise nobody reads.
 - **The migrator does NOT live under the plugin data path** and has not since the user
   redirected it. `general.get_plugin_data_path()` is not on that road any more; the
   fixture patches `general.get_data_home`. Any test that patches the plugin data path
@@ -1757,8 +1891,9 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Git state
 
-- **Branch: `wip/AIPL-21`** — NOT `wip/AIPL-16`; the AIPL-16 bullet further down is now
-  history. THREE commits on top of `main`:
+- **Branch: `wip/AIPL-21`, PR #19, open against `main`.** NOT `wip/AIPL-16`; the AIPL-16
+  bullet further down is now history. **EIGHT commits on top of `main`** (the earlier
+  "THREE commits" wording here was stale and the list stopped at the fifth):
   1. `0137ea80` "AIPL-21: Install the MySQL-to-MariaDB migration tooling from mcp.setup"
      (6 files, +869/-16) — the original download step.
   2. `010600da` "AIPL-21: Make the installed migration tooling self-contained and runnable"
@@ -1771,6 +1906,16 @@ silently runs against whatever `mariadb-shell` is on PATH.
   5. `2f335a6c` "AIPL-21: Make every mcp.setup item available as a command-line option"
      (6 files, +1329/-46) — `lib/setup_cli.py`, the four password sources and
      `--show`/`--json`.
+  6. `c15b187a` "AIPL-21: Record the non-interactive setup in the project context".
+  7. `6cecd4bb` "AIPL-21: Rename migration.* to migrator.* and setup_migration to
+     setup_migrator".
+  8. `90fb6405` "AIPL-21: Build the tooling's virtual environment with a symlinked
+     interpreter" — the Linux CI fix (see Architecture: `symlinks=True` is mandatory).
+  Plus **the commit this checkpoint describes**: the opt-in end-to-end migration test
+  (`tests/unit/test_migration_e2e.py` new, plus `tests/conftest.py`, `run_tests.py`,
+  `pytest-coverage.ini`, `README.md` and this file). ONE commit: the test and the
+  mechanism that keeps it out of a standard run are the same change, and the test was
+  never green in the tree without both.
   **Split into 2 rather than 5 deliberately, and each was PROVEN green on its own tree**:
   the module split, the Windows gate, the relocation and the provisioning all interleave in
   `lib/setup_migrator.py` and its tests, so splitting them further would have meant
@@ -1871,7 +2016,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - One unrelated pre-existing edit was left UNSTAGED on purpose:
   `.claude/skills/create-shell-plugin/SKILL.md` (not this session's work).
 
-### Verbatim snapshot at this checkpoint (2026-09-04)
+### Verbatim snapshot at this checkpoint (2026-09-04, second checkpoint of the day)
 
 ```
 $ git -C mcp_plugin status --short
