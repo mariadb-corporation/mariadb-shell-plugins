@@ -28,13 +28,36 @@ from mcp_plugin.lib import config
 import mcp_plugin.tests.unit.helpers as helpers
 
 
-def pytest_collection_modifyitems(items):
-    """Orders the shared-sandbox lifecycle around the rest of the suite.
+def pytest_addoption(parser):
+    """Adds the option that opts a run into the end-to-end tests.
+
+    They are left out of a normal run rather than merely being slow-marked,
+    because they deploy their own servers, reach the network and install
+    software outside the plugin - none of which a routine ``run_tests.py`` is
+    expected to do.
+    """
+    parser.addoption(
+        "--e2e",
+        action="store_true",
+        default=False,
+        help=(
+            "Also run the tests marked 'e2e'. They are skipped otherwise: each "
+            "deploys its own servers and installs the migration tooling."
+        ),
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Orders the shared-sandbox lifecycle and skips the end-to-end tests.
 
     ``test_sandbox_deploy`` runs first (it deploys the shared sandbox) and
     ``test_sandbox_shutdown`` runs last (it tears it down); every other test
     runs in between and uses the deployed sandbox. This uses the native pytest
     collection hook so no ordering plugin is required.
+
+    Anything marked ``e2e`` is skipped unless ``--e2e`` was given. Skipped and
+    not deselected on purpose: a run then still reports that the test exists
+    and why it did not run, instead of silently collecting one test fewer.
     """
     first, last, middle = [], [], []
     for item in items:
@@ -45,6 +68,16 @@ def pytest_collection_modifyitems(items):
         else:
             middle.append(item)
     items[:] = first + middle + last
+
+    if config.getoption("--e2e"):
+        return
+
+    skip_e2e = pytest.mark.skip(
+        reason="end-to-end test: pass --e2e (run_tests.py --e2e) to run it"
+    )
+    for item in items:
+        if "e2e" in item.keywords:
+            item.add_marker(skip_e2e)
 
 
 @pytest.fixture(scope="session", autouse=True)

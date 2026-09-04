@@ -23,7 +23,7 @@ the wrapped functions return their results instead of prompting for input.
 | --- | --- |
 | `mcp.info()` | Returns basic information about the plugin. |
 | `mcp.version()` | Returns the version number of the plugin. |
-| `mcp.setup()` | Interactively configures the allowed connections and paths. |
+| `mcp.setup()` | Interactively configures the allowed connections and paths, and installs the migration tooling. |
 | `mcp.start_server(options)` | Starts the MCP server; blocks until terminated (`host`, `port` options). |
 
 ## Configuration (`mcp.setup()`)
@@ -35,6 +35,9 @@ what the MCP server is allowed to access, or run the following command on the te
 mariadb-shell -- mcp setup
 ```
 
+Everything below can also be given as command-line options instead, for use where there
+is no terminal — see [Non-interactive setup](#non-interactive-setup).
+
 - **Connections**: enter a MariaDB connection URI (e.g. `user@host:3306`). The
   password is prompted for and the connection is verified with `shell.open_session()`
   before the password is stored in the shell secret store under the key
@@ -44,6 +47,10 @@ mariadb-shell -- mcp setup
 - **Allowed paths**: choose the local directories the server may access (the current
   directory is suggested as the default, shown as a full path). These are stored in a
   `settings.json` file in the plugin data directory.
+- **Migration tooling** (menu only, Linux and macOS only): downloads the
+  [MySQL-to-MariaDB migration tooling](https://github.com/mariadb-corporation/Mysql-to-MariaDB-Migration)
+  and extracts it into `~/.local/share/mariadb-migrator/<version>`.
+  See [Migration tooling](#migration-tooling) below.
 
 > Note: The MariaDB connections configured during the setup procedure are stored
 > separately from the regular MariaDB Shell connections. Otherwise, the LLM would
@@ -53,13 +60,158 @@ mariadb-shell -- mcp setup
 > `MCP:Connection:` prefix and call `shell.read_secret()` for the given entry.
 
 On the first run, `mcp.setup` walks through adding connections and then paths. On
-subsequent runs it presents a menu to add or delete connections and paths.
+subsequent runs it presents a menu to add or delete connections and paths and to manage
+the migration tooling. The tooling is not part of the first-run walkthrough - it is a
+download nothing else here depends on, so it is only ever installed by asking for it
+from the menu.
+
+That menu entry offers whichever of the two steps applies: **Download** when nothing is
+installed, and **Remove** when something is - there is no update step, so installing a
+different release means removing the installed one and downloading again. Removal is the
+one step the setup does not suggest going ahead with, and it takes any leftovers of an
+interrupted download with it.
+
+On **Windows** the entry is not shown at all, and the menu numbers its remaining choices
+accordingly - the tooling is a POSIX shell entry point driving a directory of shell
+scripts, so there would be nothing to run what a download installed.
+
+**No system Python is required.** The MariaDB Shell bundles a complete CPython, and the
+download uses it to build the tooling's virtual environment - so the tooling runs on a
+machine that has no `python3` of its own at all.
+
+### Non-interactive setup
+
+Every menu item is also a command-line option, so a provisioning script or a CI job can
+configure the server without a terminal. With **no** options `mcp setup` is the
+walkthrough above; with **any** option it does exactly what the options say and asks
+nothing else. Run `mariadb-shell -- mcp setup --help` for the generated list.
+
+| Option | What it does |
+| ------ | ------------ |
+| `--addConnection=<uri>` | Verify and store one connection. |
+| `--password=<str>` | Its password. **Discouraged** — a command line is visible in `ps` and lands in shell history. |
+| `--passwordEnv=<VARNAME>` | Read it from the *named* environment variable, so the password itself is never in the command line. |
+| `--passwordStdin` | Read it from the first line of stdin, for piping from a secret manager. |
+| `--noVerify` | Store without opening a session first, for a server that is not up yet. |
+| `--deleteConnections=<list>` | Delete connections, by URI in any spelling that names them. |
+| `--addPaths=<list>` | Allow directories (each must already exist). |
+| `--deletePaths=<list>` | Stop allowing directories. |
+| `--installMigrator` | Download, provision and wrap the migration tooling. |
+| `--removeMigrator` | Remove every installed release, and the wrapper. |
+| `--nonInteractive` | Never prompt; a missing password is an error, not a question. |
+| `--show` | Print the configuration and do nothing else. |
+| `--json` | Print what `--show` reports as JSON. Only applies to `--show`. |
+
+Lists are comma-separated. Repeating an option is **not** a supported way to build one.
+`--addConnection` is the exception to the list rule: it takes one connection, because
+each needs its own password.
+
+```bash
+# CI: from a secret the runner injected
+mariadb-shell -- mcp setup --addConnection=mig@source-db:3306 --passwordEnv=SRC_PW --nonInteractive
+
+# From a secret manager
+vault read -field=pw db/src | mariadb-shell -- mcp setup --addConnection=mig@source-db:3306 --passwordStdin
+
+# Paths and the tooling in one call
+mariadb-shell -- mcp setup --addPaths=/srv/projects,/tmp/work --installMigrator
+
+# Reinstall the tooling: removal runs first, so this is the idiom rather than a conflict
+mariadb-shell -- mcp setup --removeMigrator --installMigrator
+
+# Machine-readable state
+mariadb-shell -- mcp setup --show --json
+```
+
+At most **one** password source may be given — which one was meant is not guessed at —
+and a URI carrying a password (`user:pw@host`) is refused rather than used, since
+normalization strips it and the connection would end up stored with no password at all.
+
+Deletions are carried out **before** additions, and the migration tooling last, so
+deleting and re-adding the same connection in one call ends up with it added. Anything
+that fails stops the run, leaving what already succeeded in place and reported, so a
+script can tell how far it got. Storing a connection that is already configured updates
+its password, so a provisioning script is safe to run twice.
+
+### Migration tooling
+
+The release configured as `MIGRATOR_VERSION` in `lib/general.py` (currently
+`v1.4.0-beta`) is downloaded from GitHub as a source archive and extracted into
+
+```
+~/.local/share/mariadb-migrator/<version>/
+```
+
+with the archive's own top-level directory stripped, so the tooling's entry point sits
+at `~/.local/share/mariadb-migrator/v1.4.0-beta/mariadb-migrator`. The recorded file
+modes are restored, so the entry point and the `scripts/*.sh` remain executable.
+
+The base directory is `$XDG_DATA_HOME` when that is set to an absolute path, and
+`~/.local/share` otherwise. This is deliberately **not** the plugin data directory: the
+tooling is a standalone program that outlives any one plugin install, so it is installed
+where such a program belongs rather than somewhere only this plugin would look for it.
+
+**The release is part of the path**, which makes the directory name the one authoritative
+record of what a copy is - there is no version file inside an install that could disagree
+with it - and means installing a different release never extracts over the top of an
+existing one. To install a newer release, change `MIGRATOR_VERSION` to its tag, remove
+what is installed, and download again.
+
+Downloading is atomic in effect: the new copy is extracted into a dot-prefixed working
+directory beside the release directories and only moved into place once it is complete,
+so a download that fails part-way through leaves an installed copy exactly as it was.
+
+### What a download installs
+
+Downloading does three things, each reported separately so a partial install says which
+step stopped:
+
+1. **Extracts** the release into `~/.local/share/mariadb-migrator/<version>/`.
+2. **Builds the virtual environment** at `<version>/.venv` and installs
+   `orchestrator/requirements.txt` into it. The environment is created with the
+   interpreter the shell bundles, so no system `python3` is involved; the result is an
+   ordinary venv whose `bin/python3` is a real interpreter, exactly as
+   `python3 -m venv` would produce. `pip` runs with `--require-virtualenv`, so a wrong
+   path can never install into the shell's own site-packages. `.venv` is the name the
+   tooling's own launcher looks for.
+3. **Installs a wrapper** at `~/.local/bin/mariadb-migrator`, so the tooling is runnable
+   by name:
+
+   ```bash
+   mariadb-migrator --help
+   ```
+
+   The wrapper `cd`s into the install directory and activates the virtual environment
+   before handing over. Both are necessary: the tooling resolves `scripts/`,
+   `orchestrator/` and the default `config/` paths relative to the working directory,
+   and its own dependency check runs *before* it would activate `.venv` itself. Because
+   it runs from the install directory, **relative arguments are relative to there** -
+   `--out artifacts/plan` writes inside `<version>/artifacts/plan`.
+
+   If `~/.local/bin` is not on your PATH the setup says so and prints the `export` line
+   to add. A wrapper from an earlier release is overwritten; a file of that name that
+   mcp.setup did **not** create is never touched - the setup reports it and leaves it
+   alone.
+
+**Removal takes every installed release**, not just the configured one, clearing
+`~/.local/share/mariadb-migrator` outright, and takes the wrapper with it (a wrapper
+pointing at a tree that is gone is worse than none). Releases accumulate there as the pin moves
+on, and a release the pin has moved past would otherwise have no way of being removed
+again short of deleting it by hand. The menu therefore offers **Remove** whenever
+anything is installed - including a release older than the configured one - and
+**Download** only when the directory is empty or absent.
+
+The tooling runs on **Linux and macOS** only. `mcp.setup` therefore leaves the step out
+of the menu on Windows rather than installing something that cannot be run there; the
+plugin's own features do not depend on it. The code lives in `lib/setup_migrator.py`,
+separate from the rest of the interactive setup in `lib/setup.py` (both share the prompt
+primitives in `lib/setup_prompts.py`).
 
 ## Exposed MCP tools
 
 The tools are grouped into function groups that can be loaded independently via the
-`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`; defaults to
-all):
+`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migrator`;
+defaults to all):
 
 ```bash
 # expose only the database tools
@@ -127,6 +279,52 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 | `sandbox.delete` | `sandbox.delete` |
 | `sandbox.vendor` | `sandbox.vendor` |
 | `sandbox.version` | `sandbox.version` |
+
+### Migrator tools (`migrator`)
+
+| MCP tool | Purpose |
+| -------- | ------- |
+| `migrator.set_config` | Writes the tooling's `config/migration.yaml`. |
+| `migrator.plan` | Generates a migration plan; executes nothing. |
+| `migrator.run` | Executes the migration steps. |
+| `migrator.resume` | Resumes a failed run from its `state.json`. |
+
+These are registered **only where the migration tooling is installed** (see
+[Migration tooling](#migration-tooling)). On a server that never ran the download step
+the group registers nothing rather than advertising tools whose every call would fail,
+so installing the tooling takes effect on the next server start.
+
+Three things are deliberately not in the client's hands:
+
+- **Which servers can be reached at all.** A configuration may only name accounts that
+  are among the connections `mcp.setup` configured. `migrator.set_config` composes the
+  connection URI from the configuration's own fields - `SRC_ADMIN_USER` at
+  `SRC_HOST`:`SRC_PORT`, `TGT_ADMIN_USER` at `TGT_HOST`:`TGT_PORT`, `REPL_USER` on the
+  source - and **refuses to write the file at all** if any of them is not a configured
+  connection. A client therefore cannot point a migration at a server it was never
+  given, not even to have the attempt fail later. A side that names a host must also
+  name the account to reach it by, since otherwise there would be nothing to check
+  against. The check is applied to the *merged* result, so two individually harmless
+  `merge` calls cannot add up to a forbidden connection; and it runs **again before
+  every migration**, so removing a connection with `mcp.setup` stops the runs already
+  configured against it.
+- **Passwords.** `migrator.set_config` refuses `SRC_PASS`, `SRC_ADMIN_PASS`, `TGT_PASS`,
+  `TGT_ADMIN_PASS` and `REPL_PASS`, so no password is ever written to disk by this
+  plugin. Each is read from the shell's secret store when a migration runs, under the
+  matching configured connection. The result reports which connection answered, never
+  the secret.
+- **The working directory.** Every run happens in the install directory, so `out` must be
+  relative to it; an absolute path is refused.
+
+Each run returns its exit code, the tail of the orchestrator's output, the artifacts
+directory and that run's `report.json` when it wrote one. Every invocation is given a
+closed stdin: the orchestrator prompts for anything missing from the configuration - and
+`plan` has no `--non-interactive` flag at all - so without that an incomplete
+configuration would hang a tool call instead of reporting what was absent.
+
+A migration can outlast any client's patience. `timeout` defaults to an hour, and
+because the artifacts directory comes back either way, a run that outlives its timeout
+can still be followed from its own files and picked up with `migrator.resume`.
 
 ## Installation
 
@@ -378,6 +576,26 @@ select the shell binary and `MARIADB_SHELL_USER_CONFIG_HOME` to reuse a config h
 launch the MCP server as a stdio subprocess and drive it with the MCP client SDK; the
 stored connections, allowed paths and any created project folders are removed
 afterwards.
+
+### End-to-end tests
+
+Tests marked `e2e` are **not part of a standard run** and are reported as skipped.
+Each one deploys its own source and target servers, reaches the network and installs
+the migration tooling, which is more than a routine test run should do. Add `--e2e`
+to run them as well:
+
+```bash
+mariadb-shell --py -f run_tests.py --e2e
+```
+
+There is one at present, `tests/unit/test_migration_e2e.py`: it deploys a MySQL
+source and a MariaDB target with `sandbox.deploy`, registers both through the
+`mcp setup` command line, creates a schema on the source with the `db.*` tools,
+installs the migration tooling with `mcp setup --installMigrator`, migrates with
+`migrator.set_config` / `migrator.run`, and then checks every migrated object and
+row on the target. It skips itself when the machine cannot run a migration - no
+MySQL server to deploy the source from being the usual reason; see the module
+docstring for the rest.
 
 ## License
 
