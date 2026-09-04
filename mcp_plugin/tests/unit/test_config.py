@@ -32,7 +32,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_plugin.lib import config, setup
+from mcp_plugin.lib import config, setup, setup_migration, setup_prompts
 import mcp_plugin.tests.unit.helpers as helpers
 
 
@@ -222,7 +222,7 @@ def test_setup_first_run(clean_config, tmp_path, monkeypatch):
     # A single shared fake so prompt answers are consumed in sequence across all
     # _shell() calls.
     fake_shell = _FakeShell(answers)
-    monkeypatch.setattr(setup, "_shell", lambda: fake_shell)
+    monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
 
     setup.run_setup()
 
@@ -252,7 +252,7 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
         "6",                       # menu: finish
     ]
     fake_shell = _FakeShell(answers)
-    monkeypatch.setattr(setup, "_shell", lambda: fake_shell)
+    monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
 
     setup.run_setup()
 
@@ -264,7 +264,35 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
     # rather than a fixed "download" (see tests/unit/test_migrator.py). Compared
     # against the label itself so this holds whatever happens to be installed.
     menu = capsys.readouterr().out
-    assert f"5. {setup._migrator_menu_label()}" in menu
+    assert f"5. {setup_migration.menu_label()}" in menu
+
+
+def test_setup_menu_hides_the_migration_tooling_where_it_is_unsupported(
+    clean_config, tmp_path, monkeypatch, capsys
+):
+    """On Windows the whole migration step is absent from the interactive setup.
+
+    Driven through run_setup rather than through _menu_entries (see
+    tests/unit/test_migrator.py) because "not shown" covers the status line the
+    menu prints above itself as well as the entry itself - and because the
+    scripted answers are what prove the renumbering: "5" has to be Finish, so a
+    menu that still had six choices would leave a prompt unanswered and
+    _FakeShell would fail on it.
+    """
+    _clear_config()
+    config.set_allowed_paths([])
+    monkeypatch.setattr(setup_migration, "is_supported", lambda: False)
+
+    fake_shell = _FakeShell(["5"])  # menu: finish, which is 5 without the entry
+    monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
+
+    setup.run_setup()
+
+    menu = capsys.readouterr().out
+    assert "5. Finish" in menu
+    assert "6." not in menu
+    assert "migration tooling" not in menu.lower()
+    assert "Migration tooling" not in menu
 
 
 def test_setup_stores_a_connection_under_one_spelling(clean_config, monkeypatch):
@@ -287,7 +315,7 @@ def test_setup_stores_a_connection_under_one_spelling(clean_config, monkeypatch)
         "6",                                # menu: finish
     ]
     fake_shell = _FakeShell(answers)
-    monkeypatch.setattr(setup, "_shell", lambda: fake_shell)
+    monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
 
     setup.run_setup()
 
@@ -303,7 +331,9 @@ def test_setup_requires_interactive_shell(clean_config, monkeypatch):
     import mysqlsh
 
     monkeypatch.setattr(
-        setup, "_shell", lambda: SimpleNamespace(options=SimpleNamespace(useWizards=False))
+        setup_prompts,
+        "shell",
+        lambda: SimpleNamespace(options=SimpleNamespace(useWizards=False)),
     )
 
     with pytest.raises(mysqlsh.Error):

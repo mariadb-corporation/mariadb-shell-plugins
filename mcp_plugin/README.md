@@ -44,9 +44,9 @@ mariadb-shell -- mcp setup
 - **Allowed paths**: choose the local directories the server may access (the current
   directory is suggested as the default, shown as a full path). These are stored in a
   `settings.json` file in the plugin data directory.
-- **Migration tooling** (menu only): downloads the
+- **Migration tooling** (menu only, Linux and macOS only): downloads the
   [MySQL-to-MariaDB migration tooling](https://github.com/mariadb-corporation/Mysql-to-MariaDB-Migration)
-  and extracts it into a `mariadb-migrator` directory in the plugin data directory.
+  and extracts it into `~/.local/share/mariadb-migrator/<version>`.
   See [Migration tooling](#migration-tooling) below.
 
 > Note: The MariaDB connections configured during the setup procedure are stored
@@ -68,20 +68,87 @@ different release means removing the installed one and downloading again. Remova
 one step the setup does not suggest going ahead with, and it takes any leftovers of an
 interrupted download with it.
 
+On **Windows** the entry is not shown at all, and the menu numbers its remaining choices
+accordingly - the tooling is a POSIX shell entry point driving a directory of shell
+scripts, so there would be nothing to run what a download installed.
+
+**No system Python is required.** The MariaDB Shell bundles a complete CPython, and the
+download uses it to build the tooling's virtual environment - so the tooling runs on a
+machine that has no `python3` of its own at all.
+
 ### Migration tooling
 
 The release configured as `MIGRATOR_VERSION` in `lib/general.py` (currently
 `v1.4.0-beta`) is downloaded from GitHub as a source archive and extracted into
-`mariadb-migrator` in the plugin data directory, with the archive's own top-level
-directory stripped, so the tooling's `mariadb-migrator` entry point sits at
-`<plugin data dir>/mariadb-migrator/mariadb-migrator`. The recorded file modes are
-restored, so the entry point and the `scripts/*.sh` remain executable. To install a
-newer release, change `MIGRATOR_VERSION` to its tag and download again; the installed
-release is recorded in `mariadb-migrator/.migrator-version` and shown in the menu.
 
-Downloading replaces the installed copy rather than merging the two. The new copy is
-extracted beside the old one and only swapped in once it is complete, so a download
-that fails part-way through leaves an installed copy exactly as it was.
+```
+~/.local/share/mariadb-migrator/<version>/
+```
+
+with the archive's own top-level directory stripped, so the tooling's entry point sits
+at `~/.local/share/mariadb-migrator/v1.4.0-beta/mariadb-migrator`. The recorded file
+modes are restored, so the entry point and the `scripts/*.sh` remain executable.
+
+The base directory is `$XDG_DATA_HOME` when that is set to an absolute path, and
+`~/.local/share` otherwise. This is deliberately **not** the plugin data directory: the
+tooling is a standalone program that outlives any one plugin install, so it is installed
+where such a program belongs rather than somewhere only this plugin would look for it.
+
+**The release is part of the path**, which makes the directory name the one authoritative
+record of what a copy is - there is no version file inside an install that could disagree
+with it - and means installing a different release never extracts over the top of an
+existing one. To install a newer release, change `MIGRATOR_VERSION` to its tag, remove
+what is installed, and download again.
+
+Downloading is atomic in effect: the new copy is extracted into a dot-prefixed working
+directory beside the release directories and only moved into place once it is complete,
+so a download that fails part-way through leaves an installed copy exactly as it was.
+
+### What a download installs
+
+Downloading does three things, each reported separately so a partial install says which
+step stopped:
+
+1. **Extracts** the release into `~/.local/share/mariadb-migrator/<version>/`.
+2. **Builds the virtual environment** at `<version>/.venv` and installs
+   `orchestrator/requirements.txt` into it. The environment is created with the
+   interpreter the shell bundles, so no system `python3` is involved; the result is an
+   ordinary venv whose `bin/python3` is a real interpreter, exactly as
+   `python3 -m venv` would produce. `pip` runs with `--require-virtualenv`, so a wrong
+   path can never install into the shell's own site-packages. `.venv` is the name the
+   tooling's own launcher looks for.
+3. **Installs a wrapper** at `~/.local/bin/mariadb-migrator`, so the tooling is runnable
+   by name:
+
+   ```bash
+   mariadb-migrator --help
+   ```
+
+   The wrapper `cd`s into the install directory and activates the virtual environment
+   before handing over. Both are necessary: the tooling resolves `scripts/`,
+   `orchestrator/` and the default `config/` paths relative to the working directory,
+   and its own dependency check runs *before* it would activate `.venv` itself. Because
+   it runs from the install directory, **relative arguments are relative to there** -
+   `--out artifacts/plan` writes inside `<version>/artifacts/plan`.
+
+   If `~/.local/bin` is not on your PATH the setup says so and prints the `export` line
+   to add. A wrapper from an earlier release is overwritten; a file of that name that
+   mcp.setup did **not** create is never touched - the setup reports it and leaves it
+   alone.
+
+**Removal takes every installed release**, not just the configured one, clearing
+`~/.local/share/mariadb-migrator` outright, and takes the wrapper with it (a wrapper
+pointing at a tree that is gone is worse than none). Releases accumulate there as the pin moves
+on, and a release the pin has moved past would otherwise have no way of being removed
+again short of deleting it by hand. The menu therefore offers **Remove** whenever
+anything is installed - including a release older than the configured one - and
+**Download** only when the directory is empty or absent.
+
+The tooling runs on **Linux and macOS** only. `mcp.setup` therefore leaves the step out
+of the menu on Windows rather than installing something that cannot be run there; the
+plugin's own features do not depend on it. The code lives in `lib/setup_migration.py`,
+separate from the rest of the interactive setup in `lib/setup.py` (both share the prompt
+primitives in `lib/setup_prompts.py`).
 
 ## Exposed MCP tools
 

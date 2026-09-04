@@ -60,8 +60,12 @@ def setup() -> None:
     the connection is verified before the password is stored in the shell's
     secret store. The allowed directories are stored in a settings.json file in
     the plugin data directory. The migration tooling is a menu-only step: the
-    configured release is downloaded from GitHub and extracted into a
-    'mariadb-migrator' directory beside that file.
+    configured release is downloaded from GitHub and extracted into
+    '~/.local/share/mariadb-migrator/<version>', where its virtual environment
+    is built with the interpreter the shell bundles and its dependencies
+    installed, and a wrapper is placed at '~/.local/bin/mariadb-migrator' so it
+    can be run by name. No system Python is required. It runs on Linux and
+    macOS only, so on Windows the menu leaves it out altogether.
 
     Returns:
         None

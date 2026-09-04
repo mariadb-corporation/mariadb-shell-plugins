@@ -104,10 +104,12 @@ def get_plugin_data_path() -> str:
     return mcm_plugin_data_path
 
 
-# Name of the directory inside the plugin data path that the MySQL-to-MariaDB
-# migration tooling is installed into (see
-# :func:`mcp_plugin.lib.setup.download_migrator`). One fixed location, so that
-# whatever comes to drive the tooling does not have to be told where it is.
+# Name of the directory the MySQL-to-MariaDB migration tooling is installed
+# under (see :func:`mcp_plugin.lib.setup_migration.download`). It sits in the
+# user's data home rather than in this plugin's data directory: the tooling is a
+# standalone program that outlives any one plugin install and that things other
+# than this plugin may want to run, so it is installed where such a program
+# belongs and not somewhere only mcp_plugin would think to look.
 MIGRATOR_DIR_NAME = "mariadb-migrator"
 
 # The release of the MySQL-to-MariaDB migration tooling that mcp.setup installs.
@@ -122,18 +124,78 @@ MIGRATOR_DIR_NAME = "mariadb-migrator"
 MIGRATOR_VERSION = "v1.4.0-beta"
 
 
-def get_migrator_path() -> str:
-    """Returns the directory the MySQL-to-MariaDB migration tooling lives in.
+def get_data_home() -> str:
+    """Returns the base directory user-specific program data belongs in.
 
-    Unlike :func:`get_plugin_data_path` this does NOT create the directory: it
-    is the directory's existence that says whether the tooling has been
-    downloaded at all.
+    ``$XDG_DATA_HOME`` when it names an absolute path, and ``~/.local/share``
+    otherwise, which is the default the XDG base directory specification gives
+    it. A relative value is ignored rather than resolved against the current
+    directory, as the specification requires.
 
     Returns:
-        The absolute path of the migration tooling directory, whether or not it
+        The absolute path of the data home, whether or not it exists yet.
+    """
+    data_home = os.environ.get("XDG_DATA_HOME", "")
+    if data_home and os.path.isabs(data_home):
+        return data_home
+
+    return os.path.join(os.path.expanduser("~"), ".local", "share")
+
+
+def get_bin_home() -> str:
+    """Returns the directory user-installed executables belong in.
+
+    ``~/.local/bin``, the companion of :func:`get_data_home` and the path
+    systemd and the XDG user-dirs convention put user-installed programs on.
+    There is no ``$XDG_BIN_HOME`` in the base directory specification to honour,
+    so unlike the data home this is not configurable.
+
+    Note this directory is NOT always on PATH - whether it is depends on the
+    user's shell profile - so anything installed here has to say so rather than
+    assume it is reachable.
+
+    Returns:
+        The absolute path of the user's binary directory, whether or not it
         exists yet.
     """
-    return os.path.join(get_plugin_data_path(), MIGRATOR_DIR_NAME)
+    return os.path.join(os.path.expanduser("~"), ".local", "bin")
+
+
+def get_migrator_root() -> str:
+    """Returns the directory the migration tooling's releases are installed under.
+
+    One directory per installed release, named after the release (see
+    :func:`get_migrator_path`), so that installing a different one neither
+    disturbs nor is disturbed by what is already there.
+
+    Returns:
+        The absolute path of the migration tooling's root directory, whether or
+        not it exists yet.
+    """
+    return os.path.join(get_data_home(), MIGRATOR_DIR_NAME)
+
+
+def get_migrator_path(version: str = None) -> str:
+    """Returns the directory a release of the migration tooling lives in.
+
+    The release is part of the path rather than something recorded inside the
+    install, which makes the directory name the one authoritative answer to
+    which release a copy is - there is no second record to disagree with it -
+    and lets releases sit side by side.
+
+    Unlike :func:`get_plugin_data_path` this does NOT create the directory: it
+    is the directory's existence that says whether that release has been
+    downloaded at all.
+
+    Args:
+        version (str): The release to name the directory of. Defaults to the
+            configured :data:`MIGRATOR_VERSION`.
+
+    Returns:
+        The absolute path of that release's directory, whether or not it exists
+        yet.
+    """
+    return os.path.join(get_migrator_root(), version or MIGRATOR_VERSION)
 
 
 def set_active_transport(transport) -> None:
