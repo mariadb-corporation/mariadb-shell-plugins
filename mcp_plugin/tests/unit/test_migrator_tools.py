@@ -170,7 +170,8 @@ def test_a_refusal_reaches_the_client_with_its_own_words():
     original message is APPENDED, never replaced - the "Error executing tool
     migrator.run: " prefix below is the SDK's and is always present. Raising
     ToolError directly is the right shape for a plain tool function, not a
-    requirement for the message to get through. See the tool_registrar docstring.
+    requirement for the message to get through - which is why no group wraps
+    its tools any more.
 
     A blank mode is the refusal to use: it is raised before anything is read, so
     this needs no configuration, no connections and changes nothing on disk.
@@ -391,11 +392,9 @@ def test_an_unreadable_secret_is_reported_with_the_stores_own_words(
 ):
     """A configured connection whose secret cannot be read says so, and why.
 
-    The one exception worth converting by hand. Since these tools no longer go
-    through tool_registrar, anything that is not a ToolError reaches the client
-    as a generic "Error executing tool" - and the secret store raises a plain
-    RuntimeError, whose text is the useful part ("Could not find the secret"
-    when the connection was removed while a migration was starting).
+    The one exception worth converting by hand: the secret store raises a plain
+    RuntimeError, and this message says far more than that one would - which
+    connection, which config key, and which side of the line the fault is on.
     """
     def unreadable(uri):
         raise RuntimeError("Failed to read the secret: Could not find the secret")

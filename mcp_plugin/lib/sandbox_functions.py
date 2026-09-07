@@ -32,7 +32,6 @@ MCP elicitation - to trust a path that is not yet allowed.
 from typing import Optional
 
 from mcp_plugin.lib import config, general
-from mcp_plugin.lib.tool_registrar import tool_registrar
 
 
 def register_sandbox_tools(server, function_groups=()) -> None:
@@ -49,7 +48,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
     from mcp.server.mcpserver import Context
     from mysqlsh.globals import sandbox
 
-    tool = tool_registrar(server)
+    tool = server.tool
 
     def _options(**pairs) -> dict:
         """Builds an options dict, dropping keys whose value is None."""

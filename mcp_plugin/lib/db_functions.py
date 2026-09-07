@@ -131,7 +131,6 @@ from typing import Optional
 import mysqlsh
 
 from mcp_plugin.lib import config, general
-from mcp_plugin.lib.tool_registrar import tool_registrar
 
 # Maps a connection UUID to its _Connection.
 _sessions = {}
@@ -1415,7 +1414,7 @@ def register_db_tools(server, function_groups=()) -> None:
     """
     from mcp.server.mcpserver import Context
 
-    tool = tool_registrar(server)
+    tool = server.tool
 
     @tool(name="db.list_connections")
     def list_connections() -> list:
