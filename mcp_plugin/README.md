@@ -328,7 +328,7 @@ can still be followed from its own files and picked up with `migrator.resume`.
 
 ## Installation
 
-The MCP server plugin ships with the MariaDB Shell 26.9.0 and later. No manual
+The MCP server plugin ships with the MariaDB Shell 26.9.1 and later. No manual
 installation is required.
 
 ## Usage

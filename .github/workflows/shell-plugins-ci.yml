@@ -20,6 +20,7 @@ jobs:
 
   build:
     name: Shell-Plugins-CI-Verification
+    needs: ensure-runner
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
 
     env:
