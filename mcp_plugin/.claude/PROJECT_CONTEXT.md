@@ -9,13 +9,16 @@ MCP-compatible clients. It registers the global `mcp` object in the shell and se
 additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21). GPLv2,
 "MariaDB plc". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
-(`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
+(`/Users/mzinner/git/mariadb-shell/build/bin`, shell **26.9.0**), **MCP SDK 2.1.1**
+(2.0.0 until this session — the jump is what broke CI, see the SDK-error gotcha),
+Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **195 tests pass, 1 SKIPPED (~57s), 97% total coverage** (1533 statements,
-47 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
+Standard suite: **201 tests pass, 1 SKIPPED (~64s), 97% total coverage** (1535 statements,
+44 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 Gotchas). The skipped one is the OPT-IN end-to-end migration test: with `--e2e` the run is
-**196 pass (~75s)** at the SAME coverage, since everything it touches is already covered by
-the unit tests. Run it with
+**202 pass** at the SAME coverage, since everything it touches is already covered by
+the unit tests (the ~75s that used to be quoted here was measured on SDK 2.0.0; `--e2e`
+has not been re-run since the bump). Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
 
@@ -26,10 +29,15 @@ Read the SDK and uvicorn sources THERE, not upstream. (Ask the shell itself rath
 `find /`: `mariadb-shell --py -f <script printing module __file__>`.)
 **There are TWO dependency trees** in the shell build: that site-packages one, which is
 what actually runs, and `build/bundled-python-deps/`, a staging copy. As of this session
-they hold the same versions (mcp 2.0.0, uvicorn 0.52.1) and the files that matter are
+they hold the same versions (mcp **2.1.1**, uvicorn 0.52.1) and the files that matter are
 byte-identical — but only the site-packages one is authoritative, so always get the path
 from the running shell rather than from a filesystem search. (`/System/Volumes/Data/...`
-hits are the same files through the macOS firmlink, not a third copy.)
+hits are the same files through the macOS firmlink, not a third copy.) Note that
+site-packages accumulates STALE `*.dist-info` directories, because the staging copy is
+overlaid rather than installed: `mcp-2.0.0.dist-info` still sits beside
+`mcp-2.1.1.dist-info` there. Harmless — diffing the two `RECORD`s showed zero 2.0.0-only
+files left on disk, and `importlib.metadata.version('mcp')` answers 2.1.1 — but do not
+read a version off a directory listing.
 
 The shell's env vars are `MARIADB_SHELL`, `MARIADB_SHELL_USER_CONFIG_HOME` and
 `MARIADB_SHELL_TERM_COLOR_MODE` — the pre-rename `MYSQLSH*` names are GONE from all
@@ -323,13 +331,13 @@ silently runs against whatever `mariadb-shell` is on PATH.
     exception into one whose text reaches the client. `lib/migrator_functions.py` does
     not import `mysqlsh` at all any more. db/msm/sandbox DO still use the registrar and
     must keep it: those really are wrappers.
-    - **The consequence is smaller than it looks, and this was MEASURED after the
-      change** (see the SDK-error gotcha): on SDK 2.0 the original message is APPENDED
-      to "Error executing tool <name>: ", never replaced, whatever type was raised. So
-      nothing is lost by not converting - raising `ToolError` is the right SHAPE for a
-      plain tool function, not what makes the text arrive. The one case still worth
-      converting by hand, because its own text says far more than the raw exception
-      would, is the secret store's plain `RuntimeError` out of
+    - **Raising `ToolError` is what makes the text ARRIVE on SDK 2.1, not merely the
+      right shape** (see the SDK-error gotcha, and note the earlier claim here that
+      "nothing is lost by not converting" was true only of 1.28.x/2.0.0). Anything else
+      out of these tools is a crash the client reads as a bare "Error executing tool
+      <name>", which is why every refusal in this module raises `ToolError` and why the
+      one plain exception it can meet gets converted by hand: the secret store's
+      `RuntimeError` out of
       `config.get_connection_password` ("Could not find the secret" when a connection
       was removed while a migration was starting) - `_connection_passwords` catches it
       and re-raises with the store's own words plus which connection and which config
@@ -794,11 +802,14 @@ silently runs against whatever `mariadb-shell` is on PATH.
   4. **THEN, on the user's request: a stdio-level error test and a `tool_registrar`
      docstring fix** — and the docstring fix turned out to be more than wording. Writing
      the test surfaced that **SDK 2.0 appends a tool's message rather than replacing
-     it**, so the registrar is redundant and its stated premise was false (see the
-     SDK-error gotcha for the measurement). The test was rewritten to assert what is
+     it**, so the registrar looked redundant and its stated premise looked false, and it
+     was deleted. **2.1.0 then reinstated the masking and broke CI, so that conclusion
+     held only for 2.0.0 and the module is back** — see the SDK-error gotcha, which is
+     the one to read; the paragraph below records what was believed at the time. The
+     test was rewritten to assert what is
      actually true — the refusal arrives as `is_error=True` carrying the tool's own
      sentence — and to say outright that it canNOT discriminate exception types,
-     because on this SDK nothing does. `test_a_refusal_reaches_the_client_with_its_own_words`
+     because on 2.0.0 nothing did. `test_a_refusal_reaches_the_client_with_its_own_words`
      is the only test here that makes a real round trip; it SKIPS when the tooling is
      not installed, since the group then registers nothing.
   **195 pass + 1 skipped, 196 with `--e2e`, 97%** (1533 stmts / 47 missed);
@@ -1291,11 +1302,13 @@ silently runs against whatever `mariadb-shell` is on PATH.
   side-by-side-releases test, and 15 for the venv/dependency/wrapper work) and one more in
   `test_config` (the Windows menu end-to-end). **192 pass, ~62s** — the venv builds and
   the CLI tests make it slower than the old ~39s.
-- **Coverage: TOTAL 97% (1530 statements, 50 missed) — measured on a run with `.coverage`
-  DELETED first.** Per module: lib/migrator_functions **100**, lib/setup_cli **100**,
-  lib/msm_functions 100, lib/setup_migrator 99,
-  lib/db_functions 98, lib/general 98, lib/config 98, lib/server 97, lib/tool_registrar 93,
-  lib/sandbox_functions 88, lib/setup 87, server.py 81, lib/setup_prompts 81,
+- **Coverage: TOTAL 97% (1535 statements, 44 missed) — measured on a run with `.coverage`
+  DELETED first**, on SDK 2.1.1 with `tool_registrar` restored. Per module:
+  lib/migrator_functions **100**, lib/setup_cli **100**,
+  lib/msm_functions 100, lib/tool_registrar **100**, lib/setup_migrator 99,
+  lib/db_functions 98, lib/general 98, lib/server 98, lib/config 96,
+  lib/setup_prompts 95,
+  lib/sandbox_functions 88, lib/setup 87, server.py 81,
   general.py 73.
   **The trap below bit again this session**: the first run, without deleting `.coverage`,
   reported lib/setup **94** and lib/general 2-missed; the clean run says lib/setup **92** and
@@ -1427,6 +1440,15 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `_OBJECT_COLUMNS_SQL`, `_OBJECT_CONSTRAINTS_SQL`, `_OBJECT_REFERENCES_SQL`).
 - lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`;
   msm_functions also holds the db-group-gated `msm.deploy_schema`.
+- lib/tool_registrar.py -> the `server.tool` replacement db/msm/sandbox register through,
+  converting a `mysqlsh.Error` into a `ToolError` so SDK 2.1 does not strip its message
+  (see the SDK-error gotcha — this module was deleted once and had to come back).
+  `ToolError`, `ResourceError` and `MCPError` pass through unconverted. Imports the SDK
+  inside `decorator`, never at module scope. **100% covered.**
+- tests/unit/test_tool_registrar.py -> the 6 wrapper tests. `_FakeServer.tool` returns the
+  wrapper instead of registering it, so these call it DIRECTLY: no server, no protocol,
+  0.6s. They cover the passthrough types no tool group raises today — which is the half
+  the stdio round trips cannot reach.
 - lib/server.py -> build/serve; `_FUNCTION_GROUP_REGISTRARS` (a (module, function) NAME
   pair per group) + `_registrar()`, which resolves it with `importlib` when the group is
   served — the laziness that lets `migrator_functions` import the SDK at module scope;
@@ -1656,23 +1678,52 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **Registering the `e2e` marker in `pytest-coverage.ini` is not optional bookkeeping** —
   without the `markers =` entry every run prints a `PytestUnknownMarkWarning`, and the
   suite is otherwise warning-free, so it would be noise nobody reads.
-- **SDK 2.0 does NOT swallow a tool exception's message, so `tool_registrar` is
-  REDUNDANT — and the old reasoning for it must not be repeated.** The belief it was
-  built on (and which its docstring stated) was that the SDK replaces an unanticipated
-  exception's message with a generic "Error executing tool <name>" and keeps the detail
-  server-side. 2.0.0 does the opposite: `Tool.run` wraps EVERY exception as
-  `ToolError(f"Error executing tool {self.name}: {e}")`
-  (`mcp/server/mcpserver/tools/base.py:181`) and `_handle_call_tool` puts `str(e)` in
-  the content block (`mcp/server/mcpserver/server.py:424`), so the original text is
-  APPENDED whatever was raised. **Measured, not just read**: with the wrapper reduced to
-  a plain `server.tool` pass-through, `test_sandbox_dir_outside_allowed_paths_is_rejected`
-  — a real stdio round trip asserting on the message — still passes. The module is KEPT
-  (dropping it changes three groups' error handling for no behavioural gain, and the
-  premise could differ again on another SDK version) but its docstring now says this.
+- **WHETHER THE SDK SWALLOWS A TOOL EXCEPTION'S MESSAGE IS VERSION-DEPENDENT, and it
+  flipped at 2.1.0. `tool_registrar` is LOAD-BEARING again — do not delete it a second
+  time.** The history, because this has now been got wrong in both directions:
+  - **1.28.x and 2.0.0 APPEND the message** whatever type was raised: `Tool.run` ends in
+    one `except Exception` raising `ToolError(f"Error executing tool {self.name}: {e}")`
+    and `_handle_call_tool` puts `str(e)` in the content block. So against those the
+    wrapper changed nothing a client saw, which is why it was deleted (d530e97d) —
+    measured at the time, correctly, for the SDK then in the build.
+  - **2.1.0 masks it again, deliberately**, sorting a failure into three buckets in
+    `mcp/server/mcpserver/tools/base.py`: `ToolError` and `ResourceError` keep their
+    message, `MCPError` becomes a JSON-RPC protocol error, and **everything else is
+    re-raised as `UnexpectedToolError(f"Error executing tool {self.name}")`** — a crash,
+    logged server-side with its traceback and withheld from the client. The docstrings of
+    the new `Unexpected*Error` classes say so outright; read them before theorising.
+  - `mysqlsh.Error` is in that third bucket, so with the wrapper gone every anticipated
+    refusal in db/msm/sandbox reached the model as a bare "Error executing tool <name>".
+    **That is what broke CI on PR #19** (run 34115890193): exactly three tests, the ones
+    that assert a tool's own sentence — `test_db_connect_execute_and_close`,
+    `test_stdio_elicits_and_declines_new_path`,
+    `test_sandbox_dir_outside_allowed_paths_is_rejected`. Reverted whole in e7cd1c85.
+  - **Reproduced locally, which is the only reason it is nailed down**: the same three
+    fail at d530e97d and pass at the revert once the build's bundled SDK is 2.1.1 (see the
+    bundled-deps cache trap below — a rebuild alone does NOT update it).
+  - The conversion is portable, not a patch for 2.1: on 1.28.x/2.0.0 the payload is
+    byte-identical either way, because the wrapper raises `ToolError(str(exc))` and
+    `str(ToolError(s)) == s`.
+  - **`ToolError`, `ResourceError` and `MCPError` now pass through unconverted** (they
+    were not before, and `MCPError` mattered: converting one downgrades a protocol error
+    to a tool failure). `tests/unit/test_tool_registrar.py` pins all of it directly with
+    a fake server — six tests, no server started; two of them fail if the passthrough is
+    reduced back to `except ToolError`.
   Consequence for tests: **"Error executing tool" is ALWAYS in the payload**, so
   `assert "Error executing tool" not in payload` is not a test of anything — it was
   written that way once and failed immediately. Assert the tool's own sentence instead.
-  Another 1.x-to-2.0 reversal, like the sync-tool threading one further down.
+- **REBUILDING THE SHELL DOES NOT UPDATE ITS BUNDLED PYTHON PACKAGES, and that is how a
+  local build can differ from a CI shell of the SAME version.** `build/bundled-python-deps/`
+  is a cache keyed ONLY on the requested package LIST, recorded in
+  `build/bundled-python-deps.stamp` (`CMakeLists.txt`, ~line 1704). The stamp reads
+  `certifi;pyyaml;antlr4-python3-runtime;mcp` — `mcp` is UNPINNED, so as long as that list
+  is unchanged pip never re-runs and whatever `mcp` resolved to months ago is reused
+  forever. A rebuild moved the local shell 26.8.0 -> 26.9.0 while leaving mcp at 2.0.0,
+  and CI's 26.9.0 tarball (built with a cold cache) had 2.1.1: **same shell version, two
+  different SDKs, and only CI saw the failure.** To force a re-resolve:
+  `rm -rf build/bundled-python-deps build/bundled-python-deps.stamp` and rebuild. Do that
+  before concluding "it passes locally" about anything SDK-shaped, and check the version
+  the way the paragraph at the top says (ask the running shell, not a directory listing).
 - **NEVER import the MCP SDK at the module scope of anything the plugin imports
   EAGERLY.** `from mcp.server.mcpserver.exceptions import ToolError` alone loads ~110
   `mcp.*` modules, `mcp.client.stdio` among them, and that module binds
@@ -1745,8 +1796,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   inside a SYNC test, which is what `test_msm.py` already does. This cost two failing tests.
 - **`ToolError` vs `mysqlsh.Error` depends on WHICH GROUP, and it changed for migrator.**
   db/msm/sandbox wrap shell plugin functions: they raise `mysqlsh.Error`, and
-  `tool_registrar` re-raises it as `ToolError` (which on SDK 2.0 changes nothing the
-  client sees - see the SDK-error gotcha)
+  `tool_registrar` re-raises it as `ToolError` (which is what keeps the message from
+  being stripped on SDK 2.1 - see the SDK-error gotcha)
   — so assert `ToolError` for a call through the registered wrapper and `mysqlsh.Error`
   for a direct call to the module-level function. That cost two failing tests when it
   was first learned. **`migrator_functions` is now the exception and has no such split**:

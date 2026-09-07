@@ -163,14 +163,14 @@ def test_a_refusal_reaches_the_client_with_its_own_words():
     comes back flagged as an error, and that the tool's own sentence survives to
     the content block rather than being reduced to something generic.
 
-    What this does NOT prove is anything about the exception TYPE, and it cannot:
-    on MCP SDK 2.0 nothing is lost either way. `Tool.run` wraps every exception
-    as `ToolError(f"Error executing tool {name}: {e}")` (tools/base.py:181) and
-    `_handle_call_tool` then puts `str(e)` in the content (server.py:424), so the
-    original message is APPENDED, never replaced - the "Error executing tool
-    migrator.run: " prefix below is the SDK's and is always present. Raising
-    ToolError directly is the right shape for a plain tool function, not a
-    requirement for the message to get through. See the tool_registrar docstring.
+    On MCP SDK 2.1 it proves the exception TYPE as well, though only indirectly:
+    a refusal that were NOT a `ToolError` would be treated as a crash and arrive
+    as a bare "Error executing tool migrator.run", with its own sentence logged
+    server-side and withheld. The prefix below is the SDK's and is always
+    present; what this test watches is what follows it. (On 1.28.x and 2.0.0 the
+    message was appended whatever was raised, so the same assertion proved
+    nothing about the type - see the tool_registrar docstring for that reversal
+    and what it cost.)
 
     A blank mode is the refusal to use: it is raised before anything is read, so
     this needs no configuration, no connections and changes nothing on disk.

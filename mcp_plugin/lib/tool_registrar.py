@@ -21,23 +21,39 @@ those tools drive a program of their own, are not wrappers around anything, and
 raise ``ToolError`` themselves (see
 :mod:`mcp_plugin.lib.migrator_functions`).
 
-**On MCP SDK 2.0 this is belt to the SDK's braces, not load-bearing.** It was
-added when the SDK was understood to replace an unanticipated exception's message
-with a generic "Error executing tool <name>" and keep the detail server-side.
-That is not what 2.0.0 does: ``Tool.run`` wraps EVERY exception as
-``ToolError(f"Error executing tool {self.name}: {e}")``
-(``mcp/server/mcpserver/tools/base.py:181``) and ``_handle_call_tool`` then puts
-``str(e)`` into the content block (``mcp/server/mcpserver/server.py:424``), so the
-original text is appended rather than replaced whatever type was raised. Measured,
-not read: with the wrapper below reduced to a plain ``server.tool`` pass-through,
-``test_sandbox_dir_outside_allowed_paths_is_rejected`` - a real stdio round trip
-asserting on the message - still passes.
+**This is LOAD-BEARING on MCP SDK 2.1 and later**, and the reason is worth
+knowing, because the SDK changed its mind and the module was briefly deleted on
+the strength of the older behaviour (commit d530e97d, reverted):
 
-So this module could be dropped and the three groups registered directly. It is
-kept because that is a change to three groups' error handling for no behavioural
-gain, and because the premise may differ again on another SDK version - the
-1.x-to-2.0 history here is full of such reversals. Do not, however, cite the
-old "the SDK swallows the message" reasoning: it is not true of the SDK in use.
+* 1.28.x and 2.0.0 APPEND a tool's message whatever type was raised -
+  ``Tool.run`` ends in a single ``except Exception`` that raises
+  ``ToolError(f"Error executing tool {self.name}: {e}")``. Against those two,
+  this module changes nothing a client sees.
+* 2.1.0 sorts a failure into one of three buckets instead
+  (``mcp/server/mcpserver/tools/base.py``): ``ToolError`` and ``ResourceError``
+  keep their message, ``MCPError`` becomes a JSON-RPC protocol error, and
+  **everything else is re-raised as
+  ``UnexpectedToolError(f"Error executing tool {self.name}")``** - a crash,
+  whose own text is logged server-side and withheld from the client.
+
+``mysqlsh.Error`` lands in that third bucket, so without this module every
+anticipated refusal - a path that is not allowed, an unknown connection id, an
+unsupported object type - reaches the model as a bare "Error executing tool
+<name>" with the reason stripped off. Measured, not read: deleting the module
+turned exactly three tests red on the CI shell 26.9.0 (run 34115890193, PR #19)
+and the same three locally once the bundled SDK was 2.1.1, while restoring it
+returns the suite to green.
+
+Converting here is portable rather than a patch for one version: on 1.28.x and
+2.0.0 the client-visible payload is byte-identical either way, because this
+raises ``ToolError(str(exc))`` and ``str(ToolError(s)) == s``, so the SDK
+composes the same string whether or not it had to wrap anything.
+
+Three exception types are deliberately NOT converted, mirroring the buckets
+above: ``ToolError`` and ``ResourceError``, which the SDK already reports with
+their own message, and ``MCPError``, which MEANS "answer with a protocol error"
+- the SDK re-raises it ahead of its own generic handler for that reason, and
+converting it here would quietly downgrade it to a tool failure.
 
 Nothing in this module imports the MCP SDK at module import time: the shell
 imports this plugin package eagerly, and pulling in ``mcp`` that early binds
@@ -65,13 +81,20 @@ def tool_registrar(server):
 
     def mcp_tool(*args: Any, **kwargs: Any):
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            from mcp.server.mcpserver.exceptions import ToolError
+            from mcp.server.mcpserver.exceptions import ResourceError, ToolError
+            from mcp.shared.exceptions import MCPError
+
+            # What the SDK already handles faithfully goes straight through; see
+            # the module docstring for the buckets these mirror. All three names
+            # have been importable from these two modules since 2.0.0, so naming
+            # them does not tie the plugin to 2.1.
+            reported_as_is = (ToolError, ResourceError, MCPError)
 
             @wraps(func)
             async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
                     return await func(*call_args, **call_kwargs)
-                except ToolError:
+                except reported_as_is:
                     raise
                 except Exception as exc:
                     raise ToolError(str(exc)) from exc
@@ -80,7 +103,7 @@ def tool_registrar(server):
             def sync_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
                     return func(*call_args, **call_kwargs)
-                except ToolError:
+                except reported_as_is:
                     raise
                 except Exception as exc:
                     raise ToolError(str(exc)) from exc
