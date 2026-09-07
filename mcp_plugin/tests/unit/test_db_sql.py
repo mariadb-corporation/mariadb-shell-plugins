@@ -233,6 +233,13 @@ async def _db_flow(uri, script_dir):
             },
         )
         assert bad_type.is_error is True
+        # The tool's OWN words reach the client, not just the error flag. The db
+        # group is the largest and this is its only assertion of that, so it is
+        # the one that fails if `tool_registrar` stops converting `mysqlsh.Error`
+        # into a `ToolError`: on SDK 2.1 the SDK then treats the refusal as a
+        # crash and the payload is reduced to "Error executing tool db.list_objects".
+        bad_type_payload = helpers.tool_payload(bad_type)
+        assert "is not a supported object type" in bad_type_payload, bad_type_payload
         missing_schema = await call(
             "db.list_objects",
             {"connection_id": connection_id, "schema_name": "no_such_schema_here"},
@@ -459,6 +466,8 @@ async def _db_flow(uri, script_dir):
             {"connection_id": connection_id, "file_path": "/etc/hosts"},
         )
         assert denied_result.is_error is True
+        denied_payload = helpers.tool_payload(denied_result)
+        assert "not allowed" in denied_payload, denied_payload
 
         try:
             # Aggregate SELECT.

@@ -19,6 +19,16 @@ Guides the user through configuring the MariaDB connections and the local
 directories the MCP server is allowed to access. Connections are verified with
 ``shell.open_session`` before their password is stored (see
 :mod:`mcp_plugin.lib.config`).
+
+The management menu also offers the MySQL-to-MariaDB migration tooling, which
+lives in :mod:`mcp_plugin.lib.setup_migrator`: it is a menu-only step, never
+part of the first run, and it is left out altogether on platforms the tooling
+does not run on. The prompt primitives are in
+:mod:`mcp_plugin.lib.setup_prompts`, shared with that module.
+
+Everything the menu offers can also be given as an option instead, which turns
+the whole thing declarative and terminal-free; that lives in
+:mod:`mcp_plugin.lib.setup_cli`.
 """
 
 # cSpell:ignore mysqlsh MariaDB
@@ -27,58 +37,12 @@ import os
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general
+from mcp_plugin.lib import config, general, setup_cli, setup_migrator
+from mcp_plugin.lib import setup_prompts as prompts
 
-
-def _shell():
-    """Returns the shell global object."""
-    return mysqlsh.globals.shell
-
-
-def _prompt(message: str, options: dict = None) -> str:
-    """Prompts the user for input, returning the entered (stripped) string."""
-    return _shell().prompt(message, options if options is not None else {}).strip()
-
-
-def _prompt_password(message: str) -> str:
-    """Prompts the user for a password without echoing it."""
-    return _shell().prompt(message, {"type": "password"})
-
-
-def _prompt_yes_no(message: str, default: bool = True) -> bool:
-    """Prompts the user for a yes/no answer.
-
-    Args:
-        message (str): The question to ask.
-        default (bool): The answer to use when the user just presses Enter.
-
-    Returns:
-        The user's answer as a boolean.
-    """
-    suffix = " [Y/n]: " if default else " [y/N]: "
-    answer = _prompt(message + suffix).lower()
-    if answer == "":
-        return default
-    return answer in ("y", "yes")
-
-
-def _select_index(message: str, count: int) -> int:
-    """Prompts the user to pick an item number in the range 1..count.
-
-    Args:
-        message (str): The prompt message.
-        count (int): The number of items to choose from.
-
-    Returns:
-        The selected zero-based index, or -1 if the user cancelled.
-    """
-    while True:
-        answer = _prompt(message + " (or leave empty to cancel): ")
-        if answer == "":
-            return -1
-        if answer.isdigit() and 1 <= int(answer) <= count:
-            return int(answer) - 1
-        print(f"Please enter a number between 1 and {count}.")
+# The management menu's last choice, and its default: picking it (or replying
+# with nothing) leaves the menu.
+MENU_FINISH_LABEL = "Finish"
 
 
 # --- Connections -----------------------------------------------------------
@@ -104,7 +68,7 @@ def _add_connection() -> None:
     connection is what keeps the same connection from being configured twice
     over (see :func:`mcp_plugin.lib.config.normalize_connection_uri`).
     """
-    entered_uri = _prompt(
+    entered_uri = prompts.ask(
         "Enter the MariaDB connection URI (e.g. user@host:3306): "
     )
     if entered_uri == "":
@@ -119,14 +83,11 @@ def _add_connection() -> None:
     if uri != entered_uri:
         print(f"The connection will be stored as '{uri}'.")
 
-    password = _prompt_password(f"Enter the password for '{uri}': ")
+    password = prompts.password(f"Enter the password for '{uri}': ")
 
     # Verify the credentials by opening (and immediately closing) a session.
     try:
-        connection_data = _shell().parse_uri(uri)
-        connection_data["password"] = password
-        session = _shell().open_session(connection_data)
-        session.close()
+        setup_cli.verify_connection(uri, password)
     except Exception as error:  # noqa: BLE001 - surface any connection failure
         print(f"Could not connect to '{uri}': {error}")
         print("The connection was not stored.")
@@ -137,12 +98,19 @@ def _add_connection() -> None:
 
 
 def _delete_connection() -> None:
-    """Prompts the user to delete one of the configured connections."""
-    connections = _print_connections()
+    """Prompts the user to delete one of the configured connections.
+
+    The list is NOT printed first: the select prompt below renders its own
+    numbered list, so printing one here would show it twice.
+    """
+    connections = config.list_connection_uris()
     if not connections:
+        print("\nNo connections configured yet.")
         return
 
-    index = _select_index("Enter the number of the connection to delete", len(connections))
+    index = prompts.select_or_cancel(
+        "Select the connection to delete", connections
+    )
     if index < 0:
         return
 
@@ -169,7 +137,7 @@ def _print_paths() -> list:
 def _add_path() -> None:
     """Prompts for a directory to allow, defaulting to the current directory."""
     default_path = os.path.abspath(os.getcwd())
-    entered = _prompt(
+    entered = prompts.ask(
         f"Enter a directory the MCP server may access (default: {default_path}): "
     )
     path = os.path.abspath(os.path.expanduser(entered)) if entered else default_path
@@ -189,12 +157,17 @@ def _add_path() -> None:
 
 
 def _delete_path() -> None:
-    """Prompts the user to delete one of the allowed paths."""
-    paths = _print_paths()
+    """Prompts the user to delete one of the allowed paths.
+
+    The list is NOT printed first: the select prompt below renders its own
+    numbered list, so printing one here would show it twice.
+    """
+    paths = config.get_allowed_paths()
     if not paths:
+        print("\nNo allowed paths configured yet.")
         return
 
-    index = _select_index("Enter the number of the path to delete", len(paths))
+    index = prompts.select_or_cancel("Select the allowed path to delete", paths)
     if index < 0:
         return
 
@@ -207,59 +180,100 @@ def _delete_path() -> None:
 
 
 def _first_run() -> None:
-    """Guided first-run configuration: add connections, then allowed paths."""
+    """Guided first-run configuration: add connections, then allowed paths.
+
+    The migration tooling is deliberately NOT part of this: it is a download the
+    plugin does not need in order to serve anything, so it stays a step the user
+    goes and asks for from the menu rather than one the first run walks into.
+    """
     print("Let's configure the MariaDB connections the MCP server may use.")
-    while _prompt_yes_no("Add a connection?", default=True):
+    while prompts.yes_no("Add a connection?", default=True):
         _add_connection()
 
     print(
         "\nNow choose the local directories the MCP server is allowed to access."
     )
-    while _prompt_yes_no("Add an allowed path?", default=True):
+    while prompts.yes_no("Add an allowed path?", default=True):
         _add_path()
 
     # Ensure a settings file exists so subsequent runs use the management menu.
     config.set_allowed_paths(config.get_allowed_paths())
 
 
+def _menu_entries() -> list:
+    """Returns the management menu's (label, action) pairs, in order.
+
+    The migration tooling is appended only where it runs (see
+    :func:`mcp_plugin.lib.setup_migrator.is_supported`), which is why the menu
+    is built rather than written out: on Windows the entry is simply absent, and
+    the shell's select prompt numbers whatever it is given.
+
+    Returns:
+        The entries to offer, without the trailing "Finish".
+    """
+    entries = [
+        ("Add a connection", _add_connection),
+        ("Delete a connection", _delete_connection),
+        ("Add an allowed path", _add_path),
+        ("Delete an allowed path", _delete_path),
+    ]
+    if setup_migrator.is_supported():
+        entries.append((setup_migrator.menu_label(), setup_migrator.manage))
+
+    return entries
+
+
 def _menu() -> None:
-    """Management menu: add/delete connections and allowed paths."""
-    actions = {
-        "1": _add_connection,
-        "2": _delete_connection,
-        "3": _add_path,
-        "4": _delete_path,
-    }
+    """Management menu: connections, allowed paths and the migration tooling.
+
+    A select prompt, so the shell numbers the choices, refuses anything that is
+    not one of them and re-asks by itself. "Finish" is the last choice and the
+    default, which is what makes an empty reply end the menu.
+    """
     while True:
         _print_connections()
         _print_paths()
-        print(
-            "\nWhat would you like to do?\n"
-            "  1. Add a connection\n"
-            "  2. Delete a connection\n"
-            "  3. Add an allowed path\n"
-            "  4. Delete an allowed path\n"
-            "  5. Finish"
+        if setup_migrator.is_supported():
+            setup_migrator.print_status()
+
+        # Rebuilt every round: the migration entry's label follows what is
+        # installed, which the previous round may have just changed.
+        entries = _menu_entries()
+        labels = [label for label, _ in entries] + [MENU_FINISH_LABEL]
+
+        choice = prompts.select(
+            "\nWhat would you like to do?", labels, default=len(entries)
         )
-        choice = _prompt("Enter your choice: ")
-        if choice == "5" or choice == "":
+        if choice == len(entries):
             break
-        action = actions.get(choice)
-        if action is None:
-            print("Please enter a number between 1 and 5.")
-            continue
-        action()
+
+        entries[choice][1]()
 
 
-def run_setup() -> None:
-    """Runs the interactive MCP server setup.
+def run_setup(**options) -> None:
+    """Runs the MCP server setup, interactively or from the given options.
+
+    With no options this is the walkthrough it has always been. With any option
+    it is declarative instead and asks nothing it was not obliged to
+    (:func:`mcp_plugin.lib.setup_cli.apply`), which is what lets it run where
+    there is no terminal - the interactive-session requirement below applies
+    only to the walkthrough, since that is the only part that cannot proceed
+    without one.
+
+    Args:
+        **options (dict): See ``mcp.setup``.
 
     Returns:
         None
     """
-    if not _shell().options.useWizards:
+    if setup_cli.has_options(options):
+        setup_cli.apply(options)
+        return
+
+    if not prompts.shell().options.useWizards:
         raise mysqlsh.Error(
-            "mcp.setup must be run from an interactive shell session."
+            "mcp.setup must be run from an interactive shell session, or with "
+            "options - run 'mariadb-shell -- mcp setup --help' for those."
         )
 
     print("=== MariaDB MCP Server setup ===")

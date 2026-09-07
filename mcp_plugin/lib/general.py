@@ -87,10 +87,15 @@ _active_transport = None
 FUNCTION_GROUP_DB = "db"
 FUNCTION_GROUP_MSM = "msm"
 FUNCTION_GROUP_SANDBOX = "sandbox"
+# The migrator group is supported wherever the group list is concerned, but its
+# tools register only where the migration tooling is actually installed - see
+# mcp_plugin.lib.migrator_functions.register_migrator_tools.
+FUNCTION_GROUP_MIGRATOR = "migrator"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
     FUNCTION_GROUP_SANDBOX,
+    FUNCTION_GROUP_MIGRATOR,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
@@ -102,6 +107,100 @@ def get_plugin_data_path() -> str:
     pathlib.Path(mcm_plugin_data_path).mkdir(parents=True, exist_ok=True)
 
     return mcm_plugin_data_path
+
+
+# Name of the directory the MySQL-to-MariaDB migration tooling is installed
+# under (see :func:`mcp_plugin.lib.setup_migrator.download`). It sits in the
+# user's data home rather than in this plugin's data directory: the tooling is a
+# standalone program that outlives any one plugin install and that things other
+# than this plugin may want to run, so it is installed where such a program
+# belongs and not somewhere only mcp_plugin would think to look.
+MIGRATOR_DIR_NAME = "mariadb-migrator"
+
+# The release of the MySQL-to-MariaDB migration tooling that mcp.setup installs.
+# It is the name of a release TAG in the tooling's repository, which is what the
+# source archive is built from, so bumping this to a newer tag is all there is to
+# installing a newer release.
+#
+# A pinned release rather than the main branch: what an installation contains is
+# then a property of this plugin's version and not of the day it was set up, so
+# two installations of the same plugin drive the same tooling, and a release that
+# turns out to break something can be answered by pinning the one before it.
+MIGRATOR_VERSION = "v1.4.0-beta"
+
+
+def get_data_home() -> str:
+    """Returns the base directory user-specific program data belongs in.
+
+    ``$XDG_DATA_HOME`` when it names an absolute path, and ``~/.local/share``
+    otherwise, which is the default the XDG base directory specification gives
+    it. A relative value is ignored rather than resolved against the current
+    directory, as the specification requires.
+
+    Returns:
+        The absolute path of the data home, whether or not it exists yet.
+    """
+    data_home = os.environ.get("XDG_DATA_HOME", "")
+    if data_home and os.path.isabs(data_home):
+        return data_home
+
+    return os.path.join(os.path.expanduser("~"), ".local", "share")
+
+
+def get_bin_home() -> str:
+    """Returns the directory user-installed executables belong in.
+
+    ``~/.local/bin``, the companion of :func:`get_data_home` and the path
+    systemd and the XDG user-dirs convention put user-installed programs on.
+    There is no ``$XDG_BIN_HOME`` in the base directory specification to honour,
+    so unlike the data home this is not configurable.
+
+    Note this directory is NOT always on PATH - whether it is depends on the
+    user's shell profile - so anything installed here has to say so rather than
+    assume it is reachable.
+
+    Returns:
+        The absolute path of the user's binary directory, whether or not it
+        exists yet.
+    """
+    return os.path.join(os.path.expanduser("~"), ".local", "bin")
+
+
+def get_migrator_root() -> str:
+    """Returns the directory the migration tooling's releases are installed under.
+
+    One directory per installed release, named after the release (see
+    :func:`get_migrator_path`), so that installing a different one neither
+    disturbs nor is disturbed by what is already there.
+
+    Returns:
+        The absolute path of the migration tooling's root directory, whether or
+        not it exists yet.
+    """
+    return os.path.join(get_data_home(), MIGRATOR_DIR_NAME)
+
+
+def get_migrator_path(version: str = None) -> str:
+    """Returns the directory a release of the migration tooling lives in.
+
+    The release is part of the path rather than something recorded inside the
+    install, which makes the directory name the one authoritative answer to
+    which release a copy is - there is no second record to disagree with it -
+    and lets releases sit side by side.
+
+    Unlike :func:`get_plugin_data_path` this does NOT create the directory: it
+    is the directory's existence that says whether that release has been
+    downloaded at all.
+
+    Args:
+        version (str): The release to name the directory of. Defaults to the
+            configured :data:`MIGRATOR_VERSION`.
+
+    Returns:
+        The absolute path of that release's directory, whether or not it exists
+        yet.
+    """
+    return os.path.join(get_migrator_root(), version or MIGRATOR_VERSION)
 
 
 def set_active_transport(transport) -> None:

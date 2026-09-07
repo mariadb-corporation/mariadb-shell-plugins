@@ -59,15 +59,46 @@ import sys
 
 import mysqlsh
 
-from mcp_plugin.lib import db_functions, general, msm_functions, sandbox_functions
+# `db_functions` is imported here for the connection reaper that :func:`start`
+# owns, not for the tool registration below - which resolves every group the
+# same way, lazily. It costs nothing: `mcp_plugin.lib` imports it eagerly
+# anyway, and unlike `migrator_functions` it pulls in no MCP SDK module at
+# import time.
+from mcp_plugin.lib import db_functions, general
 
 
-# Maps a function group name to the callback that registers its tools.
+# Maps a function group name to the (module, function) naming the callback that
+# registers its tools. Resolved by :func:`_registrar` when a group is actually
+# served, rather than imported here, because a tool module may import the MCP
+# SDK at module scope: `migrator_functions` does, for ToolError. The shell
+# imports this plugin eagerly, and pulling the SDK in that early binds
+# `mcp.client.stdio.stdio_client`'s `errlog=sys.stderr` default to the shell's
+# `mysqlsh.shell_stderr`, which has no usable `fileno()`. Measured: importing
+# the plugin loads NO `mcp.*` module, and one `ToolError` import loads over a
+# hundred of them, `mcp.client.stdio` included.
 _FUNCTION_GROUP_REGISTRARS = {
-    general.FUNCTION_GROUP_DB: db_functions.register_db_tools,
-    general.FUNCTION_GROUP_MSM: msm_functions.register_msm_tools,
-    general.FUNCTION_GROUP_SANDBOX: sandbox_functions.register_sandbox_tools,
+    general.FUNCTION_GROUP_DB: ("db_functions", "register_db_tools"),
+    general.FUNCTION_GROUP_MSM: ("msm_functions", "register_msm_tools"),
+    general.FUNCTION_GROUP_SANDBOX: ("sandbox_functions", "register_sandbox_tools"),
+    general.FUNCTION_GROUP_MIGRATOR: ("migrator_functions", "register_migrator_tools"),
 }
+
+
+def _registrar(group):
+    """Returns the registrar callback for one function group.
+
+    Args:
+        group (str): The function group name.
+
+    Returns:
+        The ``register_*_tools`` callable for that group.
+    """
+    import importlib
+
+    module_name, function_name = _FUNCTION_GROUP_REGISTRARS[group]
+    module = importlib.import_module(f"mcp_plugin.lib.{module_name}")
+
+    return getattr(module, function_name)
 
 
 def build_mcp_server(function_groups):
@@ -91,7 +122,7 @@ def build_mcp_server(function_groups):
     # The full list of enabled groups is handed to every registrar, so a group
     # can leave out the tools that depend on another group not being served.
     for group in function_groups:
-        _FUNCTION_GROUP_REGISTRARS[group](server, function_groups)
+        _registrar(group)(server, function_groups)
 
     return server
 

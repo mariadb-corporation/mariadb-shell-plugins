@@ -83,6 +83,41 @@ def list_connection_uris() -> list:
     )
 
 
+def parse_connection_uri(uri) -> Optional[dict]:
+    """Returns a connection URI taken apart, with any protocol scheme removed.
+
+    The one place a connection URI is parsed, so that everything reading one
+    agrees on which spellings are acceptable: a ``mariadb://`` or ``mysql://``
+    prefix is stripped first (see :data:`PROTOCOL_SCHEME_PREFIXES`), since the
+    shell's own parser rejects those schemes.
+
+    Args:
+        uri: The connection URI to parse.
+
+    Returns:
+        The parsed URI as a plain dict that callers may adjust, or None if it is
+        not a URI the shell can parse - in which case it does not name a
+        connection that could be opened either.
+    """
+    if not isinstance(uri, str):
+        return None
+
+    uri = uri.strip()
+    if not uri:
+        return None
+
+    for prefix in PROTOCOL_SCHEME_PREFIXES:
+        if uri[:len(prefix)].lower() == prefix:
+            uri = uri[len(prefix):]
+            break
+
+    try:
+        # A plain dict, so that what was parsed can be adjusted.
+        return dict(_shell().parse_uri(uri))
+    except Exception:  # noqa: BLE001 - not a URI, so not a connection either
+        return None
+
+
 def normalize_connection_uri(uri) -> Optional[str]:
     """Returns a connection URI in the form used to compare connection URIs.
 
@@ -111,25 +146,14 @@ def normalize_connection_uri(uri) -> Optional[str]:
         The normalized URI, or None if it is not a URI the shell can parse - in
         which case it does not name a connection that could be opened either.
     """
-    if not isinstance(uri, str):
+    connection_data = parse_connection_uri(uri)
+    if connection_data is None:
         return None
 
-    uri = uri.strip()
-    if not uri:
-        return None
-
-    for prefix in PROTOCOL_SCHEME_PREFIXES:
-        if uri[:len(prefix)].lower() == prefix:
-            uri = uri[len(prefix):]
-            break
-
-    # Guarded as a whole: whatever the shell cannot take apart and put back
-    # together is not a URI that could be opened either, so it names no
-    # connection and there is nothing to compare.
+    # Guarded as a whole: whatever the shell cannot put back together is not a
+    # URI that could be opened either, so it names no connection and there is
+    # nothing to compare.
     try:
-        # A plain dict, so that what was parsed can be adjusted.
-        connection_data = dict(_shell().parse_uri(uri))
-
         # The password of a configured connection comes from the secret store,
         # so one written into the URI says nothing about which one is meant.
         connection_data.pop("password", None)

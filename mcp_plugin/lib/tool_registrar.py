@@ -13,12 +13,47 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Tool registration that reports a tool's own failure text to the client.
+"""Tool registration that re-raises a shell API's exception as a ``ToolError``.
 
-By default the SDK replaces the message of an unanticipated exception with a
-generic "Error executing tool <name>", keeping the detail server-side. These
-tools wrap shell APIs whose exception text is the useful part of the answer, so
-the decorator here re-raises as ``ToolError`` to let that text through.
+Used by the ``db``, ``msm`` and ``sandbox`` groups, whose tools WRAP shell plugin
+functions and so raise ``mysqlsh.Error``. The ``migrator`` group does not use it:
+those tools drive a program of their own, are not wrappers around anything, and
+raise ``ToolError`` themselves (see
+:mod:`mcp_plugin.lib.migrator_functions`).
+
+**This is LOAD-BEARING on MCP SDK 2.1 and later**, and the reason is worth
+knowing, because the SDK changed its mind and the module was briefly deleted on
+the strength of the older behaviour (commit d530e97d, reverted):
+
+* 1.28.x and 2.0.0 APPEND a tool's message whatever type was raised -
+  ``Tool.run`` ends in a single ``except Exception`` that raises
+  ``ToolError(f"Error executing tool {self.name}: {e}")``. Against those two,
+  this module changes nothing a client sees.
+* 2.1.0 sorts a failure into one of three buckets instead
+  (``mcp/server/mcpserver/tools/base.py``): ``ToolError`` and ``ResourceError``
+  keep their message, ``MCPError`` becomes a JSON-RPC protocol error, and
+  **everything else is re-raised as
+  ``UnexpectedToolError(f"Error executing tool {self.name}")``** - a crash,
+  whose own text is logged server-side and withheld from the client.
+
+``mysqlsh.Error`` lands in that third bucket, so without this module every
+anticipated refusal - a path that is not allowed, an unknown connection id, an
+unsupported object type - reaches the model as a bare "Error executing tool
+<name>" with the reason stripped off. Measured, not read: deleting the module
+turned exactly three tests red on the CI shell 26.9.0 (run 34115890193, PR #19)
+and the same three locally once the bundled SDK was 2.1.1, while restoring it
+returns the suite to green.
+
+Converting here is portable rather than a patch for one version: on 1.28.x and
+2.0.0 the client-visible payload is byte-identical either way, because this
+raises ``ToolError(str(exc))`` and ``str(ToolError(s)) == s``, so the SDK
+composes the same string whether or not it had to wrap anything.
+
+Three exception types are deliberately NOT converted, mirroring the buckets
+above: ``ToolError`` and ``ResourceError``, which the SDK already reports with
+their own message, and ``MCPError``, which MEANS "answer with a protocol error"
+- the SDK re-raises it ahead of its own generic handler for that reason, and
+converting it here would quietly downgrade it to a tool failure.
 
 Nothing in this module imports the MCP SDK at module import time: the shell
 imports this plugin package eagerly, and pulling in ``mcp`` that early binds
@@ -46,13 +81,20 @@ def tool_registrar(server):
 
     def mcp_tool(*args: Any, **kwargs: Any):
         def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-            from mcp.server.mcpserver.exceptions import ToolError
+            from mcp.server.mcpserver.exceptions import ResourceError, ToolError
+            from mcp.shared.exceptions import MCPError
+
+            # What the SDK already handles faithfully goes straight through; see
+            # the module docstring for the buckets these mirror. All three names
+            # have been importable from these two modules since 2.0.0, so naming
+            # them does not tie the plugin to 2.1.
+            reported_as_is = (ToolError, ResourceError, MCPError)
 
             @wraps(func)
             async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
                     return await func(*call_args, **call_kwargs)
-                except ToolError:
+                except reported_as_is:
                     raise
                 except Exception as exc:
                     raise ToolError(str(exc)) from exc
@@ -61,7 +103,7 @@ def tool_registrar(server):
             def sync_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
                     return func(*call_args, **call_kwargs)
-                except ToolError:
+                except reported_as_is:
                     raise
                 except Exception as exc:
                     raise ToolError(str(exc)) from exc
