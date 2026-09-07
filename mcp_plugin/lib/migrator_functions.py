@@ -13,12 +13,23 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""MCP tools driving the MySQL-to-MariaDB migration tooling (``migration``).
+"""MCP tools driving the MySQL-to-MariaDB migration tooling (``migrator``).
 
 The tools here write the tooling's configuration and run its orchestrator. They
 are registered only when the tooling is actually installed (see
 :func:`register_migrator_tools`), so a server on a machine that never ran the
 download step does not advertise tools that could not do anything.
+
+Unlike the other tool groups, these are NOT wrappers around shell plugin
+functions: they drive a program of their own. So they raise the SDK's
+``ToolError`` directly and register with plain ``server.tool``, rather than
+raising ``mysqlsh.Error`` and going through
+:func:`mcp_plugin.lib.tool_registrar.tool_registrar`, which exists to translate
+a shell API's exception into one whose text reaches the client. Nothing here
+imports ``mysqlsh`` at all. The consequence to keep in mind: an exception that
+is not a ``ToolError`` reaches the client as a generic "Error executing tool",
+so anything worth reading has to be converted where it is raised - see
+:func:`_connection_passwords` for the one such case.
 
 Two things are deliberately NOT in the client's hands:
 
@@ -45,7 +56,7 @@ without that a tool call would hang until it timed out rather than reporting
 what was absent.
 """
 
-# cSpell:ignore mysqlsh MariaDB mcpserver migrationctl yaml
+# cSpell:ignore MariaDB mcpserver migrationctl yaml
 
 import datetime
 import json
@@ -54,10 +65,9 @@ import subprocess
 import tempfile
 from typing import Optional
 
-import mysqlsh
+from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp_plugin.lib import config, general, setup_migrator
-from mcp_plugin.lib.tool_registrar import tool_registrar
 
 # The tooling's configuration and the template it follows, both relative to the
 # install directory. The example is the tooling's own and is never written to.
@@ -102,7 +112,7 @@ _CONNECTION_SIDES = (
 def _install_dir() -> str:
     """Returns the install the tools operate on, refusing if there is none."""
     if not setup_migrator.is_installed():
-        raise mysqlsh.Error(
+        raise ToolError(
             "The MySQL-to-MariaDB migration tooling is not installed. Run "
             "'mariadb-shell -- mcp setup' and choose the download step."
         )
@@ -151,7 +161,7 @@ def _stringify(key: str, value) -> str:
         The value as a string.
 
     Raises:
-        mysqlsh.Error: If the value is not a scalar.
+        ToolError: If the value is not a scalar.
     """
     if isinstance(value, bool):
         # The tooling's own flags are "1"/"0", not "True"/"False".
@@ -161,7 +171,7 @@ def _stringify(key: str, value) -> str:
     if isinstance(value, (str, int, float)):
         return str(value)
 
-    raise mysqlsh.Error(
+    raise ToolError(
         f"The value of '{key}' must be a string, number or boolean, not "
         f"{type(value).__name__}. The tooling reads its configuration as "
         "strings throughout."
@@ -217,7 +227,7 @@ def validate_connections(env: dict) -> dict:
         The {user key: configured URI} pairs that were accepted.
 
     Raises:
-        mysqlsh.Error: If a side names a host but no account, or if any account
+        ToolError: If a side names a host but no account, or if any account
             named is not a configured connection.
     """
     configured = config.list_connection_uris()
@@ -229,7 +239,7 @@ def validate_connections(env: dict) -> dict:
         and not any((env.get(user_key) or "").strip() for user_key in user_keys)
     ]
     if unnameable:
-        raise mysqlsh.Error(
+        raise ToolError(
             f"{'; '.join(unnameable)}. A host has to be named together with the "
             "account to reach it by, so that it can be checked against the "
             "connections mcp.setup configured "
@@ -246,7 +256,7 @@ def validate_connections(env: dict) -> dict:
         accepted[user_key] = configured_uri
 
     if refused:
-        raise mysqlsh.Error(
+        raise ToolError(
             f"{'; '.join(refused)} is not a connection configured with "
             "mcp.setup, so a migration cannot be configured against it. "
             f"Configured connections: {', '.join(configured) or 'none'}. Add "
@@ -273,6 +283,9 @@ def _connection_passwords(env: dict) -> tuple:
         A (passwords, resolved) tuple: the environment overrides to pass to the
         orchestrator, and the {config key: configured URI} pairs behind them,
         for reporting WHICH connection answered without disclosing anything.
+
+    Raises:
+        ToolError: If a configured connection's password cannot be read.
     """
     passwords = {}
     resolved = {}
@@ -286,7 +299,21 @@ def _connection_passwords(env: dict) -> tuple:
             # connection, whatever put it in the file.
             continue
 
-        passwords[password_key] = config.get_connection_password(configured_uri)
+        try:
+            passwords[password_key] = config.get_connection_password(configured_uri)
+        except Exception as error:
+            # The secret store raises a plain RuntimeError, whose text says what
+            # went wrong ("Could not find the secret" when the connection was
+            # removed between the check above and this read). Converted here
+            # because nothing else would: an exception that is not a ToolError
+            # reaches the client as a generic "Error executing tool", and this
+            # one is worth reading.
+            raise ToolError(
+                f"Could not read the password for '{configured_uri}' "
+                f"({password_key}): {error}. It is configured, so this is the "
+                "secret store, not the configuration - it may have been removed "
+                "while the migration was starting."
+            ) from error
         resolved[password_key] = configured_uri
 
     return passwords, resolved
@@ -299,13 +326,13 @@ def _load_config_env() -> dict:
         The mapping, or an empty dict when the file has none.
 
     Raises:
-        mysqlsh.Error: If the configuration is missing or cannot be parsed.
+        ToolError: If the configuration is missing or cannot be parsed.
     """
     import yaml
 
     path = _config_path()
     if not os.path.isfile(path):
-        raise mysqlsh.Error(
+        raise ToolError(
             f"No migration configuration at '{path}'. Write one with "
             "migrator.set_config first."
         )
@@ -314,11 +341,11 @@ def _load_config_env() -> dict:
         with open(path, "r", encoding="utf-8") as handle:
             document = yaml.safe_load(handle) or {}
     except yaml.YAMLError as error:
-        raise mysqlsh.Error(f"Could not parse '{path}': {error}") from error
+        raise ToolError(f"Could not parse '{path}': {error}") from error
 
     env = document.get("env") or {}
     if not isinstance(env, dict):
-        raise mysqlsh.Error(f"The 'env' section of '{path}' is not a mapping.")
+        raise ToolError(f"The 'env' section of '{path}' is not a mapping.")
 
     return {key: str(value) for key, value in env.items()}
 
@@ -388,7 +415,7 @@ def _run_orchestrator(command: str, arguments: list, timeout: int) -> dict:
         A dict describing the invocation's outcome.
 
     Raises:
-        mysqlsh.Error: If the invocation timed out.
+        ToolError: If the invocation timed out.
     """
     install_dir = _install_dir()
     env_mapping = _load_config_env()
@@ -435,7 +462,7 @@ def _run_orchestrator(command: str, arguments: list, timeout: int) -> dict:
             check=False,
         )
     except subprocess.TimeoutExpired as error:
-        raise mysqlsh.Error(
+        raise ToolError(
             f"migrator.{command} did not finish within {timeout}s and was "
             "stopped. Its artifacts directory holds whatever it had written by "
             "then."
@@ -467,19 +494,19 @@ def write_config(mode: str, env: dict, merge: bool = False) -> dict:
         follows, and which passwords resolve from which configured connection.
 
     Raises:
-        mysqlsh.Error: If the arguments are unusable, or a password was given.
+        ToolError: If the arguments are unusable, or a password was given.
     """
     install_dir = _install_dir()
     if not isinstance(env, dict):
-        raise mysqlsh.Error("'env' must be a mapping of keys to values.")
+        raise ToolError("'env' must be a mapping of keys to values.")
     if not mode or not str(mode).strip():
-        raise mysqlsh.Error("'mode' must name an execution mode.")
+        raise ToolError("'mode' must name an execution mode.")
 
     given = {key: _stringify(key, value) for key, value in env.items()}
 
     refused = sorted(key for key in given if key in _PASSWORD_SOURCES and given[key])
     if refused:
-        raise mysqlsh.Error(
+        raise ToolError(
             f"{', '.join(refused)} cannot be set here: passwords are read from "
             "the connections configured with mcp.setup when a migration runs, "
             "and are never written to disk by this plugin. Give the matching "
@@ -555,7 +582,7 @@ def register_migrator_tools(server, function_groups=()) -> None:
     import anyio.to_thread
     from mcp.server.mcpserver import Context
 
-    tool = tool_registrar(server)
+    tool = server.tool
 
     @tool(name="migrator.set_config")
     async def set_config(
@@ -681,7 +708,7 @@ def register_migrator_tools(server, function_groups=()) -> None:
             report.json when it wrote one.
         """
         if not out or not str(out).strip():
-            raise mysqlsh.Error(
+            raise ToolError(
                 "'out' must name the artifacts directory of the run to resume."
             )
 
@@ -708,14 +735,14 @@ def _invoke(
         The outcome dict, with the artifacts directory and report added.
     """
     if not mode or not str(mode).strip():
-        raise mysqlsh.Error("'mode' must name an execution mode.")
+        raise ToolError("'mode' must name an execution mode.")
 
     mode = str(mode).strip()
     out_dir = str(out).strip() if out and str(out).strip() else _artifacts_dir(
         command, mode
     )
     if os.path.isabs(out_dir):
-        raise mysqlsh.Error(
+        raise ToolError(
             f"'out' must be relative to the install directory, not '{out_dir}'."
         )
 

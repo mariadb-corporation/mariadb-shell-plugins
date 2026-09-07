@@ -22,7 +22,7 @@ the right directory, with the right interpreter, the right arguments and a
 closed stdin - and that no password ever comes back out.
 """
 
-# cSpell:ignore mysqlsh MariaDB migrationctl yaml
+# cSpell:ignore MariaDB mcpserver migrationctl yaml
 
 import asyncio
 import json
@@ -31,10 +31,12 @@ import subprocess
 
 import pytest
 
-import mysqlsh
 import yaml
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 from mcp_plugin.lib import config, general, migrator_functions, setup_migrator
+import mcp_plugin.tests.unit.helpers as helpers
 
 
 @pytest.fixture
@@ -115,6 +117,84 @@ class _FakeServer:
         return lambda func: func
 
 
+def test_loading_the_plugin_imports_no_mcp_sdk_module():
+    """The shell must be able to load the plugin without pulling in the SDK.
+
+    This module imports ToolError at module scope, which loads over a hundred
+    `mcp.*` modules - `mcp.client.stdio` among them, whose `stdio_client` binds
+    `errlog=sys.stderr` as a DEFAULT at import time. Were that to happen while
+    the shell is loading the plugin, the default would be the shell's own
+    `mysqlsh.shell_stderr`, which has no usable `fileno()`. lib/server.py
+    therefore resolves every registrar lazily (see its _FUNCTION_GROUP_REGISTRARS)
+    so that importing the plugin imports no tool module at all.
+
+    Checked in a subprocess because this process has long since imported the SDK
+    itself - an in-process assertion on sys.modules could only ever pass.
+    """
+    probe = (
+        "import sys, mcp_plugin;"
+        "loaded = sorted(m for m in sys.modules if m == 'mcp'"
+        " or m.startswith('mcp.'));"
+        "print('LOADED:' + ','.join(loaded))"
+    )
+    completed = subprocess.run(
+        [helpers.shell_binary(), "--quiet-start=2", "--py", "-e", probe],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    line = next(
+        (l for l in completed.stdout.splitlines() if l.startswith("LOADED:")), None
+    )
+    assert line is not None, f"probe printed nothing usable:\n{completed.stdout}"
+    assert line == "LOADED:", (
+        "importing mcp_plugin pulled in MCP SDK modules: " + line[len("LOADED:"):]
+    )
+
+
+def test_a_refusal_reaches_the_client_with_its_own_words():
+    """A refused call arrives at a real client as an error, saying why.
+
+    Every other test here calls the tool function directly, so a real round trip
+    is the only thing that shows what a client actually receives: that the call
+    comes back flagged as an error, and that the tool's own sentence survives to
+    the content block rather than being reduced to something generic.
+
+    What this does NOT prove is anything about the exception TYPE, and it cannot:
+    on MCP SDK 2.0 nothing is lost either way. `Tool.run` wraps every exception
+    as `ToolError(f"Error executing tool {name}: {e}")` (tools/base.py:181) and
+    `_handle_call_tool` then puts `str(e)` in the content (server.py:424), so the
+    original message is APPENDED, never replaced - the "Error executing tool
+    migrator.run: " prefix below is the SDK's and is always present. Raising
+    ToolError directly is the right shape for a plain tool function, not a
+    requirement for the message to get through. See the tool_registrar docstring.
+
+    A blank mode is the refusal to use: it is raised before anything is read, so
+    this needs no configuration, no connections and changes nothing on disk.
+    """
+    if not setup_migrator.is_installed():
+        pytest.skip(
+            "the migration tooling is not installed, so the migrator group "
+            "registers no tools (see register_migrator_tools)"
+        )
+
+    result = helpers.call_tool(
+        function_groups=["migrator"],
+        tool_name="migrator.run",
+        arguments={"mode": "   "},
+    )
+
+    assert result.is_error is True
+    payload = helpers.tool_payload(result)
+    assert isinstance(payload, str), payload
+    # The tool's own words, verbatim, and attributed to the tool that refused.
+    assert "'mode' must name an execution mode." in payload
+    assert "migrator.run" in payload
+
+
 def test_no_tools_are_registered_without_an_install(tmp_path, monkeypatch, capsys):
     """A server where the tooling was never downloaded advertises none of them."""
     monkeypatch.setattr(general, "get_data_home", lambda: str(tmp_path / "empty"))
@@ -191,7 +271,7 @@ def test_numbers_and_booleans_become_the_strings_the_tooling_expects(
 
 def test_a_nested_value_is_refused_rather_than_silently_flattened(fake_install):
     """There is no string a list should quietly become."""
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions.write_config("one_step", {"SRC_DBS": ["a", "b"]})
 
     assert "must be a string, number or boolean" in str(error.value)
@@ -200,7 +280,7 @@ def test_a_nested_value_is_refused_rather_than_silently_flattened(fake_install):
 def test_passwords_are_refused_in_the_configuration(fake_install):
     """Every password the store can supply is rejected, and named."""
     for key in ("SRC_PASS", "SRC_ADMIN_PASS", "TGT_PASS", "TGT_ADMIN_PASS", "REPL_PASS"):
-        with pytest.raises(mysqlsh.Error) as error:
+        with pytest.raises(ToolError) as error:
             migrator_functions.write_config(
                 "one_step", {**_SOURCE_AND_TARGET, key: "hunter2"}
             )
@@ -250,7 +330,7 @@ def test_merging_keeps_the_keys_it_was_not_given(fake_install, configured_connec
 def test_a_mode_is_required(fake_install):
     """The tooling keys everything off the mode, so it cannot be blank."""
     for bad_mode in ("", "   ", None):
-        with pytest.raises(mysqlsh.Error) as error:
+        with pytest.raises(ToolError) as error:
             migrator_functions.write_config(bad_mode, dict(_SOURCE_AND_TARGET))
         assert "must name an execution mode" in str(error.value)
 
@@ -259,7 +339,7 @@ def test_the_tools_refuse_to_work_without_an_install(tmp_path, monkeypatch):
     """Every entry point says the tooling is missing rather than failing oddly."""
     monkeypatch.setattr(general, "get_data_home", lambda: str(tmp_path / "empty"))
 
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions.write_config("one_step", {})
 
     assert "is not installed" in str(error.value)
@@ -304,6 +384,34 @@ def test_an_unconfigured_host_yields_no_password(fake_install, configured_connec
     assert "SRC_ADMIN_PASS" not in resolved
     # The target was configured, so that one still resolves.
     assert passwords == {"TGT_ADMIN_PASS": "tgt-secret"}
+
+
+def test_an_unreadable_secret_is_reported_with_the_stores_own_words(
+    fake_install, configured_connections, monkeypatch
+):
+    """A configured connection whose secret cannot be read says so, and why.
+
+    The one exception worth converting by hand. Since these tools no longer go
+    through tool_registrar, anything that is not a ToolError reaches the client
+    as a generic "Error executing tool" - and the secret store raises a plain
+    RuntimeError, whose text is the useful part ("Could not find the secret"
+    when the connection was removed while a migration was starting).
+    """
+    def unreadable(uri):
+        raise RuntimeError("Failed to read the secret: Could not find the secret")
+
+    monkeypatch.setattr(config, "get_connection_password", unreadable)
+
+    with pytest.raises(ToolError) as error:
+        migrator_functions._connection_passwords(dict(_SOURCE_AND_TARGET))
+
+    message = str(error.value)
+    # Names the connection, the config key it was needed for, and the store's
+    # own words - and says which side of the line the fault is on.
+    assert "admin@source-host:3306" in message
+    assert "SRC_ADMIN_PASS" in message
+    assert "Could not find the secret" in message
+    assert "secret store, not the configuration" in message
 
 
 def test_a_password_needs_both_a_user_and_a_host(fake_install, configured_connections):
@@ -425,7 +533,7 @@ def test_an_absolute_artifacts_directory_is_refused(
     """Everything is relative to the install; an absolute path would escape it."""
     _write_valid_config()
 
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions._invoke("run", "two_step", "/tmp/elsewhere", 60, True)
 
     assert "must be relative to the install directory" in str(error.value)
@@ -436,7 +544,7 @@ def test_a_missing_configuration_is_reported_before_anything_runs(
     fake_install, configured_connections, recorded_run
 ):
     """There is nothing to run without a configuration, and it says which one."""
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions._invoke("plan", "one_step", None, 60, False)
 
     assert "No migration configuration at" in str(error.value)
@@ -496,7 +604,7 @@ def test_a_timeout_says_where_the_artifacts_are(
 
     monkeypatch.setattr(migrator_functions.subprocess, "run", timing_out_run)
 
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions._invoke("run", "two_step", None, 5, True)
 
     assert "did not finish within 5s" in str(error.value)
@@ -521,9 +629,10 @@ def test_long_output_is_truncated_from_the_front(fake_install):
 class _CapturingServer:
     """Keeps the registered tool callables so they can be awaited directly.
 
-    Cheaper than driving a real server over stdio for this, and it still goes
-    through the real tool_registrar wrapper, which is what a client's call would
-    reach.
+    Cheaper than driving a real server over stdio for this. The tools are
+    registered with plain `server.tool`, so what is collected here is the tool
+    function itself - a refusal surfaces as the ToolError it raises, which is
+    exactly what a client's call reaches.
     """
 
     def __init__(self):
@@ -580,11 +689,6 @@ def test_the_plan_run_and_resume_tools_reach_the_orchestrator(
     assert command[command.index("--out") + 1] == "artifacts/earlier"
 
     # resume without the directory of the run to resume has nothing to go on.
-    # Raised as ToolError rather than mysqlsh.Error: a call that goes through
-    # the registered wrapper is re-raised so the client sees the tool's own
-    # message instead of a generic one (see lib/tool_registrar.py).
-    from mcp.server.mcpserver.exceptions import ToolError
-
     with pytest.raises(ToolError) as error:
         asyncio.run(server.tools["migrator.resume"](None, "two_step", "  "))
     assert "must name the artifacts directory" in str(error.value)
@@ -597,8 +701,6 @@ def test_a_blank_mode_is_refused_by_the_run_tools(
     _write_valid_config()
     server = _CapturingServer()
     migrator_functions.register_migrator_tools(server)
-
-    from mcp.server.mcpserver.exceptions import ToolError
 
     with pytest.raises(ToolError) as error:
         asyncio.run(server.tools["migrator.run"](None, "   "))
@@ -616,7 +718,7 @@ def test_an_unparsable_configuration_is_reported_not_swallowed(fake_install):
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("env: [this: is not, valid: yaml\n")
 
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions._load_config_env()
 
     assert "Could not parse" in str(error.value)
@@ -629,7 +731,7 @@ def test_an_env_section_that_is_not_a_mapping_is_refused(fake_install):
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("mode: one_step\nenv:\n  - not\n  - a mapping\n")
 
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions._load_config_env()
 
     assert "is not a mapping" in str(error.value)
@@ -646,7 +748,7 @@ def test_a_configuration_without_an_env_section_reads_as_empty(fake_install):
 
 def test_env_must_be_a_mapping(fake_install):
     """The argument is refused before anything is written."""
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions.write_config("one_step", ["SRC_HOST=x"])
 
     assert "must be a mapping" in str(error.value)
@@ -686,7 +788,7 @@ def test_a_configuration_naming_an_unconfigured_server_is_refused(
     which is what keeps a client from pointing a migration at a server it was
     never given.
     """
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions.write_config("one_step", {
             **_SOURCE_AND_TARGET, "SRC_HOST": "a-server-nobody-allowed",
         })
@@ -712,7 +814,7 @@ def test_every_account_named_is_checked_not_just_the_source(
         ("SRC_ADMIN_USER", "someone-else"),
         ("REPL_USER", "not-the-repl-user"),
     ):
-        with pytest.raises(mysqlsh.Error) as error:
+        with pytest.raises(ToolError) as error:
             migrator_functions.write_config(
                 "binlog", {**_SOURCE_AND_TARGET, "REPL_USER": "repl", key: value}
             )
@@ -727,7 +829,7 @@ def test_a_host_named_without_an_account_is_refused(
     This is the hole the check would otherwise have: name a forbidden host, omit
     the user, and nothing composes a URI to test it against.
     """
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions.write_config("one_step", {
             "SRC_HOST": "a-server-nobody-allowed", "SRC_PORT": "3306",
         })
@@ -737,7 +839,7 @@ def test_a_host_named_without_an_account_is_refused(
     assert "has to be named together with the account" in message
 
     # And the same for the target side.
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions.write_config("one_step", {
             "SRC_HOST": "source-host", "SRC_PORT": "3306",
             "SRC_ADMIN_USER": "admin", "TGT_HOST": "target-host",
@@ -783,7 +885,7 @@ def test_a_merge_cannot_assemble_a_forbidden_connection(
     migrator_functions.write_config("one_step", dict(_SOURCE_AND_TARGET))
 
     # Changing only the host, with the user already on file, still has to fail.
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions.write_config(
             "one_step", {"SRC_HOST": "a-server-nobody-allowed"}, merge=True
         )
@@ -813,7 +915,7 @@ def test_revoking_a_connection_stops_a_run_already_configured(
     # The source connection is removed, as mcp.setup would remove it.
     configured_connections.pop("admin@source-host:3306")
 
-    with pytest.raises(mysqlsh.Error) as error:
+    with pytest.raises(ToolError) as error:
         migrator_functions._invoke("run", "two_step", None, 60, True)
 
     assert "not a connection configured" in str(error.value)

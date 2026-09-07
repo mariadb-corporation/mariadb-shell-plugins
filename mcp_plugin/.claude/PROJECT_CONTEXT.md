@@ -11,10 +11,10 @@ additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21). GPLv2,
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **192 tests pass, 1 SKIPPED (~56s), 97% total coverage** (1530 statements,
-50 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
+Standard suite: **195 tests pass, 1 SKIPPED (~57s), 97% total coverage** (1533 statements,
+47 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 Gotchas). The skipped one is the OPT-IN end-to-end migration test: with `--e2e` the run is
-**193 pass (~76s)** at the SAME coverage, since everything it touches is already covered by
+**196 pass (~75s)** at the SAME coverage, since everything it touches is already covered by
 the unit tests. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
@@ -316,6 +316,34 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **The migrator MCP tools live in `lib/migrator_functions.py`** (function group
   `migrator`, registered in `lib/server.py` like the other three). Four tools:
   `migrator.set_config`, `.plan`, `.run`, `.resume`. Decisions that matter:
+  - **They are NOT wrappers around shell plugin functions, and are coded accordingly**
+    (PR #19 review). They drive a program of their own, so they raise the SDK's
+    **`ToolError`** directly and register with plain **`server.tool`** - NOT
+    `mysqlsh.Error` through `tool_registrar`, which exists to translate a shell API's
+    exception into one whose text reaches the client. `lib/migrator_functions.py` does
+    not import `mysqlsh` at all any more. db/msm/sandbox DO still use the registrar and
+    must keep it: those really are wrappers.
+    - **The consequence is smaller than it looks, and this was MEASURED after the
+      change** (see the SDK-error gotcha): on SDK 2.0 the original message is APPENDED
+      to "Error executing tool <name>: ", never replaced, whatever type was raised. So
+      nothing is lost by not converting - raising `ToolError` is the right SHAPE for a
+      plain tool function, not what makes the text arrive. The one case still worth
+      converting by hand, because its own text says far more than the raw exception
+      would, is the secret store's plain `RuntimeError` out of
+      `config.get_connection_password` ("Could not find the secret" when a connection
+      was removed while a migration was starting) - `_connection_passwords` catches it
+      and re-raises with the store's own words plus which connection and which config
+      key it was for.
+  - **`ToolError` is imported at MODULE scope, which is only safe because
+    `lib/server.py` resolves every registrar LAZILY.** See the import-hazard gotcha:
+    importing it loads ~110 `mcp.*` modules, `mcp.client.stdio` among them, and the
+    plugin must load without any of them. `_FUNCTION_GROUP_REGISTRARS` therefore maps a
+    group to a `(module, function)` NAME pair that `_registrar()` resolves with
+    `importlib` when the group is actually served. `db_functions` is still imported at
+    module scope in `server.py` - for the connection reaper `start()` owns, not for
+    registration - which costs nothing since `lib/__init__.py` imports it anyway.
+    Pinned by `test_loading_the_plugin_imports_no_mcp_sdk_module`, which runs a shell
+    SUBPROCESS because this process has long since imported the SDK itself.
   - **Registration is GATED on `setup_migrator.is_installed()`.** No install -> the group
     registers NOTHING and says so via `log_event`, rather than advertising four tools whose
     every call would fail. Consequence: installing the tooling takes effect on the NEXT
@@ -448,6 +476,33 @@ silently runs against whatever `mariadb-shell` is on PATH.
     `print_status`, `manage`, plus the new `is_supported`. The private extraction helpers
     (`_download_archive`, `_archive_prefix`, `_archive_destination`, `_extract_archive`)
     kept theirs.
+  - **The primitives use the SHELL'S OWN PROMPT TYPES, not hand-rolled text prompts**
+    (PR #19 review). `shell.prompt` takes a `type` of
+    `text | password | confirm | select | fileOpen | fileSave | directory`, and for
+    `confirm` and `select` it renders the answers, applies `defaultValue` on an empty
+    reply and RE-ASKS until the reply is valid - so none of that is reimplemented.
+    Verified against a real shell, not just the docs (`shell.help("prompt")`):
+    - `confirm` answers with the LABEL of the chosen option, **ampersand included** -
+      `'&Yes'` / `'&No'` (hence `prompts.YES_LABEL` / `NO_LABEL`, compared against
+      rather than assumed). `yes_no` lost its `" [Y/n]: "` suffix, its `.lower()`, its
+      `("y","yes")` test and its empty-default branch.
+    - `select` answers with the **TEXT** of the chosen option, not its index, and its
+      `defaultValue` is the **1-BASED** index. So `select_index(message, count)` became
+      **`select(message, choices, default=None)`**, mapping the text back to a position;
+      the choices must be distinct or they could not be told apart.
+    - **`select` has NO cancel**: it re-asks until it gets a valid index unless a
+      default is set, so an empty reply does not back out. `select_or_cancel` appends
+      `prompts.CANCEL_LABEL` as a further choice and maps it to `-1`, which is what
+      keeps `if index < 0: return` working in the two delete flows.
+    - The shell prints the numbered list itself (`  1) …`), so `_delete_connection` /
+      `_delete_path` no longer pre-print one - they read the list without printing and
+      let the prompt render it. `_print_connections` / `_print_paths` stay for the
+      menu's information display.
+  - **`_menu` is a select prompt too**, with `MENU_FINISH_LABEL` last and as the
+    `default`, which is what preserves "an empty reply finishes". Its own range check,
+    retry loop and `finish = len(entries) + 1` numbering are gone - the shell numbers
+    whatever list it is given, so the Windows renumbering falls out for free and there
+    is no printed menu to assert on any more (see Gotchas).
   - Prompt primitives renamed on the way out of `setup.py`: `_prompt` -> `prompts.ask`,
     `_prompt_password` -> `prompts.password`, `_prompt_yes_no` -> `prompts.yes_no`,
     `_select_index` -> `prompts.select_index`, `_shell` -> `prompts.shell`. Call them
@@ -719,6 +774,45 @@ silently runs against whatever `mariadb-shell` is on PATH.
   - **THEN, on the user's instruction, it was made opt-in** (see Architecture):
     192 pass + 1 skipped by default, 193 pass with `--e2e`, both measured. Also documented
     in the README's new "End-to-end tests" section.
+- **THEN (2026-09-07): the FIRST REVIEW COMMENTS on PR #19 were addressed** — three
+  inline comments from `mariadb-ReneRamirez`, all correct, all accepted. They were on
+  PR #19 (mariadb-shell-plugins), NOT the ai-plugins PR #11 that had just been opened;
+  `gh pr view --json comments` showed nothing, they were on
+  `gh api repos/.../pulls/19/comments` — check BOTH endpoints before reporting "no
+  comments".
+  1. **`setup_prompts.yes_no` and `select_index` reimplemented what the shell's own
+     prompts do.** Fixed with `confirm` / `select` (see Architecture), and `_menu` was
+     converted too on the user's instruction — the biggest instance of the same
+     anti-pattern, and it did not even go through `select_index`.
+  2. **The migrator tools were coupled to shell-plugin conventions.** They are plain
+     tool functions, so they now raise `ToolError` and register with plain
+     `server.tool` (see Architecture). `import mysqlsh` is gone from the module.
+  3. Two open points were put to the user, who chose: **catch the secret-store
+     `RuntimeError` and re-raise it as a `ToolError`** (rather than let it go generic),
+     and **uniform lazy dispatch for all four registrars** (rather than a shim for
+     migrator alone).
+  4. **THEN, on the user's request: a stdio-level error test and a `tool_registrar`
+     docstring fix** — and the docstring fix turned out to be more than wording. Writing
+     the test surfaced that **SDK 2.0 appends a tool's message rather than replacing
+     it**, so the registrar is redundant and its stated premise was false (see the
+     SDK-error gotcha for the measurement). The test was rewritten to assert what is
+     actually true — the refusal arrives as `is_error=True` carrying the tool's own
+     sentence — and to say outright that it canNOT discriminate exception types,
+     because on this SDK nothing does. `test_a_refusal_reaches_the_client_with_its_own_words`
+     is the only test here that makes a real round trip; it SKIPS when the tooling is
+     not installed, since the group then registers nothing.
+  **195 pass + 1 skipped, 196 with `--e2e`, 97%** (1533 stmts / 47 missed);
+  `lib/migrator_functions.py` still 100%, `lib/setup_prompts.py` 81 -> 95.
+  **FOUR revert probes, one per property, each failing for the right reason**: eager
+  `migrator_functions` import -> the lazy-import test lists all 110 SDK modules;
+  secret-store catch removed -> the raw `RuntimeError` escapes; `yes_no` hand-rolled
+  again -> `assert 0 == 4` on the confirm count; `_menu` hand-rolled again -> "the
+  management menu was never offered as a select prompt". The third of those is the one
+  that mattered: without the prompt-TYPE assertion the fake would have let a reverted
+  `yes_no` pass.
+  **Also verified LIVE against the real shell**, which the tests cannot do: the select
+  prompt renders `1) …`, `2) Cancel`; an empty reply takes the Finish default; a
+  declined confirm left the install and the developer's connection untouched.
 - **Feasibility findings about the shell's bundled Python** (established by experiment
   before any of the above was written):
   - The shell ships a REAL CPython binary at
@@ -1293,7 +1387,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `_named_connections`, `_connection_passwords`, `_invoke` / `_run_orchestrator`,
   `_load_config_env`, `_stringify`, `_render_config`, `_artifacts_dir`, `_read_report`,
   `_tail`, `register_migrator_tools`, `_PASSWORD_SOURCES`, `_CONNECTION_SIDES`.
-  **100% covered — keep it that way.**
+  Raises `ToolError` throughout and imports NO `mysqlsh`; registers with plain
+  `server.tool`. **100% covered — keep it that way.**
 - tests/unit/test_migration_e2e.py -> the ONE opt-in end-to-end test (marked `e2e`; see
   Architecture). Nothing is stubbed: two real sandboxes, the real setup CLI in a
   subprocess, a real install, a real migration. Named `migration_` and not `migrator_`
@@ -1316,8 +1411,12 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `MIGRATOR_REQUIREMENTS`, `MIGRATOR_PIP_TIMEOUT`, `wrapper_path`, `_wrapper_contents`,
   `_wrapper_is_ours`, `install_wrapper`, `remove_wrapper`, `MIGRATOR_WRAPPER_MARKER`,
   `_print_path_hint`). 99% covered.
-- lib/setup_prompts.py -> `shell`, `ask`, `password`, `yes_no`, `select_index`. The ONE
-  seam the interactive tests replace (`setup_prompts.shell`) to script a whole run.
+- lib/setup_prompts.py -> `shell`, `ask`, `password`, `yes_no` (a `confirm` prompt),
+  `select` / `select_or_cancel` (a `select` prompt), `YES_LABEL`, `NO_LABEL`,
+  `CANCEL_LABEL`. **`select_index` is GONE** — it took a count, the replacement takes
+  the choices, because the shell needs them to render and answers with the chosen TEXT.
+  The ONE seam the interactive tests replace (`setup_prompts.shell`) to script a whole
+  run. 95% covered.
 - lib/db_functions.py -> db.* tools; the `_Connection` cache (`_sessions` + `use_session` +
   the reaper + `_claim_connection_slot`/`_drop_connection`/`_no_such_connection` +
   `_ConnectionClosed` and the `closed` flag + `_CONNECTION_LOST_ERRORS`/
@@ -1328,7 +1427,10 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `_OBJECT_COLUMNS_SQL`, `_OBJECT_CONSTRAINTS_SQL`, `_OBJECT_REFERENCES_SQL`).
 - lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`;
   msm_functions also holds the db-group-gated `msm.deploy_schema`.
-- lib/server.py -> build/serve; `_serve_stdio` hardening; `_serve_streamable_http`
+- lib/server.py -> build/serve; `_FUNCTION_GROUP_REGISTRARS` (a (module, function) NAME
+  pair per group) + `_registrar()`, which resolves it with `importlib` when the group is
+  served — the laziness that lets `migrator_functions` import the SDK at module scope;
+  `_serve_stdio` hardening; `_serve_streamable_http`
   (own uvicorn, `proxy_headers=False`, explicit `transport_security`);
   `_transport_security_settings` + `_dialable_host_names` (the Host/Origin allow list);
   `_warn_if_reachable_from_the_network`; passes function_groups to the registrars.
@@ -1554,6 +1656,67 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **Registering the `e2e` marker in `pytest-coverage.ini` is not optional bookkeeping** —
   without the `markers =` entry every run prints a `PytestUnknownMarkWarning`, and the
   suite is otherwise warning-free, so it would be noise nobody reads.
+- **SDK 2.0 does NOT swallow a tool exception's message, so `tool_registrar` is
+  REDUNDANT — and the old reasoning for it must not be repeated.** The belief it was
+  built on (and which its docstring stated) was that the SDK replaces an unanticipated
+  exception's message with a generic "Error executing tool <name>" and keeps the detail
+  server-side. 2.0.0 does the opposite: `Tool.run` wraps EVERY exception as
+  `ToolError(f"Error executing tool {self.name}: {e}")`
+  (`mcp/server/mcpserver/tools/base.py:181`) and `_handle_call_tool` puts `str(e)` in
+  the content block (`mcp/server/mcpserver/server.py:424`), so the original text is
+  APPENDED whatever was raised. **Measured, not just read**: with the wrapper reduced to
+  a plain `server.tool` pass-through, `test_sandbox_dir_outside_allowed_paths_is_rejected`
+  — a real stdio round trip asserting on the message — still passes. The module is KEPT
+  (dropping it changes three groups' error handling for no behavioural gain, and the
+  premise could differ again on another SDK version) but its docstring now says this.
+  Consequence for tests: **"Error executing tool" is ALWAYS in the payload**, so
+  `assert "Error executing tool" not in payload` is not a test of anything — it was
+  written that way once and failed immediately. Assert the tool's own sentence instead.
+  Another 1.x-to-2.0 reversal, like the sync-tool threading one further down.
+- **NEVER import the MCP SDK at the module scope of anything the plugin imports
+  EAGERLY.** `from mcp.server.mcpserver.exceptions import ToolError` alone loads ~110
+  `mcp.*` modules, `mcp.client.stdio` among them, and that module binds
+  `stdio_client`'s `errlog=sys.stderr` as a DEFAULT at import time — to the shell's
+  `mysqlsh.shell_stderr`, which has no usable `fileno()`. Measured both ways: importing
+  `mcp_plugin` loads **zero** `mcp.*` modules today, and one eager `ToolError` import
+  loads all 110. `migrator_functions` gets to import it at module scope ONLY because
+  `lib/server.py` resolves registrars lazily; `lib/__init__.py` must never import
+  `migrator_functions` either. `test_loading_the_plugin_imports_no_mcp_sdk_module` pins
+  it, in a SUBPROCESS — an in-process check could only ever pass, since the test
+  process imports the SDK itself.
+- **Do NOT hand-roll a prompt the shell already has.** That was the PR #19 review, twice.
+  `shell.prompt` does defaults, validation and re-asking for `confirm` and `select`; a
+  text prompt with a `"[Y/n]"` suffix reimplements it and gets it subtly different. And
+  when reading a prompt's answer, remember what it actually returns: `confirm` gives the
+  LABEL with its ampersand (`'&Yes'`), `select` gives the option's TEXT and takes a
+  1-BASED `defaultValue`. Both verified against a real shell.
+- **The shell's `select` prompt cannot be cancelled.** It re-asks until it gets a valid
+  index unless a `defaultValue` is set, so an empty reply does not back out — an
+  explicit `CANCEL_LABEL` choice is the only way, which is what `select_or_cancel` adds.
+  Do not "simplify" it away: two delete flows depend on `if index < 0: return`.
+- **A select prompt renders its own numbered list, so do not print one first.** That is
+  why `_delete_connection` / `_delete_path` read the list without printing it, while
+  `_print_connections` / `_print_paths` stay for the menu's information display. Getting
+  this wrong shows the list twice.
+- **There is no printed menu left to assert on.** The management menu is a select
+  prompt, so `capsys` sees only the shell's `  1) …` rendering, not anything the plugin
+  printed — and with a FAKE shell it sees nothing at all. Assert on the CHOICES the
+  prompt was given (`_FakeShell.select_prompts()`), which is the real contract now. Two
+  tests failed on `'5. Finish' in menu` exactly this way.
+- **`_FakeShell.prompt` must honour the `type` option** or the setup tests assert
+  nothing: with a naive fake that pops a raw string, reverting `yes_no` to a hand-rolled
+  text prompt still PASSES, because the terse `"y"` works either way. It now maps
+  `''`/`y`/`n` to the default/`&Yes`/`&No` for `confirm` and a 1-based index to
+  `choices[i-1]` for `select`, and `test_setup_first_run` asserts the prompt TYPES
+  (4 `confirm`, 1 `password`) — which is what makes that revert fail. It deliberately
+  does NOT emulate re-asking: a scripted invalid answer is a bug in the script, and an
+  assertion says so instead of looping.
+- **A faithful fake encodes YOUR reading of the shell's contract, so verify it live.**
+  Every claim above about `confirm`/`select` was checked by driving a real
+  `mariadb-shell` with piped input before the fake was written, and the interactive
+  setup was then driven end to end the same way (`printf '2\n2\n5\nn\n\n' |
+  mariadb-shell -- mcp setup`) to confirm the Cancel choice, the Finish default and a
+  declined confirm all behave — the tests alone could not have shown that.
 - **The migrator does NOT live under the plugin data path** and has not since the user
   redirected it. `general.get_plugin_data_path()` is not on that road any more; the
   fixture patches `general.get_data_home`. Any test that patches the plugin data path
@@ -1580,10 +1743,16 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **There is NO async pytest plugin in mcp_plugin.** `async def test_...` is skipped with
   "async def functions are not natively supported". Wrap coroutines in `asyncio.run(...)`
   inside a SYNC test, which is what `test_msm.py` already does. This cost two failing tests.
-- **A tool called through `tool_registrar` raises `ToolError`, not `mysqlsh.Error`.** That
-  is the registrar's whole job (it re-raises so the client sees the tool's own message).
-  Assert `ToolError` for calls that go through a registered wrapper, `mysqlsh.Error` for
-  direct calls to the module-level function. This cost two more failing tests.
+- **`ToolError` vs `mysqlsh.Error` depends on WHICH GROUP, and it changed for migrator.**
+  db/msm/sandbox wrap shell plugin functions: they raise `mysqlsh.Error`, and
+  `tool_registrar` re-raises it as `ToolError` (which on SDK 2.0 changes nothing the
+  client sees - see the SDK-error gotcha)
+  — so assert `ToolError` for a call through the registered wrapper and `mysqlsh.Error`
+  for a direct call to the module-level function. That cost two failing tests when it
+  was first learned. **`migrator_functions` is now the exception and has no such split**:
+  it raises `ToolError` everywhere and registers without the wrapper (PR #19 review), so
+  assert `ToolError` either way — applying the old either/or rule there would cost
+  sixteen.
 - **`venv.EnvBuilder(with_pip=True)` ITSELF calls `subprocess.run`** (for `ensurepip`).
   A test that patches `subprocess.run` and asserts one call will see TWO — select the
   pip-install call (`command[1:4] == ["-m", "pip", "install"]`) instead of assuming it is
@@ -1911,7 +2080,12 @@ silently runs against whatever `mariadb-shell` is on PATH.
      setup_migrator".
   8. `90fb6405` "AIPL-21: Build the tooling's virtual environment with a symlinked
      interpreter" — the Linux CI fix (see Architecture: `symlinks=True` is mandatory).
-  Plus **the commit this checkpoint describes**: the opt-in end-to-end migration test
+  Plus, **UNCOMMITTED in the working tree as of 2026-09-07**: the response to the first
+  three PR #19 review comments (the shell's own prompt types, the migrator `ToolError` /
+  plain registration, the lazy registrar dispatch, plus tests and this file). Green at
+  194 + 1 skipped / 195 with `--e2e`, and probed four ways, but NOT yet committed - the
+  user had not asked for a commit when it was written.
+  Plus **the commit the previous checkpoint describes**: the opt-in end-to-end migration test
   (`tests/unit/test_migration_e2e.py` new, plus `tests/conftest.py`, `run_tests.py`,
   `pytest-coverage.ini`, `README.md` and this file). ONE commit: the test and the
   mechanism that keeps it out of a standard run are the same change, and the test was
@@ -2016,7 +2190,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - One unrelated pre-existing edit was left UNSTAGED on purpose:
   `.claude/skills/create-shell-plugin/SKILL.md` (not this session's work).
 
-### Verbatim snapshot at this checkpoint (2026-09-04, second checkpoint of the day)
+### Verbatim snapshot at the previous checkpoint (2026-09-04, second of that day)
 
 ```
 $ git -C mcp_plugin status --short

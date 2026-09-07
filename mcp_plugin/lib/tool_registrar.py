@@ -13,12 +13,31 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Tool registration that reports a tool's own failure text to the client.
+"""Tool registration that re-raises a shell API's exception as a ``ToolError``.
 
-By default the SDK replaces the message of an unanticipated exception with a
-generic "Error executing tool <name>", keeping the detail server-side. These
-tools wrap shell APIs whose exception text is the useful part of the answer, so
-the decorator here re-raises as ``ToolError`` to let that text through.
+Used by the ``db``, ``msm`` and ``sandbox`` groups, whose tools WRAP shell plugin
+functions and so raise ``mysqlsh.Error``. The ``migrator`` group does not use it:
+those tools drive a program of their own, are not wrappers around anything, and
+raise ``ToolError`` themselves (see
+:mod:`mcp_plugin.lib.migrator_functions`).
+
+**On MCP SDK 2.0 this is belt to the SDK's braces, not load-bearing.** It was
+added when the SDK was understood to replace an unanticipated exception's message
+with a generic "Error executing tool <name>" and keep the detail server-side.
+That is not what 2.0.0 does: ``Tool.run`` wraps EVERY exception as
+``ToolError(f"Error executing tool {self.name}: {e}")``
+(``mcp/server/mcpserver/tools/base.py:181``) and ``_handle_call_tool`` then puts
+``str(e)`` into the content block (``mcp/server/mcpserver/server.py:424``), so the
+original text is appended rather than replaced whatever type was raised. Measured,
+not read: with the wrapper below reduced to a plain ``server.tool`` pass-through,
+``test_sandbox_dir_outside_allowed_paths_is_rejected`` - a real stdio round trip
+asserting on the message - still passes.
+
+So this module could be dropped and the three groups registered directly. It is
+kept because that is a change to three groups' error handling for no behavioural
+gain, and because the premise may differ again on another SDK version - the
+1.x-to-2.0 history here is full of such reversals. Do not, however, cite the
+old "the SDK swallows the message" reasoning: it is not true of the SDK in use.
 
 Nothing in this module imports the MCP SDK at module import time: the shell
 imports this plugin package eagerly, and pulling in ``mcp`` that early binds
