@@ -40,6 +40,10 @@ import mysqlsh
 from mcp_plugin.lib import config, general, setup_cli, setup_migrator
 from mcp_plugin.lib import setup_prompts as prompts
 
+# The management menu's last choice, and its default: picking it (or replying
+# with nothing) leaves the menu.
+MENU_FINISH_LABEL = "Finish"
+
 
 # --- Connections -----------------------------------------------------------
 
@@ -94,12 +98,19 @@ def _add_connection() -> None:
 
 
 def _delete_connection() -> None:
-    """Prompts the user to delete one of the configured connections."""
-    connections = _print_connections()
+    """Prompts the user to delete one of the configured connections.
+
+    The list is NOT printed first: the select prompt below renders its own
+    numbered list, so printing one here would show it twice.
+    """
+    connections = config.list_connection_uris()
     if not connections:
+        print("\nNo connections configured yet.")
         return
 
-    index = prompts.select_index("Enter the number of the connection to delete", len(connections))
+    index = prompts.select_or_cancel(
+        "Select the connection to delete", connections
+    )
     if index < 0:
         return
 
@@ -146,12 +157,17 @@ def _add_path() -> None:
 
 
 def _delete_path() -> None:
-    """Prompts the user to delete one of the allowed paths."""
-    paths = _print_paths()
+    """Prompts the user to delete one of the allowed paths.
+
+    The list is NOT printed first: the select prompt below renders its own
+    numbered list, so printing one here would show it twice.
+    """
+    paths = config.get_allowed_paths()
     if not paths:
+        print("\nNo allowed paths configured yet.")
         return
 
-    index = prompts.select_index("Enter the number of the path to delete", len(paths))
+    index = prompts.select_or_cancel("Select the allowed path to delete", paths)
     if index < 0:
         return
 
@@ -189,8 +205,8 @@ def _menu_entries() -> list:
 
     The migration tooling is appended only where it runs (see
     :func:`mcp_plugin.lib.setup_migrator.is_supported`), which is why the menu
-    is built rather than written out: on Windows the entry is absent and every
-    number after it - "Finish" included - shifts up by one on its own.
+    is built rather than written out: on Windows the entry is simply absent, and
+    the shell's select prompt numbers whatever it is given.
 
     Returns:
         The entries to offer, without the trailing "Finish".
@@ -208,7 +224,12 @@ def _menu_entries() -> list:
 
 
 def _menu() -> None:
-    """Management menu: connections, allowed paths and the migration tooling."""
+    """Management menu: connections, allowed paths and the migration tooling.
+
+    A select prompt, so the shell numbers the choices, refuses anything that is
+    not one of them and re-asks by itself. "Finish" is the last choice and the
+    default, which is what makes an empty reply end the menu.
+    """
     while True:
         _print_connections()
         _print_paths()
@@ -218,21 +239,15 @@ def _menu() -> None:
         # Rebuilt every round: the migration entry's label follows what is
         # installed, which the previous round may have just changed.
         entries = _menu_entries()
-        finish = len(entries) + 1
+        labels = [label for label, _ in entries] + [MENU_FINISH_LABEL]
 
-        print("\nWhat would you like to do?")
-        for number, (label, _) in enumerate(entries, start=1):
-            print(f"  {number}. {label}")
-        print(f"  {finish}. Finish")
-
-        choice = prompts.ask("Enter your choice: ")
-        if choice == "" or choice == str(finish):
+        choice = prompts.select(
+            "\nWhat would you like to do?", labels, default=len(entries)
+        )
+        if choice == len(entries):
             break
-        if not (choice.isdigit() and 1 <= int(choice) <= len(entries)):
-            print(f"Please enter a number between 1 and {finish}.")
-            continue
 
-        entries[int(choice) - 1][1]()
+        entries[choice][1]()
 
 
 def run_setup(**options) -> None:

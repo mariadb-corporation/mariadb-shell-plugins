@@ -35,6 +35,18 @@ def shell():
     return mysqlsh.globals.shell
 
 
+# The labels a `confirm` prompt answers with. The shell returns the LABEL of the
+# chosen answer, ampersand included (the & marks the letter that acts as the
+# shortcut), so these are compared against rather than assumed.
+YES_LABEL = "&Yes"
+NO_LABEL = "&No"
+
+# The answer appended to a `select` prompt to let the user back out of it. The
+# shell's select prompt has no cancel of its own: it re-asks until it gets a
+# valid index, so without an explicit option there is no way out.
+CANCEL_LABEL = "Cancel"
+
+
 def ask(message: str, options: dict = None) -> str:
     """Prompts the user for input, returning the entered (stripped) string."""
     return shell().prompt(message, options if options is not None else {}).strip()
@@ -48,6 +60,10 @@ def password(message: str) -> str:
 def yes_no(message: str, default: bool = True) -> bool:
     """Prompts the user for a yes/no answer.
 
+    A `confirm` prompt, so the shell renders the answers, applies the default on
+    an empty reply and re-asks until the reply is one it recognizes - none of
+    which is reimplemented here.
+
     Args:
         message (str): The question to ask.
         default (bool): The answer to use when the user just presses Enter.
@@ -55,27 +71,56 @@ def yes_no(message: str, default: bool = True) -> bool:
     Returns:
         The user's answer as a boolean.
     """
-    suffix = " [Y/n]: " if default else " [y/N]: "
-    answer = ask(message + suffix).lower()
-    if answer == "":
-        return default
-    return answer in ("y", "yes")
+    answer = shell().prompt(
+        message,
+        {
+            "type": "confirm",
+            "defaultValue": YES_LABEL if default else NO_LABEL,
+        },
+    )
+
+    return answer == YES_LABEL
 
 
-def select_index(message: str, count: int) -> int:
-    """Prompts the user to pick an item number in the range 1..count.
+def select(message: str, choices: list, default: int = None) -> int:
+    """Prompts the user to pick one of the given choices.
+
+    A `select` prompt, so the shell prints the numbered list, validates the
+    reply and re-asks until it gets a valid one. It answers with the TEXT of the
+    chosen entry, which is turned back into a position here.
 
     Args:
         message (str): The prompt message.
-        count (int): The number of items to choose from.
+        choices (list): The choices to offer, in order. They have to be
+            distinct: the answer is the text, so duplicates could not be told
+            apart.
+        default (int): The zero-based choice to apply on an empty reply. None
+            (the default) means the prompt re-asks until an answer is given.
+
+    Returns:
+        The selected zero-based index.
+    """
+    options = {"type": "select", "options": list(choices)}
+    if default is not None:
+        # The shell's defaultValue for a select is the 1-based index.
+        options["defaultValue"] = default + 1
+
+    return list(choices).index(shell().prompt(message, options))
+
+
+def select_or_cancel(message: str, choices: list) -> int:
+    """Prompts the user to pick one of the given choices, or to back out.
+
+    :data:`CANCEL_LABEL` is offered as a further choice, since the shell's
+    select prompt has no cancel of its own.
+
+    Args:
+        message (str): The prompt message.
+        choices (list): The choices to offer, in order.
 
     Returns:
         The selected zero-based index, or -1 if the user cancelled.
     """
-    while True:
-        answer = ask(message + " (or leave empty to cancel): ")
-        if answer == "":
-            return -1
-        if answer.isdigit() and 1 <= int(answer) <= count:
-            return int(answer) - 1
-        print(f"Please enter a number between 1 and {count}.")
+    index = select(message, list(choices) + [CANCEL_LABEL])
+
+    return -1 if index == len(choices) else index

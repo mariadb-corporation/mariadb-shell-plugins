@@ -477,11 +477,12 @@ def test_the_tooling_is_not_offered_on_windows(migrator_data_path, monkeypatch):
 
 
 def test_the_windows_menu_leaves_the_entry_out_and_renumbers(monkeypatch):
-    """Dropping the entry shifts Finish down; the menu is built, not written out.
+    """Dropping the entry leaves one choice fewer; the menu is built, not written out.
 
-    Proves the two things the platform gate has to get right: the migration entry
-    is absent, and "Finish" is 5 rather than 6 - a menu that kept a hole at 5
-    would still list six choices.
+    Proves what the platform gate has to get right: the migration entry is
+    absent from the entries the menu is built from. The numbering follows for
+    free - the shell's select prompt numbers whatever list it is given - and
+    test_config.py pins the resulting choices, Finish included.
     """
     from mcp_plugin.lib import setup
 

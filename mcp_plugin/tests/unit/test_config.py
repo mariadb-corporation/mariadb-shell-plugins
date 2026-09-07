@@ -179,15 +179,74 @@ def test_a_connection_uri_resolves_to_the_configured_one(clean_config):
 
 
 class _FakeShell:
-    """Minimal shell stand-in that scripts prompt answers for setup tests."""
+    """Shell stand-in that scripts prompt answers for the setup tests.
+
+    ``prompt`` honours the ``type`` option the way the real shell does, so the
+    scripted answers stay in the terse form a person would type ("y", "3") while
+    the prompt still hands back what the shell hands back. That matters because
+    what the shell returns is NOT what was typed:
+
+    * a ``confirm`` prompt answers with the LABEL of the chosen option,
+      ampersand included - ``'&Yes'`` / ``'&No'`` - or the ``defaultValue`` for
+      an empty reply;
+    * a ``select`` prompt answers with the TEXT of the chosen option, not its
+      number, and applies ``defaultValue`` (a 1-BASED index) on an empty reply.
+
+    Both were verified against a real mariadb-shell before this was written; see
+    ``shell.help("prompt")``. Everything else is a plain text prompt that
+    answers with the string as typed.
+
+    The shell also re-asks until the reply is valid, which is deliberately NOT
+    emulated: a test that scripts an invalid answer has a bug in the script, and
+    an assertion says so immediately instead of looping.
+    """
 
     def __init__(self, answers):
         self._answers = list(answers)
         self.options = SimpleNamespace(useWizards=True)
+        # Every prompt asked, so a test can assert on what was OFFERED. For a
+        # select prompt that is the real contract now: the shell renders the
+        # numbered list, so the choices reach the user rather than anything the
+        # plugin printed itself.
+        self.prompts = []
+
+    def select_prompts(self) -> list:
+        """Returns the choices of every select prompt asked, in order."""
+        return [
+            (asked or {}).get("options") or []
+            for _, asked in self.prompts
+            if (asked or {}).get("type") == "select"
+        ]
 
     def prompt(self, message, options=None):
         assert self._answers, f"unexpected prompt: {message!r}"
-        return self._answers.pop(0)
+        self.prompts.append((message, options))
+        answer = self._answers.pop(0)
+        options = options or {}
+        prompt_type = options.get("type", "text")
+        default = options.get("defaultValue")
+
+        if prompt_type == "confirm":
+            if answer == "":
+                assert default is not None, f"no default to apply: {message!r}"
+                return default
+            assert answer.lower() in ("y", "yes", "n", "no"), (
+                f"{answer!r} is not a valid confirm answer for {message!r}"
+            )
+            return "&Yes" if answer.lower() in ("y", "yes") else "&No"
+
+        if prompt_type == "select":
+            choices = options.get("options") or []
+            if answer == "":
+                assert default is not None, f"no default to apply: {message!r}"
+                return choices[int(default) - 1]
+            assert answer.isdigit() and 1 <= int(answer) <= len(choices), (
+                f"{answer!r} is not one of the {len(choices)} choices for "
+                f"{message!r}"
+            )
+            return choices[int(answer) - 1]
+
+        return answer
 
     def parse_uri(self, uri):
         return {"uri": uri}
@@ -228,6 +287,14 @@ def test_setup_first_run(clean_config, tmp_path, monkeypatch):
 
     assert "setup_a@127.0.0.1:3306" in config.list_connection_uris()
     assert config.get_connection_password("setup_a@127.0.0.1:3306") == "secret"
+
+    # The four yes/no questions are the shell's own CONFIRM prompts, and the
+    # password its own password prompt. That is the whole point of asking
+    # through the shell: it renders the answers, applies the default and
+    # re-asks, none of which is reimplemented here.
+    types = [(asked or {}).get("type") for _, asked in fake_shell.prompts]
+    assert types.count("confirm") == 4, types
+    assert types.count("password") == 1, types
     assert os.path.abspath(str(tmp_path)) in config.get_allowed_paths()
 
 
@@ -261,10 +328,30 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
     assert os.path.abspath(path) not in config.get_allowed_paths()
 
     # The migration tooling entry offers whatever applies to what is installed,
-    # rather than a fixed "download" (see tests/unit/test_setup_migrator.py). Compared
-    # against the label itself so this holds whatever happens to be installed.
-    menu = capsys.readouterr().out
-    assert f"5. {setup_migrator.menu_label()}" in menu
+    # rather than a fixed "download" (see tests/unit/test_setup_migrator.py).
+    # Compared against the label itself so this holds whatever happens to be
+    # installed. Asserted on the CHOICES the select prompt was given, not on
+    # printed output: the shell renders the numbered list itself now.
+    # The menu is re-offered every round, so the selects interleave: pick them
+    # apart by their last choice rather than by position.
+    selects = fake_shell.select_prompts()
+    menus = [c for c in selects if c and c[-1] == setup.MENU_FINISH_LABEL]
+    assert menus, "the management menu was never offered as a select prompt"
+    assert menus[0] == [
+        "Add a connection",
+        "Delete a connection",
+        "Add an allowed path",
+        "Delete an allowed path",
+        setup_migrator.menu_label(),
+        setup.MENU_FINISH_LABEL,
+    ]
+
+    # The two deletions each offered their one item plus a way out, in the
+    # order the menu drove them.
+    assert [c for c in selects if c and c[-1] == setup_prompts.CANCEL_LABEL] == [
+        [os.path.abspath(path), setup_prompts.CANCEL_LABEL],
+        ["setup_b@127.0.0.1:3306", setup_prompts.CANCEL_LABEL],
+    ]
 
 
 def test_setup_menu_hides_the_migrator_where_it_is_unsupported(
@@ -276,8 +363,8 @@ def test_setup_menu_hides_the_migrator_where_it_is_unsupported(
     tests/unit/test_setup_migrator.py) because "not shown" covers the status line the
     menu prints above itself as well as the entry itself - and because the
     scripted answers are what prove the renumbering: "5" has to be Finish, so a
-    menu that still had six choices would leave a prompt unanswered and
-    _FakeShell would fail on it.
+    menu that still had six choices would select the migration entry instead and
+    then leave its prompts unanswered, which _FakeShell fails on.
     """
     _clear_config()
     config.set_allowed_paths([])
@@ -288,9 +375,21 @@ def test_setup_menu_hides_the_migrator_where_it_is_unsupported(
 
     setup.run_setup()
 
+    # The choices the select prompt was given are the menu now, so the absent
+    # entry is asserted there - and this pins that Finish really is the fifth,
+    # which the scripted "5" relies on.
+    assert fake_shell.select_prompts() == [
+        [
+            "Add a connection",
+            "Delete a connection",
+            "Add an allowed path",
+            "Delete an allowed path",
+            setup.MENU_FINISH_LABEL,
+        ]
+    ]
+
+    # The status line the menu prints above itself is gated too.
     menu = capsys.readouterr().out
-    assert "5. Finish" in menu
-    assert "6." not in menu
     assert "migration tooling" not in menu.lower()
     assert "Migration tooling" not in menu
 
