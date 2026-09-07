@@ -17,6 +17,7 @@ from mcp_plugin.lib import (
     general,
     config,
     db_functions,
+    tool_registrar,
     msm_functions,
     sandbox_functions,
     setup,

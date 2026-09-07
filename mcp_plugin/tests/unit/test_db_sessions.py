@@ -60,16 +60,14 @@ connection id or the MCP session id that would let its reader use the connection
 These drive lib/db_functions.py in-process with a stub session, so no database
 server is needed and no time has to be waited out. The tools themselves are
 registered on a recorder standing in for the MCPServer, which makes the tool
-functions callable directly - and since nothing wraps a tool any more, a refusal
-arrives here as the `mysqlsh.Error` the tool raised. The SDK is what turns that
-into the client's error result, so what a client sees is covered by the stdio
-tests instead.
+functions callable directly.
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver mysqlx
 
 import threading
 from types import SimpleNamespace
+from mcp.server.mcpserver.exceptions import ToolError
 
 import pytest
 
@@ -491,23 +489,23 @@ def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
     # Each connection is bound to its own client, so the second one is no way
     # into the first.
     other = _context(OTHER_ADDRESS, OTHER_SESSION_ID)
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         tools.tools["db.execute_sql"](other, connection_id, "SELECT 1")
     tools.tools["db.close"](other, second_id)
 
     # A tool called by another client does not reach the connection.
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         tools.tools["db.execute_sql"](other, connection_id, "SELECT 1")
 
     # Nor does one sharing the address but not the MCP session, which is the
     # case that an address alone cannot tell apart.
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         tools.tools["db.execute_sql"](
             _context(CLIENT_ADDRESS, OTHER_SESSION_ID), connection_id, "SELECT 1"
         )
 
     # Nor can another client close it.
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         tools.tools["db.close"](other, connection_id)
     assert connection_id in db_functions._sessions
 
@@ -518,7 +516,7 @@ def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
         _context(CLIENT_ADDRESS, None),
         _context(None, None),
     ):
-        with pytest.raises(mysqlsh.Error):
+        with pytest.raises(ToolError):
             tools.tools["db.connect"](context, uri)
     assert opened == [uri, uri]
 
@@ -650,7 +648,7 @@ def test_opening_a_connection_is_logged(http_transport, monkeypatch, capsys):
     # A request that cannot be attributed to a client is refused, and that is
     # recorded too - it is a client trying to open a connection the server
     # would not be able to keep anybody else off.
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         tools.tools["db.connect"](_context(CLIENT_ADDRESS, None), uri)
 
     logged = capsys.readouterr().err
@@ -1009,7 +1007,7 @@ def test_one_client_cannot_open_connections_without_end(
     assert len(opened) == 3
     capsys.readouterr()
 
-    with pytest.raises(mysqlsh.Error) as refused:
+    with pytest.raises(ToolError) as refused:
         tools["db.connect"](context, uri)
 
     assert "maximum of 3" in str(refused.value)
@@ -1053,7 +1051,7 @@ def test_the_server_as_a_whole_has_a_limit_too(http_transport, monkeypatch):
         tools["db.connect"](_context(CLIENT_ADDRESS, session_id), uri)
 
     # A third client is within its own limit and still refused.
-    with pytest.raises(mysqlsh.Error) as refused:
+    with pytest.raises(ToolError) as refused:
         tools["db.connect"](_context(OTHER_ADDRESS, "0" * 32), uri)
 
     assert "maximum of 2" in str(refused.value)
@@ -1085,7 +1083,7 @@ def test_a_connection_that_fails_to_open_gives_its_slot_back(
 
     # The error reaches the client rather than being turned into a connection
     # that does not work.
-    with pytest.raises(mysqlsh.Error) as failed:
+    with pytest.raises(ToolError) as failed:
         tools["db.connect"](context, uri)
 
     assert "MySQL Error (2003)" in str(failed.value)
@@ -1108,7 +1106,7 @@ def test_db_connect_refuses_a_uri_that_is_not_configured(
     opened = []
     tools, uri = _registered_tools(monkeypatch, opened)
 
-    with pytest.raises(mysqlsh.Error) as refused:
+    with pytest.raises(ToolError) as refused:
         tools["db.connect"](_context(CLIENT_ADDRESS), "root@192.0.2.99:3306")
 
     assert "is not a configured connection" in str(refused.value)
@@ -1169,7 +1167,7 @@ def test_db_connect_refuses_a_uri_asking_for_more_than_is_configured(
         "root@127.0.0.1:3307",
         "admin@127.0.0.1:3306",
     ):
-        with pytest.raises(mysqlsh.Error) as refused:
+        with pytest.raises(ToolError) as refused:
             tools["db.connect"](_context(CLIENT_ADDRESS), spelling)
 
         assert "is not a configured connection" in str(refused.value)
@@ -1193,7 +1191,7 @@ def test_an_expired_connection_does_not_hold_a_slot(
     context = _context(CLIENT_ADDRESS)
 
     connection_id = tools["db.connect"](context, uri)
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         tools["db.connect"](context, uri)
 
     _age(db_functions._sessions[connection_id], general.CONNECTION_MAX_LIFETIME)
@@ -1589,7 +1587,7 @@ def test_closing_a_connection_beats_a_call_that_races_it(
 
     monkeypatch.setattr(db_functions, "_get_connection", _close_it_in_the_window)
 
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         tools["db.execute_sql"](context, connection_id, "SELECT 1")
 
     # The leak, measured: no second session was ever opened.

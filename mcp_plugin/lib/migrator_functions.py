@@ -21,15 +21,15 @@ are registered only when the tooling is actually installed (see
 download step does not advertise tools that could not do anything.
 
 Unlike the other tool groups, these are NOT wrappers around shell plugin
-functions: they drive a program of their own, so they raise the SDK's
-``ToolError`` directly rather than a ``mysqlsh.Error``. Nothing here imports
-``mysqlsh`` at all.
-
-The SDK reports the message either way - it appends ``str(e)`` to "Error
-executing tool <name>: " whatever was raised - so this is about saying what the
-code means, not about making the text arrive. What DOES need converting by hand
-is an exception whose own text is more useful than the raw one: see
-:func:`_connection_passwords`.
+functions: they drive a program of their own. So they raise the SDK's
+``ToolError`` directly and register with plain ``server.tool``, rather than
+raising ``mysqlsh.Error`` and going through
+:func:`mcp_plugin.lib.tool_registrar.tool_registrar`, which exists to translate
+a shell API's exception into one whose text reaches the client. Nothing here
+imports ``mysqlsh`` at all. The consequence to keep in mind: an exception that
+is not a ``ToolError`` reaches the client as a generic "Error executing tool",
+so anything worth reading has to be converted where it is raised - see
+:func:`_connection_passwords` for the one such case.
 
 Two things are deliberately NOT in the client's hands:
 

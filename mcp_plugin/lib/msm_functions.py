@@ -31,6 +31,7 @@ MCP elicitation - to trust a path that is not yet allowed.
 from typing import Optional
 
 from mcp_plugin.lib import db_functions, general
+from mcp_plugin.lib.tool_registrar import tool_registrar
 
 
 def register_msm_tools(server, function_groups=()) -> None:
@@ -52,7 +53,7 @@ def register_msm_tools(server, function_groups=()) -> None:
     from mcp.server.mcpserver import Context
     from msm_plugin import management as msm
 
-    tool = server.tool
+    tool = tool_registrar(server)
 
     def _kwargs(**pairs) -> dict:
         """Builds a kwargs dict, dropping keys whose value is None."""

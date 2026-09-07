@@ -11,8 +11,8 @@ additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21). GPLv2,
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
 (`/Users/mzinner/git/mariadb-shell/build/bin`), **MCP SDK 2.0.0**, Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **195 tests pass, 1 SKIPPED (~57s), 97% total coverage** (1503 statements,
-45 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
+Standard suite: **195 tests pass, 1 SKIPPED (~57s), 97% total coverage** (1533 statements,
+47 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 Gotchas). The skipped one is the OPT-IN end-to-end migration test: with `--e2e` the run is
 **196 pass (~75s)** at the SAME coverage, since everything it touches is already covered by
 the unit tests. Run it with
@@ -319,11 +319,10 @@ silently runs against whatever `mariadb-shell` is on PATH.
   - **They are NOT wrappers around shell plugin functions, and are coded accordingly**
     (PR #19 review). They drive a program of their own, so they raise the SDK's
     **`ToolError`** directly and register with plain **`server.tool`** - NOT
-    `mysqlsh.Error`. `lib/migrator_functions.py` does not import `mysqlsh` at all any
-    more. **`lib/tool_registrar.py` has since been DELETED and all four groups register
-    with plain `server.tool`** — see the SDK-error gotcha: it was translating
-    `mysqlsh.Error` into a `ToolError` so the text would reach the client, and the SDK
-    does that on its own.
+    `mysqlsh.Error` through `tool_registrar`, which exists to translate a shell API's
+    exception into one whose text reaches the client. `lib/migrator_functions.py` does
+    not import `mysqlsh` at all any more. db/msm/sandbox DO still use the registrar and
+    must keep it: those really are wrappers.
     - **The consequence is smaller than it looks, and this was MEASURED after the
       change** (see the SDK-error gotcha): on SDK 2.0 the original message is APPENDED
       to "Error executing tool <name>: ", never replaced, whatever type was raised. So
@@ -814,32 +813,6 @@ silently runs against whatever `mariadb-shell` is on PATH.
   **Also verified LIVE against the real shell**, which the tests cannot do: the select
   prompt renders `1) …`, `2) Cancel`; an empty reply takes the Finish default; a
   declined confirm left the install and the developer's connection untouched.
-- **THEN, same session: `tool_registrar` was DROPPED ENTIRELY** (user's instruction, once
-  the measurement above showed it changed nothing a client sees). All four groups now do
-  `tool = server.tool`; `lib/tool_registrar.py` is deleted and gone from
-  `lib/__init__.py`. **195 pass + 1 skipped, 196 with `--e2e`, 97%** (1503 stmts / 45
-  missed — 30 statements fewer, which is the module). 31 tools still register
-  (db 8, msm 12, sandbox 7, migrator 4).
-  - **The evidence is a before/after DIFF, not an argument**: five error cases across db,
-    msm and sandbox captured over real stdio with the wrapper in place and again without
-    it, normalized for the pytest temp dir, and `diff`ed to nothing.
-  - **Consequence: a directly-called db/msm/sandbox tool raises `mysqlsh.Error` again**,
-    so 13 `pytest.raises(ToolError)` in `test_db_sessions.py` became
-    `pytest.raises(mysqlsh.Error)`. `DBError` subclasses `Error`, so one substitution
-    covered the 2003 case too. `test_migrator_tools.py` keeps `ToolError`.
-  - **A gap this surfaced and closed**: `db` — the biggest group — had NO test that its
-    error TEXT reaches a client, only `is_error is True`; msm, sandbox and migrator each
-    had one. Two assertions were added to the `test_db_sql` flow.
-  - **It also removes a latent bug**: the SDK re-raises `MCPError` before its generic
-    handler so a protocol error surfaces as a JSON-RPC error, but the wrapper caught
-    `Exception` — `MCPError` included — and converted it to a `ToolError` first. Not
-    currently reachable (`_confirm_trust_path` catches its own `McpError`), but the
-    wrapper was in a position to swallow one.
-  - Process note worth not repeating: a `for f in $FILES` loop was written assuming bash
-    word-splitting. **This shell is zsh, which does not word-split unquoted parameters**,
-    so the list stayed one word and a `git checkout` staged as a temporary revert wiped
-    the in-progress edits. Nothing committed was at risk. Quote and loop explicitly, or
-    use one command per file.
 - **Feasibility findings about the shell's bundled Python** (established by experiment
   before any of the above was written):
   - The shell ships a REAL CPython binary at
@@ -1321,7 +1294,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - **Coverage: TOTAL 97% (1530 statements, 50 missed) — measured on a run with `.coverage`
   DELETED first.** Per module: lib/migrator_functions **100**, lib/setup_cli **100**,
   lib/msm_functions 100, lib/setup_migrator 99,
-  lib/db_functions 98, lib/general 98, lib/config 98, lib/server 97,
+  lib/db_functions 98, lib/general 98, lib/config 98, lib/server 97, lib/tool_registrar 93,
   lib/sandbox_functions 88, lib/setup 87, server.py 81, lib/setup_prompts 81,
   general.py 73.
   **The trap below bit again this session**: the first run, without deleting `.coverage`,
@@ -1452,9 +1425,6 @@ silently runs against whatever `mariadb-shell` is on PATH.
   the introspection SQL constants (`_LIST_SCHEMAS_SQL`, `_LIST_OBJECTS_SQL`,
   `_OBJECT_BASIC_SQL`, `_OBJECT_DETAILS_SQL`, `_ROUTINE_PARAMETERS_SQL`,
   `_OBJECT_COLUMNS_SQL`, `_OBJECT_CONSTRAINTS_SQL`, `_OBJECT_REFERENCES_SQL`).
-- **`lib/tool_registrar.py` NO LONGER EXISTS.** Every group does `tool = server.tool`.
-  Do not reintroduce a translating decorator without re-measuring the claim it would
-  rest on (see the SDK-error gotcha).
 - lib/msm_functions.py, lib/sandbox_functions.py -> async tools w/ `ctx: Context`;
   msm_functions also holds the db-group-gated `msm.deploy_schema`.
 - lib/server.py -> build/serve; `_FUNCTION_GROUP_REGISTRARS` (a (module, function) NAME
@@ -1696,14 +1666,9 @@ silently runs against whatever `mariadb-shell` is on PATH.
   the content block (`mcp/server/mcpserver/server.py:424`), so the original text is
   APPENDED whatever was raised. **Measured, not just read**: with the wrapper reduced to
   a plain `server.tool` pass-through, `test_sandbox_dir_outside_allowed_paths_is_rejected`
-  — a real stdio round trip asserting on the message — still passes. **The module was
-  then DELETED** (user's call, once that was measured): all four groups use plain
-  `server.tool`, and the client-visible payload was proven BYTE-IDENTICAL before and
-  after for five error cases across db, msm and sandbox. It is identical rather than
-  merely equivalent because the wrapper did `ToolError(str(exc))` and
-  `str(ToolError(s)) == s`, so the SDK's `f"Error executing tool {name}: {e}"` composed
-  the same string either way — the `Shell Error: ` prefix is `str(mysqlsh.Error)` coming
-  through untouched.
+  — a real stdio round trip asserting on the message — still passes. The module is KEPT
+  (dropping it changes three groups' error handling for no behavioural gain, and the
+  premise could differ again on another SDK version) but its docstring now says this.
   Consequence for tests: **"Error executing tool" is ALWAYS in the payload**, so
   `assert "Error executing tool" not in payload` is not a test of anything — it was
   written that way once and failed immediately. Assert the tool's own sentence instead.
@@ -1780,8 +1745,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
   inside a SYNC test, which is what `test_msm.py` already does. This cost two failing tests.
 - **`ToolError` vs `mysqlsh.Error` depends on WHICH GROUP, and it changed for migrator.**
   db/msm/sandbox wrap shell plugin functions: they raise `mysqlsh.Error`, and
-  nothing wraps them, so that is what a direct call sees and what the SDK turns into the
-  client's error result (see the SDK-error gotcha)
+  `tool_registrar` re-raises it as `ToolError` (which on SDK 2.0 changes nothing the
+  client sees - see the SDK-error gotcha)
   — so assert `ToolError` for a call through the registered wrapper and `mysqlsh.Error`
   for a direct call to the module-level function. That cost two failing tests when it
   was first learned. **`migrator_functions` is now the exception and has no such split**:
