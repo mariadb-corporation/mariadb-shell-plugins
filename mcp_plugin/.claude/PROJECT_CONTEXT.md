@@ -17,8 +17,10 @@ Standard suite: **201 tests pass, 1 SKIPPED (~64s), 97% total coverage** (1535 s
 44 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 Gotchas). The skipped one is the OPT-IN end-to-end migration test: with `--e2e` the run is
 **202 pass** at the SAME coverage, since everything it touches is already covered by
-the unit tests (the ~75s that used to be quoted here was measured on SDK 2.0.0; `--e2e`
-has not been re-run since the bump). Run it with
+the unit tests. **Re-run and PASSING on SDK 2.1.1** — on its own
+(`--only=migration_e2e --e2e`) it takes **~23s**, consistent with the ~18s marginal cost
+the old 57s/75s pair implied; a full `--e2e` run has not been timed since the bump. Run it
+with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
 
@@ -763,13 +765,19 @@ silently runs against whatever `mariadb-shell` is on PATH.
   install via the CLI, `set_config` per `config/migration.yaml.example`, `run`, verify).
   **The feature works end to end against real servers**: MySQL 26.7.0 -> MariaDB 12.3.2,
   all 7 orchestrator steps DONE, exit 0, in ~3s of actual migration and ~20s of test.
+  **Re-verified on MCP SDK 2.1.1** after the `tool_registrar` revert (PASSED, 23.4s),
+  reusing the `v1.4.0-beta` install already on the machine — so that run did NOT exercise
+  the live GitHub/PyPI download path, by the fixture's design.
   - **Built by PROBING first, not by writing the test and iterating on it.** Five
     hand-driven runs in the scratchpad found five separate blockers (all in Gotchas), each
     identified from the tooling's own `report.json` and `run.log` rather than guessed at.
     Do that again: a failing 20s pytest run tells you far less than the report does.
   - **`pv` was installed with Homebrew** to get past the last blocker. It is a documented
     (optional) dependency of the tooling; it was flagged to the user as a change to their
-    machine.
+    machine. **It went missing again and had to be reinstalled** (`brew install pv`, 1.11.0,
+    pulling `json-c`) before the e2e test would do anything but skip — so check `pv` is
+    actually there before concluding anything from an `--e2e` run, and read the SKIP line:
+    a skipped e2e test still exits 0 and still prints a coverage table.
   - **PROVEN to discriminate, in BOTH halves, and the two probes are different tests**:
     pointing `SRC_DBS` at another schema fails the RUN assertion (`exited 3`), while
     removing the trigger from the source schema fails the TARGET assertion (`triggers on
