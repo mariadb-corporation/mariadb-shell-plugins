@@ -25,7 +25,7 @@ from typing import NamedTuple, Optional
 
 import mysqlsh
 
-VERSION = "26.9.0"
+VERSION = "26.9.1"
 
 # Default MCP server bind settings
 DEFAULT_HOST = "127.0.0.1"
