@@ -371,6 +371,39 @@ def test_available_versions_lists_every_patch_of_one_series(monkeypatch, platfor
     ]
 
 
+def test_available_versions_lists_every_release_of_one_major(
+    monkeypatch, platform_key
+):
+    """A bare major spans its series: every release under it, oldest first."""
+    _stub_index(
+        monkeypatch,
+        platform_key,
+        {
+            FAKE_VERSION: b"new",
+            FAKE_OLDER_VERSION: b"old",
+            "10.11.2": b"later series",
+            "11.4.2": b"another major",
+        },
+    )
+
+    # 10.11 after 10.6, because the minor is compared as a number too.
+    assert sandbox_servers.available_versions("10") == [
+        FAKE_OLDER_VERSION,
+        FAKE_VERSION,
+        "10.11.2",
+    ]
+
+
+def test_available_versions_refuses_an_unknown_major(monkeypatch, platform_key):
+    """A major nothing is published under is refused, not answered emptily."""
+    _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"new"})
+
+    with pytest.raises(mysqlsh.Error) as failure:
+        sandbox_servers.available_versions("99")
+
+    assert "MariaDB 99 is not among" in str(failure.value)
+
+
 def test_available_versions_skips_a_release_not_built_for_this_platform(
     monkeypatch, platform_key
 ):
@@ -413,22 +446,24 @@ def test_available_versions_refuses_an_unknown_series(monkeypatch, platform_key)
 @pytest.mark.parametrize(
     "text, expected",
     [
+        ("11", (11, None, None)),
         ("11.8", (11, 8, None)),
         ("11.8.9", (11, 8, 9)),
         ("v11.8.9", (11, 8, 9)),
         ("V11.8", (11, 8, None)),
+        ("v11", (11, None, None)),
         ("  11.8.9  ", (11, 8, 9)),
         ("11.8.10", (11, 8, 10)),
     ],
 )
-def test_parse_version_accepts_both_shapes(text, expected):
-    """A series, a full version, and either with the leading v of a release tag."""
+def test_parse_version_accepts_all_three_shapes(text, expected):
+    """A major, a series, a full version, and any with a release tag's v."""
     assert sandbox_servers.parse_version(text) == expected
 
 
-@pytest.mark.parametrize("text", ["11", "", None, "abc", "11.8.9.1", "11.x", "-1.2"])
+@pytest.mark.parametrize("text", ["", None, "abc", "11.8.9.1", "11.x", "-1.2", "11."])
 def test_parse_version_refuses_anything_else(text):
-    """Anything that is not one of the two shapes is refused by name."""
+    """Anything that is not one of the three shapes is refused by name."""
     with pytest.raises(mysqlsh.Error) as failure:
         sandbox_servers.parse_version(text)
 
@@ -443,13 +478,17 @@ def test_parse_version_refuses_anything_else(text):
         ("11.8.9", (11, 8, 3), False),
         ("11.8.9", (11, 4, None), False),
         ("12.3.3", (11, 8, None), False),
+        # A bare major: any minor of it, and nothing of another major.
+        ("11.8.9", (11, None, None), True),
+        ("11.4.2", (11, None, None), True),
+        ("12.3.3", (11, None, None), False),
         # Not a version at all - a stray directory under the server root.
         ("nightly", (11, 8, None), False),
         ("11.8", (11, 8, None), False),
     ],
 )
-def test_matches_treats_a_series_as_any_patch(version, request_parts, expected):
-    """A series request takes any patch release; a full one only its own."""
+def test_matches_treats_a_missing_level_as_any(version, request_parts, expected):
+    """Each level a request leaves off matches anything at that level."""
     assert sandbox_servers.matches(version, *request_parts) is expected
 
 
@@ -685,6 +724,26 @@ def test_install_refuses_to_write_outside_the_target(
 
     assert not escapee.exists()
     assert not os.path.exists(os.path.join(server_root, FAKE_VERSION))
+
+
+def test_install_normalizes_the_version_it_is_given(
+    monkeypatch, platform_key, server_root
+):
+    """A version carrying a release tag's v still finds its package.
+
+    The version is both the index key and the directory name, so it is rebuilt
+    from the parsed numbers rather than used as it arrived - otherwise
+    'v10.6.1' would look up nothing and, if it had, would install into a
+    directory of that name.
+    """
+    payload = _package_bytes(_PACKAGE_ENTRIES)
+    _stub_index(monkeypatch, platform_key, {FAKE_VERSION: payload})
+    _stub_download(monkeypatch, {_url_of(FAKE_VERSION): payload})
+
+    target = sandbox_servers.install("v" + FAKE_VERSION)
+
+    assert target == os.path.join(server_root, FAKE_VERSION)
+    assert sandbox_servers.installed_versions() == [FAKE_VERSION]
 
 
 def test_install_refuses_a_series(monkeypatch, platform_key, server_root):
@@ -968,6 +1027,78 @@ def test_resolve_refuses_a_series_that_is_not_published(
     assert "99.9" in str(failure.value)
 
 
+def test_resolve_takes_the_newest_installed_release_of_a_major(
+    monkeypatch, platform_key, server_root
+):
+    """A bare major spans the series too, and 11 sorts before 11.something."""
+    _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"x"})
+    monkeypatch.setattr(sandbox_servers, "path_server_version", lambda: None)
+    _make_install(server_root, "10.6.9")
+    _make_install(server_root, "10.11.2")
+    # Another major entirely, and a higher number: it must not be chosen.
+    _make_install(server_root, "11.4.2")
+
+    resolved = sandbox_servers.resolve("10")
+
+    assert resolved.version == "10.11.2"
+    assert resolved.source == sandbox_servers.SOURCE_INSTALLED
+
+
+def test_resolve_downloads_the_newest_release_of_a_requested_major(
+    monkeypatch, platform_key, server_root
+):
+    """With nothing installed, a bare major fetches the newest published one."""
+    newest = _package_bytes(_PACKAGE_ENTRIES)
+    older = _package_bytes(_PACKAGE_ENTRIES + (("share/old", "x", 0o644),))
+    _stub_index(
+        monkeypatch, platform_key, {"10.11.2": newest, FAKE_VERSION: older}
+    )
+    monkeypatch.setattr(sandbox_servers, "path_server_version", lambda: None)
+    requested = _stub_download(monkeypatch, {_url_of("10.11.2"): newest})
+
+    resolved = sandbox_servers.resolve("10")
+
+    assert resolved.version == "10.11.2"
+    assert requested == [_url_of("10.11.2")]
+
+
+def test_resolve_keeps_a_path_server_that_satisfies_a_bare_major(
+    monkeypatch, platform_key, server_root
+):
+    """A machine with 10.6.1 on its PATH does not fetch 10.11.2 for "10".
+
+    The PATH is not held to "newest" - see resolve's docstring. Deploying with
+    what is already installed beats a few hundred megabytes for a version the
+    client did not specifically ask for.
+    """
+    _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"x", "10.11.2": b"y"})
+    monkeypatch.setattr(sandbox_servers, "path_server_version", lambda: FAKE_VERSION)
+    _stub_download(monkeypatch, {})  # any download at all fails the test
+
+    resolved = sandbox_servers.resolve("10")
+
+    assert resolved == sandbox_servers.ResolvedServer(
+        FAKE_VERSION, None, sandbox_servers.SOURCE_PATH
+    )
+
+
+def test_resolve_refuses_a_major_not_built_for_this_platform(
+    monkeypatch, platform_key, server_root
+):
+    """A major the index has but cannot supply here names the platform."""
+    index = _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"x"})
+    for series in index["serverVersions"]:
+        for patch_group in series["patches"]:
+            for packages in patch_group.values():
+                packages[0]["os"] = "solaris-sparc"
+    monkeypatch.setattr(sandbox_servers, "path_server_version", lambda: None)
+
+    with pytest.raises(mysqlsh.Error) as failure:
+        sandbox_servers.resolve("10")
+
+    assert "MariaDB 10 is not published for" in str(failure.value)
+
+
 def test_resolve_refuses_a_series_not_built_for_this_platform(
     monkeypatch, platform_key, server_root
 ):
@@ -1090,9 +1221,13 @@ def test_the_listing_tool_answers_with_the_shipped_versions():
     assert versions, "the shipped index publishes nothing for this platform"
 
 
-def test_the_listing_tool_lists_one_series():
-    """The series argument switches it to that series' patch releases."""
-    series = sandbox_servers.available_versions()[0].rsplit(".", 1)[0]
+@pytest.mark.parametrize("levels", [2, 1])
+def test_the_listing_tool_lists_one_series(levels):
+    """The series argument switches it to the releases below that series.
+
+    Run for both shapes it accepts: a major.minor series and a bare major.
+    """
+    series = ".".join(sandbox_servers.available_versions()[0].split(".")[:levels])
 
     result = helpers.call_tool(
         function_groups=["sandbox"],

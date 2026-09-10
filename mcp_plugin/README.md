@@ -285,15 +285,27 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 #### Deploying a specific server version
 
 `sandbox.deploy` normally runs whatever `mariadbd` is on the PATH, which is one version
-per machine. Its `server_version` option asks for a particular one instead, given either
-as `major.minor` (the latest patch release of that series) or as `major.minor.patch`.
+per machine. Its `server_version` option asks for a particular one instead, as precisely
+or as loosely as you like:
+
+| `server_version` | Means |
+| --- | --- |
+| `11.8.9` | that exact release |
+| `11.8` | the latest patch release of the 11.8 series |
+| `11` | the latest release of MariaDB 11, whichever series that is |
+
+Each level left off is satisfied by the newest release below it. A leading `v` is
+accepted, so a version copied off a release page works as it stands.
+
 `sandbox.list_available_versions` says which versions are on offer - one per series by
-default, or every patch release of one series when given a `series` argument.
+default, or everything below a `series` argument, which takes the same `major.minor` or
+bare `major` shapes.
 
 Three places are searched, in this order:
 
-1. **The PATH.** A machine that already has the requested version deploys with it and
-   downloads nothing.
+1. **The PATH.** A machine whose server satisfies the request deploys with it and
+   downloads nothing. The PATH is the one place not held to "newest": a machine with
+   11.8.9 installed does not fetch 11.8.10 because a client asked for `11`.
 2. **`~/.local/share/mariadb-sandbox-server/<version>/`** (on Windows,
    `%LOCALAPPDATA%\Programs\mariadb-sandbox-server\<version>\`) - a version an earlier
    deploy downloaded. One directory per version, named after it, so versions sit side by

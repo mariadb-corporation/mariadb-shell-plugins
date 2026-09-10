@@ -20,6 +20,10 @@ which is one version on any given machine. This module is what lets a client ask
 for a *particular* version instead: it knows which versions are published, which
 are already on this machine, and how to fetch one that is neither.
 
+A request may be as precise or as loose as the caller likes - ``11.8.9``,
+``11.8`` or ``11`` - and each level left off is satisfied by the newest release
+below it.
+
 Three places are searched, in this order, and the order is the whole design:
 
 1. **The PATH.** A server that is already installed system-wide is used as it
@@ -86,10 +90,12 @@ DOWNLOAD_TIMEOUT = 120
 # record of what is real.
 WORK_PREFIX = "."
 
-# A version as a client may ask for it: 'major.minor' or 'major.minor.patch'.
-# Anything else is refused up front, so a typo is answered by a message naming
-# the two accepted shapes rather than by an empty list of matches.
-_VERSION_PATTERN = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?$")
+# A version as a client may ask for it: 'major', 'major.minor' or
+# 'major.minor.patch'. Anything else is refused up front, so a typo is answered
+# by a message naming the accepted shapes rather than by an empty list of
+# matches. Each part left off widens the request by one level, and the newest
+# release satisfying it wins - so '11' is "the newest MariaDB 11 there is".
+_VERSION_PATTERN = re.compile(r"^(\d+)(?:\.(\d+)(?:\.(\d+))?)?$")
 
 # How a server binary reports its own version: 'mariadbd  Ver 12.3.2-MariaDB-log
 # for osx10.21 on arm64'. Only the three numbers after 'Ver' are read; the
@@ -119,7 +125,7 @@ class ResolvedServer(NamedTuple):
 
     Attributes:
         version (str): The full ``major.minor.patch`` version that will run,
-            which for a ``major.minor`` request is the patch release actually
+            which for a request that left a level off is the release actually
             found - not what was asked for.
         mariadbd_path (str): The binary to deploy with, or None when the version
             is the one on the PATH and the shell should find it itself.
@@ -281,7 +287,8 @@ def available_versions(series: str = None) -> list:
     offering it would only produce a failure one call later.
 
     Args:
-        series (str): A ``major.minor`` series to list every patch release of.
+        series (str): A ``major.minor`` series to list every patch release of,
+            or a bare ``major`` to list every release of every series under it.
             Omit it to list one version per series - the latest patch release of
             each, which is what the index's ``latestPatch`` names.
 
@@ -290,8 +297,8 @@ def available_versions(series: str = None) -> list:
 
     Raises:
         mysqlsh.Error: No packages are published for this machine, ``series`` is
-            not a ``major.minor`` version, or it names a series the index does
-            not have.
+            a full version rather than a series, or it names a series the index
+            does not have.
     """
     key = require_platform_key()
     index = load_index()
@@ -309,20 +316,22 @@ def available_versions(series: str = None) -> list:
     major, minor, patch = parse_version(series)
     if patch is not None:
         raise mysqlsh.Error(
-            f"'{series}' is a full version. To list the patch releases of a "
-            f"series, pass its major.minor version ('{major}.{minor}')."
+            f"'{series}' is a full version. To list the releases below one, "
+            f"pass a series: '{major}.{minor}' or '{major}'."
         )
 
-    entry = _series_entry(index, major, minor)
-    if entry is None:
+    entries = _matching_series(index, major, minor)
+    if not entries:
         raise mysqlsh.Error(
-            f"MariaDB {major}.{minor} is not among the downloadable versions. "
-            f"Available: {', '.join(available_versions()) or 'none'}."
+            f"MariaDB {_series_text(major, minor)} is not among the "
+            "downloadable versions. Available: "
+            f"{', '.join(available_versions()) or 'none'}."
         )
 
     return sorted(
         (
             version
+            for entry in entries
             for version, packages in _series_versions(entry).items()
             if _package_of(packages, key) is not None
         ),
@@ -330,13 +339,35 @@ def available_versions(series: str = None) -> list:
     )
 
 
-def _series_entry(index: dict, major: int, minor: int) -> Optional[dict]:
-    """Returns the index entry for one major.minor series, if it has one."""
-    for entry in index.get("serverVersions", []):
-        if str(entry.get("major")) == str(major) and str(entry.get("minor")) == str(minor):
-            return entry
+def _matching_series(index: dict, major: int, minor: Optional[int]) -> list:
+    """Returns the index entries a series request covers.
 
-    return None
+    One entry for a ``major.minor`` request, and every series of that major for
+    a bare ``major`` one - which is the only reason this returns a list rather
+    than the single entry a lookup would.
+
+    Args:
+        index (dict): The parsed index.
+        major (int): The major version to match.
+        minor (int): The minor version to match, or None for all of them.
+
+    Returns:
+        The matching entries, in the order the index lists them.
+    """
+    matching = []
+    for entry in index.get("serverVersions", []):
+        if str(entry.get("major")) != str(major):
+            continue
+        if minor is not None and str(entry.get("minor")) != str(minor):
+            continue
+        matching.append(entry)
+
+    return matching
+
+
+def _series_text(major: int, minor: Optional[int]) -> str:
+    """Returns how a series request reads back in a message."""
+    return f"{major}" if minor is None else f"{major}.{minor}"
 
 
 def _sort_key(version: str) -> tuple:
@@ -348,16 +379,17 @@ def parse_version(version: str) -> tuple:
     """Parses a requested version into its numbers.
 
     Args:
-        version (str): ``major.minor`` or ``major.minor.patch``, optionally with
-            a leading ``v`` - a version copied off a release page carries one,
-            and refusing it would be a riddle rather than a rule.
+        version (str): ``major``, ``major.minor`` or ``major.minor.patch``,
+            optionally with a leading ``v`` - a version copied off a release
+            page carries one, and refusing it would be a riddle rather than a
+            rule.
 
     Returns:
-        A ``(major, minor, patch)`` tuple of ints, ``patch`` being None when
-        only a series was given.
+        A ``(major, minor, patch)`` tuple of ints, with ``minor`` and ``patch``
+        None for each level that was left off.
 
     Raises:
-        mysqlsh.Error: The version is not one of those two shapes.
+        mysqlsh.Error: The version is not one of those three shapes.
     """
     text = (version or "").strip()
     if text[:1] in ("v", "V"):
@@ -367,24 +399,33 @@ def parse_version(version: str) -> tuple:
     if match is None:
         raise mysqlsh.Error(
             f"'{version}' is not a MariaDB server version. Give it as "
-            "'major.minor' (for example '11.8', which uses the latest patch "
-            "release) or as 'major.minor.patch' (for example '11.8.9')."
+            "'major.minor.patch' (for example '11.8.9'), as 'major.minor' (for "
+            "example '11.8', which takes the latest patch release of that "
+            "series) or as 'major' (for example '11', which takes the latest "
+            "release of that major version)."
         )
 
     major, minor, patch = match.groups()
-    return int(major), int(minor), None if patch is None else int(patch)
+    return (
+        int(major),
+        None if minor is None else int(minor),
+        None if patch is None else int(patch),
+    )
 
 
-def matches(version: str, major: int, minor: int, patch: Optional[int]) -> bool:
+def matches(
+    version: str, major: int, minor: Optional[int], patch: Optional[int]
+) -> bool:
     """Returns whether a full version satisfies a request.
 
-    A ``major.minor`` request is satisfied by any patch release of that series;
-    a full request only by that exact release.
+    Each level the request left off matches anything: ``11`` is satisfied by
+    any 11.x.y, ``11.8`` by any patch release of that series, and a full
+    version only by that exact release.
 
     Args:
         version (str): A full ``major.minor.patch`` version.
         major (int): The requested major version.
-        minor (int): The requested minor version.
+        minor (int): The requested minor version, or None for any.
         patch (int): The requested patch release, or None for any.
 
     Returns:
@@ -396,7 +437,9 @@ def matches(version: str, major: int, minor: int, patch: Optional[int]) -> bool:
         # Not a version at all - a stray directory under the server root.
         return False
 
-    if len(parts) != 3 or parts[0] != major or parts[1] != minor:
+    if len(parts) != 3 or parts[0] != major:
+        return False
+    if minor is not None and parts[1] != minor:
         return False
 
     return patch is None or parts[2] == patch
@@ -641,8 +684,12 @@ def install(version: str) -> str:
     if patch is None:
         raise mysqlsh.Error(f"'{version}' is a series, not a version to install.")
 
-    entry = _series_entry(index, major, minor)
-    packages = _series_versions(entry).get(version, []) if entry is not None else []
+    # Rebuilt from the parsed numbers rather than used as given: the version is
+    # both the index key and the directory name, and 'v11.8.9' is neither.
+    version = f"{major}.{minor}.{patch}"
+
+    entries = _matching_series(index, major, minor)
+    packages = _series_versions(entries[0]).get(version, []) if entries else []
     package = _package_of(packages, key)
     if package is None:
         raise mysqlsh.Error(
@@ -717,12 +764,19 @@ def resolve(version: str) -> ResolvedServer:
     """Finds a server of the requested version, downloading it if it takes that.
 
     The three places are searched in the order the module docstring gives.
-    Within the installed copies and within the published index a ``major.minor``
-    request takes the newest patch release, so asking for a series gets the best
-    of what is there rather than the first that happened to be listed.
+    Within the installed copies and within the published index a request that
+    left a level off takes the newest release satisfying it - so a series gets
+    the best of what is there rather than the first that happened to be listed,
+    and a bare major gets the newest series of that major.
+
+    The PATH is the one place that is NOT held to "newest": it holds a single
+    server, and the question there is only whether it satisfies the request.
+    That is deliberate. Deploying with a server that is already installed beats
+    downloading a marginally newer one by enough that a machine with 11.8.9 on
+    its PATH should not fetch 11.8.10 because a client said "11".
 
     Args:
-        version (str): ``major.minor`` or ``major.minor.patch``.
+        version (str): ``major``, ``major.minor`` or ``major.minor.patch``.
 
     Returns:
         The :class:`ResolvedServer` naming the version, the binary to deploy
@@ -739,7 +793,8 @@ def resolve(version: str) -> ResolvedServer:
     if on_path is not None and matches(on_path, major, minor, patch):
         return ResolvedServer(on_path, None, SOURCE_PATH)
 
-    # 2. Downloaded by an earlier call. Newest matching patch release wins.
+    # 2. Downloaded by an earlier call. Newest matching release wins, and
+    #    installed_versions() is sorted numerically, so that is the last one.
     matching = [
         installed
         for installed in installed_versions()
@@ -756,13 +811,13 @@ def resolve(version: str) -> ResolvedServer:
     if patch is not None:
         wanted = f"{major}.{minor}.{patch}"
     else:
-        series = available_versions(f"{major}.{minor}")
-        if not series:
+        published = available_versions(_series_text(major, minor))
+        if not published:
             raise mysqlsh.Error(
-                f"MariaDB {major}.{minor} is not published for "
+                f"MariaDB {_series_text(major, minor)} is not published for "
                 f"{require_platform_key()}."
             )
-        wanted = series[-1]
+        wanted = published[-1]
 
     install_dir = install(wanted)
     binary = find_server_binary(install_dir)

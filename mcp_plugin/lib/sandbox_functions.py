@@ -85,16 +85,16 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """Lists the MariaDB server versions sandbox.deploy can be asked for.
 
         By default one version per release series - the latest patch release of
-        each. Pass a series to see every patch release published for it
-        instead.
+        each. Pass a series to see every release published below it instead.
 
         Only versions with a package built for this machine's platform are
         listed. A version that is listed can always be deployed: if it is not
         on this machine already, sandbox.deploy downloads it.
 
         Args:
-            series: A major.minor version (for example '11.8') to list all of
-                its patch releases. Leave empty to list the latest patch
+            series: A major.minor version (for example '11.8') to list its
+                patch releases, or a major version (for example '11') to list
+                every release under it. Leave empty to list the latest patch
                 release of every series.
 
         Returns:
@@ -136,12 +136,14 @@ def register_sandbox_tools(server, function_groups=()) -> None:
                 to False (unlike the shell's sandbox default of True) to avoid
                 depending on openssl for local test instances.
             openssl_path: Path to the openssl executable or its directory.
-            server_version: The MariaDB server version to run, as 'major.minor'
-                (the latest patch release of that series) or
-                'major.minor.patch'. The server on the PATH is used when it is
-                that version, otherwise a copy already downloaded, otherwise the
-                published package is downloaded first - which takes a few
-                hundred megabytes and a while. Call
+            server_version: The MariaDB server version to run, as
+                'major.minor.patch' (for example '11.8.9'), as 'major.minor'
+                (for example '11.8' - the latest patch release of that series)
+                or as 'major' (for example '11' - the latest release of that
+                major version). The server on the PATH is used when it
+                satisfies the request, otherwise a copy already downloaded,
+                otherwise the published package is downloaded first - which
+                takes a few hundred megabytes and a while. Call
                 sandbox.list_available_versions for the versions on offer.
                 Leave empty to deploy with whatever server is on the PATH.
                 Cannot be combined with mariadbd_path.
