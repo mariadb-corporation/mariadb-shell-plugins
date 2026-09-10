@@ -6,21 +6,21 @@
 Model Context Protocol (MCP) server exposing MariaDB AI Plugin capabilities to
 MCP-compatible clients. It registers the global `mcp` object in the shell and serves
 `db.*`, `msm.*`, and `sandbox.*` tool groups over stdio or streamable-http. `mcp.setup`
-additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21). GPLv2,
+additionally installs the MySQL-to-MariaDB migration tooling (AIPL-21), and
+`sandbox.deploy` can be asked for a MariaDB server VERSION, downloading it if the machine
+has none (the `wip/sandbox-binaries` work — see Architecture). GPLv2,
 "MariaDB plc". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
-(`/Users/mzinner/git/mariadb-shell/build/bin`, shell **26.9.0**), **MCP SDK 2.1.1**
-(2.0.0 until this session — the jump is what broke CI, see the SDK-error gotcha),
+(`/Users/mzinner/git/mariadb-shell/build/bin`, shell **26.9.1** — checked with
+`--version`, it was 26.9.0 in earlier sessions), **MCP SDK 2.1.1** (2.0.0 before the
+SDK-bump session — that jump is what broke CI, see the SDK-error gotcha),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **201 tests pass, 1 SKIPPED (~64s), 97% total coverage** (1535 statements,
-44 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
-Gotchas). The skipped one is the OPT-IN end-to-end migration test: with `--e2e` the run is
-**202 pass** at the SAME coverage, since everything it touches is already covered by
-the unit tests. **Re-run and PASSING on SDK 2.1.1** — on its own
-(`--only=migration_e2e --e2e`) it takes **~23s**, consistent with the ~18s marginal cost
-the old 57s/75s pair implied; a full `--e2e` run has not been timed since the bump. Run it
-with
+Standard suite: **304 tests pass, 2 SKIPPED (~68s), 98% total coverage** (1821 statements,
+45 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
+Gotchas). The two skipped are the OPT-IN end-to-end tests: with `--e2e` the run is
+**306 pass in ~99s** at the same coverage, since everything they touch is already covered
+by the unit tests. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
 
@@ -638,10 +638,86 @@ silently runs against whatever `mariadb-shell` is on PATH.
     version", and a mismatch with the configured release is called out in the menu.
   - Download and removal failures are REPORTED, not raised, out of `_manage_migrator` — the
     setup menu must survive a network problem. `MIGRATOR_DOWNLOAD_TIMEOUT` is 120s.
+- **`sandbox.deploy` can be asked for a server VERSION** (`server_version`), and
+  `sandbox.list_available_versions` says what is on offer. All of it lives in
+  `lib/sandbox_servers.py`; the sandbox tools only call `resolve()` and format the answer.
+  - **Three places, searched in this order, and the order IS the design**: the PATH (a
+    machine that already satisfies the request downloads nothing), then
+    `<root>/<version>/` (one directory per version, the version as its name), then the
+    published index (download, checksum, extract into 2., then use).
+  - **The request may leave levels off**: `11.8.9`, `11.8` or `11`, and each level omitted
+    is satisfied by the NEWEST release below it. One rule, not three: `parse_version`
+    returns None per missing level and `matches()` treats None as "any". A leading `v` is
+    accepted.
+  - **The PATH is deliberately NOT held to "newest".** It holds one server; the only
+    question is whether it satisfies the request. A machine with 11.8.9 installed must not
+    fetch 11.8.10 because a client said `11`. Installed copies and the index DO take the
+    newest match.
+  - **The index is a static file** (`lib/sandbox_server_versions.json`), not fetched at run
+    time: what a plugin version can install is then reproducible and reviewable in a diff,
+    and a lookup costs no network. Publishing a new server version means shipping a plugin.
+  - **Every package's SHA-256 is pinned there and checked as the body streams past.** This
+    ends in running a downloaded executable as a database server. A mismatch is discarded
+    with nothing installed — and this is NOT theoretical, it fired for real this session
+    (see Gotchas: the v26.9.1 assets were re-uploaded mid-session).
+  - **Extraction uses tarfile's `data` filter**, unlike the migrator's hand-rolled zip
+    walk: the packages contain symlinks, which a per-member loop would have to handle
+    itself, and the filter already refuses absolute paths, `..` and escaping links. Mode
+    handling is what the filter gives (owner execute preserved, setuid/setgid stripped),
+    verified against a real package — `bin/mariadbd` comes out 0755.
+  - **The package's one wrapping directory is stripped** (`mariadb-11.8.9-macos26-arm-64bit-sandbox/`)
+    so `<version>/bin/mariadbd` is true of every platform. Done by renaming the sole
+    top-level entry, not by rewriting member names.
+  - **Staged beside the target, swapped in only once complete and checked**, same shape as
+    the migrator's download, including the put-the-old-copy-back on a failed swap.
+  - **Install root is NOT `get_data_home()` on Windows.** XDG is a Unix convention;
+    `get_sandbox_server_root()` returns `%LOCALAPPDATA%\Programs\mariadb-sandbox-server`
+    there, `~/.local/share/mariadb-sandbox-server` elsewhere. Verified live on Windows.
+  - **`xattr -cr` on macOS only**, best-effort: without it Gatekeeper refuses a binary that
+    arrived over the network, with an error naming none of this. A failure is logged with
+    the command to run by hand, never raised — the install is otherwise complete.
+  - **Platform keys are Node-style** (`darwin-arm64`, `linux-x64`, `win32-arm64`) because
+    the index is shared with tooling that speaks those. `platform_key()` maps every Python
+    spelling onto them (`arm64`/`aarch64`, `x86_64`/`AMD64`) in one place.
+  - `server_version` and `mariadbd_path` are REFUSED together: both name the server to run.
+  - The deploy's message names the source (`found on the PATH` / `already downloaded` /
+    `downloaded now`) — two seconds and two minutes deserve different explanations — and,
+    for a non-PATH server, the `mariadbd_path` for `sandbox.start` AND the fact that
+    shutdown needs `sandbox.kill` (see Gotchas: the shell's `stop` takes no `mariadbdPath`).
 
 ## Current state
 
-- **THIS SESSION (short): AIPL-21 was already built and committed; the session verified it,
+- **THIS SESSION: the sandbox server-version feature, on a NEW branch
+  `wip/sandbox-binaries` off `main` (NOT off `wip/AIPL-21`, which was merged as PR #19 and
+  deleted).** Five commits, all green, all described under Git state. The shape of it:
+  1. Verified the (then untracked) `lib/sandbox_server_versions.json` against a
+     `lib/SERVER_SHA256SUMS` the user had beside it — 12/12 matched — and fixed one
+     misindented brace. That checksum file is GONE from the tree now; the user removed it.
+  2. Built `lib/sandbox_servers.py` + `sandbox.list_available_versions` + `server_version`
+     on `sandbox.deploy` (see Architecture). 90 new tests, none touching the network.
+  3. Added the bare-`major` form.
+  4. Re-pinned all 12 checksums after the release assets were re-uploaded mid-session.
+  5. Fixed the deploy message's shutdown advice after the Windows run found it wrong.
+- **PROVEN on real downloads, not just stubs.** macOS: `install("11.8.9")` fetched the
+  26MB package, checksum passed, `bin/mariadbd` came out 0755, `--version` said 11.8.9,
+  xattrs clean, and a sandbox deployed on it answered `SELECT VERSION()` with
+  `11.8.9-MariaDB` while the PATH server was 12.3.2. That flow is now the `e2e` test.
+- **PROVEN on Windows 11 ARM64, through codex over a real MCP server** (VM at
+  `ssh dev@192.168.10.103`, cmd.exe default shell, mariadb-shell 26.9.1 at
+  `C:\Users\dev\AppData\Local\Programs\mariadb-shell\26.9.1`). The plugin there was
+  REPLACED with this branch's build (`git archive HEAD:mcp_plugin` -> scp -> `tar -xf`);
+  **the original 26.9.0 is backed up at `C:\Users\dev\mcp_plugin.backup-26.9.0`** and
+  ours is what is installed. Codex confirmed, cold (the download dir was cleared first):
+  `list_available_versions()` -> `11.8.9, 12.3.3`; `series="11"` -> `11.8.9`;
+  `series="nonsense"` -> the full refusal message intact; `deploy(server_version="11.8")`
+  downloaded the win32-arm64 package and started it; **`sandbox.version` -> `11.8.9`**,
+  which can ONLY have come from the download since that machine has no server on its PATH
+  at all; `sandbox.kill` worked. `platform_key()` -> `win32-arm64`, root ->
+  `C:\Users\dev\AppData\Local\Programs\mariadb-sandbox-server`, and
+  `find_server_binary` picked `bin\mariadbd.exe` over the neighbouring `mariadbd-safe`.
+  Left behind on the VM, deliberately: the downloaded `11.8.9` in the standard location.
+  Codex was configured with `-c` overrides, so `~/.codex/config.toml` there is UNTOUCHED.
+- **PREVIOUS SESSION (short): AIPL-21 was already built and committed; the session verified it,
   re-measured it, and got blocked on the push.** In order: read this file, found it STALE on
   AIPL-21 (it described the AIPL-16 / `wip/MCP-CONN-HANDLING` era and never mentioned the
   migrator at all), reconstructed the real status from `git log` + the tree, ran the full
@@ -1432,6 +1508,31 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `MIGRATOR_REQUIREMENTS`, `MIGRATOR_PIP_TIMEOUT`, `wrapper_path`, `_wrapper_contents`,
   `_wrapper_is_ours`, `install_wrapper`, `remove_wrapper`, `MIGRATOR_WRAPPER_MARKER`,
   `_print_path_hint`). 99% covered.
+- lib/sandbox_servers.py -> EVERYTHING about getting a server of a requested version:
+  `load_index`/`index_path`/`SUPPORTED_INDEX_VERSION`, `platform_key`/`require_platform_key`,
+  `available_versions`, `_matching_series`/`_series_versions`/`_series_text`/`_package_of`/
+  `_sort_key`, `parse_version`/`matches`/`_VERSION_PATTERN`, `find_server_binary`/
+  `installed_versions`/`path_server_version`, `_download_package`/`_extract_package`/
+  `clear_quarantine_flags`, `install`, `resolve`, `ResolvedServer` +
+  `SOURCE_PATH`/`SOURCE_INSTALLED`/`SOURCE_DOWNLOADED`, `WORK_PREFIX`, `DOWNLOAD_TIMEOUT`.
+  Raises `mysqlsh.Error` (the sandbox group registers through `tool_registrar`).
+  **100% covered — keep it that way.**
+- lib/sandbox_server_versions.json -> the published index: `sandboxServerIndexVersion` 1,
+  then `serverVersions[]` of `{major, minor, latestPatch, patches[{"<patch>": [{os, url,
+  sha256sum}]}]}`. The nesting is awkward on purpose (diff-friendly as releases are added)
+  and is flattened once, in `_series_versions`. **The checksums track the published
+  assets** — if the release is re-cut they go stale and the e2e test is what says so.
+- tests/unit/test_sandbox_servers.py -> the 103 tests for the above. NO network: `urlopen`
+  is stubbed with a locally built `.tar.gz` and `load_index` with an index whose checksums
+  are of it (`_stub_index`/`_stub_download`/`_package_bytes`/`_FakeResponse`). The
+  `server_root` fixture patches BOTH `get_sandbox_server_root` and `get_sandbox_server_path`
+  — patching one leaves the other answering out of the real home. `FAKE_VERSION` is
+  `10.6.1`, deliberately not a version the shipped index carries. Weighted to the failure
+  paths: bad checksum, no server in the package, an entry escaping the target, a failed
+  download keeping the installed copy, a failed SWAP putting it back. The deploy-message
+  tests drive the tool IN-PROCESS through a `_ToolRecorder` + `asyncio.run` rather than
+  paying for three real server starts to read a string back. One `e2e` test really
+  downloads and really deploys.
 - lib/setup_prompts.py -> `shell`, `ask`, `password`, `yes_no` (a `confirm` prompt),
   `select` / `select_or_cancel` (a `select` prompt), `YES_LABEL`, `NO_LABEL`,
   `CANCEL_LABEL`. **`select_index` is GONE** — it took a count, the replacement takes
@@ -1539,7 +1640,21 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Next steps
 
-0. **Write the SKILL for authoring `config/migration.yaml`.** The user said this is coming
+0. **`wip/sandbox-binaries` is pushed with a PR open** (see Git state). Review comments on
+   it are the next thing to expect.
+1. **DECIDE: should `sandbox.deploy` / `sandbox.delete` survive an unusable secret store?**
+   Found on Windows, NOT fixed, because it is pre-existing code outside the feature and
+   changing it is the user's call. Both do their real work and THEN raise — `deploy` on
+   `config.store_connection`, `delete` on `config.list_connection_uris` — so a successful
+   deploy is reported as a failure while leaving a server running, and the client is never
+   told the port. The download feature makes this far likelier to bite: machines with no
+   MariaDB are exactly the ones that have not run `mcp.setup`. Options if the user wants
+   it: catch around the config call and append "the sandbox is up but could not be
+   registered" to the success message.
+2. **DECIDE: restore the Windows VM's original plugin, or leave this branch's build?** It
+   is at `C:\Users\dev\mcp_plugin.backup-26.9.0`; ours is installed. Left as-is because
+   the user asked for the replacement.
+3. **Write the SKILL for authoring `config/migration.yaml`.** The user said this is coming
    ("We will write a skill covering how to write that later") and it is the one piece of
    the migration feature deliberately left out. It has to teach an LLM: the shape
    (top-level `mode`, then `env` of STRING values), that only accounts among the
@@ -1624,6 +1739,51 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Gotchas / things not to repeat
 
+- **A PUBLISHED RELEASE ASSET CAN CHANGE UNDER YOU, and the pinned checksum is the only
+  thing that notices.** Mid-session, all twelve v26.9.1 sandbox packages were re-uploaded:
+  the same URL that had matched `3cf3848f…` at 18:44 served `ae77f8d5…` (and a different
+  size, 26,266,593 -> 28,769,442) at 20:00. The `--e2e` test failed on the checksum, which
+  is exactly what it is for. **Do NOT silently re-pin to whatever is published now** —
+  trusting a fresh upload is the user's decision, and if the release is still being re-cut
+  the new pins go stale again within the hour. Report it and wait to be handed the sums.
+- **`curl -w` WRITES TO STDOUT, so piping it into `shasum` corrupts every digest.** The
+  first sweep of all twelve packages reported 12/12 mismatched with digests that were
+  pure artefact (`e528cb67…` where a clean download gives `ae77f8d5…`). Nearly reported it
+  as "the assets are changing between my own downloads". Verify with
+  `curl -sL "$url" | shasum -a 256` and NO `-w`; if a byte count is wanted, use `-o` to a
+  file and stat it.
+- **The shell's `sandbox.stop` accepts NO `mariadbdPath`** — probed option by option
+  against shell 26.9.1: `deploy`/`start`/`vendor`/`version` take one, `stop`/`kill`/
+  `delete` do not (`stop` takes sandboxDir+password+timeout, `kill` and `delete` take
+  sandboxDir alone). Its error message says "Use the 'mariadbdPath' option" anyway, which
+  is a shell-side bug. Consequence: a sandbox deployed on a DOWNLOADED server cannot be
+  stopped gracefully on a machine with no server on the PATH; `sandbox.kill` is the way,
+  and the deploy message now says so. **The MCP wrappers are already faithful** — each
+  offers exactly the options the shell accepts, so do not "fix" this by adding a
+  `mariadbd_path` to `sandbox.stop`; the shell will reject it at Argument #2.
+- **Windows Credential Manager DOES NOT WORK over SSH, and it looks like a broken
+  install.** On the VM `shell.options["credentialStore.helper"]` reads `<invalid>` and
+  `list_credential_helpers()` returns `[]`, so every `config.store_connection` /
+  `list_connection_uris` fails with "current credential helper is invalid". The helper
+  binary IS present (`bin/mariadb-secret-store-windows-credential.exe`); running it
+  directly gives **error 1312, "a specified logon session does not exist"** — the classic
+  Credential Manager refusal under a NETWORK logon (type 3), which is what SSH gives. It
+  would work from an interactive desktop session. Do not chase this as a plugin or
+  packaging defect, and do not try to verify `db.connect` over SSH on that box.
+- **PowerShell 5.1 strips double quotes out of arguments to a native exe.** Two runs were
+  lost to it: a `codex exec` prompt containing `"SELECT VERSION()"` got split into extra
+  arguments, and `-c mcp_servers.x.args=["a","b"]` arrived as `[a,b]` and failed TOML
+  parsing. Fixes that work: pass long text on **stdin** (`Get-Content -Raw f | codex exec
+  … -`), and use TOML **single-quoted literal strings** (`args=['a','b']`, `command='C:\…'`)
+  which need no escaping and survive the mangling.
+- **`codex exec` refuses MCP tool calls under its default approval policy** — every call
+  comes back "MCP tool call requires approval, but approval policy is never", which reads
+  like a broken server. `--approve-for-me` is the sanctioned fix; it cannot be combined
+  with `--sandbox`. Reach for `--dangerously-bypass-approvals-and-sandbox` only if that
+  fails. Also: the MCP server occasionally fails to expose ANY tools for one run — retry
+  before diagnosing. Confirm the server itself is healthy by piping
+  `initialize`/`initialized`/`tools/list` JSON-RPC straight into
+  `mariadb-shell -- mcp start-server --transport=stdio`.
 - **`/checkpoint` needs its target folder** — invoked bare it must ask, but this session
   is non-interactive; target was inferred as `mcp_plugin` from the session's work.
 - **`/checkpoint` says "overwrite" — do NOT take that literally on this file.** It is a
@@ -2119,7 +2279,29 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Git state
 
-- **Branch: `wip/AIPL-21`, PR #19, open against `main`.** NOT `wip/AIPL-16`; the AIPL-16
+- **Branch: `wip/sandbox-binaries`, cut from `main` at `99b54290` ("Updating version to
+  26.9.1").** NOT from `wip/AIPL-21` — that branch was merged as PR #19 (`34817a49` on
+  main) and DELETED, so `git merge-base --is-ancestor wip/AIPL-21 HEAD` errors with "not a
+  valid object name". The AIPL-21 bullets below are history.
+  FIVE commits on top of `main`, each green on its own tree:
+  1. `fbba10df` "Deploy a sandbox on a requested MariaDB server version, downloading it if
+     needed" (8 files, +2422/-16) — `lib/sandbox_servers.py`,
+     `lib/sandbox_server_versions.json`, `tests/unit/test_sandbox_servers.py`, the two
+     path helpers in `lib/general.py`, the tool + `server_version` in
+     `lib/sandbox_functions.py`, README, conftest and the `e2e` marker text.
+  2. `352b0f3e` "Accept a bare major version too, so 'give me MariaDB 11' resolves"
+     (4 files, +272/-68) — also normalizes the version `install()` is handed.
+  3. `fe228659` "Re-pin the sandbox server checksums to the re-uploaded v26.9.1 packages"
+     (1 file, +12/-12) — see the Gotchas entry; verified against what is served before
+     committing.
+  4. `b065b105` "Say in the test that the download test is platform-neutral, because it
+     is" (1 file, +12/-4) — documentation only, prompted by the CI-runs-on-Linux question.
+  5. `774bfaa8` "Tell the client how to shut down a sandbox on a downloaded server"
+     (3 files, +25/-4) — the Windows finding.
+  Plus this file's update, uncommitted at the time of writing.
+- CI (`.github/workflows/shell-plugins-ci.yml:119`) runs `cd mcp_plugin && msh --py -f
+  run_tests.py` with NO `--e2e`, so neither end-to-end test runs there.
+- **HISTORY BELOW.** Branch: `wip/AIPL-21`, PR #19, open against `main`.** NOT `wip/AIPL-16`; the AIPL-16
   bullet further down is now history. **EIGHT commits on top of `main`** (the earlier
   "THREE commits" wording here was stale and the list stopped at the fifth):
   1. `0137ea80` "AIPL-21: Install the MySQL-to-MariaDB migration tooling from mcp.setup"
