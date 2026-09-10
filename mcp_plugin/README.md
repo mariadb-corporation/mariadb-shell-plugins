@@ -267,11 +267,13 @@ on a schema project on disk and are always available.
 Tools for deploying and managing local MariaDB/MySQL sandbox instances, wrapping the
 shell's `sandbox` global object. Sandbox instances are only meant for local testing.
 
-> Note: A `mariadbd` server binary needs to be in the PATH. Install the
-> MariaDB Server on your developer machine before using the sandbox tools.
+> Note: A `mariadbd` server binary needs to be in the PATH, **or** the deploy has to
+> name a `server_version` the plugin can download (see
+> [Deploying a specific server version](#deploying-a-specific-server-version)).
 
 | MCP tool | Wraps |
 | --- | --- |
+| `sandbox.list_available_versions` | - (`lib/sandbox_servers.py`) |
 | `sandbox.deploy` | `sandbox.deploy` |
 | `sandbox.start` | `sandbox.start` |
 | `sandbox.stop` | `sandbox.stop` |
@@ -279,6 +281,45 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 | `sandbox.delete` | `sandbox.delete` |
 | `sandbox.vendor` | `sandbox.vendor` |
 | `sandbox.version` | `sandbox.version` |
+
+#### Deploying a specific server version
+
+`sandbox.deploy` normally runs whatever `mariadbd` is on the PATH, which is one version
+per machine. Its `server_version` option asks for a particular one instead, given either
+as `major.minor` (the latest patch release of that series) or as `major.minor.patch`.
+`sandbox.list_available_versions` says which versions are on offer - one per series by
+default, or every patch release of one series when given a `series` argument.
+
+Three places are searched, in this order:
+
+1. **The PATH.** A machine that already has the requested version deploys with it and
+   downloads nothing.
+2. **`~/.local/share/mariadb-sandbox-server/<version>/`** (on Windows,
+   `%LOCALAPPDATA%\Programs\mariadb-sandbox-server\<version>\`) - a version an earlier
+   deploy downloaded. One directory per version, named after it, so versions sit side by
+   side and nothing has to be uninstalled to try another.
+3. **The published packages.** The version is downloaded and installed into 2., which
+   takes a few hundred megabytes and a while; the deploy then continues on it.
+
+Which of the three it was is reported in the message the deploy answers with, because
+"deployed" after two seconds and after two minutes deserve different explanations.
+
+What can be downloaded is a static index shipped with the plugin
+(`lib/sandbox_server_versions.json`), not something fetched at run time: what a given
+plugin version can install is then reproducible and reviewable in a diff, and looking a
+version up costs no network at all. **Every package's SHA-256 is pinned in that index
+and checked before anything is installed** - this ends in running a downloaded
+executable as a database server - and a download that does not match is discarded
+without installing anything. The install is atomic in effect, staged beside the target
+and moved into place only once complete, so a failed download leaves an already
+installed version exactly as it was. On macOS the extended attributes of the finished
+installation are cleared with `xattr -cr`, without which Gatekeeper refuses to run a
+binary that arrived over the network.
+
+`server_version` and `mariadbd_path` cannot be combined: both say which server to run.
+`sandbox.start` takes no `server_version` - to start an instance again that was deployed
+on a downloaded server, pass that server's `mariadbd_path`, which the deploy's message
+names.
 
 ### Migrator tools (`migrator`)
 
@@ -580,15 +621,25 @@ afterwards.
 ### End-to-end tests
 
 Tests marked `e2e` are **not part of a standard run** and are reported as skipped.
-Each one deploys its own source and target servers, reaches the network and installs
-the migration tooling, which is more than a routine test run should do. Add `--e2e`
-to run them as well:
+Each one deploys its own servers, reaches the network and installs software outside
+the plugin - a few hundred megabytes of it, in one case - which is more than a routine
+test run should do. Add `--e2e` to run them as well:
 
 ```bash
 mariadb-shell --py -f run_tests.py --e2e
 ```
 
-There is one at present, `tests/unit/test_migration_e2e.py`: it deploys a MySQL
+There are two at present.
+
+`test_a_sandbox_really_runs_a_downloaded_server` in
+`tests/unit/test_sandbox_servers.py` downloads a published server package for real,
+checks it against its pinned SHA-256, and deploys a sandbox on it - proving what the
+stubbed tests in that file cannot: that the packages are still downloadable, still match
+their checksums, and still extract to a server that runs. It asks for the *oldest*
+published version on purpose, so it cannot quietly resolve to the one on the PATH and
+download nothing.
+
+`tests/unit/test_migration_e2e.py`: it deploys a MySQL
 source and a MariaDB target with `sandbox.deploy`, registers both through the
 `mcp setup` command line, creates a schema on the source with the `db.*` tools,
 installs the migration tooling with `mcp setup --installMigrator`, migrates with
