@@ -34,15 +34,17 @@ def pytest_addoption(parser):
     They are left out of a normal run rather than merely being slow-marked,
     because they deploy their own servers, reach the network and install
     software outside the plugin - none of which a routine ``run_tests.py`` is
-    expected to do.
+    expected to do. One of them downloads a MariaDB server package, which is a
+    few hundred megabytes.
     """
     parser.addoption(
         "--e2e",
         action="store_true",
         default=False,
         help=(
-            "Also run the tests marked 'e2e'. They are skipped otherwise: each "
-            "deploys its own servers and installs the migration tooling."
+            "Also run the tests marked 'e2e'. They are skipped otherwise: they "
+            "deploy their own servers, and download a server package or install "
+            "the migration tooling."
         ),
     )
 

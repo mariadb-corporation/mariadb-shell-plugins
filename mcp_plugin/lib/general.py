@@ -203,6 +203,67 @@ def get_migrator_path(version: str = None) -> str:
     return os.path.join(get_migrator_root(), version or MIGRATOR_VERSION)
 
 
+# Name of the directory downloaded MariaDB server packages are installed under
+# (see :mod:`mcp_plugin.lib.sandbox_servers`). Like the migration tooling above
+# it sits outside this plugin's data directory: a server installation is a
+# standalone program, several sandboxes made by different tools may want to run
+# the same one, and a user looking for "where did that server go" should find it
+# somewhere a server belongs.
+SANDBOX_SERVER_DIR_NAME = "mariadb-sandbox-server"
+
+
+def get_sandbox_server_root() -> str:
+    """Returns the directory downloaded MariaDB server packages are installed under.
+
+    One directory per version, named after it (see
+    :func:`get_sandbox_server_path`), so that several versions sit side by side
+    and a sandbox pinned to one is unaffected by another being added.
+
+    This does NOT follow :func:`get_data_home` on Windows. The XDG base
+    directory specification is a Unix convention and ``~/.local/share`` is not
+    where a Windows user expects a program to be; unpacked programs belong under
+    ``%LOCALAPPDATA%\\Programs`` there, which is where a per-user install of
+    anything else on that machine already is. ``%LOCALAPPDATA%`` is read from
+    the environment with ``~/AppData/Local`` as the fallback, because the
+    variable is missing often enough - a service account, a stripped
+    environment - that not having an answer then would be worse than guessing
+    the default correctly.
+
+    Returns:
+        The absolute path of the server root, whether or not it exists yet.
+    """
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if not local_app_data:
+            local_app_data = os.path.join(
+                os.path.expanduser("~"), "AppData", "Local"
+            )
+        return os.path.join(local_app_data, "Programs", SANDBOX_SERVER_DIR_NAME)
+
+    return os.path.join(get_data_home(), SANDBOX_SERVER_DIR_NAME)
+
+
+def get_sandbox_server_path(version: str) -> str:
+    """Returns the directory one MariaDB server version is installed in.
+
+    The version is the directory name and there is no version file inside an
+    installation, exactly as with :func:`get_migrator_path`: the path is then
+    the one authoritative answer to which version a copy is, and no second
+    record can disagree with it.
+
+    This does NOT create the directory - its existence is what says the version
+    has been downloaded.
+
+    Args:
+        version (str): The full ``major.minor.patch`` version.
+
+    Returns:
+        The absolute path of that version's directory, whether or not it exists
+        yet.
+    """
+    return os.path.join(get_sandbox_server_root(), version)
+
+
 def set_active_transport(transport) -> None:
     """Records the transport the MCP server is being served with.
 
