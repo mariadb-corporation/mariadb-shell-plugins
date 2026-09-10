@@ -329,9 +329,18 @@ installation are cleared with `xattr -cr`, without which Gatekeeper refuses to r
 binary that arrived over the network.
 
 `server_version` and `mariadbd_path` cannot be combined: both say which server to run.
-`sandbox.start` takes no `server_version` - to start an instance again that was deployed
-on a downloaded server, pass that server's `mariadbd_path`, which the deploy's message
-names.
+
+Two things to know about the lifecycle of an instance deployed on a downloaded server,
+both of which the deploy's message spells out:
+
+- **`sandbox.start` takes no `server_version`.** Pass that server's `mariadbd_path`,
+  which the deploy's message names, to start the instance again.
+- **`sandbox.stop` needs a server on the PATH.** The shell's `stop` accepts no
+  `mariadbdPath` at all (`deploy`, `start`, `vendor` and `version` do; `stop`, `kill`
+  and `delete` do not), so on a machine with no server installed - exactly the machine
+  this feature exists for - use `sandbox.kill` to shut the instance down.
+
+Both were verified on Windows 11 ARM64 against shell 26.9.1.
 
 ### Migrator tools (`migrator`)
 
