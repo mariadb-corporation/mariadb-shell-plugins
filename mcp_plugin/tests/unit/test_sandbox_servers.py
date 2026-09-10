@@ -22,10 +22,10 @@ Covers lib/sandbox_servers.py and the two path helpers it installs through
 serving a package built locally, and the index is replaced with one whose
 checksums are of that package - so the tests neither depend on what a given
 release contains nor on it still being downloadable. The package is given the
-shape a real one has, which was read off the published
-``mariadb-11.8.9-macos26-arm-64bit-sandbox.tar.gz``: everything below one
-top-level directory named after the build, with the server in its ``bin``
-directory and the executable bit set.
+shape a real one has: everything below one top-level directory named after the
+build, with the server at ``bin/mariadbd`` and the executable bit set. That
+shape was read off the published macOS **and** Linux packages, which agree on
+it - nothing in this module or its tests is specific to one platform.
 
 The one test that really downloads and really deploys is marked ``e2e`` and runs
 only with ``--e2e`` (``run_tests.py --e2e``).
@@ -1427,6 +1427,14 @@ def test_a_sandbox_really_runs_a_downloaded_server(allowed_temp_dir, monkeypatch
     The version is deliberately the OLDEST the index publishes, so that it is
     not the one the developer's machine has on its PATH - a test that resolved
     to the PATH server would download nothing and prove none of the above.
+
+    **Runs on whatever platform it finds itself on.** The package it fetches is
+    chosen by ``available_versions``, which filters the index by
+    :func:`sandbox_servers.platform_key` - so this pulls the Linux package on
+    Linux and the macOS one on macOS, and skips itself on a platform the index
+    publishes nothing for. It is marked ``e2e`` because it reaches the network
+    and downloads a few hundred megabytes, not because of where it runs; CI
+    invokes ``run_tests.py`` without ``--e2e``, so it does not run there at all.
     """
     versions = sandbox_servers.available_versions()
     if not versions:
