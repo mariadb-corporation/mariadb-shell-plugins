@@ -25,14 +25,32 @@ accessible from external networks.
 Path arguments are authorized through
 :func:`mcp_plugin.lib.general.require_allowed_path`, which may ask the user - via
 MCP elicitation - to trust a path that is not yet allowed.
+
+A sandbox normally runs whatever server binary is on the PATH. ``sandbox.deploy``
+can be asked for a particular version instead, and
+``sandbox.list_available_versions`` says which ones can be had; both are served
+by :mod:`mcp_plugin.lib.sandbox_servers`, which is also what downloads a version
+this machine does not have yet.
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver sandboxlib mariadbd openssl
 
 from typing import Optional
 
-from mcp_plugin.lib import config, general
+import mysqlsh
+
+from mcp_plugin.lib import config, general, sandbox_servers
 from mcp_plugin.lib.tool_registrar import tool_registrar
+
+# How a resolved server's origin reads in the message sandbox.deploy answers
+# with. Worth saying: "downloaded now" is the difference between a deploy that
+# took two seconds and one that took two minutes, and only the server knows
+# which happened.
+_SERVER_SOURCE_DESCRIPTIONS = {
+    sandbox_servers.SOURCE_PATH: "found on the PATH",
+    sandbox_servers.SOURCE_INSTALLED: "already downloaded",
+    sandbox_servers.SOURCE_DOWNLOADED: "downloaded now",
+}
 
 
 def register_sandbox_tools(server, function_groups=()) -> None:
@@ -59,6 +77,31 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """Returns the connection URI for the root account of a sandbox."""
         return f"root@127.0.0.1:{port}"
 
+    # Sync, and with no ``ctx``: it touches no path and asks the user nothing,
+    # so it needs neither the request context nor a coroutine. It reads one
+    # small file that ships with the plugin.
+    @tool(name="sandbox.list_available_versions")
+    def list_available_versions(series: Optional[str] = None) -> list:
+        """Lists the MariaDB server versions sandbox.deploy can be asked for.
+
+        By default one version per release series - the latest patch release of
+        each. Pass a series to see every release published below it instead.
+
+        Only versions with a package built for this machine's platform are
+        listed. A version that is listed can always be deployed: if it is not
+        on this machine already, sandbox.deploy downloads it.
+
+        Args:
+            series: A major.minor version (for example '11.8') to list its
+                patch releases, or a major version (for example '11') to list
+                every release under it. Leave empty to list the latest patch
+                release of every series.
+
+        Returns:
+            The versions as 'major.minor.patch' strings, oldest first.
+        """
+        return sandbox_servers.available_versions(series)
+
     @tool(name="sandbox.deploy")
     async def deploy(
         ctx: Context,
@@ -69,6 +112,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         server_id: Optional[int] = None,
         ssl: bool = False,
         openssl_path: Optional[str] = None,
+        server_version: Optional[str] = None,
         mariadbd_path: Optional[str] = None,
         mariadbd_options: Optional[list] = None,
         timeout: Optional[int] = None,
@@ -76,9 +120,9 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """Deploys a new MariaDB sandbox instance on localhost.
 
         Deploys a plain standalone instance using the server found on the PATH
-        (or at mariadbd_path). The server is started, the root password is set
-        and the instance is left running. SSL/TLS is disabled by default; pass
-        ssl=True to enable it.
+        (or at mariadbd_path, or of the requested server_version). The server is
+        started, the root password is set and the instance is left running.
+        SSL/TLS is disabled by default; pass ssl=True to enable it.
 
         Args:
             port: The port the new instance will listen on.
@@ -92,6 +136,17 @@ def register_sandbox_tools(server, function_groups=()) -> None:
                 to False (unlike the shell's sandbox default of True) to avoid
                 depending on openssl for local test instances.
             openssl_path: Path to the openssl executable or its directory.
+            server_version: The MariaDB server version to run, as
+                'major.minor.patch' (for example '11.8.9'), as 'major.minor'
+                (for example '11.8' - the latest patch release of that series)
+                or as 'major' (for example '11' - the latest release of that
+                major version). The server on the PATH is used when it
+                satisfies the request, otherwise a copy already downloaded,
+                otherwise the published package is downloaded first - which
+                takes a few hundred megabytes and a while. Call
+                sandbox.list_available_versions for the versions on offer.
+                Leave empty to deploy with whatever server is on the PATH.
+                Cannot be combined with mariadbd_path.
             mariadbd_path: Path to the mariadbd binary or its
                 installation directory.
             mariadbd_options: Additional server options for the [mysqld]
@@ -99,9 +154,27 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             timeout: Seconds to wait for the instance to start. Defaults to 60.
 
         Returns:
-            A message confirming the deployment.
+            A message confirming the deployment, naming the server version it
+            runs when one was requested.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
+
+        # Both name the server to run, so honouring both is impossible and
+        # silently preferring one would deploy a version the client did not ask
+        # for and has no way of noticing.
+        if server_version is not None and mariadbd_path is not None:
+            raise mysqlsh.Error(
+                "server_version and mariadbd_path cannot be combined: both say "
+                "which server to run. Pass server_version to have the right "
+                "one found or downloaded, or mariadbd_path to use a specific "
+                "binary."
+            )
+
+        resolved = None
+        if server_version is not None:
+            resolved = sandbox_servers.resolve(server_version)
+            mariadbd_path = resolved.mariadbd_path
+
         sandbox.deploy(
             port,
             _options(
@@ -125,7 +198,33 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             _sandbox_connection_uri(port), password if password is not None else ""
         )
 
-        return f"Sandbox instance deployed and started on port {port}."
+        if resolved is None:
+            return f"Sandbox instance deployed and started on port {port}."
+
+        message = (
+            f"Sandbox instance deployed and started on port {port}, running "
+            f"MariaDB {resolved.version} "
+            f"({_SERVER_SOURCE_DESCRIPTIONS[resolved.source]})."
+        )
+        if resolved.mariadbd_path is not None:
+            # sandbox.start takes no server_version, and the server this
+            # instance was built with is not the one on the PATH - so say what
+            # it takes to start this instance again after it is stopped.
+            #
+            # And say how to shut it down, because sandbox.stop cannot always
+            # do it: the shell's stop accepts NO mariadbdPath (verified against
+            # shell 26.9.1 - deploy, start, vendor and version take one, stop,
+            # kill and delete do not) and needs a server on the PATH to talk to
+            # the instance. On a machine that has none - exactly the machine
+            # this whole feature exists for - stop fails and kill is the way.
+            message += (
+                " To start it again later, pass "
+                f"mariadbd_path='{resolved.mariadbd_path}' to sandbox.start. "
+                "sandbox.stop needs a server on the PATH, so where there is "
+                "none, shut this instance down with sandbox.kill."
+            )
+
+        return message
 
     @tool(name="sandbox.start")
     async def start(
