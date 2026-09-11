@@ -211,17 +211,11 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             # instance was built with is not the one on the PATH - so say what
             # it takes to start this instance again after it is stopped.
             #
-            # And say how to shut it down, because sandbox.stop cannot always
-            # do it: the shell's stop accepts NO mariadbdPath (verified against
-            # shell 26.9.1 - deploy, start, vendor and version take one, stop,
-            # kill and delete do not) and needs a server on the PATH to talk to
-            # the instance. On a machine that has none - exactly the machine
-            # this whole feature exists for - stop fails and kill is the way.
+            # sandbox.stop needs no such help since shell 26.9.2: it no
+            # longer depends on a server being on the PATH.
             message += (
                 " To start it again later, pass "
-                f"mariadbd_path='{resolved.mariadbd_path}' to sandbox.start. "
-                "sandbox.stop needs a server on the PATH, so where there is "
-                "none, shut this instance down with sandbox.kill."
+                f"mariadbd_path='{resolved.mariadbd_path}' to sandbox.start."
             )
 
         return message

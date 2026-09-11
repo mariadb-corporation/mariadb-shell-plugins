@@ -1372,9 +1372,6 @@ def test_deploy_on_a_downloaded_server_says_how_to_start_it_again(
 
     assert f"MariaDB 11.8.9 ({description})" in message
     assert f"mariadbd_path='{binary}'" in message
-    # And how to shut it down, which is not sandbox.stop where nothing is on
-    # the PATH - the shell's stop takes no mariadbdPath.
-    assert "sandbox.kill" in message
     assert deployed[0][1]["mariadbdPath"] == binary
 
 
