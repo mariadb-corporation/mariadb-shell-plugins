@@ -21,7 +21,7 @@
 
 "use strict";
 
-const { execFileSync, spawnSync } = require("node:child_process");
+const { execFileSync, spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -33,6 +33,14 @@ const WORKFLOW = "sandbox-server.yml";
 const VERSION_FILE_BRANCH = "release/candidate";
 const SUPPORTED_INDEX_VERSION = 1;
 const INDEX_PATH = path.join(__dirname, "..", "lib", "sandbox_server_versions.json");
+
+// Each artifact is a per-platform tarball a few hundred MB in size; a slow
+// or wedged connection to GitHub's blob storage otherwise hangs the script
+// forever with no indication of what it's waiting on. Override via env var
+// when a slower link needs more headroom.
+const ARTIFACT_DOWNLOAD_TIMEOUT_MS =
+  Number(process.env.SANDBOX_DOWNLOAD_TIMEOUT_MS) || 10 * 60 * 1000;
+const HEARTBEAT_INTERVAL_MS = 15 * 1000;
 
 // Matches every package name sandbox-server.yml produces, e.g.
 // "mariadb-11.8.9-macos26-arm-64bit-sandbox.tar.gz" or
@@ -145,23 +153,72 @@ function sha256Of(filePath) {
   return digest.digest("hex");
 }
 
+// The Actions API has no "download all" progress signal, so artifacts are
+// listed individually and fetched one at a time -- each gets its own log
+// line, a heartbeat while it's in flight, and a timeout that kills it
+// instead of leaving the script silently blocked.
+function listArtifactNames(run) {
+  const data = ghJson(["api", `repos/${REPO}/actions/runs/${run.databaseId}/artifacts`]);
+  return (data.artifacts || []).map((artifact) => artifact.name);
+}
+
+function downloadArtifact(runId, name, destDir) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const elapsedSeconds = () => Math.round((Date.now() - startedAt) / 1000);
+
+    console.log(`    downloading ${name}...`);
+    const child = spawn(
+      "gh",
+      ["run", "download", String(runId), "-R", REPO, "--name", name, "--dir", destDir],
+      { stdio: ["ignore", "inherit", "inherit"] }
+    );
+
+    const heartbeat = setInterval(() => {
+      console.log(`    ...still downloading ${name} (${elapsedSeconds()}s elapsed)`);
+    }, HEARTBEAT_INTERVAL_MS);
+
+    const timeout = setTimeout(() => {
+      console.warn(
+        `    ${name} exceeded ${ARTIFACT_DOWNLOAD_TIMEOUT_MS / 1000}s; killing the download.`
+      );
+      child.kill("SIGTERM");
+    }, ARTIFACT_DOWNLOAD_TIMEOUT_MS);
+
+    child.on("close", (code) => {
+      clearInterval(heartbeat);
+      clearTimeout(timeout);
+      if (code === 0) {
+        console.log(`    downloaded ${name} (${elapsedSeconds()}s)`);
+      } else {
+        console.warn(`    failed to download ${name}: exit code ${code} (${elapsedSeconds()}s)`);
+      }
+      resolve(code === 0);
+    });
+  });
+}
+
 // Downloads every artifact of one run, hashes each *-sandbox.tar.gz found in
 // it, and returns the packages built -- keyed by "major.minor.patch" (there
 // is exactly one per run) to a map of os -> {url, sha256sum}. The download is
 // removed as soon as it has been hashed: nothing here needs the bytes
 // afterwards, and a package is a few hundred MB times six platforms.
-function collectPackages(run, releaseTag) {
+async function collectPackages(run, releaseTag) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sandbox-server-"));
   try {
-    console.log(`  downloading artifacts from run ${run.databaseId}...`);
-    const result = spawnSync(
-      "gh",
-      ["run", "download", String(run.databaseId), "-R", REPO, "--dir", tmpDir],
-      { stdio: "inherit" }
-    );
-    if (result.status !== 0) {
-      console.warn(`  could not download artifacts for run ${run.databaseId}; skipping.`);
+    const artifactNames = listArtifactNames(run);
+    if (artifactNames.length === 0) {
+      console.warn(`  run ${run.databaseId} has no artifacts; skipping.`);
       return null;
+    }
+    console.log(`  ${artifactNames.length} artifact(s) to download: ${artifactNames.join(", ")}`);
+
+    for (const name of artifactNames) {
+      const ok = await downloadArtifact(run.databaseId, name, tmpDir);
+      if (!ok) {
+        console.warn(`  could not download artifact '${name}' for run ${run.databaseId}; skipping run.`);
+        return null;
+      }
     }
 
     const tarballs = findTarballs(tmpDir);
@@ -281,7 +338,7 @@ async function main() {
     }
     console.log(`  found run ${run.databaseId} (commit ${run.headSha})`);
 
-    const collected = collectPackages(run, releaseTag);
+    const collected = await collectPackages(run, releaseTag);
     if (!collected) continue;
 
     mergePackages(index, collected.version, collected.packagesByOs);
