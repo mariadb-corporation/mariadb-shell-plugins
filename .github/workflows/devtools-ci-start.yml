@@ -43,6 +43,35 @@ jobs:
 
       - name: Start VM (Instant if already running)
         run: |
-          gcloud compute instances start ${{ inputs.vm_name }} \
-            --project=${{ inputs.project_id }} \
-            --zone=${{ inputs.vm_zone }}
+          set -euo pipefail
+
+          max_attempts=12   # 12 x 5 min = 1 hour
+          attempt=1
+
+          while true; do
+            echo "Attempt ${attempt}/${max_attempts}: starting ${{ inputs.vm_name }}..."
+
+            if output=$(gcloud compute instances start ${{ inputs.vm_name }} \
+                --project=${{ inputs.project_id }} \
+                --zone=${{ inputs.vm_zone }} 2>&1); then
+              echo "$output"
+              echo "VM started."
+              exit 0
+            fi
+
+            echo "$output"
+
+            if ! grep -q "ZONE_RESOURCE_POOL_EXHAUSTED" <<< "$output"; then
+              echo "Non-retryable error, failing immediately."
+              exit 1
+            fi
+
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "Zone resource pool still exhausted after ${max_attempts} attempts, giving up."
+              exit 1
+            fi
+
+            echo "Zone resource pool exhausted, retrying in 5 minutes..."
+            sleep 300
+            attempt=$((attempt + 1))
+          done
