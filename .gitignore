@@ -3,6 +3,7 @@
 !**/.vscode/launch.json
 !**/.vscode/tasks.json
 !**/.vscode/settings.json
+.vscode/*
 
 **/node_modules
 **/__pycache__
