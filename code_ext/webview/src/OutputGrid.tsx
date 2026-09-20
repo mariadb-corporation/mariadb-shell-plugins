@@ -66,50 +66,49 @@ export const formatSeverityCell = (
 };
 
 /**
- * Renders the jump cell: an arrow, but only where the result set that
- * row produced is still one of the open tabs. A later run replaces the
- * tabs, so most older rows have nothing to jump to.
+ * Builds the arrow that switches to the result set a row produced, or
+ * nothing where that result set is no longer one of the open tabs: a
+ * later run replaces the tabs, so most older rows have nothing to jump
+ * to.
  *
- * @param cell The cell to render.
+ * @param row The row the cell belongs to.
  * @param available The result sets still on show.
  *
- * @returns The cell's content.
+ * @returns The button, or undefined where there is nothing to jump to.
  */
-export const formatJumpCell = (
-    cell: CellComponent,
+export const createJumpButton = (
+    row: IOutputRow,
     available: ReadonlySet<string>,
-): string | HTMLElement => {
-    const row = cell.getRow().getData() as IOutputRow;
+): HTMLButtonElement | undefined => {
     if (row.resultId === undefined || !available.has(row.resultId)) {
-        return "";
+        return undefined;
     }
 
     const button = document.createElement("button");
     button.type = "button";
     button.className = "jumpToResult";
-    button.textContent = "→";
+    button.textContent = "\u2192";
     button.title = "Show this result set";
 
     return button;
 };
 
 /**
- * Renders the go-to-statement cell: an arrow for any row that knows
- * where in the file its statement is.
+ * Builds the arrow that puts the cursor on the statement a row came
+ * from, for any row that knows where in the file that statement is.
  *
  * On the closing row of a failed run it also carries the run to its
  * first error, which is why its title differs.
  *
- * @param cell The cell to render.
+ * @param row The row the cell belongs to.
  *
- * @returns The cell's content.
+ * @returns The button, or undefined where the row has no source.
  */
-export const formatGoToCell = (
-    cell: CellComponent,
-): string | HTMLElement => {
-    const row = cell.getRow().getData() as IOutputRow;
+export const createGoToButton = (
+    row: IOutputRow,
+): HTMLButtonElement | undefined => {
     if (!row.source) {
-        return "";
+        return undefined;
     }
 
     const button = document.createElement("button");
@@ -121,6 +120,84 @@ export const formatGoToCell = (
         : "Go to the first error of this run";
 
     return button;
+};
+
+/**
+ * Renders the message cell: the message, with the go-to-statement arrow
+ * pinned to the cell's top right corner.
+ *
+ * The arrow rides here rather than in a column of its own because a
+ * column of arrows is width the message could be using instead, and the
+ * panel area is short of it.
+ *
+ * @param cell The cell to render.
+ *
+ * @returns The cell's content.
+ */
+export const formatMessageCell = (cell: CellComponent): HTMLElement => {
+    const row = cell.getRow().getData() as IOutputRow;
+    const content = document.createElement("div");
+    content.className = "outputMessageContent";
+    content.textContent = row.message;
+
+    const button = createGoToButton(row);
+    if (button) {
+        // The message is kept clear of the corner the arrow sits in.
+        content.classList.add("hasGoTo");
+        content.appendChild(button);
+    }
+
+    return content;
+};
+
+/**
+ * Renders the row count, with the jump-to-result arrow beside it - for
+ * the same reason the go-to arrow rides in the message cell.
+ *
+ * The arrow's place is held whether or not there is one to draw, so the
+ * counts stay in a column.
+ *
+ * @param cell The cell to render.
+ * @param available The result sets still on show.
+ *
+ * @returns The cell's content.
+ */
+export const formatRowsCell = (
+    cell: CellComponent,
+    available: ReadonlySet<string>,
+): HTMLElement => {
+    const row = cell.getRow().getData() as IOutputRow;
+    const content = document.createElement("div");
+    content.className = "outputRowsContent";
+
+    const count = document.createElement("span");
+    count.textContent = row.rows === undefined ? "" : String(row.rows);
+    content.appendChild(count);
+
+    const slot = document.createElement("span");
+    slot.className = "outputJumpSlot";
+    const button = createJumpButton(row, available);
+    if (button) {
+        slot.appendChild(button);
+    }
+    content.appendChild(slot);
+
+    return content;
+};
+
+/**
+ * Tabulator reports a click on the whole cell, but both arrows share
+ * their cell with the value beside them.
+ *
+ * @param event The click Tabulator reported.
+ * @param selector The control the click has to have landed on.
+ *
+ * @returns Whether it did.
+ */
+export const clickedOn = (event: unknown, selector: string): boolean => {
+    const target = (event as Event | undefined)?.target;
+
+    return target instanceof Element && target.closest(selector) !== null;
 };
 
 /**
@@ -166,6 +243,13 @@ export const buildOutputColumns = (
             headerSort: false,
             widthGrow: 3,
             cssClass: "outputMessage",
+            formatter: formatMessageCell,
+            cellClick: (event, cell) => {
+                const row = cell.getRow().getData() as IOutputRow;
+                if (row.source && clickedOn(event, ".goToStatement")) {
+                    onGoTo(row);
+                }
+            },
         },
         {
             title: "Time",
@@ -191,49 +275,19 @@ export const buildOutputColumns = (
         {
             title: "Rows",
             field: "rows",
-            width: 68,
-            hozAlign: "right",
+            width: 90,
             headerSort: false,
             cssClass: "outputRows",
             headerTooltip: "Rows returned, or rows affected",
             formatter: (cell) => {
-                const value = cell.getValue() as number | undefined;
-
-                return value === undefined ? "" : String(value);
+                return formatRowsCell(cell, available);
             },
-        },
-        {
-            title: "",
-            field: "resultId",
-            width: 34,
-            hozAlign: "center",
-            headerSort: false,
-            resizable: false,
-            cssClass: "outputJump",
-            formatter: (cell) => {
-                return formatJumpCell(cell, available);
-            },
-            cellClick: (_event, cell) => {
+            cellClick: (event, cell) => {
                 const row = cell.getRow().getData() as IOutputRow;
                 if (row.resultId !== undefined
-                    && available.has(row.resultId)) {
+                    && available.has(row.resultId)
+                    && clickedOn(event, ".jumpToResult")) {
                     onJump(row.resultId);
-                }
-            },
-        },
-        {
-            title: "",
-            field: "source",
-            width: 34,
-            hozAlign: "center",
-            headerSort: false,
-            resizable: false,
-            cssClass: "outputGoTo",
-            formatter: formatGoToCell,
-            cellClick: (_event, cell) => {
-                const row = cell.getRow().getData() as IOutputRow;
-                if (row.source) {
-                    onGoTo(row);
                 }
             },
         },
