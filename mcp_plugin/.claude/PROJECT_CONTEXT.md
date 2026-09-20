@@ -262,6 +262,32 @@ silently runs against whatever `mariadb-shell` is on PATH.
   dict). `db.execute_sql_script` = multi-statement via `mysqlsh.mysql.split_script()`,
   returns a LIST; accepts `sql_script` XOR `file_path` (file must be an allowed path).
   `sandbox.deploy` port REQUIRED int on all 7; `ssl=False` default.
+- **Script results carry their position, their time, and their own failure**
+  (2026-09-20, for the VS Code extension in `code_ext`, which cannot work any of it out
+  from the outside — the whole script is ONE call):
+  - `_serialize_result(result, session_restarted=, statement_index=, execution_time=)`.
+    Both new args are optional and omitted from the output when not passed, so
+    `db.execute_sql` (one statement, nothing to count) is unchanged. `execution_time` is
+    seconds, `round(..., 6)` — the digits a float carries past that are clock noise.
+  - **A failing statement no longer RAISES.** Its entry carries `error` (the message) and
+    `statement` (the text, `_abbreviate`d to 2000 chars) INSTEAD of a result set, and the
+    entries for everything that already ran are returned with it. That is the point: a
+    script is NOT a transaction, and the old behaviour threw away the record of what had
+    already taken effect. Callers must check every entry for an `error` key — the docstring
+    says so in capitals, because an LLM client sees `isError: false` on the tool result.
+  - `stop_on_error: bool = True`. True ends the script at the first failure (fewer entries
+    than statements means it stopped early); False attempts every statement, one entry per
+    statement, error or not. Default True: a script whose later statements build on its
+    earlier ones must not plough on.
+  - The failure is `general.log_event`'d with the statement index and the connection's
+    log-id prefix before being returned, so the server log still shows it.
+  - `index = len(results)` is the statement number, which stays right in BOTH modes because
+    error entries go into `results` too.
+  - Tested in `test_db_sql.py`'s `_db_flow`: `statement_index`/`execution_time` on every
+    entry of the happy script; a duplicate-key script under the default (2 entries, the
+    second carrying `error`, `statement_index` 1, no `rows`) plus a follow-up SELECT
+    PROVING the first insert really survived; then the same script with
+    `stop_on_error: False` (3 entries, the third succeeding after two failures).
 - **Introspection tools** (committed in 3482634a; all sync, all built on the user's own
   SQL — the queries came from the user verbatim, only parameterized; do NOT "improve" them
   without asking):
@@ -1339,7 +1365,8 @@ silently runs against whatever `mariadb-shell` is on PATH.
 - Tools: **31 total**, in 4 groups. migrator.* (**4**: `set_config`, `plan`, `run`,
   `resume`) — registered ONLY where the tooling is installed, see the migration bullet
   under Architecture. db.* (**8**: `list_connections`, `connect`, `list_schemas`, `list_objects`,
-  `get_object_details`, `execute_sql`, `execute_sql_script`, `close`),
+  `get_object_details`, `execute_sql`, `execute_sql_script` — now with `stop_on_error`
+  and per-statement `statement_index`/`execution_time`/`error`, `close`),
   msm.* (**12**, path-guarded, async — the 12th is `deploy_schema`, gated on the db group),
   sandbox.* (7, `sandbox_dir`-guarded, async, port required).
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
@@ -1606,7 +1633,9 @@ silently runs against whatever `mariadb-shell` is on PATH.
   exactly what the S4 test needs (`LOCALHOST`).
 - tests/unit/test_db_sql.py -> single `_db_flow` coroutine over ONE stdio session:
   connect -> execute_sql (incl. a DECIMAL/DATETIME serialization check and T8's two
-  columns sharing one label) -> execute_sql_script (inline + file + denied) ->
+  columns sharing one label) -> execute_sql_script (inline + file + denied + the
+  statement_index/execution_time metadata + a failing script under both stop_on_error
+  modes) ->
   list_schemas -> creates one object of EVERY type in a throwaway schema (incl. a
   system-versioned table, a sequence, a trigger, an event, an `orders` table with an FK
   to `items`, and T9's `pairs`/`pair_refs` whose composite FK is declared out of table
@@ -1739,6 +1768,24 @@ silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Gotchas / things not to repeat
 
+- **`db.execute_sql_script` returning a failure instead of raising is a CONTRACT CHANGE,
+  and a quiet one.** The tool result's `isError` is now `false` for a script that failed:
+  the failure lives in an entry's `error` key. An LLM client that only looks at `isError`
+  will read a failed script as a success — which is why the docstring says, in capitals,
+  to check every entry. If this ever needs revisiting, the alternatives both cost more
+  than they give: raising again throws away the record of what already ran (a script is
+  not a transaction, so that record is the useful part), and returning a top-level
+  `{ok: false, results: [...]}` envelope would break every existing caller of a tool whose
+  contract is "a LIST, one entry per statement".
+- **`run_tests.py --only "a or b"` silently loses its quoting.** `main()` builds the pytest
+  command as an f-string and runs it with `shell=True`, so a multi-word `-k` expression is
+  re-split by the shell and pytest reports `file or directory not found: or`. Work around
+  it by embedding the quotes (`--only="'a or b'"`), or drive pytest directly:
+  `MARIADB_SHELL_USER_CONFIG_HOME=<home> <shell> --pym pytest -c mcp_plugin/pytest-coverage.ini
+  --no-cov -q mcp_plugin -k "a or b"` with the plugin symlinked into `<home>/plugins`.
+  Note that `-k test_db_sql` ALONE selects nothing useful: the sandbox those tests need is
+  deployed by `test_sandbox_deploy`, so it has to be selected too or every db test skips
+  with "sandbox was not deployed".
 - **A PUBLISHED RELEASE ASSET CAN CHANGE UNDER YOU, and the pinned checksum is the only
   thing that notices.** Mid-session, all twelve v26.9.1 sandbox packages were re-uploaded:
   the same URL that had matched `3cf3848f…` at 18:44 served `ae77f8d5…` (and a different

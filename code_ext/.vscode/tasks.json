@@ -4,17 +4,32 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			// Runs to completion before the watcher starts. It cannot be
+			// chained into the watch script itself: its "built in" line
+			// would satisfy the watcher's endsPattern and let the
+			// extension host launch before dist/extension.js exists.
+			"label": "build: webview",
+			"type": "npm",
+			"script": "build:webview",
+			"presentation": {
+				"reveal": "silent"
+			},
+			"problemMatcher": []
+		},
+		{
 			"label": "watch",
 			"type": "npm",
 			"script": "watch",
+			"dependsOn": [
+				"build: webview"
+			],
 			"problemMatcher": {
 				"owner": "vite",
-				"fileLocation": [
-					"relative",
-					"${workspaceFolder}"
-				],
+				// esbuild reports absolute paths.
+				"fileLocation": "absolute",
 				"pattern": {
-					"regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+					// e.g. /path/src/extension.ts:278:14: ERROR: Unexpected "="
+					"regexp": "^(?:\\[[^\\]]+\\]\\s*)?([/\\\\].*?|[A-Za-z]:\\\\.*?):(\\d+):(\\d+):\\s+(ERROR|WARNING|error|warning):\\s+(.*)$",
 					"file": 1,
 					"line": 2,
 					"column": 3,
@@ -23,8 +38,11 @@
 				},
 				"background": {
 					"activeOnStart": true,
-					"beginsPattern": "build started",
-					"endsPattern": "built in"
+					"beginsPattern": "^(build started|vite v[\\d.]+ building)",
+					// A failed rebuild never prints "built in", so the
+					// failure lines have to end the task as well -
+					// otherwise F5 waits for a build that never finishes.
+					"endsPattern": "(built in |Transform failed|error during build|Could not resolve)"
 				}
 			},
 			"isBackground": true,

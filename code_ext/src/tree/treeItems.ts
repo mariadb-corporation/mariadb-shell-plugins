@@ -1,0 +1,194 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+import * as vscode from "vscode";
+
+import type { ObjectType } from "../mcp/types.js";
+import {
+    OBJECT_GROUP_LABELS,
+    type ConnectionsNode,
+    type IConnectionNode,
+    type IObjectGroupNode,
+    type IObjectNode,
+    type ISchemaNode,
+} from "./connectionsModel.js";
+
+/** Resolves an icon name to the light and dark files to show for it. */
+export type IconResolver = (name: string) => {
+    light: vscode.Uri;
+    dark: vscode.Uri;
+};
+
+/**
+ * Builds an icon resolver over the extension's `images` folder, which holds
+ * a `light` and a `dark` variant of every icon.
+ *
+ * @param extensionUri The root of the installed extension.
+ *
+ * @returns The resolver.
+ */
+export const createIconResolver = (
+    extensionUri: vscode.Uri,
+): IconResolver => {
+    return (name: string) => {
+        return {
+            light: vscode.Uri.joinPath(extensionUri, "images", "light", name),
+            dark: vscode.Uri.joinPath(extensionUri, "images", "dark", name),
+        };
+    };
+};
+
+/** The icon shown for a group of objects of one type. */
+const GROUP_ICONS: Record<ObjectType, string | vscode.ThemeIcon> = {
+    table: "schemaTables.svg",
+    view: "schemaViews.svg",
+    function: "schemaFunctions.svg",
+    procedure: "schemaProcedures.svg",
+    // The upstream icon set has no sequence icon, so this one falls back to
+    // a codicon rather than borrowing an unrelated picture.
+    sequence: new vscode.ThemeIcon("symbol-numeric"),
+    trigger: "schemaTableTriggers.svg",
+    event: "schemaEvents.svg",
+};
+
+/** The icon shown for a single object. */
+const OBJECT_ICONS: Record<ObjectType, string | vscode.ThemeIcon> = {
+    table: "schemaTable.svg",
+    view: "schemaView.svg",
+    function: "schemaFunction.svg",
+    procedure: "schemaProcedure.svg",
+    sequence: new vscode.ThemeIcon("symbol-numeric"),
+    trigger: "schemaTableTrigger.svg",
+    event: "schemaEvent.svg",
+};
+
+/**
+ * The base of every item in the Connections tree, holding the node it
+ * stands for and the icon lookup they all share.
+ */
+export class ConnectionBaseTreeItem<T extends ConnectionsNode>
+    extends vscode.TreeItem {
+
+    public constructor(
+        public readonly node: T,
+        label: string,
+        icon: string | vscode.ThemeIcon,
+        hasChildren: boolean,
+        resolveIcon: IconResolver,
+    ) {
+        super(
+            label,
+            hasChildren
+                ? vscode.TreeItemCollapsibleState.Collapsed
+                : vscode.TreeItemCollapsibleState.None,
+        );
+
+        this.iconPath = typeof icon === "string" ? resolveIcon(icon) : icon;
+    }
+}
+
+/**
+ * A configured connection.
+ *
+ * Its context value carries both whether it is open and whether it is the
+ * default, because that is what the context menu switches its entries on.
+ */
+export class ConnectionTreeItem
+    extends ConnectionBaseTreeItem<IConnectionNode> {
+
+    public constructor(node: IConnectionNode, resolveIcon: IconResolver) {
+        super(node, node.uri, "mariadbConnection.svg", node.connected,
+            resolveIcon);
+
+        this.contextValue = [
+            "mariadbConnection",
+            node.connected ? "connected" : "disconnected",
+            node.isDefault ? "default" : "notDefault",
+        ].join(".");
+
+        this.description = node.isDefault ? "default" : undefined;
+        this.tooltip = node.isDefault
+            ? `${node.uri} (default connection)`
+            : node.uri;
+    }
+}
+
+/** A schema of an open connection. */
+export class SchemaTreeItem extends ConnectionBaseTreeItem<ISchemaNode> {
+    public override contextValue = "mariadbSchema";
+
+    public constructor(node: ISchemaNode, resolveIcon: IconResolver) {
+        super(node, node.schema, "schema.svg", true, resolveIcon);
+
+        this.description = node.schemaType;
+        this.tooltip = node.comment || `${node.schema} (${node.schemaType})`;
+    }
+}
+
+/** The folder holding all objects of one type in a schema. */
+export class ObjectGroupTreeItem
+    extends ConnectionBaseTreeItem<IObjectGroupNode> {
+
+    public constructor(node: IObjectGroupNode, resolveIcon: IconResolver) {
+        super(node, OBJECT_GROUP_LABELS[node.objectType],
+            GROUP_ICONS[node.objectType], true, resolveIcon);
+
+        this.contextValue = `mariadbObjectGroup.${node.objectType}`;
+    }
+}
+
+/** A single database object. */
+export class ObjectTreeItem extends ConnectionBaseTreeItem<IObjectNode> {
+    public constructor(node: IObjectNode, resolveIcon: IconResolver) {
+        super(node, node.name, OBJECT_ICONS[node.objectType], false,
+            resolveIcon);
+
+        this.contextValue = `mariadbObject.${node.objectType}`;
+        this.tooltip = node.comment || undefined;
+    }
+}
+
+/**
+ * Builds the tree item for a node.
+ *
+ * @param node The node to show.
+ * @param resolveIcon The icon lookup to use.
+ *
+ * @returns The item to put into the tree.
+ */
+export const createTreeItem = (
+    node: ConnectionsNode,
+    resolveIcon: IconResolver,
+): vscode.TreeItem => {
+    switch (node.kind) {
+        case "connection": {
+            return new ConnectionTreeItem(node, resolveIcon);
+        }
+
+        case "schema": {
+            return new SchemaTreeItem(node, resolveIcon);
+        }
+
+        case "objectGroup": {
+            return new ObjectGroupTreeItem(node, resolveIcon);
+        }
+
+        default: {
+            return new ObjectTreeItem(node, resolveIcon);
+        }
+    }
+};

@@ -4,15 +4,30 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
  * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import type { IConnectionSettings } from "../connections/connectionManager.js";
+import type { IToolResult } from "../mcp/protocol.js";
+import type { IMcpConnection, IMcpConnector } from "../mcp/session.js";
+import type {
+    IMariaDbApi,
+    IObjectDetails,
+    IObjectInfo,
+    ISchemaInfo,
+    IStatementResult,
+} from "../mcp/types.js";
 import type { InstallCommand, ProcessRunner } from "../shell/installer.js";
 import type { ShellEnvironment } from "../shell/locator.js";
-import type {
-    McpServerCommand,
-    McpServerProcess,
-    McpServerSpawner,
-} from "../shell/mcpServer.js";
+import type { McpServerCommand } from "../shell/mcpServer.js";
 
 export interface FakeEnvironmentOptions {
     platform?: NodeJS.Platform;
@@ -101,63 +116,6 @@ export const createFakeRunner = (
     };
 };
 
-export interface FakeMcpProcess extends McpServerProcess {
-    killed: boolean;
-    /** Ends the fake process with the given exit code. */
-    finish(code: number | null): void;
-    emit(line: string): void;
-}
-
-export interface FakeSpawner extends McpServerSpawner {
-    /** The commands that were spawned, in order. */
-    commands: McpServerCommand[];
-    /** The processes that were handed out, in order. */
-    processes: FakeMcpProcess[];
-}
-
-/**
- * Builds an MCP server spawner whose processes are driven by the test.
- *
- * @returns The fake spawner.
- */
-export const createFakeSpawner = (): FakeSpawner => {
-    const commands: McpServerCommand[] = [];
-    const processes: FakeMcpProcess[] = [];
-
-    return {
-        commands,
-        processes,
-        spawn: (command, onOutput) => {
-            commands.push(command);
-
-            let resolveExit: (code: number | null) => void = () => {
-                // Replaced synchronously by the promise executor below.
-            };
-            const exited = new Promise<number | null>((resolve) => {
-                resolveExit = resolve;
-            });
-
-            const child: FakeMcpProcess = {
-                killed: false,
-                exited,
-                kill: () => {
-                    child.killed = true;
-                    resolveExit(null);
-                },
-                finish: (code) => {
-                    resolveExit(code);
-                },
-                emit: (line) => {
-                    onOutput(line);
-                },
-            };
-            processes.push(child);
-
-            return child;
-        },
-    };
-};
-
 export interface RecordingLog {
     (message: string): void;
     lines: string[];
@@ -176,4 +134,182 @@ export const createRecordingLog = (): RecordingLog => {
     log.lines = lines;
 
     return log;
+};
+
+/** What a fake database API should answer with. */
+export interface FakeApiOptions {
+    connections?: string[];
+    /** Connection URI -> the UUID handing it out produces. */
+    connectionIds?: Record<string, string>;
+    schemas?: ISchemaInfo[];
+    /** `${schema}/${objectType}` -> the objects in it. */
+    objects?: Record<string, IObjectInfo[]>;
+    /** `${schema}.${table}` -> its description. */
+    details?: Record<string, IObjectDetails>;
+    /** Script text -> the results running it produces. */
+    results?: Record<string, IStatementResult[]>;
+    /** Runs for any script that `results` does not name. */
+    defaultResults?: IStatementResult[];
+}
+
+export interface FakeApi extends IMariaDbApi {
+    /** The scripts that were run, in order. */
+    scripts: string[];
+    /** The connections that were closed, in order. */
+    closed: string[];
+    /** What the last script was asked to do about a failing statement. */
+    stopOnError?: boolean;
+}
+
+/**
+ * Builds a database API that answers from in-memory tables.
+ *
+ * @param options What the fake should report.
+ *
+ * @returns The fake API.
+ */
+export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
+    const scripts: string[] = [];
+    const closed: string[] = [];
+
+    const api: FakeApi = {
+        scripts,
+        closed,
+
+        listConnections: () => {
+            return Promise.resolve(options.connections ?? []);
+        },
+
+        connect: (uri: string) => {
+            const id = options.connectionIds?.[uri];
+            if (id === undefined) {
+                return Promise.reject(
+                    new Error(`'${uri}' is not a configured connection.`),
+                );
+            }
+
+            return Promise.resolve(id);
+        },
+
+        close: (connectionId: string) => {
+            closed.push(connectionId);
+
+            return Promise.resolve();
+        },
+
+        listSchemas: () => {
+            return Promise.resolve(options.schemas ?? []);
+        },
+
+        listObjects: (_id: string, schema: string, type: string) => {
+            return Promise.resolve(
+                options.objects?.[`${schema}/${type}`] ?? [],
+            );
+        },
+
+        getObjectDetails: (_id: string, schema: string, name: string) => {
+            const details = options.details?.[`${schema}.${name}`];
+            if (!details) {
+                return Promise.reject(
+                    new Error(`No table '${name}' in schema '${schema}'.`),
+                );
+            }
+
+            return Promise.resolve(details);
+        },
+
+        executeScript: (
+            _id: string,
+            script: string,
+            stopOnError?: boolean,
+        ) => {
+            scripts.push(script);
+            api.stopOnError = stopOnError;
+            const named = options.results?.[script.trim()];
+
+            return Promise.resolve(
+                named ?? options.defaultResults
+                ?? [{ affected_items_count: 0, warnings_count: 0 }],
+            );
+        },
+    };
+
+    return api;
+};
+
+/** Remembers a default connection in memory. */
+export const createFakeSettings = (
+    initial?: string,
+): IConnectionSettings & { value: string | undefined } => {
+    const settings = {
+        value: initial,
+
+        getDefaultConnection: (): string | undefined => {
+            return settings.value;
+        },
+
+        setDefaultConnection: (uri: string | undefined): Promise<void> => {
+            settings.value = uri;
+
+            return Promise.resolve();
+        },
+    };
+
+    return settings;
+};
+
+/** A fake MCP connection, recording the tool calls made through it. */
+export interface FakeMcpConnection extends IMcpConnection {
+    calls: Array<{ name: string; args: Record<string, unknown> }>;
+    closed: boolean;
+}
+
+export interface FakeConnector extends IMcpConnector {
+    /** The commands that were started, in order. */
+    commands: McpServerCommand[];
+    /** The connections that were handed out, in order. */
+    connections: FakeMcpConnection[];
+}
+
+/**
+ * Builds an MCP connector that hands out recording connections.
+ *
+ * @param answer Called for every tool call, to produce its result.
+ *
+ * @returns The fake connector.
+ */
+export const createFakeConnector = (
+    answer: (name: string, args: Record<string, unknown>) => IToolResult = () => {
+        return { content: [] };
+    },
+): FakeConnector => {
+    const commands: McpServerCommand[] = [];
+    const connections: FakeMcpConnection[] = [];
+
+    return {
+        commands,
+        connections,
+        open: (command, onLog) => {
+            commands.push(command);
+            onLog(`Serving ${command.command}`);
+
+            const connection: FakeMcpConnection = {
+                calls: [],
+                closed: false,
+                callTool: (name, args) => {
+                    connection.calls.push({ name, args });
+
+                    return Promise.resolve(answer(name, args));
+                },
+                close: () => {
+                    connection.closed = true;
+
+                    return Promise.resolve();
+                },
+            };
+            connections.push(connection);
+
+            return Promise.resolve(connection);
+        },
+    };
 };

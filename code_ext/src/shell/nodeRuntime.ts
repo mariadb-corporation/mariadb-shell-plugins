@@ -4,6 +4,15 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
  * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
 import { execFile, spawn } from "node:child_process";
@@ -12,11 +21,6 @@ import * as os from "node:os";
 
 import type { InstallCommand, ProcessRunner } from "./installer.js";
 import { LineReader } from "./lineReader.js";
-import type {
-    McpServerCommand,
-    McpServerProcess,
-    McpServerSpawner,
-} from "./mcpServer.js";
 import type { ShellEnvironment } from "./locator.js";
 
 /** How long a `--version` probe may take before it is given up on. */
@@ -117,51 +121,6 @@ export const createNodeProcessRunner = (): ProcessRunner => {
                     resolve(code ?? -1);
                 });
             });
-        },
-    };
-};
-
-/**
- * Starts the MCP server as a child process.
- *
- * Its stdin and stdout carry the MCP protocol and are left as pipes for the
- * client to own; only stderr is surfaced as log output.
- *
- * @returns An MCP server spawner backed by `child_process.spawn`.
- */
-export const createNodeMcpServerSpawner = (): McpServerSpawner => {
-    return {
-        spawn: (
-            command: McpServerCommand,
-            onOutput: (line: string) => void,
-        ): McpServerProcess => {
-            const child = spawn(command.command, command.args, {
-                stdio: ["pipe", "pipe", "pipe"],
-                windowsHide: true,
-            });
-
-            const reader = new LineReader(onOutput);
-            child.stderr?.setEncoding("utf8");
-            child.stderr?.on("data", (chunk: string) => {
-                reader.push(chunk);
-            });
-            child.on("error", (error: Error) => {
-                onOutput(`Failed to start the MCP server: ${error.message}`);
-            });
-
-            const exited = new Promise<number | null>((resolve) => {
-                child.on("close", (code) => {
-                    reader.flush();
-                    resolve(code);
-                });
-            });
-
-            return {
-                kill: () => {
-                    child.kill();
-                },
-                exited,
-            };
         },
     };
 };
