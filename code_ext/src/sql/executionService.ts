@@ -230,6 +230,14 @@ export class ExecutionService {
     ): Promise<IExecutionReport> {
         const { connectionUri, connectionId, script, runId } = options;
         const statements = splitStatements(script);
+        // A comment is one of the statements the server splits out and
+        // takes up an index among them, but it is not one the server runs
+        // and there is no result for it. Counting it would make a file
+        // that opens with a connection header - which every generated one
+        // does - report one statement more than it has.
+        const executable = statements.filter((statement) => {
+            return statement.executable;
+        });
         const output: IOutputRow[] = [];
         const resultSets: IResultSet[] = [];
 
@@ -252,10 +260,14 @@ export class ExecutionService {
             return { uri: options.source.uri, ...position };
         };
 
+        // Where a run as a whole points: its first real statement, not a
+        // comment standing in front of it.
+        const runSource = sourceOf(executable[0]?.index ?? 0);
+
         const what = options.label
-            ?? (statements.length === 1
+            ?? (executable.length === 1
                 ? "1 statement"
-                : `${statements.length} statements`);
+                : `${executable.length} statements`);
         output.push({
             id: `${runId}-start`,
             time: startedAt,
@@ -264,7 +276,7 @@ export class ExecutionService {
             statement: "",
             message: `Running ${what} on ${connectionUri}`,
             kind: "info",
-            source: sourceOf(0),
+            source: runSource,
         });
 
         // Asked for at most once per execution, and only when an
@@ -295,7 +307,7 @@ export class ExecutionService {
                 statement: captionFor(script),
                 message,
                 kind: "error",
-                source: sourceOf(0),
+                source: runSource,
             };
             output.push(failure, {
                 id: `${runId}-finish`,
@@ -403,7 +415,7 @@ export class ExecutionService {
 
         const elapsedMs = Date.now() - startedMs;
         const ran = results.length;
-        const stoppedEarly = errorCount > 0 && ran < statements.length;
+        const stoppedEarly = errorCount > 0 && ran < executable.length;
         const warningCount = output.filter((row) => {
             return row.kind === "warning";
         }).length;
@@ -423,7 +435,7 @@ export class ExecutionService {
                 : `Finished with ${errorCount} error`
                 + `${errorCount === 1 ? "" : "s"}`
                 + (stoppedEarly
-                    ? `, stopped after ${ran} of ${statements.length}`
+                    ? `, stopped after ${ran} of ${executable.length}`
                     : ""),
             kind: errorCount > 0
                 ? "error"

@@ -258,7 +258,12 @@ Three deliberate differences from the original:
 
 `hasContent(span)` tells a real statement from a run of comments:
 `contentStart` is deliberately set below `span.start` when there is no
-content.
+content. **Every** content-free span has to say so that way — the spans a
+comment left open at the end of the input produces used to set
+`contentStart` to `span.start` instead, which reads as content, so a
+trailing `-- note` with no newline after it counted as a statement while
+the same line with a newline did not. That fed `splitStatements()`,
+`statementAtOffset()` and the gutter dots alike.
 
 ### Splitting has to agree with the server
 
@@ -274,6 +279,18 @@ holds for `--` and `#`, for an indented comment, for a comment after a
 semicolon and for each of several comment lines in a row. It does *not*
 hold for block comments, which stay with the statement that follows, nor
 for a line comment in the middle of a statement, which stays inside it.
+
+**Being a statement is not the same as being run.** The MCP plugin does
+not execute a comment — it carries no SQL, and the server would accept it
+as a query and report a result for it — but it still *numbers* one, so the
+indexes on either side of it are unchanged. `splitStatements()` therefore
+keeps the comment as an entry (the pairing depends on it) and marks it
+`executable: false`. `execute()` filters on that for the two things that
+are about what is being run rather than what was split: the
+`Running N statements` count, and the `stopped after N of M` on a failed
+run. A run's own lines (the opening one, and the row for a call that
+failed outright) point at the first **executable** statement, not at a
+header comment standing in front of it.
 
 `src/test/sql/splitStatements.test.ts` pins all of these, and
 `splitStatements()` also drops DELIMITER commands, which the server
@@ -488,11 +505,18 @@ MCP plugin was changed for it (`mcp_plugin/lib/db_functions.py`):
   ran are still returned - which matters, because a script is not a
   transaction,
 - `stop_on_error` (default true) chooses between ending at the first
-  failure and running every statement and reporting each one.
+  failure and running every statement and reporting each one,
+- a statement that is nothing but a `--`/`#` line comment is **not run**
+  and has no entry, but still takes up a `statement_index`. Keeping the
+  numbering is what lets that ship on its own: an extension that has not
+  been updated goes on pairing correctly and simply stops seeing the row.
 
 All of these are read **defensively** on this side: they are optional in
 `IStatementResult`, and a shell that predates them still works, falling
-back to pairing by position and to no per-statement timing.
+back to pairing by position and to no per-statement timing. The comment
+change needs nothing defensive: a plugin that still runs comments sends
+one more entry, which pairs with the comment entry that is still in the
+split — the row comes back, and nothing is misattributed.
 
 ### The result grids
 

@@ -16,10 +16,10 @@ has none (the `wip/sandbox-binaries` work — see Architecture). GPLv2,
 SDK-bump session — that jump is what broke CI, see the SDK-error gotcha),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **304 tests pass, 2 SKIPPED (~68s), 98% total coverage** (1821 statements,
+Standard suite: **314 tests pass, 2 SKIPPED (~70s), 98% total coverage** (1845 statements,
 45 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 Gotchas). The two skipped are the OPT-IN end-to-end tests: with `--e2e` the run is
-**306 pass in ~99s** at the same coverage, since everything they touch is already covered
+**316 pass** at the same coverage, since everything they touch is already covered
 by the unit tests. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
@@ -281,13 +281,32 @@ silently runs against whatever `mariadb-shell` is on PATH.
     earlier ones must not plough on.
   - The failure is `general.log_event`'d with the statement index and the connection's
     log-id prefix before being returned, so the server log still shows it.
-  - `index = len(results)` is the statement number, which stays right in BOTH modes because
-    error entries go into `results` too.
+  - `statement_index` is `enumerate()` over the non-empty pieces the splitter returned —
+    NOT `len(results)`, which is what it used to be. The two only agree while every piece
+    produces an entry, and a comment-only piece does not (next bullet).
+  - **A whole-line `--`/`#` comment is NOT run** (2026-09-20). The shell's splitter returns
+    one as a statement of its own — see the `split_script` gotcha — and the server ACCEPTS a
+    comment-only query (OK packet, 0 columns) rather than rejecting it, so `-- a note`
+    before a query used to run and report a result of its own. `_is_comment_only()` filters
+    them in the loop. It still **takes up a `statement_index`**, deliberately: a caller
+    pairs results with the statements it split for itself by that number, and renumbering
+    would move every result after a comment onto the wrong statement. Keeping the numbering
+    is also what makes this safe to ship WITHOUT the extension: an unpatched `code_ext`
+    keeps pairing correctly and simply stops seeing the phantom row.
+  - `_is_comment_only()` tests only for a leading `#`, or `--` before whitespace/end. That
+    is enough BECAUSE the splitter only splits out a comment that OPENS a statement, and
+    the range it returns ends at that line — so a piece that starts with one is a piece
+    that is nothing else. Verified against the real splitter: `SELECT 1\n-- mid\nFROM
+    dual;` stays ONE piece, `/*!40101 ... */` and `/*+ ... */` (both of which DO carry SQL)
+    are never split out, and `SELECT 1--2` is arithmetic.
   - Tested in `test_db_sql.py`'s `_db_flow`: `statement_index`/`execution_time` on every
     entry of the happy script; a duplicate-key script under the default (2 entries, the
     second carrying `error`, `statement_index` 1, no `rows`) plus a follow-up SELECT
     PROVING the first insert really survived; then the same script with
-    `stop_on_error: False` (3 entries, the third succeeding after two failures).
+    `stop_on_error: False` (3 entries, the third succeeding after two failures); and a
+    leading-comment script against the real server (ONE entry, `statement_index` 1).
+    `test_db_script.py` covers the splitting on a recording stub session — what reached the
+    server, not what the server made of it.
 - **Introspection tools** (committed in 3482634a; all sync, all built on the user's own
   SQL — the queries came from the user verbatim, only parameterized; do NOT "improve" them
   without asking):
@@ -2290,6 +2309,16 @@ silently runs against whatever `mariadb-shell` is on PATH.
   chained `sleep` polling is blocked by the harness — wait for the task notification.
 - **run_sql rejects multi-statement** (1064) — split via `mysqlsh.mysql.split_script`, and
   don't leave a trailing `;` on single-statement SQL constants.
+- **`split_script` returns a whole-line comment as a STATEMENT.** `-- a note\n\nSELECT 1;`
+  comes back as `["-- a note", "SELECT 1"]`. That is the C++ `Sql_splitter::next_range()`
+  (`mysqlshdk/libs/utils/utils_mysql_parsing.cc`, the `case '#'` and `case '-'` branches:
+  *"if the whole line is a comment return it"*), which is right for the interactive shell —
+  its line editor has to echo comment lines. The splitter DOES mark them, with an empty
+  delimiter, but `split_sql()` keeps only `std::get<0>(p)` and throws the delimiter away,
+  so nothing survives the `mysqlsh.mysql.split_script` boundary. Every consumer in the
+  shell has this (`mysqlshdk::mysql::execute_sql_script`, `dump_loader`) — the real fix is
+  a `skipComments` option on `splitScript`, which would cost a shell release and a
+  `MINIMUM_SHELL_VERSION` bump, so `db.execute_sql_script` filters on this side instead.
 - **Sandbox port required** — never None/omit ("Argument #1 is expected to be an integer").
 - **stdio needs clean stdout** — don't add prints to the stdio path.
 - Don't reintroduce bg-thread+SIGTERM serving nor the interactive guard in `start()`.

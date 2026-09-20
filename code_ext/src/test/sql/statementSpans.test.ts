@@ -95,6 +95,16 @@ describe("scanStatements", () => {
         expect(contentTexts("/* a note */")).toEqual([undefined]);
     });
 
+    it("says so for a comment left open at the end of the input too", () => {
+        // The same line, with and without the newline after it, has to
+        // answer the same way: a file whose last line is a comment is not
+        // a file whose last statement is one.
+        expect(contentTexts("-- a note")).toEqual([undefined]);
+        expect(contentTexts("# a note")).toEqual([undefined]);
+        expect(contentTexts("SELECT 1;\n-- a note"))
+            .toEqual(["SELECT 1;", undefined]);
+    });
+
     it("skips leading comments when placing contentStart", () => {
         expect(contentTexts("-- a note\nSELECT 1;"))
             .toEqual(["SELECT 1;"]);

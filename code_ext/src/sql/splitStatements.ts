@@ -32,6 +32,14 @@ export interface ISqlStatement {
     line: number;
     /** The offset the statement starts at. */
     offset: number;
+    /**
+     * Whether the server runs it and reports a result for it.
+     *
+     * A whole-line comment is one of the statements the split produces and
+     * takes up an index, but it carries no SQL, so the server leaves it out
+     * and there is no result to pair with it.
+     */
+    executable: boolean;
 }
 
 /**
@@ -113,6 +121,10 @@ const textEndOf = (span: IStatementSpan): number => {
  * comments are not treated this way by either side and stay with the
  * statement that follows them.
  *
+ * The server does not *run* a comment - it carries no SQL - so a comment
+ * piece comes back marked non-executable. It is still a piece, because
+ * it still takes up an index there.
+ *
  * @param text The whole script.
  * @param span The span to split.
  *
@@ -121,8 +133,12 @@ const textEndOf = (span: IStatementSpan): number => {
 const toServerStatements = (
     text: string,
     span: IStatementSpan,
-): Array<{ text: string; offset: number }> => {
-    const pieces: Array<{ text: string; offset: number }> = [];
+): Array<{ text: string; offset: number; executable: boolean }> => {
+    const pieces: Array<{
+        text: string;
+        offset: number;
+        executable: boolean;
+    }> = [];
     const contentBoundary = hasContent(span)
         ? span.contentStart
         : span.span.start + span.span.length;
@@ -146,7 +162,11 @@ const toServerStatements = (
             : newline;
         const comment = text.slice(position, lineEnd).trim();
         if (comment.length > 0) {
-            pieces.push({ text: comment, offset: position });
+            pieces.push({
+                text: comment,
+                offset: position,
+                executable: false,
+            });
         }
         position = lineEnd;
     }
@@ -157,6 +177,7 @@ const toServerStatements = (
         pieces.push({
             text: trimmed,
             offset: position + (rest.length - rest.trimStart().length),
+            executable: true,
         });
     }
 
@@ -164,13 +185,18 @@ const toServerStatements = (
 };
 
 /**
- * Splits a SQL script into the statements the server will execute.
+ * Splits a SQL script into the statements the server will see.
  *
  * The server splits the script again on its own side, and the results
  * come back as a flat list, so this exists to pair each result with the
  * statement that produced it - the two lists have to line up. Blank
  * statements are dropped and DELIMITER commands are left out, exactly as
  * the server leaves them out.
+ *
+ * Not every entry is one the server **runs**: a comment is a statement
+ * there and takes up an index, but produces no result. Those come back
+ * marked `executable: false`, so a caller can count the statements a run
+ * is really of without breaking the pairing the indexes carry.
  *
  * @param script The script to split.
  *
@@ -194,6 +220,7 @@ export const splitStatements = (script: string): ISqlStatement[] => {
                 index: statements.length,
                 line: lines.lineAt(piece.offset),
                 offset: piece.offset,
+                executable: piece.executable,
             });
         }
     }

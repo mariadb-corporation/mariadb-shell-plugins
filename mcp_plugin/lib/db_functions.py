@@ -1380,6 +1380,42 @@ def _abbreviate(text: str, limit: int = 2000) -> str:
     return stripped[:limit] + "... (truncated)"
 
 
+def _is_comment_only(statement: str) -> bool:
+    """Whether a split-out statement holds nothing but a line comment.
+
+    The shell's splitter returns a whole-line ``--`` or ``#`` comment as a
+    statement of its own, so ``-- a note`` before a query is two statements
+    there, not one. That is deliberate on its side - the interactive shell
+    needs comment lines surfaced as units to echo them - but the comment
+    carries no SQL, and the server accepts one as a query rather than
+    rejecting it, so running it produces a result for a statement nobody
+    wrote.
+
+    Only a comment that OPENS a statement is split out this way, and the
+    range the splitter returns for one ends at that line, so a statement
+    beginning with a line comment is a statement that is nothing else. A
+    comment inside a statement (``SELECT 1 -- note`` and the line after it)
+    stays with it, and ``/* ... */`` in any of its forms - including the
+    ``/*!...*/`` and ``/*+...*/`` ones, which DO carry SQL - is never split
+    out at all.
+
+    Args:
+        statement (str): One statement as the splitter returned it.
+
+    Returns:
+        True if it is only a line comment, and so nothing to run.
+    """
+    stripped = statement.lstrip()
+    if stripped.startswith("#"):
+        return True
+
+    # `--` opens a comment only when whitespace or the end of the text
+    # follows it; `1--2` is a subtraction of a negative.
+    return stripped.startswith("--") and (
+        len(stripped) == 2 or stripped[2].isspace()
+    )
+
+
 def _query_rows(session, sql: str, params: Optional[list] = None) -> list:
     """Runs a query and returns just its rows.
 
@@ -1780,10 +1816,17 @@ def register_db_tools(server, function_groups=()) -> None:
         Returns:
             A list with one entry per statement that ran, each a dict with the
             result set (columns and rows) and execution metadata: its position
-            in the script (statement_index, counting only the non-empty
-            statements from 0) and how long it took (execution_time, in
-            seconds). Two columns sharing one label are keyed apart as label
-            and label_2, as for db.execute_sql.
+            in the script (statement_index, counting the non-empty statements
+            from 0) and how long it took (execution_time, in seconds). Two
+            columns sharing one label are keyed apart as label and label_2, as
+            for db.execute_sql.
+
+            A statement that is nothing but a -- or # line comment is NOT run
+            and has no entry, since it carries no SQL. It still takes up a
+            statement_index, so the indexes of the statements around it are
+            what they would be if it had run - a caller that split the script
+            for itself can go on pairing results with statements by this
+            number.
 
             IMPORTANT - a failing statement does NOT raise. Its entry carries
             error (the message) and statement (the text that failed) INSTEAD
@@ -1795,8 +1838,9 @@ def register_db_tools(server, function_groups=()) -> None:
             With stop_on_error true (the default) the script ends at the first
             failure, and the statements after it have no entries because they
             never ran - so fewer entries than statements means it stopped
-            early. With stop_on_error false every statement is attempted and
-            there is one entry per statement, error or not.
+            early, or that the script held a comment. With stop_on_error false
+            every statement is attempted and there is one entry per statement
+            that ran, error or not.
 
             If the FIRST entry contains session_restarted: true, the script ran
             on a newly opened database session, because the previous one had
@@ -1823,12 +1867,22 @@ def register_db_tools(server, function_groups=()) -> None:
 
         with use_session(connection_id, general.get_client_identity(ctx)) as session:
             restarted = _session_was_restarted(connection_id)
+            statements = [
+                statement
+                for statement in mysqlsh.mysql.split_script(sql_script)
+                if statement.strip() != ""
+            ]
             results = []
-            for statement in mysqlsh.mysql.split_script(sql_script):
-                if statement.strip() == "":
+            for index, statement in enumerate(statements):
+                # A whole-line comment is one of these, and running it would
+                # report a result for a statement nobody wrote. It keeps its
+                # index all the same: a caller that split the script for
+                # itself pairs results with statements by this number, and
+                # renumbering would move every result after the comment onto
+                # the wrong statement.
+                if _is_comment_only(statement):
                     continue
 
-                index = len(results)
                 started = time.perf_counter()
                 try:
                     result = session.run_sql(statement, [])
