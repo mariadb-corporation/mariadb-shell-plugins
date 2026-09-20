@@ -1,0 +1,15 @@
+.claude/**
+.vscode/**
+.vscode-test/**
+coverage/**
+src/**
+.gitignore
+.yarnrc
+vsc-extension-quickstart.md
+**/tsconfig.json
+**/eslint.config.mjs
+**/vite.config.ts
+**/vitest.config.ts
+**/*.map
+**/*.ts
+!dist/**

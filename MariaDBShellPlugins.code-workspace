@@ -28,6 +28,10 @@
         {
             "name": "MCP Plugin",
             "path": "mcp_plugin"
+        },
+        {
+            "name": "Code Extension",
+            "path": "code_ext"
         }
     ],
     "settings": {
