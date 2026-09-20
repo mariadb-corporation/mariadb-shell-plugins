@@ -3,13 +3,16 @@
 .vscode-test/**
 coverage/**
 src/**
+webview/**
 .gitignore
 .yarnrc
-vsc-extension-quickstart.md
 **/tsconfig.json
+**/tsconfig.webview.json
 **/eslint.config.mjs
 **/vite.config.ts
+**/vite.webview.config.ts
 **/vitest.config.ts
 **/*.map
 **/*.ts
 !dist/**
+!images/**

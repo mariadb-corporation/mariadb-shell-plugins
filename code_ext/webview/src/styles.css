@@ -1,0 +1,548 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/*
+ * Everything is expressed in the editor's own theme variables, so the view
+ * follows whatever theme the user has without a light and a dark
+ * stylesheet. Tabulator's stylesheet is imported first and then overridden
+ * here, because its defaults are a light theme of its own.
+ */
+
+@import "tabulator-tables/dist/css/tabulator_simple.min.css";
+
+/*
+ * The icon font VS Code's own views draw with, so the severity markers
+ * here are the glyphs the Problems panel uses rather than lookalikes.
+ */
+@import "@vscode/codicons/dist/codicon.css";
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+body {
+    color: var(--vscode-foreground);
+    /* The rows take this too, so the view reads as one surface. */
+    background: var(--vscode-sideBar-background,
+            var(--vscode-panel-background));
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+/*
+ * The editor's font is for SQL and nothing else: statements, and the
+ * generated statements in the preview. Everything the view says in its
+ * own voice - headers, messages, counts, times - is UI text and uses
+ * the UI font at the UI size.
+ */
+.monospace,
+.tabulator .tabulator-cell.outputStatement,
+.sqlPreview code {
+    font-family: var(--vscode-editor-font-family);
+}
+
+/* Times and counts line up without leaving the UI font. */
+.tabulator .tabulator-cell.outputTime,
+.tabulator .tabulator-cell.outputElapsed,
+.tabulator .tabulator-cell.outputRows {
+    font-variant-numeric: tabular-nums;
+}
+
+button {
+    color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+    background: var(--vscode-button-secondaryBackground, transparent);
+    border: 1px solid var(--vscode-contrastBorder, transparent);
+    border-radius: 2px;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 18px;
+    cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+    background: var(--vscode-button-secondaryHoverBackground,
+            var(--vscode-toolbar-hoverBackground));
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+button.primary {
+    color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background);
+}
+
+button.primary:hover:not(:disabled) {
+    background: var(--vscode-button-hoverBackground);
+}
+
+button.toggled {
+    background: var(--vscode-inputOption-activeBackground);
+    color: var(--vscode-inputOption-activeForeground);
+    border-color: var(--vscode-inputOption-activeBorder, transparent);
+}
+
+button:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.placeholder {
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* ------------------------------------------------------------------ *
+ * Layout: the content fills the view, the tab bar and the toolbar sit
+ * on one row underneath it, and an error - when there is one - is the
+ * very last thing.
+ * ------------------------------------------------------------------ */
+
+.panel {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+}
+
+.content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.statusBar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 6px;
+    border-top: 1px solid var(--vscode-panel-border);
+    overflow-x: auto;
+}
+
+.statusBar .status {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--vscode-descriptionForeground);
+}
+
+.toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+}
+
+.toolbar .readOnly {
+    color: var(--vscode-descriptionForeground);
+    font-style: italic;
+    white-space: nowrap;
+}
+
+.errorBar {
+    flex: 0 0 auto;
+    padding: 3px 8px;
+    color: var(--vscode-inputValidation-errorForeground,
+            var(--vscode-errorForeground));
+    background: var(--vscode-inputValidation-errorBackground);
+    border-top: 1px solid var(--vscode-inputValidation-errorBorder,
+            var(--vscode-panel-border));
+    white-space: pre-wrap;
+    max-height: 6em;
+    overflow-y: auto;
+}
+
+/* Tabs, in the bottom bar beside the toolbar. */
+
+.tabs {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 2px;
+}
+
+.tab {
+    border: none;
+    border-radius: 2px;
+    padding: 1px 8px;
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+}
+
+.tab.active {
+    color: var(--vscode-panelTitle-activeForeground,
+            var(--vscode-foreground));
+    background: var(--vscode-list-activeSelectionBackground);
+}
+
+.badge {
+    margin-left: 4px;
+    padding: 0 5px;
+    border-radius: 8px;
+    font-size: 0.85em;
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+}
+
+/* The output tab. */
+
+.outputGridHost {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.tabulator .tabulator-row.errorRow .tabulator-cell.outputMessage {
+    color: var(--vscode-errorForeground);
+}
+
+.tabulator .tabulator-cell.outputTime,
+.tabulator .tabulator-cell.outputStatement {
+    color: var(--vscode-descriptionForeground);
+}
+
+.tabulator .tabulator-cell.outputJump,
+.tabulator .tabulator-cell.outputGoTo {
+    padding: 0;
+}
+
+/*
+ * The opening and closing lines that frame one execution. They are set
+ * apart by weight, not by colour: every row shares one background, and
+ * the marker icon carries the severity.
+ */
+.tabulator .tabulator-row.runRow .tabulator-cell.outputMessage {
+    font-weight: 600;
+}
+
+/* The Problems panel's severity markers, in its colours. */
+.markerIcon {
+    font-size: 14px;
+    line-height: 16px;
+}
+
+.markerIcon.info {
+    color: var(--vscode-problemsInfoIcon-foreground,
+            var(--vscode-editorInfo-foreground));
+}
+
+.markerIcon.warning {
+    color: var(--vscode-problemsWarningIcon-foreground,
+            var(--vscode-editorWarning-foreground));
+}
+
+.markerIcon.error {
+    color: var(--vscode-problemsErrorIcon-foreground,
+            var(--vscode-editorError-foreground));
+}
+
+/*
+ * The marker belongs to the message beside it, as in the Problems
+ * panel: no rule between them, and only enough room for the glyph.
+ */
+.tabulator .tabulator-cell.outputSeverity,
+.tabulator .tabulator-header .tabulator-col.outputSeverity {
+    padding: 0 0 0 6px;
+    border-right: none;
+}
+
+.tabulator .tabulator-cell.outputMessage,
+.tabulator .tabulator-header .tabulator-col.outputMessage
+.tabulator-col-content {
+    padding-left: 5px;
+}
+
+.tabulator .tabulator-row.warningRow .tabulator-cell.outputMessage {
+    color: var(--vscode-list-warningForeground,
+            var(--vscode-editorWarning-foreground));
+}
+
+.jumpToResult {
+    border: none;
+    border-radius: 0;
+    width: 100%;
+    padding: 0;
+    background: transparent;
+    color: var(--vscode-textLink-foreground);
+}
+
+.jumpToResult:hover,
+.goToStatement:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+    color: var(--vscode-textLink-activeForeground);
+}
+
+.goToStatement {
+    border: none;
+    border-radius: 0;
+    width: 100%;
+    padding: 0;
+    background: transparent;
+    color: var(--vscode-textLink-foreground);
+}
+
+/* The connection picker, at the far left of the bottom bar. */
+
+.connectionPicker {
+    flex: 0 1 auto;
+    min-width: 6em;
+    max-width: 22em;
+    border: 1px solid var(--vscode-dropdown-border, transparent);
+    border-radius: 2px;
+    padding: 1px 4px;
+    background: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    font-family: inherit;
+    font-size: inherit;
+}
+
+.connectionPicker:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.empty {
+    padding: 6px 8px;
+    margin: 0;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* The SQL preview. */
+
+.sqlPreview {
+    overflow: auto;
+    padding: 4px 0;
+}
+
+.previewItem {
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.previewStatement {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    border: none;
+    border-radius: 0;
+    padding: 3px 8px;
+    background: transparent;
+    text-align: left;
+}
+
+.previewStatement:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.previewStatement code {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.previewRow {
+    flex: 0 0 auto;
+    min-width: 2em;
+    text-align: right;
+    color: var(--vscode-descriptionForeground);
+}
+
+.previewItem.failed .previewStatement code {
+    color: var(--vscode-errorForeground);
+}
+
+.previewError {
+    margin: 0;
+    padding: 2px 8px 6px 3em;
+    color: var(--vscode-errorForeground);
+}
+
+/* ------------------------------------------------------------------ *
+ * Tabulator, retyped in the editor's theme. Its own stylesheet ships a
+ * light theme, so every surface, border and text colour is replaced.
+ * ------------------------------------------------------------------ */
+
+.resultGridHost {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.tabulator {
+    border: none;
+    background: transparent;
+    /* Not the editor font: a grid of results is UI, not code. */
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+.tabulator .tabulator-header {
+    border-bottom: 1px solid var(--vscode-panel-border);
+    /* One surface: the border alone sets the header apart. */
+    background: transparent;
+    color: var(--vscode-foreground);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    font-weight: 600;
+}
+
+.tabulator .tabulator-header .tabulator-col {
+    border-right: 1px solid var(--vscode-panel-border);
+    background: transparent;
+}
+
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+    padding: 2px 6px;
+}
+
+.tabulator .tabulator-header .tabulator-col.pkColumn
+.tabulator-col-title::after {
+    content: " \1F511";
+    font-size: 0.85em;
+}
+
+.tabulator .tabulator-tableholder {
+    background: transparent;
+}
+
+/*
+ * Tabulator's stylesheet is a light theme with the colours written in,
+ * so every surface it paints has to be answered - not just the rows.
+ * The table element sits behind them and is `#fff` with `#333` text,
+ * which is invisible in a light theme and glaring in a dark one.
+ */
+.tabulator .tabulator-tableholder .tabulator-table {
+    background: transparent;
+    color: inherit;
+}
+
+.tabulator .tabulator-row,
+.tabulator .tabulator-row.tabulator-row-even {
+    background: transparent;
+}
+
+.tabulator .tabulator-tableholder .tabulator-placeholder-contents,
+.tabulator .tabulator-tableholder .tabulator-placeholder span {
+    /* The theme writes this one as #000, which a dark theme swallows. */
+    color: var(--vscode-descriptionForeground);
+}
+
+/* The header's hover and sort arrows, likewise written in as greys. */
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable
+.tabulator-col-sorter,
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort]
+.tabulator-col-content .tabulator-col-sorter {
+    color: var(--vscode-descriptionForeground);
+}
+
+.tabulator .tabulator-header
+.tabulator-col.tabulator-sortable.tabulator-col-sorter-element:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.tabulator .tabulator-row {
+    border-bottom: 1px solid var(--vscode-panel-border);
+    color: var(--vscode-foreground);
+    min-height: 0;
+}
+
+.tabulator .tabulator-row.tabulator-selectable:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.tabulator .tabulator-row.tabulator-selected {
+    background: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
+.tabulator .tabulator-row .tabulator-cell {
+    border-right: 1px solid var(--vscode-panel-border);
+    padding: 1px 6px;
+}
+
+.tabulator .tabulator-row .tabulator-cell.tabulator-editing {
+    border: 1px solid var(--vscode-focusBorder);
+    padding: 0 5px;
+}
+
+.tabulator .tabulator-row .tabulator-cell.tabulator-editing input {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: none;
+    font-family: inherit;
+    font-size: inherit;
+}
+
+.tabulator .tabulator-row .tabulator-cell.dirtyCell {
+    background: var(--vscode-diffEditor-insertedTextBackground,
+            rgb(155 185 85 / 20%));
+}
+
+.tabulator .tabulator-row.addedRow .tabulator-cell {
+    background: var(--vscode-diffEditor-insertedTextBackground,
+            rgb(155 185 85 / 20%));
+}
+
+.tabulator .tabulator-row.deletedRow .tabulator-cell {
+    background: var(--vscode-diffEditor-removedTextBackground,
+            rgb(255 0 0 / 20%));
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+.tabulator .tabulator-cell.rowHeaderCell {
+    padding: 0;
+}
+
+.rowDeleteToggle {
+    border: none;
+    border-radius: 0;
+    width: 100%;
+    padding: 0;
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+}
+
+.rowDeleteToggle:hover {
+    color: var(--vscode-errorForeground);
+    background: transparent;
+}
+
+.nullValue {
+    color: var(--vscode-descriptionForeground);
+    font-style: italic;
+}
+
+.tabulator .tabulator-col-resize-handle {
+    background: transparent;
+}

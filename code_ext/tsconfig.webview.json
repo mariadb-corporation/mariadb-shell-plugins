@@ -1,0 +1,31 @@
+{
+    "compilerOptions": {
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "target": "ES2022",
+        "lib": [
+            "ES2023",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "types": [],
+        "jsx": "react-jsx",
+        "jsxImportSource": "preact",
+        "noEmit": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true
+    },
+    "include": [
+        "webview/**/*.ts",
+        "webview/**/*.tsx",
+        "src/webview/protocol.ts",
+        "src/webview/changes.ts",
+        "src/sql/**/*.ts",
+        "src/mcp/types.ts"
+    ]
+}

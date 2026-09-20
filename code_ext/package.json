@@ -10,37 +10,438 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onLanguage:sql"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mariadb-view",
+          "title": "MariaDB",
+          "icon": "images/mariadb-seal.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "mariadb-panel",
+          "title": "MariaDB",
+          "icon": "images/mariadb-seal.svg"
+        }
+      ]
+    },
+    "views": {
+      "mariadb-view": [
+        {
+          "id": "mariadb.connections",
+          "name": "Connections",
+          "icon": "images/light/mariadbConnection.svg"
+        }
+      ],
+      "mariadb-panel": [
+        {
+          "id": "mariadb.results",
+          "name": "Results",
+          "type": "webview"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "mariadb.connections",
+        "contents": "No MariaDB connections are configured yet.\nConfigure one by running `mariadb-shell -- mcp setup` in a terminal, then refresh this view."
+      }
+    ],
+    "configuration": {
+      "title": "MariaDB",
+      "properties": {
+        "mariadb.defaultConnection": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The connection URI new SQL editors run on, as listed by `db.list_connections`. Set it from the context menu of a connection in the **Connections** view."
+        },
+        "mariadb.execute.stopOnError": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Whether a failing statement ends the script. Turn this off to run every statement and collect all the failures, which suits a script of independent statements. A single file can be switched from the editor's toolbar without changing this; it starts out doing whatever this says."
+        },
+        "mariadb.keybindings.runScript": {
+          "type": "string",
+          "default": "cmdOrCtrl+enter",
+          "enum": [
+            "cmdOrCtrl+enter",
+            "shift+enter",
+            "cmdOrCtrl+shift+enter",
+            "alt+enter",
+            "f5",
+            "f8",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Cmd+Enter on macOS, Ctrl+Enter elsewhere",
+            "Shift+Enter",
+            "Cmd+Shift+Enter on macOS, Ctrl+Shift+Enter elsewhere",
+            "Alt+Enter",
+            "F5",
+            "F8",
+            "No shortcut"
+          ],
+          "markdownDescription": "The shortcut that runs the whole SQL file (or the selection). Any shortcut outside this list can be set in the Keyboard Shortcuts editor against `mariadb.runSqlFile`."
+        },
+        "mariadb.keybindings.runStatementAtCursor": {
+          "type": "string",
+          "default": "shift+enter",
+          "enum": [
+            "cmdOrCtrl+enter",
+            "shift+enter",
+            "cmdOrCtrl+shift+enter",
+            "alt+enter",
+            "f5",
+            "f8",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Cmd+Enter on macOS, Ctrl+Enter elsewhere",
+            "Shift+Enter",
+            "Cmd+Shift+Enter on macOS, Ctrl+Shift+Enter elsewhere",
+            "Alt+Enter",
+            "F5",
+            "F8",
+            "No shortcut"
+          ],
+          "markdownDescription": "The shortcut that runs only the statement the cursor is in. Any shortcut outside this list can be set in the Keyboard Shortcuts editor against `mariadb.runSqlStatement`."
+        }
+      }
+    },
     "commands": [
       {
+        "command": "mariadb.refreshConnections",
+        "title": "Refresh",
+        "category": "MariaDB",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mariadb.connect",
+        "title": "Connect",
+        "category": "MariaDB",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "mariadb.disconnect",
+        "title": "Disconnect",
+        "category": "MariaDB",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "mariadb.newSqlEditor",
+        "title": "New SQL Editor",
+        "category": "MariaDB",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "mariadb.setDefaultConnection",
+        "title": "Set as Default Connection",
+        "category": "MariaDB",
+        "icon": "$(star-empty)"
+      },
+      {
+        "command": "mariadb.clearDefaultConnection",
+        "title": "Clear Default Connection",
+        "category": "MariaDB",
+        "icon": "$(star-full)"
+      },
+      {
+        "command": "mariadb.clearResultView",
+        "title": "Clear Output",
+        "category": "MariaDB",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mariadb.selectEditorConnection",
+        "title": "Select Connection for this SQL File",
+        "category": "MariaDB",
+        "icon": "$(database)"
+      },
+      {
+        "command": "mariadb.runSqlFile",
+        "title": "Run SQL Script",
+        "category": "MariaDB",
+        "icon": {
+          "light": "images/light/toolbar-execute.svg",
+          "dark": "images/dark/toolbar-execute.svg"
+        }
+      },
+      {
+        "command": "mariadb.runSqlStatement",
+        "title": "Run SQL Statement at Cursor",
+        "category": "MariaDB",
+        "icon": {
+          "light": "images/light/toolbar-execute_caret.svg",
+          "dark": "images/dark/toolbar-execute_caret.svg"
+        }
+      },
+      {
+        "command": "mariadb.stopOnError.disable",
+        "title": "Stop on Error (on)",
+        "category": "MariaDB",
+        "icon": {
+          "light": "images/light/toolbar-stop_on_error-active.svg",
+          "dark": "images/dark/toolbar-stop_on_error-active.svg"
+        }
+      },
+      {
+        "command": "mariadb.stopOnError.enable",
+        "title": "Stop on Error (off)",
+        "category": "MariaDB",
+        "icon": {
+          "light": "images/light/toolbar-stop_on_error-inactive.svg",
+          "dark": "images/dark/toolbar-stop_on_error-inactive.svg"
+        }
+      },
+      {
         "command": "mariadb.restartMcpServer",
-        "title": "MariaDB: Restart MCP Server"
+        "title": "Restart MCP Server",
+        "category": "MariaDB"
       },
       {
         "command": "mariadb.showMcpServerLog",
-        "title": "MariaDB: Show MCP Server Log"
+        "title": "Show MCP Server Log",
+        "category": "MariaDB"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "mariadb.refreshConnections",
+          "when": "view == mariadb.connections",
+          "group": "navigation"
+        },
+        {
+          "command": "mariadb.clearResultView",
+          "when": "view == mariadb.results",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mariadb.connect",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.disconnected/",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.disconnect",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.connected/",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.newSqlEditor",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "inline@2"
+        },
+        {
+          "command": "mariadb.newSqlEditor",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "1_connection@2"
+        },
+        {
+          "command": "mariadb.connect",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.disconnected/",
+          "group": "1_connection@1"
+        },
+        {
+          "command": "mariadb.disconnect",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.connected/",
+          "group": "1_connection@1"
+        },
+        {
+          "command": "mariadb.setDefaultConnection",
+          "when": "view == mariadb.connections && viewItem =~ /notDefault$/",
+          "group": "2_default@1"
+        },
+        {
+          "command": "mariadb.clearDefaultConnection",
+          "when": "view == mariadb.connections && viewItem =~ /\\.default$/",
+          "group": "2_default@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "mariadb.selectEditorConnection",
+          "when": "resourceLangId == sql",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mariadb.runSqlFile",
+          "when": "resourceLangId == sql",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mariadb.runSqlStatement",
+          "when": "resourceLangId == sql",
+          "group": "navigation@3"
+        },
+        {
+          "command": "mariadb.stopOnError.disable",
+          "when": "resourceLangId == sql && mariadb.stopOnError",
+          "group": "navigation@4"
+        },
+        {
+          "command": "mariadb.stopOnError.enable",
+          "when": "resourceLangId == sql && !mariadb.stopOnError",
+          "group": "navigation@4"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "mariadb.runSqlFile",
+          "when": "resourceLangId == sql",
+          "group": "mariadb@1"
+        },
+        {
+          "command": "mariadb.runSqlStatement",
+          "when": "resourceLangId == sql",
+          "group": "mariadb@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mariadb.connect",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.disconnect",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.newSqlEditor",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.setDefaultConnection",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.refreshConnections",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.runSqlFile",
+          "when": "editorLangId == sql"
+        },
+        {
+          "command": "mariadb.selectEditorConnection",
+          "when": "editorLangId == sql"
+        },
+        {
+          "command": "mariadb.runSqlStatement",
+          "when": "editorLangId == sql"
+        },
+        {
+          "command": "mariadb.stopOnError.disable",
+          "when": "editorLangId == sql && mariadb.stopOnError"
+        },
+        {
+          "command": "mariadb.stopOnError.enable",
+          "when": "editorLangId == sql && !mariadb.stopOnError"
+        },
+        {
+          "command": "mariadb.clearResultView",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "mariadb.runSqlFile",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'cmdOrCtrl+enter'"
+      },
+      {
+        "command": "mariadb.runSqlFile",
+        "key": "shift+enter",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'shift+enter'"
+      },
+      {
+        "command": "mariadb.runSqlFile",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'cmdOrCtrl+shift+enter'"
+      },
+      {
+        "command": "mariadb.runSqlFile",
+        "key": "alt+enter",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'alt+enter'"
+      },
+      {
+        "command": "mariadb.runSqlFile",
+        "key": "f5",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'f5'"
+      },
+      {
+        "command": "mariadb.runSqlFile",
+        "key": "f8",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'f8'"
+      },
+      {
+        "command": "mariadb.runSqlStatement",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'cmdOrCtrl+enter'"
+      },
+      {
+        "command": "mariadb.runSqlStatement",
+        "key": "shift+enter",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'shift+enter'"
+      },
+      {
+        "command": "mariadb.runSqlStatement",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'cmdOrCtrl+shift+enter'"
+      },
+      {
+        "command": "mariadb.runSqlStatement",
+        "key": "alt+enter",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'alt+enter'"
+      },
+      {
+        "command": "mariadb.runSqlStatement",
+        "key": "f5",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'f5'"
+      },
+      {
+        "command": "mariadb.runSqlStatement",
+        "key": "f8",
+        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'f8'"
       }
     ]
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
-    "build": "vite build",
+    "build": "npm run clean && npm run build:extension && npm run build:webview",
     "watch": "vite build --watch",
-    "typecheck": "tsc --noEmit -p ./",
+    "typecheck": "tsc --noEmit -p ./ && tsc --noEmit -p tsconfig.webview.json",
     "pretest": "npm run typecheck && npm run lint",
-    "lint": "eslint src",
+    "lint": "eslint src webview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "build:extension": "vite build",
+    "build:webview": "vite build --config vite.webview.config.ts",
+    "watch:webview": "vite build --config vite.webview.config.ts --watch",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
   },
   "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@testing-library/preact": "^3.2.4",
     "@types/node": "24.x",
+    "@types/tabulator-tables": "^6.2.6",
     "@types/vscode": "^1.138.0",
     "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.5.0",
+    "jsdom": "^30.1.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
     "vite": "^7.1.5",
@@ -52,5 +453,11 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@vscode/codicons": "^0.0.46-24",
+    "preact": "^10.29.8",
+    "tabulator-tables": "^6.3.1"
   }
 }

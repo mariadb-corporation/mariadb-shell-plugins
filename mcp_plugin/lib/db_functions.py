@@ -1288,7 +1288,12 @@ def _unique_column_labels(columns) -> list:
     return labels
 
 
-def _serialize_result(result, session_restarted: bool = False) -> dict:
+def _serialize_result(
+    result,
+    session_restarted: bool = False,
+    statement_index: Optional[int] = None,
+    execution_time: Optional[float] = None,
+) -> dict:
     """Serializes a shell SQL result into a JSON-friendly dict.
 
     Args:
@@ -1296,6 +1301,10 @@ def _serialize_result(result, session_restarted: bool = False) -> dict:
         session_restarted (bool): Whether this statement ran on a session that
             had to be opened for it, which the caller is told about because
             nothing that only lived in the previous session survived.
+        statement_index (int): Which statement of a script this is, counting
+            only the non-empty ones from 0. Left out for a single statement,
+            where there is nothing to count.
+        execution_time (float): How long this statement took, in seconds.
 
     Returns:
         A dict with the result set (columns and rows) and execution metadata.
@@ -1304,6 +1313,14 @@ def _serialize_result(result, session_restarted: bool = False) -> dict:
         "affected_items_count": result.affected_items_count,
         "warnings_count": result.warnings_count,
     }
+
+    if statement_index is not None:
+        output["statement_index"] = statement_index
+
+    if execution_time is not None:
+        # Rounded to microseconds: the extra digits a float carries are
+        # noise from the clock, not measurement.
+        output["execution_time"] = round(execution_time, 6)
 
     # Present only when it happened. A field that is almost always false is a
     # field a client learns to skip.
@@ -1340,6 +1357,27 @@ def _serialize_result(result, session_restarted: bool = False) -> dict:
         output["rows"] = rows
 
     return output
+
+
+def _abbreviate(text: str, limit: int = 2000) -> str:
+    """Shortens a statement for reporting it back.
+
+    A failing statement is echoed so the caller can see what broke, but a
+    generated script can hold a single statement of any size, and the whole
+    of one would swamp the result.
+
+    Args:
+        text (str): The statement text.
+        limit (int): The longest text to return, before the marker.
+
+    Returns:
+        The text, truncated with a marker if it was too long.
+    """
+    stripped = text.strip()
+    if len(stripped) <= limit:
+        return stripped
+
+    return stripped[:limit] + "... (truncated)"
 
 
 def _query_rows(session, sql: str, params: Optional[list] = None) -> list:
@@ -1714,6 +1752,7 @@ def register_db_tools(server, function_groups=()) -> None:
         connection_id: str,
         sql_script: Optional[str] = None,
         file_path: Optional[str] = None,
+        stop_on_error: bool = True,
     ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
@@ -1730,12 +1769,34 @@ def register_db_tools(server, function_groups=()) -> None:
             sql_script: One or more semicolon-separated SQL statements.
             file_path: Path to a .sql file on disk to read the script from,
                 as an alternative to sql_script.
+            stop_on_error: Whether a failing statement ends the script.
+                True (the default) runs no further statements once one
+                fails, which is what a script whose later statements build
+                on its earlier ones needs. False runs every statement and
+                reports each failure, which suits a script of independent
+                statements - a batch of inserts, or a set of DROPs - where
+                one failure should not hold up the rest.
 
         Returns:
-            A list with one entry per executed statement, each a dict with the
-            result set (columns and rows) and execution metadata. Two columns
-            sharing one label are keyed apart as label and label_2, as for
-            db.execute_sql.
+            A list with one entry per statement that ran, each a dict with the
+            result set (columns and rows) and execution metadata: its position
+            in the script (statement_index, counting only the non-empty
+            statements from 0) and how long it took (execution_time, in
+            seconds). Two columns sharing one label are keyed apart as label
+            and label_2, as for db.execute_sql.
+
+            IMPORTANT - a failing statement does NOT raise. Its entry carries
+            error (the message) and statement (the text that failed) INSTEAD
+            of a result set, so check every entry for an error key before
+            treating the script as done. Nothing is rolled back either way: a
+            script is not a transaction, and the statements that already ran
+            have taken effect.
+
+            With stop_on_error true (the default) the script ends at the first
+            failure, and the statements after it have no entries because they
+            never ran - so fewer entries than statements means it stopped
+            early. With stop_on_error false every statement is attempted and
+            there is one entry per statement, error or not.
 
             If the FIRST entry contains session_restarted: true, the script ran
             on a newly opened database session, because the previous one had
@@ -1766,12 +1827,45 @@ def register_db_tools(server, function_groups=()) -> None:
             for statement in mysqlsh.mysql.split_script(sql_script):
                 if statement.strip() == "":
                     continue
+
+                index = len(results)
+                started = time.perf_counter()
+                try:
+                    result = session.run_sql(statement, [])
+                except Exception as error:  # noqa: BLE001
+                    # Reported rather than raised, because what already ran
+                    # matters: a script is not a transaction, and a caller
+                    # that only sees "it failed" cannot tell how far it got
+                    # or which statement to fix.
+                    general.log_event(
+                        "db.execute_sql_script: statement "
+                        f"{index} failed on connection "
+                        f"{general.log_id_prefix(connection_id)}: {error}"
+                    )
+                    results.append(
+                        {
+                            "statement_index": index,
+                            "execution_time": round(
+                                time.perf_counter() - started, 6
+                            ),
+                            "statement": _abbreviate(statement),
+                            "error": str(error),
+                        }
+                    )
+
+                    if stop_on_error:
+                        break
+
+                    continue
+
                 results.append(
                     _serialize_result(
-                        session.run_sql(statement, []),
+                        result,
                         # On the first result only: one session was opened, once,
                         # before any of these statements ran.
                         session_restarted=restarted and not results,
+                        statement_index=index,
+                        execution_time=time.perf_counter() - started,
                     )
                 )
 

@@ -1,0 +1,189 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+import { describe, expect, it } from "vitest";
+
+import type {
+    IConnectionNode,
+    IObjectNode,
+} from "../../tree/connectionsModel.js";
+import { createTreeItem, type IconResolver } from "../../tree/treeItems.js";
+import {
+    ThemeIcon,
+    TreeItemCollapsibleState,
+    Uri,
+} from "../mocks/vscode.js";
+
+/** Resolves an icon name to a recognisable pair of paths. */
+const resolveIcon: IconResolver = (name: string) => {
+    return {
+        light: Uri.file(`/ext/images/light/${name}`),
+        dark: Uri.file(`/ext/images/dark/${name}`),
+    } as never;
+};
+
+/**
+ * @param overrides The fields that differ from a plain closed connection.
+ *
+ * @returns A connection node.
+ */
+const connection = (
+    overrides: Partial<IConnectionNode> = {},
+): IConnectionNode => {
+    return {
+        kind: "connection",
+        uri: "dba@localhost:3310",
+        connected: false,
+        isDefault: false,
+        ...overrides,
+    };
+};
+
+describe("createTreeItem for a connection", () => {
+    it("shows the URI with the seal icon", () => {
+        const item = createTreeItem(connection(), resolveIcon);
+
+        expect(item.label).toBe("dba@localhost:3310");
+        expect(item.iconPath).toEqual({
+            light: Uri.file("/ext/images/light/mariadbConnection.svg"),
+            dark: Uri.file("/ext/images/dark/mariadbConnection.svg"),
+        });
+    });
+
+    it("is not expandable while it is closed", () => {
+        expect(createTreeItem(connection(), resolveIcon).collapsibleState)
+            .toBe(TreeItemCollapsibleState.None);
+    });
+
+    it("becomes expandable once it is open", () => {
+        expect(createTreeItem(connection({ connected: true }), resolveIcon)
+            .collapsibleState).toBe(TreeItemCollapsibleState.Collapsed);
+    });
+
+    it("carries its state in the context value, for the menus", () => {
+        expect(createTreeItem(connection(), resolveIcon).contextValue)
+            .toBe("mariadbConnection.disconnected.notDefault");
+        expect(createTreeItem(
+            connection({ connected: true, isDefault: true }), resolveIcon,
+        ).contextValue).toBe("mariadbConnection.connected.default");
+    });
+
+    it("marks the default connection in the tree", () => {
+        const item = createTreeItem(
+            connection({ isDefault: true }), resolveIcon);
+
+        expect(item.description).toBe("default");
+        expect(item.tooltip).toContain("default connection");
+    });
+
+    it("leaves a non-default connection undecorated", () => {
+        expect(createTreeItem(connection(), resolveIcon).description)
+            .toBeUndefined();
+    });
+});
+
+describe("createTreeItem for a schema", () => {
+    it("shows the schema with its type", () => {
+        const item = createTreeItem({
+            kind: "schema",
+            uri: "dba@h",
+            schema: "world",
+            schemaType: "User Schema",
+            comment: "the sample",
+        }, resolveIcon);
+
+        expect(item.label).toBe("world");
+        expect(item.description).toBe("User Schema");
+        expect(item.tooltip).toBe("the sample");
+        expect(item.contextValue).toBe("mariadbSchema");
+        expect(item.collapsibleState)
+            .toBe(TreeItemCollapsibleState.Collapsed);
+    });
+});
+
+describe("createTreeItem for an object group", () => {
+    it.each([
+        ["table", "Tables", "schemaTables.svg"],
+        ["view", "Views", "schemaViews.svg"],
+        ["function", "Functions", "schemaFunctions.svg"],
+        ["procedure", "Procedures", "schemaProcedures.svg"],
+        ["trigger", "Triggers", "schemaTableTriggers.svg"],
+        ["event", "Events", "schemaEvents.svg"],
+    ] as const)("shows %s as %s", (objectType, label, icon) => {
+        const item = createTreeItem({
+            kind: "objectGroup",
+            uri: "dba@h",
+            schema: "world",
+            objectType,
+        }, resolveIcon);
+
+        expect(item.label).toBe(label);
+        expect(item.contextValue).toBe(`mariadbObjectGroup.${objectType}`);
+        expect(item.iconPath).toEqual({
+            light: Uri.file(`/ext/images/light/${icon}`),
+            dark: Uri.file(`/ext/images/dark/${icon}`),
+        });
+    });
+
+    it("falls back to a codicon where there is no icon", () => {
+        // The upstream icon set has no sequence icon.
+        const item = createTreeItem({
+            kind: "objectGroup",
+            uri: "dba@h",
+            schema: "world",
+            objectType: "sequence",
+        }, resolveIcon);
+
+        expect(item.iconPath).toBeInstanceOf(ThemeIcon);
+    });
+});
+
+describe("createTreeItem for an object", () => {
+    const object = (overrides: Partial<IObjectNode> = {}): IObjectNode => {
+        return {
+            kind: "object",
+            uri: "dba@h",
+            schema: "world",
+            objectType: "table",
+            name: "city",
+            ...overrides,
+        };
+    };
+
+    it("is a leaf", () => {
+        expect(createTreeItem(object(), resolveIcon).collapsibleState)
+            .toBe(TreeItemCollapsibleState.None);
+    });
+
+    it("shows the object name with its type's icon", () => {
+        const item = createTreeItem(object(), resolveIcon);
+
+        expect(item.label).toBe("city");
+        expect(item.contextValue).toBe("mariadbObject.table");
+        expect(item.iconPath).toEqual({
+            light: Uri.file("/ext/images/light/schemaTable.svg"),
+            dark: Uri.file("/ext/images/dark/schemaTable.svg"),
+        });
+    });
+
+    it("shows a comment as the tooltip", () => {
+        expect(createTreeItem(object({ comment: "Cities" }), resolveIcon)
+            .tooltip).toBe("Cities");
+        expect(createTreeItem(object({ comment: "" }), resolveIcon).tooltip)
+            .toBeUndefined();
+    });
+});

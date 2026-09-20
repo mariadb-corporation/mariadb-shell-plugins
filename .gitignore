@@ -33,3 +33,12 @@ AGENTS.md
 .agents/
 
 mysqlsh.log
+
+# Test artefacts. mcp_plugin/.gitignore covers these inside the plugin,
+# but run_tests.py writes them relative to where it is invoked from,
+# which is the repository root.
+.coverage
+.coverage.*
+htmlcov/
+plugin-tests.xml
+plugin-test-coverage.xml

@@ -6,11 +6,34 @@ The extension drives the MariaDB Shell backend through its
 [MCP plugin](../mcp_plugin), which exposes the backend functions over the
 Model Context Protocol.
 
+## Features
+
+- **Connections view** in the activity bar: browse your configured
+  connections, their schemas, and the tables, views, functions,
+  procedures, sequences, triggers and events in each.
+- **Run SQL** from any `.sql` file, with a connection picker and a run
+  button in the editor toolbar (`Ctrl`/`Cmd`+`Enter`).
+- **New SQL Editor**, beside Connect on a connection in the tree, opens an
+  unsaved `.sql` file already bound to that connection.
+- **Results** docked in the bottom panel, beside Problems and Output, with
+  an output log and a tab per result set. A dropdown picks which
+  connection's results are shown, the output accumulates until you clear
+  it, and each output row can jump to the result set it produced.
+- A result that comes from a single table with a primary key can be
+  **edited in place** — change cells, add and remove rows — and
+  **Preview SQL** shows exactly the statements Apply would run, with a
+  click on any of them taking you to the row it came from.
+- **Default connection**, set from a connection's context menu and
+  remembered in your workspace settings.
+
 ## Requirements
 
-MariaDB Shell **26.9.2** or newer. The extension takes care of this on its
-own: at startup it looks for a suitable shell and, if there is none,
-installs one.
+MariaDB Shell **26.9.2** or newer, with at least one connection configured
+via `mariadb-shell -- mcp setup`.
+
+The extension takes care of the shell on its own. The first time it needs
+the server it looks for a suitable shell and, if there is none, installs
+one:
 
 1. A `mariadb-shell` on your `PATH` is used if it is new enough.
 2. Otherwise a local installation under
@@ -21,22 +44,44 @@ installs one.
 
 Set `MARIADB_SHELL_PREFIX` to install and look somewhere else.
 
+## Settings
+
+| Setting | Description |
+| --- | --- |
+| `mariadb.defaultConnection` | The connection URI new SQL editors run on. |
+
 ## Commands
 
 | Command | Description |
 | --- | --- |
-| **MariaDB: Restart MCP Server** | Re-runs the shell lookup and restarts the MCP server. |
+| **MariaDB: Run SQL** | Runs the selection, or the whole `.sql` file. |
+| **MariaDB: Select Connection for this SQL File** | Pins this file to a connection. |
+| **MariaDB: Restart MCP Server** | Closes the connections and starts the server again. |
 | **MariaDB: Show MCP Server Log** | Opens the *MariaDB* output channel. |
 
 ## Development
 
 ```bash
-npm install     # install the toolchain
-npm run watch   # rebuild on change, then press F5 to launch the host
-npm test        # run the Vitest suite
-npm run pretest # type check and lint
+npm install            # install the toolchain
+npm run build          # bundle the extension and the result panel
+npm test               # run the Vitest suite
+npm run pretest        # type check and lint
 ```
 
-The extension is bundled with [Vite](https://vite.dev) and tested with
-[Vitest](https://vitest.dev). See [.claude/PROJECT_CONTEXT.md](.claude/PROJECT_CONTEXT.md)
-for the layout and the startup behaviour in detail.
+Press <kbd>F5</kbd> to launch an extension host. The **Run Extension**
+configuration builds the result panel and then starts the extension
+watcher, so nothing else is needed. To watch from a terminal instead, run
+`npm run watch` for the extension and `npm run watch:webview` for the
+result panel - `npm run watch` covers the extension only.
+
+The extension is bundled with [Vite](https://vite.dev), the result panel is
+[Preact](https://preactjs.com), and both are tested with
+[Vitest](https://vitest.dev). See
+[.claude/PROJECT_CONTEXT.md](.claude/PROJECT_CONTEXT.md) for the layout and
+the behaviour in detail.
+
+## Credits
+
+The tree icons are taken from the
+[MySQL Shell for VS Code](https://github.com/mysql/mysql-shell-plugins)
+extension, and the result view is modelled on its `ResultTabView`.

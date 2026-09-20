@@ -113,6 +113,86 @@ async def _db_flow(uri, script_dir):
         assert isinstance(statements, list) and len(statements) == 3
         # The INSERT (third statement) affected three rows.
         assert statements[2]["affected_items_count"] == 3
+        # Each entry says where in the script it came from and how long it
+        # took, so a caller can line the results up with the statements it
+        # sent and report them one by one.
+        assert [entry["statement_index"] for entry in statements] == [0, 1, 2]
+        for entry in statements:
+            assert isinstance(entry["execution_time"], float)
+            assert entry["execution_time"] >= 0
+
+        # A failing statement stops the script but does not raise: the
+        # entries for what already ran are returned, and the failing one
+        # carries the error and the statement instead of a result set. The
+        # statements after it never ran, so they have no entries.
+        failing_script = (
+            f"INSERT INTO `{schema}`.`items` (id, name) VALUES (90, 'x');"
+            f"INSERT INTO `{schema}`.`items` (id, name) VALUES (90, 'y');"
+            f"INSERT INTO `{schema}`.`items` (id, name) VALUES (91, 'z');"
+        )
+        failing_result = await call(
+            "db.execute_sql_script",
+            {"connection_id": connection_id, "sql_script": failing_script},
+        )
+        assert failing_result.is_error is False
+        failing = helpers.tool_payload(failing_result)
+        assert isinstance(failing, list) and len(failing) == 2
+        assert failing[0]["affected_items_count"] == 1
+        assert "error" in failing[1]
+        assert failing[1]["statement_index"] == 1
+        assert "Duplicate entry" in failing[1]["error"]
+        assert "VALUES (90, 'y')" in failing[1]["statement"]
+        assert "rows" not in failing[1]
+
+        # The first of the two inserts really did run and was not rolled
+        # back, which is why the caller is told about it at all.
+        survivor = await call(
+            "db.execute_sql",
+            {
+                "connection_id": connection_id,
+                "sql": f"SELECT name FROM `{schema}`.`items` WHERE id = 90",
+            },
+        )
+        assert helpers.tool_payload(survivor)["rows"] == [{"name": "x"}]
+
+        # With stop_on_error false every statement is attempted, so the
+        # third one runs even though the second failed, and there is one
+        # entry per statement.
+        continued_result = await call(
+            "db.execute_sql_script",
+            {
+                "connection_id": connection_id,
+                "sql_script": failing_script,
+                "stop_on_error": False,
+            },
+        )
+        assert continued_result.is_error is False
+        continued = helpers.tool_payload(continued_result)
+        assert isinstance(continued, list) and len(continued) == 3
+        # 90 is already there from the run above, so the first two both
+        # collide now and only the third gets in.
+        assert "error" in continued[0]
+        assert "error" in continued[1]
+        assert "error" not in continued[2]
+        assert continued[2]["affected_items_count"] == 1
+        assert [entry["statement_index"] for entry in continued] == [0, 1, 2]
+
+        landed = await call(
+            "db.execute_sql",
+            {
+                "connection_id": connection_id,
+                "sql": f"SELECT id FROM `{schema}`.`items` WHERE id = 91",
+            },
+        )
+        assert helpers.tool_payload(landed)["rows"] == [{"id": 91}]
+
+        await call(
+            "db.execute_sql",
+            {
+                "connection_id": connection_id,
+                "sql": f"DELETE FROM `{schema}`.`items` WHERE id >= 90",
+            },
+        )
 
         # db.list_schemas sees the freshly created schema as a user schema, plus
         # the server's own system schemas.
