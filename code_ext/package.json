@@ -1,0 +1,56 @@
+{
+  "name": "mariadb",
+  "displayName": "MariaDB",
+  "description": "The power of MariaDB Shell inside your favorite editor.",
+  "version": "26.9.0",
+  "engines": {
+    "vscode": "^1.138.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "mariadb.restartMcpServer",
+        "title": "MariaDB: Restart MCP Server"
+      },
+      {
+        "command": "mariadb.showMcpServerLog",
+        "title": "MariaDB: Show MCP Server Log"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "vite build",
+    "watch": "vite build --watch",
+    "typecheck": "tsc --noEmit -p ./",
+    "pretest": "npm run typecheck && npm run lint",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@types/node": "24.x",
+    "@types/vscode": "^1.138.0",
+    "@vitest/coverage-v8": "^5.0.1",
+    "eslint": "^10.5.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1",
+    "vite": "^7.1.5",
+    "vitest": "^5.0.1"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
