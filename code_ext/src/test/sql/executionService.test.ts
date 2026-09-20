@@ -793,6 +793,165 @@ describe("output row severity", () => {
     });
 });
 
+describe("ExecutionService with a comment among the statements", () => {
+    /**
+     * @returns A source that maps every offset to its own line.
+     */
+    const lineSource = () => {
+        return {
+            uri: "file:///work/query.sql",
+            positionAt: (offset: number) => {
+                return { line: offset, character: 0 };
+            },
+        };
+    };
+
+    // What the Connections view's New SQL Editor button writes at the top
+    // of every file it generates, followed by a query.
+    const GENERATED = "-- MariaDB connection: dba@h\n\nSELECT 1;";
+
+    it("does not count a comment among the statements being run", async () => {
+        // The server splits the comment out and numbers it, but does not
+        // run it, so there is one result and it is numbered 1.
+        const api = createFakeApi({
+            defaultResults: [
+                {
+                    affected_items_count: 0,
+                    warnings_count: 0,
+                    statement_index: 1,
+                    execution_time: 0.001,
+                    columns: ["a"],
+                    rows: [{ a: 1 }],
+                },
+            ],
+        });
+
+        const report = await new ExecutionService(api).execute({
+            connectionUri: "dba@h",
+            connectionId: "id",
+            script: GENERATED,
+            runId: "run1",
+        });
+
+        expect(report.output.map((row) => {
+            return [row.role, row.message];
+        })).toEqual([
+            ["start", "Running 1 statement on dba@h"],
+            ["statement", "1 row in set"],
+            ["finish", "Finished 1 statement successfully"],
+        ]);
+    });
+
+    it("pairs the one result with the statement, not the comment",
+        async () => {
+            const api = createFakeApi({
+                defaultResults: [
+                    {
+                        affected_items_count: 0,
+                        warnings_count: 0,
+                        statement_index: 1,
+                        execution_time: 0.001,
+                        columns: ["a"],
+                        rows: [{ a: 1 }],
+                    },
+                ],
+            });
+
+            const report = await new ExecutionService(api).execute({
+                connectionUri: "dba@h",
+                connectionId: "id",
+                script: GENERATED,
+                runId: "run1",
+                source: lineSource(),
+            });
+
+            // The index the server sent is what picks the statement out,
+            // which is why the comment has to keep its place in the split.
+            expect(report.output[1]).toMatchObject({
+                id: "run1-1",
+                statement: "SELECT 1",
+                // Offset 30: the query, past the header and the blank line.
+                source: {
+                    uri: "file:///work/query.sql",
+                    line: 30,
+                    character: 0,
+                },
+            });
+        });
+
+    it("points the run's own lines at its first real statement", async () => {
+        // Not at the header comment in front of it, which is where they
+        // pointed while the comment counted as statement zero.
+        const api = createFakeApi({
+            defaultResults: [
+                {
+                    affected_items_count: 0,
+                    warnings_count: 0,
+                    statement_index: 1,
+                    execution_time: 0.001,
+                },
+            ],
+        });
+
+        const report = await new ExecutionService(api).execute({
+            connectionUri: "dba@h",
+            connectionId: "id",
+            script: GENERATED,
+            runId: "run1",
+            source: lineSource(),
+        });
+
+        expect(report.output[0].source).toEqual({
+            uri: "file:///work/query.sql",
+            line: 30,
+            character: 0,
+        });
+    });
+
+    it("counts only the statements being run when one stops the script",
+        async () => {
+            const api = createFakeApi({
+                defaultResults: [
+                    {
+                        statement_index: 1,
+                        execution_time: 0.001,
+                        statement: "INSERT INTO t VALUES (1)",
+                        error: "Duplicate entry '1' for key 'PRIMARY'",
+                    },
+                ],
+            });
+
+            const report = await new ExecutionService(api).execute({
+                connectionUri: "dba@h",
+                connectionId: "id",
+                script: "-- a note\nINSERT INTO t VALUES (1);\nSELECT 1;",
+                runId: "run1",
+            });
+
+            // Two statements to run, not three: "1 of 2".
+            expect(report.output.at(-1)?.message)
+                .toBe("Finished with 1 error, stopped after 1 of 2");
+        });
+
+    it("says a script of nothing but comments runs nothing", async () => {
+        const api = createFakeApi({ defaultResults: [] });
+
+        const report = await new ExecutionService(api).execute({
+            connectionUri: "dba@h",
+            connectionId: "id",
+            script: "-- one\n-- two\n",
+            runId: "run1",
+        });
+
+        expect(report.output.map((row) => {
+            return [row.role, row.message];
+        })).toEqual([
+            ["start", "Running 0 statements on dba@h"],
+            ["finish", "Finished 0 statements successfully"],
+        ]);
+    });
+});
+
 describe("ExecutionService.applyChanges", () => {
     /**
      * @returns An editable result set over world.city.

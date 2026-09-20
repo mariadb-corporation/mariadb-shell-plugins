@@ -72,6 +72,12 @@ export interface IStatementSpan {
      * The first character that is neither whitespace nor comment. It is
      * less than `span.start` when the statement has no content at all,
      * which is how a run of comments is told from a statement.
+     *
+     * Every span that can be content-free says so the same way, including
+     * the ones a comment left open at the end of the input produces. A
+     * trailing `-- note` with no newline after it used to report content,
+     * so it read as a statement while the same line with a newline did
+     * not.
      */
     contentStart: number;
 
@@ -141,7 +147,7 @@ export function* scanStatements(
             pending.push({
                 delimiter,
                 span: { start, length: tail - start },
-                contentStart: haveContent ? head : start,
+                contentStart: haveContent ? head : start - 1,
                 state: StatementFinishState.Complete,
             });
 
@@ -160,7 +166,7 @@ export function* scanStatements(
             pending.push({
                 delimiter,
                 span: { start, length: tail - start },
-                contentStart: haveContent ? head : start,
+                contentStart: haveContent ? head : start - 1,
                 state: StatementFinishState.Complete,
             });
 
@@ -202,7 +208,7 @@ export function* scanStatements(
                             pending.push({
                                 delimiter,
                                 span: { start, length: tail - start },
-                                contentStart: haveContent ? head : start,
+                                contentStart: haveContent ? head : start - 1,
                                 state: StatementFinishState.OpenComment,
                             });
                             start = tail;
@@ -243,7 +249,7 @@ export function* scanStatements(
                         pending.push({
                             delimiter,
                             span: { start, length: tail - start },
-                            contentStart: haveContent ? head : start,
+                            contentStart: haveContent ? head : start - 1,
                             state: StatementFinishState.OpenComment,
                         });
                         start = tail;
@@ -272,7 +278,7 @@ export function* scanStatements(
                     pending.push({
                         delimiter,
                         span: { start, length: tail - start },
-                        contentStart: haveContent ? head : start,
+                        contentStart: haveContent ? head : start - 1,
                         state: StatementFinishState.OpenComment,
                     });
                     start = tail;

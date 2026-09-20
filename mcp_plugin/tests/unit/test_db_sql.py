@@ -121,6 +121,29 @@ async def _db_flow(uri, script_dir):
             assert isinstance(entry["execution_time"], float)
             assert entry["execution_time"] >= 0
 
+        # A whole-line comment is not a statement to run. The shell's splitter
+        # returns one as a statement of its own and the server accepts it as a
+        # query rather than rejecting it, so this is asserted against a real
+        # server: nothing but the query comes back, and it is numbered 1, as
+        # the comment still takes up an index.
+        commented_result = await call(
+            "db.execute_sql_script",
+            {
+                "connection_id": connection_id,
+                "sql_script": (
+                    f"-- MariaDB connection: {uri}\n"
+                    f"\n"
+                    f"SELECT COUNT(*) AS cnt FROM `{schema}`.`items`;"
+                ),
+            },
+        )
+        assert commented_result.is_error is False
+        # One entry, which the wire format renders as the entry itself rather
+        # than as a list of one - the same as any single-statement script.
+        commented = helpers.tool_payload(commented_result)
+        assert commented["statement_index"] == 1
+        assert commented["rows"] == [{"cnt": 3}]
+
         # A failing statement stops the script but does not raise: the
         # entries for what already ran are returned, and the failing one
         # carries the error and the statement instead of a result set. The
