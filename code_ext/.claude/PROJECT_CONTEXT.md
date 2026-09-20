@@ -437,11 +437,12 @@ the extension references from the HTML it builds.
 ### The output grid
 
 A Tabulator table:
-`◆ | Output | Time | Elapsed | Rows | → | ↗ | Statement`.
+`◆ | Output | Time | Elapsed | Rows | Statement`.
 
-The marker and the message lead together and share a cell boundary with
-no rule between them, as they do in the Problems panel; the details
-follow.
+The marker and the message lead together, as they do in the Problems
+panel; the details follow. The grid draws **no vertical rules**: it is a
+log, not a spreadsheet, and the columns line up on their own. The result
+grids keep theirs, so the override is scoped to `.outputGridHost`.
 
 A run reads as a block of three parts, which is what `role` on a row
 says: an opening line (`Running 5 statements on ...`), one line per
@@ -455,11 +456,25 @@ statement, and a closing line (`Finished ... successfully`, or
 - The marker is `info`, `warning` or `error`. A statement that succeeded
   but raised warnings is a warning, and the closing line of a run takes
   the worst of what it saw.
-- `→` jumps to the result set that statement produced, when that tab is
-  still open.
-- `↗` puts the cursor on the statement in the file it came from. On the
-  closing line of a failed run it also scrolls the output to that run's
-  first error, so one control answers "what went wrong, and where".
+
+The two jump arrows ride **inside the cells they belong to** rather than
+in columns of their own: a column of arrows costs the Output column width
+it can put to better use, and the panel area is short of it.
+
+- `↗` sits in the Output cell's top right corner and puts the cursor on
+  the statement in the file it came from. On the closing line of a failed
+  run it also scrolls the output to that run's first error, so one
+  control answers "what went wrong, and where". A message that has one
+  gets `padding-right` so the text truncates before the arrow rather than
+  running under it.
+- `→` follows the row count in the Rows cell and jumps to the result set
+  that statement produced, when that tab is still open. Its place is
+  held by an empty slot where there is no arrow, so the counts stay in a
+  column.
+
+Both share their cell with the value beside them, so their `cellClick`
+handlers check what the click actually landed on (`clickedOn()`) instead
+of firing for anywhere in the cell.
 
 ### What the server had to report for this
 

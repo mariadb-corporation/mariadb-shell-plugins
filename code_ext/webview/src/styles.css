@@ -234,11 +234,6 @@ button:focus-visible {
     color: var(--vscode-descriptionForeground);
 }
 
-.tabulator .tabulator-cell.outputJump,
-.tabulator .tabulator-cell.outputGoTo {
-    padding: 0;
-}
-
 /*
  * The opening and closing lines that frame one execution. They are set
  * apart by weight, not by colour: every row shares one background, and
@@ -270,13 +265,22 @@ button:focus-visible {
 }
 
 /*
+ * The output grid is a log, not a spreadsheet: the columns line up on
+ * their own and a rule between every one of them only adds noise. The
+ * result grids keep theirs.
+ */
+.outputGridHost.tabulator .tabulator-row .tabulator-cell,
+.outputGridHost.tabulator .tabulator-header .tabulator-col {
+    border-right: none;
+}
+
+/*
  * The marker belongs to the message beside it, as in the Problems
- * panel: no rule between them, and only enough room for the glyph.
+ * panel: only enough room for the glyph.
  */
 .tabulator .tabulator-cell.outputSeverity,
 .tabulator .tabulator-header .tabulator-col.outputSeverity {
     padding: 0 0 0 6px;
-    border-right: none;
 }
 
 .tabulator .tabulator-cell.outputMessage,
@@ -290,11 +294,19 @@ button:focus-visible {
             var(--vscode-editorWarning-foreground));
 }
 
-.jumpToResult {
+/*
+ * Both arrows ride inside the cell they belong to rather than in a
+ * column of their own: a column of arrows is width the Output column
+ * can put to better use, and the panel area is short of it.
+ */
+.jumpToResult,
+.goToStatement {
     border: none;
-    border-radius: 0;
-    width: 100%;
+    border-radius: 2px;
+    width: 16px;
+    height: 16px;
     padding: 0;
+    line-height: 16px;
     background: transparent;
     color: var(--vscode-textLink-foreground);
 }
@@ -305,13 +317,42 @@ button:focus-visible {
     color: var(--vscode-textLink-activeForeground);
 }
 
+/* The go-to arrow sits in the message cell's top right corner. */
+.tabulator .tabulator-cell.outputMessage {
+    position: relative;
+}
+
+.outputMessageContent {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* A message only gives up the corner where there is an arrow in it. */
+.outputMessageContent.hasGoTo {
+    padding-right: 18px;
+}
+
 .goToStatement {
-    border: none;
-    border-radius: 0;
-    width: 100%;
-    padding: 0;
-    background: transparent;
-    color: var(--vscode-textLink-foreground);
+    position: absolute;
+    top: 1px;
+    right: 2px;
+}
+
+/*
+ * The jump arrow follows the row count. Its place is held whether or
+ * not there is one to draw, so the counts stay in a column.
+ */
+.outputRowsContent {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+.outputJumpSlot {
+    flex: 0 0 16px;
+    height: 16px;
 }
 
 /* The connection picker, at the far left of the bottom bar. */
