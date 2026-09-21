@@ -16,10 +16,10 @@ has none (the `wip/sandbox-binaries` work — see Architecture). GPLv2,
 SDK-bump session — that jump is what broke CI, see the SDK-error gotcha),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **314 tests pass, 2 SKIPPED (~70s), 98% total coverage** (1845 statements,
-45 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
+Standard suite: **335 tests pass, 2 SKIPPED (~80s), 98% total coverage** (1935 statements,
+42 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 Gotchas). The two skipped are the OPT-IN end-to-end tests: with `--e2e` the run is
-**316 pass** at the same coverage, since everything they touch is already covered
+**337 pass** at the same coverage, since everything they touch is already covered
 by the unit tests. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
@@ -48,6 +48,43 @@ three plugins' runners and test helpers. `run_tests.py` exports `MARIADB_SHELL` 
 silently runs against whatever `mariadb-shell` is on PATH.
 
 ## Architecture / key decisions
+
+- **GUI mode (`mcp start-server --gui`)** — the server is being driven by the MariaDB
+  VS Code extension (`code_ext`) rather than by an autonomous agent. Set by
+  `lib/server.start()` via `general.set_gui_mode()` **before the tools are built**,
+  because it decides which tools exist; read by exactly two places:
+  - `config.is_path_allowed()` returns True for everything. This is the ONE chokepoint —
+    both `db.execute_sql_script`'s own check and `general.require_allowed_path()` go
+    through it, so there is no second place to keep in step. The allowed-path list on
+    disk is left untouched, so turning the mode off restores the old answers exactly.
+  - `db_functions.register_db_tools()` registers `_register_connection_management_tools`
+    instead of the plain `db.list_connections`, adding `db.add_connection` and
+    `db.delete_connection`.
+
+  It is deliberately NOT something a client can ask for over the protocol: it is decided
+  on the command line that started the server. Over HTTP it is allowed but WARNED about
+  (`_warn_if_gui_mode_over_http`) — there is no authentication, so it would hand full
+  file access to whoever reaches the port.
+- **Two connection lists, told apart by a `kind`** (`lib/config.py`): `mcp`
+  (`MCP:Connection:`, curated with `mcp.setup`, openable by any client) and `gui`
+  (`GUI:Connection:`, the extension's own). Neither prefix is a prefix of the other, so
+  the listings cannot bleed. Every connection function takes `kind` and **defaults it to
+  `mcp`**, which is what every caller written before this means — `mcp.setup`,
+  `sandbox.deploy` and the migrator tools were therefore not touched and stay MCP-only.
+  - `normalize_connection_kind()` refuses an unknown kind rather than defaulting it: a
+    misspelling would otherwise act on the other list.
+  - `usable_connection_kinds()` is `(gui, mcp)` in GUI mode and `(mcp,)` otherwise, so
+    the GUI list is **unreachable** without `--gui`.
+  - `find_connection(uri, kinds)` returns `(uri, kind)`, first list wins — a URI in both
+    resolves rather than being refused. (Two spellings WITHIN one list are still refused.)
+    `resolve_connection_uri(uri, kind)` is the one-list form the old callers still use.
+  - `_Connection.kind` is kept for the connection's life, and `_open_session(uri, kind)`
+    re-validates in THAT list only: deleting from the GUI list revokes even where the MCP
+    list names the same server.
+  - `db.delete_connection` also drops every open connection on it (`_drop_connections_on`),
+    so a deletion takes effect at once instead of at the next session reopen.
+  - `db.add_connection` verifies through `setup_cli.verify_connection` — the same function
+    `mcp.setup` uses, so a connection is accepted on identical terms either way.
 
 - Repo's existing `*_plugin` layout (NOT create-shell-plugin's `python/plugins/`).
   `@plugin` / `@plugin_function` decorators. FQNs camelCase (`mcp.startServer`) ->
@@ -1513,6 +1550,19 @@ silently runs against whatever `mariadb-shell` is on PATH.
   (`SESSION_IDLE_TIMEOUT`, `CONNECTION_MAX_LIFETIME`, `MAX_CONNECTIONS_TOTAL`,
   `MAX_CONNECTIONS_PER_CLIENT`). **100% covered — keep it that way.**
 - lib/config.py -> connections (secrets) + allowed paths (settings.json) + `add_allowed_path`.
+  Also the two connection lists: `CONNECTION_SECRET_PREFIX` / `GUI_CONNECTION_SECRET_PREFIX`,
+  `CONNECTION_KIND_MCP` / `CONNECTION_KIND_GUI` / `SUPPORTED_CONNECTION_KINDS` /
+  `DEFAULT_CONNECTION_KIND`, `normalize_connection_kind`, `connection_secret_prefix`,
+  `usable_connection_kinds`, `_resolve_in_kind` and `find_connection`. `is_path_allowed`
+  is the single GUI-mode path chokepoint.
+- tests/unit/test_gui_mode.py -> the 17 GUI-mode tests: the flag, the path bypass (both
+  that it is on AND that the allow-list is not written to), which tools are served,
+  the two lists through the tools, `db.connect` preferring the GUI entry, per-list
+  revocation, and the HTTP warning. `_empty_both_connection_lists()` is needed because
+  `clean_config` restores but does NOT clear, so a developer's own connections would
+  otherwise show up in the exact-list assertions. One test starts a REAL shell
+  (`helpers.list_tool_names(["db"], gui=True)`) and is the only thing that pins the
+  actual `--gui` command-line spelling; everything else drives the plugin in-process.
 - lib/setup.py -> the interactive `mcp.setup`: connections, allowed paths, `_first_run`,
   `_menu_entries` / `_menu` (built, not written out — see Architecture) and `run_setup`.
   Needs `import os` for the paths section. 87% covered.

@@ -83,6 +83,11 @@ MAX_CONNECTIONS_PER_CLIENT = 16
 # is running, which is also what the in-process tests see.
 _active_transport = None
 
+# Whether the server is being served for the MariaDB VS Code extension, set by
+# mcp_plugin.lib.server.start() from the --gui option before it starts serving.
+# False while no server is running, which is also what the in-process tests see.
+_gui_mode = False
+
 # MCP function groups that can be loaded independently
 FUNCTION_GROUP_DB = "db"
 FUNCTION_GROUP_MSM = "msm"
@@ -299,6 +304,52 @@ def is_http_transport() -> bool:
         True while a server is running with the streamable-http transport.
     """
     return _active_transport == TRANSPORT_STREAMABLE_HTTP
+
+
+def set_gui_mode(enabled) -> None:
+    """Records whether the server is being served for the VS Code extension.
+
+    Set from the ``--gui`` option by :func:`mcp_plugin.lib.server.start`, before
+    the tools are registered - :func:`mcp_plugin.lib.db_functions.register_db_tools`
+    reads it to decide whether the connection-management tools exist at all, so
+    a later change would leave a server advertising the wrong set of tools.
+
+    GUI mode is a statement about WHO the client is, not about what it asked
+    for: the extension is a user interface the user drives directly, on this
+    machine, over stdio, so the two things it turns on are the two the
+    allow-lists exist to ask an autonomous client about.
+
+    * Every local path is accessible (see
+      :func:`mcp_plugin.lib.config.is_path_allowed`). The extension opens files
+      the user picked in VS Code's own file dialogs, so an allow-list would ask
+      the user to confirm a choice they had just made.
+    * The connection list can be written, not only read (see
+      :func:`mcp_plugin.lib.db_functions.register_db_tools`), which is what lets
+      the extension manage connections instead of sending the user to
+      ``mcp.setup``.
+
+    Both are a real widening of what a client can do, so it is deliberately not
+    something a client can ask for over the protocol: it is decided once, on the
+    command line that started the server.
+
+    Args:
+        enabled (bool): Whether the server is being served for the extension.
+
+    Returns:
+        None
+    """
+    global _gui_mode
+
+    _gui_mode = bool(enabled)
+
+
+def is_gui_mode() -> bool:
+    """Returns whether the server is being served for the VS Code extension.
+
+    Returns:
+        True while a server is running that was started with ``--gui``.
+    """
+    return _gui_mode
 
 
 # The token every form of a loopback address is normalized to. A client talking
@@ -637,6 +688,11 @@ async def require_allowed_path(ctx, path) -> None:
     to trust it. On confirmation the path is added to the allowed paths on disk
     (see :func:`mcp_plugin.lib.config.add_allowed_path`) and the call returns
     normally; otherwise a :class:`mysqlsh.Error` is raised.
+
+    In GUI mode every path is allowed, so this returns without eliciting
+    anything and without writing the path to the allow-list - the check it
+    performs is what
+    :func:`mcp_plugin.lib.config.is_path_allowed` has already answered.
 
     Args:
         ctx: The MCP request context, used to elicit confirmation from the

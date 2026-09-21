@@ -81,14 +81,18 @@ def configured_connections(monkeypatch):
         "repl@source-host:3306": "repl-secret",
     }
 
-    def fake_resolve(uri):
+    def fake_resolve(uri, kind=None):
         return uri if uri in connections else None
 
     monkeypatch.setattr(config, "resolve_connection_uri", fake_resolve)
-    monkeypatch.setattr(config, "get_connection_password", lambda uri: connections[uri])
+    monkeypatch.setattr(
+        config, "get_connection_password", lambda uri, kind=None: connections[uri]
+    )
     # Also the list the refusals name: without this a test would read - and
     # print - whatever the developer happens to have configured.
-    monkeypatch.setattr(config, "list_connection_uris", lambda: sorted(connections))
+    monkeypatch.setattr(
+        config, "list_connection_uris", lambda kind=None: sorted(connections)
+    )
     yield connections
 
 
@@ -397,7 +401,7 @@ def test_an_unreadable_secret_is_reported_with_the_stores_own_words(
     RuntimeError, whose text is the useful part ("Could not find the secret"
     when the connection was removed while a migration was starting).
     """
-    def unreadable(uri):
+    def unreadable(uri, kind=None):
         raise RuntimeError("Failed to read the secret: Could not find the secret")
 
     monkeypatch.setattr(config, "get_connection_password", unreadable)

@@ -32,6 +32,8 @@ from types import SimpleNamespace
 
 import pytest
 
+import mysqlsh
+
 from mcp_plugin.lib import config, setup, setup_migrator, setup_prompts
 import mcp_plugin.tests.unit.helpers as helpers
 
@@ -90,6 +92,133 @@ def test_config_connection_secrets(clean_config):
 
     config.delete_connection(uri)
     assert uri not in config.list_connection_uris()
+
+
+def _empty_both_connection_lists():
+    """Empties both connection lists so a test can assert on them exactly.
+
+    The clean_config fixture backs the lists up and restores them afterwards
+    but does NOT clear them first, so without this a developer's own configured
+    connections turn up in these assertions.
+    """
+    for kind in config.SUPPORTED_CONNECTION_KINDS:
+        for uri in config.list_connection_uris(kind):
+            config.delete_connection(uri, kind)
+
+
+def test_the_two_connection_lists_are_kept_apart(clean_config):
+    """One URI can be in both lists, under two passwords, and stays separate.
+
+    The MCP list and the GUI list have different owners - mcp.setup curates the
+    first, the VS Code extension the second - so a connection made in one must
+    not appear in, or be removed by, an operation on the other. The same server
+    in both is the case that would give it away, since only the secret prefix
+    tells the two entries apart.
+    """
+    _empty_both_connection_lists()
+    uri = "kind_pytest@127.0.0.1:3306"
+
+    config.store_connection(uri, "mcp-secret")
+    config.store_connection(uri, "gui-secret", config.CONNECTION_KIND_GUI)
+
+    assert config.list_connection_uris() == [uri]
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [uri]
+
+    assert config.get_connection_password(uri) == "mcp-secret"
+    assert (
+        config.get_connection_password(uri, config.CONNECTION_KIND_GUI)
+        == "gui-secret"
+    )
+
+    # Deleting one leaves the other exactly as it was.
+    config.delete_connection(uri, config.CONNECTION_KIND_GUI)
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
+    assert config.list_connection_uris() == [uri]
+    assert config.get_connection_password(uri) == "mcp-secret"
+
+
+def test_an_unknown_connection_kind_is_refused():
+    """A kind that names neither list is an error, never a silent default.
+
+    It arrives straight from a tool argument, and defaulting a misspelling
+    would read, write or delete in the other list than the caller meant.
+    """
+    assert config.normalize_connection_kind(None) == config.CONNECTION_KIND_MCP
+    # Spelled as a client might: cased differently, with space around it.
+    assert config.normalize_connection_kind(" GUI ") == config.CONNECTION_KIND_GUI
+
+    with pytest.raises(mysqlsh.Error) as refused:
+        config.normalize_connection_kind("mysql")
+
+    assert "not a known connection kind" in str(refused.value)
+
+
+def test_resolving_a_connection_reports_the_list_it_was_found_in(clean_config):
+    """find_connection answers with the kind, and searches in the given order.
+
+    The URI alone stops identifying a connection once there are two lists: the
+    password is read under the kind, so whatever resolves one has to say which
+    list it came out of.
+    """
+    _empty_both_connection_lists()
+    shared = "both_pytest@127.0.0.1:3306"
+    gui_only = "gui_pytest@127.0.0.1:3306"
+
+    config.store_connection(shared, "mcp-secret")
+    config.store_connection(shared, "gui-secret", config.CONNECTION_KIND_GUI)
+    config.store_connection(gui_only, "gui-secret", config.CONNECTION_KIND_GUI)
+
+    both = (config.CONNECTION_KIND_GUI, config.CONNECTION_KIND_MCP)
+
+    # A URI in both lists resolves to the first kind searched rather than being
+    # refused as ambiguous - the caller chose the order.
+    assert config.find_connection(shared, both) == (
+        shared, config.CONNECTION_KIND_GUI
+    )
+    assert config.find_connection(shared, reversed(both)) == (
+        shared, config.CONNECTION_KIND_MCP
+    )
+
+    # A URI in one list only is found whichever order is used, and not found at
+    # all where that list is not searched.
+    assert config.find_connection(gui_only, both) == (
+        gui_only, config.CONNECTION_KIND_GUI
+    )
+    assert config.find_connection(
+        gui_only, (config.CONNECTION_KIND_MCP,)
+    ) is None
+
+    # The single-list form is the MCP list unless told otherwise, which is what
+    # every caller written before the GUI list means.
+    assert config.resolve_connection_uri(gui_only) is None
+    assert (
+        config.resolve_connection_uri(gui_only, config.CONNECTION_KIND_GUI)
+        == gui_only
+    )
+    # And a spelling that only NAMES the connection still resolves, per list.
+    assert (
+        config.resolve_connection_uri(
+            "mariadb://" + gui_only, config.CONNECTION_KIND_GUI
+        )
+        == gui_only
+    )
+
+
+def test_only_the_mcp_list_is_searched_outside_gui_mode(clean_config):
+    """usable_connection_kinds is what keeps the GUI list out of reach.
+
+    The GUI list is written by a server started with --gui and meant for the
+    extension. Anywhere else it must not be openable, or a connection the user
+    made for their editor would quietly be handed to whatever else drives this
+    server.
+    """
+    _empty_both_connection_lists()
+    assert config.usable_connection_kinds() == (config.CONNECTION_KIND_MCP,)
+
+    uri = "reach_pytest@127.0.0.1:3306"
+    config.store_connection(uri, "gui-secret", config.CONNECTION_KIND_GUI)
+
+    assert config.find_connection(uri) is None
 
 
 def test_connection_uris_reduce_to_one_spelling():

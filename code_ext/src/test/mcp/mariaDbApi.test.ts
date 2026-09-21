@@ -47,6 +47,14 @@ describe("MariaDbApi", () => {
             "db.list_connections": {
                 content: [{ type: "text", text: "dba@localhost:3310" }],
             },
+            "db.add_connection": {
+                content: [{ type: "text", text: "dba@localhost:3310" }],
+                structuredContent: { result: "dba@localhost:3310" },
+            },
+            "db.delete_connection": {
+                content: [{ type: "text", text: "dba@localhost:3310" }],
+                structuredContent: { result: "dba@localhost:3310" },
+            },
             "db.connect": {
                 content: [{ type: "text", text: "uuid-1" }],
                 structuredContent: { result: "uuid-1" },
@@ -80,6 +88,46 @@ describe("MariaDbApi", () => {
             },
         });
         api = new MariaDbApi(caller);
+    });
+
+    it("names the connection list only when asked to", async () => {
+        // A server that is not in GUI mode has no `kind` argument, so sending
+        // one would fail a call that works perfectly well without it.
+        await expect(api.listConnections())
+            .resolves.toEqual(["dba@localhost:3310"]);
+        expect(caller.calls[0]!.args).toEqual({});
+
+        await api.listConnections("gui");
+        expect(caller.calls[1]!.args).toEqual({ kind: "gui" });
+    });
+
+    it("adds a connection, leaving out what it was not told", async () => {
+        await expect(api.addConnection("dba@localhost:3310", "pw"))
+            .resolves.toBe("dba@localhost:3310");
+        expect(caller.calls[0]).toEqual({
+            name: "db.add_connection",
+            args: { uri: "dba@localhost:3310", password: "pw" },
+        });
+
+        await api.addConnection("dba@localhost:3310", "pw", "gui", false);
+        expect(caller.calls[1]!.args).toEqual({
+            uri: "dba@localhost:3310",
+            password: "pw",
+            kind: "gui",
+            verify: false,
+        });
+    });
+
+    it("deletes a connection from the list it names", async () => {
+        await expect(api.deleteConnection("dba@localhost:3310", "gui"))
+            .resolves.toBe("dba@localhost:3310");
+        expect(caller.calls[0]).toEqual({
+            name: "db.delete_connection",
+            args: { uri: "dba@localhost:3310", kind: "gui" },
+        });
+
+        await api.deleteConnection("dba@localhost:3310");
+        expect(caller.calls[1]!.args).toEqual({ uri: "dba@localhost:3310" });
     });
 
     it("lists connections", async () => {

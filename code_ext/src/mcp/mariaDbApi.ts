@@ -23,6 +23,7 @@ import {
     type IToolResult,
 } from "./protocol.js";
 import type {
+    ConnectionKind,
     IMariaDbApi,
     IObjectDetails,
     IObjectInfo,
@@ -49,17 +50,85 @@ export class MariaDbApi implements IMariaDbApi {
     public constructor(private readonly caller: IToolCaller) { }
 
     /**
-     * Lists the connection URIs configured with `mcp.setup`.
+     * Lists the configured connection URIs of one kind.
      *
-     * @returns One URI per configured connection.
+     * @param kind Which list to read. Left out entirely when not given, so a
+     *             server that predates the two lists - or one not started
+     *             with `--gui` - is not handed an argument it does not know.
+     *             Either way it answers with the shared `mcp` list.
+     *
+     * @returns One URI per configured connection of that kind.
      */
-    public async listConnections(): Promise<string[]> {
+    public async listConnections(kind?: ConnectionKind): Promise<string[]> {
         const name = "db.list_connections";
 
         return decodeList<string>(
             name,
-            await this.caller.callTool(name, {}),
+            await this.caller.callTool(name, kind === undefined ? {} : { kind }),
         );
+    }
+
+    /**
+     * Stores a connection and its password, and reports the spelling it was
+     * stored under.
+     *
+     * Served only by a server started with `--gui`. Storing a connection that
+     * is already in that list replaces its password, which is how a password
+     * entered wrongly is corrected.
+     *
+     * @param uri The connection to store. It must not carry a password: the
+     *            server strips one while normalizing and refuses rather than
+     *            storing a connection without one.
+     * @param password The password to store, in the OS secret store.
+     * @param kind Which list to store it in. Defaults to the server's own
+     *             default, the shared `mcp` list.
+     * @param verify Whether the server opens a session with the credentials
+     *               first and stores them only if that works. Defaults to the
+     *               server's own default, which is to verify.
+     *
+     * @returns The normalized URI the connection was stored under, which is
+     *          the spelling `listConnections` then reports.
+     */
+    public async addConnection(
+        uri: string,
+        password: string,
+        kind?: ConnectionKind,
+        verify?: boolean,
+    ): Promise<string> {
+        const name = "db.add_connection";
+
+        return decodeScalar(name, await this.caller.callTool(name, {
+            uri,
+            password,
+            ...(kind === undefined ? {} : { kind }),
+            ...(verify === undefined ? {} : { verify }),
+        }));
+    }
+
+    /**
+     * Deletes a stored connection and its password, closing whatever is open
+     * on it.
+     *
+     * Served only by a server started with `--gui`. The connection is deleted
+     * from the named list alone, even where the other list holds the same URI.
+     *
+     * @param uri The connection to delete. It need not be spelled exactly as
+     *            `listConnections` reports it, only name the same connection.
+     * @param kind Which list to delete it from. Defaults to the server's own
+     *             default, the shared `mcp` list.
+     *
+     * @returns The URI that was deleted, as it was stored.
+     */
+    public async deleteConnection(
+        uri: string,
+        kind?: ConnectionKind,
+    ): Promise<string> {
+        const name = "db.delete_connection";
+
+        return decodeScalar(name, await this.caller.callTool(name, {
+            uri,
+            ...(kind === undefined ? {} : { kind }),
+        }));
     }
 
     /**

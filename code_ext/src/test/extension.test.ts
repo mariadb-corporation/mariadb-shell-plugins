@@ -289,7 +289,9 @@ describe("activate", () => {
 
         expect(runtime.connector?.commands).toEqual([{
             command: "mariadb-shell",
-            args: ["--", "mcp", "start-server", "--transport=stdio"],
+            args: [
+                "--", "mcp", "start-server", "--transport=stdio", "--gui",
+            ],
         }]);
         expect(roots.map((node) => {
             return node.uri;

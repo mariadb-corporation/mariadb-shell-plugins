@@ -25,12 +25,28 @@ export const MINIMUM_SHELL_VERSION = "26.9.2";
 /** Name of the shell executable, without a platform specific extension. */
 export const SHELL_BINARY_NAME = "mariadb-shell";
 
-/** Arguments that make the shell host the MCP server over stdin/stdout. */
+/**
+ * Arguments that make the shell host the MCP server over stdin/stdout.
+ *
+ * `--gui` tells the server its client is this extension rather than an
+ * autonomous agent, which is what gives it access to every local path - the
+ * user picks those in VS Code's own dialogs, so the server's allowed-path
+ * list has nothing left to confirm - and what makes the connection list
+ * writable, through the `db.add_connection` and `db.delete_connection` tools
+ * that only a `--gui` server serves.
+ *
+ * A shell whose MCP plugin predates the option ignores it rather than
+ * failing, because the plugin function takes its options as a dictionary and
+ * only reads the ones it knows. Such a server simply comes up without GUI
+ * mode, so connection management is unavailable and paths go back to being
+ * confirmed - which is why {@link MINIMUM_SHELL_VERSION} is the real gate.
+ */
 export const MCP_SERVER_ARGS = [
     "--",
     "mcp",
     "start-server",
     "--transport=stdio",
+    "--gui",
 ];
 
 export const INSTALL_SCRIPT_URL_POSIX =

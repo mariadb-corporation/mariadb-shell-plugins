@@ -89,6 +89,62 @@ def non_interactive_shell():
     yield
 
 
+def _backup_connections() -> dict:
+    """Returns every stored connection of every kind, with its password.
+
+    Keyed by ``(kind, uri)`` because the two lists can hold the same URI under
+    two different passwords, and a backup that collapsed them would restore the
+    wrong one.
+
+    Returns:
+        A dict mapping ``(kind, uri)`` to the stored password.
+    """
+    return {
+        (kind, uri): config.get_connection_password(uri, kind)
+        for kind in config.SUPPORTED_CONNECTION_KINDS
+        for uri in config.list_connection_uris(kind)
+    }
+
+
+def _clear_connections() -> None:
+    """Deletes every stored connection of every kind, best effort."""
+    for kind in config.SUPPORTED_CONNECTION_KINDS:
+        for uri in config.list_connection_uris(kind):
+            try:
+                config.delete_connection(uri, kind)
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
+
+
+def _restore_connections(connections: dict) -> None:
+    """Re-stores what :func:`_backup_connections` returned, best effort."""
+    for (kind, uri), password in connections.items():
+        try:
+            config.store_connection(uri, password, kind)
+        except Exception:  # noqa: BLE001 - best-effort restore
+            pass
+
+
+@pytest.fixture
+def gui_mode():
+    """Serves the rest of the test as a server started with ``--gui``.
+
+    GUI mode is a process-wide global (see
+    :func:`mcp_plugin.lib.general.set_gui_mode`), and in a real run it is set
+    once by a server that then blocks. A test has to put it back, or every test
+    after it would run with the path allow-list off and the
+    connection-management tools registered.
+    """
+    from mcp_plugin.lib import general as lib_general
+
+    previous = lib_general.is_gui_mode()
+    lib_general.set_gui_mode(True)
+    try:
+        yield
+    finally:
+        lib_general.set_gui_mode(previous)
+
+
 @pytest.fixture
 def stored_connections():
     """Stores the two test connections, restoring prior state afterwards.
@@ -102,15 +158,8 @@ def stored_connections():
     """
     # Back up the connections that existed prior to the test, then remove them
     # so the test starts from a clean, known set.
-    original_connections = {
-        uri: config.get_connection_password(uri)
-        for uri in config.list_connection_uris()
-    }
-    for uri in original_connections:
-        try:
-            config.delete_connection(uri)
-        except Exception:  # noqa: BLE001 - best-effort cleanup
-            pass
+    original_connections = _backup_connections()
+    _clear_connections()
 
     for uri in helpers.TEST_CONNECTION_URIS:
         config.store_connection(uri, helpers.TEST_CONNECTION_PASSWORD)
@@ -119,16 +168,8 @@ def stored_connections():
 
     # Restore the original set of connections exactly: drop everything that is
     # currently stored, then re-store the backed-up connections.
-    for uri in config.list_connection_uris():
-        try:
-            config.delete_connection(uri)
-        except Exception:  # noqa: BLE001 - best-effort cleanup
-            pass
-    for uri, password in original_connections.items():
-        try:
-            config.store_connection(uri, password)
-        except Exception:  # noqa: BLE001 - best-effort restore
-            pass
+    _clear_connections()
+    _restore_connections(original_connections)
 
 
 @pytest.fixture
@@ -166,26 +207,15 @@ def clean_config():
     backed up before the test and restored exactly afterwards, so a test may
     freely add, clear or delete connections and paths.
     """
-    original_connections = {
-        uri: config.get_connection_password(uri)
-        for uri in config.list_connection_uris()
-    }
+    original_connections = _backup_connections()
     had_settings = config.settings_file_exists()
     original_paths = config.get_allowed_paths()
 
     try:
         yield
     finally:
-        for uri in config.list_connection_uris():
-            try:
-                config.delete_connection(uri)
-            except Exception:  # noqa: BLE001 - best-effort cleanup
-                pass
-        for uri, password in original_connections.items():
-            try:
-                config.store_connection(uri, password)
-            except Exception:  # noqa: BLE001 - best-effort restore
-                pass
+        _clear_connections()
+        _restore_connections(original_connections)
         if had_settings:
             config.set_allowed_paths(original_paths)
         else:

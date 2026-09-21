@@ -74,11 +74,13 @@ def server_binary_available() -> bool:
     return bool(shutil.which("mariadbd") or shutil.which("mysqld"))
 
 
-def _stdio_server_params(function_groups):
+def _stdio_server_params(function_groups, gui=False):
     """Builds the StdioServerParameters for the MCP server subprocess.
 
     Args:
         function_groups (list): The function groups to expose.
+        gui (bool): Whether to pass --gui, which serves the server as the
+            MariaDB VS Code extension is served.
 
     Returns:
         A StdioServerParameters instance.
@@ -105,6 +107,10 @@ def _stdio_server_params(function_groups):
             "start-server",
             "--transport=stdio",
             f"--function-groups={','.join(function_groups)}",
+            # Spelled as the shell's own help lists it. This is the ONE place
+            # the real option name is exercised, so a rename that only touched
+            # the plugin would be caught here and nowhere else.
+            *(["--gui"] if gui else []),
         ],
         env=env,
     )
@@ -162,12 +168,12 @@ def call_tool(
     )
 
 
-async def _alist_tool_names(function_groups, timeout):
+async def _alist_tool_names(function_groups, timeout, gui=False):
     """Lists the tool names a server exposes for the given function groups."""
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
 
-    params = _stdio_server_params(function_groups)
+    params = _stdio_server_params(function_groups, gui)
 
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -177,19 +183,22 @@ async def _alist_tool_names(function_groups, timeout):
             return [tool.name for tool in result.tools]
 
 
-def list_tool_names(function_groups, timeout=None):
+def list_tool_names(function_groups, timeout=None, gui=False):
     """Returns the names of the tools a server advertises over stdio.
 
     Args:
         function_groups (list): The function groups the server should expose.
         timeout (float): Round-trip timeout in seconds.
+        gui (bool): Whether to start the server with --gui.
 
     Returns:
         The list of tool names.
     """
     return asyncio.run(
         _alist_tool_names(
-            function_groups, timeout if timeout is not None else _MCP_TIMEOUT
+            function_groups,
+            timeout if timeout is not None else _MCP_TIMEOUT,
+            gui,
         )
     )
 

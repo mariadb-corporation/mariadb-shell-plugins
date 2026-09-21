@@ -23,6 +23,15 @@ Two kinds of configuration are persisted:
   system's secret store rather than in a plain file. A connection is looked up
   by its URI, and a client need not spell it exactly as it was configured (see
   :func:`normalize_connection_uri`).
+
+  There are two lists of them, told apart by a *kind* and stored under a prefix
+  of their own: :data:`CONNECTION_KIND_MCP`, the connections ``mcp.setup``
+  curates and any MCP client may open, and :data:`CONNECTION_KIND_GUI`, the ones
+  the MariaDB VS Code extension manages for itself. Every function here takes
+  the kind and defaults it to the MCP list, which is what everything written
+  before the GUI list existed means. The GUI list is only reachable at all from
+  a server started with ``--gui`` (see
+  :func:`mcp_plugin.lib.general.set_gui_mode`).
 * **Allowed paths**: the local directories the MCP server is allowed to
   access. These are stored in a ``settings.json`` file inside the plugin data
   directory (see :func:`mcp_plugin.lib.general.get_mcp_plugin_data_path`).
@@ -40,6 +49,32 @@ from mcp_plugin.lib import general
 
 # Prefix used for the shell secrets that store MCP connection passwords.
 CONNECTION_SECRET_PREFIX = "MCP:Connection:"
+
+# Prefix used for the shell secrets that store the connection passwords the
+# MariaDB VS Code extension manages. A separate prefix and not a flag inside the
+# secret: the two lists have different owners and different reach. The MCP list
+# is what an autonomous client may open and is curated with ``mcp.setup``; the
+# GUI list is the user's own, added and removed from the extension while it
+# runs. Keeping them apart means a connection the user made for the editor is
+# not silently handed to whatever else drives this server, and neither list can
+# be emptied by an operation meant for the other.
+GUI_CONNECTION_SECRET_PREFIX = "GUI:Connection:"
+
+# The two lists a connection can belong to, named for the callers that use them.
+CONNECTION_KIND_MCP = "mcp"
+CONNECTION_KIND_GUI = "gui"
+SUPPORTED_CONNECTION_KINDS = (CONNECTION_KIND_MCP, CONNECTION_KIND_GUI)
+
+# The list everything that does not say otherwise means. Every caller that
+# predates the GUI list - mcp.setup, sandbox.deploy, the migrator tools - works
+# on the MCP connections, so leaving the kind out has to go on meaning that.
+DEFAULT_CONNECTION_KIND = CONNECTION_KIND_MCP
+
+# The secret prefix each kind is stored under.
+_CONNECTION_SECRET_PREFIXES = {
+    CONNECTION_KIND_MCP: CONNECTION_SECRET_PREFIX,
+    CONNECTION_KIND_GUI: GUI_CONNECTION_SECRET_PREFIX,
+}
 
 # URI scheme prefixes that mean the same thing as a bare ``user@host:port``:
 # the MariaDB client-server protocol. A client writing a URI of its own tends to
@@ -70,16 +105,86 @@ def _shell():
 # --- Connections (stored as shell secrets) --------------------------------
 
 
-def list_connection_uris() -> list:
-    """Returns the configured connection URIs.
+def normalize_connection_kind(kind) -> str:
+    """Returns the connection kind a caller named, checked against the list.
+
+    Args:
+        kind: The kind to use, or None for :data:`DEFAULT_CONNECTION_KIND`.
+            Matched without regard to case or surrounding space, since it
+            reaches this straight from a tool argument.
 
     Returns:
-        The sorted list of connection URIs that have a stored password.
+        One of :data:`SUPPORTED_CONNECTION_KINDS`.
+
+    Raises:
+        mysqlsh.Error: If it names no known kind. Refused rather than defaulted:
+            a misspelled kind would otherwise read, write or delete in the other
+            list than the one the caller meant.
     """
+    if kind is None:
+        return DEFAULT_CONNECTION_KIND
+
+    normalized = str(kind).strip().lower()
+    if normalized not in _CONNECTION_SECRET_PREFIXES:
+        raise mysqlsh.Error(
+            f"'{kind}' is not a known connection kind. Supported kinds are: "
+            f"{', '.join(SUPPORTED_CONNECTION_KINDS)}."
+        )
+
+    return normalized
+
+
+def connection_secret_prefix(kind=None) -> str:
+    """Returns the shell-secret prefix one kind of connection is stored under.
+
+    Args:
+        kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
+
+    Returns:
+        The secret key prefix, including its trailing colon.
+    """
+    return _CONNECTION_SECRET_PREFIXES[normalize_connection_kind(kind)]
+
+
+def usable_connection_kinds() -> tuple:
+    """Returns the connection kinds this server may open a connection from.
+
+    The MCP list always; the GUI list only where a server was started with
+    ``--gui``, which is the one setting in which the connections the extension
+    made for itself are meant to be reachable at all.
+
+    The GUI list comes FIRST, so that when one connection is in both lists it is
+    the GUI entry that is opened. The two can hold different passwords, and in
+    GUI mode the entry the user last worked with through the extension is the
+    one they mean; the MCP entry still answers for every URI the GUI list does
+    not name.
+
+    Returns:
+        The kinds to search, in the order they are searched.
+    """
+    if general.is_gui_mode():
+        return (CONNECTION_KIND_GUI, CONNECTION_KIND_MCP)
+
+    return (CONNECTION_KIND_MCP,)
+
+
+def list_connection_uris(kind=None) -> list:
+    """Returns the configured connection URIs of one kind.
+
+    Args:
+        kind: The connection kind to list, or None for
+            :data:`DEFAULT_CONNECTION_KIND`.
+
+    Returns:
+        The sorted list of connection URIs of that kind that have a stored
+        password.
+    """
+    prefix = connection_secret_prefix(kind)
+
     return sorted(
-        key[len(CONNECTION_SECRET_PREFIX):]
+        key[len(prefix):]
         for key in _shell().list_secrets()
-        if key.startswith(CONNECTION_SECRET_PREFIX)
+        if key.startswith(prefix)
     )
 
 
@@ -181,27 +286,22 @@ def normalize_connection_uri(uri) -> Optional[str]:
         return None
 
 
-def resolve_connection_uri(uri) -> Optional[str]:
-    """Returns the configured connection URI that the given URI names.
-
-    The URI a client passes to ``db.connect`` does not have to be spelled
-    exactly like the configured one, only name the same connection (see
-    :func:`normalize_connection_uri`). What comes back is the configured URI,
-    which is the key everything else uses: the password is read under it and the
-    connection is opened, logged and re-validated on it.
+def _resolve_in_kind(uri, kind) -> Optional[str]:
+    """Returns the configured URI of one kind that the given URI names.
 
     Args:
         uri: The connection URI to resolve.
+        kind (str): The connection kind to look in, already normalized.
 
     Returns:
-        The configured connection URI, or None if no configured connection is
-        the one named.
+        The configured connection URI, or None if that list holds no connection
+        the given URI names.
 
     Raises:
-        mysqlsh.Error: If more than one configured connection is - the same
+        mysqlsh.Error: If more than one connection in that list is - the same
             connection configured twice, under two spellings.
     """
-    configured_uris = list_connection_uris()
+    configured_uris = list_connection_uris(kind)
 
     # The spelling that was stored is a match for itself whatever it looks
     # like, including one no longer parsable by this shell.
@@ -234,41 +334,116 @@ def resolve_connection_uri(uri) -> Optional[str]:
     return matches[0]
 
 
-def get_connection_password(uri: str) -> str:
+def find_connection(uri, kinds=None) -> Optional[tuple]:
+    """Returns the configured connection the given URI names, and its kind.
+
+    The kind comes back with the URI because the URI on its own no longer
+    identifies a connection: the same one can be in both lists under two
+    passwords, and everything done with it afterwards - reading the password,
+    re-validating it when a session is reopened - has to happen in the list it
+    was found in.
+
+    The lists are searched in the order they are given and the FIRST one holding
+    a match wins, so a URI in both is resolved to one connection rather than
+    being refused as ambiguous. Two spellings of one connection WITHIN a list
+    are still refused, which is the case nobody can disambiguate (see
+    :func:`_resolve_in_kind`).
+
+    Args:
+        uri: The connection URI to resolve.
+        kinds: The connection kinds to search, in order. Defaults to
+            :func:`usable_connection_kinds`, which is the GUI list before the
+            MCP one where the server was started with ``--gui`` and the MCP list
+            alone otherwise.
+
+    Returns:
+        A ``(configured_uri, kind)`` tuple, or None if no configured connection
+        in any of those lists is the one named.
+
+    Raises:
+        mysqlsh.Error: If one of the lists holds the same connection twice.
+    """
+    if kinds is None:
+        kinds = usable_connection_kinds()
+
+    for kind in kinds:
+        kind = normalize_connection_kind(kind)
+        configured_uri = _resolve_in_kind(uri, kind)
+        if configured_uri is not None:
+            return (configured_uri, kind)
+
+    return None
+
+
+def resolve_connection_uri(uri, kind=None) -> Optional[str]:
+    """Returns the configured connection URI that the given URI names.
+
+    The URI a client passes to ``db.connect`` does not have to be spelled
+    exactly like the configured one, only name the same connection (see
+    :func:`normalize_connection_uri`). What comes back is the configured URI,
+    which is the key everything else uses: the password is read under it and the
+    connection is opened, logged and re-validated on it.
+
+    This looks in ONE list. Use :func:`find_connection` where the connection may
+    be in either, which is what ``db.connect`` does.
+
+    Args:
+        uri: The connection URI to resolve.
+        kind: The connection kind to look in, or None for
+            :data:`DEFAULT_CONNECTION_KIND`.
+
+    Returns:
+        The configured connection URI, or None if no configured connection is
+        the one named.
+
+    Raises:
+        mysqlsh.Error: If more than one configured connection is - the same
+            connection configured twice, under two spellings.
+    """
+    return _resolve_in_kind(uri, normalize_connection_kind(kind))
+
+
+def get_connection_password(uri: str, kind=None) -> str:
     """Returns the stored password for the given connection URI.
 
     Args:
         uri (str): The connection URI.
+        kind: The connection kind it is stored under, or None for
+            :data:`DEFAULT_CONNECTION_KIND`.
 
     Returns:
         The stored password.
     """
-    return _shell().read_secret(CONNECTION_SECRET_PREFIX + uri)
+    return _shell().read_secret(connection_secret_prefix(kind) + uri)
 
 
-def store_connection(uri: str, password: str) -> None:
+def store_connection(uri: str, password: str, kind=None) -> None:
     """Stores the password for the given connection URI.
 
     Args:
         uri (str): The connection URI.
         password (str): The password to store.
+        kind: The connection kind to store it as, or None for
+            :data:`DEFAULT_CONNECTION_KIND`.
 
     Returns:
         None
     """
-    _shell().store_secret(CONNECTION_SECRET_PREFIX + uri, password)
+    _shell().store_secret(connection_secret_prefix(kind) + uri, password)
 
 
-def delete_connection(uri: str) -> None:
+def delete_connection(uri: str, kind=None) -> None:
     """Deletes the stored password for the given connection URI.
 
     Args:
         uri (str): The connection URI.
+        kind: The connection kind it is stored under, or None for
+            :data:`DEFAULT_CONNECTION_KIND`.
 
     Returns:
         None
     """
-    _shell().delete_secret(CONNECTION_SECRET_PREFIX + uri)
+    _shell().delete_secret(connection_secret_prefix(kind) + uri)
 
 
 # --- Allowed paths (stored in settings.json) ------------------------------
@@ -353,12 +528,24 @@ def is_path_allowed(path: str) -> bool:
     inside one of them. If no allowed directories are configured, nothing is
     allowed.
 
+    The one exception is a server started with ``--gui``, where EVERY path is
+    allowed. The allow-list answers the question "should this client be trusted
+    with this directory", and in GUI mode the client is a user interface the
+    user is driving on this machine: the path it names is one the user just
+    picked in VS Code, so there is nothing left to ask them. See
+    :func:`mcp_plugin.lib.general.set_gui_mode`. This is the single chokepoint
+    for that - both ``db.execute_sql_script`` and
+    :func:`mcp_plugin.lib.general.require_allowed_path` come through here.
+
     Args:
         path (str): The path to check.
 
     Returns:
         True if access to the path is allowed, False otherwise.
     """
+    if general.is_gui_mode():
+        return True
+
     allowed_paths = get_allowed_paths()
     if not allowed_paths:
         return False

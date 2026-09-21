@@ -50,6 +50,14 @@ call happened to be the first to need it.
 
 The shell's interactive mode is disabled before serving, so the wrapped ``msm``
 plugin functions return their results instead of prompting for input.
+
+``--gui`` is recorded the same way, via
+:func:`mcp_plugin.lib.general.set_gui_mode`, and before the tools are built
+rather than merely before serving: it decides which tools the server has, so it
+cannot be settled any later. It says the client is the MariaDB VS Code
+extension, which is the one client that is a user interface rather than an
+autonomous agent - see that function for what it turns on and why the answer is
+different for it.
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver streamable fdopen dup2 uvicorn starlette
@@ -128,7 +136,12 @@ def build_mcp_server(function_groups):
 
 
 def start(
-    host: str, port: int, transport: str, function_groups, allowed_hosts=()
+    host: str,
+    port: int,
+    transport: str,
+    function_groups,
+    allowed_hosts=(),
+    gui: bool = False,
 ) -> None:
     """Builds and serves the MCP server using the given transport.
 
@@ -145,6 +158,9 @@ def start(
         allowed_hosts: Additional Host header values to accept (streamable-http
             only), for a server reachable under a name that cannot be derived
             from the bind address (see :func:`_transport_security_settings`).
+        gui (bool): Whether to serve for the MariaDB VS Code extension, which
+            widens what a client may do (see
+            :func:`mcp_plugin.lib.general.set_gui_mode`).
 
     Returns:
         None
@@ -179,12 +195,18 @@ def start(
     # when they fall idle (see mcp_plugin.lib.db_functions).
     general.set_active_transport(transport)
 
+    # Recorded before the tools are built, because it decides which of them
+    # exist: the connection-management tools are served in GUI mode only, and a
+    # server cannot change what it advertises once a client has asked.
+    general.set_gui_mode(gui)
+
     mcp_server = build_mcp_server(function_groups=function_groups)
 
     if transport == general.TRANSPORT_STDIO:
         _serve_stdio(mcp_server)
     else:
         _warn_if_reachable_from_the_network(host, port)
+        _warn_if_gui_mode_over_http(gui, host, port)
 
         # The reaper that closes idle sessions and drops expired connections
         # belongs to the server, and this is where a server begins and ends. It
@@ -230,6 +252,51 @@ def _warn_if_reachable_from_the_network(host: str, port: int) -> None:
         "         Bind to 127.0.0.1 (the default) and put a tunnel or an "
         "authenticating proxy in\n"
         "         front of it if it has to be reachable remotely.\n",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def _warn_if_gui_mode_over_http(gui: bool, host: str, port: int) -> None:
+    """Warns when GUI mode is being served to anything but a local extension.
+
+    GUI mode is a statement about who the client is: the MariaDB VS Code
+    extension, which owns the shell process it started and talks to it over
+    stdio. Served over HTTP that assumption is simply not checked - the server
+    has no authentication (see :func:`_warn_if_reachable_from_the_network`), so
+    every client that reaches the port gets what the extension was meant to
+    get: read and write access to every file this user can read and write, and
+    the ability to add connections to the list an MCP client may open.
+
+    It is a warning and not a refusal, because there are legitimate reasons to
+    serve a GUI-mode server over loopback - driving it from a tool that cannot
+    speak stdio, or watching the traffic while developing the extension - and
+    refusing would take those away to prevent a configuration nobody arrives at
+    by accident. Written to stderr, like the bind warning above it.
+
+    Args:
+        gui (bool): Whether GUI mode was asked for.
+        host (str): The host the server is about to bind to.
+        port (int): The port the server is about to listen on.
+
+    Returns:
+        None
+    """
+    if not gui:
+        return
+
+    print(
+        f"\nWARNING: the MariaDB MCP server is about to serve --gui over HTTP "
+        f"on {host}:{port}.\n"
+        "         --gui is meant for the MariaDB VS Code extension, which "
+        "speaks to the server over\n"
+        "         stdio and owns the process. Over HTTP there is NO "
+        "AUTHENTICATION, so every client\n"
+        "         that can reach this port gets full access to this user's "
+        "files and can add\n"
+        "         connections to the list any MCP client may open. Use "
+        "--transport=stdio unless you\n"
+        "         mean exactly this.\n",
         file=sys.stderr,
         flush=True,
     )
