@@ -16,10 +16,10 @@ has none (the `wip/sandbox-binaries` work — see Architecture). GPLv2,
 SDK-bump session — that jump is what broke CI, see the SDK-error gotcha),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **335 tests pass, 2 SKIPPED (~80s), 98% total coverage** (1935 statements,
+Standard suite: **346 tests pass, 2 SKIPPED (~85s), 98% total coverage** (1984 statements,
 42 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 Gotchas). The two skipped are the OPT-IN end-to-end tests: with `--e2e` the run is
-**337 pass** at the same coverage, since everything they touch is already covered
+**348 pass** at the same coverage, since everything they touch is already covered
 by the unit tests. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
@@ -85,6 +85,17 @@ silently runs against whatever `mariadb-shell` is on PATH.
     so a deletion takes effect at once instead of at the next session reopen.
   - `db.add_connection` verifies through `setup_cli.verify_connection` — the same function
     `mcp.setup` uses, so a connection is accepted on identical terms either way.
+  - `db.update_connection` re-keys a connection (new URI, other list, new password) and is
+    what lets an editor change one WITHOUT the password: it reads the stored secret and
+    writes it straight back, and nothing returns it. Writes the new key before deleting the
+    old, so a failure leaves the connection configured somewhere rather than nowhere, and
+    drops what was open on the old key.
+  - `db.test_connection` opens a session and closes it, storing nothing — the question an
+    editor's Test button asks, which `db.connect` cannot answer (configured connections
+    only) and `db.add_connection` cannot either (stores on success). Its password is
+    optional: left out it uses the stored one, so editing does not mean retyping.
+    **GUI-only for a reason of its own** — it opens a session to any host and credentials
+    it is handed, so an autonomous client could try passwords against any reachable server.
 
 - Repo's existing `*_plugin` layout (NOT create-shell-plugin's `python/plugins/`).
   `@plugin` / `@plugin_function` decorators. FQNs camelCase (`mcp.startServer`) ->
@@ -1555,7 +1566,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   `DEFAULT_CONNECTION_KIND`, `normalize_connection_kind`, `connection_secret_prefix`,
   `usable_connection_kinds`, `_resolve_in_kind` and `find_connection`. `is_path_allowed`
   is the single GUI-mode path chokepoint.
-- tests/unit/test_gui_mode.py -> the 17 GUI-mode tests: the flag, the path bypass (both
+- tests/unit/test_gui_mode.py -> the 28 GUI-mode tests: the flag, the path bypass (both
   that it is on AND that the allow-list is not written to), which tools are served,
   the two lists through the tools, `db.connect` preferring the GUI entry, per-list
   revocation, and the HTTP warning. `_empty_both_connection_lists()` is needed because

@@ -67,6 +67,29 @@ const createModel = (defaultConnection?: string) => {
 };
 
 describe("ConnectionsModel.getRoots", () => {
+    it("lists both connection lists, each knowing which it came from",
+        async () => {
+            // A connection in the shared MCP list is as usable from the
+            // editor as one of the extension's own, so the tree shows both -
+            // and has to remember which is which, since that is half of what
+            // identifies a connection.
+            const api = createFakeApi({
+                connections: ["shared@localhost:3306"],
+                guiConnections: ["mine@localhost:3307"],
+            });
+            const model = new ConnectionsModel(new ConnectionManager(
+                () => { return Promise.resolve(api); },
+                createFakeSettings(),
+            ));
+
+            expect((await model.getRoots()).map((node) => {
+                return [node.uri, node.connectionKind];
+            })).toEqual([
+                ["shared@localhost:3306", "mcp"],
+                ["mine@localhost:3307", "gui"],
+            ]);
+        });
+
     it("lists one node per configured connection", async () => {
         const { model } = createModel();
 
@@ -76,12 +99,14 @@ describe("ConnectionsModel.getRoots", () => {
                 uri: "dba@localhost:3310",
                 connected: false,
                 isDefault: false,
+                connectionKind: "mcp",
             },
             {
                 kind: "connection",
                 uri: "app@localhost:3311",
                 connected: false,
                 isDefault: false,
+                connectionKind: "mcp",
             },
         ]);
     });
@@ -114,6 +139,7 @@ describe("ConnectionsModel.getChildren", () => {
             uri: "dba@localhost:3310",
             connected,
             isDefault: false,
+            connectionKind: "gui",
         };
     };
 

@@ -15,6 +15,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import type { EditorWebviewMessage }
+    from "../../src/connections/editorProtocol.js";
 import type { WebviewMessage } from "../../src/webview/protocol.js";
 
 /** The bridge VS Code injects into every webview. */
@@ -33,10 +35,17 @@ const api = acquireVsCodeApi();
 /**
  * Sends a message to the extension.
  *
+ * The two webviews - the result view and the connection editor - speak
+ * different protocols but load the same module, so this accepts either. A
+ * webview only ever sends one of them, and the type parameter is what keeps
+ * a call site honest about which.
+ *
  * @param message The message to send.
  *
  * @returns Nothing.
  */
-export const post = (message: WebviewMessage): void => {
+export const post = <T extends WebviewMessage | EditorWebviewMessage>(
+    message: T,
+): void => {
     api.postMessage(message);
 };

@@ -142,6 +142,8 @@ export interface FakeApiOptions {
     connections?: string[];
     /** The connections of the extension's own list, if it has any. */
     guiConnections?: string[];
+    /** Makes `testConnection` reject with this message instead of passing. */
+    testFailure?: string;
     /** Connection URI -> the UUID handing it out produces. */
     connectionIds?: Record<string, string>;
     schemas?: ISchemaInfo[];
@@ -164,6 +166,16 @@ export interface FakeApi extends IMariaDbApi {
     added: Array<{ uri: string; password: string; kind?: ConnectionKind }>;
     /** The connections that were deleted, in order. */
     deleted: Array<{ uri: string; kind?: ConnectionKind }>;
+    /** The connections that were tested, in order. */
+    tested: Array<{ uri: string; password?: string }>;
+    /** The updates that were applied, in order. */
+    updated: Array<{
+        uri: string;
+        newUri?: string;
+        kind?: ConnectionKind;
+        newKind?: ConnectionKind;
+        password?: string;
+    }>;
     /** What the last script was asked to do about a failing statement. */
     stopOnError?: boolean;
 }
@@ -180,12 +192,16 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
     const closed: string[] = [];
     const added: FakeApi["added"] = [];
     const deleted: FakeApi["deleted"] = [];
+    const tested: FakeApi["tested"] = [];
+    const updated: FakeApi["updated"] = [];
 
     const api: FakeApi = {
         scripts,
         closed,
         added,
         deleted,
+        tested,
+        updated,
 
         listConnections: (kind?: ConnectionKind) => {
             return Promise.resolve(
@@ -209,6 +225,26 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             deleted.push({ uri, kind });
 
             return Promise.resolve(uri);
+        },
+
+        updateConnection: (
+            uri: string,
+            newUri?: string,
+            kind?: ConnectionKind,
+            newKind?: ConnectionKind,
+            password?: string,
+        ) => {
+            updated.push({ uri, newUri, kind, newKind, password });
+
+            return Promise.resolve(newUri ?? uri);
+        },
+
+        testConnection: (uri: string, password?: string) => {
+            tested.push({ uri, password });
+
+            return options.testFailure === undefined
+                ? Promise.resolve(`Connected to '${uri}' successfully.`)
+                : Promise.reject(new Error(options.testFailure));
         },
 
         connect: (uri: string) => {

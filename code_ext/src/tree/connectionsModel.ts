@@ -16,7 +16,8 @@
  */
 
 import type { ConnectionManager } from "../connections/connectionManager.js";
-import { OBJECT_TYPES, type ObjectType } from "../mcp/types.js";
+import { OBJECT_TYPES, type ConnectionKind, type ObjectType }
+    from "../mcp/types.js";
 
 /** A connection, shown at the root of the tree. */
 export interface IConnectionNode {
@@ -24,6 +25,11 @@ export interface IConnectionNode {
     uri: string;
     connected: boolean;
     isDefault: boolean;
+    /**
+     * Which list it is configured in. Half of what identifies it, so editing
+     * and deleting both need it - and it is what the "MCP" marker shows.
+     */
+    connectionKind: ConnectionKind;
 }
 
 /** A schema of an open connection. */
@@ -86,15 +92,16 @@ export class ConnectionsModel {
      * @returns The connection nodes.
      */
     public async getRoots(): Promise<IConnectionNode[]> {
-        const uris = await this.connections.listConnections();
+        const stored = await this.connections.listStoredConnections();
         const defaultUri = this.connections.defaultConnection;
 
-        return uris.map((uri) => {
+        return stored.map((connection) => {
             return {
                 kind: "connection",
-                uri,
-                connected: this.connections.isConnected(uri),
-                isDefault: uri === defaultUri,
+                uri: connection.uri,
+                connected: this.connections.isConnected(connection.uri),
+                isDefault: connection.uri === defaultUri,
+                connectionKind: connection.kind,
             };
         });
     }

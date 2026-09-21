@@ -132,6 +132,74 @@ export class MariaDbApi implements IMariaDbApi {
     }
 
     /**
+     * Re-keys a configured connection, keeping its password.
+     *
+     * Served only by a server started with `--gui`. A connection is keyed by
+     * its URI and by which list it is in, so changing the host, the user or
+     * the MCP checkbox means a new key - and `addConnection` would need the
+     * password for that, which nothing can read back. This moves the stored
+     * secret without it passing through the extension.
+     *
+     * @param uri The connection as it is configured now.
+     * @param newUri The URI to move it to, or undefined to keep it.
+     * @param kind The list it is in now.
+     * @param newKind The list to move it to, or undefined to keep it.
+     * @param password A new password, or undefined to keep the stored one.
+     *
+     * @returns The URI the connection is now configured under.
+     */
+    public async updateConnection(
+        uri: string,
+        newUri?: string,
+        kind?: ConnectionKind,
+        newKind?: ConnectionKind,
+        password?: string,
+    ): Promise<string> {
+        const name = "db.update_connection";
+
+        return decodeScalar(name, await this.caller.callTool(name, {
+            uri,
+            // Each one left out when not given, so the server keeps what it
+            // has rather than being told to set it to nothing.
+            ...(newUri === undefined ? {} : { new_uri: newUri }),
+            ...(kind === undefined ? {} : { kind }),
+            ...(newKind === undefined ? {} : { new_kind: newKind }),
+            ...(password === undefined ? {} : { password }),
+        }));
+    }
+
+    /**
+     * Checks that a URI and password open a session, storing nothing.
+     *
+     * Served only by a server started with `--gui`. This is what the
+     * editor's Test button needs: `connect` only opens connections that are
+     * already configured, and `addConnection` stores on success, so neither
+     * can answer the question before the connection exists.
+     *
+     * @param uri The connection to try. As with `addConnection` it must not
+     *            carry a password.
+     * @param password The password to try, or undefined to use the one
+     *                 already stored - which is how an existing connection is
+     *                 tested without the user retyping it. The URI must then
+     *                 name a configured connection.
+     *
+     * @returns The server's confirmation message. It rejects instead when
+     *          the connection could not be opened, carrying the shell's own
+     *          reason - which is the useful half of the answer.
+     */
+    public async testConnection(
+        uri: string,
+        password?: string,
+    ): Promise<string> {
+        const name = "db.test_connection";
+
+        return decodeScalar(name, await this.caller.callTool(name, {
+            uri,
+            ...(password === undefined ? {} : { password }),
+        }));
+    }
+
+    /**
      * Opens one of the configured connections.
      *
      * @param uri The connection to open.

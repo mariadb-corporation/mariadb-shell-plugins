@@ -14,12 +14,12 @@ the extension grows.
 | `src/extension.ts` | Activation entry point. Wires everything together and registers the commands. |
 | `src/shell/` | Finding, installing and launching the MariaDB Shell. |
 | `src/mcp/` | The MCP client: session lifecycle, wire decoding, typed `db.*` API. |
-| `src/connections/` | Which connections are open, and which one is the default. |
+| `src/connections/` | Which connections are open and which is the default, plus the connection editor: URI building, the store, the panel and its protocol. |
 | `src/tree/` | The Connections view: its data model and its tree items. |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
 | `src/editor/` | The SQL editor toolbar, status bar entry and run command. |
 | `src/webview/` | The result view host, its message protocol and the edit-collection logic. |
-| `webview/src/` | The Preact frontend rendered inside the result view. |
+| `webview/src/` | The two Preact frontends: the result view and the connection editor. |
 | `src/test/` | The extension-side test suite, mirroring the source layout. |
 | `webview/test/` | The frontend test suite, run under jsdom. |
 | `images/` | Icons: `light/` and `dark/` variants, the activity bar seal, and `marketplace-icon.png`. |
@@ -187,20 +187,78 @@ autonomous agent, and that changes two things about the server:
   allowed-path list (`mcp.setup`) and asks, by MCP elicitation, before
   touching anything outside it. The extension names paths the user just
   picked in VS Code's own dialogs, so there is nothing left to confirm.
-- **The connection list is writable**, through `db.add_connection` and
-  `db.delete_connection`, which a server serves in this mode only. There
-  are then **two** lists, told apart by a `kind`:
+- **The connection list is writable**, through `db.add_connection`,
+  `db.update_connection`, `db.delete_connection` and `db.test_connection`,
+  which a server serves in this mode only. The last two exist for the
+  editor: nothing can read a stored password back, so `update` is what
+  re-keys a connection without one having to come out, and `test` is the
+  only way to try credentials before the connection exists (`db.connect`
+  opens configured connections only, and `add` stores on success).
+  `db.test_connection` is GUI-only for a reason beyond symmetry: it opens a
+  session to any host and credentials it is handed, which given to an
+  autonomous client is a way to try passwords against any reachable server.
+  There are then **two** lists, told apart by a `kind`:
 
   | kind | who owns it | secret prefix |
   | --- | --- | --- |
   | `mcp` (the default) | `mcp.setup`; every MCP client can open these | `MCP:Connection:` |
-  | `gui` | this extension, via the two tools above | `GUI:Connection:` |
+  | `gui` | this extension, via the tools above | `GUI:Connection:` |
 
   `db.list_connections` reports **one kind per call**, so the extension
   asks twice to see both and always knows which list an entry is in — which
   it needs, since a connection is deleted from the list it is in. The same
   server may be in both under different credentials; `db.connect` then
   opens the `gui` one.
+
+### The connection editor
+
+`src/connections/` holds it, split so that only the panel needs VS Code:
+
+| File | Purpose |
+| --- | --- |
+| `connectionUri.ts` | Fields <-> URI, and the allow-list of URI options. Pure. |
+| `connectionStore.ts` | Add / edit / delete / test, over `IMariaDbApi`. Pure. |
+| `editorProtocol.ts` | The messages the panel and its webview exchange. |
+| `connectionEditorPanel.ts` | The panel, its HTML and the message loop. |
+| `webview/src/ConnectionEditor.tsx` | The dialog itself. |
+
+It is modelled on the MySQL Shell extension's `ConnectionEditor`: the same
+three tabs (Basic, SSL, Advanced) in the same order, with the same captions
+where the setting is the same one. **What is missing is missing on purpose** -
+a connection here is stored as a URI and nothing else, so a setting that
+cannot be written into one cannot be offered. That rules out the SSH tunnel
+tab (the shell keeps `ssh-*` in `ssh_uri_connection_attributes`, a separate
+set that never reaches a URI), the OCI/MDS tabs, `sql-mode` and the HeatWave
+check. `URI_OPTIONS` is `uri_connection_attributes` from the shell's
+`mysqlshdk/libs/db/utils_connection.h`, and is what tells a typo in the
+"Other Connection Options" table from a real option.
+
+Four things about it are load bearing:
+
+- **`buildConnectionUri` emits the shell's own canonical spelling.** Every
+  expectation in `connectionUri.test.ts` was produced by running the fields
+  through the real `shell.unparse_uri`, then feeding the result back through
+  `parse_uri`/`unparse_uri`, which returned it unchanged. Options are sorted
+  because the shell's encoder sorts them; two URIs naming one connection must
+  come out identical or the server sees two connections.
+- **A password is never in the URI and never leaves the server.** Nothing can
+  read a stored password back - no tool returns one - so the host sends the
+  webview `hasStoredPassword`, not a value. `password: undefined` means "keep
+  what is stored" and is NOT the same as `""`, which is a real password for an
+  account that has none.
+- **Editing is a re-key, not an update in place.** A connection is keyed by
+  its URI and by which list it is in, so changing the host or the MCP checkbox
+  moves it. That is what `db.update_connection` is for: it moves the secret
+  server-side, so an edit does not make the user retype the password.
+- **Saving does not verify**, as in the original. Test Connection is its own
+  button; a server that is down must not stop its connection being configured.
+
+The editor is **its own vite build** (`vite.editor.config.ts`), not a second
+entry beside the result view. One build with two entries makes Rollup hoist
+what they share into a common chunk, which each entry pulls in with a static
+`import` - and a webview's `script-src 'nonce-...'` does NOT extend to a
+module the entry imports, so that chunk would be refused and the view would
+come up blank. One entry per build has nothing to hoist.
 
 `MCP_SERVER_ARGS` in `src/shell/constants.ts` is where the flag is passed.
 A shell whose MCP plugin predates it **ignores it rather than failing** (the
@@ -249,7 +307,13 @@ dba@localhost:3310            connection (seal icon; "default" if default)
   typo was corrected to `schemaProcedure.svg` on copy.
 - A connection item's `contextValue` is
   `mariadbConnection.<connected|disconnected>.<default|notDefault>`, which
-  is what the context menu switches its entries on.
+  is what the context menu switches its entries on. The connection's LIST is
+  deliberately **not** a fourth segment: the `when` clauses anchor on the
+  third (`/notDefault$/`, `/\.default$/`) and would break. Edit and delete
+  are handed the node itself, which carries `connectionKind`.
+- A connection in the shared MCP list is described `MCP` in the tree, and
+  `MCP, default` when it is both. The view lists **both** lists: the checkbox
+  says who else may open a connection, not whether this extension can.
 
 ## Default connection
 
@@ -674,6 +738,9 @@ preview and the execution identical.
 | Command | Title | Where |
 | --- | --- | --- |
 | `mariadb.refreshConnections` | Refresh | Connections view title |
+| `mariadb.addConnection` | Add Connection | Connections view title (`+`) |
+| `mariadb.editConnection` | Edit Connection | Connection context menu |
+| `mariadb.deleteConnection` | Delete Connection | Connection context menu |
 | `mariadb.connect` | Connect | Connection context menu |
 | `mariadb.disconnect` | Disconnect | Connection context menu |
 | `mariadb.newSqlEditor` | New SQL Editor | Connection row, beside Connect |
@@ -739,11 +806,9 @@ form, which is uppercase and absolute - hence `fileLocation: "absolute"`.
   timing, a failing script reports one error for the whole call with no
   statement to jump to, and `stopOnError: false` is ignored. Raise the
   minimum once a shell carrying the new plugin ships.
-- The `db.add_connection` / `db.delete_connection` tools are reachable
-  through `MariaDbApi` but **nothing in the UI calls them yet**: there is no
-  "Add Connection" command, no credentials dialog and no tree entry for the
-  `gui` list. Adding and removing connections is still `mcp.setup`'s job
-  from the user's point of view.
+- The connection editor has no file pickers: the SSL certificate paths and
+  the socket are typed, where the MySQL Shell's editor offers a browse
+  button for each.
 - The result grid edits every value as text; there is no type-aware editor
   (date picker, NULL toggle, BLOB viewer) yet, and no cell context menu.
 - There is no paging. The MySQL Shell's result view pages through a result

@@ -106,6 +106,10 @@ export class ConnectionBaseTreeItem<T extends ConnectionsNode>
  *
  * Its context value carries both whether it is open and whether it is the
  * default, because that is what the context menu switches its entries on.
+ * Which LIST the connection is in is deliberately not in there: the commands
+ * that need it - edit and delete - are handed the node itself, and adding a
+ * fourth segment would break the `when` clauses that anchor on the third
+ * (`/notDefault$/` and `/\.default$/`).
  */
 export class ConnectionTreeItem
     extends ConnectionBaseTreeItem<IConnectionNode> {
@@ -120,9 +124,28 @@ export class ConnectionTreeItem
             node.isDefault ? "default" : "notDefault",
         ].join(".");
 
-        this.description = node.isDefault ? "default" : undefined;
-        this.tooltip = node.isDefault
-            ? `${node.uri} (default connection)`
+        // "MCP" marks a connection in the shared list, which every MCP client
+        // on this machine can open - not just this extension. That is worth
+        // seeing at a glance, since it is the difference the checkbox makes.
+        const marks: string[] = [];
+        if (node.connectionKind === "mcp") {
+            marks.push("MCP");
+        }
+        if (node.isDefault) {
+            marks.push("default");
+        }
+
+        this.description = marks.length > 0 ? marks.join(", ") : undefined;
+
+        const notes: string[] = [];
+        if (node.connectionKind === "mcp") {
+            notes.push("MCP access allowed");
+        }
+        if (node.isDefault) {
+            notes.push("default connection");
+        }
+        this.tooltip = notes.length > 0
+            ? `${node.uri} (${notes.join(", ")})`
             : node.uri;
     }
 }
