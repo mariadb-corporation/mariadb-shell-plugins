@@ -3,8 +3,8 @@
 The power of MariaDB Shell inside your favorite editor.
 
 The extension drives the MariaDB Shell backend through its
-[MCP plugin](../mcp_plugin), which exposes the backend functions over the
-Model Context Protocol.
+[MCP plugin](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/mcp_plugin),
+which exposes the backend functions over the Model Context Protocol.
 
 ## Features
 
@@ -77,11 +77,12 @@ result panel - `npm run watch` covers the extension only.
 The extension is bundled with [Vite](https://vite.dev), the result panel is
 [Preact](https://preactjs.com), and both are tested with
 [Vitest](https://vitest.dev). See
-[.claude/PROJECT_CONTEXT.md](.claude/PROJECT_CONTEXT.md) for the layout and
-the behaviour in detail.
+[.claude/PROJECT_CONTEXT.md](https://github.com/mariadb-corporation/mariadb-shell-plugins/blob/main/code_ext/.claude/PROJECT_CONTEXT.md)
+for the layout and the behaviour in detail.
 
-## Credits
+## Licensing
 
-The tree icons are taken from the
-[MySQL Shell for VS Code](https://github.com/mysql/mysql-shell-plugins)
-extension, and the result view is modelled on its `ResultTabView`.
+The MariaDB for VS Code extension is a part of the MariaDB Shell and licensed
+under the GPLv2. See
+[LICENSE](https://github.com/mariadb-corporation/mariadb-shell-plugins/blob/main/code_ext/LICENSE)
+for more details.

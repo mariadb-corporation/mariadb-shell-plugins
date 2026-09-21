@@ -1,9 +1,13 @@
 {
-  "name": "mariadb",
+  "name": "mariadb-ext",
   "displayName": "MariaDB",
   "description": "The power of MariaDB Shell inside your favorite editor.",
+  "publisher": "MariaDB",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mariadb-corporation/mariadb-shell-plugins.git"
+  },
   "version": "26.9.0",
-  "private": true,
   "engines": {
     "vscode": "^1.138.0",
     "node": ">=24.15.0"
@@ -45,7 +49,8 @@
         {
           "id": "mariadb.results",
           "name": "Results",
-          "type": "webview"
+          "type": "webview",
+          "icon": "images/light/mariadbConnection.svg"
         }
       ]
     },
