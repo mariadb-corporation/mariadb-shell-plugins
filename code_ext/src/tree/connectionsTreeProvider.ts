@@ -43,12 +43,19 @@ export class ConnectionsTreeProvider
 
     public readonly onDidChangeTreeData = this.#onDidChangeTreeData.event;
 
+    /**
+     * @param connections The open connections and the default one.
+     * @param resolveIcon The icon lookup the items share.
+     * @param log Where to write a failure the tree cannot show.
+     * @param connectOnOpen Whether expanding a closed connection opens it.
+     */
     public constructor(
-        connections: ConnectionManager,
+        private readonly connections: ConnectionManager,
         private readonly resolveIcon: IconResolver,
         private readonly log: (message: string) => void,
+        private readonly connectOnOpen: () => boolean,
     ) {
-        this.#model = new ConnectionsModel(connections);
+        this.#model = new ConnectionsModel(connections, connectOnOpen);
         this.#unsubscribe = connections.onDidChange(() => {
             this.refresh();
         });
@@ -87,18 +94,59 @@ export class ConnectionsTreeProvider
                 ? await this.#model.getRoots()
                 : await this.#model.getChildren(node);
         } catch (error) {
-            // A tree that throws shows nothing and says nothing, so the
-            // reason goes to the log and the branch comes back empty.
-            const message = error instanceof Error
-                ? error.message
-                : String(error);
-            this.log(`Failed to populate the Connections view: ${message}`);
-            void vscode.window.showErrorMessage(
-                `MariaDB: ${message}`,
-            );
+            this.#report("populate the Connections view", error);
 
             return [];
         }
+    }
+
+    /**
+     * Opens the connection a node the user just expanded stands for, where
+     * that is the mode in force.
+     *
+     * This hangs off the user's expand rather than off `getChildren`, which
+     * the tree also calls on every refresh: a closed connection that opened
+     * itself whenever it was asked for its children could never be
+     * disconnected. The children come from the refresh that opening fires,
+     * so there is nothing to return here.
+     *
+     * @param node The node that was expanded.
+     *
+     * @returns Nothing.
+     */
+    public async expanded(node: ConnectionsNode): Promise<void> {
+        if (node.kind !== "connection" || !this.connectOnOpen()) {
+            return;
+        }
+
+        if (this.connections.isConnected(node.uri)) {
+            return;
+        }
+
+        try {
+            await this.connections.connect(node.uri);
+        } catch (error) {
+            this.#report(`open '${node.uri}'`, error);
+        }
+    }
+
+    /**
+     * Surfaces a failure the tree itself cannot show.
+     *
+     * A tree that throws shows nothing and says nothing, so the reason
+     * goes to the log and to a notification.
+     *
+     * @param what The attempt that failed, as a verb phrase.
+     * @param error What went wrong.
+     *
+     * @returns Nothing.
+     */
+    #report(what: string, error: unknown): void {
+        const message = error instanceof Error
+            ? error.message
+            : String(error);
+        this.log(`Failed to ${what}: ${message}`);
+        void vscode.window.showErrorMessage(`MariaDB: ${message}`);
     }
 
     /**

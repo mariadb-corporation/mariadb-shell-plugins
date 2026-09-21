@@ -23,6 +23,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
   MySQL Shell for VS Code extension.
 - Connect and disconnect from a connection's context menu, and **Set as
   Default Connection**, stored in the `mariadb.defaultConnection` setting.
+- Expanding a connection in the **Connections** view opens it, and the
+  Connect button is left off the row. `mariadb.connections.connectMode`
+  set to `explicit` brings the button back and stops the tree opening a
+  connection on its own.
 - A connection picker and a run button in the editor toolbar of `.sql`
   files, plus a status bar entry showing which connection the file runs on
   and a `Ctrl`/`Cmd`+`Enter` keybinding.

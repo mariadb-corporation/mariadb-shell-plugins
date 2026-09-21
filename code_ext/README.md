@@ -35,6 +35,9 @@ which exposes the backend functions over the Model Context Protocol.
   click on any of them taking you to the row it came from.
 - **Default connection**, set from a connection's context menu and
   remembered in your workspace settings.
+- **Expanding a connection opens it**, so browsing a database takes one
+  click. Set `mariadb.connections.connectMode` to `explicit` to go back to
+  connecting with the button on the row.
 
 ## Requirements
 
@@ -59,6 +62,7 @@ Set `MARIADB_SHELL_PREFIX` to install and look somewhere else.
 | Setting | Description |
 | --- | --- |
 | `mariadb.defaultConnection` | The connection URI new SQL editors run on. |
+| `mariadb.connections.connectMode` | Whether expanding a connection in the **Connections** view opens it (`onOpen`, the default) or only the Connect button does (`explicit`). |
 
 ## Commands
 

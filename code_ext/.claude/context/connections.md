@@ -73,8 +73,11 @@ dba@localhost:3310            connection (seal icon; "default" if default)
 - The shape of the tree lives in `src/tree/connectionsModel.ts`, which is
   pure data and has no VS Code import; `connectionsTreeProvider.ts` only
   maps its nodes onto items.
-- A connection that is **not open has no children**: expanding a node must
-  not open a database connection the user did not ask for.
+- A connection that is **not open has no children**. `getChildren` never
+  opens one, not even in the connect-on-open mode below: the tree asks a
+  node for its children again on every refresh, so a connection that
+  opened itself there could never be disconnected - the refresh that
+  disconnecting fires would open it straight back up.
 - A schema lists all seven object folders without querying anything; the
   query happens when a folder is opened.
 - Icons are the MySQL Shell extension's, copied into `images/light` and
@@ -90,6 +93,32 @@ dba@localhost:3310            connection (seal icon; "default" if default)
 - A connection in the shared MCP list is described `MCP` in the tree, and
   `MCP, default` when it is both. The view lists **both** lists: the checkbox
   says who else may open a connection, not whether this extension can.
+
+## Opening a connection
+
+Two modes, set by `mariadb.connections.connectMode`:
+
+- **`onOpen`**, the default. A closed connection is drawn with a twistie
+  and expanding the row opens it. The trigger is the tree view's
+  `onDidExpandElement`, wired in `extension.ts` to
+  `ConnectionsTreeProvider.expanded` - an expand the *user* performed, as
+  against `getChildren`, which the tree also calls on every refresh. That
+  method opens the connection and returns nothing: the children arrive
+  with the refresh the manager fires when the connection opens.
+- **`explicit`**. What it did before: a closed connection has no twistie
+  and only the Connect button or command opens it.
+
+The mode reaches the menus as the `mariadb.connectOnOpen` context key,
+published by `publishConnectMode` on activation and on every change to the
+setting. Its one job is to drop the inline Connect button from a row in
+the `onOpen` mode, where it duplicates the twistie; the context menu
+entry stays in both modes, since the palette and the keyboard need it.
+Disconnect is untouched - nothing implicit closes a connection.
+
+Whether a node is drawn with a twistie is `IConnectionNode.expandable`,
+which the model works out (`connected || connectOnOpen()`), not something
+`treeItems.ts` decides: the shape of the tree stays in one place, and the
+model is where it can be tested without VS Code.
 
 ## Default connection
 

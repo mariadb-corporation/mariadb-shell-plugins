@@ -115,7 +115,7 @@ export class ConnectionTreeItem
     extends ConnectionBaseTreeItem<IConnectionNode> {
 
     public constructor(node: IConnectionNode, resolveIcon: IconResolver) {
-        super(node, node.uri, "mariadbConnection.svg", node.connected,
+        super(node, node.uri, "mariadbConnection.svg", node.expandable,
             resolveIcon);
 
         this.contextValue = [

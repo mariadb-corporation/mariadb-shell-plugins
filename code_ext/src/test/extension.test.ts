@@ -538,6 +538,61 @@ describe("activate", () => {
             expect(statusBarItems).toHaveLength(1);
         });
 
+    it("publishes the connect mode, and follows a change to it", async () => {
+        activate(createContext() as never);
+
+        // The Connect button is dropped from the row where connecting is
+        // what opening the row does, which is the default.
+        await vi.waitFor(() => {
+            expect(contextKeys.get("mariadb.connectOnOpen")).toBe(true);
+        });
+
+        configuration.set("mariadb.connections.connectMode", "explicit");
+        fireConfigurationChange("mariadb.connections.connectMode");
+
+        await vi.waitFor(() => {
+            expect(contextKeys.get("mariadb.connectOnOpen")).toBe(false);
+        });
+    });
+
+    it("opens a connection the user expands in the tree", async () => {
+        activate(createContext() as never);
+        const provider = (treeViews[0].options as {
+            treeDataProvider: {
+                getChildren(node?: unknown): Promise<unknown[]>;
+            };
+        }).treeDataProvider;
+        const [root] = await provider.getChildren();
+
+        treeViews[0].expand(root);
+
+        await vi.waitFor(() => {
+            expect(runtime.connector?.connections[0].calls
+                .filter((call) => {
+                    return call.name === "db.connect";
+                })).toHaveLength(1);
+        });
+    });
+
+    it("leaves expanding alone in the explicit connect mode", async () => {
+        configuration.set("mariadb.connections.connectMode", "explicit");
+        activate(createContext() as never);
+        const provider = (treeViews[0].options as {
+            treeDataProvider: {
+                getChildren(node?: unknown): Promise<unknown[]>;
+            };
+        }).treeDataProvider;
+        const [root] = await provider.getChildren();
+
+        treeViews[0].expand(root);
+        await expect(provider.getChildren(root)).resolves.toEqual([]);
+
+        expect(runtime.connector?.connections[0].calls
+            .filter((call) => {
+                return call.name === "db.connect";
+            })).toEqual([]);
+    });
+
     it("opens and closes a connection from the tree", async () => {
         activate(createContext() as never);
         const node = { kind: "connection", uri: "dba@localhost:3310" };

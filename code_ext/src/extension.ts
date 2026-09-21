@@ -18,7 +18,11 @@
 import * as vscode from "vscode";
 
 import { ConnectionManager } from "./connections/connectionManager.js";
-import { createWorkspaceSettings } from "./connections/settings.js";
+import {
+    connectOnOpen,
+    createWorkspaceSettings,
+    publishConnectMode,
+} from "./connections/settings.js";
 import { applyKeybindings } from "./editor/keybindings.js";
 import { SqlEditorBinding } from "./editor/sqlEditorBinding.js";
 import { StatementDecorator } from "./editor/statementDecorations.js";
@@ -140,6 +144,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         connections,
         createIconResolver(context.extensionUri),
         log,
+        connectOnOpen,
     );
     const editors = new SqlEditorBinding(connections, resultView, log);
     // Marks where each statement begins. The ranges come from the SQL
@@ -155,15 +160,24 @@ export const activate = (context: vscode.ExtensionContext): void => {
         await editors.revealStatement(source);
     });
 
+    const connectionsView = vscode.window.createTreeView(CONNECTIONS_VIEW_ID, {
+        treeDataProvider: tree,
+        showCollapseAll: true,
+    });
+
+    // Where connecting is implicit, this is what makes it happen: opening a
+    // connection row is the gesture, and the tree provider decides whether
+    // the mode in force means anything by it.
+    connectionsView.onDidExpandElement((event) => {
+        void tree.expanded(event.element);
+    });
+
     context.subscriptions.push(
         tree,
         editors,
         statementDots,
         resultView,
-        vscode.window.createTreeView(CONNECTIONS_VIEW_ID, {
-            treeDataProvider: tree,
-            showCollapseAll: true,
-        }),
+        connectionsView,
         vscode.window.registerWebviewViewProvider(
             RESULT_VIEW_ID,
             resultView,
@@ -186,6 +200,15 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 void applyKeybindings();
             }
 
+            // Both the twistie on a closed connection and the Connect
+            // button follow the mode, so the tree and the menus have to
+            // be told when it changes.
+            if (event.affectsConfiguration(
+                "mariadb.connections.connectMode")) {
+                void publishConnectMode();
+                tree.refresh();
+            }
+
             // Files that have not been switched by hand follow the
             // setting, so the toolbar button has to catch up.
             if (event.affectsConfiguration("mariadb.execute.stopOnError")) {
@@ -197,6 +220,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // The contributed keybindings are gated on context keys, which is how
     // the chosen chords reach them.
     void applyKeybindings();
+    void publishConnectMode();
 
     context.subscriptions.push(
         vscode.commands.registerCommand("mariadb.refreshConnections", () => {
