@@ -537,7 +537,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
     has to cover the status line the menu prints above itself, not just the entry.
 - **Migration tooling install (AIPL-21)**: `mcp.setup` can download the MySQL-to-MariaDB
   migration tooling (github.com/mariadb-corporation/Mysql-to-MariaDB-Migration) into
-  **`<data home>/mariadb-migrator/<version>`** — `~/.local/share/mariadb-migrator/v1.4.0-beta`
+  **`<data home>/mariadb-migrator/<version>`** — `~/.local/share/mariadb-migrator/v1.5.0`
   by default. Decisions worth not relitigating:
   - **NOT the plugin data directory** (it was, until the user redirected it): the tooling is
     a standalone program that outlives any one plugin install and that things other than
@@ -615,7 +615,7 @@ silently runs against whatever `mariadb-shell` is on PATH.
   - `remove()` removes the wrapper FIRST, then the tree: a wrapper pointing at a deleted
     install is worse than none.
   Decisions inherited from the original AIPL-21 commit, still standing:
-  - **The release is PINNED** as `general.MIGRATOR_VERSION` (currently `v1.4.0-beta`), not
+  - **The release is PINNED** as `general.MIGRATOR_VERSION` (currently `v1.5.0`), not
     tracked from main: what an install contains is then a property of the plugin version and
     not of the day it was set up, and a release that breaks something is answered by pinning
     the one before it. There is deliberately NO update step — a different release means
