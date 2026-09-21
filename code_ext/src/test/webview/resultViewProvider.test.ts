@@ -17,14 +17,17 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type {
+    IActivityEvent,
+} from "../../connections/connectionActivity.js";
 import { ExecutionService } from "../../sql/executionService.js";
 import type {
     IExecutionReport,
-    IOutputRow,
+    IActionRow,
     IViewState,
 } from "../../webview/protocol.js";
 import {
-    MAX_OUTPUT_ROWS,
+    MAX_ACTION_ROWS,
     ResultViewProvider,
     RESULT_VIEW_ID,
 } from "../../webview/resultViewProvider.js";
@@ -52,7 +55,7 @@ const editableReport = (
         connection: "dba@localhost:3310",
         startedAt: "12:00:00.123",
         elapsedMs: 4,
-        output: [{
+        actions: [{
             ...pendingRun(),
             message: "Ran 1 statement on dba@localhost:3310",
             summary: "Finished 1 statement successfully",
@@ -66,7 +69,6 @@ const editableReport = (
                 statement: "SELECT ID, Name FROM world.city",
                 message: "1 row in set",
                 kind: "info",
-                rows: 1,
                 elapsedMs: 4,
                 resultId: "run1-result-0",
             }],
@@ -106,8 +108,8 @@ const editableReport = (
  * @returns The row a run is opened with.
  */
 const pendingRun = (
-    overrides: Partial<IOutputRow> = {},
-): IOutputRow => {
+    overrides: Partial<IActionRow> = {},
+): IActionRow => {
     return {
         id: "run1",
         time: "12:00:00.123",
@@ -212,7 +214,7 @@ describe("ResultViewProvider", () => {
             // resolved view has not seen yet. It comes a tick later,
             // since listing the connections is async.
             await vi.waitFor(() => {
-                expect(lastState(view)?.output.map((row) => {
+                expect(lastState(view)?.actions.map((row) => {
                     return row.kind;
                 })).toEqual(["pending"]);
             });
@@ -238,7 +240,7 @@ describe("ResultViewProvider", () => {
         });
 
         expect(lastState(second)?.resultSets).toEqual(report.resultSets);
-        expect(lastState(second)?.output).toEqual(report.output);
+        expect(lastState(second)?.actions).toEqual(report.actions);
     });
 
     it("applies a grid's changes and reports the statements", async () => {
@@ -375,7 +377,7 @@ describe("ResultViewProvider", () => {
 
             await provider.startRun("dba@localhost:3310", pendingRun());
 
-            expect(lastState(view)?.output).toEqual([pendingRun()]);
+            expect(lastState(view)?.actions).toEqual([pendingRun()]);
         });
 
         it("replaces it with what the run produced", async () => {
@@ -390,7 +392,7 @@ describe("ResultViewProvider", () => {
             });
 
             // One row, not two: the report carries the same id.
-            const output = lastState(view)?.output ?? [];
+            const output = lastState(view)?.actions ?? [];
             expect(output).toHaveLength(1);
             expect(output[0]).toMatchObject({
                 id: "run1",
@@ -428,7 +430,7 @@ describe("ResultViewProvider", () => {
                 connection: "app@localhost:3311",
             }));
 
-            expect(provider.outputFor("dba@localhost:3310")).toHaveLength(1);
+            expect(provider.actionsFor("dba@localhost:3310")).toHaveLength(1);
             expect(lastState(view)?.connection).toBe("app@localhost:3311");
         });
     });
@@ -445,13 +447,14 @@ describe("ResultViewProvider", () => {
 
             await provider.showResults(editableReport(), context);
             await provider.showResults(editableReport({
-                output: [pendingRun({ id: "run2", kind: "info" })],
+                actions: [pendingRun({ id: "run2", kind: "info" })],
                 resultSets: [],
             }), context);
 
-            expect(lastState(view)?.output.map((row) => {
+            // Newest first: what has just happened is at the top.
+            expect(lastState(view)?.actions.map((row) => {
                 return row.id;
-            })).toEqual(["run1", "run2"]);
+            })).toEqual(["run2", "run1"]);
         });
 
         it("replaces the result sets on each run", async () => {
@@ -465,7 +468,7 @@ describe("ResultViewProvider", () => {
 
             await provider.showResults(editableReport(), context);
             await provider.showResults(
-                editableReport({ output: [], resultSets: [] }), context);
+                editableReport({ actions: [], resultSets: [] }), context);
 
             // The tabs stand for the last run only.
             expect(lastState(view)?.resultSets).toEqual([]);
@@ -483,7 +486,7 @@ describe("ResultViewProvider", () => {
             });
             await provider.showResults(editableReport({
                 connection: "app@localhost:3311",
-                output: [pendingRun({
+                actions: [pendingRun({
                     id: "run2",
                     connection: "app@localhost:3311",
                     kind: "info",
@@ -495,8 +498,8 @@ describe("ResultViewProvider", () => {
                 service,
             });
 
-            expect(provider.outputFor("dba@localhost:3310")).toHaveLength(1);
-            expect(provider.outputFor("app@localhost:3311")).toHaveLength(1);
+            expect(provider.actionsFor("dba@localhost:3310")).toHaveLength(1);
+            expect(provider.actionsFor("app@localhost:3311")).toHaveLength(1);
             expect(lastState(view)?.connection).toBe("app@localhost:3311");
         });
 
@@ -512,10 +515,10 @@ describe("ResultViewProvider", () => {
             // Output lives for as long as the window does, so it needs a
             // ceiling; the oldest runs go first, whole. Three runs of
             // half of it are over it.
-            const perRun = Math.floor(MAX_OUTPUT_ROWS / 2) - 1;
+            const perRun = Math.floor(MAX_ACTION_ROWS / 2) - 1;
             for (let run = 0; run < 3; run += 1) {
                 await provider.showResults(editableReport({
-                    output: [pendingRun({
+                    actions: [pendingRun({
                         id: `run${run}`,
                         kind: "info",
                         children: Array.from({ length: perRun }, (_v, i) => {
@@ -535,11 +538,12 @@ describe("ResultViewProvider", () => {
                 }), context);
             }
 
-            // The first run goes whole: the tree cannot keep half of it.
-            const output = provider.outputFor("dba@localhost:3310");
+            // The oldest run goes whole: the tree cannot keep half of
+            // it, and the oldest is the one at the end.
+            const output = provider.actionsFor("dba@localhost:3310");
             expect(output.map((row) => {
                 return row.id;
-            })).toEqual(["run1", "run2"]);
+            })).toEqual(["run2", "run1"]);
         });
     });
 
@@ -579,7 +583,7 @@ describe("ResultViewProvider", () => {
 
                 await provider.showResults(editableReport({
                     connection: "adhoc@localhost:3312",
-                    output: [],
+                    actions: [],
                     resultSets: [],
                 }), {
                     connectionUri: "adhoc@localhost:3312",
@@ -613,12 +617,41 @@ describe("ResultViewProvider", () => {
 
             // A connection nothing has run on yet shows empty, and the
             // other connection's results are left untouched.
-            expect(lastState(view)?.output).toEqual([]);
+            expect(lastState(view)?.actions).toEqual([]);
             expect(lastState(view)?.resultSets).toEqual([]);
-            expect(provider.outputFor("dba@localhost:3310"))
+            expect(provider.actionsFor("dba@localhost:3310"))
                 .toHaveLength(1);
             expect(view.description).toBe("app@localhost:3311");
         });
+
+        it("does not ask the server for the list on every row",
+            async () => {
+                const { api, provider, view } = createResolvedView();
+                let listed = 0;
+                provider.setConnectionLister(() => {
+                    listed += 1;
+
+                    return Promise.resolve(["dba@localhost:3310"]);
+                });
+                view.webview.receive({ type: "ready" });
+
+                const context = {
+                    connectionUri: "dba@localhost:3310",
+                    connectionId: "uuid",
+                    service: new ExecutionService(api),
+                };
+                await provider.showResults(editableReport(), context);
+                await provider.showResults(editableReport({
+                    actions: [pendingRun({ id: "run2", kind: "info" })],
+                    resultSets: [],
+                }), context);
+
+                // State is sent for every row that appears, and the
+                // configured list only changes when one is edited.
+                expect(listed).toBe(1);
+                expect(lastState(view)?.connections)
+                    .toEqual(["dba@localhost:3310"]);
+            });
 
         it("still shows the results when the list cannot be fetched",
             async () => {
@@ -653,14 +686,14 @@ describe("ResultViewProvider", () => {
                     connectionId: "uuid",
                     service: new ExecutionService(api),
                 });
-                expect(lastState(view)?.output).toHaveLength(1);
+                expect(lastState(view)?.actions).toHaveLength(1);
                 expect(lastState(view)?.resultSets).toHaveLength(1);
 
                 await provider.clear();
 
-                expect(lastState(view)?.output).toEqual([]);
+                expect(lastState(view)?.actions).toEqual([]);
                 expect(lastState(view)?.resultSets).toEqual([]);
-                expect(provider.outputFor("dba@localhost:3310"))
+                expect(provider.actionsFor("dba@localhost:3310"))
                     .toEqual([]);
                 expect(provider.resultSetsFor("dba@localhost:3310"))
                     .toEqual([]);
@@ -713,11 +746,286 @@ describe("ResultViewProvider", () => {
 
             await provider.clear();
 
-            expect(provider.outputFor("app@localhost:3311")).toEqual([]);
-            expect(provider.outputFor("dba@localhost:3310"))
+            expect(provider.actionsFor("app@localhost:3311")).toEqual([]);
+            expect(provider.actionsFor("dba@localhost:3310"))
                 .toHaveLength(1);
             expect(provider.resultSetsFor("dba@localhost:3310"))
                 .toHaveLength(1);
+        });
+    });
+
+    describe("several connections on one URI", () => {
+        /**
+         * @param overrides The fields that differ from a plain event.
+         *
+         * @returns One event on a connection.
+         */
+        const anEvent = (
+            overrides: Partial<IActivityEvent> = {},
+        ): IActivityEvent => {
+            return {
+                connection: "dba@localhost:3310",
+                label: "UI Backend",
+                call: "db.list_schemas()",
+                message: "Listed 2 schemas",
+                when: new Date(2026, 8, 21, 12, 0, 0, 500),
+                elapsedMs: 3,
+                ...overrides,
+            };
+        };
+
+        /**
+         * @returns A view knowing one open connection per label.
+         */
+        const createWithSessions = () => {
+            const created = createResolvedView();
+            created.provider.setSessionLister(() => {
+                return ["1", "UI Backend"];
+            });
+            created.view.webview.receive({ type: "ready" });
+
+            return created;
+        };
+
+        it("gathers what happens outside a run", async () => {
+            const { provider, view } = createWithSessions();
+
+            await provider.appendEvent(anEvent());
+
+            const output = lastState(view)?.actions ?? [];
+            expect(output).toHaveLength(1);
+            expect(output[0]).toMatchObject({
+                role: "event",
+                connectionLabel: "UI Backend",
+                message: "Listed 2 schemas",
+                statement: "db.list_schemas()",
+                kind: "info",
+            });
+        });
+
+        it("shows every connection's rows together by default",
+            async () => {
+                const { provider, view } = createWithSessions();
+
+                await provider.appendEvent(anEvent());
+                await provider.startRun("dba@localhost:3310", pendingRun({
+                    connectionLabel: "1",
+                }));
+
+                const state = lastState(view);
+                expect(state?.session).toBeUndefined();
+                expect(state?.actions.map((row) => {
+                    return row.connectionLabel;
+                })).toEqual(["1", "UI Backend"]);
+                // Both, whether or not anything has run on them.
+                expect(state?.sessions).toEqual([
+                    { label: "1", open: true },
+                    { label: "UI Backend", open: true },
+                ]);
+            });
+
+        it("puts what a run does on the way above the run", async () => {
+            const { provider, view } = createWithSessions();
+
+            // The run's row goes up before its connection is opened,
+            // so the opening arrives after it - and the newest is what
+            // the top of the log holds.
+            await provider.startRun("dba@localhost:3310", pendingRun({
+                connectionLabel: "1",
+            }));
+            await provider.appendEvent(anEvent({
+                label: "1",
+                call: "db.connect(dba@localhost:3310)",
+                message: "Opened Session 1 for dba@localhost:3310",
+            }));
+
+            expect(lastState(view)?.actions.map((row) => {
+                return [row.role, row.message];
+            })).toEqual([
+                ["event", "Opened Session 1 for dba@localhost:3310"],
+                ["run", "Running 1 statement on dba@localhost:3310"],
+            ]);
+        });
+
+        it("puts what happens after a run has finished above it",
+            async () => {
+                const { api, provider, view } = createWithSessions();
+                await provider.showResults(editableReport(), {
+                    connectionUri: "dba@localhost:3310",
+                    connectionId: "uuid",
+                    service: new ExecutionService(api),
+                });
+
+                await provider.appendEvent(anEvent());
+
+                expect(lastState(view)?.actions.map((row) => {
+                    return row.role;
+                })).toEqual(["event", "run"]);
+            });
+
+        it("narrows the output to the connection the page picked",
+            async () => {
+                const { provider, view } = createWithSessions();
+                await provider.appendEvent(anEvent());
+                await provider.startRun("dba@localhost:3310", pendingRun({
+                    connectionLabel: "1",
+                }));
+
+                view.webview.receive({
+                    type: "selectSession",
+                    session: "UI Backend",
+                });
+                await vi.waitFor(() => {
+                    expect(lastState(view)?.session).toBe("UI Backend");
+                });
+
+                expect(lastState(view)?.actions.map((row) => {
+                    return row.id;
+                })).toEqual(["event1"]);
+                // Nothing was thrown away: the other rows are still
+                // there to come back to.
+                expect(provider.actionsFor("dba@localhost:3310"))
+                    .toHaveLength(2);
+            });
+
+        it("drops a filter that would hide the run just started",
+            async () => {
+                const { provider, view } = createWithSessions();
+                await provider.selectSession("UI Backend");
+
+                await provider.startRun("dba@localhost:3310", pendingRun({
+                    connectionLabel: "1",
+                }));
+
+                // Putting a run up the moment it starts is pointless if
+                // the filter in force hides it.
+                expect(lastState(view)?.session).toBeUndefined();
+                expect(lastState(view)?.actions).toHaveLength(1);
+            });
+
+        it("keeps the filter when the run is on the connection shown",
+            async () => {
+                const { provider, view } = createWithSessions();
+                await provider.selectSession("1");
+
+                await provider.startRun("dba@localhost:3310", pendingRun({
+                    connectionLabel: "1",
+                }));
+
+                expect(lastState(view)?.session).toBe("1");
+            });
+
+        it("offers a connection that has been closed, and says so",
+            async () => {
+                const { provider, view } = createResolvedView();
+                provider.setSessionLister(() => { return []; });
+                view.webview.receive({ type: "ready" });
+
+                await provider.appendEvent(anEvent());
+
+                // The log outlives the connection it was gathered on.
+                expect(lastState(view)?.sessions)
+                    .toEqual([{ label: "UI Backend", open: false }]);
+            });
+
+        it("shows all of them again when the connection changes",
+            async () => {
+                const { provider, view } = createWithSessions();
+                await provider.appendEvent(anEvent());
+                await provider.selectSession("UI Backend");
+
+                view.webview.receive({
+                    type: "selectConnection",
+                    connection: "app@localhost:3311",
+                });
+                await vi.waitFor(() => {
+                    expect(lastState(view)?.connection)
+                        .toBe("app@localhost:3311");
+                });
+
+                expect(lastState(view)?.session).toBeUndefined();
+            });
+
+        it("does not reveal the view for an event", async () => {
+            const { provider, view } = createWithSessions();
+            const shown = view.shown;
+
+            await provider.appendEvent(anEvent());
+
+            // Browsing the tree is no reason to throw the panel open
+            // over whatever is being read.
+            expect(view.shown).toBe(shown);
+        });
+
+        it("leaves another connection's view alone", async () => {
+            const { api, provider, view } = createWithSessions();
+            await provider.showResults(editableReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+            const before = view.webview.posted.length;
+
+            await provider.appendEvent(anEvent({
+                connection: "app@localhost:3311",
+            }));
+
+            expect(view.webview.posted).toHaveLength(before);
+            expect(provider.actionsFor("app@localhost:3311"))
+                .toHaveLength(1);
+        });
+
+        it("shows the tabs of whichever connection ran last", async () => {
+            const { api, provider, view } = createWithSessions();
+            const service = new ExecutionService(api);
+
+            await provider.showResults(editableReport({
+                actions: [pendingRun({
+                    kind: "info",
+                    connectionLabel: "UI Backend",
+                })],
+            }), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid-ui",
+                service,
+            });
+
+            expect(lastState(view)?.resultSets).toHaveLength(1);
+
+            // A run on the other connection takes the tabs over; the
+            // first one's are kept, and come back when it is picked.
+            await provider.showResults(editableReport({
+                actions: [pendingRun({
+                    id: "run2",
+                    kind: "info",
+                    connectionLabel: "1",
+                })],
+                resultSets: [],
+            }), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid-editor",
+                service,
+            });
+            expect(lastState(view)?.resultSets).toEqual([]);
+
+            await provider.selectSession("UI Backend");
+            expect(lastState(view)?.resultSets).toHaveLength(1);
+        });
+
+        it("clears only the connection on show", async () => {
+            const { provider, view } = createWithSessions();
+            await provider.appendEvent(anEvent());
+            await provider.startRun("dba@localhost:3310", pendingRun({
+                connectionLabel: "1",
+            }));
+            await provider.selectSession("1");
+
+            await provider.clear();
+
+            expect(lastState(view)?.actions).toEqual([]);
+            expect(provider.actionsFor("dba@localhost:3310").map((row) => {
+                return row.connectionLabel;
+            })).toEqual(["UI Backend"]);
         });
     });
 

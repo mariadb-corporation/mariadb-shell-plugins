@@ -17,7 +17,10 @@
 
 import * as vscode from "vscode";
 
-import { ConnectionManager } from "./connections/connectionManager.js";
+import {
+    ConnectionManager,
+    UI_BACKEND_SESSION,
+} from "./connections/connectionManager.js";
 import {
     connectOnOpen,
     createWorkspaceSettings,
@@ -131,13 +134,16 @@ export const activate = (context: vscode.ExtensionContext): void => {
     };
 
     const session = new McpSession(createSdkConnector(), log);
+    const resultView = new ResultViewProvider(context.extensionUri, log);
     const connections = new ConnectionManager(
         async () => {
             return session.api ?? await startServer(session, log);
         },
         createWorkspaceSettings(),
+        // Everything that happens on an open connection is a row of that
+        // connection's output, not only the SQL an editor runs on it.
+        (event) => { void resultView.appendEvent(event); },
     );
-    const resultView = new ResultViewProvider(context.extensionUri, log);
     state = { session, connections, resultView };
 
     const tree = new ConnectionsTreeProvider(
@@ -155,6 +161,11 @@ export const activate = (context: vscode.ExtensionContext): void => {
     });
     resultView.setConnectionLister(async () => {
         return await connections.listConnections();
+    });
+    resultView.setSessionLister((uri) => {
+        return connections.sessionsOf(uri).map((open) => {
+            return open.label;
+        });
     });
     resultView.setRevealHandler(async (source) => {
         await editors.revealStatement(source);
@@ -302,7 +313,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     if (uri === undefined) {
                         throw new Error("No connection was given.");
                     }
-                    await connections.connect(uri);
+                    // The tree's own connection: connecting here is what
+                    // the Connections view then browses on.
+                    await connections.connect(uri, UI_BACKEND_SESSION);
                 });
             },
         ),

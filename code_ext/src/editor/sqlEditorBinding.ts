@@ -368,7 +368,7 @@ export class SqlEditorBinding implements vscode.Disposable {
      * @param editor The editor it came from.
      * @param script The SQL to run.
      * @param baseOffset Where the script starts in the document.
-     * @param label What to call the run in the output.
+     * @param label What to call the run in the actions.
      *
      * @returns Nothing.
      */
@@ -408,7 +408,7 @@ export class SqlEditorBinding implements vscode.Disposable {
     }
 
     /**
-     * Puts the cursor on a statement an output row came from.
+     * Puts the cursor on a statement an action row came from.
      *
      * @param source Where the statement is.
      *
@@ -432,7 +432,7 @@ export class SqlEditorBinding implements vscode.Disposable {
      *
      * @param uri The connection to run on.
      * @param script The SQL to run.
-     * @param label What to call the run in the output.
+     * @param label What to call the run in the actions.
      * @param source Where the script came from, for the jump links.
      *
      * @returns Nothing.
@@ -445,11 +445,20 @@ export class SqlEditorBinding implements vscode.Disposable {
         stopAtFirstError: boolean = stopOnError(),
     ): Promise<void> {
         // The run is put up before the connection is even opened, which
-        // is what the shell may have to be started for, so the output
+        // is what the shell may have to be started for, so the actions
         // shows it is under way rather than nothing at all.
         const runId = this.#nextRunId();
         const what = describeRun(script, label);
-        const run = pendingRunRow({ runId, connectionUri: uri, what });
+        // Which connection this will run on has to be known before it is
+        // opened, because the row goes up first: the manager answers it
+        // from what is open now, and opens that same one below.
+        const connectionLabel = this.connections.labelFor(uri);
+        const run = pendingRunRow({
+            runId,
+            connectionUri: uri,
+            connectionLabel,
+            what,
+        });
         await this.resultView.startRun(uri, run);
 
         try {
@@ -459,6 +468,7 @@ export class SqlEditorBinding implements vscode.Disposable {
             const report = await service.execute({
                 connectionUri: uri,
                 connectionId,
+                connectionLabel,
                 script,
                 runId,
                 source,
@@ -479,12 +489,12 @@ export class SqlEditorBinding implements vscode.Disposable {
             // Shown without an apply context: the failure happened
             // before there was anything editable to write back. It
             // closes off the run that was put up above - same id - so
-            // the output does not keep a run that never ends.
+            // the actions do not keep a run that never ends.
             await this.resultView.showResults({
                 connection: uri,
                 startedAt: run.time,
                 elapsedMs: 0,
-                output: [{
+                actions: [{
                     ...run,
                     message: `Ran ${what} on ${uri}`,
                     summary: `Execution failed: ${message}`,
@@ -494,6 +504,7 @@ export class SqlEditorBinding implements vscode.Disposable {
                         id: `${runId}-error`,
                         time: run.time,
                         connection: uri,
+                        connectionLabel,
                         role: "statement",
                         statement: captionFor(script),
                         message,

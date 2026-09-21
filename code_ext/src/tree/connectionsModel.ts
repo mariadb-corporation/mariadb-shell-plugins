@@ -15,7 +15,10 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import type { ConnectionManager } from "../connections/connectionManager.js";
+import {
+    UI_BACKEND_SESSION,
+    type ConnectionManager,
+} from "../connections/connectionManager.js";
 import { OBJECT_TYPES, type ConnectionKind, type ObjectType }
     from "../mcp/types.js";
 
@@ -111,6 +114,9 @@ export class ConnectionsModel {
         const defaultUri = this.connections.defaultConnection;
 
         return stored.map((connection) => {
+            // Any connection open on it, not only the one the tree
+            // browses with: what the row says, and what disconnecting it
+            // closes, is the whole of what is open on the connection.
             const connected = this.connections.isConnected(connection.uri);
 
             return {
@@ -169,7 +175,8 @@ export class ConnectionsModel {
      * @returns Its schema nodes.
      */
     async #schemasOf(node: IConnectionNode): Promise<ISchemaNode[]> {
-        const connectionId = this.connections.connectionIdFor(node.uri);
+        const connectionId = this.connections.connectionIdFor(
+            node.uri, UI_BACKEND_SESSION);
         if (connectionId === undefined) {
             return [];
         }
@@ -216,7 +223,8 @@ export class ConnectionsModel {
      * @returns Its object nodes.
      */
     async #objectsOf(node: IObjectGroupNode): Promise<IObjectNode[]> {
-        const connectionId = this.connections.connectionIdFor(node.uri);
+        const connectionId = this.connections.connectionIdFor(
+            node.uri, UI_BACKEND_SESSION);
         if (connectionId === undefined) {
             return [];
         }

@@ -1,11 +1,13 @@
 # Result view
 
 The webview docked in the bottom panel: its layout, whose state it shows,
-the output grid, the result grids, the SQL preview and the code both sides
-share.
+the two pickers, the actions grid, the result grids, the SQL preview and
+the code both sides share.
 
 Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). What fills it is in
-[running-sql.md](running-sql.md).
+[running-sql.md](running-sql.md), and everything other than a run that
+fills it - the connections a URI has open, and what is reported on them -
+is in [connections.md](connections.md).
 
 Docked in the **bottom panel**, beside Problems, Output, Debug Console and
 Ports. That is why it is a `WebviewView` in a `contributes.viewsContainers.panel`
@@ -27,42 +29,110 @@ Vertically, and deliberately in this order:
 
 ```
 +-----------------------------------------------+
-| content: output grid, result grid, or preview |  flex
+| error message, when there is one              |  very top
 +-----------------------------------------------+
-| [Output][Result #1]  status  [conn v][tools]  |  tabs at the bottom
+| content: actions grid, result grid, or preview|  flex
+| ......................................        |
+| status ............ [read only][tools]        |  the result set's own
 +-----------------------------------------------+
-| error message, when there is one              |  very bottom
+| [Actions][Result #1 ][< >]     [conn][All Ses]|  what is on show
 +-----------------------------------------------+
 ```
+
+The last row is the **contentSelectionBar**, and it holds only what
+picks what is on show: the tabs, and the two pickers at the far right.
+What a result set came to, and what can be done with it, is a
+**statusBar of its own along the bottom of that result set**
+(`ResultStatusBar`), inside the tab's content. Every button there -
+Preview SQL, + Row, Revert, Apply, Refresh - acts on one result set, so
+it belongs to the result set and not to the view; keeping them apart is
+also what leaves the row of tabs the room to be a row of tabs. The
+Actions tab has no such bar: there is no result set for one to be
+about.
+
+The error bar leads, above what it is about: it is read before the eye
+has gone looking for what went wrong.
+
+The tabs are **the editor's, not the activity bar's**: flat, with the
+one on show marked by a line under it in `textLink.foreground` rather
+than by a filled surface. The panel's own container tabs sit right
+above them and are selected by surface, so two selections in one corner
+of the screen cannot be read as one.
+
+Only the **result** tabs scroll. The Actions tab stays outside the
+strip, because it is what a result tab is gone back to, and the strip
+carries a paging button on each side - VS Code chevrons - that appear
+only while the tabs do not all fit. `pagingOf()` is the whole of the
+decision: it reads the strip's `scrollWidth`, `clientWidth` and
+`scrollLeft` and says whether it overflows and whether it is at either
+end, so the buttons can be disabled where there is nothing that way. A
+`ResizeObserver` on the strip and the strip's own `scroll` event are
+what ask it again. The scrollbar itself is hidden: the buttons are the
+control, and a bar under the tabs would cost a row of the panel.
 
 Paddings are a couple of pixels throughout: the panel area is short, and
 every row spent on chrome is a row of data not shown.
 
 ## State is per connection, and the host owns it
 
-`ResultViewProvider` keeps a `Map<connectionUri, { output, resultSets }>`
-and the webview mirrors one entry of it at a time. The host has to own it
+`ResultViewProvider` keeps a `Map<connectionUri, IConnectionResults>` and
+the webview mirrors one entry of it at a time. The host has to own it
 because VS Code discards a hidden view's DOM, so the frontend cannot be
 trusted to still be holding anything.
 
 The two halves behave differently on purpose:
 
-- **Output accumulates.** It is the log of everything run on that
-  connection, so a run appends to it. It is capped at `MAX_OUTPUT_ROWS`
-  (2000) per connection, oldest first, because a window can stay open
-  for days. A run counts as its own row plus its statements and is
-  dropped whole: the tree cannot keep half of one.
+- **Actions accumulate, newest first.** They are the log of everything
+  that has happened on that connection, and what has just happened
+  goes to the **top** of it - which is where the view already is, so
+  nothing has to be scrolled to and a reader looking through the older
+  rows is not taken away from them. The list is capped at
+  `MAX_ACTION_ROWS` (2000) per connection, the oldest going first from
+  the end, because a window can stay open for days. A run counts as
+  its own row plus its statements and is dropped whole: the tree
+  cannot keep half of one.
 - **Result sets are replaced.** The tabs stand for the *last* run, so
   starting a run clears them along with the apply context they were
-  written back through.
+  written back through. They are kept **per open connection**: a run on
+  one does not throw away the tabs of another, and picking that other one
+  brings them back.
 
-A run goes into the output **when it starts**, not when it finishes.
+The actions are **one list per URI**, not one per open connection, because
+that is what the view shows by default: each row carries the label of the
+connection it happened on (`IActionRow.connectionLabel`), and picking one
+filters the list rather than switching to another. Which connection a
+report's tabs belong to is read off the run's own row, so a report cannot
+say one thing and the rows it carries another.
+
+## Everything that happens, not only what is run
+
+`appendEvent` is what puts up a row for anything other than a run: a
+connection opened or closed, and each `db.*` call made on one. They are
+`role: "event"` rows - no twistie, nothing under them - with the call in
+the Information column where a statement row has its SQL, and they come
+from the reporter the `ConnectionManager` is built with.
+
+Two things they deliberately do not do:
+
+- **An event does not reveal the view.** Browsing the schema tree is no
+  reason to throw the panel open over what the user is reading; the rows
+  are simply there when they next look. A run still reveals it.
+- **An event does not reset the page.** State now arrives at any moment,
+  so the frontend rebuilds its editing state and picks a tab only when
+  the result set ids actually changed - otherwise a schema listed in the
+  tree would throw away a grid's pending edits.
+
+State is sent for every row that appears, which is why the configured
+connection list is cached for `CONNECTION_LIST_TTL_MS`: listing it costs
+two tool calls, and it only changes when the user edits a connection.
+
+A run goes into the actions **when it starts**, not when it finishes.
 `startRun()` puts up the row `pendingRunRow()` built - marked `pending`,
 with an empty child array - before the connection has even been opened,
 which is what the shell may have to be started for. `showResults()` then
 replaces it, matching on the run's id, so the finished run takes the
 pending row's place rather than being appended beside it. That is why
-`IExecutionReport.output` is one row and why `execute()` is given the
+`IExecutionReport.actions` is one row and why `execute()` is given the
 same `runId` the pending row went up with.
 
 There is no "running" message and no placeholder over the view: the run
@@ -71,9 +141,12 @@ readable while it runs.
 
 ## Picking the connection, and clearing
 
-The connection picker is a `<select>` at the far left of the view's own
-bottom bar. It is not in the panel toolbar because it cannot be -
-checked against `@types/vscode` 1.138:
+The two pickers are `<select>`s at the far **right** of the view's own
+bottom bar: the connection URI, and which of the connections open on it.
+They sit after everything else, held there by `margin-left: auto` on the
+first of them, so they stay put whether or not the status text beside
+them has anything to say. They are not in the panel toolbar because they
+cannot be - checked against `@types/vscode` 1.138:
 
 - `WebviewView` exposes `title`, `description`, `badge` and `show()`,
   and `TreeView` little more; neither has a control of any kind.
@@ -83,16 +156,27 @@ checked against `@types/vscode` 1.138:
   but its items are commands declared in `package.json` with fixed
   titles, so it cannot list connections discovered at runtime.
 
-A view title can hold buttons, so **Clear Output** does live there
-(`mariadb.clearResultView`, `$(clear-all)`). It empties the connection on
-show completely: its gathered output *and* its result set tabs, along
-with the apply context those tabs were written back through. Other
-connections are untouched.
+The second picker offers **All Sessions** first, which is what the view
+opens on and the only case in which the actions name a connection per
+row. It lists the connections open on the URI and any that only the
+gathered actions still remember, which say `(closed)`: the log outlives
+the connection it was gathered on. A filter that would hide a run just
+starting is dropped rather than left in force - putting a run up the
+moment it starts is pointless if it cannot be seen - and picking another
+URI goes back to all of them, since one URI's connections are not
+another's.
+
+A view title can hold buttons, so **Clear Actions** does live there
+(`mariadb.clearResultView`, `$(clear-all)`). It empties what is on show:
+with All picked, the connection's whole log *and* every one of its
+result set tabs, along with the apply contexts those were written back
+through; with one connection picked, only its rows and its tabs. Other
+URIs are untouched.
 
 The connection on show is also named beside the view's title through
 `WebviewView.description`, as the Output panel names its channel.
 
-Because the tabs are replaced but the output is not, a statement row can
+Because the tabs are replaced but the actions are not, a statement row can
 outlive the result set it produced. That is why result set ids carry the
 run that made them (`run3-result-0`): without it a later run's
 `result-0` would make an old row's jump arrow point at the wrong tab.
@@ -103,16 +187,21 @@ The grid only draws the arrow when the id is still among the open tabs.
 The view is UI, not an editor, so it uses `--vscode-font-family` at
 `--vscode-font-size` throughout - column headers, messages, counts and
 grid cells alike. `--vscode-editor-font-family` is reserved for SQL: the
-output grid's Information column on a statement row - not on a run's,
+actions grid's Information column on a statement row - not on a run's,
 which holds a summary - and the generated statements in the SQL
 preview. Times and counts get `font-variant-numeric: tabular-nums`, so
 they line up without leaving the UI font.
 
-Every row shares one background, `--vscode-sideBar-background`, header
-included; only borders separate them. What a row *means* is carried by a
+The panel itself is drawn on `--vscode-panel-background`, so the bars
+around the content - the row of tabs, a result set's own bar - read as
+part of the panel. The **content** of the tab on show is the one thing
+set into it, on `--vscode-sideBar-background`, and every row of every
+grid shares that one surface; only borders separate them. What a row *means* is carried by a
 marker icon instead, drawn with the codicon font in the Problems panel's
 own colours (`--vscode-problemsInfoIcon-foreground` and its siblings).
-A run's own row is set apart from its statements by weight alone.
+A run's own row is set apart by its twistie and by the indent of the
+statements under it - not by weight, and not by colour: every row is
+the same font in the same size on the same ground.
 
 `@vscode/codicons` supplies the glyph font. Two things make it work:
 the webview build sets `base: "./"`, because the stylesheet is loaded
@@ -122,24 +211,85 @@ its own filename while the stylesheet's is pinned to `main.css`, which
 the extension references from the HTML it builds.
 `src/test/webview/assets.test.ts` guards both.
 
-## The output grid
+## The actions grid
 
-A Tabulator table:
-`◆ | Output | Time | Elapsed | Rows | Information`.
+A Tabulator table: `Actions | Time | Information | (Conn)`.
+
+Three columns carry it, **and no header row**: `headerVisible` is
+false, because the columns are self evident from what is in them and
+the panel area is short enough that a row of titles is a row of the log
+not shown. The titles stay in the column definitions - one option flips
+the header back - and the actions grid's own header rules went with it.
+The grid is given 2px of margin above it instead, and a height of
+`calc(100% - 2px)` to pay for it: an element told to be 100% tall with
+a margin on top overflows its parent by exactly that much.
+
+What is *not* there is deliberate:
+
+- **There is no column of icons.** Everything a row leads with is in
+  the Actions cell: the twistie of a run or the branch of a statement,
+  which Tabulator puts in front of the cell's own content, then the
+  severity marker, then what happened. A column of its own for the
+  marker cost width twice over - its own, and the gap between it and
+  the message it belongs to.
+- **Time, Information and Conn are the detail beside the message**, so
+  they are quieter and smaller than it (`0.9em`, and `0.85em` for
+  Conn), and `vertAlign: "middle"` centres them against a message that
+  may be taller than they are.
+- **Time holds both the start and the duration**, as
+  `20:44:13.431 (3ms)`: the statement's own time, or the whole run's on
+  its own row. One column of the pair would be dead space on every row
+  that has no duration, and a run's start and its length read as one
+  fact. Nothing in brackets while a run is still under way - a `(0ms)`
+  would claim it had finished.
+- **There is no Rows column.** The count is already in the Actions
+  column, in the server's own words (`12 rows in set`,
+  `Query OK, 3 rows affected`, `Listed 12 tables in world`), so a column
+  for it repeated what the row already said. `IActionRow` carries no
+  `rows` field for the same reason: nothing reads it.
+- **Conn is there only while several connections are on show together.**
+  With one picked, a column repeating its name the whole way down says
+  nothing. It comes last, where it labels the row without standing
+  between the marker and what it says, and is drawn smaller and
+  quieter than what it labels. The columns close over whether it is there, so
+  the table is rebuilt when that changes.
 
 The marker and the message lead together, as they do in the Problems
 panel; the details follow. The grid draws **no vertical rules**: it is a
 log, not a spreadsheet, and the columns line up on their own. The result
-grids keep theirs, so the override is scoped to `.outputGridHost`.
+grids keep theirs, so the override is scoped to `.actionsGridHost`.
+
+**Every marker that stands on its own sits in one column.** A run
+carries a 16px twistie with 2px of margin after it; an event, which is
+a top level row with no children, gets neither twistie nor branch, so
+`formatMessageCell` gives it a `.treeSpacer` of the same 16px *and the
+same margin* - without them a log of runs and events would step in and
+out as the eye runs down it. The room around the marker is given as
+margins rather than as a flex `gap` for the same reason: a gap would
+also fall between that spacer and the marker after it.
+
+Everything in that cell except the message itself is `flex: 0 0 auto`,
+Tabulator's branch element included. A flex line shares what it has to
+give up in proportion to how wide each item wants to be, so a message
+too long for its cell asks for hundreds of pixels beside the branch's
+seven: left to shrink, the guide all but disappears and the marker and
+the message slide left with it, out of the column.
+
+A **statement** is meant to miss it: `dataTreeChildIndent` is **20**,
+and Tabulator adds its branch element's 7px of width and 5px of margin,
+which puts a statement's marker at 32 - one clear step in from its
+run's 16. That step, and the twistie above it, are what say the row
+belongs to the run.
 
 ### One row per run, opened to see its statements
 
 It is a **tree**, two levels deep, which is what `role` on a row says:
 one `run` row per execution, with a `statement` row per statement under
-it. A run is therefore one line in the log until it is asked about,
-instead of a block of lines to be picked apart by eye.
+it, and an `event` row of its own for everything else that happened. A
+run is therefore one line in the log until it is asked about, instead of
+a block of lines to be picked apart by eye.
 
-- `Output` on a run says what ran and where (`Ran 5 statements on ...`,
+- `Actions` on a run says what ran and where (`Ran 5 statements on ...`,
   `Running 5 statements on ...` while it is under way); on a statement,
   what the server said about it.
 - `Information` - the column that used to be `Statement` - says what the
@@ -147,11 +297,9 @@ instead of a block of lines to be picked apart by eye.
   `Finished with 2 errors, stopped after 4 of 5`, `Running…`) and, on a
   statement, which statement it was. A run's summary is the view
   speaking, not SQL, so it drops the editor font its children use.
-- `Time` is the run's start, to the millisecond.
-- `Elapsed` is the **whole run's** time on a run row and **that
-  statement's own**, as the server measured it, on a statement. It is
-  empty while a run is pending: a `0 ms` would claim it had finished.
-- `Rows` is rows returned for a query, rows affected otherwise.
+- `Time` is the start, to the millisecond, with the duration after it in
+  brackets - the whole run's on a run row and that statement's own, as
+  the server measured it, on a statement.
 - The marker is `pending`, `info`, `warning` or `error`. A statement
   that succeeded but raised warnings is a warning, and a run takes the
   worst of what its statements saw. `pending` is the spinning
@@ -159,8 +307,12 @@ instead of a block of lines to be picked apart by eye.
 
 **Only the newest run is open.** `dataTreeStartExpanded` is asked for
 every row Tabulator builds and answers `startsExpanded()`, which opens
-whatever is now the last run; since a data change rebuilds every row, a
-run that was open closes behind the one that follows it. A pending run
+whatever `latestRunOf()` finds; since a data change rebuilds every row,
+a run that was open closes behind the one that follows it. The newest
+run is **looked for** rather than taken from the front of the list,
+because the row in front of it may be an event - a run's row goes up
+before the connection it needs has been opened, so the opening lands
+above it. A pending run
 carries `children: []` rather than nothing, so it already has its
 twistie and its message does not shift when the statements arrive.
 
@@ -168,11 +320,11 @@ Three things about the tree had to be told to Tabulator:
 
 - `dataTreeChildField: "children"`, because the rows are the protocol's
   own shape rather than Tabulator's `_children`.
-- `dataTreeElementColumn: "message"`. A twistie has nowhere to go in a
-  24px column of markers, and indenting that column would push the
-  markers out of line. The message cell is `inline-flex` for it -
-  Tabulator inserts the control as the cell's first child, and a `flex`
-  cell would be block level and take the whole row.
+- `dataTreeElementColumn: "message"`, the one column there is to put it
+  in. Tabulator inserts the control as that cell's first child, which
+  is why the cell is `inline-flex` - `inline`, because a Tabulator cell
+  is inline-level and laid out beside its neighbours, and a block one
+  takes the whole row and the grid comes apart.
 - `dataTreeExpandElement` / `dataTreeCollapseElement`, VS Code's
   chevrons. Tabulator's own control is a boxed `+`/`-` in hard coded
   greys; supplying the elements is what stops those rules applying at
@@ -183,29 +335,42 @@ Rows are looked up by index among the **top level only**, so a statement
 cannot be scrolled to by its own id: `openTo()` finds its run, opens it
 and takes the child component from `getTreeChildren()`.
 
+### Nothing scrolls itself
+
+Rows arriving are not scrolled to, because they arrive at the **top**
+and the view opens there. A reader who has not gone looking through the
+older rows is already where the new ones appear, and one who has is not
+taken away from what they are reading. That is what putting the newest
+first buys, and it is why `replaceData` is now the whole of the data
+effect.
+
+The jump arrows still scroll where they are pointed: an explicit ask,
+and the one thing in the grid that moves the view.
+
 ### The two jump arrows
 
-They ride **inside the cells they belong to** rather than in columns of
-their own: a column of arrows costs the Output column width it can put
-to better use, and the panel area is short of it.
+They both ride **at the end of the Actions cell** rather than in columns
+of their own: a column of arrows costs the Actions column width it can
+put to better use, and the panel area is short of it.
 
-- `↗` sits in the Output cell's top right corner and puts the cursor on
-  the statement in the file it came from. On a failed run's row it also
-  opens that run and scrolls to its first error, so one control answers
-  "what went wrong, and where". A message that has one gets
-  `padding-right` so the text truncates before the arrow rather than
-  running under it.
-- `→` follows the row count in the Rows cell and jumps to the result set
-  that statement produced, when that tab is still open. Its place is
-  held by an empty slot where there is no arrow, so the counts stay in a
-  column.
+- `→` jumps to the result set that statement produced, when that tab is
+  still open.
+- `↗` puts the cursor on the statement in the file it came from. On a
+  failed run's row it also opens that run and scrolls to its first
+  error, so one control answers "what went wrong, and where".
 
-Both share their cell with the value beside them, so their `cellClick`
-handlers check what the click actually landed on (`clickedOn()`) instead
+They are laid out **beside** the message rather than over it - the cell
+is a flex row of the message and an `.actionArrows` span - so the text
+truncates before them, a row can show both, and neither can cover the
+other.
+
+Both share their cell with the message, so the column's `cellClick`
+handler checks what the click actually landed on (`clickedOn()`) instead
 of firing for anywhere in the cell.
 
-The error bar under the tabs follows the same reading: `lastErrorOf()`
-looks at the **last run only** and reports what its failing statement
+The error bar above the content follows the same reading:
+`lastErrorOf()`
+looks at the **newest row only** and reports what its failing statement
 said, not the run's count of errors. A run that worked clears it.
 
 ## What the server had to report for this
@@ -268,9 +433,10 @@ override.
 
 ## SQL preview
 
-The **Preview SQL** button in the toolbar swaps the grid for the list of
-statements the pending changes would run. The statements come from
-`createQueryBuilder()`, the same factory the extension executes with, so
+The **Preview SQL** button in the result set's own bar swaps the grid
+for the list of statements the pending changes would run. The
+statements come from `createQueryBuilder()`, the same factory the
+extension executes with, so
 what is previewed is what will be sent. Clicking a statement goes back to
 the grid and scrolls to the row it was generated from - which is how a
 `RowChange` came to carry its `rowIndex`.

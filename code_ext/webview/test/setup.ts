@@ -52,3 +52,36 @@ export const installVsCodeApi = (): void => {
 };
 
 installVsCodeApi();
+
+/**
+ * The layout APIs jsdom does not implement.
+ *
+ * The page measures its tab strip and scrolls a tab into view, and
+ * jsdom has neither `ResizeObserver` nor the scroll methods - without
+ * these the calls throw inside an effect, where the failure is easy to
+ * miss and every test after it is running against a page that never
+ * finished rendering.
+ *
+ * They measure nothing: jsdom reports every element as zero sized, so
+ * what they are is stubs that let the code under test run.
+ *
+ * @returns Nothing.
+ */
+export const installLayoutStubs = (): void => {
+    class NoLayoutResizeObserver implements ResizeObserver {
+        public observe(): void { /* nothing to measure */ }
+        public unobserve(): void { /* nothing to measure */ }
+        public disconnect(): void { /* nothing to measure */ }
+    }
+
+    (globalThis as Record<string, unknown>).ResizeObserver =
+        NoLayoutResizeObserver;
+    Element.prototype.scrollIntoView = function scrollIntoView(): void {
+        // Nowhere to scroll.
+    };
+    Element.prototype.scrollBy = function scrollBy(): void {
+        // Nowhere to scroll.
+    };
+};
+
+installLayoutStubs();

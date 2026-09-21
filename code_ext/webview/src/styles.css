@@ -45,9 +45,12 @@ body,
 
 body {
     color: var(--vscode-foreground);
-    /* The rows take this too, so the view reads as one surface. */
-    background: var(--vscode-sideBar-background,
-            var(--vscode-panel-background));
+    /*
+     * The panel's own ground, so the bars around the content - the row
+     * of tabs, a result set's own bar - are part of the panel rather
+     * than part of what is on show in it.
+     */
+    background: var(--vscode-panel-background);
     font-family: var(--vscode-font-family);
     font-size: var(--vscode-font-size);
 }
@@ -59,15 +62,13 @@ body {
  * the UI font at the UI size.
  */
 .monospace,
-.tabulator .tabulator-cell.outputStatement,
+.tabulator .tabulator-cell.actionInformation,
 .sqlPreview code {
     font-family: var(--vscode-editor-font-family);
 }
 
-/* Times and counts line up without leaving the UI font. */
-.tabulator .tabulator-cell.outputTime,
-.tabulator .tabulator-cell.outputElapsed,
-.tabulator .tabulator-cell.outputRows {
+/* Times line up without leaving the UI font. */
+.tabulator .tabulator-cell.actionTime {
     font-variant-numeric: tabular-nums;
 }
 
@@ -122,9 +123,12 @@ button:focus-visible {
 }
 
 /* ------------------------------------------------------------------ *
- * Layout: the content fills the view, the tab bar and the toolbar sit
- * on one row underneath it, and an error - when there is one - is the
- * very last thing.
+ * Layout: an error - when there is one - leads, the content fills the
+ * view, and the bar that picks what is on show is the last row. What a
+ * result set came to, and what can be done with it, is a bar of its
+ * own at the bottom of that result set rather than in the last row:
+ * every button there acts on one result set, and keeping them apart
+ * leaves the row of tabs the room to be a row of tabs.
  * ------------------------------------------------------------------ */
 
 .panel {
@@ -133,14 +137,38 @@ button:focus-visible {
     flex-direction: column;
 }
 
+/*
+ * What the tab on show holds, and the one surface it is drawn on: the
+ * rows of every grid take this too, so the content reads as one thing
+ * set into the panel around it.
+ */
 .content {
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: var(--vscode-sideBar-background,
+            var(--vscode-panel-background));
 }
 
+/* The last row: what is on show, and nothing else. */
+.contentSelectionBar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 6px;
+    border-top: 1px solid var(--vscode-panel-border);
+    /*
+     * Hidden, not scrolled: the bar holds the pickers at a fixed
+     * place, and it is the strip of result tabs inside it that gives
+     * way and pages.
+     */
+    overflow: hidden;
+}
+
+/* One result set's own bar, along the bottom of it. */
 .statusBar {
     display: flex;
     flex: 0 0 auto;
@@ -148,7 +176,7 @@ button:focus-visible {
     gap: 6px;
     padding: 2px 6px;
     border-top: 1px solid var(--vscode-panel-border);
-    overflow-x: auto;
+    overflow: hidden;
 }
 
 .statusBar .status {
@@ -173,40 +201,92 @@ button:focus-visible {
     white-space: nowrap;
 }
 
+/* The first thing in the panel, above what it is about. */
 .errorBar {
     flex: 0 0 auto;
     padding: 3px 8px;
     color: var(--vscode-inputValidation-errorForeground,
             var(--vscode-errorForeground));
     background: var(--vscode-inputValidation-errorBackground);
-    border-top: 1px solid var(--vscode-inputValidation-errorBorder,
+    border-bottom: 1px solid var(--vscode-inputValidation-errorBorder,
             var(--vscode-panel-border));
     white-space: pre-wrap;
     max-height: 6em;
     overflow-y: auto;
 }
 
-/* Tabs, in the bottom bar beside the toolbar. */
+/* Tabs, in the bar that picks what is on show. */
 
+/*
+ * The tabs are the editor's, not the activity bar's: flat, and the one
+ * on show marked by a line under it rather than by a filled surface.
+ * The panel's own container tabs above them are selected by surface,
+ * so two selections in the same corner of the screen cannot be read as
+ * one.
+ */
 .tabs {
     display: flex;
-    flex: 0 0 auto;
-    gap: 2px;
+    /* It, and nothing else in the bar, is what gives way. */
+    flex: 0 1 auto;
+    min-width: 0;
+    align-items: stretch;
+}
+
+/*
+ * The result tabs alone scroll; the Actions tab is always there to be
+ * gone back to. The scrollbar is hidden - the paging buttons are the
+ * control, and a bar under the tabs would cost a row of the panel.
+ */
+.resultTabs {
+    display: flex;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.resultTabs::-webkit-scrollbar {
+    display: none;
 }
 
 .tab {
+    flex: 0 0 auto;
     border: none;
-    border-radius: 2px;
+    border-radius: 0;
+    border-bottom: 1px solid transparent;
     padding: 1px 8px;
     background: transparent;
-    color: var(--vscode-descriptionForeground);
+    color: var(--vscode-tab-inactiveForeground,
+            var(--vscode-descriptionForeground));
     white-space: nowrap;
 }
 
-.tab.active {
-    color: var(--vscode-panelTitle-activeForeground,
+.tab:hover {
+    color: var(--vscode-tab-activeForeground,
             var(--vscode-foreground));
-    background: var(--vscode-list-activeSelectionBackground);
+}
+
+.tab.active {
+    color: var(--vscode-tab-activeForeground,
+            var(--vscode-foreground));
+    border-bottom-color: var(--vscode-textLink-foreground);
+}
+
+/* Only there while the tabs do not all fit. */
+.tabPager {
+    flex: 0 0 auto;
+    border: none;
+    border-radius: 2px;
+    padding: 0 2px;
+    background: transparent;
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
+}
+
+.tabPager:disabled {
+    opacity: 0.4;
+}
+
+.tabPager:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
 }
 
 .badge {
@@ -218,46 +298,62 @@ button:focus-visible {
     color: var(--vscode-badge-foreground);
 }
 
-/* The output tab. */
+/* The Actions tab. */
 
-.outputGridHost {
+/*
+ * The height Tabulator is given is `calc(100% - 2px)`, which is this
+ * margin: an element told to be 100% tall with a margin on top of it
+ * overflows its parent by exactly that much.
+ */
+.actionsGridHost {
     flex: 1 1 auto;
     min-height: 0;
+    margin-top: 2px;
 }
 
-.tabulator .tabulator-row.errorRow .tabulator-cell.outputMessage {
+.tabulator .tabulator-row.errorRow .tabulator-cell.actionMessage {
     color: var(--vscode-errorForeground);
 }
 
-.tabulator .tabulator-cell.outputTime,
-.tabulator .tabulator-cell.outputStatement {
+/*
+ * The detail beside the message, not the message: quieter than it, and
+ * smaller.
+ */
+.tabulator .tabulator-cell.actionTime,
+.tabulator .tabulator-cell.actionInformation {
     color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
 }
 
 /*
- * The row one execution reads as, with its statements under it. It is
- * set apart by weight, not by colour: every row shares one background,
- * and the marker icon carries the severity.
+ * Smaller again: this column is SQL in the editor font, which carries
+ * more weight at a given size than the UI font it sits beside.
  */
-.tabulator .tabulator-row.runRow .tabulator-cell.outputMessage {
-    font-weight: 600;
+.tabulator .tabulator-cell.actionInformation {
+    font-size: 0.85em;
 }
+
+/*
+ * A run's row is set apart by its twistie and by the indent of the
+ * statements under it, not by weight or colour: every row shares one
+ * background and one font, and the marker icon carries the severity.
+ */
 
 /*
  * What a run came to is the view speaking, not SQL, so it drops the
  * editor font its children use and takes the full foreground: on a run
  * that failed it is the only place the count of errors is given.
  */
-.tabulator .tabulator-row.runRow .tabulator-cell.outputStatement {
+.tabulator .tabulator-row.runRow .tabulator-cell.actionInformation {
     font-family: var(--vscode-font-family);
     color: var(--vscode-foreground);
 }
 
-.tabulator .tabulator-row.runRow.errorRow .tabulator-cell.outputStatement {
+.tabulator .tabulator-row.runRow.errorRow .tabulator-cell.actionInformation {
     color: var(--vscode-errorForeground);
 }
 
-.tabulator .tabulator-row.runRow.warningRow .tabulator-cell.outputStatement {
+.tabulator .tabulator-row.runRow.warningRow .tabulator-cell.actionInformation {
     color: var(--vscode-list-warningForeground,
             var(--vscode-editorWarning-foreground));
 }
@@ -289,11 +385,24 @@ button:focus-visible {
  * Its own theme paints it #ddd, which is the tree's one remaining
  * hard coded surface; VS Code's own indent guide colour answers it.
  */
-.outputGridHost .tabulator-row .tabulator-cell .tabulator-data-tree-branch {
+.actionsGridHost .tabulator-row .tabulator-cell .tabulator-data-tree-branch {
     border-left-color: var(--vscode-tree-indentGuidesStroke,
             var(--vscode-panel-border));
     border-bottom-color: var(--vscode-tree-indentGuidesStroke,
             var(--vscode-panel-border));
+}
+
+/*
+ * It is a flex item of the message cell, so it must be told not to
+ * shrink. A flex line shares what it has to give up in proportion to
+ * how wide each item wants to be, and a message that does not fit asks
+ * for hundreds of pixels beside this one's seven: left to itself the
+ * guide all but disappears, and everything after it slides left with
+ * it. The same holds for the empty branch of a row with no children.
+ */
+.actionsGridHost .tabulator-cell .tabulator-data-tree-branch,
+.actionsGridHost .tabulator-cell .tabulator-data-tree-branch-empty {
+    flex: 0 0 auto;
 }
 
 /* The Problems panel's severity markers, in its colours. */
@@ -323,39 +432,37 @@ button:focus-visible {
 }
 
 /*
- * The output grid is a log, not a spreadsheet: the columns line up on
- * their own and a rule between every one of them only adds noise. The
- * result grids keep theirs.
+ * Which connection a row is from, shown only while several are on show
+ * together. It is a label on the row rather than news, so it is smaller
+ * and quieter than everything beside it.
  */
-.outputGridHost.tabulator .tabulator-row .tabulator-cell,
-.outputGridHost.tabulator .tabulator-header .tabulator-col {
-    border-right: none;
+.tabulator .tabulator-cell.actionConnection {
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
 }
 
 /*
- * The marker belongs to the message beside it, as in the Problems
- * panel: only enough room for the glyph.
+ * The actions grid is a log, not a spreadsheet: the columns line up on
+ * their own and a rule between every one of them only adds noise. The
+ * result grids keep theirs.
  */
-.tabulator .tabulator-cell.outputSeverity,
-.tabulator .tabulator-header .tabulator-col.outputSeverity {
-    padding: 0 0 0 6px;
+.actionsGridHost.tabulator .tabulator-row .tabulator-cell {
+    border-right: none;
 }
 
-.tabulator .tabulator-cell.outputMessage,
-.tabulator .tabulator-header .tabulator-col.outputMessage
-.tabulator-col-content {
+.tabulator .tabulator-cell.actionMessage {
     padding-left: 5px;
 }
 
-.tabulator .tabulator-row.warningRow .tabulator-cell.outputMessage {
+.tabulator .tabulator-row.warningRow .tabulator-cell.actionMessage {
     color: var(--vscode-list-warningForeground,
             var(--vscode-editorWarning-foreground));
 }
 
 /*
- * Both arrows ride inside the cell they belong to rather than in a
- * column of their own: a column of arrows is width the Output column
- * can put to better use, and the panel area is short of it.
+ * Both arrows ride at the end of the message they belong to rather than
+ * in columns of their own: a column of arrows is width the Actions
+ * column can put to better use, and the panel area is short of it.
  */
 .jumpToResult,
 .goToStatement {
@@ -376,19 +483,52 @@ button:focus-visible {
 }
 
 /*
- * The go-to arrow sits in the message cell's top right corner, and the
- * twistie of a run - which Tabulator puts in front of the cell's own
- * content - beside the message rather than above it. `inline-flex`, not
- * `flex`: a Tabulator cell is inline-level and laid out beside its
- * neighbours, so a block one would take the whole row.
+ * Everything a row leads with is in this cell: the twistie of a run or
+ * the branch of a statement, which Tabulator puts in front of the
+ * cell's own content, then the marker, then what happened.
+ *
+ * `inline-flex`, not `flex`: a Tabulator cell is inline-level and laid
+ * out beside its neighbours, so a block one takes the whole row and the
+ * grid comes apart.
  */
-.tabulator .tabulator-cell.outputMessage {
-    position: relative;
+.tabulator .tabulator-cell.actionMessage {
     display: inline-flex;
     align-items: center;
 }
 
-.outputMessageContent {
+/*
+ * What a row with neither twistie nor branch stands in for, so its
+ * marker lines up with every other row's: the twistie's width, and the
+ * margin after it too.
+ */
+.treeSpacer {
+    flex: 0 0 auto;
+    height: 16px;
+    margin-right: 2px;
+}
+
+/*
+ * The marker and the message, then the arrows: laid out beside the
+ * message, not over it.
+ *
+ * The room is given as margins rather than as a `gap`, because a gap
+ * would also fall between the spacer that stands in for a missing
+ * twistie and the marker after it - which is exactly the 4px by which
+ * such a row's marker would then miss the column.
+ */
+.actionMessageCell {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+}
+
+.actionMessageCell .markerIcon {
+    flex: 0 0 auto;
+    margin-right: 4px;
+}
+
+.actionMessageContent {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
@@ -396,36 +536,27 @@ button:focus-visible {
     text-overflow: ellipsis;
 }
 
-/* A message only gives up the corner where there is an arrow in it. */
-.outputMessageContent.hasGoTo {
-    padding-right: 18px;
-}
-
-.goToStatement {
-    position: absolute;
-    top: 1px;
-    right: 2px;
+.actionArrows {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 4px;
 }
 
 /*
- * The jump arrow follows the row count. Its place is held whether or
- * not there is one to draw, so the counts stay in a column.
+ * The two pickers at the far right of the bottom bar: which connection,
+ * and which of the connections open on it. `margin-left: auto` on the
+ * first of them holds them there whether or not the status text beside
+ * them has anything to say.
  */
-.outputRowsContent {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-}
-
-.outputJumpSlot {
-    flex: 0 0 16px;
-    height: 16px;
-}
-
-/* The connection picker, at the far left of the bottom bar. */
 
 .connectionPicker {
+    margin-left: auto;
+}
+
+.connectionPicker,
+.sessionPicker {
     flex: 0 1 auto;
     min-width: 6em;
     max-width: 22em;
@@ -438,7 +569,14 @@ button:focus-visible {
     font-size: inherit;
 }
 
-.connectionPicker:focus-visible {
+/* It holds an index or a short name, so it need not be as wide. */
+.sessionPicker {
+    min-width: 4em;
+    max-width: 10em;
+}
+
+.connectionPicker:focus-visible,
+.sessionPicker:focus-visible {
     outline: 1px solid var(--vscode-focusBorder);
     outline-offset: -1px;
 }
@@ -451,7 +589,15 @@ button:focus-visible {
 
 /* The SQL preview. */
 
+/*
+ * It fills the tab whether it holds one statement or fifty, as the
+ * grid it stands in for does: the result set's own bar sits under it,
+ * and a preview sized to its content would carry that bar up the view
+ * with it.
+ */
 .sqlPreview {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: auto;
     padding: 4px 0;
 }

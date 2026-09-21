@@ -24,7 +24,12 @@
 			],
 			// Named rather than ${defaultBuildTask}: other folders of the
 			// multi-root workspace declare a default build task too.
-			"preLaunchTask": "watch"
+			//
+			// The one shot build, not the watcher: it takes under two
+			// seconds, it rebuilds the webviews as well, and it leaves
+			// nothing running once the session ends. Run the watch task
+			// by name to iterate without relaunching.
+			"preLaunchTask": "build"
 		},
 		{
 			"name": "Run Tests (vitest)",

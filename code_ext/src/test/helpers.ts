@@ -190,6 +190,8 @@ export interface FakeApi extends IMariaDbApi {
 export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
     const scripts: string[] = [];
     const closed: string[] = [];
+    /** How often each connection has been opened, for its UUIDs. */
+    const opens = new Map<string, number>();
     const added: FakeApi["added"] = [];
     const deleted: FakeApi["deleted"] = [];
     const tested: FakeApi["tested"] = [];
@@ -255,7 +257,12 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
                 );
             }
 
-            return Promise.resolve(id);
+            // A real server hands out a UUID per call, so opening one
+            // connection twice gives two connections.
+            const opened = (opens.get(uri) ?? 0) + 1;
+            opens.set(uri, opened);
+
+            return Promise.resolve(opened === 1 ? id : `${id}-${opened}`);
         },
 
         close: (connectionId: string) => {

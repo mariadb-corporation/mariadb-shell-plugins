@@ -20,10 +20,10 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { posted } from "./setup.js";
-import { App, lastErrorOf } from "../src/App.js";
+import { App, lastErrorOf, pagingOf } from "../src/App.js";
 import type {
     HostMessage,
-    IOutputRow,
+    IActionRow,
     IViewState,
 } from "../../src/webview/protocol.js";
 
@@ -82,6 +82,38 @@ const click = async (
 };
 
 /**
+ * Says what a scrolling strip measures and lets the page read it.
+ *
+ * jsdom lays nothing out, so the sizes the paging buttons follow have
+ * to be stated; the scroll event is what the page listens to.
+ *
+ * @param strip The strip to measure.
+ * @param sizes What it should report.
+ *
+ * @returns Nothing.
+ */
+const measure = async (
+    strip: HTMLElement,
+    sizes: { scrollLeft: number; scrollWidth: number; clientWidth?: number },
+): Promise<void> => {
+    for (const [name, value] of Object.entries({
+        clientWidth: sizes.clientWidth ?? 100,
+        scrollWidth: sizes.scrollWidth,
+        scrollLeft: sizes.scrollLeft,
+    })) {
+        Object.defineProperty(strip, name, {
+            configurable: true,
+            value,
+        });
+    }
+
+    await act(async () => {
+        strip.dispatchEvent(new Event("scroll"));
+        await Promise.resolve();
+    });
+};
+
+/**
  * @param matches Picks the button to look up.
  *
  * @returns The matching button, if it is on screen.
@@ -95,13 +127,14 @@ const button = (
 };
 
 /**
- * @returns A view state with one output row and an editable result set.
+ * @returns A view state with one action row and an editable result set.
  */
 const report = (): IViewState => {
     return {
         connections: ["dba@localhost:3310", "app@localhost:3311"],
         connection: "dba@localhost:3310",
-        output: [{
+        sessions: [{ label: "1", open: true }],
+        actions: [{
             id: "run1",
             time: "12:00:00.123",
             connection: "dba@localhost:3310",
@@ -120,7 +153,6 @@ const report = (): IViewState => {
                 statement: "CREATE SCHEMA demo",
                 message: "Query OK, 1 row affected",
                 kind: "info",
-                rows: 1,
                 elapsedMs: 4,
                 source: { uri: "file:///q.sql", line: 0, character: 0 },
             }],
@@ -170,7 +202,7 @@ describe("lastErrorOf", () => {
      *
      * @returns One run of the output.
      */
-    const run = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
+    const run = (overrides: Partial<IActionRow> = {}): IActionRow => {
         return {
             id: "run1",
             time: "12:00:00.123",
@@ -213,11 +245,40 @@ describe("lastErrorOf", () => {
     });
 
     it("leaves an earlier run's error behind", () => {
-        // The bar says what just happened; a run that worked clears it.
+        // The bar says what just happened; a run that worked clears
+        // it. The newest is the first, so that is the one it reads.
         expect(lastErrorOf([
-            run({ kind: "error", summary: "Finished with 1 error" }),
             run({ id: "run2" }),
+            run({ kind: "error", summary: "Finished with 1 error" }),
         ])).toBeUndefined();
+    });
+});
+
+describe("pagingOf", () => {
+    it("says nothing is to be paged when the tabs all fit", () => {
+        expect(pagingOf({
+            scrollLeft: 0, scrollWidth: 100, clientWidth: 100,
+        })).toEqual({ overflowing: false, atStart: true, atEnd: true });
+    });
+
+    it("ignores a fraction of a pixel of overflow", () => {
+        // A fractional layout leaves the scrolled width a hair over the
+        // visible one, which is not something to offer paging for.
+        expect(pagingOf({
+            scrollLeft: 0, scrollWidth: 100.5, clientWidth: 100,
+        }).overflowing).toBe(false);
+    });
+
+    it("says which way there is more to see", () => {
+        expect(pagingOf({
+            scrollLeft: 0, scrollWidth: 300, clientWidth: 100,
+        })).toEqual({ overflowing: true, atStart: true, atEnd: false });
+        expect(pagingOf({
+            scrollLeft: 100, scrollWidth: 300, clientWidth: 100,
+        })).toEqual({ overflowing: true, atStart: false, atEnd: false });
+        expect(pagingOf({
+            scrollLeft: 200, scrollWidth: 300, clientWidth: 100,
+        })).toEqual({ overflowing: true, atStart: false, atEnd: true });
     });
 });
 
@@ -235,14 +296,14 @@ describe("App", () => {
             expect(host.textContent).toContain("Run a .sql file");
         });
 
-    it("shows a run that has only just started on the output tab",
+    it("shows a run that has only just started on the Actions tab",
         async () => {
             // The run is a row of the output from the moment it starts,
             // rather than a placeholder over the whole view, so what the
             // connection did before it is still there to read.
             await mount();
             const pending = report();
-            pending.output.push({
+            pending.actions.push({
                 id: "run2",
                 time: "12:00:01.000",
                 connection: "dba@localhost:3310",
@@ -258,7 +319,7 @@ describe("App", () => {
             await send({ type: "state", state: pending });
 
             expect(host.querySelector(".tab.active")?.textContent)
-                .toContain("Output");
+                .toContain("Actions");
             expect(host.querySelector(".errorBar")).toBeNull();
         });
 
@@ -275,7 +336,58 @@ describe("App", () => {
         expect(children[1].querySelector(".tabs")).not.toBeNull();
     });
 
-    it("names one tab per result set, beside the output tab", async () => {
+    it("marks the tab on show with a line under it, not a surface",
+        async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+
+            // The panel's own container tabs are selected by surface,
+            // so two selections in one corner cannot be read as one.
+            const active = host.querySelector(".tab.active");
+            expect(active?.textContent).toBe("Result #1");
+            expect([...host.querySelectorAll(".tab.active")])
+                .toHaveLength(1);
+        });
+
+    it("gives a result set its own bar, at the bottom of it", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+
+        // Inside the tab's own content, under the grid - not in the
+        // row of tabs, which picks what is on show and nothing else.
+        const content = host.querySelector(".content");
+        const bar = content?.querySelector(".statusBar");
+        expect(bar).not.toBeNull();
+        expect(content?.lastElementChild).toBe(bar);
+        expect(bar?.querySelector(".status")?.textContent)
+            .toBe("2 rows in set");
+        expect(bar?.querySelector(".toolbar")).not.toBeNull();
+    });
+
+    it("gives the Actions tab no bar of its own", async () => {
+        await mount();
+        await send({
+            type: "state",
+            state: { ...report(), resultSets: [] },
+        });
+
+        // There is no result set for one to be about.
+        expect(host.querySelector(".statusBar")).toBeNull();
+    });
+
+    it("keeps the Actions tab out of the strip that scrolls", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+
+        // It is what a result tab is gone back to, so it is always
+        // there to be clicked.
+        const tabs = host.querySelector(".tabs");
+        expect(tabs?.firstElementChild?.textContent).toContain("Actions");
+        expect(host.querySelector(".resultTabs")?.textContent)
+            .toBe("Result #1");
+    });
+
+    it("names one tab per result set, beside the Actions tab", async () => {
         await mount();
         await send({ type: "state", state: report() });
 
@@ -283,7 +395,7 @@ describe("App", () => {
             return node.textContent;
         });
         // The badge counts runs, which is what the output now holds.
-        expect(tabs).toEqual(["Output1", "Result #1"]);
+        expect(tabs).toEqual(["Actions1", "Result #1"]);
     });
 
     it("opens on the result set when the script produced rows", async () => {
@@ -294,7 +406,7 @@ describe("App", () => {
         expect(active?.textContent).toBe("Result #1");
     });
 
-    it("stays on the output tab when nothing returned rows", async () => {
+    it("stays on the Actions tab when nothing returned rows", async () => {
         await mount();
         await send({
             type: "state",
@@ -302,21 +414,24 @@ describe("App", () => {
         });
 
         expect(host.querySelector(".tab.active")?.textContent)
-            .toBe("Output1");
+            .toBe("Actions1");
         // Tabulator renders nothing under jsdom, so only the mount is
         // checkable here; the rows themselves are covered by the
-        // OutputGrid tests.
-        expect(host.querySelector(".outputGridHost")).not.toBeNull();
+        // ActionsGrid tests.
+        expect(host.querySelector(".actionsGridHost")).not.toBeNull();
     });
 
-    it("puts the connection picker at the far left of the bottom bar",
+    it("puts the two pickers at the far right of the bottom bar",
         async () => {
             await mount();
             await send({ type: "state", state: report() });
 
-            const footer = host.querySelector(".statusBar");
-            expect(footer?.firstElementChild?.className)
-                .toBe("connectionPicker");
+            const footer = host.querySelector(".contentSelectionBar");
+            // The bar picks what is on show and holds nothing else:
+            // the tabs, then the two pickers at the far right.
+            expect([...(footer?.children ?? [])].map((node) => {
+                return node.className;
+            })).toEqual(["tabs", "connectionPicker", "sessionPicker"]);
             expect([...host.querySelectorAll<HTMLOptionElement>(
                 ".connectionPicker option")].map((option) => {
                 return option.value;
@@ -344,13 +459,181 @@ describe("App", () => {
             });
         });
 
+    it("puts the session picker beside the connection picker", async () => {
+        await mount();
+        await send({
+            type: "state",
+            state: {
+                ...report(),
+                sessions: [
+                    { label: "1", open: true },
+                    { label: "UI Backend", open: false },
+                ],
+            },
+        });
+
+        const pickers = [...host.querySelectorAll(
+            ".contentSelectionBar > select")];
+        expect(pickers.map((node) => { return node.className; }))
+            .toEqual(["connectionPicker", "sessionPicker"]);
+        // The very last things in the bar.
+        expect(host.querySelector(".contentSelectionBar")
+            ?.lastElementChild?.className).toBe("sessionPicker");
+        // All of them together first, which is what the view opens on,
+        // and a connection that has been closed says so.
+        expect([...host.querySelectorAll<HTMLOptionElement>(
+            ".sessionPicker option")].map((option) => {
+            return [option.value, option.textContent];
+        })).toEqual([
+            ["", "All Sessions"],
+            ["1", "1"],
+            ["UI Backend", "UI Backend (closed)"],
+        ]);
+        expect(host.querySelector<HTMLSelectElement>(
+            ".sessionPicker")?.value).toBe("");
+    });
+
+    it("offers paging only when the result tabs do not fit", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+        const strip = host.querySelector<HTMLDivElement>(".resultTabs");
+
+        // jsdom reports every element as zero sized, so what the strip
+        // measures is said here instead.
+        expect(host.querySelectorAll(".tabPager")).toHaveLength(0);
+
+        await measure(strip!, { scrollLeft: 0, scrollWidth: 500 });
+
+        const pagers = [...host.querySelectorAll<HTMLButtonElement>(
+            ".tabPager")];
+        expect(pagers).toHaveLength(2);
+        // At the start there is nothing before these.
+        expect(pagers[0].disabled).toBe(true);
+        expect(pagers[1].disabled).toBe(false);
+
+        await measure(strip!, { scrollLeft: 400, scrollWidth: 500 });
+
+        const atEnd = [...host.querySelectorAll<HTMLButtonElement>(
+            ".tabPager")];
+        expect(atEnd[0].disabled).toBe(false);
+        expect(atEnd[1].disabled).toBe(true);
+    });
+
+    it("pages the strip by most of its width", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+        const strip = host.querySelector<HTMLDivElement>(".resultTabs");
+        await measure(strip!, { scrollLeft: 200, scrollWidth: 500 });
+        const scrolled: Array<Record<string, unknown>> = [];
+        strip!.scrollBy = (options: unknown) => {
+            scrolled.push(options as Record<string, unknown>);
+        };
+
+        const pagers = [...host.querySelectorAll<HTMLButtonElement>(
+            ".tabPager")];
+        await act(async () => {
+            pagers[1].click();
+            await Promise.resolve();
+        });
+        await act(async () => {
+            pagers[0].click();
+            await Promise.resolve();
+        });
+
+        expect(scrolled).toEqual([
+            { left: 80, behavior: "smooth" },
+            { left: -80, behavior: "smooth" },
+        ]);
+    });
+
+    it("offers no session picker where nothing is open", async () => {
+        await mount();
+        await send({
+            type: "state",
+            state: { ...report(), sessions: [] },
+        });
+
+        expect(host.querySelector(".sessionPicker")).toBeNull();
+    });
+
+    it("asks the host to narrow the output to one connection",
+        async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+            const picker = host.querySelector<HTMLSelectElement>(
+                ".sessionPicker");
+
+            await act(async () => {
+                picker!.value = "1";
+                picker!.dispatchEvent(new Event("change", {
+                    bubbles: true,
+                }));
+                await Promise.resolve();
+            });
+
+            expect(posted.at(-1))
+                .toEqual({ type: "selectSession", session: "1" });
+        });
+
+    it("asks the host for every connection again", async () => {
+        await mount();
+        await send({
+            type: "state",
+            state: { ...report(), session: "1" },
+        });
+        const picker = host.querySelector<HTMLSelectElement>(
+            ".sessionPicker");
+
+        await act(async () => {
+            picker!.value = "";
+            picker!.dispatchEvent(new Event("change", { bubbles: true }));
+            await Promise.resolve();
+        });
+
+        expect(posted.at(-1))
+            .toEqual({ type: "selectSession", session: undefined });
+    });
+
+    it("keeps pending edits when something else happens on the "
+        + "connection", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+            await click((label) => { return label.startsWith("+ Row"); });
+            expect(button((label) => {
+                return label.startsWith("Apply");
+            })?.disabled).toBe(false);
+
+            // A schema listed in the tree sends state like anything
+            // else, and the grid is still being edited.
+            await send({
+                type: "state",
+                state: {
+                    ...report(),
+                    actions: [...report().actions, {
+                        id: "event1",
+                        time: "12:00:01.000",
+                        connection: "dba@localhost:3310",
+                        connectionLabel: "UI Backend",
+                        role: "event",
+                        statement: "db.list_schemas()",
+                        message: "Listed 2 schemas",
+                        kind: "info",
+                    }],
+                },
+            });
+
+            expect(button((label) => {
+                return label.startsWith("Apply");
+            })?.disabled).toBe(false);
+        });
+
     it("leaves clearing to the view's toolbar", async () => {
         await mount();
         await send({ type: "state", state: report() });
 
-        // Clear Output is a button in the panel's own title bar now.
+        // Clear Actions is a button in the panel's own title bar now.
         expect(button((label) => {
-            return label === "Clear Output";
+            return label === "Clear Actions";
         })).toBeUndefined();
     });
 
@@ -365,7 +648,8 @@ describe("App", () => {
                     "dba@localhost:3310", "app@localhost:3311",
                 ],
                 connection: "app@localhost:3311",
-                output: [],
+                sessions: [],
+                actions: [],
                 resultSets: [],
             },
         });
@@ -373,7 +657,7 @@ describe("App", () => {
         // The other connection's tabs went with it.
         expect([...host.querySelectorAll(".tab")].map((node) => {
             return node.textContent;
-        })).toEqual(["Output"]);
+        })).toEqual(["Actions"]);
     });
 
     it("shows nothing once the host has cleared the view", async () => {
@@ -384,13 +668,13 @@ describe("App", () => {
         // What clearing sends back: no output and no result sets.
         await send({
             type: "state",
-            state: { ...report(), output: [], resultSets: [] },
+            state: { ...report(), actions: [], resultSets: [] },
         });
 
-        // Only the output tab is left, and it has no badge.
+        // Only the Actions tab is left, and it has no badge.
         expect([...host.querySelectorAll(".tab")].map((node) => {
             return node.textContent;
-        })).toEqual(["Output"]);
+        })).toEqual(["Actions"]);
     });
 
     it("mounts the grid for a result set", async () => {
@@ -506,7 +790,7 @@ describe("App", () => {
             .toEqual({ type: "refresh", resultId: "run1-result-0" });
     });
 
-    it("shows an apply failure at the very bottom and opens the preview",
+    it("shows an apply failure at the very top and opens the preview",
         async () => {
             await mount();
             await send({ type: "state", state: report() });
@@ -518,10 +802,12 @@ describe("App", () => {
                 error: "Duplicate entry '1' for key 'PRIMARY'",
             });
 
+            // Above what it is about, where it is read before the eye
+            // has gone looking for what went wrong.
             const panel = host.querySelector(".panel");
-            const last = panel?.lastElementChild;
-            expect(last?.classList.contains("errorBar")).toBe(true);
-            expect(last?.textContent)
+            const first = panel?.firstElementChild;
+            expect(first?.classList.contains("errorBar")).toBe(true);
+            expect(first?.textContent)
                 .toBe("Duplicate entry '1' for key 'PRIMARY'");
             // The failing statement is in the preview, so that is where
             // the user is taken.
@@ -554,7 +840,8 @@ describe("App", () => {
             state: {
                 connections: ["dba@localhost:3310"],
                 connection: "dba@localhost:3310",
-                output: [{
+                sessions: [{ label: "1", open: true }],
+                actions: [{
                     id: "run1",
                     time: "12:00:00.123",
                     connection: "dba@localhost:3310",

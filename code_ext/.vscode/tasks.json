@@ -4,10 +4,47 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			// What F5 builds with: one shot, everything, into an empty
+			// dist. A background watcher is the faster way to iterate,
+			// but it is the wrong thing to launch behind: its problem
+			// collection outlives the build that filled it, so an error
+			// from a half written file can sit in the Problems panel
+			// long after the file is fixed. This reports through the
+			// same matcher with no background block, so every run
+			// clears what the last one said. It takes under two
+			// seconds.
+			"label": "build",
+			"type": "npm",
+			"script": "build",
+			"presentation": {
+				// Shown only if it fails, which is when it has
+				// something to say.
+				"reveal": "silent"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": {
+				"owner": "vite",
+				// esbuild reports absolute paths.
+				"fileLocation": "absolute",
+				"pattern": {
+					// e.g. /path/src/extension.ts:278:14: ERROR: Unexpected "="
+					"regexp": "^(?:\\[[^\\]]+\\]\\s*)?([/\\\\].*?|[A-Za-z]:\\\\.*?):(\\d+):(\\d+):\\s+(ERROR|WARNING|error|warning):\\s+(.*)$",
+					"file": 1,
+					"line": 2,
+					"column": 3,
+					"severity": 4,
+					"message": 5
+				}
+			}
+		},
+		{
 			// Runs to completion before the watcher starts. It cannot be
 			// chained into the watch script itself: its "built in" line
-			// would satisfy the watcher's endsPattern and let the
-			// extension host launch before dist/extension.js exists.
+			// would satisfy the watcher's endsPattern, reporting the
+			// build as finished before dist/extension.js was written.
 			"label": "build: webview",
 			"type": "npm",
 			"script": "build:webview",
@@ -41,7 +78,8 @@
 					"beginsPattern": "^(build started|vite v[\\d.]+ building)",
 					// A failed rebuild never prints "built in", so the
 					// failure lines have to end the task as well -
-					// otherwise F5 waits for a build that never finishes.
+					// otherwise whatever waits on the task waits for a
+					// build that never finishes.
 					"endsPattern": "(built in |Transform failed|error during build|Could not resolve)"
 				}
 			},
@@ -49,10 +87,13 @@
 			"presentation": {
 				"reveal": "never"
 			},
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			}
+			// In the build group, but no longer the default one: run it
+			// by name when iterating, from Tasks: Run Task. F5 builds
+			// with the one shot task instead, so nothing is left
+			// watching after a debug session - and the stale problem
+			// report that a watcher can leave behind cannot happen
+			// unless it was asked for.
+			"group": "build"
 		},
 		{
 			"label": "test",

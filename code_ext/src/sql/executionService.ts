@@ -22,11 +22,11 @@ import type {
 } from "../mcp/types.js";
 import type {
     IExecutionReport,
-    IOutputRow,
+    IActionRow,
     IResultColumn,
     IResultSet,
     IStatementSource,
-    OutputSeverity,
+    ActionSeverity,
     RowChange,
 } from "../webview/protocol.js";
 import { createQueryBuilder } from "./resultSetQueryBuilder.js";
@@ -61,7 +61,7 @@ export const describeResult = (result: IStatementResult): string => {
 /**
  * Formats a wall-clock time to the millisecond.
  *
- * The output grid keeps rows from every run, so a row has to say when it
+ * The actions grid keeps rows from every run, so a row has to say when it
  * happened precisely enough to tell two runs a second apart apart.
  *
  * @param when The moment to format.
@@ -126,20 +126,23 @@ export const describeRun = (script: string, label?: string): string => {
  *
  * @param options The run this row stands for.
  *
- * @returns The row to put in the output.
+ * @returns The row to put in the actions.
  */
 export const pendingRunRow = (options: {
     runId: string;
     connectionUri: string;
+    /** Which connection open on it the run is on: `1`, `UI Backend`. */
+    connectionLabel?: string;
     /** What the run is called, from `describeRun()`. */
     what: string;
     /** When it started; now, unless a test says otherwise. */
     when?: Date;
-}): IOutputRow => {
+}): IActionRow => {
     return {
         id: options.runId,
         time: formatTime(options.when ?? new Date()),
         connection: options.connectionUri,
+        connectionLabel: options.connectionLabel,
         role: "run",
         statement: "",
         message: `Running ${options.what} on ${options.connectionUri}`,
@@ -260,10 +263,16 @@ export interface IScriptSource {
 export interface IExecutionOptions {
     connectionUri: string;
     connectionId: string;
+    /**
+     * Which connection open on that URI it runs on. Every row the run
+     * produces carries it, which is what the result view groups and
+     * filters the actions by.
+     */
+    connectionLabel?: string;
     script: string;
     /**
      * Distinguishes this run's rows and result sets from every other
-     * run's, so an older output row cannot link to a tab a later run
+     * run's, so an older action row cannot link to a tab a later run
      * replaced.
      */
     runId: string;
@@ -306,6 +315,7 @@ export class ExecutionService {
         options: IExecutionOptions,
     ): Promise<IExecutionReport> {
         const { connectionUri, connectionId, script, runId } = options;
+        const connectionLabel = options.connectionLabel;
         const statements = splitStatements(script);
         // A comment is one of the statements the server splits out and
         // takes up an index among them, but it is not one the server runs
@@ -315,7 +325,7 @@ export class ExecutionService {
         const executable = statements.filter((statement) => {
             return statement.executable;
         });
-        const children: IOutputRow[] = [];
+        const children: IActionRow[] = [];
         const resultSets: IResultSet[] = [];
 
         const startedAt = formatTime(new Date());
@@ -358,7 +368,7 @@ export class ExecutionService {
          */
         const finish = (
             outcome: string,
-            kind: OutputSeverity,
+            kind: ActionSeverity,
         ): IExecutionReport => {
             const elapsedMs = Date.now() - startedMs;
 
@@ -366,10 +376,11 @@ export class ExecutionService {
                 connection: connectionUri,
                 startedAt,
                 elapsedMs,
-                output: [{
+                actions: [{
                     id: runId,
                     time: startedAt,
                     connection: connectionUri,
+                    connectionLabel,
                     role: "run",
                     statement: "",
                     message: `Ran ${what} on ${connectionUri}`,
@@ -408,10 +419,11 @@ export class ExecutionService {
             const message = error instanceof Error
                 ? error.message
                 : String(error);
-            const failure: IOutputRow = {
+            const failure: IActionRow = {
                 id: `${runId}-error`,
                 time: startedAt,
                 connection: connectionUri,
+                connectionLabel,
                 role: "statement",
                 statement: captionFor(script),
                 message,
@@ -445,6 +457,7 @@ export class ExecutionService {
                     id,
                     time: startedAt,
                     connection: connectionUri,
+                    connectionLabel,
                     role: "statement",
                     statement: captionFor(statement || result.statement || ""),
                     message: result.error,
@@ -466,11 +479,11 @@ export class ExecutionService {
                     id,
                     time: startedAt,
                     connection: connectionUri,
+                    connectionLabel,
                     role: "statement",
                     statement: captionFor(statement),
                     message: describeResult(result),
                     kind,
-                    rows: result.affected_items_count,
                     elapsedMs,
                     source,
                 });
@@ -492,11 +505,11 @@ export class ExecutionService {
                 id,
                 time: startedAt,
                 connection: connectionUri,
+                connectionLabel,
                 role: "statement",
                 statement: captionFor(statement),
                 message: describeResult(result),
                 kind,
-                rows: resultSet.rows.length,
                 elapsedMs,
                 source,
                 resultId: resultSet.id,

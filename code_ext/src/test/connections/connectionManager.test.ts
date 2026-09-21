@@ -17,7 +17,11 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { ConnectionManager } from "../../connections/connectionManager.js";
+import type { IActivityEvent } from "../../connections/connectionActivity.js";
+import {
+    ConnectionManager,
+    UI_BACKEND_SESSION,
+} from "../../connections/connectionManager.js";
 import { createFakeApi, createFakeSettings } from "../helpers.js";
 
 /**
@@ -34,11 +38,14 @@ const createManager = (defaultConnection?: string) => {
         },
     });
     const settings = createFakeSettings(defaultConnection);
+    const reported: IActivityEvent[] = [];
     const manager = new ConnectionManager(() => {
         return Promise.resolve(api);
-    }, settings);
+    }, settings, (event) => {
+        reported.push(event);
+    });
 
-    return { api, settings, manager };
+    return { api, settings, manager, reported };
 };
 
 describe("ConnectionManager", () => {
@@ -131,6 +138,162 @@ describe("ConnectionManager", () => {
         };
 
         await expect(manager.disconnectAll()).resolves.toBeUndefined();
+    });
+
+    describe("several connections on one URI", () => {
+        it("numbers an unnamed connection and names a named one",
+            async () => {
+                const { manager } = createManager();
+
+                await manager.connect("dba@localhost:3310");
+                await manager.connect(
+                    "dba@localhost:3310", UI_BACKEND_SESSION);
+
+                expect(manager.sessionsOf("dba@localhost:3310")).toEqual([
+                    {
+                        uri: "dba@localhost:3310",
+                        label: "1",
+                        connectionId: "uuid-dba",
+                    },
+                    {
+                        uri: "dba@localhost:3310",
+                        label: UI_BACKEND_SESSION,
+                        connectionId: "uuid-dba-2",
+                    },
+                ]);
+                // One URI, however many connections are open on it.
+                expect(manager.openConnections)
+                    .toEqual(["dba@localhost:3310"]);
+            });
+
+        it("reuses a connection by name", async () => {
+            const { api, manager } = createManager();
+            const connect = vi.spyOn(api, "connect");
+
+            const first = await manager.connect(
+                "dba@localhost:3310", UI_BACKEND_SESSION);
+            const second = await manager.connect(
+                "dba@localhost:3310", UI_BACKEND_SESSION);
+
+            expect(second).toBe(first);
+            expect(connect).toHaveBeenCalledTimes(1);
+        });
+
+        it("says what a connection opened now would be called", () => {
+            const { manager } = createManager();
+
+            // The result view puts a run up before its connection has
+            // been opened, so this has to answer before there is one.
+            expect(manager.labelFor("dba@localhost:3310")).toBe("1");
+            expect(manager.labelFor("dba@localhost:3310", UI_BACKEND_SESSION))
+                .toBe(UI_BACKEND_SESSION);
+        });
+
+        it("keeps answering with the connection an editor is running on",
+            async () => {
+                const { manager } = createManager();
+                await manager.connect(
+                    "dba@localhost:3310", UI_BACKEND_SESSION);
+                await manager.connect("dba@localhost:3310");
+
+                // The named one is not an editor's to run on, and the
+                // numbered one is already there to be reused.
+                expect(manager.labelFor("dba@localhost:3310")).toBe("1");
+            });
+
+        it("looks a connection up by name", async () => {
+            const { manager } = createManager();
+            await manager.connect("dba@localhost:3310");
+            await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+
+            expect(manager.connectionIdFor(
+                "dba@localhost:3310", UI_BACKEND_SESSION))
+                .toBe("uuid-dba-2");
+            expect(manager.isConnected(
+                "dba@localhost:3310", UI_BACKEND_SESSION)).toBe(true);
+            expect(manager.isConnected("app@localhost:3311",
+                UI_BACKEND_SESSION)).toBe(false);
+            // With no name, any connection on the URI answers.
+            expect(manager.connectionIdFor("dba@localhost:3310"))
+                .toBe("uuid-dba");
+        });
+
+        it("closes every connection on a URI at once", async () => {
+            const { api, manager } = createManager();
+            await manager.connect("dba@localhost:3310");
+            await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+
+            await manager.disconnect("dba@localhost:3310");
+
+            expect(api.closed).toEqual(["uuid-dba", "uuid-dba-2"]);
+            expect(manager.isConnected("dba@localhost:3310")).toBe(false);
+        });
+
+        it("closes one connection by name", async () => {
+            const { api, manager } = createManager();
+            await manager.connect("dba@localhost:3310");
+            await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+
+            await manager.disconnect(
+                "dba@localhost:3310", UI_BACKEND_SESSION);
+
+            expect(api.closed).toEqual(["uuid-dba-2"]);
+            expect(manager.isConnected("dba@localhost:3310")).toBe(true);
+        });
+    });
+
+    describe("what it reports", () => {
+        it("reports a connection being opened", async () => {
+            const { manager, reported } = createManager();
+
+            await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+
+            expect(reported).toHaveLength(1);
+            expect(reported[0]).toMatchObject({
+                connection: "dba@localhost:3310",
+                label: UI_BACKEND_SESSION,
+                call: "db.connect(dba@localhost:3310)",
+                message: `Opened Session ${UI_BACKEND_SESSION} for `
+                    + "dba@localhost:3310",
+            });
+        });
+
+        it("reports a connection being closed", async () => {
+            const { manager, reported } = createManager();
+            await manager.connect("dba@localhost:3310");
+
+            await manager.disconnect("dba@localhost:3310");
+
+            expect(reported.at(-1)).toMatchObject({
+                connection: "dba@localhost:3310",
+                label: "1",
+                call: "db.close()",
+                message: "Closed Session 1 for dba@localhost:3310",
+            });
+        });
+
+        it("says nothing about a connection it did not open", async () => {
+            const { manager, reported } = createManager();
+
+            await expect(manager.connect("nope")).rejects.toThrow();
+
+            expect(reported).toEqual([]);
+        });
+
+        it("reports what is done on an open connection", async () => {
+            const { manager, reported } = createManager();
+            const connectionId = await manager.connect("dba@localhost:3310");
+            const api = await manager.api();
+
+            await api.listSchemas(connectionId);
+
+            expect(reported.at(-1)).toMatchObject({
+                connection: "dba@localhost:3310",
+                label: "1",
+                call: "db.list_schemas()",
+                message: "Listed 0 schemas",
+            });
+        });
     });
 
     it("reads the default connection from the settings", () => {
