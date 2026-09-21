@@ -17,7 +17,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { ConnectionManager } from "../../connections/connectionManager.js";
+import {
+    ConnectionManager,
+    UI_BACKEND_SESSION,
+} from "../../connections/connectionManager.js";
 import {
     ConnectionsModel,
     OBJECT_GROUP_LABELS,
@@ -136,7 +139,7 @@ describe("ConnectionsModel.getRoots", () => {
 
     it("gives an open connection a twistie in either mode", async () => {
         const { manager, model } = createModel();
-        await manager.connect("dba@localhost:3310");
+        await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
         expect((await model.getRoots())[0].expandable).toBe(true);
     });
@@ -153,7 +156,7 @@ describe("ConnectionsModel.getRoots", () => {
 
     it("marks an open connection", async () => {
         const { manager, model } = createModel();
-        await manager.connect("dba@localhost:3310");
+        await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
         const roots = await model.getRoots();
 
@@ -193,9 +196,24 @@ describe("ConnectionsModel.getChildren", () => {
             expect(manager.isConnected("dba@localhost:3310")).toBe(false);
         });
 
+    it("marks a connection an editor has open, though the tree has not",
+        async () => {
+            const { manager, model } = createModel();
+            await manager.connect("dba@localhost:3310");
+
+            const [node] = await model.getRoots();
+
+            // What the row says, and what disconnecting it closes, is
+            // the whole of what is open on the connection.
+            expect(node.connected).toBe(true);
+            // The tree browses on its own connection, which is not open
+            // yet, so it has nothing to show until it is.
+            await expect(model.getChildren(node)).resolves.toEqual([]);
+        });
+
     it("lists the schemas of an open connection", async () => {
         const { manager, model } = createModel();
-        await manager.connect("dba@localhost:3310");
+        await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
         await expect(model.getChildren(connectionNode(true)))
             .resolves.toEqual([
@@ -219,7 +237,7 @@ describe("ConnectionsModel.getChildren", () => {
     it("gives a schema one folder per object type, without querying",
         async () => {
             const { api, manager, model } = createModel();
-            await manager.connect("dba@localhost:3310");
+            await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
             const schema: ISchemaNode = {
                 kind: "schema",
                 uri: "dba@localhost:3310",
@@ -249,7 +267,7 @@ describe("ConnectionsModel.getChildren", () => {
 
     it("lists the objects of a group", async () => {
         const { manager, model } = createModel();
-        await manager.connect("dba@localhost:3310");
+        await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
         const group: IObjectGroupNode = {
             kind: "objectGroup",
             uri: "dba@localhost:3310",
@@ -279,7 +297,7 @@ describe("ConnectionsModel.getChildren", () => {
 
     it("gives an empty group no children", async () => {
         const { manager, model } = createModel();
-        await manager.connect("dba@localhost:3310");
+        await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
         await expect(model.getChildren({
             kind: "objectGroup",

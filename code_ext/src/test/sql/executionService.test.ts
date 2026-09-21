@@ -29,7 +29,7 @@ import {
 } from "../../sql/executionService.js";
 import type {
     IExecutionReport,
-    IOutputRow,
+    IActionRow,
 } from "../../webview/protocol.js";
 import { createFakeApi } from "../helpers.js";
 
@@ -38,8 +38,8 @@ import { createFakeApi } from "../helpers.js";
  *
  * @returns The run's own row, which is the whole of the output.
  */
-const runOf = (report: IExecutionReport): IOutputRow => {
-    return report.output[0];
+const runOf = (report: IExecutionReport): IActionRow => {
+    return report.actions[0];
 };
 
 /**
@@ -47,7 +47,7 @@ const runOf = (report: IExecutionReport): IOutputRow => {
  *
  * @returns The rows of its statements, under the run.
  */
-const statementsOf = (report: IExecutionReport): IOutputRow[] => {
+const statementsOf = (report: IExecutionReport): IActionRow[] => {
     return runOf(report).children ?? [];
 };
 
@@ -218,7 +218,7 @@ describe("ExecutionService.execute", () => {
         // The run is one row - keyed on the run's own id, so it replaces
         // the pending row it was started under - with a row per
         // statement under it.
-        expect(report.output).toHaveLength(1);
+        expect(report.actions).toHaveLength(1);
         expect(runOf(report)).toMatchObject({
             id: "run1",
             role: "run",
@@ -235,7 +235,6 @@ describe("ExecutionService.execute", () => {
             connection: "dba@h",
             statement: "CREATE SCHEMA demo",
             kind: "info",
-            rows: 1,
         });
         expect(report.connection).toBe("dba@h");
         expect(runOf(report).time).toMatch(/^\d\d:\d\d:\d\d\.\d\d\d$/);
@@ -305,9 +304,6 @@ describe("ExecutionService.execute", () => {
             undefined,
             "run1-result-1",
         ]);
-        expect(statementRows.map((row) => {
-            return row.rows;
-        })).toEqual([1, 0, 0]);
     });
 
     it("marks a derived result set read only", async () => {

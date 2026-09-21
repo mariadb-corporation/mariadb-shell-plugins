@@ -24,17 +24,23 @@ import {
     type RowComponent,
 } from "tabulator-tables";
 
-import type { IOutputRow } from "../../src/webview/protocol.js";
+import type { IActionRow } from "../../src/webview/protocol.js";
 
-interface IOutputGridProperties {
-    /** One row per run, oldest first, each holding its statements. */
-    rows: IOutputRow[];
+interface IActionsGridProperties {
+    /** One row per run, newest first, each holding its statements. */
+    rows: IActionRow[];
+    /**
+     * Whether to name the connection each row happened on. Only when the
+     * rows of several are on show together: with one picked, a column
+     * repeating its name the whole way down says nothing.
+     */
+    showConnection?: boolean;
     /** The result sets whose tabs are still on show. */
     availableResultIds: ReadonlySet<string>;
     /** Switches to the tab of the result set a row produced. */
     onJumpToResult(resultId: string): void;
     /** Puts the cursor on the statement a row came from. */
-    onGoToStatement(row: IOutputRow): void;
+    onGoToStatement(row: IActionRow): void;
     /** A row to scroll into view, e.g. a run's first error. */
     scrollToRowId?: string;
 }
@@ -72,25 +78,33 @@ const COLLAPSE_ELEMENT =
     "<span class=\"treeToggle codicon codicon-chevron-down\"></span>";
 
 /**
- * How far a statement is indented under its run, in pixels. Tabulator
- * adds the 7px of its own branch element to this, which puts a statement
- * just past where its run's message starts.
+ * How far a statement is indented under its run, in pixels.
+ *
+ * Tabulator gives a child's branch element 7px of width and 5px of
+ * margin on top of this, so 20 puts a statement's marker at 32 - one
+ * clear step of `TREE_ELEMENT_WIDTH` in from the 16 its run's marker
+ * sits at. The markers of the rows that stand on their own line up;
+ * the ones that belong to a run are meant not to.
  */
-const CHILD_INDENT = 16;
+const CHILD_INDENT = 20;
 
 /**
- * Renders the severity cell: the same glyph the Problems panel marks a
+ * The room a run's twistie takes, which a row that has neither twistie
+ * nor branch - an event - has to be given, or its marker would sit
+ * where every other row's message does.
+ */
+const TREE_ELEMENT_WIDTH = 16;
+
+/**
+ * Builds the severity marker: the same glyph the Problems panel marks a
  * line with, which is what tells the rows apart now that they all share
  * one background.
  *
- * @param cell The cell to render.
+ * @param row The row to mark.
  *
- * @returns The cell's content.
+ * @returns The marker.
  */
-export const formatSeverityCell = (
-    cell: CellComponent,
-): HTMLElement => {
-    const row = cell.getRow().getData() as IOutputRow;
+export const createSeverityIcon = (row: IActionRow): HTMLElement => {
     const icon = document.createElement("span");
     icon.className =
         `markerIcon ${row.kind} codicon ${SEVERITY_ICONS[row.kind]}`;
@@ -111,7 +125,7 @@ export const formatSeverityCell = (
  * @returns The button, or undefined where there is nothing to jump to.
  */
 export const createJumpButton = (
-    row: IOutputRow,
+    row: IActionRow,
     available: ReadonlySet<string>,
 ): HTMLButtonElement | undefined => {
     if (row.resultId === undefined || !available.has(row.resultId)) {
@@ -139,7 +153,7 @@ export const createJumpButton = (
  * @returns The button, or undefined where the row has no source.
  */
 export const createGoToButton = (
-    row: IOutputRow,
+    row: IActionRow,
 ): HTMLButtonElement | undefined => {
     if (!row.source) {
         return undefined;
@@ -157,66 +171,59 @@ export const createGoToButton = (
 };
 
 /**
- * Renders the message cell: the message, with the go-to-statement arrow
- * pinned to the cell's top right corner.
+ * Renders the message cell: what happened, with both arrows at the end
+ * of it.
  *
- * The arrow rides here rather than in a column of its own because a
- * column of arrows is width the message could be using instead, and the
- * panel area is short of it.
- *
- * @param cell The cell to render.
- *
- * @returns The cell's content.
- */
-export const formatMessageCell = (cell: CellComponent): HTMLElement => {
-    const row = cell.getRow().getData() as IOutputRow;
-    const content = document.createElement("div");
-    content.className = "outputMessageContent";
-    content.textContent = row.message;
-
-    const button = createGoToButton(row);
-    if (button) {
-        // The message is kept clear of the corner the arrow sits in.
-        content.classList.add("hasGoTo");
-        content.appendChild(button);
-    }
-
-    return content;
-};
-
-/**
- * Renders the row count, with the jump-to-result arrow beside it - for
- * the same reason the go-to arrow rides in the message cell.
- *
- * The arrow's place is held whether or not there is one to draw, so the
- * counts stay in a column.
+ * They ride here rather than in columns of their own because a column of
+ * arrows is width the message could be using instead, and the panel area
+ * is short of it. The message truncates before them: they are laid out
+ * beside it rather than over it, so neither can cover the other.
  *
  * @param cell The cell to render.
  * @param available The result sets still on show.
  *
  * @returns The cell's content.
  */
-export const formatRowsCell = (
+export const formatMessageCell = (
     cell: CellComponent,
     available: ReadonlySet<string>,
 ): HTMLElement => {
-    const row = cell.getRow().getData() as IOutputRow;
-    const content = document.createElement("div");
-    content.className = "outputRowsContent";
+    const row = cell.getRow().getData() as IActionRow;
+    const host = document.createElement("div");
+    host.className = "actionMessageCell";
 
-    const count = document.createElement("span");
-    count.textContent = row.rows === undefined ? "" : String(row.rows);
-    content.appendChild(count);
-
-    const slot = document.createElement("span");
-    slot.className = "outputJumpSlot";
-    const button = createJumpButton(row, available);
-    if (button) {
-        slot.appendChild(button);
+    // Tabulator has already put the twistie of a run, or the branch of
+    // a statement, in front of this. An event has neither, so it is
+    // given the room they take: the markers stay in one column.
+    if (row.role === "event") {
+        const spacer = document.createElement("span");
+        spacer.className = "treeSpacer";
+        spacer.style.width = `${TREE_ELEMENT_WIDTH}px`;
+        host.appendChild(spacer);
     }
-    content.appendChild(slot);
 
-    return content;
+    host.appendChild(createSeverityIcon(row));
+
+    const content = document.createElement("div");
+    content.className = "actionMessageContent";
+    content.textContent = row.message;
+    host.appendChild(content);
+
+    const actions = document.createElement("span");
+    actions.className = "actionArrows";
+    const jump = createJumpButton(row, available);
+    if (jump) {
+        actions.appendChild(jump);
+    }
+    const goTo = createGoToButton(row);
+    if (goTo) {
+        actions.appendChild(goTo);
+    }
+    if (actions.childElementCount > 0) {
+        host.appendChild(actions);
+    }
+
+    return host;
 };
 
 /**
@@ -227,7 +234,7 @@ export const formatRowsCell = (
  *
  * @returns The text for the cell.
  */
-export const informationOf = (row: IOutputRow): string => {
+export const informationOf = (row: IActionRow): string => {
     return row.role === "run" ? row.summary ?? "" : row.statement;
 };
 
@@ -243,7 +250,7 @@ export const informationOf = (row: IOutputRow): string => {
  * @returns The cell's content.
  */
 export const formatInformationCell = (cell: CellComponent): HTMLElement => {
-    const row = cell.getRow().getData() as IOutputRow;
+    const row = cell.getRow().getData() as IActionRow;
     const content = document.createElement("span");
     content.textContent = informationOf(row);
 
@@ -268,91 +275,69 @@ export const clickedOn = (event: unknown, selector: string): boolean => {
 /**
  * @param value The number of milliseconds.
  *
- * @returns The duration, in the largest unit that stays readable.
+ * @returns The duration, in the largest unit that stays readable. Tight
+ *          against its unit, because it is shown in brackets after a
+ *          time of day and the column is narrow.
  */
 export const formatElapsed = (value: number): string => {
     if (value < 1000) {
-        return `${value} ms`;
+        return `${value}ms`;
     }
 
-    return `${(value / 1000).toFixed(3)} s`;
+    return `${(value / 1000).toFixed(3)}s`;
 };
 
 /**
- * Builds the output grid's columns.
+ * What the Time column says: when it started and, in brackets, how long
+ * it took - `20:44:13.431 (3ms)`.
+ *
+ * The two belong together: one column of the pair is dead space on
+ * every row that has no duration, and a run's start and its length are
+ * read as one fact.
+ *
+ * @param row The row to describe.
+ *
+ * @returns The text for the cell.
+ */
+export const timeOf = (row: IActionRow): string => {
+    // Nothing in brackets while a run is still under way: it has no
+    // time yet, and a 0ms would claim it had.
+    return row.elapsedMs === undefined
+        ? row.time
+        : `${row.time} (${formatElapsed(row.elapsedMs)})`;
+};
+
+/**
+ * Builds the actions grid's columns.
  *
  * @param available The result sets still on show.
  * @param onJump Switches to a result set's tab.
+ * @param onGoTo Puts the cursor on the statement a row came from.
+ * @param showConnection Whether to name the connection each row is on.
  *
  * @returns The column definitions.
  */
-export const buildOutputColumns = (
+export const buildActionColumns = (
     available: ReadonlySet<string>,
     onJump: (resultId: string) => void,
-    onGoTo: (row: IOutputRow) => void,
+    onGoTo: (row: IActionRow) => void,
+    showConnection = false,
 ): ColumnDefinition[] => {
     return [
         {
-            title: "",
-            field: "kind",
-            width: 24,
-            hozAlign: "center",
-            headerSort: false,
-            resizable: false,
-            cssClass: "outputSeverity",
-            formatter: formatSeverityCell,
-        },
-        {
-            title: "Output",
+            title: "Actions",
             field: "message",
             headerSort: false,
             widthGrow: 3,
-            cssClass: "outputMessage",
-            formatter: formatMessageCell,
+            cssClass: "actionMessage",
+            formatter: (cell) => {
+                return formatMessageCell(cell, available);
+            },
             cellClick: (event, cell) => {
-                const row = cell.getRow().getData() as IOutputRow;
+                const row = cell.getRow().getData() as IActionRow;
                 if (row.source && clickedOn(event, ".goToStatement")) {
                     onGoTo(row);
                 }
-            },
-        },
-        {
-            title: "Time",
-            field: "time",
-            width: 104,
-            headerSort: false,
-            cssClass: "outputTime",
-        },
-        {
-            title: "Elapsed",
-            field: "elapsedMs",
-            width: 84,
-            hozAlign: "right",
-            headerSort: false,
-            cssClass: "outputElapsed",
-            headerTooltip:
-                "How long the statement took, or the whole run on its own "
-                + "row",
-            formatter: (cell) => {
-                const value = cell.getValue() as number | undefined;
-
-                // Empty while a run is still under way: it has no time
-                // yet, and a 0 ms would claim it had.
-                return value === undefined ? "" : formatElapsed(value);
-            },
-        },
-        {
-            title: "Rows",
-            field: "rows",
-            width: 90,
-            headerSort: false,
-            cssClass: "outputRows",
-            headerTooltip: "Rows returned, or rows affected",
-            formatter: (cell) => {
-                return formatRowsCell(cell, available);
-            },
-            cellClick: (event, cell) => {
-                const row = cell.getRow().getData() as IOutputRow;
                 if (row.resultId !== undefined
                     && available.has(row.resultId)
                     && clickedOn(event, ".jumpToResult")) {
@@ -361,16 +346,64 @@ export const buildOutputColumns = (
             },
         },
         {
+            title: "Time",
+            field: "time",
+            width: 152,
+            vertAlign: "middle",
+            headerSort: false,
+            cssClass: "actionTime",
+            headerTooltip:
+                "When it started and, in brackets, how long it took - the "
+                + "statement's own time, or the whole run's on its own row",
+            formatter: (cell) => {
+                return timeOf(cell.getRow().getData() as IActionRow);
+            },
+        },
+        {
             title: "Information",
             field: "statement",
             width: 260,
+            vertAlign: "middle",
             headerSort: false,
-            cssClass: "outputStatement",
+            cssClass: "actionInformation",
             headerTooltip:
                 "The statement that ran, or what the run came to",
             formatter: formatInformationCell,
         },
+        // Last, where it labels the row without standing between the
+        // marker and what it says.
+        ...(showConnection
+            ? [{
+                title: "Conn",
+                field: "connectionLabel",
+                width: 76,
+                vertAlign: "middle",
+                headerSort: false,
+                cssClass: "actionConnection",
+                headerTooltip:
+                    "Which connection open on this URI the row is from",
+            } satisfies ColumnDefinition]
+            : []),
     ];
+};
+
+/**
+ * The run at the top of the log: the newest one, which is the one left
+ * open.
+ *
+ * It is looked for rather than taken from the front of the list,
+ * because the row in front may be an event - the connection a run
+ * opened on the way is reported after the run's own row went up, and
+ * so sits above it.
+ *
+ * @param rows The actions, newest first.
+ *
+ * @returns The newest run's id, if there is a run at all.
+ */
+export const latestRunOf = (rows: IActionRow[]): string | undefined => {
+    return rows.find((row) => {
+        return row.role === "run";
+    })?.id;
 };
 
 /**
@@ -378,11 +411,11 @@ export const buildOutputColumns = (
  *
  * Tabulator asks this for every row it builds, and it rebuilds them all
  * on every data change, so the answer is read fresh each time: whatever
- * is now the last run is open, and a run that was open before a newer
+ * is now the newest run is open, and a run that was open before a newer
  * one arrived closes behind it.
  *
  * @param rowId The row Tabulator is building.
- * @param latestRunId The run at the end of the output.
+ * @param latestRunId The newest run in the actions.
  *
  * @returns Whether that row starts out open.
  */
@@ -394,13 +427,13 @@ export const startsExpanded = (
 };
 
 /**
- * @param rows The output, run by run.
+ * @param rows The actions, newest first.
  * @param rowId The statement row to place.
  *
  * @returns The id of the run holding it, if any run does.
  */
 export const runHolding = (
-    rows: IOutputRow[],
+    rows: IActionRow[],
     rowId: string,
 ): string | undefined => {
     return rows.find((run) => {
@@ -443,29 +476,30 @@ const openTo = (
 };
 
 /**
- * The output tab: one row per execution, oldest first, holding a row per
- * statement of it.
+ * The Actions tab: one row per execution, newest first, holding a row
+ * per statement of it.
  *
- * Unlike the result grids, this one accumulates - it is the log of what
- * has been run on this connection - so it scrolls to the newest run as
- * runs arrive, and only that run is left open.
+ * Unlike the result grids, this one accumulates - it is the log of
+ * what has happened on this connection - so what has just happened is
+ * put at the top, where the view already is, and only the newest run
+ * is left open.
  *
  * @param props The rows to show.
  *
  * @returns The rendered grid.
  */
-export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
-    const { rows, availableResultIds, scrollToRowId } = props;
+export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
+    const { rows, availableResultIds, scrollToRowId, showConnection } = props;
     const host = useRef<HTMLDivElement>(null);
     const table = useRef<Tabulator | undefined>(undefined);
     const built = useRef(false);
-    const pendingRows = useRef<IOutputRow[] | undefined>(undefined);
+    const pendingRows = useRef<IActionRow[] | undefined>(undefined);
     // Held in a ref so the callbacks Tabulator keeps never go stale.
     const callbacks = useRef(props);
     callbacks.current = props;
     // Read by Tabulator as it builds each row, long after this render.
     const latestRunId = useRef<string | undefined>(undefined);
-    latestRunId.current = rows.at(-1)?.id;
+    latestRunId.current = latestRunOf(rows);
 
     useLayoutEffect(() => {
         if (!host.current) {
@@ -474,24 +508,31 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
 
         const instance = new Tabulator(host.current, {
             data: [...rows],
-            columns: buildOutputColumns(
+            columns: buildActionColumns(
                 availableResultIds,
                 (resultId) => {
                     callbacks.current.onJumpToResult(resultId);
                 },
-                (outputRow) => {
-                    callbacks.current.onGoToStatement(outputRow);
+                (actionRow) => {
+                    callbacks.current.onGoToStatement(actionRow);
                 },
+                showConnection,
             ),
             index: "id",
             layout: "fitColumns",
-            height: "100%",
+            // No header: the columns are self evident from what is in
+            // them, and the panel area is short enough that a row of
+            // titles is a row of the log not shown.
+            headerVisible: false,
+            // Less the 2px of margin above it, or the grid would be
+            // that much taller than the room it has.
+            height: "calc(100% - 2px)",
             placeholder: "Nothing has been run on this connection yet.",
             dataTree: true,
             dataTreeChildField: "children",
-            // The message column, not the marker beside it: a twistie in
-            // a 24px column of icons has nowhere to go, and indenting
-            // that column would push the markers out of line.
+            // Everything a row leads with is in this one cell: the
+            // twistie or the branch Tabulator puts in front of it, then
+            // the marker, then what happened.
             dataTreeElementColumn: "message",
             dataTreeChildIndent: CHILD_INDENT,
             dataTreeExpandElement: EXPAND_ELEMENT,
@@ -500,7 +541,7 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
                 return startsExpanded(row.getIndex(), latestRunId.current);
             },
             rowFormatter: (row) => {
-                const data = row.getData() as IOutputRow;
+                const data = row.getData() as IActionRow;
                 const element = row.getElement();
                 // Only the text colour and the marker icon vary; every
                 // row shares one background.
@@ -535,10 +576,11 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
                 // rather than being a no-op.
             }
         };
-        // The columns close over which result sets are still available,
-        // so the table is rebuilt when that changes.
+        // The columns close over which result sets are still available
+        // and over whether the connection is named, so the table is
+        // rebuilt when either changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [availableResultIds]);
+    }, [availableResultIds, showConnection]);
 
     useEffect(() => {
         const instance = table.current;
@@ -562,7 +604,7 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
         } catch {
             // The run has scrolled out of the capped history.
         }
-        // The run to open is looked up in the output as it now stands.
+        // The run to open is looked up in the actions as they now stand.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scrollToRowId]);
 
@@ -578,26 +620,13 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
             return;
         }
 
-        void instance.replaceData([...rows]).then(() => {
-            // The newest run is the one worth seeing, and it is the one
-            // left open, so the bottom of it is its last statement.
-            const last = rows.at(-1);
-            if (!last) {
-                return;
-            }
-
-            try {
-                const row = openTo(
-                    instance, last.id, last.children?.at(-1)?.id ?? last.id);
-                if (row) {
-                    void instance.scrollToRow(row, "bottom", false);
-                }
-            } catch {
-                // The row is gone already, which is not worth
-                // reporting.
-            }
-        });
+        // Nothing is scrolled to. The newest row is the first one, and
+        // the view opens at the top: a reader who has not gone looking
+        // through the older rows is already where the new ones arrive,
+        // and one who has is not taken away from what they are
+        // reading.
+        void instance.replaceData([...rows]);
     }, [rows]);
 
-    return <div class="outputGridHost" ref={host} />;
+    return <div class="actionsGridHost" ref={host} />;
 };

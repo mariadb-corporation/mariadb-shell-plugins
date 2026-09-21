@@ -17,7 +17,10 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { ConnectionManager } from "../../connections/connectionManager.js";
+import {
+    ConnectionManager,
+    UI_BACKEND_SESSION,
+} from "../../connections/connectionManager.js";
 import {
     ConnectionsTreeProvider,
     CONNECTIONS_VIEW_ID,
@@ -106,7 +109,7 @@ describe("ConnectionsTreeProvider", () => {
 
     it("expands an open connection", async () => {
         const { connections, provider } = createProvider();
-        await connections.connect("dba@localhost:3310");
+        await connections.connect("dba@localhost:3310", UI_BACKEND_SESSION);
         const [root] = await provider.getChildren();
 
         const children = await provider.getChildren(root);
@@ -124,7 +127,7 @@ describe("ConnectionsTreeProvider", () => {
             fired.push(node);
         });
 
-        await connections.connect("dba@localhost:3310");
+        await connections.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
         expect(fired).toEqual([undefined]);
 
@@ -185,6 +188,25 @@ describe("ConnectionsTreeProvider", () => {
         provider.dispose();
     });
 
+    it("opens its own connection on a connection something else opened",
+        async () => {
+            // The explicit mode is about not connecting to a server
+            // behind the user's back, and an editor has already
+            // connected to this one; without the tree's own connection
+            // the row would expand to nothing and stay that way.
+            const { connections, provider } = createProvider();
+            await connections.connect("dba@localhost:3310");
+            const [root] = await provider.getChildren();
+
+            await provider.expanded(root);
+
+            expect(connections.isConnected(
+                "dba@localhost:3310", UI_BACKEND_SESSION)).toBe(true);
+            expect(await provider.getChildren(root)).toHaveLength(1);
+
+            provider.dispose();
+        });
+
     it("leaves a connection closed on expand in the explicit mode",
         async () => {
             const { connections, provider } = createProvider();
@@ -238,7 +260,7 @@ describe("ConnectionsTreeProvider", () => {
         });
 
         provider.dispose();
-        await connections.connect("dba@localhost:3310");
+        await connections.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
         expect(fired).toEqual([]);
     });

@@ -16,7 +16,7 @@ extension grows.
 | `src/extension.ts` | Activation entry point. Wires everything together and registers the commands. |
 | `src/shell/` | Finding, installing and launching the MariaDB Shell. |
 | `src/mcp/` | The MCP client: session lifecycle, wire decoding, typed `db.*` API. |
-| `src/connections/` | Which connections are open and which is the default, plus the connection editor: URI building, the store, the panel and its protocol. |
+| `src/connections/` | Which connections are open on which URI and which is the default, what happens on each one, plus the connection editor: URI building, the store, the panel and its protocol. |
 | `src/tree/` | The Connections view: its data model and its tree items. |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
 | `src/editor/` | The SQL editor toolbar, status bar entry and run command. |
@@ -36,9 +36,9 @@ change belongs to up to date, and this table with it.
 | --- | --- |
 | [`context/toolchain.md`](context/toolchain.md) | The two Vite builds and two Vitest projects, the npm scripts, the pinned Node and the lockfile churn, the Marketplace icon, CI. |
 | [`context/shell-and-mcp.md`](context/shell-and-mcp.md) | `src/shell/` and `src/mcp/` file by file, the lazy startup and shell lookup, GUI mode (`--gui`) and the two connection lists, the MCP wire format. |
-| [`context/connections.md`](context/connections.md) | The connection editor and what it deliberately leaves out, the Connections view and its tree, the default connection. |
+| [`context/connections.md`](context/connections.md) | The connection editor and what it deliberately leaves out, the several connections one URI can have open and the one the Connections view keeps, the tree, the default connection. |
 | [`context/running-sql.md`](context/running-sql.md) | The two run commands and stop on error, which connection a file runs on, the statement scanner, splitting agreeing with the server, what makes a result set editable, the gutter markers. |
-| [`context/result-view.md`](context/result-view.md) | The panel webview: layout, per-connection state, fonts and surfaces, the output grid and what the server had to report for it, the result grids, the SQL preview, the shared code. |
+| [`context/result-view.md`](context/result-view.md) | The panel webview: layout, per-connection state, the two pickers, the actions grid and what the server had to report for it, fonts and surfaces, the result grids, the SQL preview, the shared code. |
 | [`context/commands.md`](context/commands.md) | Every contributed command and where it appears. |
 | [`context/testing-and-debugging.md`](context/testing-and-debugging.md) | The interfaces everything external sits behind, and the F5 launch and watch task. |
 
@@ -52,6 +52,11 @@ change belongs to up to date, and this table with it.
   timing, a failing script reports one error for the whole call with no
   statement to jump to, and `stopOnError: false` is ignored. Raise the
   minimum once a shell carrying the new plugin ships.
+- The Connections view keeps a connection of its own per URI, so a URI
+  being browsed and run on costs two of the server's
+  `MAX_CONNECTIONS_PER_CLIENT` (16). Nine connections open at once is
+  therefore the ceiling, and nothing closes the tree's one on its own -
+  only Disconnect does, or the server's 12 hour lifetime.
 - The connection editor has no file pickers: the SSL certificate paths and
   the socket are typed, where the MySQL Shell's editor offers a browse
   button for each.

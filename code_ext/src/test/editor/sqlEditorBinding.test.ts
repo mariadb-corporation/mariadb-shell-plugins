@@ -23,6 +23,7 @@ import {
     readConnectionHeader,
     SqlEditorBinding,
 } from "../../editor/sqlEditorBinding.js";
+import type { IViewState } from "../../webview/protocol.js";
 import {
     ResultViewProvider,
     RESULT_VIEW_ID,
@@ -245,7 +246,7 @@ describe("SqlEditorBinding", () => {
         expect(api.scripts).toEqual(["SELECT 1 AS a;"]);
         const posted = view.webview.posted as Array<{
             type: string;
-            state?: { output: Array<{ kind: string; summary?: string }> };
+            state?: { actions: Array<{ kind: string; summary?: string }> };
         }>;
         // Two states: the run going up before anything is run, and the
         // same row with what it produced in it. The state holds the
@@ -256,8 +257,8 @@ describe("SqlEditorBinding", () => {
             return message.type === "state";
         });
         expect(states).toHaveLength(2);
-        expect(states.at(-1)?.state?.output).toHaveLength(1);
-        expect(states.at(-1)?.state?.output.at(-1)).toMatchObject({
+        expect(states.at(-1)?.state?.actions).toHaveLength(1);
+        expect(states.at(-1)?.state?.actions.at(-1)).toMatchObject({
             kind: "info",
             summary: "Finished 1 statement successfully",
         });
@@ -288,6 +289,23 @@ describe("SqlEditorBinding", () => {
         await binding.run(createEditor("SELECT 1;") as never);
 
         expect(connections.isConnected("dba@localhost:3310")).toBe(true);
+
+        binding.dispose();
+    });
+
+    it("says which connection it ran on, on every row", async () => {
+        const { view, binding } = createBinding("dba@localhost:3310");
+
+        await binding.run(createEditor("SELECT 1;") as never);
+
+        // An editor runs on a numbered connection of its own; the
+        // Connections view browses on the one it keeps beside it.
+        const states = view.webview.posted.filter((message) => {
+            return (message as { type: string }).type === "state";
+        }) as Array<{ state: IViewState }>;
+        const run = states.at(-1)?.state.actions.at(-1);
+        expect(run?.connectionLabel).toBe("1");
+        expect(run?.children?.[0].connectionLabel).toBe("1");
 
         binding.dispose();
     });
@@ -336,7 +354,7 @@ describe("SqlEditorBinding", () => {
         const posted = view.webview.posted as Array<{
             type: string;
             state?: {
-                output: Array<{
+                actions: Array<{
                     summary?: string;
                     kind: string;
                     children?: Array<{ message: string; kind: string }>;
@@ -348,7 +366,7 @@ describe("SqlEditorBinding", () => {
         });
         // The run that was put up pending is closed off rather than left
         // running, and what the server said sits under it.
-        const run = states.at(-1)?.state?.output.at(-1);
+        const run = states.at(-1)?.state?.actions.at(-1);
         expect(run).toMatchObject({
             summary: "Execution failed: Access denied for user 'dba'",
             kind: "error",

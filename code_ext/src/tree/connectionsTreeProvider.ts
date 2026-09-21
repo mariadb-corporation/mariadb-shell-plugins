@@ -17,7 +17,10 @@
 
 import * as vscode from "vscode";
 
-import type { ConnectionManager } from "../connections/connectionManager.js";
+import {
+    UI_BACKEND_SESSION,
+    type ConnectionManager,
+} from "../connections/connectionManager.js";
 import {
     ConnectionsModel,
     type ConnectionsNode,
@@ -101,8 +104,8 @@ export class ConnectionsTreeProvider
     }
 
     /**
-     * Opens the connection a node the user just expanded stands for, where
-     * that is the mode in force.
+     * Opens the connection the tree browses with, for a node the user
+     * just expanded.
      *
      * This hangs off the user's expand rather than off `getChildren`, which
      * the tree also calls on every refresh: a closed connection that opened
@@ -110,21 +113,31 @@ export class ConnectionsTreeProvider
      * disconnected. The children come from the refresh that opening fires,
      * so there is nothing to return here.
      *
+     * A connection something else already has open is expanded even in
+     * the explicit mode. What that mode is about is not connecting to a
+     * server behind the user's back, and the server has been connected
+     * to; all this adds is the connection the tree browses on, without
+     * which the row would expand to nothing and stay that way.
+     *
      * @param node The node that was expanded.
      *
      * @returns Nothing.
      */
     public async expanded(node: ConnectionsNode): Promise<void> {
-        if (node.kind !== "connection" || !this.connectOnOpen()) {
+        if (node.kind !== "connection") {
             return;
         }
 
-        if (this.connections.isConnected(node.uri)) {
+        if (!this.connectOnOpen() && !this.connections.isConnected(node.uri)) {
+            return;
+        }
+
+        if (this.connections.isConnected(node.uri, UI_BACKEND_SESSION)) {
             return;
         }
 
         try {
-            await this.connections.connect(node.uri);
+            await this.connections.connect(node.uri, UI_BACKEND_SESSION);
         } catch (error) {
             this.#report(`open '${node.uri}'`, error);
         }

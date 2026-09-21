@@ -16,7 +16,13 @@
  */
 
 import type { JSX } from "preact";
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "preact/hooks";
 
 import {
     blankRow,
@@ -26,44 +32,81 @@ import {
 } from "../../src/webview/changes.js";
 import type {
     HostMessage,
-    IOutputRow,
+    IActionRow,
     IResultSet,
     IViewState,
 } from "../../src/webview/protocol.js";
 import { createQueryBuilder } from "../../src/sql/resultSetQueryBuilder.js";
-import { OutputGrid } from "./OutputGrid.js";
+import { ActionsGrid } from "./ActionsGrid.js";
 import { ResultGrid } from "./ResultGrid.js";
+import { ResultStatusBar } from "./ResultStatusBar.js";
 import { SqlPreview } from "./SqlPreview.js";
 import { post } from "./vscodeApi.js";
 
-/** The id of the always-present output tab. */
-const OUTPUT_TAB = "output";
+/** The id of the always-present Actions tab. */
+const ACTIONS_TAB = "actions";
 
 /**
- * What to put in the error bar: the last thing that went wrong in the
- * last run.
+ * What to put in the error bar: the last thing that went wrong on the
+ * connection.
  *
- * Only the last run is looked at. The output keeps every run, and an
- * error two runs ago is not what the bar is for - it says what just
- * happened.
+ * Only the first row is looked at, that being the newest. The actions
+ * keep everything, and an error two runs ago is not what the bar is
+ * for - it says what just happened.
  *
- * @param output The runs, oldest last.
+ * @param actions What happened, newest first.
  *
- * @returns The message, or undefined if the last run was clean.
+ * @returns The message, or undefined if the last thing went well.
  */
-export const lastErrorOf = (output: IOutputRow[]): string | undefined => {
-    const run = output.at(-1);
+export const lastErrorOf = (actions: IActionRow[]): string | undefined => {
+    const run = actions[0];
     if (!run || run.kind !== "error") {
         return undefined;
     }
 
     // The statement that failed says what the server said; the run's own
-    // row only counts them.
+    // row only counts them. An event has no children and says it itself.
     const failed = run.children?.findLast((child) => {
         return child.kind === "error";
     });
 
     return failed?.message ?? run.summary ?? run.message;
+};
+
+/** The value the session picker offers every connection together under. */
+const ALL_SESSIONS = "";
+
+/** How much of the strip a page of result tabs moves by. */
+const PAGE_FRACTION = 0.8;
+
+/** What the strip of result tabs can be paged to. */
+export interface ITabPaging {
+    /** True when they do not all fit, which is what the buttons are for. */
+    overflowing: boolean;
+    atStart: boolean;
+    atEnd: boolean;
+}
+
+/**
+ * Works out which way the strip of result tabs can still be paged.
+ *
+ * @param strip What the strip measures, as the DOM reports it.
+ *
+ * @returns Whether it overflows, and whether it is at either end.
+ *
+ * A pixel of slack throughout: a fractional layout leaves the scrolled
+ * width a hair over the visible one, and the end a hair short of it.
+ */
+export const pagingOf = (strip: {
+    scrollLeft: number;
+    scrollWidth: number;
+    clientWidth: number;
+}): ITabPaging => {
+    return {
+        overflowing: strip.scrollWidth - strip.clientWidth > 1,
+        atStart: strip.scrollLeft <= 1,
+        atEnd: strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1,
+    };
 };
 
 /** The editing state held for one result set. */
@@ -80,20 +123,35 @@ interface IEditingState {
 /**
  * The result view, docked in the bottom panel.
  *
- * It shows the output of everything run on the selected connection, and
- * a tab per result set of that connection's last execution. The
- * connection is picked from the toolbar, so the results of a connection
- * can be looked at while another one is being worked on.
+ * It shows everything that has happened on the selected connection, and
+ * a tab per result set of its last execution. Two pickers choose what
+ * that is: the connection URI, and which of the connections open on it -
+ * or all of them together, which is what it opens on and the only case
+ * in which the actions name a connection per row.
  *
  * @returns The rendered view.
  */
 export const App = (): JSX.Element => {
     const [state, setState] = useState<IViewState | undefined>();
-    const [activeTab, setActiveTab] = useState<string>(OUTPUT_TAB);
+    const [activeTab, setActiveTab] = useState<string>(ACTIONS_TAB);
     const [notice, setNotice] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [editing, setEditing] = useState<Record<string, IEditingState>>({});
     const [scrollToRowId, setScrollToRowId] = useState<string | undefined>();
+    /** The strip of result tabs, measured for the paging buttons. */
+    const resultTabs = useRef<HTMLDivElement>(null);
+    const [paging, setPaging] = useState<ITabPaging>({
+        overflowing: false,
+        atStart: true,
+        atEnd: true,
+    });
+    /**
+     * The tabs the editing state below was built for. State arrives
+     * whenever anything at all happens on the connection - a schema
+     * listed while the user is part way through editing a grid, say - and
+     * only a change of tabs may throw that editing away.
+     */
+    const shownResults = useRef<string>("");
 
     useEffect(() => {
         const onMessage = (event: MessageEvent<HostMessage>): void => {
@@ -101,23 +159,29 @@ export const App = (): JSX.Element => {
             switch (message.type) {
                 case "state": {
                     setState(message.state);
-                    setEditing(Object.fromEntries(
-                        message.state.resultSets.map((set) => {
-                            return [set.id, {
-                                rows: initialRows(set),
-                                previewActive: false,
-                                errors: {},
-                            }];
-                        }),
-                    ));
-                    setNotice(undefined);
-                    // A run that produced rows opens on them; one that
-                    // did not - or one that has only just started - stays
-                    // on the output, which is where its progress and its
-                    // outcome are.
-                    setActiveTab(message.state.resultSets[0]?.id
-                        ?? OUTPUT_TAB);
-                    setError(lastErrorOf(message.state.output));
+                    const ids = message.state.resultSets.map((set) => {
+                        return set.id;
+                    }).join("\u0000");
+                    if (ids !== shownResults.current) {
+                        shownResults.current = ids;
+                        setEditing(Object.fromEntries(
+                            message.state.resultSets.map((set) => {
+                                return [set.id, {
+                                    rows: initialRows(set),
+                                    previewActive: false,
+                                    errors: {},
+                                }];
+                            }),
+                        ));
+                        setNotice(undefined);
+                        // A run that produced rows opens on them; one
+                        // that did not - or one that has only just
+                        // started - stays on the actions, which is where
+                        // its progress and its outcome are.
+                        setActiveTab(message.state.resultSets[0]?.id
+                            ?? ACTIONS_TAB);
+                    }
+                    setError(lastErrorOf(message.state.actions));
                     break;
                 }
 
@@ -164,6 +228,48 @@ export const App = (): JSX.Element => {
         return () => {
             window.removeEventListener("message", onMessage);
         };
+    }, []);
+
+    const measureTabs = useCallback((): void => {
+        if (resultTabs.current) {
+            setPaging(pagingOf(resultTabs.current));
+        }
+    }, []);
+
+    // The strip overflows when the tabs outgrow it or the panel is made
+    // narrower, so both are watched.
+    useEffect(() => {
+        const strip = resultTabs.current;
+        if (!strip) {
+            return;
+        }
+
+        measureTabs();
+        const observer = new ResizeObserver(measureTabs);
+        observer.observe(strip);
+
+        return () => {
+            observer.disconnect();
+        };
+    }, [measureTabs, state?.resultSets]);
+
+    /**
+     * Moves the strip of result tabs by most of its width.
+     *
+     * @param direction -1 for back, 1 for on.
+     *
+     * @returns Nothing.
+     */
+    const pageTabs = useCallback((direction: number): void => {
+        const strip = resultTabs.current;
+        if (!strip) {
+            return;
+        }
+
+        strip.scrollBy({
+            left: direction * strip.clientWidth * PAGE_FRACTION,
+            behavior: "smooth",
+        });
     }, []);
 
     const active: IResultSet | undefined = state?.resultSets.find((set) => {
@@ -314,12 +420,12 @@ export const App = (): JSX.Element => {
         setActiveTab(resultId);
     }, []);
 
-    const goToStatement = useCallback((row: IOutputRow): void => {
+    const goToStatement = useCallback((row: IActionRow): void => {
         if (row.source) {
             post({ type: "revealStatement", source: row.source });
         }
 
-        // The row of a failed run also opens it and carries the output
+        // The row of a failed run also opens it and carries the actions
         // to the error it is reporting.
         if (row.jumpToRowId !== undefined) {
             setScrollToRowId(row.jumpToRowId);
@@ -338,44 +444,151 @@ export const App = (): JSX.Element => {
 
     return (
         <div class="panel">
+            {error !== undefined && (
+                <div class="errorBar" role="alert">{error}</div>
+            )}
+
             <section class="content">
-                {activeTab === OUTPUT_TAB
+                {activeTab === ACTIONS_TAB
                     ? (
-                        <OutputGrid
-                            rows={state.output}
+                        <ActionsGrid
+                            rows={state.actions}
+                            showConnection={state.session === undefined
+                                && state.sessions.length > 0}
                             availableResultIds={availableResultIds}
                             onJumpToResult={jumpToResult}
                             onGoToStatement={goToStatement}
                             scrollToRowId={scrollToRowId}
                         />
                     )
-                    : active && editState && (editState.previewActive
-                        ? (
-                            <SqlPreview
-                                statements={statements}
-                                errors={editState.errors}
-                                onStatementClick={goToRow}
-                            />
-                        )
-                        : (
-                            <ResultGrid
+                    : active && editState && (
+                        <>
+                            {editState.previewActive
+                                ? (
+                                    <SqlPreview
+                                        statements={statements}
+                                        errors={editState.errors}
+                                        onStatementClick={goToRow}
+                                    />
+                                )
+                                : (
+                                    <ResultGrid
+                                        resultSet={active}
+                                        rows={editState.rows}
+                                        selectedRowIndex={
+                                            editState.selectedRowIndex}
+                                        onCellEdited={onCellEdited}
+                                        onToggleDeleted={onToggleDeleted}
+                                        onSelectionChanged={() => {
+                                            // Selection is Tabulator's
+                                            // own; the app does not
+                                            // track it.
+                                        }}
+                                    />
+                                )}
+
+                            <ResultStatusBar
                                 resultSet={active}
-                                rows={editState.rows}
-                                selectedRowIndex={editState.selectedRowIndex}
-                                onCellEdited={onCellEdited}
-                                onToggleDeleted={onToggleDeleted}
-                                onSelectionChanged={() => {
-                                    // Selection is Tabulator's own; the
-                                    // app does not track it.
-                                }}
+                                notice={notice}
+                                dirty={dirty}
+                                previewActive={editState.previewActive}
+                                onTogglePreview={togglePreview}
+                                onAddRow={addRow}
+                                onRevert={revert}
+                                onApply={apply}
+                                onRefresh={refresh}
                             />
-                        ))}
+                        </>
+                    )}
             </section>
 
-            <footer class="statusBar">
+            <footer class="contentSelectionBar">
+                <nav class="tabs" role="tablist">
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTab === ACTIONS_TAB}
+                        class={activeTab === ACTIONS_TAB
+                            ? "tab active"
+                            : "tab"}
+                        onClick={() => {
+                            setActiveTab(ACTIONS_TAB);
+                        }}
+                    >
+                        Actions
+                        {state.actions.length > 0
+                            && <span class="badge">
+                                {state.actions.length}
+                            </span>}
+                    </button>
+                    {paging.overflowing && (
+                        <button
+                            type="button"
+                            class="tabPager codicon codicon-chevron-left"
+                            title="Show the result sets before these"
+                            aria-label="Previous result sets"
+                            disabled={paging.atStart}
+                            onClick={() => {
+                                pageTabs(-1);
+                            }}
+                        />
+                    )}
+
+                    <div
+                        class="resultTabs"
+                        ref={resultTabs}
+                        onScroll={measureTabs}
+                    >
+                        {state.resultSets.map((set) => {
+                            return (
+                                <button
+                                    key={set.id}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={activeTab === set.id}
+                                    title={set.statement}
+                                    class={activeTab === set.id
+                                        ? "tab active"
+                                        : "tab"}
+                                    ref={(element) => {
+                                        // A tab the host just switched
+                                        // to may be off the end of the
+                                        // strip; this brings it in.
+                                        if (element
+                                            && activeTab === set.id) {
+                                            element.scrollIntoView({
+                                                block: "nearest",
+                                                inline: "nearest",
+                                            });
+                                        }
+                                    }}
+                                    onClick={() => {
+                                        setActiveTab(set.id);
+                                    }}
+                                >
+                                    {set.caption}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {paging.overflowing && (
+                        <button
+                            type="button"
+                            class="tabPager codicon codicon-chevron-right"
+                            title="Show the result sets after these"
+                            aria-label="Next result sets"
+                            disabled={paging.atEnd}
+                            onClick={() => {
+                                pageTabs(1);
+                            }}
+                        />
+                    )}
+                </nav>
+
                 <select
                     class="connectionPicker"
-                    title="The connection whose output and results are shown"
+                    title="The connection whose actions and results are shown"
                     value={state.connection}
                     onChange={(event) => {
                         post({
@@ -390,124 +603,38 @@ export const App = (): JSX.Element => {
                     })}
                 </select>
 
-                <nav class="tabs" role="tablist">
-                    <button
-                        type="button"
-                        role="tab"
-                        aria-selected={activeTab === OUTPUT_TAB}
-                        class={activeTab === OUTPUT_TAB ? "tab active" : "tab"}
-                        onClick={() => {
-                            setActiveTab(OUTPUT_TAB);
+                {state.sessions.length > 0 && (
+                    <select
+                        class="sessionPicker"
+                        title="Which of its open connections to show"
+                        value={state.session ?? ALL_SESSIONS}
+                        onChange={(event) => {
+                            const picked =
+                                (event.target as HTMLSelectElement).value;
+                            post({
+                                type: "selectSession",
+                                session: picked === ALL_SESSIONS
+                                    ? undefined
+                                    : picked,
+                            });
                         }}
                     >
-                        Output
-                        {state.output.length > 0
-                            && <span class="badge">
-                                {state.output.length}
-                            </span>}
-                    </button>
-                    {state.resultSets.map((set) => {
-                        return (
-                            <button
-                                key={set.id}
-                                type="button"
-                                role="tab"
-                                aria-selected={activeTab === set.id}
-                                title={set.statement}
-                                class={activeTab === set.id
-                                    ? "tab active"
-                                    : "tab"}
-                                onClick={() => {
-                                    setActiveTab(set.id);
-                                }}
-                            >
-                                {set.caption}
-                            </button>
-                        );
-                    })}
-                </nav>
-
-                <span class="status">
-                    {notice ?? (activeTab === OUTPUT_TAB
-                        ? ""
-                        : active?.status ?? "")}
-                </span>
-
-                <div class="toolbar">
-                    {active && (
-                        <>
-                            {active.readOnlyReason !== undefined && (
-                                <span
-                                    class="readOnly"
-                                    title={active.readOnlyReason}
+                        <option value={ALL_SESSIONS}>All Sessions</option>
+                        {state.sessions.map((session) => {
+                            return (
+                                <option
+                                    key={session.label}
+                                    value={session.label}
                                 >
-                                    read only
-                                </span>
-                            )}
-                            {active.editable && editState && (
-                                <>
-                                    <button
-                                        type="button"
-                                        class={editState.previewActive
-                                            ? "iconButton toggled"
-                                            : "iconButton"}
-                                        title="Preview the SQL these changes
- would run"
-                                        onClick={togglePreview}
-                                    >
-                                        {editState.previewActive
-                                            ? "▦ Grid"
-                                            : "≡ Preview SQL"}
-                                        {dirty > 0
-                                            && !editState.previewActive
-                                            && <span class="badge">
-                                                {dirty}
-                                            </span>}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="iconButton"
-                                        title="Add a new row"
-                                        onClick={addRow}
-                                    >
-                                        + Row
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="iconButton"
-                                        title="Discard the pending changes"
-                                        disabled={dirty === 0}
-                                        onClick={revert}
-                                    >
-                                        Revert
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="iconButton primary"
-                                        title="Run the previewed statements"
-                                        disabled={dirty === 0}
-                                        onClick={apply}
-                                    >
-                                        Apply{dirty > 0 ? ` (${dirty})` : ""}
-                                    </button>
-                                </>
-                            )}
-                            <button
-                                type="button"
-                                class="iconButton"
-                                title="Run this statement again"
-                                onClick={refresh}
-                            >
-                                Refresh
-                            </button>
-                        </>
-                    )}
-                </div>
+                                    {session.open
+                                        ? session.label
+                                        : `${session.label} (closed)`}
+                                </option>
+                            );
+                        })}
+                    </select>
+                )}
             </footer>
-
-            {error !== undefined && (
-                <div class="errorBar" role="alert">{error}</div>
-            )}
         </div>
     );
 };

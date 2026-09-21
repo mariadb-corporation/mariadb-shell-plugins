@@ -67,34 +67,44 @@ export interface IStatementSource {
 }
 
 /**
- * What an output row stands for: one execution, or one statement of it.
+ * What an action row stands for: one execution, one statement of it, or
+ * one other thing that happened on the connection.
  *
  * The grid is a tree of the first over the second, so a run reads as one
  * line that can be opened rather than as a block of lines to be picked
- * apart by eye.
+ * apart by eye. An `event` - a connection opened, a schema listed - has
+ * nothing under it and is a line of its own.
  */
-export type OutputRowRole = "run" | "statement";
+export type ActionRole = "run" | "statement" | "event";
 
 /**
- * How an output row is marked. `pending` is a run that has been started
+ * How an action row is marked. `pending` is a run that has been started
  * and has not reported back yet; the other three are the Problems
  * panel's own levels.
  */
-export type OutputSeverity = "pending" | "info" | "warning" | "error";
+export type ActionSeverity = "pending" | "info" | "warning" | "error";
 
 /**
- * One row of the output grid: one execution, or one statement of one.
+ * One row of the actions grid: one execution, one statement of one, or
+ * one other event on the connection.
  *
- * Output accumulates across executions, so a row has to carry enough to
+ * Actions accumulate across executions, so a row has to carry enough to
  * stand on its own once the run that produced it is long past.
  */
-export interface IOutputRow {
+export interface IActionRow {
     /** Unique across every run, so the grid can key on it. */
     id: string;
     /** When the run started, to the millisecond. */
     time: string;
     /** The connection the statement ran on. */
     connection: string;
+    /**
+     * Which of the connections open on that URI it ran on: an index
+     * (`1`, `2`) or a name (`UI Backend`). This is what the Conn column
+     * shows, and what the session picker filters on, so a statement row
+     * carries the same label its run does.
+     */
+    connectionLabel?: string;
     /** The statement, shortened to fit. Empty on a run row. */
     statement: string;
     /** What the server said: a status line, or an error. */
@@ -110,18 +120,16 @@ export interface IOutputRow {
      * not plain information, and a run row takes the worst of what its
      * statements saw.
      */
-    kind: OutputSeverity;
-    /** Whether this is a run or one of its statements. */
-    role: OutputRowRole;
+    kind: ActionSeverity;
+    /** Whether this is a run, one of its statements, or an event. */
+    role: ActionRole;
     /**
      * The statements of a run, as the grid's child rows. A run that has
      * not reported back yet carries an empty array rather than nothing,
      * so its row keeps the expander - and its place in the column - once
      * the statements arrive.
      */
-    children?: IOutputRow[];
-    /** Rows returned by a query, or rows affected by anything else. */
-    rows?: number;
+    children?: IActionRow[];
     /**
      * How long this took, in milliseconds: the statement's own time for a
      * statement row, and the whole run's for a run row. Absent where the
@@ -134,7 +142,7 @@ export interface IOutputRow {
      */
     source?: IStatementSource;
     /**
-     * An output row to scroll to as well as jumping to the source: set on
+     * An action row to scroll to as well as jumping to the source: set on
      * the row of a run that failed, pointing at its first error. The
      * grid opens the run to get there.
      */
@@ -145,6 +153,20 @@ export interface IOutputRow {
      * offering to jump to it.
      */
     resultId?: string;
+}
+
+/**
+ * One of the connections open on a connection URI, as the session picker
+ * offers it.
+ *
+ * A connection that has been closed stays in the list for as long as its
+ * actions do: the log outlives the connection it was gathered on.
+ */
+export interface IConnectionSession {
+    /** `1`, `2`, or a name like `UI Backend`. */
+    label: string;
+    /** False once it has been closed, its actions still being there. */
+    open: boolean;
 }
 
 /** Everything one execution produced. */
@@ -160,7 +182,7 @@ export interface IExecutionReport {
      * id the pending row was started under, so it replaces it rather
      * than being appended beside it.
      */
-    output: IOutputRow[];
+    actions: IActionRow[];
     resultSets: IResultSet[];
 }
 
@@ -168,10 +190,26 @@ export interface IExecutionReport {
 export interface IViewState {
     /** Every connection to choose from, for the picker in the page. */
     connections: string[];
-    /** The connection whose output and results are on show. */
+    /** The connection whose actions and results are on show. */
     connection: string;
-    /** One row per run on it, oldest first, each holding its statements. */
-    output: IOutputRow[];
+    /**
+     * The connections open on it, for the second picker. Several can be
+     * open at once on one URI - the Connections view browses on its own
+     * one while an editor runs on another.
+     */
+    sessions: IConnectionSession[];
+    /**
+     * Which of them is on show, or undefined for all of them together -
+     * which is what the view opens on, and the only case in which the
+     * actions name a connection per row.
+     */
+    session?: string;
+    /**
+     * What happened on it, newest first: a row per run, each holding
+     * its statements, and a row per other event. Already filtered to
+     * the chosen connection, so the page shows what it is given.
+     */
+    actions: IActionRow[];
     /** Its result sets, replaced by each execution. */
     resultSets: IResultSet[];
 }
@@ -218,8 +256,13 @@ export type WebviewMessage =
     | { type: "ready" }
     | { type: "applyChanges"; resultId: string; changes: RowChange[] }
     | { type: "refresh"; resultId: string }
-    /** Put the cursor on the statement an output row came from. */
+    /** Put the cursor on the statement an action row came from. */
     | { type: "revealStatement"; source: IStatementSource }
-    /** Show another connection's output and results. */
+    /** Show another connection's actions and results. */
     | { type: "selectConnection"; connection: string }
+    /**
+     * Narrow the actions to one of the connections open on it, or show
+     * all of them together when the session is left out.
+     */
+    | { type: "selectSession"; session?: string }
     | { type: "copyToClipboard"; text: string };

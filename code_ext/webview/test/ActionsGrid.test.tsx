@@ -20,18 +20,19 @@ import { describe, expect, it, vi } from "vitest";
 
 import "./setup.js";
 import {
-    buildOutputColumns,
+    buildActionColumns,
     clickedOn,
     formatElapsed,
     formatInformationCell,
     formatMessageCell,
-    formatRowsCell,
-    formatSeverityCell,
+    createSeverityIcon,
     informationOf,
+    latestRunOf,
     runHolding,
     startsExpanded,
-} from "../src/OutputGrid.js";
-import type { IOutputRow } from "../../src/webview/protocol.js";
+    timeOf,
+} from "../src/ActionsGrid.js";
+import type { IActionRow } from "../../src/webview/protocol.js";
 
 /**
  * Tabulator needs real layout and never builds under jsdom, so what it
@@ -42,9 +43,9 @@ import type { IOutputRow } from "../../src/webview/protocol.js";
 /**
  * @param overrides The fields that differ from a plain info row.
  *
- * @returns An output row.
+ * @returns An action row.
  */
-const row = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
+const row = (overrides: Partial<IActionRow> = {}): IActionRow => {
     return {
         id: "run1-0",
         time: "12:00:00.123",
@@ -53,7 +54,6 @@ const row = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
         statement: "SELECT 1",
         message: "1 row in set",
         kind: "info",
-        rows: 1,
         elapsedMs: 4,
         ...overrides,
     };
@@ -64,7 +64,7 @@ const row = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
  *
  * @returns The row one execution reads as.
  */
-const run = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
+const run = (overrides: Partial<IActionRow> = {}): IActionRow => {
     return {
         id: "run1",
         time: "12:00:00.123",
@@ -86,7 +86,7 @@ const run = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
  *
  * @returns A stand-in for Tabulator's cell component.
  */
-const cell = (data: IOutputRow, value: unknown = undefined) => {
+const cell = (data: IActionRow, value: unknown = undefined) => {
     return {
         getValue: () => {
             return value;
@@ -101,13 +101,26 @@ const cell = (data: IOutputRow, value: unknown = undefined) => {
 
 describe("formatElapsed", () => {
     it("shows milliseconds below a second", () => {
-        expect(formatElapsed(0)).toBe("0 ms");
-        expect(formatElapsed(999)).toBe("999 ms");
+        expect(formatElapsed(0)).toBe("0ms");
+        expect(formatElapsed(999)).toBe("999ms");
     });
 
     it("shows seconds above one", () => {
-        expect(formatElapsed(1000)).toBe("1.000 s");
-        expect(formatElapsed(1234)).toBe("1.234 s");
+        expect(formatElapsed(1000)).toBe("1.000s");
+        expect(formatElapsed(1234)).toBe("1.234s");
+    });
+});
+
+describe("timeOf", () => {
+    it("puts how long it took after when it started", () => {
+        expect(timeOf(row({ time: "20:44:13.431", elapsedMs: 3 })))
+            .toBe("20:44:13.431 (3ms)");
+    });
+
+    it("says only when a run that is still going started", () => {
+        // A (0ms) would claim it had finished.
+        expect(timeOf(run({ time: "20:44:13.431", elapsedMs: undefined })))
+            .toBe("20:44:13.431");
     });
 });
 
@@ -120,9 +133,41 @@ const click = (target: Element): Event => {
     return { target } as unknown as Event;
 };
 
-describe("formatRowsCell", () => {
+describe("formatMessageCell", () => {
+    it("offers a go-to arrow for a row that knows where its statement is",
+        () => {
+            const rendered = formatMessageCell(cell(row({
+                source: { uri: "file:///q.sql", line: 3, character: 0 },
+            })), new Set());
+            const button = rendered.querySelector("button");
+
+            expect(button?.className).toBe("goToStatement");
+            expect(button?.title).toBe("Go to this statement in the editor");
+        });
+
+    it("leads with the severity marker", () => {
+        const rendered = formatMessageCell(cell(row({ kind: "error" })),
+            new Set());
+
+        // In the cell, after the twistie or the branch Tabulator puts
+        // in front of it, rather than in a column of its own.
+        expect(rendered.firstElementChild?.className)
+            .toBe("markerIcon error codicon codicon-error");
+    });
+
+    it("stands in for the twistie an event does not have", () => {
+        // A top level row with no children gets neither twistie nor
+        // branch, so without this its marker would sit where every
+        // other row's message does.
+        const rendered = formatMessageCell(cell(row({ role: "event" })),
+            new Set());
+
+        expect(rendered.firstElementChild?.className).toBe("treeSpacer");
+        expect(rendered.querySelector(".markerIcon")).not.toBeNull();
+    });
+
     it("offers a jump where the result set is still on show", () => {
-        const rendered = formatRowsCell(
+        const rendered = formatMessageCell(
             cell(row({ resultId: "run1-result-0" })),
             new Set(["run1-result-0"]),
         );
@@ -134,60 +179,37 @@ describe("formatRowsCell", () => {
 
     it("offers nothing where the result set has been replaced", () => {
         // A later run replaced the tabs, so this row's result is gone.
-        expect(formatRowsCell(
+        expect(formatMessageCell(
             cell(row({ resultId: "run1-result-0" })),
             new Set(["run2-result-0"]),
         ).querySelector("button")).toBeNull();
     });
 
-    it("offers nothing for a row that produced no result set", () => {
-        expect(formatRowsCell(cell(row()), new Set(["run1-result-0"]))
-            .querySelector("button")).toBeNull();
+    it("offers both arrows, in one place, when there are both", () => {
+        const rendered = formatMessageCell(cell(row({
+            resultId: "run1-result-0",
+            source: { uri: "file:///q.sql", line: 3, character: 0 },
+        })), new Set(["run1-result-0"]));
+
+        expect([...rendered.querySelectorAll(".actionArrows button")]
+            .map((button) => { return button.className; }))
+            .toEqual(["jumpToResult", "goToStatement"]);
     });
 
-    it("holds the arrow's place so the counts stay in a column", () => {
-        // Without the slot a row with no jump would let its count slide
-        // right, out of line with the rows above and below it.
-        const rendered = formatRowsCell(cell(row()), new Set());
-
-        expect(rendered.querySelector(".outputJumpSlot")).not.toBeNull();
-    });
-
-    it("shows the row count, and nothing where there is none", () => {
-        expect(formatRowsCell(cell(row({ rows: 3 })), new Set())
-            .textContent).toBe("3");
-        expect(formatRowsCell(cell(row({ rows: undefined })), new Set())
-            .textContent).toBe("");
-    });
-});
-
-describe("formatMessageCell", () => {
-    it("offers a go-to arrow for a row that knows where its statement is",
-        () => {
-            const rendered = formatMessageCell(cell(row({
-                source: { uri: "file:///q.sql", line: 3, character: 0 },
-            })));
-            const button = rendered.querySelector("button");
-
-            expect(button?.className).toBe("goToStatement");
-            expect(button?.title).toBe("Go to this statement in the editor");
-            // The message gives up the corner the arrow sits in.
-            expect(rendered.classList.contains("hasGoTo")).toBe(true);
-        });
-
-    it("offers nothing for a row with no source", () => {
-        const rendered = formatMessageCell(cell(row()));
+    it("offers nothing for a row with neither", () => {
+        const rendered = formatMessageCell(cell(row()), new Set());
 
         expect(rendered.querySelector("button")).toBeNull();
         expect(rendered.textContent).toBe("1 row in set");
-        expect(rendered.classList.contains("hasGoTo")).toBe(false);
+        // No arrows, no room given up for them.
+        expect(rendered.querySelector(".actionArrows")).toBeNull();
     });
 
     it("says it goes to the first error on a failed run's row", () => {
         const rendered = formatMessageCell(cell(run({
             source: { uri: "file:///q.sql", line: 3, character: 0 },
             jumpToRowId: "run1-2",
-        })));
+        })), new Set());
 
         expect(rendered.querySelector("button")?.title)
             .toBe("Go to the first error of this run");
@@ -220,14 +242,14 @@ describe("clickedOn", () => {
     });
 });
 
-describe("formatSeverityCell", () => {
+describe("createSeverityIcon", () => {
     it.each([
         ["info", "codicon-info"],
         ["warning", "codicon-warning"],
         ["error", "codicon-error"],
     ] as const)("draws %s with the Problems panel's glyph",
         (kind, codicon) => {
-            const rendered = formatSeverityCell(cell(row({ kind })));
+            const rendered = createSeverityIcon(row({ kind }));
 
             expect(rendered.className)
                 .toBe(`markerIcon ${kind} codicon ${codicon}`);
@@ -235,8 +257,8 @@ describe("formatSeverityCell", () => {
         });
 
     it("spins the marker of a run that has not reported back", () => {
-        const rendered = formatSeverityCell(
-            cell(run({ kind: "pending", summary: "Running\u2026" })));
+        const rendered = createSeverityIcon(
+            run({ kind: "pending", summary: "Running\u2026" }));
 
         expect(rendered.className).toBe(
             "markerIcon pending codicon codicon-loading "
@@ -246,6 +268,16 @@ describe("formatSeverityCell", () => {
 });
 
 describe("informationOf", () => {
+    it("shows the call an event row stands for", () => {
+        // An event has no statement and is no run, so what it did is
+        // what the Information column has to hold.
+        expect(informationOf(row({
+            role: "event",
+            statement: "db.list_schemas()",
+        }))).toBe("db.list_schemas()");
+    });
+
+
     it("shows a statement the statement it ran", () => {
         expect(informationOf(row())).toBe("SELECT 1");
     });
@@ -263,6 +295,24 @@ describe("informationOf", () => {
 
         expect(rendered.textContent).toBe("SELECT a <> b FROM t");
         expect(rendered.children).toHaveLength(0);
+    });
+});
+
+describe("latestRunOf", () => {
+    it("finds the newest run, not merely the first row", () => {
+        // The row in front may be an event: the connection a run opens
+        // on the way is reported after the run's own row went up.
+        expect(latestRunOf([
+            row({ id: "event1", role: "event" }),
+            run({ id: "run2" }),
+            run({ id: "run1" }),
+        ])).toBe("run2");
+    });
+
+    it("finds nothing in a log of events alone", () => {
+        expect(latestRunOf([row({ id: "event1", role: "event" })]))
+            .toBeUndefined();
+        expect(latestRunOf([])).toBeUndefined();
     });
 });
 
@@ -292,7 +342,7 @@ describe("runHolding", () => {
     });
 });
 
-describe("buildOutputColumns", () => {
+describe("buildActionColumns", () => {
     const onJump = vi.fn();
     const onGoTo = vi.fn();
 
@@ -306,36 +356,54 @@ describe("buildOutputColumns", () => {
         return click(button);
     };
 
-    it("leads with the marker and the message", () => {
-        const columns = buildOutputColumns(new Set(), onJump, onGoTo);
+    it("leads with what happened", () => {
+        const columns = buildActionColumns(new Set(), onJump, onGoTo);
 
         expect(columns.map((column) => {
             return column.title;
-        })).toEqual(["", "Output", "Time", "Elapsed", "Rows", "Information"]);
-        // The marker and the message lead together, as they do in the
-        // Problems panel; the details follow.
-        expect(columns[0].field).toBe("kind");
-        expect(columns[1].field).toBe("message");
+        })).toEqual(["Actions", "Time", "Information"]);
+        // The twistie, the branch and the marker all ride in this one
+        // cell, in front of the message; there is no column of icons.
+        expect(columns[0].field).toBe("message");
     });
 
-    it("renders the elapsed time in the largest readable unit", () => {
-        const columns = buildOutputColumns(new Set(), onJump, onGoTo);
-        const format = columns[3].formatter as
+    it("names the connection last, and only when several are on show",
+        () => {
+            const withConnection = buildActionColumns(
+                new Set(), onJump, onGoTo, true);
+
+            expect(withConnection.map((column) => {
+                return column.title;
+            })).toEqual(["Actions", "Time", "Information", "Conn"]);
+            // Last, where it labels the row without standing between
+            // the marker and what it says.
+            expect(withConnection.at(-1)?.field).toBe("connectionLabel");
+            expect(withConnection.at(-1)?.cssClass).toBe("actionConnection");
+
+            // With one connection picked, a column repeating its name
+            // the whole way down says nothing.
+            expect(buildActionColumns(new Set(), onJump, onGoTo)
+                .some((column) => { return column.title === "Conn"; }))
+                .toBe(false);
+        });
+
+    it("puts how long it took in the Time column", () => {
+        const columns = buildActionColumns(new Set(), onJump, onGoTo);
+        const format = columns[1].formatter as
             (cell: CellComponent) => string;
 
-        expect(format(cell(row(), 4))).toBe("4 ms");
-        expect(format(cell(row(), 2500))).toBe("2.500 s");
-        // A run that is still under way has no time yet, and a 0 ms
-        // would claim it had.
-        expect(format(cell(run({ elapsedMs: undefined }), undefined)))
-            .toBe("");
+        expect(format(cell(row({ time: "20:44:13.431", elapsedMs: 4 }))))
+            .toBe("20:44:13.431 (4ms)");
+        expect(format(cell(run({
+            time: "20:44:13.431", elapsedMs: undefined,
+        })))).toBe("20:44:13.431");
     });
 
     it("jumps to the result set a row produced", () => {
         const handler = vi.fn();
-        const columns = buildOutputColumns(
+        const columns = buildActionColumns(
             new Set(["run1-result-0"]), handler, onGoTo);
-        const onClick = columns[4].cellClick as
+        const onClick = columns[0].cellClick as
             (event: unknown, cell: CellComponent) => void;
 
         onClick(clickOn("jumpToResult"),
@@ -346,9 +414,9 @@ describe("buildOutputColumns", () => {
 
     it("does not jump to a result set that is gone", () => {
         const handler = vi.fn();
-        const columns = buildOutputColumns(
+        const columns = buildActionColumns(
             new Set(["run2-result-0"]), handler, onGoTo);
-        const onClick = columns[4].cellClick as
+        const onClick = columns[0].cellClick as
             (event: unknown, cell: CellComponent) => void;
 
         onClick(clickOn("jumpToResult"),
@@ -359,8 +427,8 @@ describe("buildOutputColumns", () => {
 
     it("does not jump from a row with no result set", () => {
         const handler = vi.fn();
-        const columns = buildOutputColumns(new Set(), handler, onGoTo);
-        const onClick = columns[4].cellClick as
+        const columns = buildActionColumns(new Set(), handler, onGoTo);
+        const onClick = columns[0].cellClick as
             (event: unknown, cell: CellComponent) => void;
 
         onClick(clickOn("jumpToResult"), cell(row()));
@@ -369,14 +437,14 @@ describe("buildOutputColumns", () => {
     });
 
     it("does not jump when the click missed the arrow", () => {
-        // The arrow now shares its cell with the row count.
+        // Both arrows now share the message's cell.
         const handler = vi.fn();
-        const columns = buildOutputColumns(
+        const columns = buildActionColumns(
             new Set(["run1-result-0"]), handler, onGoTo);
-        const onClick = columns[4].cellClick as
+        const onClick = columns[0].cellClick as
             (event: unknown, cell: CellComponent) => void;
 
-        onClick(clickOn("outputJumpSlot"),
+        onClick(clickOn("actionMessageContent"),
             cell(row({ resultId: "run1-result-0" })));
 
         expect(handler).not.toHaveBeenCalled();
@@ -384,8 +452,8 @@ describe("buildOutputColumns", () => {
 
     it("goes to the statement a row came from", () => {
         const handler = vi.fn();
-        const columns = buildOutputColumns(new Set(), onJump, handler);
-        const onClick = columns[1].cellClick as
+        const columns = buildActionColumns(new Set(), onJump, handler);
+        const onClick = columns[0].cellClick as
             (event: unknown, cell: CellComponent) => void;
         const data = row({
             source: { uri: "file:///q.sql", line: 3, character: 0 },
@@ -398,8 +466,8 @@ describe("buildOutputColumns", () => {
 
     it("does not go anywhere from a row with no source", () => {
         const handler = vi.fn();
-        const columns = buildOutputColumns(new Set(), onJump, handler);
-        const onClick = columns[1].cellClick as
+        const columns = buildActionColumns(new Set(), onJump, handler);
+        const onClick = columns[0].cellClick as
             (event: unknown, cell: CellComponent) => void;
 
         onClick(clickOn("goToStatement"), cell(row()));
@@ -410,11 +478,11 @@ describe("buildOutputColumns", () => {
     it("does not go anywhere when the click missed the arrow", () => {
         // The arrow now shares its cell with the message.
         const handler = vi.fn();
-        const columns = buildOutputColumns(new Set(), onJump, handler);
-        const onClick = columns[1].cellClick as
+        const columns = buildActionColumns(new Set(), onJump, handler);
+        const onClick = columns[0].cellClick as
             (event: unknown, cell: CellComponent) => void;
 
-        onClick(clickOn("outputMessageContent"), cell(row({
+        onClick(clickOn("actionMessageContent"), cell(row({
             source: { uri: "file:///q.sql", line: 3, character: 0 },
         })));
 

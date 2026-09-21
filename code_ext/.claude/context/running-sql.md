@@ -48,6 +48,13 @@ Keyboard Shortcuts editor's job.
 In order: the connection explicitly picked for that document, else the
 one its header names, else the default.
 
+Which of the connections open on that URI it runs on is the editors'
+numbered one, `1` - the Connections view keeps `UI Backend` beside it for
+browsing (see [connections.md](connections.md)). `labelFor()` is asked
+for it *before* the connection is opened, because the run's row goes up
+the moment the user asks for it and every row of the run carries the
+label; `connect()` then picks the same one.
+
 **New SQL Editor** on a connection in the tree opens an unsaved `.sql`
 file bound to it. The binding is held in memory keyed by document URI,
 *and* written into the file as a header:
@@ -72,7 +79,7 @@ result of every generated file would be captioned with its header.
    be paired with the statement that produced it — the server splits again
    on its own side, and the two have to line up,
 2. runs it with `db.execute_sql_script`,
-3. sends statements without a result set to the **Output** tab and each
+3. sends statements without a result set to the **Actions** tab and each
    result set to a tab of its own,
 4. works out whether a result set can be written back.
 
