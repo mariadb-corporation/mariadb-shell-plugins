@@ -83,6 +83,47 @@ the extension grows.
 | `npm run lint` | Lint `src` and `webview`. |
 | `npm run pretest` | `typecheck` + `lint`. |
 
+### Node version, and why the lockfile keeps churning
+
+**Node is pinned exactly, in `.nvmrc` (currently `24.21.0`)**, with
+`engines.node` in `package.json` as the documented floor (`>=24.15.0`). Both
+numbers are load bearing:
+
+- The jsdom stack the webview tests run on (`jsdom`, `@asamuzakjp/dom-selector`,
+  `@asamuzakjp/css-color`) requires `^22.22.2 || ^24.15.0 || >=26.0.0`. Node 22.19
+  produces three `EBADENGINE` warnings and runs the suite on an unsupported
+  runtime; Node 24.21 produces none.
+- Node 24 ships **npm 11**, and npm 11 writes the `libc` fields that
+  `package-lock.json` carries for the optional rollup binaries. **npm 10 silently
+  strips them**, so a contributor on Node 22 rewrites the lockfile just by
+  installing. That is the churn — it is not noise to be ignored, it is two npm
+  majors disagreeing about the file's format.
+
+`package-lock.json` **is** checked in, and should be: this is an application
+(shipped as a `.vsix`, with the four runtime deps bundled into
+`dist/extension.js` by Vite), not a library whose consumers resolve their own
+tree. What the lockfile pins is literally what ships — which matters most for
+`@modelcontextprotocol/sdk`, since `src/mcp/protocol.ts` decodes shapes read off
+the running server and a floating minor could change them underneath a release
+build. `package.json` also carries `"private": true`, since the extension is
+never published to npm.
+
+**Always `npm ci`, never `npm install`, in CI.** `npm ci` installs exactly the
+locked tree and never writes the lockfile back.
+
+### CI
+
+`.github/workflows/shell-plugins-ci.yml` has a `Code-Ext-CI-Verification` job
+running `npm ci` -> `npm run pretest` -> `npm test` -> `npm run build`, on the
+Node that `code_ext/.nvmrc` names. The build step is there because the extension
+ships as a bundle: an import that only resolves under the test aliases, or an
+asset that is not copied, is invisible to the type check and the tests alike.
+
+Which suites run is decided once, by a `changes` job whose outputs the plugin
+job and this one both read — `code_ext/**` gates this job, and each `*_plugin/`
+prefix gates its own step. Adding a fifth thing to test means adding it to the
+loop in that job **and** reading the new output somewhere.
+
 ## Startup behaviour
 
 The extension activates on `onStartupFinished` and on `onLanguage:sql`, but
