@@ -459,14 +459,14 @@ def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
     """db.connect binds to the caller and the db tools check the binding."""
     opened = []
 
-    def _fake_open_session(uri):
+    def _fake_open_session(uri, kind=None):
         opened.append(uri)
         return _StubSession()
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
     uri = "root@127.0.0.1:3306"
     monkeypatch.setattr(
-        db_functions.config, "list_connection_uris", lambda: [uri]
+        db_functions.config, "list_connection_uris", lambda kind=None: [uri]
     )
 
     tools = _ToolRecorder()
@@ -554,7 +554,7 @@ def test_an_idle_session_is_closed_and_opened_again(http_transport, monkeypatch)
 
     second_session = _StubSession()
     monkeypatch.setattr(
-        db_functions, "_open_session", lambda uri: second_session
+        db_functions, "_open_session", lambda uri, kind=None: second_session
     )
 
     # Using the connection opens a new session, transparently to the caller.
@@ -602,7 +602,7 @@ def test_close_does_not_open_an_idle_session_again(http_transport, monkeypatch):
     connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
     assert db_functions._close_idle_sessions() == 1
 
-    def _fail_to_open(uri):
+    def _fail_to_open(uri, kind=None):
         raise AssertionError("db.close must not open a session")
 
     monkeypatch.setattr(db_functions, "_open_session", _fail_to_open)
@@ -627,8 +627,12 @@ def test_opening_a_connection_is_logged(http_transport, monkeypatch, capsys):
     be a place to read them out of.
     """
     uri = "root@127.0.0.1:3306"
-    monkeypatch.setattr(db_functions, "_open_session", lambda _uri: _StubSession())
-    monkeypatch.setattr(db_functions.config, "list_connection_uris", lambda: [uri])
+    monkeypatch.setattr(
+        db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
+    )
+    monkeypatch.setattr(
+        db_functions.config, "list_connection_uris", lambda kind=None: [uri]
+    )
 
     tools = _ToolRecorder()
     db_functions.register_db_tools(tools)
@@ -919,7 +923,9 @@ def test_removing_a_connection_revokes_it(http_transport, monkeypatch):
     uri = "root@127.0.0.1:3306"
     configured = [uri]
     monkeypatch.setattr(
-        db_functions.config, "list_connection_uris", lambda: list(configured)
+        db_functions.config,
+        "list_connection_uris",
+        lambda kind=None: list(configured),
     )
 
     connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
@@ -953,7 +959,9 @@ def test_a_first_open_is_validated_too(http_transport, monkeypatch):
     _open_session is what covers every path - a first open and a reopen alike -
     so a caller reaching the cache another way cannot open an unconfigured URI.
     """
-    monkeypatch.setattr(db_functions.config, "list_connection_uris", lambda: [])
+    monkeypatch.setattr(
+        db_functions.config, "list_connection_uris", lambda kind=None: []
+    )
 
     with pytest.raises(mysqlsh.Error) as refused:
         db_functions._open_session("root@192.0.2.99:3306")
@@ -973,13 +981,13 @@ def _registered_tools(monkeypatch, opened):
     """
     uri = "root@127.0.0.1:3306"
 
-    def _fake_open_session(session_uri):
+    def _fake_open_session(session_uri, kind=None):
         opened.append(session_uri)
         return _StubSession()
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
     monkeypatch.setattr(
-        db_functions.config, "list_connection_uris", lambda: [uri]
+        db_functions.config, "list_connection_uris", lambda kind=None: [uri]
     )
 
     tools = _ToolRecorder()
@@ -1076,7 +1084,7 @@ def test_a_connection_that_fails_to_open_gives_its_slot_back(
     tools, uri = _registered_tools(monkeypatch, opened)
     context = _context(CLIENT_ADDRESS)
 
-    def _fail_to_open(_uri):
+    def _fail_to_open(_uri, kind=None):
         raise mysqlsh.DBError(2003, "Can't connect to MariaDB server")
 
     monkeypatch.setattr(db_functions, "_open_session", _fail_to_open)
@@ -1091,7 +1099,9 @@ def test_a_connection_that_fails_to_open_gives_its_slot_back(
     assert db_functions._sessions == {}
 
     # Which is what lets it try again once the server is back.
-    monkeypatch.setattr(db_functions, "_open_session", lambda _uri: _StubSession())
+    monkeypatch.setattr(
+        db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
+    )
     assert tools["db.connect"](context, uri) in db_functions._sessions
 
 
@@ -1474,7 +1484,7 @@ def test_a_lost_connection_throws_the_session_away(http_transport, monkeypatch):
     """
     sessions = []
 
-    def _open(_uri):
+    def _open(_uri, kind=None):
         sessions.append(_StubSession())
         return sessions[-1]
 
@@ -1482,7 +1492,7 @@ def test_a_lost_connection_throws_the_session_away(http_transport, monkeypatch):
     monkeypatch.setattr(
         db_functions.config,
         "list_connection_uris",
-        lambda: ["root@127.0.0.1:3306"],
+        lambda kind=None: ["root@127.0.0.1:3306"],
     )
 
     connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
@@ -1520,7 +1530,9 @@ def test_an_ordinary_sql_error_keeps_the_session(http_transport, monkeypatch):
     temporary tables, session variables and open transaction on it - because of a
     typo.
     """
-    monkeypatch.setattr(db_functions, "_open_session", lambda _uri: _StubSession())
+    monkeypatch.setattr(
+        db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
+    )
 
     connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
     session_before = connection.session
@@ -1614,7 +1626,9 @@ def test_a_session_being_closed_is_not_replaced_underneath(
     # A stand-in session factory, so that a racer which is NOT refused really
     # does end up holding a second session - that leaked session is the whole
     # point, and the test has to be able to see it.
-    monkeypatch.setattr(db_functions, "_open_session", lambda _uri: _StubSession())
+    monkeypatch.setattr(
+        db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
+    )
 
     attempted = []
     connection = db_functions._Connection("root@127.0.0.1:3306", STDIO_CLIENT)

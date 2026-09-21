@@ -20,6 +20,20 @@ export interface IConnectionUri {
     uri: string;
 }
 
+/**
+ * Which list of connections a `db.*_connection` call works on.
+ *
+ * `mcp` is the shared list that `mcp.setup` curates and every MCP client on
+ * this machine can open; `gui` is the list this extension manages for itself.
+ * They are stored apart, so the same server can be in both under different
+ * credentials, and an entry has to be deleted from the list it is in.
+ *
+ * Only a server started with `--gui` knows about the second one at all.
+ */
+export const CONNECTION_KINDS = ["mcp", "gui"] as const;
+
+export type ConnectionKind = (typeof CONNECTION_KINDS)[number];
+
 /** One entry of `db.list_schemas`. */
 export interface ISchemaInfo {
     schema_name: string;
@@ -112,7 +126,14 @@ export interface IStatementResult {
  * result panel be tested without a shell.
  */
 export interface IMariaDbApi {
-    listConnections(): Promise<string[]>;
+    listConnections(kind?: ConnectionKind): Promise<string[]>;
+    addConnection(
+        uri: string,
+        password: string,
+        kind?: ConnectionKind,
+        verify?: boolean,
+    ): Promise<string>;
+    deleteConnection(uri: string, kind?: ConnectionKind): Promise<string>;
     connect(uri: string): Promise<string>;
     close(connectionId: string): Promise<void>;
     listSchemas(connectionId: string): Promise<ISchemaInfo[]>;

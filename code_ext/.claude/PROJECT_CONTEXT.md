@@ -109,11 +109,44 @@ drives the shell lookup:
    `Verifying checksum` and `Unpacking into ...` become the notification's
    message as they arrive.
 
-`McpSession` then starts `<shell> -- mcp start-server --transport=stdio`
-through the MCP SDK's stdio transport, which owns the process. Its stdin
-and stdout carry the protocol; stderr goes to the **MariaDB** output
-channel. Concurrent callers share one start, so the tree, the toolbar and
-the panel cannot each spawn a server.
+`McpSession` then starts
+`<shell> -- mcp start-server --transport=stdio --gui` through the MCP SDK's
+stdio transport, which owns the process. Its stdin and stdout carry the
+protocol; stderr goes to the **MariaDB** output channel. Concurrent callers
+share one start, so the tree, the toolbar and the panel cannot each spawn a
+server.
+
+## GUI mode (`--gui`)
+
+`--gui` tells the MCP server its client is this extension rather than an
+autonomous agent, and that changes two things about the server:
+
+- **Every local path is accessible.** Without it the server keeps an
+  allowed-path list (`mcp.setup`) and asks, by MCP elicitation, before
+  touching anything outside it. The extension names paths the user just
+  picked in VS Code's own dialogs, so there is nothing left to confirm.
+- **The connection list is writable**, through `db.add_connection` and
+  `db.delete_connection`, which a server serves in this mode only. There
+  are then **two** lists, told apart by a `kind`:
+
+  | kind | who owns it | secret prefix |
+  | --- | --- | --- |
+  | `mcp` (the default) | `mcp.setup`; every MCP client can open these | `MCP:Connection:` |
+  | `gui` | this extension, via the two tools above | `GUI:Connection:` |
+
+  `db.list_connections` reports **one kind per call**, so the extension
+  asks twice to see both and always knows which list an entry is in — which
+  it needs, since a connection is deleted from the list it is in. The same
+  server may be in both under different credentials; `db.connect` then
+  opens the `gui` one.
+
+`MCP_SERVER_ARGS` in `src/shell/constants.ts` is where the flag is passed.
+A shell whose MCP plugin predates it **ignores it rather than failing** (the
+plugin function takes its options as a dictionary and reads only the ones it
+knows), so such a server simply comes up without GUI mode.
+`MariaDbApi.listConnections`/`addConnection`/`deleteConnection` leave `kind`
+and `verify` out of the call entirely when they were not given, for the same
+reason.
 
 ## The MCP wire format
 
@@ -647,6 +680,11 @@ form, which is uppercase and absolute - hence `fileLocation: "absolute"`.
   timing, a failing script reports one error for the whole call with no
   statement to jump to, and `stopOnError: false` is ignored. Raise the
   minimum once a shell carrying the new plugin ships.
+- The `db.add_connection` / `db.delete_connection` tools are reachable
+  through `MariaDbApi` but **nothing in the UI calls them yet**: there is no
+  "Add Connection" command, no credentials dialog and no tree entry for the
+  `gui` list. Adding and removing connections is still `mcp.setup`'s job
+  from the user's point of view.
 - The result grid edits every value as text; there is no type-aware editor
   (date picker, NULL toggle, BLOB viewer) yet, and no cell context menu.
 - There is no paging. The MySQL Shell's result view pages through a result

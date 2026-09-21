@@ -30,7 +30,9 @@ describe("buildMcpServerCommand", () => {
     it("starts the MCP server over stdio", () => {
         expect(buildMcpServerCommand(location)).toEqual({
             command: "/usr/local/bin/mariadb-shell",
-            args: ["--", "mcp", "start-server", "--transport=stdio"],
+            args: [
+                "--", "mcp", "start-server", "--transport=stdio", "--gui",
+            ],
         });
     });
 
@@ -51,6 +53,6 @@ describe("buildMcpServerCommand", () => {
         const first = buildMcpServerCommand(location);
         first.args.push("--extra");
 
-        expect(buildMcpServerCommand(location).args).toHaveLength(4);
+        expect(buildMcpServerCommand(location).args).toHaveLength(5);
     });
 });

@@ -19,6 +19,7 @@ import type { IConnectionSettings } from "../connections/connectionManager.js";
 import type { IToolResult } from "../mcp/protocol.js";
 import type { IMcpConnection, IMcpConnector } from "../mcp/session.js";
 import type {
+    ConnectionKind,
     IMariaDbApi,
     IObjectDetails,
     IObjectInfo,
@@ -139,6 +140,8 @@ export const createRecordingLog = (): RecordingLog => {
 /** What a fake database API should answer with. */
 export interface FakeApiOptions {
     connections?: string[];
+    /** The connections of the extension's own list, if it has any. */
+    guiConnections?: string[];
     /** Connection URI -> the UUID handing it out produces. */
     connectionIds?: Record<string, string>;
     schemas?: ISchemaInfo[];
@@ -157,6 +160,10 @@ export interface FakeApi extends IMariaDbApi {
     scripts: string[];
     /** The connections that were closed, in order. */
     closed: string[];
+    /** The connections that were added, in order. */
+    added: Array<{ uri: string; password: string; kind?: ConnectionKind }>;
+    /** The connections that were deleted, in order. */
+    deleted: Array<{ uri: string; kind?: ConnectionKind }>;
     /** What the last script was asked to do about a failing statement. */
     stopOnError?: boolean;
 }
@@ -171,13 +178,37 @@ export interface FakeApi extends IMariaDbApi {
 export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
     const scripts: string[] = [];
     const closed: string[] = [];
+    const added: FakeApi["added"] = [];
+    const deleted: FakeApi["deleted"] = [];
 
     const api: FakeApi = {
         scripts,
         closed,
+        added,
+        deleted,
 
-        listConnections: () => {
-            return Promise.resolve(options.connections ?? []);
+        listConnections: (kind?: ConnectionKind) => {
+            return Promise.resolve(
+                (kind === "gui"
+                    ? options.guiConnections
+                    : options.connections) ?? [],
+            );
+        },
+
+        addConnection: (
+            uri: string,
+            password: string,
+            kind?: ConnectionKind,
+        ) => {
+            added.push({ uri, password, kind });
+
+            return Promise.resolve(uri);
+        },
+
+        deleteConnection: (uri: string, kind?: ConnectionKind) => {
+            deleted.push({ uri, kind });
+
+            return Promise.resolve(uri);
         },
 
         connect: (uri: string) => {

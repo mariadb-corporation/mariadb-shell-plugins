@@ -502,10 +502,11 @@ class _Connection:
     """A database connection opened with ``db.connect``.
 
     Holds the open shell session together with what is needed to police its
-    use: the URI it was opened from, so a session closed for being idle can be
-    opened again, the address of the client that opened it, the time it was last
-    used and the time it was opened - the first bounding the life of its
-    session, the second the life of the connection itself.
+    use: the URI it was opened from and the connection list it came out of, so
+    a session closed for being idle can be opened again, the address of the
+    client that opened it, the time it was last used and the time it was opened
+    - the first bounding the life of its session, the second the life of the
+    connection itself.
 
     The lock is held for as long as a tool works with the session. That keeps
     the idle reaper from closing a session out from under a running statement,
@@ -513,8 +514,13 @@ class _Connection:
     cannot run two statements at once anyway.
     """
 
-    def __init__(self, uri: str, client):
+    def __init__(self, uri: str, client, kind=None):
         self.uri = uri
+        # Which of the two connection lists the URI was resolved in (see
+        # mcp_plugin.lib.config). Kept for the life of the connection because
+        # the URI alone no longer identifies one: the password is read under
+        # this kind, and so is the re-validation every reopened session does.
+        self.kind = config.normalize_connection_kind(kind)
         # Normalized on the way in, so the stored identity and the one a later
         # request is compared against are always in the same form.
         self.client = general.normalize_client_identity(client)
@@ -615,7 +621,7 @@ class _Connection:
                 raise _ConnectionClosed()
 
             if self.session is None:
-                self.session = _open_session(self.uri)
+                self.session = _open_session(self.uri, self.kind)
 
             return self.session
 
@@ -693,27 +699,38 @@ class _Connection:
             self.lock.release()
 
 
-def _open_session(uri: str):
+def _open_session(uri: str, kind=None):
     """Opens a shell session for one of the configured connection URIs.
 
     The URI is checked against the configured connections here, on every open
     and not only in ``db.connect``, because a connection can be taken away while
     a UUID for it is still live: an operator can remove it with ``mcp.setup``,
-    and ``sandbox.delete`` removes the one its ``sandbox.deploy`` registered.
+    the extension can remove it with ``db.delete_connection``, and
+    ``sandbox.delete`` removes the one its ``sandbox.deploy`` registered.
     Without this check, a session reopened after an idle period would come back
     on a URI that is no longer configured - the stored password is read again on
     every open, so the connection would keep working and removing it would not
     revoke anything.
 
+    The check is made in the connection list the URI was resolved in, and in
+    that one only: a connection deleted from the GUI list is revoked even where
+    the MCP list happens to name the same server, which it would not be if any
+    list holding the URI counted.
+
     Args:
-        uri (str): The connection URI, as configured via ``mcp.setup``.
+        uri (str): The connection URI, as configured via ``mcp.setup`` or
+            ``db.add_connection``.
+        kind: The connection list it belongs to, or None for the MCP list (see
+            :mod:`mcp_plugin.lib.config`).
 
     Returns:
         The open shell session.
     """
+    kind = config.normalize_connection_kind(kind)
+
     # The list is read from the secret store on each call, so it reflects what
     # is configured now rather than what was configured when db.connect ran.
-    if uri not in config.list_connection_uris():
+    if uri not in config.list_connection_uris(kind):
         raise mysqlsh.Error(
             f"'{uri}' is no longer a configured connection. Use "
             "db.list_connections to see the configured connections and "
@@ -723,7 +740,7 @@ def _open_session(uri: str):
     # Read the stored password back and open the session with it. The session
     # is independent of the shell's global session.
     connection_data = mysqlsh.globals.shell.parse_uri(uri)
-    connection_data["password"] = config.get_connection_password(uri)
+    connection_data["password"] = config.get_connection_password(uri, kind)
 
     return mysqlsh.globals.shell.open_session(connection_data)
 
@@ -1476,8 +1493,205 @@ def _parse_json_fields(rows: list, field: str) -> list:
     return rows
 
 
+def _drop_connections_on(uri: str, kind: str) -> int:
+    """Ends every open connection that was opened on one configured connection.
+
+    Called when that connection is deleted, so that deleting it takes effect at
+    once rather than at the next time a session happens to be reopened. Without
+    this a UUID handed out before the deletion goes on working for as long as
+    its session lives - which for a connection in steady use is until it reaches
+    CONNECTION_MAX_LIFETIME.
+
+    Args:
+        uri (str): The configured connection URI, as it is stored.
+        kind (str): The connection list it was stored in.
+
+    Returns:
+        How many open connections were dropped.
+    """
+    with _sessions_lock:
+        connection_ids = [
+            connection_id
+            for connection_id, connection in _sessions.items()
+            if connection.uri == uri and connection.kind == kind
+        ]
+
+    for connection_id in connection_ids:
+        _drop_connection(
+            connection_id, f"its connection '{uri}' ({kind}) was deleted"
+        )
+
+    return len(connection_ids)
+
+
+def _register_connection_management_tools(tool) -> None:
+    """Registers the connection tools a server started with ``--gui`` serves.
+
+    Only in GUI mode, which is what makes the connection list writable at all:
+    everywhere else it is curated with ``mcp.setup``, deliberately out of reach
+    of the clients that use it, so that a client cannot give itself credentials
+    for a server nobody configured. The extension is not such a client - it is
+    the user interface the user is entering those credentials into (see
+    :func:`mcp_plugin.lib.general.set_gui_mode`).
+
+    These tools take the connection list to work on as a ``kind``, because the
+    extension works with both: the shared ``mcp`` list, which every MCP client
+    sees and ``mcp.setup`` curates, and the ``gui`` list, which is the
+    extension's own. It defaults to ``mcp``, so a call that does not say means
+    the same list every other caller means.
+
+    Args:
+        tool: The registrar decorator factory to register with.
+
+    Returns:
+        None
+    """
+
+    @tool(name="db.list_connections")
+    def list_connections(kind: str = config.DEFAULT_CONNECTION_KIND) -> list:
+        """Lists the configured database connection URIs of one kind.
+
+        Args:
+            kind: Which list of connections to return. "mcp" (the default) is
+                the shared list that mcp.setup curates and every MCP client can
+                open; "gui" is the list the MariaDB VS Code extension manages
+                for itself with db.add_connection and db.delete_connection.
+                Call this once per kind to see both.
+
+        Returns:
+            The list of connection URIs of that kind. Any of these can be
+            passed to db.connect.
+        """
+        return config.list_connection_uris(kind)
+
+    @tool(name="db.add_connection")
+    def add_connection(
+        uri: str,
+        password: str = "",
+        kind: str = config.DEFAULT_CONNECTION_KIND,
+        verify: bool = True,
+    ) -> str:
+        """Stores a database connection and its password.
+
+        The password goes into the operating system's secret store rather than
+        into any file, and the URI is stored normalized, which is the spelling
+        db.list_connections then reports.
+
+        Storing a connection that is already in that list updates its password
+        rather than failing, so this is safe to call again.
+
+        Args:
+            uri: The connection URI to store, for example user@host:3306. It
+                must NOT carry a password - normalization strips one, so it
+                would be stored without a password at all; pass it as the
+                password argument instead.
+            password: The password to store. An empty string is stored as an
+                empty password, which is what a server with no password for
+                that account wants.
+            kind: Which list to store it in. "mcp" (the default) is the shared
+                list that every MCP client can open; "gui" is the list the
+                MariaDB VS Code extension manages for itself.
+            verify: Whether to open a session with the credentials first and
+                store them only if that works, which is the default. Pass false
+                to store a connection to a server that is not up yet.
+
+        Returns:
+            The normalized connection URI the connection was stored under.
+        """
+        kind = config.normalize_connection_kind(kind)
+
+        # Refused rather than used or quietly dropped, as mcp.setup refuses it:
+        # normalization strips a password out of the URI, so using it would
+        # mean storing a connection with no password at all.
+        parsed = config.parse_connection_uri(uri)
+        if parsed is not None and parsed.get("password"):
+            raise mysqlsh.Error(
+                "The connection URI carries a password. Give the URI without "
+                "it and pass the password as the 'password' argument."
+            )
+
+        normalized = config.normalize_connection_uri(uri)
+        if normalized is None:
+            raise mysqlsh.Error(f"'{uri}' is not a valid connection URI.")
+
+        if verify:
+            # The same check mcp.setup makes, through the same function: a
+            # connection has to be accepted on identical terms however it was
+            # added. Imported here rather than at module scope to keep the
+            # setup modules out of the import graph of the tools.
+            from mcp_plugin.lib import setup_cli
+
+            try:
+                setup_cli.verify_connection(normalized, password)
+            except Exception as error:  # noqa: BLE001 - surface the shell's text
+                raise mysqlsh.Error(
+                    f"Could not connect to '{normalized}': {error}. The "
+                    "connection was not stored. Pass verify false to store it "
+                    "anyway."
+                ) from error
+
+        replaced = normalized in config.list_connection_uris(kind)
+        config.store_connection(normalized, password, kind)
+
+        general.log_event(
+            f"db.add_connection: {'updated' if replaced else 'stored'} "
+            f"'{normalized}' ({kind})"
+        )
+
+        return normalized
+
+    @tool(name="db.delete_connection")
+    def delete_connection(
+        uri: str, kind: str = config.DEFAULT_CONNECTION_KIND
+    ) -> str:
+        """Deletes a stored database connection and its password.
+
+        Every connection open on it is closed as well, so the deletion takes
+        effect at once and the UUIDs db.connect handed out for it stop working.
+
+        Args:
+            uri: The connection to delete. It does not have to be spelled
+                exactly as db.list_connections reports it, only name the same
+                connection.
+            kind: Which list to delete it from. "mcp" (the default) is the
+                shared list that every MCP client can open; "gui" is the list
+                the MariaDB VS Code extension manages for itself. A connection
+                is only deleted from the list named here, even where the other
+                list holds the same URI.
+
+        Returns:
+            The connection URI that was deleted, as it was stored.
+        """
+        kind = config.normalize_connection_kind(kind)
+
+        configured_uri = config.resolve_connection_uri(uri, kind)
+        if configured_uri is None:
+            configured = config.list_connection_uris(kind)
+            raise mysqlsh.Error(
+                f"'{uri}' is not a configured '{kind}' connection. Configured "
+                f"connections: {', '.join(configured) or 'none'}."
+            )
+
+        config.delete_connection(configured_uri, kind)
+        dropped = _drop_connections_on(configured_uri, kind)
+
+        general.log_event(
+            f"db.delete_connection: deleted '{configured_uri}' ({kind}), "
+            f"dropping {dropped} open connection(s)"
+        )
+
+        return configured_uri
+
+
 def register_db_tools(server, function_groups=()) -> None:
     """Registers the database connection tools on the given server.
+
+    Which tools those are depends on GUI mode: a server started with ``--gui``
+    also serves ``db.add_connection`` and ``db.delete_connection``, and its
+    ``db.list_connections`` takes the connection list to report (see
+    :func:`_register_connection_management_tools`). GUI mode is read once, here,
+    because it decides what the server ADVERTISES - so it has to be settled
+    before a client asks.
 
     Args:
         server: The MCPServer instance to register the tools on.
@@ -1491,15 +1705,18 @@ def register_db_tools(server, function_groups=()) -> None:
 
     tool = tool_registrar(server)
 
-    @tool(name="db.list_connections")
-    def list_connections() -> list:
-        """Lists the configured database connection URIs.
+    if general.is_gui_mode():
+        _register_connection_management_tools(tool)
+    else:
+        @tool(name="db.list_connections")
+        def list_connections() -> list:
+            """Lists the configured database connection URIs.
 
-        Returns:
-            The list of connection URIs configured via mcp.setup. Any of these
-            can be passed to db.connect.
-        """
-        return config.list_connection_uris()
+            Returns:
+                The list of connection URIs configured via mcp.setup. Any of
+                these can be passed to db.connect.
+            """
+            return config.list_connection_uris()
 
     @tool(name="db.connect")
     def connect(ctx: Context, uri: str) -> str:
@@ -1540,13 +1757,17 @@ def register_db_tools(server, function_groups=()) -> None:
         # Resolved to the spelling the connection is configured under, which is
         # the key the password is read under and the URI everything from here on
         # works with: the session is opened on it, it is re-validated against
-        # the configuration on every open, and it is what the log says.
-        configured_uri = config.resolve_connection_uri(uri)
-        if configured_uri is None:
+        # the configuration on every open, and it is what the log says. The list
+        # it was found in comes back with it and is kept for the same reason -
+        # in GUI mode there are two, and the URI alone does not say which.
+        found = config.find_connection(uri)
+        if found is None:
             raise mysqlsh.Error(
                 f"'{uri}' is not a configured connection. Use db.list_connections "
                 "to list the available connections, or configure it with mcp.setup."
             )
+
+        configured_uri, kind = found
 
         # The connection belongs to the client that opens it. Without both the
         # peer address and the MCP session id to bind it to there is no way to
@@ -1567,7 +1788,7 @@ def register_db_tools(server, function_groups=()) -> None:
                 "server can determine."
             )
 
-        connection = _Connection(configured_uri, client)
+        connection = _Connection(configured_uri, client, kind)
         connection_id = str(uuid.uuid4())
 
         # Room is claimed before the session is opened, so a call that is going
@@ -1591,7 +1812,8 @@ def register_db_tools(server, function_groups=()) -> None:
         # client it was bound to, and which stored credentials it was opened on.
         general.log_event(
             f"db.connect: opened connection {general.log_id_prefix(connection_id)} "
-            f"on '{configured_uri}' for {general.describe_client(client)}"
+            f"on '{configured_uri}' ({kind}) for "
+            f"{general.describe_client(client)}"
         )
 
         return connection_id

@@ -51,6 +51,18 @@ def start_server(**options) -> None:
             "sandbox" and "migrator". Defaults to all groups. The "migrator"
             group registers its tools only where the MySQL-to-MariaDB
             migration tooling is installed (see mcp.setup).
+        gui (bool): Serve for the MariaDB VS Code extension. The extension is
+            a user interface the user drives directly on this machine, not an
+            autonomous client, so two things the allow-lists exist to ask such
+            a client about are turned on: every local path is accessible
+            without being added to the allowed paths with mcp.setup, and the
+            configured connections can be managed over the protocol with the
+            db.add_connection and db.delete_connection tools that only this
+            mode serves. Those tools, and db.list_connections, then take a
+            "kind" naming which list of connections to work on: "mcp", the
+            shared one mcp.setup curates, or "gui", the one the extension
+            manages for itself. db.connect opens a connection from either,
+            preferring the "gui" one where both name the same server.
         allowed_hosts (list): Additional values of the HTTP Host header to
             accept, for a server reached under a name that cannot be derived
             from the host it binds to - through a reverse proxy, a port forward
@@ -66,6 +78,7 @@ def start_server(**options) -> None:
     host = options.get("host", lib.general.DEFAULT_HOST)
     port = int(options.get("port", lib.general.DEFAULT_PORT))
     transport = options.get("transport", lib.general.DEFAULT_TRANSPORT)
+    gui = bool(options.get("gui", False))
 
     function_groups = options.get("function_groups", None)
     if function_groups is None:
@@ -88,4 +101,5 @@ def start_server(**options) -> None:
         transport=transport,
         function_groups=function_groups,
         allowed_hosts=allowed_hosts,
+        gui=gui,
     )
