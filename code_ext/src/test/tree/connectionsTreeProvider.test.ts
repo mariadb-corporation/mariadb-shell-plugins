@@ -38,9 +38,11 @@ const resolveIcon: IconResolver = (name: string) => {
 };
 
 /**
+ * @param connectOnOpen Whether expanding a closed connection opens it.
+ *
  * @returns A provider over a fake server with one connection.
  */
-const createProvider = () => {
+const createProvider = (connectOnOpen = false) => {
     const api = createFakeApi({
         connections: ["dba@localhost:3310"],
         connectionIds: { "dba@localhost:3310": "uuid-dba" },
@@ -58,7 +60,7 @@ const createProvider = () => {
     );
     const log = createRecordingLog();
     const provider = new ConnectionsTreeProvider(
-        connections, resolveIcon, log);
+        connections, resolveIcon, log, () => { return connectOnOpen; });
 
     return { api, connections, provider, log };
 };
@@ -83,6 +85,7 @@ describe("ConnectionsTreeProvider", () => {
             connected: false,
             isDefault: false,
             connectionKind: "mcp",
+            expandable: false,
         }]);
 
         provider.dispose();
@@ -140,6 +143,7 @@ describe("ConnectionsTreeProvider", () => {
             connected: true,
             isDefault: false,
             connectionKind: "gui",
+            expandable: true,
         } as const;
 
         provider.refresh(node);
@@ -166,6 +170,65 @@ describe("ConnectionsTreeProvider", () => {
 
             provider.dispose();
         });
+
+    it("opens a connection the user expands", async () => {
+        const { connections, provider } = createProvider(true);
+        const [root] = await provider.getChildren();
+
+        await provider.expanded(root);
+
+        expect(connections.isConnected("dba@localhost:3310")).toBe(true);
+        // The children come from the refresh that opening fires, which is
+        // why expanding answers with nothing itself.
+        expect(await provider.getChildren(root)).toHaveLength(1);
+
+        provider.dispose();
+    });
+
+    it("leaves a connection closed on expand in the explicit mode",
+        async () => {
+            const { connections, provider } = createProvider();
+            const [root] = await provider.getChildren();
+
+            await provider.expanded(root);
+
+            expect(connections.isConnected("dba@localhost:3310")).toBe(false);
+
+            provider.dispose();
+        });
+
+    it("says why a connection the user expanded would not open",
+        async () => {
+            const { api, connections, provider, log } = createProvider(true);
+            const [root] = await provider.getChildren();
+            api.connect = () => {
+                return Promise.reject(new Error("access denied"));
+            };
+
+            await provider.expanded(root);
+
+            expect(connections.isConnected("dba@localhost:3310")).toBe(false);
+            expect(errorMessages).toEqual(["MariaDB: access denied"]);
+            expect(log.lines.join("\n"))
+                .toContain("Failed to open 'dba@localhost:3310'");
+
+            provider.dispose();
+        });
+
+    it("ignores the expansion of anything but a connection", async () => {
+        const { connections, provider } = createProvider(true);
+
+        await provider.expanded({
+            kind: "objectGroup",
+            uri: "dba@localhost:3310",
+            schema: "world",
+            objectType: "table",
+        });
+
+        expect(connections.isConnected("dba@localhost:3310")).toBe(false);
+
+        provider.dispose();
+    });
 
     it("stops listening once disposed", async () => {
         const { connections, provider } = createProvider();

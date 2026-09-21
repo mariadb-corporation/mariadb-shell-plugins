@@ -50,6 +50,7 @@ const connection = (
         connected: false,
         isDefault: false,
         connectionKind: "gui",
+        expandable: false,
         ...overrides,
     };
 };
@@ -65,14 +66,21 @@ describe("createTreeItem for a connection", () => {
         });
     });
 
-    it("is not expandable while it is closed", () => {
+    it("has no twistie where the model says it has nothing to show", () => {
         expect(createTreeItem(connection(), resolveIcon).collapsibleState)
             .toBe(TreeItemCollapsibleState.None);
     });
 
-    it("becomes expandable once it is open", () => {
-        expect(createTreeItem(connection({ connected: true }), resolveIcon)
-            .collapsibleState).toBe(TreeItemCollapsibleState.Collapsed);
+    it("has one where the model says so, open or not", () => {
+        // A closed connection is expandable where expanding it is what
+        // opens it, which is the model's call and not this one's.
+        for (const node of [
+            connection({ connected: true, expandable: true }),
+            connection({ connected: false, expandable: true }),
+        ]) {
+            expect(createTreeItem(node, resolveIcon).collapsibleState)
+                .toBe(TreeItemCollapsibleState.Collapsed);
+        }
     });
 
     it("carries its state in the context value, for the menus", () => {

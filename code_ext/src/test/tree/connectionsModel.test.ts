@@ -29,10 +29,11 @@ import { createFakeApi, createFakeSettings } from "../helpers.js";
 
 /**
  * @param defaultConnection The default connection, if any.
+ * @param connectOnOpen Whether expanding a closed connection opens it.
  *
  * @returns A model over a fake server holding one schema with one table.
  */
-const createModel = (defaultConnection?: string) => {
+const createModel = (defaultConnection?: string, connectOnOpen = false) => {
     const api = createFakeApi({
         connections: ["dba@localhost:3310", "app@localhost:3311"],
         connectionIds: { "dba@localhost:3310": "uuid-dba" },
@@ -63,7 +64,11 @@ const createModel = (defaultConnection?: string) => {
         createFakeSettings(defaultConnection),
     );
 
-    return { api, manager, model: new ConnectionsModel(manager) };
+    return {
+        api,
+        manager,
+        model: new ConnectionsModel(manager, () => { return connectOnOpen; }),
+    };
 };
 
 describe("ConnectionsModel.getRoots", () => {
@@ -77,10 +82,13 @@ describe("ConnectionsModel.getRoots", () => {
                 connections: ["shared@localhost:3306"],
                 guiConnections: ["mine@localhost:3307"],
             });
-            const model = new ConnectionsModel(new ConnectionManager(
-                () => { return Promise.resolve(api); },
-                createFakeSettings(),
-            ));
+            const model = new ConnectionsModel(
+                new ConnectionManager(
+                    () => { return Promise.resolve(api); },
+                    createFakeSettings(),
+                ),
+                () => { return false; },
+            );
 
             expect((await model.getRoots()).map((node) => {
                 return [node.uri, node.connectionKind];
@@ -100,6 +108,7 @@ describe("ConnectionsModel.getRoots", () => {
                 connected: false,
                 isDefault: false,
                 connectionKind: "mcp",
+                expandable: false,
             },
             {
                 kind: "connection",
@@ -107,8 +116,29 @@ describe("ConnectionsModel.getRoots", () => {
                 connected: false,
                 isDefault: false,
                 connectionKind: "mcp",
+                expandable: false,
             },
         ]);
+    });
+
+    it("gives a closed connection a twistie only where opening it connects",
+        async () => {
+            // The twistie is the whole gesture in that mode, and a twistie
+            // that can never show anything is a dead end in the other.
+            const explicit = await createModel().model.getRoots();
+            const onOpen = await createModel(undefined, true).model.getRoots();
+
+            expect(explicit.map((node) => { return node.expandable; }))
+                .toEqual([false, false]);
+            expect(onOpen.map((node) => { return node.expandable; }))
+                .toEqual([true, true]);
+        });
+
+    it("gives an open connection a twistie in either mode", async () => {
+        const { manager, model } = createModel();
+        await manager.connect("dba@localhost:3310");
+
+        expect((await model.getRoots())[0].expandable).toBe(true);
     });
 
     it("marks the default connection", async () => {
@@ -140,6 +170,7 @@ describe("ConnectionsModel.getChildren", () => {
             connected,
             isDefault: false,
             connectionKind: "gui",
+            expandable: connected,
         };
     };
 
@@ -149,6 +180,18 @@ describe("ConnectionsModel.getChildren", () => {
         await expect(model.getChildren(connectionNode(false)))
             .resolves.toEqual([]);
     });
+
+    it("does not open a closed connection to answer for its children",
+        async () => {
+            // Even where expanding the row is what opens a connection: the
+            // tree asks again on every refresh, so a connection that opened
+            // itself here could never be disconnected.
+            const { manager, model } = createModel(undefined, true);
+
+            await expect(model.getChildren(connectionNode(false)))
+                .resolves.toEqual([]);
+            expect(manager.isConnected("dba@localhost:3310")).toBe(false);
+        });
 
     it("lists the schemas of an open connection", async () => {
         const { manager, model } = createModel();

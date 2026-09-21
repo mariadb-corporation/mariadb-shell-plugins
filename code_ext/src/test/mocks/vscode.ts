@@ -174,7 +174,12 @@ export const setWarningMessageAnswer = (answer: string | undefined): void => {
 export const errorMessages: string[] = [];
 export const outputChannels: MockOutputChannel[] = [];
 export const statusBarItems: MockStatusBarItem[] = [];
-export const treeViews: Array<{ id: string; options: unknown }> = [];
+export const treeViews: Array<{
+    id: string;
+    options: unknown;
+    /** Fires the view's `onDidExpandElement`, as a user expanding a row. */
+    expand: (element: unknown) => void;
+}> = [];
 export const webviewPanels: MockWebviewPanel[] = [];
 export const webviewViewProviders = new Map<string, {
     provider: { resolveWebviewView(view: MockWebviewView): void };
@@ -658,10 +663,22 @@ export const window = {
         return item;
     },
 
-    createTreeView: (id: string, options: unknown): Disposable => {
-        treeViews.push({ id, options });
+    createTreeView: (id: string, options: unknown) => {
+        const expanded = new EventEmitter<{ element: unknown }>();
+        treeViews.push({
+            id,
+            options,
+            expand: (element: unknown) => {
+                expanded.fire({ element });
+            },
+        });
 
-        return { dispose: () => { /* nothing to undo */ } };
+        return {
+            onDidExpandElement: expanded.event,
+            dispose: () => {
+                expanded.dispose();
+            },
+        };
     },
 
     registerWebviewViewProvider: (

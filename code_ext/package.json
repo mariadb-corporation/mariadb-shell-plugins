@@ -69,6 +69,19 @@
           "default": "",
           "markdownDescription": "The connection URI new SQL editors run on, as listed by `db.list_connections`. Set it from the context menu of a connection in the **Connections** view."
         },
+        "mariadb.connections.connectMode": {
+          "type": "string",
+          "default": "onOpen",
+          "enum": [
+            "onOpen",
+            "explicit"
+          ],
+          "enumDescriptions": [
+            "Opening a connection in the Connections view connects it.",
+            "A connection is only opened by the Connect button or command."
+          ],
+          "markdownDescription": "How a connection in the **Connections** view is opened. `onOpen` connects as soon as the connection is expanded, and leaves the Connect button off the row; `explicit` keeps the button and never connects on its own."
+        },
         "mariadb.execute.stopOnError": {
           "type": "boolean",
           "default": true,
@@ -257,7 +270,7 @@
       "view/item/context": [
         {
           "command": "mariadb.connect",
-          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.disconnected/",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.disconnected/ && !mariadb.connectOnOpen",
           "group": "inline@1"
         },
         {

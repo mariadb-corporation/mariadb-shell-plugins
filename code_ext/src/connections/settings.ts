@@ -28,6 +28,17 @@ export const DEFAULT_CONNECTION_SETTING = "defaultConnection";
 /** The setting deciding whether a failing statement ends a script. */
 export const STOP_ON_ERROR_SETTING = "execute.stopOnError";
 
+/** The setting deciding how a connection in the tree is opened. */
+export const CONNECT_MODE_SETTING = "connections.connectMode";
+
+/**
+ * The context key saying that connecting is implicit.
+ *
+ * The menus need it to drop the Connect button from a connection row,
+ * which in that mode duplicates what expanding the row already does.
+ */
+export const CONNECT_ON_OPEN_CONTEXT_KEY = "mariadb.connectOnOpen";
+
 /**
  * The context key holding the active SQL file's stop-on-error state.
  *
@@ -45,6 +56,33 @@ export const stopOnError = (): boolean => {
     return vscode.workspace
         .getConfiguration(CONFIG_SECTION)
         .get<boolean>(STOP_ON_ERROR_SETTING) ?? true;
+};
+
+/**
+ * Whether expanding a connection in the tree should open it.
+ *
+ * Anything but the explicit mode means yes, so a setting written by hand
+ * with a value nobody knows still lands on the documented default.
+ *
+ * @returns True to connect on open, the default.
+ */
+export const connectOnOpen = (): boolean => {
+    return vscode.workspace
+        .getConfiguration(CONFIG_SECTION)
+        .get<string>(CONNECT_MODE_SETTING) !== "explicit";
+};
+
+/**
+ * Publishes the connect mode to the context key the menus read.
+ *
+ * @returns Nothing.
+ */
+export const publishConnectMode = async (): Promise<void> => {
+    await vscode.commands.executeCommand(
+        "setContext",
+        CONNECT_ON_OPEN_CONTEXT_KEY,
+        connectOnOpen(),
+    );
 };
 
 /**

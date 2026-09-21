@@ -10,7 +10,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.addConnection` | Add Connection | Connections view title (`+`) |
 | `mariadb.editConnection` | Edit Connection | Connection context menu |
 | `mariadb.deleteConnection` | Delete Connection | Connection context menu |
-| `mariadb.connect` | Connect | Connection context menu |
+| `mariadb.connect` | Connect | Connection context menu; the inline button only in the explicit connect mode |
 | `mariadb.disconnect` | Disconnect | Connection context menu |
 | `mariadb.newSqlEditor` | New SQL Editor | Connection row, beside Connect |
 | `mariadb.setDefaultConnection` | Set as Default Connection | Connection context menu |

@@ -30,6 +30,12 @@ export interface IConnectionNode {
      * and deleting both need it - and it is what the "MCP" marker shows.
      */
     connectionKind: ConnectionKind;
+    /**
+     * Whether the row has a twistie. An open connection always has one;
+     * a closed one only where opening it is what expanding the row does,
+     * since a twistie that can never show anything is a dead end.
+     */
+    expandable: boolean;
 }
 
 /** A schema of an open connection. */
@@ -84,7 +90,16 @@ export const OBJECT_GROUP_LABELS: Record<ObjectType, string> = {
  * open - is testable against a fake server.
  */
 export class ConnectionsModel {
-    public constructor(private readonly connections: ConnectionManager) { }
+    /**
+     * @param connections The open connections and the default one.
+     * @param connectOnOpen Whether expanding a closed connection opens it.
+     *   Read on every call, because the setting behind it can change while
+     *   the tree is up.
+     */
+    public constructor(
+        private readonly connections: ConnectionManager,
+        private readonly connectOnOpen: () => boolean,
+    ) { }
 
     /**
      * The root of the tree: one node per configured connection.
@@ -96,12 +111,15 @@ export class ConnectionsModel {
         const defaultUri = this.connections.defaultConnection;
 
         return stored.map((connection) => {
+            const connected = this.connections.isConnected(connection.uri);
+
             return {
                 kind: "connection",
                 uri: connection.uri,
-                connected: this.connections.isConnected(connection.uri),
+                connected,
                 isDefault: connection.uri === defaultUri,
                 connectionKind: connection.kind,
+                expandable: connected || this.connectOnOpen(),
             };
         });
     }
@@ -109,9 +127,13 @@ export class ConnectionsModel {
     /**
      * The children of a node.
      *
-     * A connection that is not open has no children rather than opening
-     * itself: expanding a node in a tree should not make a network
-     * connection the user did not ask for.
+     * A connection that is not open has no children. Opening it is not
+     * this method's job even where expanding the row is what opens it:
+     * the tree asks a node for its children again on every refresh, and a
+     * closed connection that answers by opening itself could never be
+     * disconnected - the refresh that follows would open it straight back
+     * up. Only an expand the user performed opens a connection, which is
+     * why that lives on the tree provider.
      *
      * @param node The node to expand.
      *
