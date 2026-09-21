@@ -22,7 +22,7 @@ the extension grows.
 | `webview/src/` | The Preact frontend rendered inside the result view. |
 | `src/test/` | The extension-side test suite, mirroring the source layout. |
 | `webview/test/` | The frontend test suite, run under jsdom. |
-| `images/` | Icons: `light/` and `dark/` variants, plus the activity bar seal. |
+| `images/` | Icons: `light/` and `dark/` variants, the activity bar seal, and `marketplace-icon.png`. |
 
 ### `src/shell/`
 
@@ -110,6 +110,27 @@ never published to npm.
 
 **Always `npm ci`, never `npm install`, in CI.** `npm ci` installs exactly the
 locked tree and never writes the lockfile back.
+
+### The Marketplace icon
+
+`images/marketplace-icon.png`, declared by `icon` in `package.json`. It is a
+**256x256** PNG: the manifest reference asks for "at least 128x128 pixels
+(256x256 for Retina screens)". Two traps:
+
+- **`icon` may not be an SVG.** vsce rejects it outright, and that is the only
+  icon rule vsce enforces - it checks no dimensions at all, so an undersized
+  PNG packages happily and is only rejected at the Marketplace end. The SVG ban
+  applies to this field alone; the `contributes` icons (`mariadb-seal.svg`, the
+  `light/` and `dark/` trees) stay vectors.
+- **There is no light/dark variant.** The one image sits on both Marketplace
+  card backgrounds, so the artwork is a tile with an opaque body and alpha only
+  in the rounded corners - a transparent logo would vanish on one of them.
+
+vsce publishes it as the `Microsoft.VisualStudio.Services.Icons.Default` asset.
+The source artwork lives outside the repo, under
+`Work/Artwork/Logos/MariaDB VS Code Extension/`; copying from there carries the
+volume's mode and xattrs, so `chmod 644` and `xattr -c` afterwards or git
+records the file executable.
 
 ### CI
 
@@ -710,9 +731,6 @@ form, which is uppercase and absolute - hence `fileLocation: "absolute"`.
 
 ## Known gaps
 
-- `package.json` has **no Marketplace `icon`**: VS Code requires a PNG
-  there, and the artwork is kept as a vector on request. Add a PNG before
-  publishing.
 - `MINIMUM_SHELL_VERSION` is 26.9.2, which is a **released** shell and
   therefore predates the `db.execute_sql_script` changes this extension
   asked for (`statement_index`, `execution_time`, per-statement `error`,
