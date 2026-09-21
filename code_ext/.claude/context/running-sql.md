@@ -130,9 +130,11 @@ keeps the comment as an entry (the pairing depends on it) and marks it
 `executable: false`. `execute()` filters on that for the two things that
 are about what is being run rather than what was split: the
 `Running N statements` count, and the `stopped after N of M` on a failed
-run. A run's own lines (the opening one, and the row for a call that
-failed outright) point at the first **executable** statement, not at a
-header comment standing in front of it.
+run. `describeRun()` follows the same rule, so the row a run goes up
+with says what the row that replaces it will say. A run's own row (and
+the row for a call that failed outright) points at the first
+**executable** statement, not at a header comment standing in front of
+it - unless the run failed, in which case it points at its first error.
 
 `src/test/sql/splitStatements.test.ts` pins all of these, and
 `splitStatements()` also drops DELIMITER commands, which the server

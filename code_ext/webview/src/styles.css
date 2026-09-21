@@ -235,18 +235,76 @@ button:focus-visible {
 }
 
 /*
- * The opening and closing lines that frame one execution. They are set
- * apart by weight, not by colour: every row shares one background, and
- * the marker icon carries the severity.
+ * The row one execution reads as, with its statements under it. It is
+ * set apart by weight, not by colour: every row shares one background,
+ * and the marker icon carries the severity.
  */
 .tabulator .tabulator-row.runRow .tabulator-cell.outputMessage {
     font-weight: 600;
+}
+
+/*
+ * What a run came to is the view speaking, not SQL, so it drops the
+ * editor font its children use and takes the full foreground: on a run
+ * that failed it is the only place the count of errors is given.
+ */
+.tabulator .tabulator-row.runRow .tabulator-cell.outputStatement {
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-foreground);
+}
+
+.tabulator .tabulator-row.runRow.errorRow .tabulator-cell.outputStatement {
+    color: var(--vscode-errorForeground);
+}
+
+.tabulator .tabulator-row.runRow.warningRow .tabulator-cell.outputStatement {
+    color: var(--vscode-list-warningForeground,
+            var(--vscode-editorWarning-foreground));
+}
+
+/*
+ * The twistie a run is opened with. Tabulator's own control is a boxed
+ * +/- in hard coded greys, so the grid supplies VS Code's chevrons
+ * instead - and they are what the theme's rules for that control would
+ * otherwise have had to be overridden for.
+ */
+.treeToggle {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
+    line-height: 16px;
+    margin-right: 2px;
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
+    cursor: pointer;
+}
+
+.treeToggle:hover {
+    color: var(--vscode-textLink-activeForeground,
+            var(--vscode-foreground));
+}
+
+/*
+ * The guide Tabulator draws from a run down to each of its statements.
+ * Its own theme paints it #ddd, which is the tree's one remaining
+ * hard coded surface; VS Code's own indent guide colour answers it.
+ */
+.outputGridHost .tabulator-row .tabulator-cell .tabulator-data-tree-branch {
+    border-left-color: var(--vscode-tree-indentGuidesStroke,
+            var(--vscode-panel-border));
+    border-bottom-color: var(--vscode-tree-indentGuidesStroke,
+            var(--vscode-panel-border));
 }
 
 /* The Problems panel's severity markers, in its colours. */
 .markerIcon {
     font-size: 14px;
     line-height: 16px;
+}
+
+/* A run that has not reported back yet: work in progress, not news. */
+.markerIcon.pending {
+    color: var(--vscode-icon-foreground, var(--vscode-descriptionForeground));
 }
 
 .markerIcon.info {
@@ -317,12 +375,22 @@ button:focus-visible {
     color: var(--vscode-textLink-activeForeground);
 }
 
-/* The go-to arrow sits in the message cell's top right corner. */
+/*
+ * The go-to arrow sits in the message cell's top right corner, and the
+ * twistie of a run - which Tabulator puts in front of the cell's own
+ * content - beside the message rather than above it. `inline-flex`, not
+ * `flex`: a Tabulator cell is inline-level and laid out beside its
+ * neighbours, so a block one would take the whole row.
+ */
 .tabulator .tabulator-cell.outputMessage {
     position: relative;
+    display: inline-flex;
+    align-items: center;
 }
 
 .outputMessageContent {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;

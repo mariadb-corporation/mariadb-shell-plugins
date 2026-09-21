@@ -39,6 +39,33 @@ import { post } from "./vscodeApi.js";
 /** The id of the always-present output tab. */
 const OUTPUT_TAB = "output";
 
+/**
+ * What to put in the error bar: the last thing that went wrong in the
+ * last run.
+ *
+ * Only the last run is looked at. The output keeps every run, and an
+ * error two runs ago is not what the bar is for - it says what just
+ * happened.
+ *
+ * @param output The runs, oldest last.
+ *
+ * @returns The message, or undefined if the last run was clean.
+ */
+export const lastErrorOf = (output: IOutputRow[]): string | undefined => {
+    const run = output.at(-1);
+    if (!run || run.kind !== "error") {
+        return undefined;
+    }
+
+    // The statement that failed says what the server said; the run's own
+    // row only counts them.
+    const failed = run.children?.findLast((child) => {
+        return child.kind === "error";
+    });
+
+    return failed?.message ?? run.summary ?? run.message;
+};
+
 /** The editing state held for one result set. */
 interface IEditingState {
     rows: IEditableRow[];
@@ -62,7 +89,6 @@ interface IEditingState {
  */
 export const App = (): JSX.Element => {
     const [state, setState] = useState<IViewState | undefined>();
-    const [running, setRunning] = useState<string | undefined>();
     const [activeTab, setActiveTab] = useState<string>(OUTPUT_TAB);
     const [notice, setNotice] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
@@ -73,15 +99,7 @@ export const App = (): JSX.Element => {
         const onMessage = (event: MessageEvent<HostMessage>): void => {
             const message = event.data;
             switch (message.type) {
-                case "running": {
-                    setRunning(message.connection);
-                    setNotice(undefined);
-                    setError(undefined);
-                    break;
-                }
-
                 case "state": {
-                    setRunning(undefined);
                     setState(message.state);
                     setEditing(Object.fromEntries(
                         message.state.resultSets.map((set) => {
@@ -94,14 +112,12 @@ export const App = (): JSX.Element => {
                     ));
                     setNotice(undefined);
                     // A run that produced rows opens on them; one that
-                    // did not stays on the output, which is where its
-                    // outcome is.
+                    // did not - or one that has only just started - stays
+                    // on the output, which is where its progress and its
+                    // outcome are.
                     setActiveTab(message.state.resultSets[0]?.id
                         ?? OUTPUT_TAB);
-                    const failure = message.state.output.findLast((row) => {
-                        return row.kind === "error";
-                    });
-                    setError(failure?.message);
+                    setError(lastErrorOf(message.state.output));
                     break;
                 }
 
@@ -303,20 +319,12 @@ export const App = (): JSX.Element => {
             post({ type: "revealStatement", source: row.source });
         }
 
-        // The closing line of a failed run also carries the output to
-        // the error it is reporting.
+        // The row of a failed run also opens it and carries the output
+        // to the error it is reporting.
         if (row.jumpToRowId !== undefined) {
             setScrollToRowId(row.jumpToRowId);
         }
     }, []);
-
-    if (running !== undefined) {
-        return (
-            <div class="placeholder">
-                <p>Running on {running}&hellip;</p>
-            </div>
-        );
-    }
 
     if (!state) {
         return (

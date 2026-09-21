@@ -50,8 +50,24 @@ The two halves behave differently on purpose:
 - **Output accumulates.** It is the log of everything run on that
   connection, so a run appends to it. It is capped at `MAX_OUTPUT_ROWS`
   (2000) per connection, oldest first, because a window can stay open
-  for days.
-- **Result sets are replaced.** The tabs stand for the *last* run.
+  for days. A run counts as its own row plus its statements and is
+  dropped whole: the tree cannot keep half of one.
+- **Result sets are replaced.** The tabs stand for the *last* run, so
+  starting a run clears them along with the apply context they were
+  written back through.
+
+A run goes into the output **when it starts**, not when it finishes.
+`startRun()` puts up the row `pendingRunRow()` built - marked `pending`,
+with an empty child array - before the connection has even been opened,
+which is what the shell may have to be started for. `showResults()` then
+replaces it, matching on the run's id, so the finished run takes the
+pending row's place rather than being appended beside it. That is why
+`IExecutionReport.output` is one row and why `execute()` is given the
+same `runId` the pending row went up with.
+
+There is no "running" message and no placeholder over the view: the run
+is a row like any other, so what the connection did before it stays
+readable while it runs.
 
 ## Picking the connection, and clearing
 
@@ -76,7 +92,7 @@ connections are untouched.
 The connection on show is also named beside the view's title through
 `WebviewView.description`, as the Output panel names its channel.
 
-Because the tabs are replaced but the output is not, an output row can
+Because the tabs are replaced but the output is not, a statement row can
 outlive the result set it produced. That is why result set ids carry the
 run that made them (`run3-result-0`): without it a later run's
 `result-0` would make an old row's jump arrow point at the wrong tab.
@@ -87,7 +103,8 @@ The grid only draws the arrow when the id is still among the open tabs.
 The view is UI, not an editor, so it uses `--vscode-font-family` at
 `--vscode-font-size` throughout - column headers, messages, counts and
 grid cells alike. `--vscode-editor-font-family` is reserved for SQL: the
-output grid's Statement column and the generated statements in the SQL
+output grid's Information column on a statement row - not on a run's,
+which holds a summary - and the generated statements in the SQL
 preview. Times and counts get `font-variant-numeric: tabular-nums`, so
 they line up without leaving the UI font.
 
@@ -95,7 +112,7 @@ Every row shares one background, `--vscode-sideBar-background`, header
 included; only borders separate them. What a row *means* is carried by a
 marker icon instead, drawn with the codicon font in the Problems panel's
 own colours (`--vscode-problemsInfoIcon-foreground` and its siblings).
-The opening and closing lines of a run are set apart by weight alone.
+A run's own row is set apart from its statements by weight alone.
 
 `@vscode/codicons` supplies the glyph font. Two things make it work:
 the webview build sets `base: "./"`, because the stylesheet is loaded
@@ -108,35 +125,75 @@ the extension references from the HTML it builds.
 ## The output grid
 
 A Tabulator table:
-`◆ | Output | Time | Elapsed | Rows | Statement`.
+`◆ | Output | Time | Elapsed | Rows | Information`.
 
 The marker and the message lead together, as they do in the Problems
 panel; the details follow. The grid draws **no vertical rules**: it is a
 log, not a spreadsheet, and the columns line up on their own. The result
 grids keep theirs, so the override is scoped to `.outputGridHost`.
 
-A run reads as a block of three parts, which is what `role` on a row
-says: an opening line (`Running 5 statements on ...`), one line per
-statement, and a closing line (`Finished ... successfully`, or
-`Finished with 2 errors, stopped after 4 of 5`).
+### One row per run, opened to see its statements
 
+It is a **tree**, two levels deep, which is what `role` on a row says:
+one `run` row per execution, with a `statement` row per statement under
+it. A run is therefore one line in the log until it is asked about,
+instead of a block of lines to be picked apart by eye.
+
+- `Output` on a run says what ran and where (`Ran 5 statements on ...`,
+  `Running 5 statements on ...` while it is under way); on a statement,
+  what the server said about it.
+- `Information` - the column that used to be `Statement` - says what the
+  run came to (`Finished 5 statements successfully`,
+  `Finished with 2 errors, stopped after 4 of 5`, `Running…`) and, on a
+  statement, which statement it was. A run's summary is the view
+  speaking, not SQL, so it drops the editor font its children use.
 - `Time` is the run's start, to the millisecond.
-- `Elapsed` on a statement line is **that statement's own** time, as the
-  server measured it. Only the closing line carries the run's total.
+- `Elapsed` is the **whole run's** time on a run row and **that
+  statement's own**, as the server measured it, on a statement. It is
+  empty while a run is pending: a `0 ms` would claim it had finished.
 - `Rows` is rows returned for a query, rows affected otherwise.
-- The marker is `info`, `warning` or `error`. A statement that succeeded
-  but raised warnings is a warning, and the closing line of a run takes
-  the worst of what it saw.
+- The marker is `pending`, `info`, `warning` or `error`. A statement
+  that succeeded but raised warnings is a warning, and a run takes the
+  worst of what its statements saw. `pending` is the spinning
+  `codicon-loading`, as VS Code marks work in progress.
 
-The two jump arrows ride **inside the cells they belong to** rather than
-in columns of their own: a column of arrows costs the Output column width
-it can put to better use, and the panel area is short of it.
+**Only the newest run is open.** `dataTreeStartExpanded` is asked for
+every row Tabulator builds and answers `startsExpanded()`, which opens
+whatever is now the last run; since a data change rebuilds every row, a
+run that was open closes behind the one that follows it. A pending run
+carries `children: []` rather than nothing, so it already has its
+twistie and its message does not shift when the statements arrive.
+
+Three things about the tree had to be told to Tabulator:
+
+- `dataTreeChildField: "children"`, because the rows are the protocol's
+  own shape rather than Tabulator's `_children`.
+- `dataTreeElementColumn: "message"`. A twistie has nowhere to go in a
+  24px column of markers, and indenting that column would push the
+  markers out of line. The message cell is `inline-flex` for it -
+  Tabulator inserts the control as the cell's first child, and a `flex`
+  cell would be block level and take the whole row.
+- `dataTreeExpandElement` / `dataTreeCollapseElement`, VS Code's
+  chevrons. Tabulator's own control is a boxed `+`/`-` in hard coded
+  greys; supplying the elements is what stops those rules applying at
+  all. Its branch guide is the one surface left, and
+  `--vscode-tree-indentGuidesStroke` answers it.
+
+Rows are looked up by index among the **top level only**, so a statement
+cannot be scrolled to by its own id: `openTo()` finds its run, opens it
+and takes the child component from `getTreeChildren()`.
+
+### The two jump arrows
+
+They ride **inside the cells they belong to** rather than in columns of
+their own: a column of arrows costs the Output column width it can put
+to better use, and the panel area is short of it.
 
 - `↗` sits in the Output cell's top right corner and puts the cursor on
-  the statement in the file it came from. On the closing line of a failed
-  run it also scrolls the output to that run's first error, so one
-  control answers "what went wrong, and where". A message that has one
-  gets `padding-right` so the text truncates before the arrow rather than
+  the statement in the file it came from. On a failed run's row it also
+  opens that run and scrolls to its first error, so one control answers
+  "what went wrong, and where". A message that has one gets
+  `padding-right` so the text truncates before the arrow rather than
   running under it.
 - `→` follows the row count in the Rows cell and jumps to the result set
   that statement produced, when that tab is still open. Its place is
@@ -146,6 +203,10 @@ it can put to better use, and the panel area is short of it.
 Both share their cell with the value beside them, so their `cellClick`
 handlers check what the click actually landed on (`clickedOn()`) instead
 of firing for anywhere in the cell.
+
+The error bar under the tabs follows the same reading: `lastErrorOf()`
+looks at the **last run only** and reports what its failing statement
+said, not the run's count of errors. A run that worked clears it.
 
 ## What the server had to report for this
 

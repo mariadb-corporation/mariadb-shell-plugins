@@ -66,14 +66,24 @@ export interface IStatementSource {
     character: number;
 }
 
-/** What an output row stands for. */
-export type OutputRowRole = "start" | "statement" | "finish";
-
-/** How an output row is marked. */
-export type OutputSeverity = "info" | "warning" | "error";
+/**
+ * What an output row stands for: one execution, or one statement of it.
+ *
+ * The grid is a tree of the first over the second, so a run reads as one
+ * line that can be opened rather than as a block of lines to be picked
+ * apart by eye.
+ */
+export type OutputRowRole = "run" | "statement";
 
 /**
- * One row of the output grid: what one statement of one execution did.
+ * How an output row is marked. `pending` is a run that has been started
+ * and has not reported back yet; the other three are the Problems
+ * panel's own levels.
+ */
+export type OutputSeverity = "pending" | "info" | "warning" | "error";
+
+/**
+ * One row of the output grid: one execution, or one statement of one.
  *
  * Output accumulates across executions, so a row has to carry enough to
  * stand on its own once the run that produced it is long past.
@@ -85,24 +95,37 @@ export interface IOutputRow {
     time: string;
     /** The connection the statement ran on. */
     connection: string;
-    /** The statement, shortened to fit. */
+    /** The statement, shortened to fit. Empty on a run row. */
     statement: string;
     /** What the server said: a status line, or an error. */
     message: string;
     /**
-     * How the row is marked, with the same three levels the Problems
-     * panel uses. A statement that succeeded but raised warnings is a
-     * warning, not plain information.
+     * What a run came to, shown in the Information column where a
+     * statement row shows its statement. Set on a run row only.
+     */
+    summary?: string;
+    /**
+     * How the row is marked, with the same levels the Problems panel
+     * uses. A statement that succeeded but raised warnings is a warning,
+     * not plain information, and a run row takes the worst of what its
+     * statements saw.
      */
     kind: OutputSeverity;
-    /** Whether this is the run's opening line, a statement, or its last. */
+    /** Whether this is a run or one of its statements. */
     role: OutputRowRole;
+    /**
+     * The statements of a run, as the grid's child rows. A run that has
+     * not reported back yet carries an empty array rather than nothing,
+     * so its row keeps the expander - and its place in the column - once
+     * the statements arrive.
+     */
+    children?: IOutputRow[];
     /** Rows returned by a query, or rows affected by anything else. */
     rows?: number;
     /**
      * How long this took, in milliseconds: the statement's own time for a
-     * statement row, and the whole run's for the closing row. Absent
-     * where the server did not report one.
+     * statement row, and the whole run's for a run row. Absent where the
+     * server did not report one, and while a run is still pending.
      */
     elapsedMs?: number;
     /**
@@ -112,7 +135,8 @@ export interface IOutputRow {
     source?: IStatementSource;
     /**
      * An output row to scroll to as well as jumping to the source: set on
-     * the closing row of a run that failed, pointing at its first error.
+     * the row of a run that failed, pointing at its first error. The
+     * grid opens the run to get there.
      */
     jumpToRowId?: string;
     /**
@@ -131,6 +155,11 @@ export interface IExecutionReport {
     startedAt: string;
     /** How long the whole execution took, in milliseconds. */
     elapsedMs: number;
+    /**
+     * The run's own row, with its statements as children. It carries the
+     * id the pending row was started under, so it replaces it rather
+     * than being appended beside it.
+     */
     output: IOutputRow[];
     resultSets: IResultSet[];
 }
@@ -141,7 +170,7 @@ export interface IViewState {
     connections: string[];
     /** The connection whose output and results are on show. */
     connection: string;
-    /** Every output row for it, oldest first, across all its runs. */
+    /** One row per run on it, oldest first, each holding its statements. */
     output: IOutputRow[];
     /** Its result sets, replaced by each execution. */
     resultSets: IResultSet[];
@@ -174,7 +203,6 @@ export interface IGeneratedStatement {
 /** Messages the extension sends to the webview. */
 export type HostMessage =
     | { type: "state"; state: IViewState }
-    | { type: "running"; connection: string }
     | {
         type: "applied";
         resultId: string;
