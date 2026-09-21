@@ -134,6 +134,14 @@ export interface IMariaDbApi {
         verify?: boolean,
     ): Promise<string>;
     deleteConnection(uri: string, kind?: ConnectionKind): Promise<string>;
+    testConnection(uri: string, password?: string): Promise<string>;
+    updateConnection(
+        uri: string,
+        newUri?: string,
+        kind?: ConnectionKind,
+        newKind?: ConnectionKind,
+        password?: string,
+    ): Promise<string>;
     connect(uri: string): Promise<string>;
     close(connectionId: string): Promise<void>;
     listSchemas(connectionId: string): Promise<ISchemaInfo[]>;

@@ -16,6 +16,10 @@
  */
 
 import type { IMariaDbApi } from "../mcp/types.js";
+import {
+    listConnections as listStored,
+    type IStoredConnection,
+} from "./connectionStore.js";
 
 /**
  * Where the default connection is remembered. Backed by the extension's
@@ -84,14 +88,27 @@ export class ConnectionManager {
     }
 
     /**
-     * Lists the configured connection URIs.
+     * Lists every configured connection, from both lists.
+     *
+     * Both, because a connection in the shared MCP list is as usable from
+     * the editor as one of the extension's own - the checkbox says who ELSE
+     * may open it, not whether this extension can.
+     *
+     * @returns One entry per configured connection, with the list it is in.
+     */
+    public async listStoredConnections(): Promise<IStoredConnection[]> {
+        return await listStored(await this.apiProvider());
+    }
+
+    /**
+     * Lists the configured connection URIs, from both lists.
      *
      * @returns One URI per configured connection.
      */
     public async listConnections(): Promise<string[]> {
-        const api = await this.apiProvider();
+        const stored = await this.listStoredConnections();
 
-        return await api.listConnections();
+        return stored.map((connection) => { return connection.uri; });
     }
 
     /**

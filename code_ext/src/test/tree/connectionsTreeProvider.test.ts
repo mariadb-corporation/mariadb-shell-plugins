@@ -82,6 +82,7 @@ describe("ConnectionsTreeProvider", () => {
             uri: "dba@localhost:3310",
             connected: false,
             isDefault: false,
+            connectionKind: "mcp",
         }]);
 
         provider.dispose();
@@ -138,6 +139,7 @@ describe("ConnectionsTreeProvider", () => {
             uri: "dba@localhost:3310",
             connected: true,
             isDefault: false,
+            connectionKind: "gui",
         } as const;
 
         provider.refresh(node);

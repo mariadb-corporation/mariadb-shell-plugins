@@ -38,6 +38,8 @@ import {
     CONNECTIONS_VIEW_ID,
 } from "./tree/connectionsTreeProvider.js";
 import { createIconResolver } from "./tree/treeItems.js";
+import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
+import { deleteConnection } from "./connections/connectionStore.js";
 import type { IConnectionNode } from "./tree/connectionsModel.js";
 import {
     ResultViewProvider,
@@ -200,6 +202,72 @@ export const activate = (context: vscode.ExtensionContext): void => {
         vscode.commands.registerCommand("mariadb.refreshConnections", () => {
             tree.refresh();
         }),
+
+        vscode.commands.registerCommand("mariadb.addConnection", () => {
+            ConnectionEditorPanel.show(context.extensionUri, {
+                api: () => { return connections.api(); },
+                onSaved: () => { tree.refresh(); },
+                log,
+            });
+        }),
+
+        vscode.commands.registerCommand(
+            "mariadb.editConnection",
+            (node?: IConnectionNode) => {
+                if (node === undefined) {
+                    return;
+                }
+
+                // Both halves of what identifies it: the URI is the key and
+                // the kind says which of the two lists it is the key in.
+                ConnectionEditorPanel.show(
+                    context.extensionUri,
+                    {
+                        api: () => { return connections.api(); },
+                        onSaved: () => { tree.refresh(); },
+                        log,
+                    },
+                    { uri: node.uri, kind: node.connectionKind },
+                );
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.deleteConnection",
+            async (node?: IConnectionNode) => {
+                if (node === undefined) {
+                    return;
+                }
+
+                // Modal, because this throws away a stored credential and
+                // there is no undo. The MCP list is called out by name: a
+                // connection there may be in use by something that is not
+                // this editor.
+                const detail = node.connectionKind === "mcp"
+                    ? "It is in the shared MCP connection list, so any MCP "
+                    + "client configured to use it will lose it too. Its "
+                    + "stored password is deleted."
+                    : "Its stored password is deleted.";
+
+                const confirmed = await vscode.window.showWarningMessage(
+                    `Delete the connection '${node.uri}'?`,
+                    { modal: true, detail },
+                    "Delete",
+                );
+                if (confirmed !== "Delete") {
+                    return;
+                }
+
+                await guard(log, async () => {
+                    await deleteConnection(await connections.api(), {
+                        uri: node.uri,
+                        kind: node.connectionKind,
+                    });
+                    log(`Deleted the connection '${node.uri}'.`);
+                    tree.refresh();
+                });
+            },
+        ),
 
         vscode.commands.registerCommand(
             "mariadb.connect",
@@ -366,6 +434,10 @@ export const deactivate = async (): Promise<void> => {
     if (!current) {
         return;
     }
+
+    // Before the session goes: the panel's buttons reach for the API, and
+    // one left open across a reload would be bound to a server that is gone.
+    ConnectionEditorPanel.disposeCurrent();
 
     await current.connections.disconnectAll();
     await current.session.stop();

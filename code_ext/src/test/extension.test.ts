@@ -32,6 +32,9 @@ import {
     openedDocuments,
     outputChannels,
     registeredCommands,
+    setWarningMessageAnswer,
+    warningMessages,
+    webviewPanels,
     shownDocuments,
     resetVscodeMock,
     resolveWebviewView,
@@ -62,8 +65,13 @@ const runtime = vi.hoisted(() => {
         runner: undefined as
             | ReturnType<typeof import("./helpers.js")["createFakeRunner"]>
             | undefined,
-        /** What the fake MCP server answers `db.list_connections` with. */
+        /**
+         * What the fake MCP server answers `db.list_connections` with, per
+         * connection list. The extension asks for both kinds, so a double
+         * that ignored the argument would report every connection twice.
+         */
         connections: [] as string[],
+        guiConnections: [] as string[],
     };
 });
 
@@ -115,10 +123,32 @@ vi.mock("../mcp/sdkConnector.js", async () => {
         createSdkConnector: () => {
             runtime.connector = helpers.createFakeConnector((name, args) => {
                 if (name === "db.list_connections") {
+                    const uris = args.kind === "gui"
+                        ? runtime.guiConnections
+                        : runtime.connections;
+
                     return {
-                        content: runtime.connections.map((uri) => {
+                        content: uris.map((uri) => {
                             return { type: "text", text: uri };
                         }),
+                    };
+                }
+
+                if (name === "db.delete_connection"
+                    || name === "db.add_connection"
+                    || name === "db.update_connection") {
+                    const uri = String(args.new_uri ?? args.uri);
+
+                    return {
+                        content: [{ type: "text", text: uri }],
+                        structuredContent: { result: uri },
+                    };
+                }
+
+                if (name === "db.test_connection") {
+                    return {
+                        content: [{ type: "text", text: "Connected." }],
+                        structuredContent: { result: "Connected." },
                     };
                 }
 
@@ -170,6 +200,7 @@ describe("activate", () => {
         runtime.runner = undefined;
         runtime.connector = undefined;
         runtime.connections = ["dba@localhost:3310"];
+        runtime.guiConnections = [];
     });
 
     it("registers the Connections view and every command", () => {
@@ -181,10 +212,13 @@ describe("activate", () => {
             return view.id;
         })).toEqual(["mariadb.connections"]);
         expect([...registeredCommands.keys()].sort()).toEqual([
+            "mariadb.addConnection",
             "mariadb.clearDefaultConnection",
             "mariadb.clearResultView",
             "mariadb.connect",
+            "mariadb.deleteConnection",
             "mariadb.disconnect",
+            "mariadb.editConnection",
             "mariadb.newSqlEditor",
             "mariadb.refreshConnections",
             "mariadb.restartMcpServer",
@@ -265,6 +299,100 @@ describe("activate", () => {
 
         // Nothing has run, so there is nothing to clear and nothing to
         // go wrong; the command is still safe to invoke.
+        expect(errorMessages).toEqual([]);
+    });
+
+    /** Every tool call made on every MCP connection the fake handed out. */
+    const toolCalls = (): Array<{ name: string; args: unknown }> => {
+        return (runtime.connector?.connections ?? []).flatMap((connection) => {
+            return connection.calls;
+        });
+    };
+
+    it("opens the connection editor on a new connection", async () => {
+        activate(createContext() as never);
+
+        await mockCommands.executeCommand("mariadb.addConnection");
+
+        expect(webviewPanels).toHaveLength(1);
+        expect(webviewPanels[0].viewType).toBe("mariadb.connectionEditor");
+        expect(webviewPanels[0].title).toBe("New Database Connection");
+    });
+
+    it("opens the editor on the connection the menu was used on", async () => {
+        activate(createContext() as never);
+
+        await mockCommands.executeCommand("mariadb.editConnection", {
+            kind: "connection",
+            uri: "dba@localhost:3310",
+            connected: false,
+            isDefault: false,
+            connectionKind: "mcp",
+        });
+
+        expect(webviewPanels[0].title).toBe("Edit dba@localhost:3310");
+
+        // The node carries the list it is in, and the editor has to be told:
+        // it decides whether the MCP box comes up ticked, and which list a
+        // save updates.
+        webviewPanels[0].webview.receive({ type: "ready" });
+        await vi.waitFor(() => {
+            expect(webviewPanels[0].webview.posted[0])
+                .toMatchObject({ mcpAccess: true });
+        });
+    });
+
+    it("does nothing when edit or delete arrive without a connection",
+        async () => {
+            // Both are menu entries on a node; the palette cannot supply one.
+            activate(createContext() as never);
+
+            await mockCommands.executeCommand("mariadb.editConnection");
+            await mockCommands.executeCommand("mariadb.deleteConnection");
+
+            expect(webviewPanels).toEqual([]);
+            expect(errorMessages).toEqual([]);
+        });
+
+    it("asks before deleting a connection, and stops if told no", async () => {
+        activate(createContext() as never);
+
+        // The mock dismisses the dialog unless a test says otherwise, which
+        // is what this one wants: a stored credential is about to be thrown
+        // away and there is no undo.
+        await mockCommands.executeCommand("mariadb.deleteConnection", {
+            kind: "connection",
+            uri: "dba@localhost:3310",
+            connected: false,
+            isDefault: false,
+            connectionKind: "gui",
+        });
+
+        expect(warningMessages).toEqual([
+            "Delete the connection 'dba@localhost:3310'?",
+        ]);
+        expect(toolCalls().map((call) => { return call.name; }))
+            .not.toContain("db.delete_connection");
+    });
+
+    it("deletes the connection from its own list once confirmed", async () => {
+        activate(createContext() as never);
+        setWarningMessageAnswer("Delete");
+
+        await mockCommands.executeCommand("mariadb.deleteConnection", {
+            kind: "connection",
+            uri: "shared@localhost:3310",
+            connected: false,
+            isDefault: false,
+            connectionKind: "mcp",
+        });
+
+        await vi.waitFor(() => {
+            expect(toolCalls()).toContainEqual({
+                name: "db.delete_connection",
+                args: { uri: "shared@localhost:3310", kind: "mcp" },
+            });
+        });
         expect(errorMessages).toEqual([]);
     });
 

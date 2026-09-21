@@ -1534,6 +1534,13 @@ def _register_connection_management_tools(tool) -> None:
     the user interface the user is entering those credentials into (see
     :func:`mcp_plugin.lib.general.set_gui_mode`).
 
+    ``db.test_connection`` is here for the same reason and not only for
+    symmetry: it opens a session to whatever host and credentials it is handed,
+    which is an outbound connection primitive that has nothing to do with the
+    configured connections. Given to an autonomous client it would be a way to
+    try passwords against any reachable server, so it exists only where the
+    client is the user's own editor.
+
     These tools take the connection list to work on as a ``kind``, because the
     extension works with both: the shared ``mcp`` list, which every MCP client
     sees and ``mcp.setup`` curates, and the ``gui`` list, which is the
@@ -1639,6 +1646,173 @@ def _register_connection_management_tools(tool) -> None:
         )
 
         return normalized
+
+    @tool(name="db.update_connection")
+    def update_connection(
+        uri: str,
+        new_uri: str = None,
+        kind: str = config.DEFAULT_CONNECTION_KIND,
+        new_kind: str = None,
+        password: str = None,
+    ) -> str:
+        """Re-keys a configured connection, keeping its password.
+
+        An editor needs this because a connection is keyed by its URI and by
+        which list it is in, so changing the host, the port, the user or the
+        MCP checkbox means storing it under a new key. Doing that with
+        db.add_connection would mean knowing the password, and nothing can read
+        one back - deliberately, since a tool that returned a stored password
+        would hand every secret to any client that can call it. This moves the
+        secret without anybody seeing it.
+
+        Every connection open on the old key is closed, as it is by
+        db.delete_connection: the connection it was opened on no longer exists
+        under that name.
+
+        Args:
+            uri: The connection to change, as it is configured now.
+            new_uri: The URI to move it to. Left out, the URI does not change.
+                It must not carry a password.
+            kind: Which list it is in now. "mcp" (the default) or "gui".
+            new_kind: The list to move it to, which is how the MCP access
+                checkbox is applied to a connection that already exists. Left
+                out, the list does not change.
+            password: A new password. Left out, the stored one is kept - which
+                is the point of this tool.
+
+        Returns:
+            The URI the connection is now configured under.
+        """
+        kind = config.normalize_connection_kind(kind)
+        target_kind = config.normalize_connection_kind(
+            kind if new_kind is None else new_kind
+        )
+
+        configured_uri = config.resolve_connection_uri(uri, kind)
+        if configured_uri is None:
+            configured = config.list_connection_uris(kind)
+            raise mysqlsh.Error(
+                f"'{uri}' is not a configured '{kind}' connection. Configured "
+                f"connections: {', '.join(configured) or 'none'}."
+            )
+
+        if new_uri is None:
+            target_uri = configured_uri
+        else:
+            parsed = config.parse_connection_uri(new_uri)
+            if parsed is not None and parsed.get("password"):
+                raise mysqlsh.Error(
+                    "The connection URI carries a password. Give the URI "
+                    "without it and pass the password as the 'password' "
+                    "argument."
+                )
+
+            target_uri = config.normalize_connection_uri(new_uri)
+            if target_uri is None:
+                raise mysqlsh.Error(
+                    f"'{new_uri}' is not a valid connection URI."
+                )
+
+        if target_uri == configured_uri and target_kind == kind:
+            if password is None:
+                # Nothing to do, and saying so beats a delete-then-store that
+                # briefly leaves the connection not configured at all.
+                return configured_uri
+
+            config.store_connection(configured_uri, password, kind)
+            general.log_event(
+                f"db.update_connection: replaced the password of "
+                f"'{configured_uri}' ({kind})"
+            )
+
+            return configured_uri
+
+        # Read here and never returned: this is the one place the stored
+        # password is touched, and it goes straight back into the store.
+        moved_password = (
+            config.get_connection_password(configured_uri, kind)
+            if password is None
+            else password
+        )
+
+        # Written before the old one is removed, so a failure leaves the
+        # connection configured somewhere rather than nowhere.
+        config.store_connection(target_uri, moved_password, target_kind)
+        config.delete_connection(configured_uri, kind)
+        dropped = _drop_connections_on(configured_uri, kind)
+
+        general.log_event(
+            f"db.update_connection: moved '{configured_uri}' ({kind}) to "
+            f"'{target_uri}' ({target_kind}), dropping {dropped} open "
+            "connection(s)"
+        )
+
+        return target_uri
+
+    @tool(name="db.test_connection")
+    def test_connection(uri: str, password: str = None) -> str:
+        """Checks that a URI and password open a session, storing nothing.
+
+        This is what an editor's "Test Connection" button needs: whether the
+        credentials work has to be answerable BEFORE the connection is stored,
+        and db.connect cannot answer it because it only opens connections that
+        are already configured.
+
+        The session is closed again immediately and nothing is written, so a
+        failed test leaves no trace and a successful one still requires
+        db.add_connection.
+
+        Args:
+            uri: The connection URI to try, for example user@host:3306. As
+                with db.add_connection it must not carry a password.
+            password: The password to try. Left out, the password already
+                stored for this connection is used - which is what lets an
+                editor test a connection the user has not retyped the password
+                for. The URI must then name a configured connection.
+
+        Returns:
+            A message saying the connection was opened.
+        """
+        parsed = config.parse_connection_uri(uri)
+        if parsed is not None and parsed.get("password"):
+            raise mysqlsh.Error(
+                "The connection URI carries a password. Give the URI without "
+                "it and pass the password as the 'password' argument."
+            )
+
+        normalized = config.normalize_connection_uri(uri)
+        if normalized is None:
+            raise mysqlsh.Error(f"'{uri}' is not a valid connection URI.")
+
+        if password is None:
+            # Read here and used here; like db.update_connection this is a
+            # place the stored secret is touched without ever being returned.
+            found = config.find_connection(normalized)
+            if found is None:
+                raise mysqlsh.Error(
+                    f"'{uri}' is not a configured connection, so there is no "
+                    "stored password to test it with. Pass the password to "
+                    "test a connection that does not exist yet."
+                )
+
+            configured_uri, kind = found
+            password = config.get_connection_password(configured_uri, kind)
+
+        # The same check db.add_connection and mcp.setup make, so a test that
+        # passes cannot be followed by a store that fails for a reason the
+        # test would have caught.
+        from mcp_plugin.lib import setup_cli
+
+        try:
+            setup_cli.verify_connection(normalized, password)
+        except Exception as error:  # noqa: BLE001 - surface the shell's text
+            raise mysqlsh.Error(
+                f"Could not connect to '{normalized}': {error}"
+            ) from error
+
+        general.log_event(f"db.test_connection: opened '{normalized}' and closed it")
+
+        return f"Connected to '{normalized}' successfully."
 
     @tool(name="db.delete_connection")
     def delete_connection(

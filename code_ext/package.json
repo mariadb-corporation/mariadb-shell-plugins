@@ -130,6 +130,24 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "mariadb.deleteConnection",
+        "title": "Delete Connection",
+        "category": "MariaDB",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mariadb.editConnection",
+        "title": "Edit Connection",
+        "category": "MariaDB",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "mariadb.addConnection",
+        "title": "Add Connection",
+        "category": "MariaDB",
+        "icon": "$(add)"
+      },
+      {
         "command": "mariadb.connect",
         "title": "Connect",
         "category": "MariaDB",
@@ -221,6 +239,11 @@
     "menus": {
       "view/title": [
         {
+          "command": "mariadb.addConnection",
+          "when": "view == mariadb.connections",
+          "group": "navigation@0"
+        },
+        {
           "command": "mariadb.refreshConnections",
           "when": "view == mariadb.connections",
           "group": "navigation"
@@ -271,6 +294,16 @@
           "command": "mariadb.clearDefaultConnection",
           "when": "view == mariadb.connections && viewItem =~ /\\.default$/",
           "group": "2_default@1"
+        },
+        {
+          "command": "mariadb.editConnection",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "3_manage@1"
+        },
+        {
+          "command": "mariadb.deleteConnection",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "3_manage@2"
         }
       ],
       "editor/title": [
@@ -356,6 +389,14 @@
         {
           "command": "mariadb.clearResultView",
           "when": "false"
+        },
+        {
+          "command": "mariadb.editConnection",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.deleteConnection",
+          "when": "false"
         }
       ]
     },
@@ -437,7 +478,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "build:extension": "vite build",
-    "build:webview": "vite build --config vite.webview.config.ts",
+    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts",
     "watch:webview": "vite build --config vite.webview.config.ts --watch",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
   },

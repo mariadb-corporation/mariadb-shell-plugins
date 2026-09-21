@@ -157,6 +157,20 @@ export interface WithProgressCall {
 export const withProgressCalls: WithProgressCall[] = [];
 export const informationMessages: string[] = [];
 export const warningMessages: string[] = [];
+
+/** What the next `showWarningMessage` answers with; see the mock below. */
+let warningMessageAnswer: string | undefined;
+
+/**
+ * Makes the next warning dialog answer with the given button.
+ *
+ * @param answer The button to press, or undefined to dismiss it.
+ *
+ * @returns Nothing.
+ */
+export const setWarningMessageAnswer = (answer: string | undefined): void => {
+    warningMessageAnswer = answer;
+};
 export const errorMessages: string[] = [];
 export const outputChannels: MockOutputChannel[] = [];
 export const statusBarItems: MockStatusBarItem[] = [];
@@ -482,7 +496,8 @@ export class MockWebviewPanel {
 
     public constructor(
         public readonly viewType: string,
-        public readonly title: string,
+        // Not readonly: a panel reused for another subject retitles itself.
+        public title: string,
         public viewColumn: ViewColumn | undefined,
         public readonly options: unknown,
     ) { }
@@ -684,10 +699,21 @@ export const window = {
         return Promise.resolve(undefined);
     },
 
-    showWarningMessage: (message: string): Promise<undefined> => {
+    showWarningMessage: (
+        message: string,
+        ...rest: unknown[]
+    ): Promise<string | undefined> => {
         warningMessages.push(message);
 
-        return Promise.resolve(undefined);
+        // A modal warning is a question with buttons, and the caller branches
+        // on which was pressed. Tests set the answer with
+        // `setWarningMessageAnswer`; the default is a dismissal, which keeps
+        // a destructive action from running in a test that never opted in.
+        const answer = warningMessageAnswer;
+        warningMessageAnswer = undefined;
+        void rest;
+
+        return Promise.resolve(answer);
     },
 
     showErrorMessage: (message: string): Promise<undefined> => {
@@ -929,10 +955,18 @@ export const resetVscodeMock = (): void => {
     withProgressCalls.length = 0;
     informationMessages.length = 0;
     warningMessages.length = 0;
+    warningMessageAnswer = undefined;
     errorMessages.length = 0;
     outputChannels.length = 0;
     statusBarItems.length = 0;
     treeViews.length = 0;
+    // Disposed, not just forgotten: a panel is owned by whatever created it,
+    // and code that keeps one - the connection editor holds a single panel
+    // and reuses it - only lets go when told it closed. Dropping the array
+    // alone would leave the next test reusing a panel it cannot see.
+    for (const panel of webviewPanels) {
+        panel.dispose();
+    }
     webviewPanels.length = 0;
     webviewViewProviders.clear();
     webviewViews.length = 0;

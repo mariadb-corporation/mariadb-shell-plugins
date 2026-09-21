@@ -193,7 +193,10 @@ def test_the_connection_tools_are_served_in_gui_mode_only(monkeypatch, gui_mode)
     reach of the clients that use it: a client that could add a connection
     could give itself credentials for a server nobody configured.
     """
-    written = ("db.add_connection", "db.delete_connection")
+    written = (
+        "db.add_connection", "db.delete_connection", "db.test_connection",
+        "db.update_connection",
+    )
 
     tools = _registered_tools(monkeypatch)
     for name in written:
@@ -410,6 +413,250 @@ def test_deleting_a_connection_closes_what_is_open_on_it(
     db_functions._sessions.clear()
 
 
+def test_updating_a_connection_carries_its_password_over(
+    monkeypatch, gui_mode, clean_config
+):
+    """Re-keying must not need the password, because nothing can read one.
+
+    A connection is keyed by URI and list, so changing the host or ticking
+    the MCP box means a new key. db.add_connection would need the password
+    for that, and there is no tool that hands one back - on purpose. This
+    moves the secret without anybody seeing it.
+    """
+    _empty_both_connection_lists()
+    config.store_connection("old@127.0.0.1:3306", "kept", config.CONNECTION_KIND_GUI)
+
+    tools = _registered_tools(monkeypatch)
+
+    moved = tools["db.update_connection"](
+        "old@127.0.0.1:3306", "new@127.0.0.1:3307",
+        config.CONNECTION_KIND_GUI, None, None,
+    )
+
+    assert moved == "new@127.0.0.1:3307"
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [moved]
+    assert config.get_connection_password(moved, config.CONNECTION_KIND_GUI) == "kept"
+
+
+def test_updating_moves_a_connection_between_the_two_lists(
+    monkeypatch, gui_mode, clean_config
+):
+    """Which is how the MCP access checkbox applies to an existing one."""
+    _empty_both_connection_lists()
+    uri = "switch@127.0.0.1:3306"
+    config.store_connection(uri, "pw", config.CONNECTION_KIND_GUI)
+
+    tools = _registered_tools(monkeypatch)
+
+    assert tools["db.update_connection"](
+        uri, None, config.CONNECTION_KIND_GUI, config.CONNECTION_KIND_MCP, None,
+    ) == uri
+
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
+    assert config.list_connection_uris() == [uri]
+    assert config.get_connection_password(uri) == "pw"
+
+    # And back again, which is unticking the box.
+    tools["db.update_connection"](
+        uri, None, config.CONNECTION_KIND_MCP, config.CONNECTION_KIND_GUI, None,
+    )
+    assert config.list_connection_uris() == []
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [uri]
+
+
+def test_updating_can_replace_just_the_password(
+    monkeypatch, gui_mode, clean_config
+):
+    """Setting a new password must not disturb the key or the open state."""
+    _empty_both_connection_lists()
+    uri = "pw@127.0.0.1:3306"
+    config.store_connection(uri, "old", config.CONNECTION_KIND_GUI)
+
+    tools = _registered_tools(monkeypatch)
+    db_functions._sessions.clear()
+    connection_id = tools["db.connect"](STDIO_CONTEXT, uri)
+
+    assert tools["db.update_connection"](
+        uri, None, config.CONNECTION_KIND_GUI, None, "new",
+    ) == uri
+
+    assert config.get_connection_password(uri, config.CONNECTION_KIND_GUI) == "new"
+    # Nothing moved, so the open connection is still the same connection.
+    assert connection_id in db_functions._sessions
+
+    db_functions._sessions.clear()
+
+
+def test_updating_nothing_is_a_no_op(monkeypatch, gui_mode, clean_config):
+    """A save that changed nothing must not briefly unconfigure it."""
+    _empty_both_connection_lists()
+    uri = "same@127.0.0.1:3306"
+    config.store_connection(uri, "pw", config.CONNECTION_KIND_GUI)
+
+    tools = _registered_tools(monkeypatch)
+
+    assert tools["db.update_connection"](
+        uri, uri, config.CONNECTION_KIND_GUI, config.CONNECTION_KIND_GUI, None,
+    ) == uri
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [uri]
+    assert config.get_connection_password(uri, config.CONNECTION_KIND_GUI) == "pw"
+
+
+def test_updating_closes_what_was_open_on_the_old_key(
+    monkeypatch, gui_mode, clean_config
+):
+    """The connection that UUID was opened on no longer exists under that name."""
+    _empty_both_connection_lists()
+    config.store_connection("moving@127.0.0.1:3306", "pw", config.CONNECTION_KIND_GUI)
+
+    tools = _registered_tools(monkeypatch)
+    db_functions._sessions.clear()
+    connection_id = tools["db.connect"](STDIO_CONTEXT, "moving@127.0.0.1:3306")
+
+    tools["db.update_connection"](
+        "moving@127.0.0.1:3306", "moved@127.0.0.1:3306",
+        config.CONNECTION_KIND_GUI, None, None,
+    )
+
+    assert connection_id not in db_functions._sessions
+    db_functions._sessions.clear()
+
+
+def test_updating_an_unknown_connection_is_refused(
+    monkeypatch, gui_mode, clean_config
+):
+    """And a new URI is held to the same rules as db.add_connection."""
+    _empty_both_connection_lists()
+    config.store_connection("known@127.0.0.1:3306", "pw", config.CONNECTION_KIND_GUI)
+
+    tools = _registered_tools(monkeypatch)
+
+    with pytest.raises(ToolError) as missing:
+        tools["db.update_connection"]("nope@127.0.0.1:3306", None,
+                                      config.CONNECTION_KIND_GUI, None, None)
+    assert "not a configured 'gui' connection" in str(missing.value)
+
+    with pytest.raises(ToolError) as carries:
+        tools["db.update_connection"]("known@127.0.0.1:3306",
+                                      "new:secret@127.0.0.1:3306",
+                                      config.CONNECTION_KIND_GUI, None, None)
+    assert "carries a password" in str(carries.value)
+
+    with pytest.raises(ToolError) as invalid:
+        tools["db.update_connection"]("known@127.0.0.1:3306", "not a uri",
+                                      config.CONNECTION_KIND_GUI, None, None)
+    assert "not a valid connection URI" in str(invalid.value)
+
+
+def test_testing_a_connection_stores_nothing(
+    monkeypatch, gui_mode, clean_config
+):
+    """The Test button has to answer BEFORE the connection exists.
+
+    db.connect cannot answer it - it only opens configured connections - and
+    db.add_connection stores on success, so neither is a test. This one opens
+    a session and closes it again, leaving both lists untouched either way.
+    """
+    _empty_both_connection_lists()
+
+    from mcp_plugin.lib import setup_cli
+
+    tried = []
+    monkeypatch.setattr(
+        setup_cli, "verify_connection",
+        lambda uri, pw: tried.append((uri, pw)),
+    )
+
+    tools = _registered_tools(monkeypatch)
+
+    message = tools["db.test_connection"]("mariadb://tester@127.0.0.1", "pw")
+
+    # Normalized before it is tried, so a test and a later store agree on
+    # which connection was checked.
+    assert tried == [("tester@127.0.0.1:3306", "pw")]
+    assert "tester@127.0.0.1:3306" in message
+    assert config.list_connection_uris() == []
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
+
+
+def test_testing_without_a_password_uses_the_stored_one(
+    monkeypatch, gui_mode, clean_config
+):
+    """Editing a connection must not mean retyping its password to test it.
+
+    Nothing can read a stored password back, so the fallback has to happen
+    server-side - the same place db.update_connection moves one.
+    """
+    _empty_both_connection_lists()
+    config.store_connection("stored@127.0.0.1:3306", "kept", config.CONNECTION_KIND_GUI)
+
+    from mcp_plugin.lib import setup_cli
+
+    tried = []
+    monkeypatch.setattr(
+        setup_cli, "verify_connection", lambda uri, pw: tried.append((uri, pw)),
+    )
+
+    tools = _registered_tools(monkeypatch)
+    tools["db.test_connection"]("stored@127.0.0.1:3306", None)
+
+    assert tried == [("stored@127.0.0.1:3306", "kept")]
+
+
+def test_testing_an_unknown_connection_without_a_password_says_so(
+    monkeypatch, gui_mode, clean_config
+):
+    """There is nothing to fall back to, and guessing an empty one would lie."""
+    _empty_both_connection_lists()
+
+    tools = _registered_tools(monkeypatch)
+
+    with pytest.raises(ToolError) as refused:
+        tools["db.test_connection"]("nobody@127.0.0.1:3306", None)
+
+    assert "no stored password" in str(refused.value)
+
+
+def test_a_failed_test_reports_the_shell_and_stores_nothing(
+    monkeypatch, gui_mode, clean_config
+):
+    """A failure is the useful answer, so it carries the shell's own words."""
+    _empty_both_connection_lists()
+
+    from mcp_plugin.lib import setup_cli
+
+    def _refuse(uri, password):
+        raise mysqlsh.Error("Access denied for user 'tester'@'127.0.0.1'")
+
+    monkeypatch.setattr(setup_cli, "verify_connection", _refuse)
+
+    tools = _registered_tools(monkeypatch)
+
+    with pytest.raises(ToolError) as failed:
+        tools["db.test_connection"]("tester@127.0.0.1:3306", "wrong")
+
+    assert "Access denied" in str(failed.value)
+    assert config.list_connection_uris() == []
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
+
+
+def test_testing_refuses_a_password_in_the_uri(
+    monkeypatch, gui_mode, clean_config
+):
+    """Same rule as db.add_connection, so the two cannot disagree."""
+    tools = _registered_tools(monkeypatch)
+
+    with pytest.raises(ToolError) as refused:
+        tools["db.test_connection"]("tester:secret@127.0.0.1:3306", "")
+
+    assert "carries a password" in str(refused.value)
+
+    with pytest.raises(ToolError) as invalid:
+        tools["db.test_connection"]("not a uri", "")
+
+    assert "not a valid connection URI" in str(invalid.value)
+
+
 # --- db.connect across the two lists ---------------------------------------
 
 
@@ -494,11 +741,15 @@ def test_the_gui_option_is_a_real_command_line_option():
     plain = helpers.list_tool_names(["db"])
     assert "db.add_connection" not in plain
     assert "db.delete_connection" not in plain
+    assert "db.test_connection" not in plain
+    assert "db.update_connection" not in plain
     assert "db.list_connections" in plain
 
     served = helpers.list_tool_names(["db"], gui=True)
     assert "db.add_connection" in served
     assert "db.delete_connection" in served
+    assert "db.test_connection" in served
+    assert "db.update_connection" in served
     assert "db.list_connections" in served
 
 

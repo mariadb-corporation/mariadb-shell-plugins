@@ -49,6 +49,7 @@ const connection = (
         uri: "dba@localhost:3310",
         connected: false,
         isDefault: false,
+        connectionKind: "gui",
         ...overrides,
     };
 };
@@ -80,6 +81,46 @@ describe("createTreeItem for a connection", () => {
         expect(createTreeItem(
             connection({ connected: true, isDefault: true }), resolveIcon,
         ).contextValue).toBe("mariadbConnection.connected.default");
+    });
+
+    it("marks a connection the MCP list holds", () => {
+        // The difference the checkbox makes is worth seeing at a glance:
+        // every MCP client on this machine can open this one, not just the
+        // extension.
+        const item = createTreeItem(
+            connection({ connectionKind: "mcp" }), resolveIcon);
+
+        expect(item.description).toBe("MCP");
+        expect(item.tooltip).toContain("MCP access allowed");
+    });
+
+    it("leaves one of the extension's own unmarked", () => {
+        const item = createTreeItem(
+            connection({ connectionKind: "gui" }), resolveIcon);
+
+        expect(item.description).toBeUndefined();
+        expect(item.tooltip).toBe("dba@localhost:3310");
+    });
+
+    it("shows both marks when a connection is MCP and the default", () => {
+        const item = createTreeItem(
+            connection({ connectionKind: "mcp", isDefault: true }),
+            resolveIcon,
+        );
+
+        expect(item.description).toBe("MCP, default");
+        expect(item.tooltip)
+            .toBe("dba@localhost:3310 (MCP access allowed, default connection)");
+    });
+
+    it("keeps the list out of the context value", () => {
+        // The `when` clauses anchor on the third segment (`/notDefault$/`),
+        // so a fourth would break the menus. Edit and delete are handed the
+        // node itself, which carries the kind.
+        for (const connectionKind of ["mcp", "gui"] as const) {
+            expect(createTreeItem(connection({ connectionKind }), resolveIcon)
+                .contextValue).toBe("mariadbConnection.disconnected.notDefault");
+        }
     });
 
     it("marks the default connection in the tree", () => {

@@ -19,15 +19,15 @@ import preact from "@preact/preset-vite";
 import { defineConfig } from "vite";
 
 /**
- * Builds the result panel's Preact frontend.
+ * Builds the connection editor's Preact frontend.
  *
  * It is a second, browser targeted build beside the extension's Node one:
  * the extension host and a webview are different runtimes and cannot share
  * a bundle. The output file names are fixed rather than hashed, because the
  * extension has to reference them from the webview's HTML.
  *
- * The connection editor is a THIRD build, in `vite.editor.config.ts`, and
- * the two are deliberately not one build with two entries: Rollup would then
+ * This is a build of its own rather than a second entry beside the result
+ * panel, and the reason is not tidiness: Rollup would then
  * hoist what they share - Preact, `vscodeApi` - into a common chunk, which
  * each entry pulls in with a static `import`. A webview is served under
  * `script-src 'nonce-...'`, and a nonce does NOT carry to a module the
@@ -45,20 +45,23 @@ export default defineConfig({
     plugins: [preact()],
     build: {
         outDir: "../dist/webview",
-        emptyOutDir: true,
+        // False, unlike the result panel's build: that one runs first and
+        // clears the directory, and emptying it again here would take its
+        // output away.
+        emptyOutDir: false,
         sourcemap: true,
         target: "es2022",
         rollupOptions: {
-            input: "webview/src/main.tsx",
+            input: "webview/src/editor.tsx",
             output: {
-                entryFileNames: "main.js",
+                entryFileNames: "editor.js",
                 // The stylesheet has a fixed name because the extension
                 // references it from the webview's HTML. Everything else
                 // - the codicon font, above all - keeps its own name,
                 // since the stylesheet points at it by that.
                 assetFileNames: (asset) => {
                     return asset.names?.[0]?.endsWith(".css") ?? false
-                        ? "main.css"
+                        ? "editor.css"
                         : "[name][extname]";
                 },
                 format: "es",

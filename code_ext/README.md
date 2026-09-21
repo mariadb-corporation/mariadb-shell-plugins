@@ -11,6 +11,16 @@ which exposes the backend functions over the Model Context Protocol.
 - **Connections view** in the activity bar: browse your configured
   connections, their schemas, and the tables, views, functions,
   procedures, sequences, triggers and events in each.
+- **Add, edit and delete connections** from the view's `+` button and each
+  connection's context menu, in a dialog with the host, protocol, port,
+  user, default schema, socket, SSL and compression settings a MariaDB
+  Shell connection URI can carry. Passwords go to the operating system's
+  secret store, never into the URI, and **Test Connection** tries the
+  credentials before anything is saved.
+- **MCP access** is a checkbox on each connection. Ticked, it goes in the
+  shared MCP connection list, which any MCP client on this machine - an AI
+  assistant, say - can open; the Connections view marks those `MCP`.
+  Unticked, it belongs to this extension alone.
 - **Run SQL** from any `.sql` file, with a connection picker and a run
   button in the editor toolbar (`Ctrl`/`Cmd`+`Enter`).
 - **New SQL Editor**, beside Connect on a connection in the tree, opens an
@@ -54,6 +64,7 @@ Set `MARIADB_SHELL_PREFIX` to install and look somewhere else.
 
 | Command | Description |
 | --- | --- |
+| **MariaDB: Add Connection** | Opens the connection editor on a new connection. |
 | **MariaDB: Run SQL** | Runs the selection, or the whole `.sql` file. |
 | **MariaDB: Select Connection for this SQL File** | Pins this file to a connection. |
 | **MariaDB: Restart MCP Server** | Closes the connections and starts the server again. |
