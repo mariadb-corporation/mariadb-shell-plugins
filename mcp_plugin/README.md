@@ -136,14 +136,14 @@ its password, so a provisioning script is safe to run twice.
 ### Migration tooling
 
 The release configured as `MIGRATOR_VERSION` in `lib/general.py` (currently
-`v1.4.0-beta`) is downloaded from GitHub as a source archive and extracted into
+`v1.5.0`) is downloaded from GitHub as a source archive and extracted into
 
 ```
 ~/.local/share/mariadb-migrator/<version>/
 ```
 
 with the archive's own top-level directory stripped, so the tooling's entry point sits
-at `~/.local/share/mariadb-migrator/v1.4.0-beta/mariadb-migrator`. The recorded file
+at `~/.local/share/mariadb-migrator/v1.5.0/mariadb-migrator`. The recorded file
 modes are restored, so the entry point and the `scripts/*.sh` remain executable.
 
 The base directory is `$XDG_DATA_HOME` when that is set to an absolute path, and

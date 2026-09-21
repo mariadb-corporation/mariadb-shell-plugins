@@ -538,20 +538,20 @@ def test_releases_install_side_by_side(migrator_data_path, monkeypatch):
     the function that has to be right about it either way.
     """
     _stub_download(monkeypatch, _SOURCE_ARCHIVE)
+    pinned = general.MIGRATOR_VERSION
     first = setup_migrator.download()
 
     monkeypatch.setattr(general, "MIGRATOR_VERSION", "v9.9.9")
     second = setup_migrator.download()
 
+    both = sorted([pinned, "v9.9.9"])
     assert first != second
     assert os.path.isfile(os.path.join(first, "mariadb-migrator"))
     assert os.path.isfile(os.path.join(second, "mariadb-migrator"))
-    assert setup_migrator.installed_versions() == ["v1.4.0-beta", "v9.9.9"]
+    assert setup_migrator.installed_versions() == both
 
     # No working directories left behind by either download.
-    assert sorted(os.listdir(general.get_migrator_root())) == [
-        "v1.4.0-beta", "v9.9.9"
-    ]
+    assert sorted(os.listdir(general.get_migrator_root())) == both
 
 
 # --- The venv, the dependencies and the wrapper ----------------------------

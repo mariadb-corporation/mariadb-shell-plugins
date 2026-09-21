@@ -126,7 +126,7 @@ MIGRATOR_DIR_NAME = "mariadb-migrator"
 # then a property of this plugin's version and not of the day it was set up, so
 # two installations of the same plugin drive the same tooling, and a release that
 # turns out to break something can be answered by pinning the one before it.
-MIGRATOR_VERSION = "v1.4.0-beta"
+MIGRATOR_VERSION = "v1.5.0"
 
 
 def get_data_home() -> str:
