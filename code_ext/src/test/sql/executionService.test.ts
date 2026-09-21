@@ -21,11 +21,35 @@ import type { IColumnDetails, IObjectDetails } from "../../mcp/types.js";
 import {
     captionFor,
     describeResult,
+    describeRun,
     dropLeadingComments,
     ExecutionService,
     mapColumns,
+    pendingRunRow,
 } from "../../sql/executionService.js";
+import type {
+    IExecutionReport,
+    IOutputRow,
+} from "../../webview/protocol.js";
 import { createFakeApi } from "../helpers.js";
+
+/**
+ * @param report The report to read.
+ *
+ * @returns The run's own row, which is the whole of the output.
+ */
+const runOf = (report: IExecutionReport): IOutputRow => {
+    return report.output[0];
+};
+
+/**
+ * @param report The report to read.
+ *
+ * @returns The rows of its statements, under the run.
+ */
+const statementsOf = (report: IExecutionReport): IOutputRow[] => {
+    return runOf(report).children ?? [];
+};
 
 /**
  * @param overrides The fields that differ from a plain nullable column.
@@ -191,16 +215,22 @@ describe("ExecutionService.execute", () => {
             });
 
         expect(report.resultSets).toEqual([]);
-        // A run reads as a block: what is about to happen, each
-        // statement, then how it went.
-        expect(report.output.map((row) => {
+        // The run is one row - keyed on the run's own id, so it replaces
+        // the pending row it was started under - with a row per
+        // statement under it.
+        expect(report.output).toHaveLength(1);
+        expect(runOf(report)).toMatchObject({
+            id: "run1",
+            role: "run",
+            connection: "dba@h",
+            message: "Ran 1 statement on dba@h",
+            summary: "Finished 1 statement successfully",
+            kind: "info",
+        });
+        expect(statementsOf(report).map((row) => {
             return [row.role, row.message];
-        })).toEqual([
-            ["start", "Running 1 statement on dba@h"],
-            ["statement", "Query OK, 1 row affected"],
-            ["finish", "Finished 1 statement successfully"],
-        ]);
-        expect(report.output[1]).toMatchObject({
+        })).toEqual([["statement", "Query OK, 1 row affected"]]);
+        expect(statementsOf(report)[0]).toMatchObject({
             id: "run1-0",
             connection: "dba@h",
             statement: "CREATE SCHEMA demo",
@@ -208,8 +238,30 @@ describe("ExecutionService.execute", () => {
             rows: 1,
         });
         expect(report.connection).toBe("dba@h");
-        expect(report.output[0].time).toMatch(/^\d\d:\d\d:\d\d\.\d\d\d$/);
+        expect(runOf(report).time).toMatch(/^\d\d:\d\d:\d\d\.\d\d\d$/);
     });
+
+    it("keeps the run's id, so it replaces the row it went up as",
+        async () => {
+            const api = createFakeApi({
+                defaultResults: [
+                    { affected_items_count: 1, warnings_count: 0 },
+                    { affected_items_count: 1, warnings_count: 0 },
+                ],
+            });
+
+            const report = await new ExecutionService(api).execute({
+                connectionUri: "dba@h",
+                connectionId: "id",
+                script: "SELECT 1;\nSELECT 2;",
+                runId: "run7",
+            });
+
+            expect(runOf(report).id).toBe("run7");
+            expect(statementsOf(report).map((row) => {
+                return row.id;
+            })).toEqual(["run7-0", "run7-1"]);
+        });
 
     it("makes one tab per result set", async () => {
         const api = createFakeApi({
@@ -242,12 +294,9 @@ describe("ExecutionService.execute", () => {
         })).toEqual(["Result #1", "Result #2"]);
         expect(report.resultSets[0].statement).toBe("SELECT 1 AS a");
         expect(report.resultSets[1].statement).toBe("SELECT 2 AS b");
-        // Every statement gets an output row between the run's opening
-        // and closing lines, and the two that returned rows link to the
-        // tab they produced.
-        const statementRows = report.output.filter((row) => {
-            return row.role === "statement";
-        });
+        // Every statement gets a row under the run's, and the two that
+        // returned rows link to the tab they produced.
+        const statementRows = statementsOf(report);
         expect(statementRows).toHaveLength(3);
         expect(statementRows.map((row) => {
             return row.resultId;
@@ -475,16 +524,19 @@ describe("ExecutionService.execute", () => {
             });
 
         expect(report.resultSets).toEqual([]);
-        const failure = report.output.find((row) => {
-            return row.kind === "error" && row.role === "statement";
+        const failure = statementsOf(report).find((row) => {
+            return row.kind === "error";
         });
         expect(failure?.message).toContain("doesn't exist");
 
-        // The closing line reports the failure and points back at it.
-        const finish = report.output.at(-1);
-        expect(finish?.role).toBe("finish");
-        expect(finish?.kind).toBe("error");
-        expect(finish?.jumpToRowId).toBe(failure?.id);
+        // The run's own row reports the failure and points back at it.
+        expect(runOf(report)).toMatchObject({
+            role: "run",
+            kind: "error",
+            summary: "Execution failed: MySQL Error (1146): Table "
+                + "'nope.nope' doesn't exist",
+            jumpToRowId: failure?.id,
+        });
     });
 
     it("says so when the script held no statements", async () => {
@@ -498,11 +550,12 @@ describe("ExecutionService.execute", () => {
                 runId: "run1",
             });
 
-        expect(report.output.map((row) => {
-            return row.role;
-        })).toEqual(["start", "finish"]);
-        expect(report.output[0].message)
-            .toBe("Running 0 statements on dba@h");
+        expect(runOf(report)).toMatchObject({
+            role: "run",
+            message: "Ran 0 statements on dba@h",
+            summary: "Finished 0 statements successfully",
+        });
+        expect(statementsOf(report)).toEqual([]);
     });
 });
 
@@ -546,16 +599,12 @@ describe("ExecutionService with the server's statement reporting", () => {
             runId: "run1",
         });
 
-        const statementRows = report.output.filter((row) => {
-            return row.role === "statement";
-        });
         // Each statement's own time, not the run's repeated.
-        expect(statementRows.map((row) => {
+        expect(statementsOf(report).map((row) => {
             return row.elapsedMs;
         })).toEqual([4, 250]);
-        // Only the closing line carries the run's time.
-        expect(report.output.at(-1)?.role).toBe("finish");
-        expect(report.output.at(-1)?.elapsedMs).toBe(report.elapsedMs);
+        // Only the run's own row carries the run's time.
+        expect(runOf(report).elapsedMs).toBe(report.elapsedMs);
     });
 
     it("blames the statement the server says failed", async () => {
@@ -585,8 +634,8 @@ describe("ExecutionService with the server's statement reporting", () => {
             source: lineSource(),
         });
 
-        const failure = report.output.find((row) => {
-            return row.kind === "error" && row.role === "statement";
+        const failure = statementsOf(report).find((row) => {
+            return row.kind === "error";
         });
         expect(failure?.message).toContain("Duplicate entry");
         // The second statement, so the second line of the source.
@@ -596,13 +645,13 @@ describe("ExecutionService with the server's statement reporting", () => {
             character: 0,
         });
 
-        const finish = report.output.at(-1);
-        expect(finish?.message)
+        const run = runOf(report);
+        expect(run.summary)
             .toBe("Finished with 1 error, stopped after 2 of 3");
-        // The closing line carries the run to its first error, in the
-        // output and in the editor.
-        expect(finish?.jumpToRowId).toBe(failure?.id);
-        expect(finish?.source).toEqual(failure?.source);
+        // The run's row carries it to its first error, in the output and
+        // in the editor.
+        expect(run.jumpToRowId).toBe(failure?.id);
+        expect(run.source).toEqual(failure?.source);
     });
 
     it("reports every failure when the script ran on", async () => {
@@ -635,14 +684,13 @@ describe("ExecutionService with the server's statement reporting", () => {
         });
 
         expect(api.stopOnError).toBe(false);
-        const errors = report.output.filter((row) => {
-            return row.kind === "error" && row.role === "statement";
+        const errors = statementsOf(report).filter((row) => {
+            return row.kind === "error";
         });
         expect(errors).toHaveLength(2);
-        const finish = report.output.at(-1);
         // Nothing was skipped, so it does not claim it stopped early.
-        expect(finish?.message).toBe("Finished with 2 errors");
-        expect(finish?.jumpToRowId).toBe(errors[0].id);
+        expect(runOf(report).summary).toBe("Finished with 2 errors");
+        expect(runOf(report).jumpToRowId).toBe(errors[0].id);
     });
 
     it("gives every statement row a place in the file", async () => {
@@ -662,16 +710,13 @@ describe("ExecutionService with the server's statement reporting", () => {
         });
 
         // Offsets 0 and 10, which this source maps to lines 0 and 10.
-        expect(report.output.filter((row) => {
-            return row.role === "statement";
-        }).map((row) => {
+        expect(statementsOf(report).map((row) => {
             return row.source?.line;
         })).toEqual([0, 10]);
-        // The opening line points at the first statement.
-        expect(report.output[0].source?.line).toBe(0);
-        // The closing line has nowhere to point on a run that worked:
-        // its source is the first error, and there was none.
-        expect(report.output.at(-1)?.source).toBeUndefined();
+        // A run that worked points at where it began; one that failed
+        // points at its first error instead.
+        expect(runOf(report).source?.line).toBe(0);
+        expect(runOf(report).jumpToRowId).toBeUndefined();
     });
 
     it("leaves the source out when nothing was behind the run", async () => {
@@ -686,12 +731,12 @@ describe("ExecutionService with the server's statement reporting", () => {
             runId: "run1",
         });
 
-        expect(report.output.every((row) => {
+        expect([runOf(report), ...statementsOf(report)].every((row) => {
             return row.source === undefined;
         })).toBe(true);
     });
 
-    it("names the run in its opening and closing lines", async () => {
+    it("names the run in its own row", async () => {
         const api = createFakeApi({
             defaultResults: [{ affected_items_count: 0, warnings_count: 0 }],
         });
@@ -704,9 +749,8 @@ describe("ExecutionService with the server's statement reporting", () => {
             label: "the selection",
         });
 
-        expect(report.output[0].message)
-            .toBe("Running the selection on dba@h");
-        expect(report.output.at(-1)?.message)
+        expect(runOf(report).message).toBe("Ran the selection on dba@h");
+        expect(runOf(report).summary)
             .toBe("Finished the selection successfully");
     });
 
@@ -723,12 +767,13 @@ describe("ExecutionService with the server's statement reporting", () => {
             runId: "run1",
         });
 
-        expect(report.output.map((row) => {
-            return row.role;
-        })).toEqual(["start", "statement", "finish"]);
-        expect(report.output.at(-1)?.message)
+        // Nothing ran, so the one row under the run is the call itself.
+        expect(statementsOf(report).map((row) => {
+            return [row.role, row.message];
+        })).toEqual([["statement", "the connection went away"]]);
+        expect(runOf(report).summary)
             .toBe("Execution failed: the connection went away");
-        expect(report.output.at(-1)?.jumpToRowId).toBe("run1-error");
+        expect(runOf(report).jumpToRowId).toBe("run1-error");
     });
 });
 
@@ -748,15 +793,17 @@ describe("output row severity", () => {
             runId: "run1",
         });
 
-        expect(report.output.map((row) => {
+        expect(statementsOf(report).map((row) => {
             return row.kind;
-        })).toEqual(["info", "info", "warning", "warning"]);
-        // The closing line says so too, rather than claiming success.
-        expect(report.output.at(-1)?.message)
+        })).toEqual(["info", "warning"]);
+        // The run takes the worst of what its statements saw, and says
+        // so rather than claiming plain success.
+        expect(runOf(report).kind).toBe("warning");
+        expect(runOf(report).summary)
             .toBe("Finished 2 statements successfully with 1 warning");
     });
 
-    it("lets an error outrank a warning on the closing line", async () => {
+    it("lets an error outrank a warning on the run's row", async () => {
         const api = createFakeApi({
             defaultResults: [
                 { affected_items_count: 1, warnings_count: 3 },
@@ -771,8 +818,8 @@ describe("output row severity", () => {
             runId: "run1",
         });
 
-        expect(report.output.at(-1)?.kind).toBe("error");
-        expect(report.output.at(-1)?.message).toBe("Finished with 1 error");
+        expect(runOf(report).kind).toBe("error");
+        expect(runOf(report).summary).toBe("Finished with 1 error");
     });
 
     it("stays plain information when nothing was amiss", async () => {
@@ -787,7 +834,7 @@ describe("output row severity", () => {
             runId: "run1",
         });
 
-        expect(report.output.every((row) => {
+        expect([runOf(report), ...statementsOf(report)].every((row) => {
             return row.kind === "info";
         })).toBe(true);
     });
@@ -833,13 +880,12 @@ describe("ExecutionService with a comment among the statements", () => {
             runId: "run1",
         });
 
-        expect(report.output.map((row) => {
+        expect(runOf(report).message).toBe("Ran 1 statement on dba@h");
+        expect(runOf(report).summary)
+            .toBe("Finished 1 statement successfully");
+        expect(statementsOf(report).map((row) => {
             return [row.role, row.message];
-        })).toEqual([
-            ["start", "Running 1 statement on dba@h"],
-            ["statement", "1 row in set"],
-            ["finish", "Finished 1 statement successfully"],
-        ]);
+        })).toEqual([["statement", "1 row in set"]]);
     });
 
     it("pairs the one result with the statement, not the comment",
@@ -867,7 +913,7 @@ describe("ExecutionService with a comment among the statements", () => {
 
             // The index the server sent is what picks the statement out,
             // which is why the comment has to keep its place in the split.
-            expect(report.output[1]).toMatchObject({
+            expect(statementsOf(report)[0]).toMatchObject({
                 id: "run1-1",
                 statement: "SELECT 1",
                 // Offset 30: the query, past the header and the blank line.
@@ -879,8 +925,8 @@ describe("ExecutionService with a comment among the statements", () => {
             });
         });
 
-    it("points the run's own lines at its first real statement", async () => {
-        // Not at the header comment in front of it, which is where they
+    it("points the run's own row at its first real statement", async () => {
+        // Not at the header comment in front of it, which is where it
         // pointed while the comment counted as statement zero.
         const api = createFakeApi({
             defaultResults: [
@@ -901,7 +947,7 @@ describe("ExecutionService with a comment among the statements", () => {
             source: lineSource(),
         });
 
-        expect(report.output[0].source).toEqual({
+        expect(runOf(report).source).toEqual({
             uri: "file:///work/query.sql",
             line: 30,
             character: 0,
@@ -929,7 +975,7 @@ describe("ExecutionService with a comment among the statements", () => {
             });
 
             // Two statements to run, not three: "1 of 2".
-            expect(report.output.at(-1)?.message)
+            expect(runOf(report).summary)
                 .toBe("Finished with 1 error, stopped after 1 of 2");
         });
 
@@ -943,12 +989,64 @@ describe("ExecutionService with a comment among the statements", () => {
             runId: "run1",
         });
 
-        expect(report.output.map((row) => {
-            return [row.role, row.message];
-        })).toEqual([
-            ["start", "Running 0 statements on dba@h"],
-            ["finish", "Finished 0 statements successfully"],
-        ]);
+        expect(runOf(report).message).toBe("Ran 0 statements on dba@h");
+        expect(runOf(report).summary)
+            .toBe("Finished 0 statements successfully");
+        expect(statementsOf(report)).toEqual([]);
+    });
+});
+
+describe("describeRun", () => {
+    it("counts the statements that will be run", () => {
+        expect(describeRun("SELECT 1;")).toBe("1 statement");
+        expect(describeRun("SELECT 1;\nSELECT 2;")).toBe("2 statements");
+        expect(describeRun("   ")).toBe("0 statements");
+    });
+
+    it("does not count a comment among them", () => {
+        // The same rule `execute()` follows, so the row a run goes up
+        // with says what the row it is replaced by will say.
+        expect(describeRun("-- a note\nSELECT 1;")).toBe("1 statement");
+    });
+
+    it("takes the caller's own name for the run instead", () => {
+        expect(describeRun("SELECT 1;\nSELECT 2;", "the selection"))
+            .toBe("the selection");
+    });
+});
+
+describe("pendingRunRow", () => {
+    it("says what is being run, and marks it as still running", () => {
+        const row = pendingRunRow({
+            runId: "run7",
+            connectionUri: "dba@h",
+            what: "3 statements",
+            when: new Date(2026, 8, 21, 14, 5, 6, 78),
+        });
+
+        expect(row).toEqual({
+            // The run's own id, so the finished run replaces this row
+            // rather than being appended beside it.
+            id: "run7",
+            time: "14:05:06.078",
+            connection: "dba@h",
+            role: "run",
+            statement: "",
+            message: "Running 3 statements on dba@h",
+            summary: "Running\u2026",
+            kind: "pending",
+            // Empty rather than absent: the row keeps its expander, so
+            // its message does not shift when the statements arrive.
+            children: [],
+        });
+    });
+
+    it("has no time of its own to report yet", () => {
+        expect(pendingRunRow({
+            runId: "run1",
+            connectionUri: "dba@h",
+            what: "1 statement",
+        }).elapsedMs).toBeUndefined();
     });
 });
 

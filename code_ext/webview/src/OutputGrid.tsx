@@ -21,11 +21,13 @@ import {
     TabulatorFull as Tabulator,
     type CellComponent,
     type ColumnDefinition,
+    type RowComponent,
 } from "tabulator-tables";
 
 import type { IOutputRow } from "../../src/webview/protocol.js";
 
 interface IOutputGridProperties {
+    /** One row per run, oldest first, each holding its statements. */
     rows: IOutputRow[];
     /** The result sets whose tabs are still on show. */
     availableResultIds: ReadonlySet<string>;
@@ -37,12 +39,44 @@ interface IOutputGridProperties {
     scrollToRowId?: string;
 }
 
-/** The codicon each severity is drawn with, as the Problems panel does. */
+/**
+ * The codicon each severity is drawn with, as the Problems panel does -
+ * plus the spinner a run is marked with until it reports back, which is
+ * the same glyph VS Code spins for work in progress.
+ */
 const SEVERITY_ICONS = {
+    pending: "codicon-loading codicon-modifier-spin",
     info: "codicon-info",
     warning: "codicon-warning",
     error: "codicon-error",
 } as const;
+
+/** What the marker's tooltip says, where the kind is not the word. */
+const SEVERITY_TITLES = {
+    pending: "running",
+    info: "info",
+    warning: "warning",
+    error: "error",
+} as const;
+
+/**
+ * The twistie a run is opened and closed with. VS Code's own chevrons,
+ * supplied to Tabulator in place of the boxed +/- its theme draws in
+ * hard coded greys.
+ */
+const EXPAND_ELEMENT =
+    "<span class=\"treeToggle codicon codicon-chevron-right\"></span>";
+
+/** Its counterpart on an open run. */
+const COLLAPSE_ELEMENT =
+    "<span class=\"treeToggle codicon codicon-chevron-down\"></span>";
+
+/**
+ * How far a statement is indented under its run, in pixels. Tabulator
+ * adds the 7px of its own branch element to this, which puts a statement
+ * just past where its run's message starts.
+ */
+const CHILD_INDENT = 16;
 
 /**
  * Renders the severity cell: the same glyph the Problems panel marks a
@@ -60,7 +94,7 @@ export const formatSeverityCell = (
     const icon = document.createElement("span");
     icon.className =
         `markerIcon ${row.kind} codicon ${SEVERITY_ICONS[row.kind]}`;
-    icon.title = row.kind;
+    icon.title = SEVERITY_TITLES[row.kind];
 
     return icon;
 };
@@ -97,8 +131,8 @@ export const createJumpButton = (
  * Builds the arrow that puts the cursor on the statement a row came
  * from, for any row that knows where in the file that statement is.
  *
- * On the closing row of a failed run it also carries the run to its
- * first error, which is why its title differs.
+ * On the row of a failed run it also opens the run and carries it to
+ * its first error, which is why its title differs.
  *
  * @param row The row the cell belongs to.
  *
@@ -186,6 +220,37 @@ export const formatRowsCell = (
 };
 
 /**
+ * What the Information column says: a statement shows the statement it
+ * ran, and a run what it came to.
+ *
+ * @param row The row to describe.
+ *
+ * @returns The text for the cell.
+ */
+export const informationOf = (row: IOutputRow): string => {
+    return row.role === "run" ? row.summary ?? "" : row.statement;
+};
+
+/**
+ * Renders the Information cell.
+ *
+ * It is built as an element rather than returned as a string because
+ * Tabulator writes a formatter's string into the cell as HTML, and this
+ * column holds SQL and server messages.
+ *
+ * @param cell The cell to render.
+ *
+ * @returns The cell's content.
+ */
+export const formatInformationCell = (cell: CellComponent): HTMLElement => {
+    const row = cell.getRow().getData() as IOutputRow;
+    const content = document.createElement("span");
+    content.textContent = informationOf(row);
+
+    return content;
+};
+
+/**
  * Tabulator reports a click on the whole cell, but both arrows share
  * their cell with the value beside them.
  *
@@ -265,11 +330,15 @@ export const buildOutputColumns = (
             hozAlign: "right",
             headerSort: false,
             cssClass: "outputElapsed",
-            // The server runs a script in one call and reports no
-            // per-statement timing, so this is the whole run's time.
-            headerTooltip: "How long the whole execution took",
+            headerTooltip:
+                "How long the statement took, or the whole run on its own "
+                + "row",
             formatter: (cell) => {
-                return formatElapsed(cell.getValue() as number);
+                const value = cell.getValue() as number | undefined;
+
+                // Empty while a run is still under way: it has no time
+                // yet, and a 0 ms would claim it had.
+                return value === undefined ? "" : formatElapsed(value);
             },
         },
         {
@@ -292,22 +361,94 @@ export const buildOutputColumns = (
             },
         },
         {
-            title: "Statement",
+            title: "Information",
             field: "statement",
             width: 260,
             headerSort: false,
             cssClass: "outputStatement",
+            headerTooltip:
+                "The statement that ran, or what the run came to",
+            formatter: formatInformationCell,
         },
     ];
 };
 
 /**
- * The output tab: one row per statement of every execution, oldest
- * first.
+ * Opens the newest run and closes the rest.
+ *
+ * Tabulator asks this for every row it builds, and it rebuilds them all
+ * on every data change, so the answer is read fresh each time: whatever
+ * is now the last run is open, and a run that was open before a newer
+ * one arrived closes behind it.
+ *
+ * @param rowId The row Tabulator is building.
+ * @param latestRunId The run at the end of the output.
+ *
+ * @returns Whether that row starts out open.
+ */
+export const startsExpanded = (
+    rowId: unknown,
+    latestRunId: string | undefined,
+): boolean => {
+    return latestRunId !== undefined && rowId === latestRunId;
+};
+
+/**
+ * @param rows The output, run by run.
+ * @param rowId The statement row to place.
+ *
+ * @returns The id of the run holding it, if any run does.
+ */
+export const runHolding = (
+    rows: IOutputRow[],
+    rowId: string,
+): string | undefined => {
+    return rows.find((run) => {
+        return run.children?.some((child) => {
+            return child.id === rowId;
+        }) ?? false;
+    })?.id;
+};
+
+/**
+ * Finds a row of the tree, opening the run it belongs to.
+ *
+ * Tabulator looks rows up by index among the top level only, so a
+ * statement cannot be asked for by its own id: it is reached through its
+ * run, which has to be open for it to be a row at all.
+ *
+ * @param instance The table to look in.
+ * @param runId The run the row belongs to, or is.
+ * @param rowId The row to find.
+ *
+ * @returns The row, if the tree still holds it.
+ */
+const openTo = (
+    instance: Tabulator,
+    runId: string,
+    rowId: string,
+): RowComponent | undefined => {
+    const run = instance.getRows().find((candidate) => {
+        return candidate.getIndex() === runId;
+    });
+    if (!run || rowId === runId) {
+        return run;
+    }
+
+    run.treeExpand();
+
+    return run.getTreeChildren().find((candidate) => {
+        return candidate.getIndex() === rowId;
+    });
+};
+
+/**
+ * The output tab: one row per execution, oldest first, holding a row per
+ * statement of it.
  *
  * Unlike the result grids, this one accumulates - it is the log of what
- * has been run on this connection - so it scrolls to the newest row as
- * rows arrive.
+ * has been run on this connection - so it scrolls to the newest run as
+ * runs arrive, and only that run is left open.
  *
  * @param props The rows to show.
  *
@@ -322,6 +463,9 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
     // Held in a ref so the callbacks Tabulator keeps never go stale.
     const callbacks = useRef(props);
     callbacks.current = props;
+    // Read by Tabulator as it builds each row, long after this render.
+    const latestRunId = useRef<string | undefined>(undefined);
+    latestRunId.current = rows.at(-1)?.id;
 
     useLayoutEffect(() => {
         if (!host.current) {
@@ -343,6 +487,18 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
             layout: "fitColumns",
             height: "100%",
             placeholder: "Nothing has been run on this connection yet.",
+            dataTree: true,
+            dataTreeChildField: "children",
+            // The message column, not the marker beside it: a twistie in
+            // a 24px column of icons has nowhere to go, and indenting
+            // that column would push the markers out of line.
+            dataTreeElementColumn: "message",
+            dataTreeChildIndent: CHILD_INDENT,
+            dataTreeExpandElement: EXPAND_ELEMENT,
+            dataTreeCollapseElement: COLLAPSE_ELEMENT,
+            dataTreeStartExpanded: (row) => {
+                return startsExpanded(row.getIndex(), latestRunId.current);
+            },
             rowFormatter: (row) => {
                 const data = row.getData() as IOutputRow;
                 const element = row.getElement();
@@ -351,7 +507,7 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
                 element.classList.toggle("errorRow", data.kind === "error");
                 element.classList.toggle(
                     "warningRow", data.kind === "warning");
-                element.classList.toggle("runRow", data.role !== "statement");
+                element.classList.toggle("runRow", data.role === "run");
             },
         });
 
@@ -390,11 +546,24 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
             return;
         }
 
-        try {
-            void instance.scrollToRow(scrollToRowId, "center", false);
-        } catch {
-            // The row has scrolled out of the capped history.
+        // The run asked about here is usually a closed one - it is the
+        // error of an older run that is being pointed at - so it is
+        // opened on the way.
+        const runId = runHolding(rows, scrollToRowId);
+        if (runId === undefined) {
+            return;
         }
+
+        try {
+            const row = openTo(instance, runId, scrollToRowId);
+            if (row) {
+                void instance.scrollToRow(row, "center", false);
+            }
+        } catch {
+            // The run has scrolled out of the capped history.
+        }
+        // The run to open is looked up in the output as it now stands.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scrollToRowId]);
 
     useEffect(() => {
@@ -410,15 +579,22 @@ export const OutputGrid = (props: IOutputGridProperties): JSX.Element => {
         }
 
         void instance.replaceData([...rows]).then(() => {
-            // The newest line is the one worth seeing.
+            // The newest run is the one worth seeing, and it is the one
+            // left open, so the bottom of it is its last statement.
             const last = rows.at(-1);
-            if (last) {
-                try {
-                    void instance.scrollToRow(last.id, "bottom", false);
-                } catch {
-                    // The row is gone already, which is not worth
-                    // reporting.
+            if (!last) {
+                return;
+            }
+
+            try {
+                const row = openTo(
+                    instance, last.id, last.children?.at(-1)?.id ?? last.id);
+                if (row) {
+                    void instance.scrollToRow(row, "bottom", false);
                 }
+            } catch {
+                // The row is gone already, which is not worth
+                // reporting.
             }
         });
     }, [rows]);

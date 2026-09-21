@@ -23,9 +23,13 @@ import {
     buildOutputColumns,
     clickedOn,
     formatElapsed,
+    formatInformationCell,
     formatMessageCell,
     formatRowsCell,
     formatSeverityCell,
+    informationOf,
+    runHolding,
+    startsExpanded,
 } from "../src/OutputGrid.js";
 import type { IOutputRow } from "../../src/webview/protocol.js";
 
@@ -51,6 +55,27 @@ const row = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
         kind: "info",
         rows: 1,
         elapsedMs: 4,
+        ...overrides,
+    };
+};
+
+/**
+ * @param overrides The fields that differ from a finished run.
+ *
+ * @returns The row one execution reads as.
+ */
+const run = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
+    return {
+        id: "run1",
+        time: "12:00:00.123",
+        connection: "dba@localhost:3310",
+        role: "run",
+        statement: "",
+        message: "Ran 1 statement on dba@localhost:3310",
+        summary: "Finished 1 statement successfully",
+        kind: "info",
+        elapsedMs: 6,
+        children: [row()],
         ...overrides,
     };
 };
@@ -158,9 +183,8 @@ describe("formatMessageCell", () => {
         expect(rendered.classList.contains("hasGoTo")).toBe(false);
     });
 
-    it("says it goes to the first error on a run's closing line", () => {
-        const rendered = formatMessageCell(cell(row({
-            role: "finish",
+    it("says it goes to the first error on a failed run's row", () => {
+        const rendered = formatMessageCell(cell(run({
             source: { uri: "file:///q.sql", line: 3, character: 0 },
             jumpToRowId: "run1-2",
         })));
@@ -209,6 +233,63 @@ describe("formatSeverityCell", () => {
                 .toBe(`markerIcon ${kind} codicon ${codicon}`);
             expect(rendered.title).toBe(kind);
         });
+
+    it("spins the marker of a run that has not reported back", () => {
+        const rendered = formatSeverityCell(
+            cell(run({ kind: "pending", summary: "Running\u2026" })));
+
+        expect(rendered.className).toBe(
+            "markerIcon pending codicon codicon-loading "
+            + "codicon-modifier-spin");
+        expect(rendered.title).toBe("running");
+    });
+});
+
+describe("informationOf", () => {
+    it("shows a statement the statement it ran", () => {
+        expect(informationOf(row())).toBe("SELECT 1");
+    });
+
+    it("shows a run what it came to", () => {
+        expect(informationOf(run())).toBe("Finished 1 statement successfully");
+        expect(informationOf(run({ summary: undefined }))).toBe("");
+    });
+
+    it("writes it as text, not as markup", () => {
+        // Tabulator puts a formatter's string into the cell as HTML, and
+        // this column holds SQL and server messages.
+        const rendered = formatInformationCell(
+            cell(row({ statement: "SELECT a <> b FROM t" })));
+
+        expect(rendered.textContent).toBe("SELECT a <> b FROM t");
+        expect(rendered.children).toHaveLength(0);
+    });
+});
+
+describe("startsExpanded", () => {
+    it("opens the newest run and closes the rest", () => {
+        expect(startsExpanded("run2", "run2")).toBe(true);
+        expect(startsExpanded("run1", "run2")).toBe(false);
+        // A statement row is never a parent, and an empty grid has no
+        // newest run to open.
+        expect(startsExpanded("run1-0", "run2")).toBe(false);
+        expect(startsExpanded("run1", undefined)).toBe(false);
+    });
+});
+
+describe("runHolding", () => {
+    it("finds the run a statement belongs to", () => {
+        const rows = [
+            run({ id: "run1", children: [row({ id: "run1-0" })] }),
+            run({ id: "run2", children: [row({ id: "run2-0" })] }),
+        ];
+
+        expect(runHolding(rows, "run2-0")).toBe("run2");
+        expect(runHolding(rows, "run3-0")).toBeUndefined();
+        // A run that never reported back holds nothing.
+        expect(runHolding([run({ children: [] })], "run1-0"))
+            .toBeUndefined();
+    });
 });
 
 describe("buildOutputColumns", () => {
@@ -230,7 +311,7 @@ describe("buildOutputColumns", () => {
 
         expect(columns.map((column) => {
             return column.title;
-        })).toEqual(["", "Output", "Time", "Elapsed", "Rows", "Statement"]);
+        })).toEqual(["", "Output", "Time", "Elapsed", "Rows", "Information"]);
         // The marker and the message lead together, as they do in the
         // Problems panel; the details follow.
         expect(columns[0].field).toBe("kind");
@@ -244,6 +325,10 @@ describe("buildOutputColumns", () => {
 
         expect(format(cell(row(), 4))).toBe("4 ms");
         expect(format(cell(row(), 2500))).toBe("2.500 s");
+        // A run that is still under way has no time yet, and a 0 ms
+        // would claim it had.
+        expect(format(cell(run({ elapsedMs: undefined }), undefined)))
+            .toBe("");
     });
 
     it("jumps to the result set a row produced", () => {

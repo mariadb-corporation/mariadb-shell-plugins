@@ -243,9 +243,24 @@ describe("SqlEditorBinding", () => {
         await binding.run(editor as never);
 
         expect(api.scripts).toEqual(["SELECT 1 AS a;"]);
-        const posted = view.webview.posted;
-        expect(posted[0]).toMatchObject({ type: "running" });
-        expect(posted.at(-1)).toMatchObject({ type: "state" });
+        const posted = view.webview.posted as Array<{
+            type: string;
+            state?: { output: Array<{ kind: string; summary?: string }> };
+        }>;
+        // Two states: the run going up before anything is run, and the
+        // same row with what it produced in it. The state holds the
+        // provider's own array, so the first message cannot be read back
+        // once the second has changed it - what it carried is pinned in
+        // the provider's own tests.
+        const states = posted.filter((message) => {
+            return message.type === "state";
+        });
+        expect(states).toHaveLength(2);
+        expect(states.at(-1)?.state?.output).toHaveLength(1);
+        expect(states.at(-1)?.state?.output.at(-1)).toMatchObject({
+            kind: "info",
+            summary: "Finished 1 statement successfully",
+        });
 
         binding.dispose();
     });
@@ -321,16 +336,27 @@ describe("SqlEditorBinding", () => {
         const posted = view.webview.posted as Array<{
             type: string;
             state?: {
-                output: Array<{ message: string; kind: string }>;
+                output: Array<{
+                    summary?: string;
+                    kind: string;
+                    children?: Array<{ message: string; kind: string }>;
+                }>;
             };
         }>;
         const states = posted.filter((message) => {
             return message.type === "state";
         });
-        expect(states.at(-1)?.state?.output.at(-1)).toMatchObject({
-            message: "Access denied for user 'dba'",
+        // The run that was put up pending is closed off rather than left
+        // running, and what the server said sits under it.
+        const run = states.at(-1)?.state?.output.at(-1);
+        expect(run).toMatchObject({
+            summary: "Execution failed: Access denied for user 'dba'",
             kind: "error",
         });
+        expect(run?.children).toEqual([expect.objectContaining({
+            message: "Access denied for user 'dba'",
+            kind: "error",
+        })]);
 
         binding.dispose();
     });

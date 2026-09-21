@@ -20,9 +20,10 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { posted } from "./setup.js";
-import { App } from "../src/App.js";
+import { App, lastErrorOf } from "../src/App.js";
 import type {
     HostMessage,
+    IOutputRow,
     IViewState,
 } from "../../src/webview/protocol.js";
 
@@ -101,16 +102,28 @@ const report = (): IViewState => {
         connections: ["dba@localhost:3310", "app@localhost:3311"],
         connection: "dba@localhost:3310",
         output: [{
-            id: "run1-0",
+            id: "run1",
             time: "12:00:00.123",
             connection: "dba@localhost:3310",
-            role: "statement",
-            statement: "CREATE SCHEMA demo",
-            message: "Query OK, 1 row affected",
+            role: "run",
+            statement: "",
+            message: "Ran 1 statement on dba@localhost:3310",
+            summary: "Finished 1 statement successfully",
             kind: "info",
-            rows: 1,
-            elapsedMs: 4,
+            elapsedMs: 6,
             source: { uri: "file:///q.sql", line: 0, character: 0 },
+            children: [{
+                id: "run1-0",
+                time: "12:00:00.123",
+                connection: "dba@localhost:3310",
+                role: "statement",
+                statement: "CREATE SCHEMA demo",
+                message: "Query OK, 1 row affected",
+                kind: "info",
+                rows: 1,
+                elapsedMs: 4,
+                source: { uri: "file:///q.sql", line: 0, character: 0 },
+            }],
         }],
         resultSets: [{
             id: "run1-result-0",
@@ -151,6 +164,63 @@ afterEach(() => {
     render(null, host);
 });
 
+describe("lastErrorOf", () => {
+    /**
+     * @param overrides The fields that differ from a clean run.
+     *
+     * @returns One run of the output.
+     */
+    const run = (overrides: Partial<IOutputRow> = {}): IOutputRow => {
+        return {
+            id: "run1",
+            time: "12:00:00.123",
+            connection: "dba@localhost:3310",
+            role: "run",
+            statement: "",
+            message: "Ran 1 statement on dba@localhost:3310",
+            summary: "Finished 1 statement successfully",
+            kind: "info",
+            children: [],
+            ...overrides,
+        };
+    };
+
+    it("says nothing about a run that worked", () => {
+        expect(lastErrorOf([])).toBeUndefined();
+        expect(lastErrorOf([run()])).toBeUndefined();
+    });
+
+    it("reports what the server said, not the count of errors", () => {
+        expect(lastErrorOf([run({
+            kind: "error",
+            summary: "Finished with 1 error",
+            children: [{
+                ...run({ id: "run1-0", role: "statement" }),
+                kind: "error",
+                message: "Table 'nope.nope' doesn't exist",
+            }],
+        })])).toBe("Table 'nope.nope' doesn't exist");
+    });
+
+    it("falls back to the run's own summary", () => {
+        // A run that failed before it could blame a statement: the
+        // connection was never opened.
+        expect(lastErrorOf([run({
+            kind: "error",
+            summary: "Execution failed: Access denied",
+            children: [],
+        })])).toBe("Execution failed: Access denied");
+    });
+
+    it("leaves an earlier run's error behind", () => {
+        // The bar says what just happened; a run that worked clears it.
+        expect(lastErrorOf([
+            run({ kind: "error", summary: "Finished with 1 error" }),
+            run({ id: "run2" }),
+        ])).toBeUndefined();
+    });
+});
+
 describe("App", () => {
     it("tells the extension it is listening", async () => {
         await mount();
@@ -165,16 +235,32 @@ describe("App", () => {
             expect(host.textContent).toContain("Run a .sql file");
         });
 
-    it("shows which connection a run is on", async () => {
-        await mount();
+    it("shows a run that has only just started on the output tab",
+        async () => {
+            // The run is a row of the output from the moment it starts,
+            // rather than a placeholder over the whole view, so what the
+            // connection did before it is still there to read.
+            await mount();
+            const pending = report();
+            pending.output.push({
+                id: "run2",
+                time: "12:00:01.000",
+                connection: "dba@localhost:3310",
+                role: "run",
+                statement: "",
+                message: "Running 1 statement on dba@localhost:3310",
+                summary: "Running\u2026",
+                kind: "pending",
+                children: [],
+            });
+            pending.resultSets = [];
 
-        await send({
-            type: "running",
-            connection: "dba@localhost:3310",
+            await send({ type: "state", state: pending });
+
+            expect(host.querySelector(".tab.active")?.textContent)
+                .toContain("Output");
+            expect(host.querySelector(".errorBar")).toBeNull();
         });
-
-        expect(host.textContent).toContain("Running on dba@localhost:3310");
-    });
 
     it("puts the tabs at the bottom, after the content", async () => {
         await mount();
@@ -196,6 +282,7 @@ describe("App", () => {
         const tabs = [...host.querySelectorAll(".tab")].map((node) => {
             return node.textContent;
         });
+        // The badge counts runs, which is what the output now holds.
         expect(tabs).toEqual(["Output1", "Result #1"]);
     });
 
@@ -468,14 +555,25 @@ describe("App", () => {
                 connections: ["dba@localhost:3310"],
                 connection: "dba@localhost:3310",
                 output: [{
-                    id: "run1-error",
+                    id: "run1",
                     time: "12:00:00.123",
                     connection: "dba@localhost:3310",
-                    role: "statement",
-                    statement: "SELECT * FROM nope.nope",
-                    message: "Table 'nope.nope' doesn't exist",
+                    role: "run",
+                    statement: "",
+                    message: "Ran 1 statement on dba@localhost:3310",
+                    summary: "Finished with 1 error",
                     kind: "error",
                     elapsedMs: 2,
+                    children: [{
+                        id: "run1-0",
+                        time: "12:00:00.123",
+                        connection: "dba@localhost:3310",
+                        role: "statement",
+                        statement: "SELECT * FROM nope.nope",
+                        message: "Table 'nope.nope' doesn't exist",
+                        kind: "error",
+                        elapsedMs: 2,
+                    }],
                 }],
                 resultSets: [],
             },

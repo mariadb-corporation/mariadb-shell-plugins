@@ -26,6 +26,7 @@ import type {
     IResultColumn,
     IResultSet,
     IStatementSource,
+    OutputSeverity,
     RowChange,
 } from "../webview/protocol.js";
 import { createQueryBuilder } from "./resultSetQueryBuilder.js";
@@ -74,6 +75,78 @@ export const formatTime = (when: Date): string => {
 
     return `${pad(when.getHours())}:${pad(when.getMinutes())}`
         + `:${pad(when.getSeconds())}.${pad(when.getMilliseconds(), 3)}`;
+};
+
+/**
+ * Names what a run is about to do, for the run's own row.
+ *
+ * @param count How many statements will actually be run.
+ * @param label What the caller wants the run called instead.
+ *
+ * @returns The phrase the run's row is built around.
+ */
+export const describeStatementCount = (
+    count: number,
+    label?: string,
+): string => {
+    if (label !== undefined) {
+        return label;
+    }
+
+    return count === 1 ? "1 statement" : `${count} statements`;
+};
+
+/**
+ * The same phrase, worked out from the script itself.
+ *
+ * This is what a caller uses to open the run's row before it has a
+ * connection to run on, which is the whole point of the row: it appears
+ * the moment the user asks for it, not once the server answers.
+ *
+ * @param script The SQL about to be run.
+ * @param label What the caller wants the run called instead.
+ *
+ * @returns The phrase the run's row is built around.
+ */
+export const describeRun = (script: string, label?: string): string => {
+    const executable = splitStatements(script).filter((statement) => {
+        return statement.executable;
+    });
+
+    return describeStatementCount(executable.length, label);
+};
+
+/**
+ * Builds the row a run is shown by while it is still running.
+ *
+ * It carries the run's id, so the finished run replaces it rather than
+ * being appended beside it, and an empty child array, so the row already
+ * has its expander and its text does not shift when the statements
+ * arrive under it.
+ *
+ * @param options The run this row stands for.
+ *
+ * @returns The row to put in the output.
+ */
+export const pendingRunRow = (options: {
+    runId: string;
+    connectionUri: string;
+    /** What the run is called, from `describeRun()`. */
+    what: string;
+    /** When it started; now, unless a test says otherwise. */
+    when?: Date;
+}): IOutputRow => {
+    return {
+        id: options.runId,
+        time: formatTime(options.when ?? new Date()),
+        connection: options.connectionUri,
+        role: "run",
+        statement: "",
+        message: `Running ${options.what} on ${options.connectionUri}`,
+        summary: "Running\u2026",
+        kind: "pending",
+        children: [],
+    };
 };
 
 /**
@@ -198,7 +271,7 @@ export interface IExecutionOptions {
     source?: IScriptSource;
     /** Whether a failing statement ends the script. */
     stopOnError?: boolean;
-    /** What to call this run in the opening and closing lines. */
+    /** What to call this run in its own row. */
     label?: string;
 }
 
@@ -216,10 +289,14 @@ export class ExecutionService {
     /**
      * Runs a script and collects everything the view needs to show it.
      *
-     * The output opens with a line saying what is about to run and closes
-     * with one saying how it went, so a run reads as a block in a log
-     * that keeps growing. Each line in between is one statement, timed by
-     * the server and carrying where in the file it came from.
+     * What comes back is one row for the run with a child row per
+     * statement under it: the run's row says what ran, where, how long
+     * all of it took and what it came to, and its children carry the
+     * server's word on each statement - that statement's own time, its
+     * rows and where in the file it came from.
+     *
+     * The row carries the run's id, so it takes the place of the pending
+     * row the caller put up when the user asked for the run.
      *
      * @param options What to run, and where it came from.
      *
@@ -238,7 +315,7 @@ export class ExecutionService {
         const executable = statements.filter((statement) => {
             return statement.executable;
         });
-        const output: IOutputRow[] = [];
+        const children: IOutputRow[] = [];
         const resultSets: IResultSet[] = [];
 
         const startedAt = formatTime(new Date());
@@ -264,20 +341,52 @@ export class ExecutionService {
         // comment standing in front of it.
         const runSource = sourceOf(executable[0]?.index ?? 0);
 
-        const what = options.label
-            ?? (executable.length === 1
-                ? "1 statement"
-                : `${executable.length} statements`);
-        output.push({
-            id: `${runId}-start`,
-            time: startedAt,
-            connection: connectionUri,
-            role: "start",
-            statement: "",
-            message: `Running ${what} on ${connectionUri}`,
-            kind: "info",
-            source: runSource,
-        });
+        const what = describeStatementCount(executable.length, options.label);
+
+        let firstErrorId: string | undefined;
+        let firstErrorSource: IStatementSource | undefined;
+        let errorCount = 0;
+
+        /**
+         * Closes the run off: the statements gathered so far become the
+         * children of one row saying how the whole thing went.
+         *
+         * @param outcome What it came to, for the Information column.
+         * @param kind How the run's row is marked.
+         *
+         * @returns The report to send to the webview.
+         */
+        const finish = (
+            outcome: string,
+            kind: OutputSeverity,
+        ): IExecutionReport => {
+            const elapsedMs = Date.now() - startedMs;
+
+            return {
+                connection: connectionUri,
+                startedAt,
+                elapsedMs,
+                output: [{
+                    id: runId,
+                    time: startedAt,
+                    connection: connectionUri,
+                    role: "run",
+                    statement: "",
+                    message: `Ran ${what} on ${connectionUri}`,
+                    summary: outcome,
+                    kind,
+                    children,
+                    // The run's own time. Each child carries its
+                    // statement's, as the server measured it.
+                    elapsedMs,
+                    // A run that failed points at its first error; one
+                    // that did not points at where it began.
+                    source: firstErrorSource ?? runSource,
+                    jumpToRowId: firstErrorId,
+                }],
+                resultSets,
+            };
+        };
 
         // Asked for at most once per execution, and only when an
         // unqualified table name actually has to be resolved.
@@ -309,31 +418,12 @@ export class ExecutionService {
                 kind: "error",
                 source: runSource,
             };
-            output.push(failure, {
-                id: `${runId}-finish`,
-                time: formatTime(new Date()),
-                connection: connectionUri,
-                role: "finish",
-                statement: "",
-                message: `Execution failed: ${message}`,
-                kind: "error",
-                elapsedMs: Date.now() - startedMs,
-                source: failure.source,
-                jumpToRowId: failure.id,
-            });
+            children.push(failure);
+            firstErrorId = failure.id;
+            firstErrorSource = failure.source;
 
-            return {
-                connection: connectionUri,
-                startedAt,
-                elapsedMs: Date.now() - startedMs,
-                output,
-                resultSets,
-            };
+            return finish(`Execution failed: ${message}`, "error");
         }
-
-        let firstErrorId: string | undefined;
-        let firstErrorSource: IStatementSource | undefined;
-        let errorCount = 0;
 
         for (const [position, result] of results.entries()) {
             // The server reports which statement each result belongs to.
@@ -351,7 +441,7 @@ export class ExecutionService {
                 errorCount += 1;
                 firstErrorId ??= id;
                 firstErrorSource ??= source;
-                output.push({
+                children.push({
                     id,
                     time: startedAt,
                     connection: connectionUri,
@@ -372,7 +462,7 @@ export class ExecutionService {
                 : "info" as const;
 
             if (!result.columns) {
-                output.push({
+                children.push({
                     id,
                     time: startedAt,
                     connection: connectionUri,
@@ -398,7 +488,7 @@ export class ExecutionService {
             );
             resultSets.push(resultSet);
 
-            output.push({
+            children.push({
                 id,
                 time: startedAt,
                 connection: connectionUri,
@@ -413,20 +503,14 @@ export class ExecutionService {
             });
         }
 
-        const elapsedMs = Date.now() - startedMs;
         const ran = results.length;
         const stoppedEarly = errorCount > 0 && ran < executable.length;
-        const warningCount = output.filter((row) => {
+        const warningCount = children.filter((row) => {
             return row.kind === "warning";
         }).length;
 
-        output.push({
-            id: `${runId}-finish`,
-            time: formatTime(new Date()),
-            connection: connectionUri,
-            role: "finish",
-            statement: "",
-            message: errorCount === 0
+        return finish(
+            errorCount === 0
                 ? `Finished ${what} successfully`
                 + (warningCount === 0
                     ? ""
@@ -437,25 +521,12 @@ export class ExecutionService {
                 + (stoppedEarly
                     ? `, stopped after ${ran} of ${executable.length}`
                     : ""),
-            kind: errorCount > 0
+            errorCount > 0
                 ? "error"
                 : warningCount > 0
                     ? "warning"
                     : "info",
-            // Only the closing line carries the run's own time; the lines
-            // above it each carry their statement's.
-            elapsedMs,
-            source: firstErrorSource,
-            jumpToRowId: firstErrorId,
-        });
-
-        return {
-            connection: connectionUri,
-            startedAt,
-            elapsedMs,
-            output,
-            resultSets,
-        };
+        );
     }
 
     /**

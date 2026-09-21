@@ -24,9 +24,10 @@ import {
 } from "../connections/settings.js";
 import {
     captionFor,
+    describeRun,
     ExecutionService,
-    formatTime,
     type IScriptSource,
+    pendingRunRow,
 } from "../sql/executionService.js";
 import { statementAtOffset } from "../sql/statementAtOffset.js";
 import type {
@@ -443,7 +444,13 @@ export class SqlEditorBinding implements vscode.Disposable {
         source?: IScriptSource,
         stopAtFirstError: boolean = stopOnError(),
     ): Promise<void> {
-        await this.resultView.showRunning(uri);
+        // The run is put up before the connection is even opened, which
+        // is what the shell may have to be started for, so the output
+        // shows it is under way rather than nothing at all.
+        const runId = this.#nextRunId();
+        const what = describeRun(script, label);
+        const run = pendingRunRow({ runId, connectionUri: uri, what });
+        await this.resultView.startRun(uri, run);
 
         try {
             const connectionId = await this.connections.connect(uri);
@@ -453,7 +460,7 @@ export class SqlEditorBinding implements vscode.Disposable {
                 connectionUri: uri,
                 connectionId,
                 script,
-                runId: this.#nextRunId(),
+                runId,
                 source,
                 label,
                 stopOnError: stopAtFirstError,
@@ -470,21 +477,29 @@ export class SqlEditorBinding implements vscode.Disposable {
             this.log(`Failed to run the script on ${uri}: ${message}`);
             void vscode.window.showErrorMessage(`MariaDB: ${message}`);
             // Shown without an apply context: the failure happened
-            // before there was anything editable to write back.
-            const now = formatTime(new Date());
+            // before there was anything editable to write back. It
+            // closes off the run that was put up above - same id - so
+            // the output does not keep a run that never ends.
             await this.resultView.showResults({
                 connection: uri,
-                startedAt: now,
+                startedAt: run.time,
                 elapsedMs: 0,
                 output: [{
-                    id: this.#nextRunId(),
-                    time: now,
-                    connection: uri,
-                    role: "finish",
-                    statement: captionFor(script),
-                    message,
+                    ...run,
+                    message: `Ran ${what} on ${uri}`,
+                    summary: `Execution failed: ${message}`,
                     kind: "error",
                     elapsedMs: 0,
+                    children: [{
+                        id: `${runId}-error`,
+                        time: run.time,
+                        connection: uri,
+                        role: "statement",
+                        statement: captionFor(script),
+                        message,
+                        kind: "error",
+                    }],
+                    jumpToRowId: `${runId}-error`,
                 }],
                 resultSets: [],
             });

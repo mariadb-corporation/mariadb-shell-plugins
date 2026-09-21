@@ -39,12 +39,16 @@ export interface IApplyContext {
     service: ExecutionService;
 }
 
-/** How many output rows one connection keeps before the oldest go. */
+/**
+ * How many output rows one connection keeps before the oldest go. A run
+ * and its statements are counted together, since they stand or fall as
+ * one row of the tree.
+ */
 export const MAX_OUTPUT_ROWS = 2000;
 
 /** What the view holds for one connection. */
 interface IConnectionResults {
-    /** Every run's output, oldest first. */
+    /** One row per run, oldest first, each holding its statements. */
     output: IOutputRow[];
     /** The last run's result sets; a run replaces them. */
     resultSets: IResultSet[];
@@ -238,24 +242,44 @@ export class ResultViewProvider
     }
 
     /**
-     * Tells the view that an execution has started.
+     * Opens a run in the output, before anything has been run.
+     *
+     * The row goes in the moment the user asks for the run rather than
+     * once the server answers, so a script that takes its time - or a
+     * connection that has to be opened first - is visibly under way.
+     * `showResults` then replaces it, matching on its id.
+     *
+     * The result set tabs of the previous run go with it: they stand for
+     * the last run, and this is no longer it.
      *
      * @param connection The connection it runs on.
+     * @param run The run's row, from `pendingRunRow()`.
      *
      * @returns Nothing.
      */
-    public async showRunning(connection: string): Promise<void> {
+    public async startRun(
+        connection: string,
+        run: IOutputRow,
+    ): Promise<void> {
         await this.reveal();
+
+        const results = this.#resultsFor(connection);
+        results.output.push(run);
+        this.#trim(results);
+        results.resultSets = [];
+        results.applyContext = undefined;
+
         this.#active = connection;
-        this.#send({ type: "running", connection });
+        await this.#sendState();
     }
 
     /**
      * Shows what an execution produced.
      *
-     * The output is appended to whatever that connection has gathered so
-     * far; only its result sets are replaced, since their tabs stand for
-     * the last run.
+     * A run that was opened with `startRun` is updated in place - its row
+     * carries the same id - and one that was not is appended, so a report
+     * that arrives on its own still shows. Only the result sets are
+     * replaced outright, since their tabs stand for the last run.
      *
      * @param report What the execution produced.
      * @param applyContext What is needed to write grid edits back. Left
@@ -271,13 +295,17 @@ export class ResultViewProvider
         await this.reveal();
 
         const results = this.#resultsFor(report.connection);
-        results.output.push(...report.output);
-        if (results.output.length > MAX_OUTPUT_ROWS) {
-            // Output accumulates for as long as a window is open, so it
-            // needs a ceiling; the oldest rows go first.
-            results.output.splice(
-                0, results.output.length - MAX_OUTPUT_ROWS);
+        for (const row of report.output) {
+            const at = results.output.findIndex((existing) => {
+                return existing.id === row.id;
+            });
+            if (at === -1) {
+                results.output.push(row);
+            } else {
+                results.output[at] = row;
+            }
         }
+        this.#trim(results);
         results.resultSets = report.resultSets;
         results.applyContext = applyContext;
 
@@ -326,7 +354,7 @@ export class ResultViewProvider
     /**
      * @param connection The connection to look up.
      *
-     * @returns Its output rows, oldest first.
+     * @returns Its runs, oldest first, each holding its statements.
      */
     public outputFor(connection: string): IOutputRow[] {
         return this.#byConnection.get(connection)?.output ?? [];
@@ -435,6 +463,32 @@ export class ResultViewProvider
         }
 
         return results;
+    }
+
+    /**
+     * Drops the oldest runs once a connection has gathered too much.
+     *
+     * A run counts as its own row plus its statements: the tree cannot
+     * keep half a run, so the ceiling is enforced a whole run at a time,
+     * and the newest one is kept however long it is.
+     *
+     * @param results The connection's state, trimmed in place.
+     *
+     * @returns Nothing.
+     */
+    #trim(results: IConnectionResults): void {
+        const sizeOf = (row: IOutputRow): number => {
+            return 1 + (row.children?.length ?? 0);
+        };
+
+        let total = results.output.reduce((sum, row) => {
+            return sum + sizeOf(row);
+        }, 0);
+
+        while (total > MAX_OUTPUT_ROWS && results.output.length > 1) {
+            total -= sizeOf(results.output[0]);
+            results.output.shift();
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExecutionService } from "../../sql/executionService.js";
 import type {
     IExecutionReport,
+    IOutputRow,
     IViewState,
 } from "../../webview/protocol.js";
 import {
@@ -52,16 +53,23 @@ const editableReport = (
         startedAt: "12:00:00.123",
         elapsedMs: 4,
         output: [{
-            id: "run1-0",
-            time: "12:00:00.123",
-            connection: "dba@localhost:3310",
-            role: "statement",
-            statement: "SELECT ID, Name FROM world.city",
-            message: "1 row in set",
+            ...pendingRun(),
+            message: "Ran 1 statement on dba@localhost:3310",
+            summary: "Finished 1 statement successfully",
             kind: "info",
-            rows: 1,
             elapsedMs: 4,
-            resultId: "run1-result-0",
+            children: [{
+                id: "run1-0",
+                time: "12:00:00.123",
+                connection: "dba@localhost:3310",
+                role: "statement",
+                statement: "SELECT ID, Name FROM world.city",
+                message: "1 row in set",
+                kind: "info",
+                rows: 1,
+                elapsedMs: 4,
+                resultId: "run1-result-0",
+            }],
         }],
         ...overrides,
         resultSets: overrides.resultSets ?? [{
@@ -89,6 +97,28 @@ const editableReport = (
             target: { schema: "world", table: "city" },
             status: "1 row in set",
         }],
+    };
+};
+
+/**
+ * @param overrides The fields that differ from a plain pending run.
+ *
+ * @returns The row a run is opened with.
+ */
+const pendingRun = (
+    overrides: Partial<IOutputRow> = {},
+): IOutputRow => {
+    return {
+        id: "run1",
+        time: "12:00:00.123",
+        connection: "dba@localhost:3310",
+        role: "run",
+        statement: "",
+        message: "Running 1 statement on dba@localhost:3310",
+        summary: "Running\u2026",
+        kind: "pending",
+        children: [],
+        ...overrides,
     };
 };
 
@@ -173,20 +203,18 @@ describe("ResultViewProvider", () => {
         async () => {
             const { provider, view } = createResolvedView();
 
-            await provider.showRunning("dba@localhost:3310");
+            await provider.startRun("dba@localhost:3310", pendingRun());
             expect(view.webview.posted).toEqual([]);
 
             view.webview.receive({ type: "ready" });
 
-            expect(view.webview.posted[0]).toEqual(
-                { type: "running", connection: "dba@localhost:3310" },
-            );
-            // Followed by the state of the connection it is running on,
-            // which a freshly resolved view has not seen yet. It comes a
-            // tick later, since listing the connections is async.
+            // The state of the connection being run on, which a freshly
+            // resolved view has not seen yet. It comes a tick later,
+            // since listing the connections is async.
             await vi.waitFor(() => {
-                expect(view.webview.posted[1])
-                    .toMatchObject({ type: "state" });
+                expect(lastState(view)?.output.map((row) => {
+                    return row.kind;
+                })).toEqual(["pending"]);
             });
         });
 
@@ -340,6 +368,71 @@ describe("ResultViewProvider", () => {
         });
     });
 
+    describe("a run under way", () => {
+        it("puts the run up before anything has been run", async () => {
+            const { provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+
+            await provider.startRun("dba@localhost:3310", pendingRun());
+
+            expect(lastState(view)?.output).toEqual([pendingRun()]);
+        });
+
+        it("replaces it with what the run produced", async () => {
+            const { api, provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+
+            await provider.startRun("dba@localhost:3310", pendingRun());
+            await provider.showResults(editableReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+
+            // One row, not two: the report carries the same id.
+            const output = lastState(view)?.output ?? [];
+            expect(output).toHaveLength(1);
+            expect(output[0]).toMatchObject({
+                id: "run1",
+                kind: "info",
+                summary: "Finished 1 statement successfully",
+            });
+            expect(output[0].children).toHaveLength(1);
+        });
+
+        it("clears the tabs of the run before it", async () => {
+            const { api, provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            await provider.showResults(editableReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+
+            await provider.startRun(
+                "dba@localhost:3310", pendingRun({ id: "run2" }));
+
+            // The tabs stand for the last run, and this is no longer it;
+            // nothing can be written back through them either.
+            expect(lastState(view)?.resultSets).toEqual([]);
+            expect(provider.applyContext).toBeUndefined();
+        });
+
+        it("keeps each connection's runs apart", async () => {
+            const { provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+
+            await provider.startRun("dba@localhost:3310", pendingRun());
+            await provider.startRun("app@localhost:3311", pendingRun({
+                id: "run2",
+                connection: "app@localhost:3311",
+            }));
+
+            expect(provider.outputFor("dba@localhost:3310")).toHaveLength(1);
+            expect(lastState(view)?.connection).toBe("app@localhost:3311");
+        });
+    });
+
     describe("accumulating output", () => {
         it("keeps the output of earlier runs", async () => {
             const { api, provider, view } = createResolvedView();
@@ -352,23 +445,13 @@ describe("ResultViewProvider", () => {
 
             await provider.showResults(editableReport(), context);
             await provider.showResults(editableReport({
-                output: [{
-                    id: "run2-0",
-                    time: "12:00:01.500",
-                    connection: "dba@localhost:3310",
-                    role: "statement",
-                    statement: "SELECT 2",
-                    message: "1 row in set",
-                    kind: "info",
-                    rows: 1,
-                    elapsedMs: 3,
-                }],
+                output: [pendingRun({ id: "run2", kind: "info" })],
                 resultSets: [],
             }), context);
 
             expect(lastState(view)?.output.map((row) => {
                 return row.id;
-            })).toEqual(["run1-0", "run2-0"]);
+            })).toEqual(["run1", "run2"]);
         });
 
         it("replaces the result sets on each run", async () => {
@@ -400,16 +483,11 @@ describe("ResultViewProvider", () => {
             });
             await provider.showResults(editableReport({
                 connection: "app@localhost:3311",
-                output: [{
-                    id: "run2-0",
-                    time: "12:00:01.500",
+                output: [pendingRun({
+                    id: "run2",
                     connection: "app@localhost:3311",
-                    role: "statement",
-                    statement: "SELECT 2",
-                    message: "1 row in set",
                     kind: "info",
-                    elapsedMs: 3,
-                }],
+                })],
                 resultSets: [],
             }), {
                 connectionUri: "app@localhost:3311",
@@ -432,29 +510,36 @@ describe("ResultViewProvider", () => {
             };
 
             // Output lives for as long as the window does, so it needs a
-            // ceiling; the oldest rows go first.
+            // ceiling; the oldest runs go first, whole. Three runs of
+            // half of it are over it.
+            const perRun = Math.floor(MAX_OUTPUT_ROWS / 2) - 1;
             for (let run = 0; run < 3; run += 1) {
                 await provider.showResults(editableReport({
-                    output: Array.from({ length: 900 }, (_value, index) => {
-                        return {
-                            id: `run${run}-${index}`,
-                            time: "12:00:00.000",
-                            connection: "dba@localhost:3310",
-                            role: "statement" as const,
-                            statement: "SELECT 1",
-                            message: "ok",
-                            kind: "info" as const,
-                            elapsedMs: 1,
-                        };
-                    }),
+                    output: [pendingRun({
+                        id: `run${run}`,
+                        kind: "info",
+                        children: Array.from({ length: perRun }, (_v, i) => {
+                            return {
+                                id: `run${run}-${i}`,
+                                time: "12:00:00.000",
+                                connection: "dba@localhost:3310",
+                                role: "statement" as const,
+                                statement: "SELECT 1",
+                                message: "ok",
+                                kind: "info" as const,
+                                elapsedMs: 1,
+                            };
+                        }),
+                    })],
                     resultSets: [],
                 }), context);
             }
 
+            // The first run goes whole: the tree cannot keep half of it.
             const output = provider.outputFor("dba@localhost:3310");
-            expect(output).toHaveLength(MAX_OUTPUT_ROWS);
-            expect(output[0].id).toBe("run0-700");
-            expect(output.at(-1)?.id).toBe("run2-899");
+            expect(output.map((row) => {
+                return row.id;
+            })).toEqual(["run1", "run2"]);
         });
     });
 
