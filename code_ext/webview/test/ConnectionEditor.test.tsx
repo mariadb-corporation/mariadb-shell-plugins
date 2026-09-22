@@ -84,6 +84,22 @@ const click = async (label: string): Promise<void> => {
     });
 };
 
+/** Clicks the checkbox whose label reads as given. */
+const toggle = async (label: string): Promise<void> => {
+    const box = [...host.querySelectorAll("label.checkbox")].find((node) => {
+        return (node.textContent ?? "").trim() === label;
+    })?.querySelector("input") as HTMLInputElement | null;
+    if (!box) {
+        throw new Error(`No checkbox '${label}'.`);
+    }
+
+    await act(async () => {
+        box.checked = !box.checked;
+        box.dispatchEvent(new Event("change", { bubbles: true }));
+        await Promise.resolve();
+    });
+};
+
 /** Types into the input under the given caption. */
 const type = async (caption: string, value: string): Promise<void> => {
     const field = [...host.querySelectorAll("label.field")].find((node) => {
@@ -127,26 +143,64 @@ describe("ConnectionEditor", () => {
         expect(posted).toEqual([{ type: "ready" }]);
     });
 
-    it("shows the three tabs the MySQL Shell's editor has", async () => {
+    it("shows the tabs the MySQL Shell's editor has", async () => {
         await mount();
         await load();
 
         expect([...host.querySelectorAll(".tab")].map((node) => {
             return node.textContent;
-        })).toEqual(["Basic", "SSL", "Advanced"]);
+        })).toEqual(["Basic", "SSL", "SSH", "Advanced"]);
     });
 
-    it("offers no SSH or OCI tab", async () => {
+    it("offers no OCI or MDS tab", async () => {
         // They are in the original, and deliberately not here: a connection
         // is stored as a URI, and neither can be written into one.
         await mount();
         await load();
 
         const text = host.textContent ?? "";
-        expect(text).not.toContain("SSH");
         expect(text).not.toContain("Bastion");
         expect(text).not.toContain("MDS");
     });
+
+    it("hides the SSH settings until the tunnel is asked for", async () => {
+        // The fields are only meaningful on a `+ssh` URI - the shell refuses
+        // an ssh-* option on any other scheme - so showing them on a
+        // connection that does not tunnel would offer a setting that cannot
+        // be saved.
+        await mount();
+        await load();
+        await click("SSH");
+
+        expect(host.textContent).not.toContain("SSH Host");
+
+        await toggle("Connect through an SSH tunnel");
+
+        expect(host.textContent).toContain("SSH Host");
+    });
+
+    it("turns the tunnel on by changing the protocol, and back again",
+        async () => {
+            await mount();
+            await load({ user: "dba", host: "db.internal", scheme: "mysql" });
+            await click("SSH");
+            await toggle("Connect through an SSH tunnel");
+            await type("SSH Host", "bastion.example.com");
+            await type("SSH User Name", "jump");
+            await click("Create");
+
+            // The base protocol is kept: only the extension is added.
+            expect(lastPosted<ISaveMessage>("save")?.fields.scheme)
+                .toBe("mysql+ssh");
+            expect(lastPosted<ISaveMessage>("save")?.fields.sshHost)
+                .toBe("bastion.example.com");
+
+            await toggle("Connect through an SSH tunnel");
+            await click("Create");
+
+            expect(lastPosted<ISaveMessage>("save")?.fields.scheme)
+                .toBe("mysql");
+        });
 
     it("fills the fields from the connection it was opened on", async () => {
         await mount();

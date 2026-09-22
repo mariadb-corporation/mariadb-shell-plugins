@@ -39,7 +39,7 @@ describe("buildMcpServerCommand", () => {
     it("uses the located binary", () => {
         const managed: ShellLocation = {
             binaryPath:
-                "/Users/mzinner/.local/share/mariadb-shell/26.9.2/bin"
+                "/Users/mzinner/.local/share/mariadb-shell/26.9.3/bin"
                 + "/mariadb-shell",
             version: { major: 26, minor: 9, patch: 2 },
             source: "managed",

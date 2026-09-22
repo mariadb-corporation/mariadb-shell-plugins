@@ -21,17 +21,39 @@ activity reported here is in [result-view.md](result-view.md).
 | `webview/src/ConnectionEditor.tsx` | The dialog itself. |
 
 It is modelled on the MySQL Shell extension's `ConnectionEditor`: the same
-three tabs (Basic, SSL, Advanced) in the same order, with the same captions
+tabs (Basic, SSL, SSH, Advanced) in the same order, with the same captions
 where the setting is the same one. **What is missing is missing on purpose** -
 a connection here is stored as a URI and nothing else, so a setting that
-cannot be written into one cannot be offered. That rules out the SSH tunnel
-tab (the shell keeps `ssh-*` in `ssh_uri_connection_attributes`, a separate
-set that never reaches a URI), the OCI/MDS tabs, `sql-mode` and the HeatWave
-check. `URI_OPTIONS` is `uri_connection_attributes` from the shell's
-`mysqlshdk/libs/db/utils_connection.h`, and is what tells a typo in the
-"Other Connection Options" table from a real option.
+cannot be written into one cannot be offered. That rules out the OCI/MDS tabs,
+`sql-mode`, the HeatWave check, and the two SSH passwords (`ssh-password`,
+`ssh-identity-file-password`), which the shell keeps out of a URI deliberately.
+`URI_OPTIONS` is `uri_connection_attributes` plus `ssh_uri_query_attributes`
+from the shell's `mysqlshdk/libs/db/utils_connection.h`, and is what tells a
+typo in the "Other Connection Options" table from a real option.
 
-Four things about it are load bearing:
+Five things about it are load bearing:
+
+- **The scheme is a real field and always written out.** `db.list_connections`
+  reports `scheme://user@host:port` from MariaDB Shell 26.9.3 on, and the
+  scheme is part of what identifies a connection to the server - `mariadb://`,
+  `mysql://`, `mysqlx://` and the `+ssh` forms are five different connections.
+  `emptyConnectionFields()` therefore starts on `DEFAULT_SCHEME` (`mariadb`),
+  `parseConnectionUri` keeps whatever scheme it reads (lowercased, since they
+  are case-insensitive and the shell emits them lowercased) and defaults a URI
+  with none - one stored before 26.9.3 - to the same. `withDefaultScheme()` is
+  the textual fill-in for comparing a URI written down by an older version of
+  the extension against one listed now; the default-connection setting is the
+  one place that matters, and `ConnectionsModel.getRoots` puts both sides
+  through it or the default connection quietly loses its marker.
+- **The SSH tab is a view onto the scheme.** There is no option that turns a
+  tunnel on - `mariadb+ssh://` is the whole of it - so the tab's "Connect
+  through an SSH tunnel" checkbox is the Protocol dropdown by another name
+  (`withSshTunnel` keeps the base scheme and adds or removes `+ssh`). The
+  `ssh-*` fields are hidden and NOT emitted while it is off, because the shell
+  refuses an `ssh-*` option on any other scheme - carrying one over would make
+  the connection unsaveable rather than simply untunnelled. The authority of a
+  `+ssh` URI is the DATABASE; `ssh-host` names the bastion, and left out, the
+  database host IS the SSH host and the tunnel forwards to loopback there.
 
 - **`buildConnectionUri` emits the shell's own canonical spelling.** Every
   expectation in `connectionUri.test.ts` was produced by running the fields

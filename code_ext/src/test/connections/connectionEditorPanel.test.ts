@@ -149,17 +149,17 @@ describe("ConnectionEditorPanel", () => {
         const { host } = createHost();
 
         ConnectionEditorPanel.show(extensionUri as never, host, {
-            uri: "dba@db.example.com:3307/world",
+            uri: "mariadb://dba@db.example.com:3307/world",
             kind: "mcp",
         });
 
-        expect(currentPanel().title).toBe("Edit dba@db.example.com:3307/world");
+        expect(currentPanel().title).toBe("Edit mariadb://dba@db.example.com:3307/world");
 
         await receive({ type: "ready" });
 
         expect(posted()[0]).toMatchObject({
             type: "load",
-            uri: "dba@db.example.com:3307/world",
+            uri: "mariadb://dba@db.example.com:3307/world",
             // In the shared list, so the checkbox comes up ticked.
             mcpAccess: true,
             hasStoredPassword: true,
@@ -174,7 +174,7 @@ describe("ConnectionEditorPanel", () => {
         const { host } = createHost();
 
         ConnectionEditorPanel.show(extensionUri as never, host, {
-            uri: "dba@localhost:3306", kind: "gui",
+            uri: "mariadb://dba@localhost:3306", kind: "gui",
         });
         await receive({ type: "ready" });
 
@@ -188,7 +188,7 @@ describe("ConnectionEditorPanel", () => {
         const first = currentPanel();
 
         ConnectionEditorPanel.show(extensionUri as never, host, {
-            uri: "dba@localhost:3306", kind: "gui",
+            uri: "mariadb://dba@localhost:3306", kind: "gui",
         });
 
         // The same panel, revealed and retitled - not a second dialog able
@@ -196,11 +196,11 @@ describe("ConnectionEditorPanel", () => {
         expect(webviewPanels).toHaveLength(1);
         expect(currentPanel()).toBe(first);
         expect(first.revealed).toBe(1);
-        expect(first.title).toBe("Edit dba@localhost:3306");
+        expect(first.title).toBe("Edit mariadb://dba@localhost:3306");
 
         await receive({ type: "ready" });
         expect(posted()[posted().length - 1]).toMatchObject({
-            uri: "dba@localhost:3306",
+            uri: "mariadb://dba@localhost:3306",
         });
     });
 
@@ -216,12 +216,12 @@ describe("ConnectionEditorPanel", () => {
         });
 
         expect(api.tested).toEqual([
-            { uri: "dba@localhost:3306", password: "pw" },
+            { uri: "mariadb://dba@localhost:3306", password: "pw" },
         ]);
         expect(posted()).toContainEqual({
             type: "testResult",
             ok: true,
-            message: "Connected to 'dba@localhost:3306' successfully.",
+            message: "Connected to 'mariadb://dba@localhost:3306' successfully.",
         });
         // The buttons go back to being usable either way.
         expect(posted()).toContainEqual({ type: "busy", busy: false });
@@ -257,7 +257,7 @@ describe("ConnectionEditorPanel", () => {
         });
 
         expect(api.added).toEqual([{
-            uri: "dba@localhost:3306", password: "pw", kind: "mcp",
+            uri: "mariadb://dba@localhost:3306", password: "pw", kind: "mcp",
         }]);
         expect(currentPanel().disposed).toBe(true);
     });

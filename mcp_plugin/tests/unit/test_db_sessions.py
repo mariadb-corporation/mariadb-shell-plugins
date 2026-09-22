@@ -466,7 +466,7 @@ def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
     uri = "root@127.0.0.1:3306"
     monkeypatch.setattr(
-        db_functions.config, "list_connection_uris", lambda kind=None: [uri]
+        db_functions.config, "list_stored_connection_uris", lambda kind=None: [uri]
     )
 
     tools = _ToolRecorder()
@@ -631,7 +631,7 @@ def test_opening_a_connection_is_logged(http_transport, monkeypatch, capsys):
         db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
     )
     monkeypatch.setattr(
-        db_functions.config, "list_connection_uris", lambda kind=None: [uri]
+        db_functions.config, "list_stored_connection_uris", lambda kind=None: [uri]
     )
 
     tools = _ToolRecorder()
@@ -924,7 +924,7 @@ def test_removing_a_connection_revokes_it(http_transport, monkeypatch):
     configured = [uri]
     monkeypatch.setattr(
         db_functions.config,
-        "list_connection_uris",
+        "list_stored_connection_uris",
         lambda kind=None: list(configured),
     )
 
@@ -960,7 +960,7 @@ def test_a_first_open_is_validated_too(http_transport, monkeypatch):
     so a caller reaching the cache another way cannot open an unconfigured URI.
     """
     monkeypatch.setattr(
-        db_functions.config, "list_connection_uris", lambda kind=None: []
+        db_functions.config, "list_stored_connection_uris", lambda kind=None: []
     )
 
     with pytest.raises(mysqlsh.Error) as refused:
@@ -987,7 +987,7 @@ def _registered_tools(monkeypatch, opened):
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
     monkeypatch.setattr(
-        db_functions.config, "list_connection_uris", lambda kind=None: [uri]
+        db_functions.config, "list_stored_connection_uris", lambda kind=None: [uri]
     )
 
     tools = _ToolRecorder()
@@ -1130,19 +1130,19 @@ def test_db_connect_takes_a_uri_however_the_client_spelled_it(
 ):
     """A URI naming the configured connection opens it, however it is written.
 
-    db.list_connections hands out `user@host:port`, but a client composing a URI
-    of its own writes a scheme in front of it - `mariadb://`, which the shell's
-    parser does not even accept - or leaves the default port out. Those all name
-    the one configured connection, and a client told that a connection it can
-    see listed is not configured has nowhere to go from there.
+    db.list_connections hands out `mariadb://user@host:port`, but a client
+    composing a URI of its own leaves the scheme off, cases it differently or
+    leaves the default port out. Those all name the one configured connection,
+    and a client told that a connection it can see listed is not configured has
+    nowhere to go from there.
     """
     opened = []
     tools, uri = _registered_tools(monkeypatch, opened)
     context = _context(CLIENT_ADDRESS)
 
     for spelling in (
+        "root@127.0.0.1:3306",
         "mariadb://root@127.0.0.1:3306",
-        "mysql://root@127.0.0.1:3306",
         "MariaDB://root@127.0.0.1",
         "root@127.0.0.1",
         "root:ignored@127.0.0.1:3306/",
@@ -1161,11 +1161,11 @@ def test_db_connect_refuses_a_uri_asking_for_more_than_is_configured(
 ):
     """Only spellings of the same connection are accepted, not near misses.
 
-    A URI naming a default schema, a connection option or another protocol is
-    not the configured connection: opening that one instead would answer the
-    call with a connection quietly not doing what it asked for - an option like
-    `ssl-mode=REQUIRED` on a session opened without TLS being the case that
-    matters.
+    A URI naming a default schema, a connection option or another scheme is not
+    the configured connection: opening that one instead would answer the call
+    with a connection quietly not doing what it asked for - an option like
+    `ssl-mode=REQUIRED` on a session opened without TLS, or a `+ssh` tunnel that
+    was never established, being the cases that matter.
     """
     opened = []
     tools, _ = _registered_tools(monkeypatch, opened)
@@ -1173,6 +1173,8 @@ def test_db_connect_refuses_a_uri_asking_for_more_than_is_configured(
     for spelling in (
         "root@127.0.0.1:3306/mysql",
         "mariadb://root@127.0.0.1:3306?ssl-mode=REQUIRED",
+        "mariadb+ssh://root@127.0.0.1:3306",
+        "mysql://root@127.0.0.1:3306",
         "mysqlx://root@127.0.0.1:3306",
         "root@127.0.0.1:3307",
         "admin@127.0.0.1:3306",
@@ -1601,7 +1603,7 @@ def test_a_lost_connection_throws_the_session_away(http_transport, monkeypatch):
     monkeypatch.setattr(db_functions, "_open_session", _open)
     monkeypatch.setattr(
         db_functions.config,
-        "list_connection_uris",
+        "list_stored_connection_uris",
         lambda kind=None: ["root@127.0.0.1:3306"],
     )
 

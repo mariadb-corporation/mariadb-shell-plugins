@@ -154,6 +154,33 @@ describe("ConnectionsModel.getRoots", () => {
         })).toEqual([false, true]);
     });
 
+    it("marks it whether or not the setting names its scheme", async () => {
+        // The setting was written before connections carried one, and what
+        // db.list_connections reports now always does. They are one
+        // connection, so the marker has to survive the difference - either
+        // way round, since a setting written now carries the scheme and a
+        // connection stored before the change is still listed without one.
+        const withScheme = await createModel(
+            "mariadb://app@localhost:3311",
+        ).model.getRoots();
+
+        expect(withScheme.map((node) => { return node.isDefault; }))
+            .toEqual([false, true]);
+
+        const api = createFakeApi({
+            connections: ["mariadb://app@localhost:3311"],
+        });
+        const listed = new ConnectionsModel(
+            new ConnectionManager(
+                () => { return Promise.resolve(api); },
+                createFakeSettings("app@localhost:3311"),
+            ),
+            () => { return false; },
+        );
+
+        expect((await listed.getRoots())[0].isDefault).toBe(true);
+    });
+
     it("marks an open connection", async () => {
         const { manager, model } = createModel();
         await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);

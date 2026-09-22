@@ -33,9 +33,11 @@ from contextlib import asynccontextmanager
 
 # Two connections used by the connection round-trip test. The URIs only need to
 # be unique keys for the secret store; the round-trip test does not open them.
+# Spelled as they normalize, scheme included, so that what is stored is what
+# db.list_connections reports back.
 TEST_CONNECTION_URIS = [
-    "mcp_pytest_a@127.0.0.1:33061",
-    "mcp_pytest_b@127.0.0.1:33062",
+    "mariadb://mcp_pytest_a@127.0.0.1:33061",
+    "mariadb://mcp_pytest_b@127.0.0.1:33062",
 ]
 
 TEST_CONNECTION_PASSWORD = "mcp_pytest_password"

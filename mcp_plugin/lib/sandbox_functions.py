@@ -74,8 +74,12 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         return {key: value for key, value in pairs.items() if value is not None}
 
     def _sandbox_connection_uri(port: int) -> str:
-        """Returns the connection URI for the root account of a sandbox."""
-        return f"root@127.0.0.1:{port}"
+        """Returns the connection URI for the root account of a sandbox.
+
+        Spelled as it normalizes, scheme included, so that the key deploy
+        stores is the one everything else resolves to.
+        """
+        return f"{config.DEFAULT_CONNECTION_SCHEME}://root@127.0.0.1:{port}"
 
     # Sync, and with no ``ctx``: it touches no path and asks the user nothing,
     # so it needs neither the request context nor a coroutine. It reads one
@@ -315,8 +319,10 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         sandbox.delete(port, _options(sandboxDir=sandbox_dir))
 
         # Remove the connection registered for this instance by deploy, if any.
-        uri = _sandbox_connection_uri(port)
-        if uri in config.list_connection_uris():
+        # Resolved rather than compared: an instance deployed before the scheme
+        # was kept is stored under the spelling of that day.
+        uri = config.resolve_connection_uri(_sandbox_connection_uri(port))
+        if uri is not None:
             config.delete_connection(uri)
 
         return f"Sandbox instance on port {port} deleted."

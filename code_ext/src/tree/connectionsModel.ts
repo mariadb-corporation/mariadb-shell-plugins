@@ -19,6 +19,7 @@ import {
     UI_BACKEND_SESSION,
     type ConnectionManager,
 } from "../connections/connectionManager.js";
+import { withDefaultScheme } from "../connections/connectionUri.js";
 import { OBJECT_TYPES, type ConnectionKind, type ObjectType }
     from "../mcp/types.js";
 
@@ -111,7 +112,12 @@ export class ConnectionsModel {
      */
     public async getRoots(): Promise<IConnectionNode[]> {
         const stored = await this.connections.listStoredConnections();
-        const defaultUri = this.connections.defaultConnection;
+        // The setting may have been written before connections carried their
+        // scheme, and what is listed now always does. Both sides go through
+        // the same fill-in, or the default connection loses its marker.
+        const defaultUri = this.connections.defaultConnection === undefined
+            ? undefined
+            : withDefaultScheme(this.connections.defaultConnection);
 
         return stored.map((connection) => {
             // Any connection open on it, not only the one the tree
@@ -123,7 +129,7 @@ export class ConnectionsModel {
                 kind: "connection",
                 uri: connection.uri,
                 connected,
-                isDefault: connection.uri === defaultUri,
+                isDefault: withDefaultScheme(connection.uri) === defaultUri,
                 connectionKind: connection.kind,
                 expandable: connected || this.connectOnOpen(),
             };

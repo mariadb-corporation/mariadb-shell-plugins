@@ -69,7 +69,7 @@ def _add_connection() -> None:
     over (see :func:`mcp_plugin.lib.config.normalize_connection_uri`).
     """
     entered_uri = prompts.ask(
-        "Enter the MariaDB connection URI (e.g. user@host:3306): "
+        "Enter the MariaDB connection URI (e.g. mariadb://user@host:3306): "
     )
     if entered_uri == "":
         return
@@ -94,7 +94,10 @@ def _add_connection() -> None:
         return
 
     config.store_connection(uri, password)
+    superseded = config.drop_superseded_spellings(uri)
     print(f"Connection '{uri}' verified and stored.")
+    for old_uri in superseded:
+        print(f"It replaces '{old_uri}', which named the same connection.")
 
 
 def _delete_connection() -> None:
@@ -114,7 +117,14 @@ def _delete_connection() -> None:
     if index < 0:
         return
 
-    uri = connections[index]
+    # The list is the reported one, whose spellings are not always the stored
+    # keys - a connection configured before the scheme was kept is reported
+    # with it - so the pick is resolved back to the key it is stored under.
+    uri = config.resolve_connection_uri(connections[index])
+    if uri is None:
+        print(f"'{connections[index]}' is no longer configured.")
+        return
+
     config.delete_connection(uri)
     print(f"Connection '{uri}' deleted.")
 

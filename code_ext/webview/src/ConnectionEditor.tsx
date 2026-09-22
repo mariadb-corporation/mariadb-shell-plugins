@@ -23,6 +23,8 @@ import {
     CONNECTION_SCHEMES,
     SSL_MODES,
     emptyConnectionFields,
+    usesSshTunnel,
+    withSshTunnel,
     type IConnectionFields,
 } from "../../src/connections/connectionUri.js";
 import type {
@@ -33,19 +35,19 @@ import { post } from "./vscodeApi.js";
 
 /**
  * The connection editor, modelled on the MySQL Shell extension's
- * `ConnectionEditor`: the same three tabs in the same order, with the same
- * captions where the setting is the same one.
+ * `ConnectionEditor`: the same tabs in the same order, with the same captions
+ * where the setting is the same one.
  *
  * What is missing from it is missing on purpose. A connection here is stored
  * as a URI and nothing else, so a setting that cannot be written into one
- * cannot be offered: that rules out the SSH tunnel tab (the shell keeps the
- * `ssh-*` options in a separate set that never reaches a URI), the OCI and
- * MDS/Bastion tabs, `sql-mode`, and the HeatWave check. What is left is the
- * whole of what a MariaDB Shell connection URI can carry.
+ * cannot be offered: that rules out the OCI and MDS/Bastion tabs, `sql-mode`,
+ * the HeatWave check, and the two SSH passwords - the shell keeps those out of
+ * a URI deliberately, so a tunnel needing one is reached with a key instead.
+ * What is left is the whole of what a MariaDB Shell connection URI can carry.
  */
 
 /** The tabs, in the order the original shows them. */
-const TABS = ["Basic", "SSL", "Advanced"] as const;
+const TABS = ["Basic", "SSL", "SSH", "Advanced"] as const;
 
 type Tab = (typeof TABS)[number];
 
@@ -195,7 +197,6 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                         (event.target as HTMLSelectElement).value);
                                 }}
                             >
-                                <option value="">Default</option>
                                 {CONNECTION_SCHEMES.map((scheme) => {
                                     return (
                                         <option key={scheme} value={scheme}>
@@ -325,6 +326,74 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                         <Field caption="Path to Client Key file for SSL">
                             {text("sslKey")}
                         </Field>
+                    </section>
+                ) : null}
+
+                {tab === "SSH" ? (
+                    <section class="grid">
+                        <div class="group">
+                            <label class="checkbox">
+                                <input
+                                    type="checkbox"
+                                    checked={usesSshTunnel(fields.scheme)}
+                                    disabled={busy}
+                                    onChange={(event) => {
+                                        update("scheme", withSshTunnel(
+                                            fields.scheme,
+                                            (event.target as HTMLInputElement)
+                                                .checked,
+                                        ));
+                                    }}
+                                />
+                                <span>Connect through an SSH tunnel</span>
+                            </label>
+                            <p class="note">
+                                A tunnel is asked for by protocol and by
+                                nothing else, so this is the Protocol field on
+                                the Basic tab: it switches between
+                                <code> mariadb://</code> and
+                                <code> mariadb+ssh://</code>. The host and port
+                                on that tab stay the DATABASE - what changes is
+                                how it is reached.
+                            </p>
+                        </div>
+
+                        {usesSshTunnel(fields.scheme) ? (
+                            <>
+                                <Field
+                                    caption="SSH Host"
+                                    hint={"The machine to tunnel through. "
+                                        + "Left empty, the database host is "
+                                        + "also the SSH host and the tunnel "
+                                        + "forwards to loopback there."}
+                                >
+                                    {text("sshHost")}
+                                </Field>
+                                <Field
+                                    caption="SSH User Name"
+                                    hint="Defaults to whoever runs VS Code."
+                                >
+                                    {text("sshUser")}
+                                </Field>
+                                <Field caption="SSH Port">
+                                    {text("sshPort", "22")}
+                                </Field>
+                                <Field caption="Path to SSH Identity File">
+                                    {text("sshIdentityFile")}
+                                </Field>
+                                <Field caption="Path to SSH Config File">
+                                    {text("sshConfigFile")}
+                                </Field>
+
+                                <p class="note">
+                                    There is no field for an SSH password or a
+                                    key passphrase: a URI is what names and
+                                    identifies a connection, so the shell keeps
+                                    secrets out of it. Use a key the agent has
+                                    already unlocked.
+                                </p>
+                            </>
+                        ) : null}
                     </section>
                 ) : null}
 

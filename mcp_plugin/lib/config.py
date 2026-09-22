@@ -22,7 +22,11 @@ Two kinds of configuration are persisted:
   by ``MCP:Connection:<uri>``, so that passwords are kept in the operating
   system's secret store rather than in a plain file. A connection is looked up
   by its URI, and a client need not spell it exactly as it was configured (see
-  :func:`normalize_connection_uri`).
+  :func:`normalize_connection_uri`). The URI carries its scheme - ``mariadb``
+  unless it says otherwise - which is what lets a connection be configured
+  through an SSH tunnel, as ``mariadb+ssh://``. Connections stored before that
+  was so have no scheme in their key; they are reported with the default one
+  filled in and resolve either way, so nothing has to be migrated.
 
   There are two lists of them, told apart by a *kind* and stored under a prefix
   of their own: :data:`CONNECTION_KIND_MCP`, the connections ``mcp.setup``
@@ -41,6 +45,7 @@ Two kinds of configuration are persisted:
 
 import json
 import os
+import re
 from typing import Optional
 
 import mysqlsh
@@ -76,19 +81,31 @@ _CONNECTION_SECRET_PREFIXES = {
     CONNECTION_KIND_GUI: GUI_CONNECTION_SECRET_PREFIX,
 }
 
-# URI scheme prefixes that mean the same thing as a bare ``user@host:port``:
-# the MariaDB client-server protocol. A client writing a URI of its own tends to
-# put one in front of it - ``mariadb://`` is not even a scheme the shell's own
-# parser accepts - so they are stripped before parsing and all three spellings
-# of one connection compare equal. ``mysqlx://`` is deliberately NOT among
-# them: it names a different protocol on a different port. Compared
-# case-insensitively.
-PROTOCOL_SCHEME_PREFIXES = ("mariadb://", "mysql://")
+# The scheme a connection URI without one means. Connections used to be stored
+# with the scheme stripped off, because the shell's own parser rejected
+# ``mariadb://`` outright; MariaDB Shell 26.9.3 takes the whole family, and an
+# SSH tunnel can only be ASKED for by scheme (``mariadb+ssh://``), so a scheme
+# now has to survive into the stored URI rather than being thrown away. It is
+# filled in where a URI leaves it out, so that a spelling with it and one
+# without still name the same connection.
+DEFAULT_CONNECTION_SCHEME = "mariadb"
+
+# The schemes that speak the MariaDB client-server protocol, and so open on
+# :data:`DEFAULT_PORT` when a URI names no port. ``mysqlx`` is deliberately NOT
+# among them: it is a different protocol on a different port, so a ``mysqlx://``
+# URI stays a different connection. The ``+ssh`` forms ARE, because the
+# authority of a ``+ssh`` URI is the database endpoint - the tunnel is described
+# by the ``ssh-*`` options, not by the host and port.
+PROTOCOL_SCHEMES = ("mariadb", "mariadb+ssh", "mysql", "mysql+ssh")
 
 # The TCP port a connection without one is opened on. Named here because a URI
 # that leaves the port out and one that spells out the default name the same
 # server, and the two have to compare equal.
 DEFAULT_PORT = 3306
+
+# Matches the ``scheme://`` a URI starts with, if it has one. The scheme
+# grammar is RFC 3986's, which allows the ``+`` that ``mariadb+ssh`` uses.
+_SCHEME_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 
 # Name of the settings file inside the plugin data directory.
 SETTINGS_FILE_NAME = "settings.json"
@@ -168,16 +185,22 @@ def usable_connection_kinds() -> tuple:
     return (CONNECTION_KIND_MCP,)
 
 
-def list_connection_uris(kind=None) -> list:
-    """Returns the configured connection URIs of one kind.
+def list_stored_connection_uris(kind=None) -> list:
+    """Returns the connection URIs of one kind exactly as they are stored.
+
+    This is the KEY list: what comes back is what the secret store is keyed on,
+    so it is what a password is read under and what a connection is deleted by.
+    Connections configured before MariaDB Shell 26.9.3 are stored without a
+    scheme, so the spellings here are not all of one form - use
+    :func:`list_connection_uris` for the list to report, and
+    :func:`resolve_connection_uri` to get from any spelling back to the key.
 
     Args:
         kind: The connection kind to list, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
 
     Returns:
-        The sorted list of connection URIs of that kind that have a stored
-        password.
+        The sorted list of stored connection URIs of that kind.
     """
     prefix = connection_secret_prefix(kind)
 
@@ -188,13 +211,68 @@ def list_connection_uris(kind=None) -> list:
     )
 
 
+def list_connection_uris(kind=None) -> list:
+    """Returns the configured connection URIs of one kind, as they are named.
+
+    The spelling to report and to hand out. A connection configured before the
+    scheme was kept is stored without one (see
+    :func:`list_stored_connection_uris`), and is reported with
+    :data:`DEFAULT_CONNECTION_SCHEME` filled in - that names the same
+    connection, and every lookup resolves either spelling back to the key it is
+    stored under, so the only thing this changes is how the connection reads.
+
+    Args:
+        kind: The connection kind to list, or None for
+            :data:`DEFAULT_CONNECTION_KIND`.
+
+    Returns:
+        The sorted list of connection URIs of that kind that have a stored
+        password.
+    """
+    return sorted(
+        with_default_scheme(uri) for uri in list_stored_connection_uris(kind)
+    )
+
+
+def with_default_scheme(uri) -> str:
+    """Returns the given URI with :data:`DEFAULT_CONNECTION_SCHEME` filled in.
+
+    Textual and deliberately so: it is used on URIs that are already in the
+    form they are meant to keep - a stored key being reported, a URI on its way
+    to ``db.connect`` - where re-normalizing would change more than the scheme
+    and, for a key this shell can no longer parse, would fail outright.
+
+    Args:
+        uri: The connection URI. Anything that is not a string is handed back
+            untouched, for callers that pass one through on the way to a
+            parser that will refuse it properly.
+
+    Returns:
+        The URI with a scheme, or what was given if it already had one.
+    """
+    if not isinstance(uri, str):
+        return uri
+
+    uri = uri.strip()
+    if uri == "" or _SCHEME_PREFIX.match(uri):
+        return uri
+
+    return f"{DEFAULT_CONNECTION_SCHEME}://{uri}"
+
+
 def parse_connection_uri(uri) -> Optional[dict]:
-    """Returns a connection URI taken apart, with any protocol scheme removed.
+    """Returns a connection URI taken apart, with its scheme filled in.
 
     The one place a connection URI is parsed, so that everything reading one
-    agrees on which spellings are acceptable: a ``mariadb://`` or ``mysql://``
-    prefix is stripped first (see :data:`PROTOCOL_SCHEME_PREFIXES`), since the
-    shell's own parser rejects those schemes.
+    agrees on which spellings are acceptable. A URI that names no scheme gets
+    :data:`DEFAULT_CONNECTION_SCHEME`, which is the protocol the shell would
+    have opened it on anyway - written out so that a URI with the scheme and one
+    without come apart the same way, and so that everything downstream can read
+    the scheme instead of having to know the default.
+
+    A scheme that IS named is kept, whatever it is: that is what makes
+    ``mariadb+ssh://`` reach the shell at all, and what keeps ``mysqlx://`` a
+    connection of its own.
 
     Args:
         uri: The connection URI to parse.
@@ -211,16 +289,22 @@ def parse_connection_uri(uri) -> Optional[dict]:
     if not uri:
         return None
 
-    for prefix in PROTOCOL_SCHEME_PREFIXES:
-        if uri[:len(prefix)].lower() == prefix:
-            uri = uri[len(prefix):]
-            break
+    # Schemes are case-insensitive (RFC 3986) and the shell's parser is not, so
+    # the prefix is lowered on the way in rather than a client being told that
+    # `MariaDB://` is not a scheme.
+    prefix = _SCHEME_PREFIX.match(uri)
+    if prefix:
+        uri = prefix.group(0).lower() + uri[prefix.end():]
 
     try:
         # A plain dict, so that what was parsed can be adjusted.
-        return dict(_shell().parse_uri(uri))
+        connection_data = dict(_shell().parse_uri(uri))
     except Exception:  # noqa: BLE001 - not a URI, so not a connection either
         return None
+
+    connection_data.setdefault("scheme", DEFAULT_CONNECTION_SCHEME)
+
+    return connection_data
 
 
 def normalize_connection_uri(uri) -> Optional[str]:
@@ -235,14 +319,15 @@ def normalize_connection_uri(uri) -> Optional[str]:
     connection it can see listed is not configured.
 
     Only spellings that name the very same connection are folded together: a
-    ``mariadb://`` or ``mysql://`` prefix (see
-    :data:`PROTOCOL_SCHEME_PREFIXES`), a missing port, the case of the host, and
-    a password written into the URI, which is never used - the stored one is.
-    Anything a URI says over and above that is kept and has to match, so a URI
-    naming a default schema or a connection option is NOT the same connection as
-    one that does not: it would otherwise be answered with a connection that
+    left-out scheme, which is :data:`DEFAULT_CONNECTION_SCHEME` (so a URI
+    written ``dba@host`` and one written ``mariadb://dba@host`` are one
+    connection), a missing port, the case of the host, and a password written
+    into the URI, which is never used - the stored one is. Anything a URI says
+    over and above that is kept and has to match, so a URI naming a default
+    schema, a connection option or a DIFFERENT scheme is NOT the same connection
+    as one that does not: it would otherwise be answered with a connection that
     quietly does not do what it asked for, an option like ``ssl-mode=REQUIRED``
-    included.
+    or the ``+ssh`` tunnel included.
 
     Args:
         uri: The connection URI to normalize.
@@ -272,11 +357,16 @@ def normalize_connection_uri(uri) -> Optional[str]:
             host
             and "port" not in connection_data
             and "socket" not in connection_data
-            and "scheme" not in connection_data
+            # A socket given as an absolute path comes back as the HOST rather
+            # than as a socket, and a port on it would be nonsense. No host name
+            # carries a path separator, so this tells the two apart.
+            and "/" not in host
+            and "\\" not in host
+            and connection_data.get("scheme") in PROTOCOL_SCHEMES
         ):
             # Left to the shell this would default to the same port; spelled
             # out, a URI with and one without the default port compare equal.
-            # Only for the protocol above - another scheme has its own default.
+            # Only for the protocols above - another scheme has its own default.
             connection_data["port"] = DEFAULT_PORT
 
         # The shell's own rendering of the parsed URI: options in a fixed
@@ -294,14 +384,17 @@ def _resolve_in_kind(uri, kind) -> Optional[str]:
         kind (str): The connection kind to look in, already normalized.
 
     Returns:
-        The configured connection URI, or None if that list holds no connection
-        the given URI names.
+        The configured connection URI AS IT IS STORED, which is the key its
+        password is under, or None if that list holds no connection the given
+        URI names. That is why the stored list is what is searched: a
+        connection configured before the scheme was kept is reported with one
+        and stored without, and the key is what a caller needs back.
 
     Raises:
         mysqlsh.Error: If more than one connection in that list is - the same
             connection configured twice, under two spellings.
     """
-    configured_uris = list_connection_uris(kind)
+    configured_uris = list_stored_connection_uris(kind)
 
     # The spelling that was stored is a match for itself whatever it looks
     # like, including one no longer parsable by this shell.
@@ -420,6 +513,11 @@ def get_connection_password(uri: str, kind=None) -> str:
 def store_connection(uri: str, password: str, kind=None) -> None:
     """Stores the password for the given connection URI.
 
+    A plain write, under exactly the key it is given. Anything CONFIGURING a
+    connection - as opposed to restoring or moving one - follows it with
+    :func:`drop_superseded_spellings`, which is what keeps one connection to one
+    key.
+
     Args:
         uri (str): The connection URI.
         password (str): The password to store.
@@ -430,6 +528,52 @@ def store_connection(uri: str, password: str, kind=None) -> None:
         None
     """
     _shell().store_secret(connection_secret_prefix(kind) + uri, password)
+
+
+def drop_superseded_spellings(uri, kind=None) -> list:
+    """Deletes the connections that name the same one as the given URI.
+
+    One connection has one key, and this is what holds that after a connection
+    is configured. The case it exists for is not hypothetical: every connection
+    configured before the scheme was kept is stored without one, so configuring
+    it again writes the new key and would leave the old one sitting next to it -
+    and the pair then resolves to NEITHER, since two spellings of one connection
+    are refused as ambiguous (see :func:`_resolve_in_kind`).
+
+    Called AFTER the new key is written, so a failure in between leaves the
+    connection configured under one of the two rather than under neither.
+
+    Unlike :func:`resolve_connection_uri` it does not raise when more than one
+    matches: here the answer is to clear them all out rather than to refuse.
+
+    Args:
+        uri: The connection URI just stored, which is the one kept. It is never
+            deleted, and neither is a configured key this shell cannot parse -
+            an unparsable key cannot be shown to name the same connection, and
+            guessing is worse than leaving it alone.
+        kind: The connection kind to clear up, or None for
+            :data:`DEFAULT_CONNECTION_KIND`.
+
+    Returns:
+        The connection URIs that were deleted - empty in the ordinary case. A
+        caller holding open connections on one of them has to close them, as it
+        would for a deletion.
+    """
+    normalized = normalize_connection_uri(uri)
+    if normalized is None:
+        return []
+
+    superseded = [
+        configured_uri
+        for configured_uri in list_stored_connection_uris(kind)
+        if configured_uri != uri
+        and normalize_connection_uri(configured_uri) == normalized
+    ]
+
+    for old_uri in superseded:
+        delete_connection(old_uri, kind)
+
+    return superseded
 
 
 def delete_connection(uri: str, kind=None) -> None:

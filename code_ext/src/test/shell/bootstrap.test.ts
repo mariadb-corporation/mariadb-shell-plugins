@@ -29,9 +29,9 @@ import {
     type ProgressHost,
 } from "../../shell/installer.js";
 
-const MINIMUM = "26.9.2";
+const MINIMUM = "26.9.3";
 const PREFIX = "/Users/mzinner/.local/share/mariadb-shell";
-const MANAGED_BINARY = `${PREFIX}/26.9.2/bin/mariadb-shell`;
+const MANAGED_BINARY = `${PREFIX}/26.9.3/bin/mariadb-shell`;
 
 /**
  * Builds the `--version` line the shell prints.
@@ -76,7 +76,7 @@ const createRecordingProgress = (): ProgressHost & {
 describe("ensureShell", () => {
     it("uses a shell that is already on the PATH", async () => {
         const environment = createFakeEnvironment({
-            versions: { "mariadb-shell": versionLine("26.9.2") },
+            versions: { "mariadb-shell": versionLine("26.9.3") },
         });
         const runner = createFakeRunner();
         const log = createRecordingLog();
@@ -99,9 +99,9 @@ describe("ensureShell", () => {
     it("uses a local installation when the PATH has no usable shell",
         async () => {
             const environment = createFakeEnvironment({
-                directories: { [PREFIX]: ["26.9.2"] },
+                directories: { [PREFIX]: ["26.9.3"] },
                 files: [MANAGED_BINARY],
-                versions: { [MANAGED_BINARY]: versionLine("26.9.2") },
+                versions: { [MANAGED_BINARY]: versionLine("26.9.3") },
             });
             const runner = createFakeRunner();
 
@@ -116,7 +116,7 @@ describe("ensureShell", () => {
             expect(result.installed).toBe(false);
             expect(result.location).toEqual({
                 binaryPath: MANAGED_BINARY,
-                version: { major: 26, minor: 9, patch: 2 },
+                version: { major: 26, minor: 9, patch: 3 },
                 source: "managed",
             });
             expect(runner.calls).toEqual([]);
@@ -134,9 +134,9 @@ describe("ensureShell", () => {
         // Rebuild the environment's answers once the installer has run by
         // swapping the tables the fake reads from.
         const installed = createFakeEnvironment({
-            directories: { [PREFIX]: ["26.9.2"] },
+            directories: { [PREFIX]: ["26.9.3"] },
             files: [MANAGED_BINARY],
-            versions: { [MANAGED_BINARY]: versionLine("26.9.2") },
+            versions: { [MANAGED_BINARY]: versionLine("26.9.3") },
         });
 
         const runner = createFakeRunner([
@@ -179,12 +179,12 @@ describe("ensureShell", () => {
         expect(result.installed).toBe(true);
         expect(result.location.binaryPath).toBe(MANAGED_BINARY);
         expect(progress.titles)
-            .toEqual(["Installing MariaDB Shell 26.9.2"]);
+            .toEqual(["Installing MariaDB Shell 26.9.3"]);
         expect(progress.messages).toContain("Downloading");
         expect(progress.messages).toContain(
             "Unpacking into /Users/mzinner/.local/share/mariadb-shell",
         );
-        expect(log.lines[0]).toContain("No MariaDB Shell 26.9.2 or newer");
+        expect(log.lines[0]).toContain("No MariaDB Shell 26.9.3 or newer");
     });
 
     it("installs the shell when the PATH version is too old", async () => {
@@ -199,7 +199,7 @@ describe("ensureShell", () => {
             progress: createRecordingProgress(),
             log: createRecordingLog(),
             minimumVersion: MINIMUM,
-        })).rejects.toThrow(/no MariaDB Shell 26.9.2 or newer could be found/);
+        })).rejects.toThrow(/no MariaDB Shell 26.9.3 or newer could be found/);
 
         expect(runner.calls).toEqual([
             buildInstallCommand("darwin", MINIMUM),
@@ -252,6 +252,6 @@ describe("ensureShell", () => {
         })).rejects.toThrow();
 
         expect(runner.calls[0].args.at(-1))
-            .toContain("MARIADB_SHELL_TAG=v26.9.2");
+            .toContain("MARIADB_SHELL_TAG=v26.9.3");
     });
 });

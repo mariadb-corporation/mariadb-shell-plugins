@@ -53,6 +53,30 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `test_config` (the Windows menu end-to-end). **192 pass, ~62s** — the venv builds and
   the CLI tests make it slower than the old ~39s.
 
+- **The connection-scheme session added four tests and re-spelled many.** New in
+  `test_config`: `test_a_connection_stored_without_a_scheme_still_resolves` (the
+  whole backwards-compatibility story in one place — reported with the scheme,
+  stored without, resolving either way, and re-configuring it dropping the old
+  key), `test_filling_in_the_scheme_leaves_everything_else_alone` and
+  `test_superseding_a_spelling_needs_one_it_can_recognize`. Two traps the
+  re-spelling exposed, both of which will bite again:
+  - **A test helper that lists connections and then DELETES or reads a password
+    by what it listed must use `config.list_stored_connection_uris`**, not
+    `list_connection_uris` — the second reports the scheme filled in, which is
+    not the secret-store key. `_empty_both_connection_lists` in `test_config` and
+    `test_gui_mode`, and `_backup_connections`/`_clear_connections` in
+    `conftest`, all do. Getting it wrong fails with the shell's
+    `RuntimeError: Failed to delete the secret: Could not find the secret`, on
+    dozens of tests at once.
+  - **A test that monkeypatches the configured list to stand in for the secret
+    store must patch `list_stored_connection_uris`** — that is what
+    `_resolve_in_kind` and `_open_session`'s re-validation read.
+    `test_db_sessions` (5 sites) and `test_db_script` do.
+  - `helpers.TEST_CONNECTION_URIS` and the sandbox fixture's `uri` are spelled
+    `mariadb://...` so that what is stored is what `db.list_connections` reports;
+    the `setup_cli` tests deliberately keep their INPUTS scheme-less, since that
+    is what a provisioning script writes.
+
 - **Coverage: TOTAL 97% (1535 statements, 44 missed) — measured on a run with `.coverage`
   DELETED first**, on SDK 2.1.1 with `tool_registrar` restored. Per module:
   lib/migrator_functions **100**, lib/setup_cli **100**,

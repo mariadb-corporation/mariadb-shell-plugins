@@ -12,18 +12,21 @@ has none (see [`context/sandbox.md`](context/sandbox.md); that work merged as
 PR #21). GPLv2,
 "MariaDB plc". Top-level plugin folder in mysql-shell-plugins
 (sibling to `msm_plugin`, `mrs_plugin`, etc.). Verified against a real `mariadb-shell`
-(`/Users/mzinner/git/mariadb-shell/build/bin`, shell **26.9.1** — checked with
-`--version`, it was 26.9.0 in earlier sessions), **MCP SDK 2.1.1** (2.0.0 before the
+(`/Users/mzinner/git/mariadb-shell/build/bin`, shell **26.9.3** — checked with
+`--version`; 26.9.1 and 26.9.0 in earlier sessions. 26.9.3 is what the connection
+URI now REQUIRES: it is the first shell whose parser accepts `mariadb://`, and
+connections are stored with their scheme from here on — see
+[`context/connections.md`](context/connections.md)), **MCP SDK 2.1.1** (2.0.0 before the
 SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **346 tests pass, 2 SKIPPED (~85s), 98% total coverage** (1984 statements,
-42 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
+Standard suite: **353 tests pass, 2 SKIPPED (~100s), 98% total coverage** (2032 statements,
+46 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 [`context/testing.md`](context/testing.md)). These figures are from the session that
 last measured them, not from this checkpoint. The two skipped are the OPT-IN
 end-to-end tests: with `--e2e` the run is
-**348 pass** at the same coverage, since everything they touch is already covered
+**355 pass** at the same coverage, since everything they touch is already covered
 by the unit tests. Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).

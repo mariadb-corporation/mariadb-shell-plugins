@@ -330,13 +330,18 @@ def _add_connection(options: dict) -> None:
             ) from error
 
     # Re-configuring a connection updates its password rather than failing: a
-    # provisioning script has to be safe to run twice.
-    replaced = uri in config.list_connection_uris()
+    # provisioning script has to be safe to run twice. Asked before storing,
+    # since storing is what makes it true.
+    replaced = uri in config.list_stored_connection_uris()
     config.store_connection(uri, password)
+    superseded = config.drop_superseded_spellings(uri)
     print(
-        f"Connection '{uri}' {'updated' if replaced else 'stored'}"
+        f"Connection '{uri}' "
+        f"{'updated' if replaced or superseded else 'stored'}"
         f"{'' if options.get('no_verify') else ' after verification'}."
     )
+    for old_uri in superseded:
+        print(f"It replaces '{old_uri}', which named the same connection.")
 
 
 def _delete_connections(options: dict) -> None:

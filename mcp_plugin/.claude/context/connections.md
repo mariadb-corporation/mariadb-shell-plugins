@@ -41,6 +41,35 @@ produced most of this is in [security-review.md](security-review.md).
     **GUI-only for a reason of its own** — it opens a session to any host and credentials
     it is handed, so an autonomous client could try passwords against any reachable server.
 
+- **The scheme is part of the URI, since MariaDB Shell 26.9.3** (`lib/config.py`). Until
+  then `parse_uri` REJECTED `mariadb://` outright, so `parse_connection_uri` STRIPPED a
+  `mariadb://`/`mysql://` prefix and connections were stored with no scheme at all. 26.9.3
+  takes the whole family, and `mariadb+ssh://` is the ONLY way to ask for an SSH tunnel —
+  so the scheme now has to survive into the stored key. `DEFAULT_CONNECTION_SCHEME` is
+  `mariadb` and is filled in where a URI names none.
+  - **Nothing is migrated, and nothing has to be.** `list_stored_connection_uris()` is the
+    KEY list (secret-store keys, some of them scheme-less); `list_connection_uris()` is what
+    is REPORTED and fills the default scheme in with `with_default_scheme()` — a purely
+    TEXTUAL helper, deliberately not a re-normalization, so a key this shell can no longer
+    parse still reports as itself. `_resolve_in_kind` and `_open_session`'s re-validation
+    read the STORED list; everything user-facing reads the reported one. Getting that
+    backwards is how a password lookup breaks, since the reported spelling is not the key.
+  - **`store_connection` is a plain write; `drop_superseded_spellings(uri, kind)` is what
+    keeps one connection to one key.** It runs AFTER the write (so a failure in between
+    leaves the connection configured under one of the two, never neither) and is called by
+    the three paths that CONFIGURE a connection: `db.add_connection`, `db.update_connection`
+    and `setup_cli._add_connection`/`setup._add_connection`. Without it, re-adding a
+    connection stored under the old spelling leaves BOTH keys and the pair then resolves to
+    NEITHER — `_resolve_in_kind` refuses two spellings of one connection as ambiguous. It
+    was deliberately NOT folded into `store_connection`: the ambiguity behaviour is a tested
+    property of `resolve_connection_uri`, and its test builds that state by storing twice.
+  - `db.update_connection` must check `configured_uri not in superseded` before deleting the
+    old key — `delete_secret` RAISES on a missing key, and storing the new spelling of the
+    same connection may already have taken it.
+  - `sandbox.deploy` registers `mariadb://root@127.0.0.1:<port>` and `sandbox.delete`
+    RESOLVES rather than comparing, so an instance deployed before the change is still
+    cleaned up.
+
 - **`db_functions.use_session(connection_id, client_address=None)`** is the PUBLIC accessor
   (a `@contextmanager`, NOT the old plain `get_session` — that name is GONE), so other tool
   modules (msm) can resolve a `db.connect` session without reaching into another module's
@@ -53,17 +82,20 @@ produced most of this is in [security-review.md](security-review.md).
   configured URIs, but NOT by string equality: `config.resolve_connection_uri()` maps what
   the client sent to the spelling it is stored under, and everything from there on uses the
   configured one (the password key, `_Connection.uri`, the log line, the re-validation on
-  reopen). `config.normalize_connection_uri()` is the comparison form: a `mariadb://` or
-  `mysql://` prefix stripped (`parse_uri` REJECTS `mariadb://` outright — that was the
-  bug), then `parse_uri` -> drop the password, lowercase the host, spell out port 3306 when
-  the URI left it out -> `unparse_uri` (which also fixes option order, percent-encoding and
-  a trailing slash). It is a fixed point, so stored and incoming URIs go through the same
-  function. Everything ELSE in the URI is kept and must match — a schema (`/db`) or an
-  option (`?ssl-mode=REQUIRED`) the configured connection does not have makes it a
-  different connection, refused rather than silently answered with a session that does not
-  do that; `mysqlx://` likewise stays distinct. `mcp.setup` stores the normalized URI, so
-  one connection has one key; the same connection configured under two spellings is the one
-  case resolution cannot settle and it raises instead of guessing. Opens via
+  reopen). `config.normalize_connection_uri()` is the comparison form: lowercase the
+  `scheme://` prefix (the shell's parser is case-sensitive on it), then `parse_uri` ->
+  default the scheme to `mariadb` when there is none -> drop the password, lowercase the
+  host, spell out port 3306 when the URI left it out (only for `PROTOCOL_SCHEMES` =
+  mariadb/mysql with or without `+ssh`, and NOT when the host is really a socket path —
+  an absolute socket comes back as `host`, not `socket`) -> `unparse_uri` (which also fixes
+  option order, percent-encoding and a trailing slash). It is a fixed point, so stored and
+  incoming URIs go through the same function. Everything ELSE in the URI is kept and must
+  match — a schema (`/db`), an option (`?ssl-mode=REQUIRED`) or a different scheme the
+  configured connection does not have makes it a different connection, refused rather than
+  silently answered with a session that does not do that; `mysql://`, `mysqlx://` and
+  `mariadb+ssh://` all stay distinct from `mariadb://`. `mcp.setup` stores the normalized
+  URI, so one connection has one key; the same connection configured under two spellings is
+  the one case resolution cannot settle and it raises instead of guessing. Opens via
   `_open_session()` = `parse_uri`+password ->
   `shell.open_session` (independent of the shell's global session). `_sessions` maps the
   UUID to a **`_Connection`** record (uri, `client_address`, `session`, `last_used`,
@@ -181,8 +213,10 @@ produced most of this is in [security-review.md](security-review.md).
   Also the two connection lists: `CONNECTION_SECRET_PREFIX` / `GUI_CONNECTION_SECRET_PREFIX`,
   `CONNECTION_KIND_MCP` / `CONNECTION_KIND_GUI` / `SUPPORTED_CONNECTION_KINDS` /
   `DEFAULT_CONNECTION_KIND`, `normalize_connection_kind`, `connection_secret_prefix`,
-  `usable_connection_kinds`, `_resolve_in_kind` and `find_connection`. `is_path_allowed`
-  is the single GUI-mode path chokepoint.
+  `usable_connection_kinds`, `_resolve_in_kind` and `find_connection`; and the scheme:
+  `DEFAULT_CONNECTION_SCHEME`, `PROTOCOL_SCHEMES`, `_SCHEME_PREFIX`,
+  `with_default_scheme`, `list_stored_connection_uris` vs `list_connection_uris`, and
+  `drop_superseded_spellings`. `is_path_allowed` is the single GUI-mode path chokepoint.
 
 - lib/db_functions.py -> db.* tools; the `_Connection` cache (`_sessions` + `use_session` +
   the reaper + `_claim_connection_slot`/`_drop_connection`/`_no_such_connection` +

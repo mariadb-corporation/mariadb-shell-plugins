@@ -97,7 +97,7 @@ def tools(monkeypatch):
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
     monkeypatch.setattr(
-        db_functions.config, "list_connection_uris", lambda kind=None: [uri]
+        db_functions.config, "list_stored_connection_uris", lambda kind=None: [uri]
     )
 
     recorder = SimpleNamespace(tools={})

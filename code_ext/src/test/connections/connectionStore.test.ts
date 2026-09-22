@@ -82,9 +82,9 @@ describe("saveConnection", () => {
             mcpAccess: false,
         });
 
-        expect(result).toEqual({ uri: "dba@localhost:3306", kind: "gui" });
+        expect(result).toEqual({ uri: "mariadb://dba@localhost:3306", kind: "gui" });
         expect(fake.added).toEqual([{
-            uri: "dba@localhost:3306", password: "pw", kind: "gui",
+            uri: "mariadb://dba@localhost:3306", password: "pw", kind: "gui",
         }]);
         expect(fake.updated).toEqual([]);
     });
@@ -145,18 +145,18 @@ describe("saveConnection", () => {
         const result = await saveConnection(fake, {
             fields: fields({ user: "dba", host: "db.example.com" }),
             mcpAccess: false,
-            original: { uri: "dba@localhost:3306", kind: "gui" },
+            original: { uri: "mariadb://dba@localhost:3306", kind: "gui" },
         });
 
         expect(fake.added).toEqual([]);
         expect(fake.updated).toEqual([{
-            uri: "dba@localhost:3306",
-            newUri: "dba@db.example.com:3306",
+            uri: "mariadb://dba@localhost:3306",
+            newUri: "mariadb://dba@db.example.com:3306",
             kind: "gui",
             newKind: undefined,
             password: undefined,
         }]);
-        expect(result.uri).toBe("dba@db.example.com:3306");
+        expect(result.uri).toBe("mariadb://dba@db.example.com:3306");
     });
 
     it("leaves the URI out of the update when it did not change", async () => {
@@ -167,11 +167,11 @@ describe("saveConnection", () => {
         await saveConnection(fake, {
             fields: fields({ user: "dba" }),
             mcpAccess: false,
-            original: { uri: "dba@localhost:3306", kind: "gui" },
+            original: { uri: "mariadb://dba@localhost:3306", kind: "gui" },
         });
 
         expect(fake.updated[0]).toMatchObject({
-            uri: "dba@localhost:3306", newUri: undefined,
+            uri: "mariadb://dba@localhost:3306", newUri: undefined,
         });
     });
 
@@ -182,7 +182,7 @@ describe("saveConnection", () => {
             await saveConnection(fake, {
                 fields: fields({ user: "dba" }),
                 mcpAccess: true,
-                original: { uri: "dba@localhost:3306", kind: "gui" },
+                original: { uri: "mariadb://dba@localhost:3306", kind: "gui" },
             });
 
             expect(fake.updated[0]).toMatchObject({
@@ -194,7 +194,7 @@ describe("saveConnection", () => {
             await saveConnection(other, {
                 fields: fields({ user: "dba" }),
                 mcpAccess: false,
-                original: { uri: "dba@localhost:3306", kind: "mcp" },
+                original: { uri: "mariadb://dba@localhost:3306", kind: "mcp" },
             });
 
             expect(other.updated[0]).toMatchObject({
@@ -206,7 +206,7 @@ describe("saveConnection", () => {
         // undefined is not "": nothing here can read a stored password, so
         // an omitted one has to mean "leave it alone" all the way down.
         const fake = api();
-        const original = { uri: "dba@localhost:3306", kind: "gui" as const };
+        const original = { uri: "mariadb://dba@localhost:3306", kind: "gui" as const };
 
         await saveConnection(fake, {
             fields: fields({ user: "dba" }), mcpAccess: false, original,
@@ -237,10 +237,10 @@ describe("testConnection", () => {
         const fake = api();
 
         await expect(testConnection(fake, fields({ user: "dba" }), "pw"))
-            .resolves.toContain("dba@localhost:3306");
+            .resolves.toContain("mariadb://dba@localhost:3306");
 
         expect(fake.tested).toEqual([
-            { uri: "dba@localhost:3306", password: "pw" },
+            { uri: "mariadb://dba@localhost:3306", password: "pw" },
         ]);
         expect(fake.added).toEqual([]);
         expect(fake.updated).toEqual([]);
@@ -275,11 +275,11 @@ describe("deleteConnection", () => {
         const fake = api();
 
         await deleteConnection(fake, {
-            uri: "dba@localhost:3306", kind: "mcp",
+            uri: "mariadb://dba@localhost:3306", kind: "mcp",
         });
 
         expect(fake.deleted).toEqual([
-            { uri: "dba@localhost:3306", kind: "mcp" },
+            { uri: "mariadb://dba@localhost:3306", kind: "mcp" },
         ]);
     });
 });
@@ -287,7 +287,7 @@ describe("deleteConnection", () => {
 describe("fieldsOf", () => {
     it("opens the editor on an existing connection", () => {
         expect(fieldsOf({
-            uri: "dba@db.example.com:3307/world?ssl-mode=REQUIRED",
+            uri: "mariadb://dba@db.example.com:3307/world?ssl-mode=REQUIRED",
             kind: "mcp",
         })).toEqual({
             mcpAccess: true,
@@ -302,7 +302,7 @@ describe("fieldsOf", () => {
     });
 
     it("leaves the MCP box unticked for one of the extension's own", () => {
-        expect(fieldsOf({ uri: "dba@localhost:3306", kind: "gui" }).mcpAccess)
+        expect(fieldsOf({ uri: "mariadb://dba@localhost:3306", kind: "gui" }).mcpAccess)
             .toBe(false);
     });
 });

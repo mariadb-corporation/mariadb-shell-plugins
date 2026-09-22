@@ -160,7 +160,7 @@ def test_the_password_can_come_from_the_command_line(stored_connection):
     """--password works, and is the one the docstring discourages."""
     setup_cli.apply({"add_connection": "cli_a@127.0.0.1:3306", "password": "pw-a"})
 
-    assert config.get_connection_password("cli_a@127.0.0.1:3306") == "pw-a"
+    assert config.get_connection_password("mariadb://cli_a@127.0.0.1:3306") == "pw-a"
 
 
 def test_the_password_can_come_from_a_named_environment_variable(
@@ -173,7 +173,7 @@ def test_the_password_can_come_from_a_named_environment_variable(
         "add_connection": "cli_b@127.0.0.1:3306", "password_env": "MCP_TEST_PW",
     })
 
-    assert config.get_connection_password("cli_b@127.0.0.1:3306") == "pw-b"
+    assert config.get_connection_password("mariadb://cli_b@127.0.0.1:3306") == "pw-b"
 
 
 def test_an_unset_environment_variable_is_an_error(stored_connection, monkeypatch):
@@ -187,7 +187,7 @@ def test_an_unset_environment_variable_is_an_error(stored_connection, monkeypatc
         })
 
     assert "--passwordEnv names 'MCP_TEST_MISSING'" in str(error.value)
-    assert "cli_c@127.0.0.1:3306" not in config.list_connection_uris()
+    assert "mariadb://cli_c@127.0.0.1:3306" not in config.list_connection_uris()
 
 
 def test_an_empty_environment_variable_is_an_empty_password(
@@ -200,7 +200,7 @@ def test_an_empty_environment_variable_is_an_empty_password(
         "add_connection": "cli_d@127.0.0.1:3306", "password_env": "MCP_TEST_EMPTY",
     })
 
-    assert config.get_connection_password("cli_d@127.0.0.1:3306") == ""
+    assert config.get_connection_password("mariadb://cli_d@127.0.0.1:3306") == ""
 
 
 def test_the_password_can_come_from_stdin(stored_connection, monkeypatch):
@@ -212,7 +212,7 @@ def test_the_password_can_come_from_stdin(stored_connection, monkeypatch):
     })
 
     # The first line only: a password has no line break in it.
-    assert config.get_connection_password("cli_e@127.0.0.1:3306") == "pw-e"
+    assert config.get_connection_password("mariadb://cli_e@127.0.0.1:3306") == "pw-e"
 
 
 def test_reading_the_password_from_a_terminal_is_refused(monkeypatch):
@@ -235,7 +235,7 @@ def test_with_no_source_the_password_is_prompted_for(stored_connection, monkeypa
 
     setup_cli.apply({"add_connection": "cli_f@127.0.0.1:3306"})
 
-    assert config.get_connection_password("cli_f@127.0.0.1:3306") == "pw-f"
+    assert config.get_connection_password("mariadb://cli_f@127.0.0.1:3306") == "pw-f"
 
 
 def test_non_interactive_turns_a_missing_password_into_an_error(monkeypatch):
@@ -294,17 +294,18 @@ def test_the_uri_is_stored_normalized(stored_connection):
     })
 
     configured = config.list_connection_uris()
-    assert "cli_g@127.0.0.1:3306" in configured
+    assert "mariadb://cli_g@127.0.0.1:3306" in configured
     # The spelling that was passed is NOT what it is stored under.
     assert "  mariadb://cli_g@127.0.0.1  " not in configured
     assert "mariadb://cli_g@127.0.0.1" not in configured
+    assert "cli_g@127.0.0.1:3306" not in configured
 
 
 def test_the_connection_is_verified_before_being_stored(stored_connection):
     """The same check the menu makes, and it is what --noVerify skips."""
     setup_cli.apply({"add_connection": "cli_h@127.0.0.1:3306", "password": "pw"})
 
-    assert stored_connection == ["cli_h@127.0.0.1:3306"]
+    assert stored_connection == ["mariadb://cli_h@127.0.0.1:3306"]
 
 
 def test_a_connection_that_cannot_be_opened_is_not_stored(clean_config, monkeypatch):
@@ -320,7 +321,7 @@ def test_a_connection_that_cannot_be_opened_is_not_stored(clean_config, monkeypa
     message = str(error.value)
     assert "Access denied for user" in message
     assert "--noVerify" in message
-    assert "cli_i@127.0.0.1:3306" not in config.list_connection_uris()
+    assert "mariadb://cli_i@127.0.0.1:3306" not in config.list_connection_uris()
 
 
 def test_no_verify_stores_without_opening_a_session(clean_config, monkeypatch):
@@ -334,7 +335,7 @@ def test_no_verify_stores_without_opening_a_session(clean_config, monkeypatch):
         "add_connection": "cli_j@127.0.0.1:3306", "password": "pw", "no_verify": True,
     })
 
-    assert config.get_connection_password("cli_j@127.0.0.1:3306") == "pw"
+    assert config.get_connection_password("mariadb://cli_j@127.0.0.1:3306") == "pw"
 
 
 def test_adding_a_configured_connection_updates_its_password(
@@ -346,8 +347,13 @@ def test_adding_a_configured_connection_updates_its_password(
 
     setup_cli.apply({"add_connection": "cli_k@127.0.0.1:3306", "password": "second"})
 
-    assert config.get_connection_password("cli_k@127.0.0.1:3306") == "second"
-    assert config.list_connection_uris().count("cli_k@127.0.0.1:3306") == 1
+    assert (
+        config.get_connection_password("mariadb://cli_k@127.0.0.1:3306")
+        == "second"
+    )
+    assert config.list_connection_uris().count(
+        "mariadb://cli_k@127.0.0.1:3306"
+    ) == 1
     # Said, rather than looking like a fresh one.
     assert "updated" in capsys.readouterr().out
 
@@ -358,7 +364,7 @@ def test_connections_are_deleted_by_uri_in_any_spelling(stored_connection):
 
     setup_cli.apply({"delete_connections": "mariadb://cli_l@127.0.0.1"})
 
-    assert "cli_l@127.0.0.1:3306" not in config.list_connection_uris()
+    assert "mariadb://cli_l@127.0.0.1:3306" not in config.list_connection_uris()
 
 
 def test_deleting_a_connection_that_is_not_configured_is_an_error(stored_connection):
@@ -370,7 +376,7 @@ def test_deleting_a_connection_that_is_not_configured_is_an_error(stored_connect
 
     message = str(error.value)
     assert "is not a configured connection" in message
-    assert "cli_m@127.0.0.1:3306" in message
+    assert "mariadb://cli_m@127.0.0.1:3306" in message
 
 
 # --- Allowed paths ---------------------------------------------------------
@@ -499,7 +505,7 @@ def test_deletions_happen_before_additions(stored_connection):
         "password": "new",
     })
 
-    assert config.get_connection_password("cli_n@127.0.0.1:3306") == "new"
+    assert config.get_connection_password("mariadb://cli_n@127.0.0.1:3306") == "new"
 
 
 def test_a_failure_leaves_what_already_succeeded_in_place(clean_config, tmp_path):
