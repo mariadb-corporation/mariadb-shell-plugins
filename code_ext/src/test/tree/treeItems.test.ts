@@ -146,7 +146,7 @@ describe("createTreeItem for a connection", () => {
 });
 
 describe("createTreeItem for a schema", () => {
-    it("shows the schema with its type", () => {
+    it("leaves a user schema undecorated, it being nearly every row", () => {
         const item = createTreeItem({
             kind: "schema",
             uri: "dba@h",
@@ -156,11 +156,28 @@ describe("createTreeItem for a schema", () => {
         }, resolveIcon);
 
         expect(item.label).toBe("world");
-        expect(item.description).toBe("User Schema");
+        expect(item.description).toBeUndefined();
+        // The type is still there to be read, just not down the tree.
         expect(item.tooltip).toBe("the sample");
         expect(item.contextValue).toBe("mariadbSchema");
         expect(item.collapsibleState)
             .toBe(TreeItemCollapsibleState.Collapsed);
+    });
+
+    it.each([
+        "System Schema",
+        "System Information Schema",
+    ])("says of %s what it is", (schemaType) => {
+        const item = createTreeItem({
+            kind: "schema",
+            uri: "dba@h",
+            schema: "mysql",
+            schemaType,
+            comment: "",
+        }, resolveIcon);
+
+        expect(item.description).toBe(schemaType);
+        expect(item.tooltip).toBe(`mysql (${schemaType})`);
     });
 });
 

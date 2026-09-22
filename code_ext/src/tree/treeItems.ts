@@ -150,6 +150,12 @@ export class ConnectionTreeItem
     }
 }
 
+/**
+ * What `db.list_schemas` calls a schema that is none of the server's own.
+ * It is what nearly every row is, so it is the one type left unsaid.
+ */
+const USER_SCHEMA = "User Schema";
+
 /** A schema of an open connection. */
 export class SchemaTreeItem extends ConnectionBaseTreeItem<ISchemaNode> {
     public override contextValue = "mariadbSchema";
@@ -157,7 +163,11 @@ export class SchemaTreeItem extends ConnectionBaseTreeItem<ISchemaNode> {
     public constructor(node: ISchemaNode, resolveIcon: IconResolver) {
         super(node, node.schema, "schema.svg", true, resolveIcon);
 
-        this.description = node.schemaType;
+        // Only a system schema says what it is: a column of "User Schema"
+        // down the tree is what the user came for and tells them nothing.
+        this.description = node.schemaType === USER_SCHEMA
+            ? undefined
+            : node.schemaType;
         this.tooltip = node.comment || `${node.schema} (${node.schemaType})`;
     }
 }

@@ -23,6 +23,7 @@ import {
 } from "../../connections/connectionManager.js";
 import {
     ConnectionsTreeProvider,
+    CONNECTIONS_LISTED_CONTEXT_KEY,
     CONNECTIONS_VIEW_ID,
 } from "../../tree/connectionsTreeProvider.js";
 import type { IconResolver } from "../../tree/treeItems.js";
@@ -31,7 +32,12 @@ import {
     createFakeSettings,
     createRecordingLog,
 } from "../helpers.js";
-import { errorMessages, resetVscodeMock, Uri } from "../mocks/vscode.js";
+import {
+    contextKeys,
+    errorMessages,
+    resetVscodeMock,
+    Uri,
+} from "../mocks/vscode.js";
 
 const resolveIcon: IconResolver = (name: string) => {
     return {
@@ -152,6 +158,51 @@ describe("ConnectionsTreeProvider", () => {
         provider.refresh(node);
 
         expect(fired).toEqual([node]);
+
+        provider.dispose();
+    });
+
+    it("says nothing is configured only once it has asked", async () => {
+        const { api, provider } = createProvider();
+        // Both lists are asked for at once, so one gate holds them both.
+        let answer: () => void = () => { /* set below */ };
+        const listed = new Promise<void>((resolve) => {
+            answer = resolve;
+        });
+        api.listConnections = async () => {
+            await listed;
+
+            return [];
+        };
+
+        const roots = provider.getChildren();
+
+        // The list comes from a server that has to be started first, so
+        // an empty tree means "not asked yet" until this comes back -
+        // and the welcome content says so rather than claiming there is
+        // nothing configured.
+        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY))
+            .toBeUndefined();
+
+        answer();
+        await expect(roots).resolves.toEqual([]);
+
+        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY)).toBe(true);
+
+        provider.dispose();
+    });
+
+    it("says it has asked even where the asking failed", async () => {
+        const { api, provider } = createProvider();
+        api.listConnections = () => {
+            return Promise.reject(new Error("the shell is not running"));
+        };
+
+        await provider.getChildren();
+
+        // A view left looking for ever would be as wrong as one saying
+        // nothing is there; the failure itself is reported separately.
+        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY)).toBe(true);
 
         provider.dispose();
     });

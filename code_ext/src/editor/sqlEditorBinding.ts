@@ -272,9 +272,12 @@ export class SqlEditorBinding implements vscode.Disposable {
     ): Promise<string | undefined> {
         const uris = await this.connections.listConnections();
         if (uris.length === 0) {
+            // A notification draws no codicon, so the button is named
+            // rather than shown; the view it sits in is what is being
+            // pointed at.
             void vscode.window.showWarningMessage(
-                "No MariaDB connections are configured. Run "
-                + "'mariadb-shell -- mcp setup' to add one.",
+                "No MariaDB connections are configured. Add one with the "
+                + "+ button in the MariaDB Connections view.",
             );
 
             return undefined;
