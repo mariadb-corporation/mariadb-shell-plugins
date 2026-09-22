@@ -546,6 +546,53 @@ describe("App", () => {
         ]);
     });
 
+    it("does not drag the active tab back while the strip is paged",
+        async () => {
+            await mount();
+            const state = report();
+            const first = state.resultSets[0];
+            await send({
+                type: "state",
+                state: {
+                    ...state,
+                    resultSets: [first, {
+                        ...first,
+                        id: "run1-result-1",
+                        caption: "Result #2",
+                    }],
+                },
+            });
+
+            const scrolledTo: string[] = [];
+            const original = Element.prototype.scrollIntoView;
+            Element.prototype.scrollIntoView = function record(
+                this: Element,
+            ): void {
+                scrolledTo.push(this.textContent ?? "");
+            };
+
+            try {
+                const strip = host.querySelector<HTMLDivElement>(
+                    ".resultTabs");
+                // A page is a scroll, and a scroll re-renders the bar.
+                // The tab the page started from must not be brought
+                // back in on that render, which would undo the page.
+                await measure(strip!, { scrollLeft: 60, scrollWidth: 500 });
+
+                expect(scrolledTo).toEqual([]);
+
+                // Switching tabs is what does bring one in, since the
+                // one switched to may be off the end of the strip.
+                await click((label) => {
+                    return label === "Result #2";
+                });
+
+                expect(scrolledTo).toEqual(["Result #2"]);
+            } finally {
+                Element.prototype.scrollIntoView = original;
+            }
+        });
+
     it("offers no session picker where nothing is open", async () => {
         await mount();
         await send({

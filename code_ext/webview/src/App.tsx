@@ -140,6 +140,8 @@ export const App = (): JSX.Element => {
     const [scrollToRowId, setScrollToRowId] = useState<string | undefined>();
     /** The strip of result tabs, measured for the paging buttons. */
     const resultTabs = useRef<HTMLDivElement>(null);
+    /** Every result tab now rendered, by id, so one can be scrolled to. */
+    const tabElements = useRef(new Map<string, HTMLButtonElement>());
     const [paging, setPaging] = useState<ITabPaging>({
         overflowing: false,
         atStart: true,
@@ -231,9 +233,21 @@ export const App = (): JSX.Element => {
     }, []);
 
     const measureTabs = useCallback((): void => {
-        if (resultTabs.current) {
-            setPaging(pagingOf(resultTabs.current));
+        if (!resultTabs.current) {
+            return;
         }
+
+        // Scrolling fires this at every frame of a page, so what is
+        // measured is kept when it has not changed: a fresh object
+        // every frame is a render every frame, for nothing.
+        const measured = pagingOf(resultTabs.current);
+        setPaging((previous) => {
+            return previous.overflowing === measured.overflowing
+                && previous.atStart === measured.atStart
+                && previous.atEnd === measured.atEnd
+                ? previous
+                : measured;
+        });
     }, []);
 
     // The strip overflows when the tabs outgrow it or the panel is made
@@ -252,6 +266,17 @@ export const App = (): JSX.Element => {
             observer.disconnect();
         };
     }, [measureTabs, state?.resultSets]);
+
+    // A tab the host has just switched to may be off the end of the
+    // strip, so it is brought in - but only when it changes. Doing it
+    // on every render would undo a page the moment the tab it started
+    // from scrolled out of sight.
+    useEffect(() => {
+        tabElements.current.get(activeTab)?.scrollIntoView({
+            block: "nearest",
+            inline: "nearest",
+        });
+    }, [activeTab]);
 
     /**
      * Moves the strip of result tabs by most of its width.
@@ -551,15 +576,12 @@ export const App = (): JSX.Element => {
                                         ? "tab active"
                                         : "tab"}
                                     ref={(element) => {
-                                        // A tab the host just switched
-                                        // to may be off the end of the
-                                        // strip; this brings it in.
-                                        if (element
-                                            && activeTab === set.id) {
-                                            element.scrollIntoView({
-                                                block: "nearest",
-                                                inline: "nearest",
-                                            });
+                                        if (element) {
+                                            tabElements.current.set(
+                                                set.id, element);
+                                        } else {
+                                            tabElements.current.delete(
+                                                set.id);
                                         }
                                     }}
                                     onClick={() => {
