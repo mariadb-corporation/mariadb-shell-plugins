@@ -144,6 +144,40 @@ async def _db_flow(uri, script_dir):
         assert commented["statement_index"] == 1
         assert commented["rows"] == [{"cnt": 3}]
 
+        # Warnings, against a real server because both halves of this were
+        # got wrong against a stub. A SELECT that warns only knows it has
+        # once its rows have been read, so the count used to come back 0 for
+        # every one of them; and a warning is a shell Row, so its fields have
+        # to be read by attribute rather than subscripted by name.
+        warned_result = await call(
+            "db.execute_sql_script",
+            {
+                "connection_id": connection_id,
+                "sql_script": (
+                    "SELECT CAST('not-a-number' AS UNSIGNED) AS n;"
+                    f"DROP TABLE IF EXISTS `{schema}`.`not_there`;"
+                ),
+            },
+        )
+        assert warned_result.is_error is False
+        warned = helpers.tool_payload(warned_result)
+        # The one with a result set, which is the case that was broken.
+        assert warned[0]["warnings_count"] == 1
+        assert warned[0]["warnings"] == [{
+            "level": "Warning",
+            "code": 1292,
+            "message": "Truncated incorrect INTEGER value: 'not-a-number'",
+        }]
+        # And the one without, where the level is a Note rather than a Warning.
+        assert warned[1]["warnings_count"] == 1
+        assert warned[1]["warnings"][0]["level"] == "Note"
+        assert warned[1]["warnings"][0]["code"] == 1051
+
+        # A statement that warned about nothing says so by carrying no
+        # warnings at all, which is what lets a client skip the key.
+        assert "warnings" not in commented
+        assert commented["warnings_count"] == 0
+
         # A failing statement stops the script but does not raise: the
         # entries for what already ran are returned, and the failing one
         # carries the error and the statement instead of a result set. The

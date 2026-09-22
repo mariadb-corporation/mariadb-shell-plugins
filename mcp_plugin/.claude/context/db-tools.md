@@ -14,6 +14,28 @@ handling are in [connections.md](connections.md).
   returns a LIST; accepts `sql_script` XOR `file_path` (file must be an allowed path).
   `sandbox.deploy` port REQUIRED int on all 7; `ssl=False` default.
 
+- **Warnings come back with their texts, and the count is read at the right moment**
+  (2026-09-22, for `code_ext`, which shows one row per warning under the statement that
+  raised it):
+  - `_serialize_result` reads `result.warnings_count` **after** `fetch_all()`, not
+    before. It is `mysql_warning_count`, which for a statement returning a result set is
+    not final until that set has been consumed — read first, it answered **0 for every
+    SELECT**, however many warnings the statement went on to report. A statement with no
+    result set was always right, which is why this survived so long. Verified against a
+    real server in `test_db_sql.py`'s `_db_flow`: `SELECT CAST('not-a-number' AS
+    UNSIGNED)` reports 1, code 1292.
+  - `_serialize_warnings(result)` adds `warnings`: one dict per warning with `level`,
+    `code` and `message`, exactly as `SHOW WARNINGS` reports them. Present only when
+    there are any, so a client can skip the key.
+  - Fields are read **by ATTRIBUTE** (`warning.level`). A warning comes back as a shell
+    `Row`, the same type a query result row is, and subscripting one takes the sequence
+    path — `warning["level"]` raises `sequence index must be integer, not 'str'`. That
+    is the opposite of the surrounding code, which reads result rows by POSITION for its
+    own reason (a label cannot reach the second of two columns sharing one).
+  - `get_warnings` is looked up with `getattr` and missing means no texts, so a shell
+    that predates it still reports the count. That also keeps this safe to ship without
+    the extension, and the extension safe to ship without this.
+
 - **Script results carry their position, their time, and their own failure**
   (2026-09-20, for the VS Code extension in `code_ext`, which cannot work any of it out
   from the outside — the whole script is ONE call):

@@ -1306,6 +1306,116 @@ def test_distinct_labels_are_left_exactly_as_they_are():
     ]
 
 
+class _StubWarningResult:
+    """A result that only knows its warnings once its rows have been read.
+
+    Which is how the real one behaves: warnings_count is mysql_warning_count,
+    and for a statement that returns a result set that is not final until the
+    set has been consumed.
+    """
+
+    affected_items_count = 0
+
+    def __init__(self, warnings, has_data=True):
+        self._warnings = warnings
+        self._has_data = has_data
+        self._consumed = not has_data
+
+    @property
+    def warnings_count(self):
+        return len(self._warnings) if self._consumed else 0
+
+    def has_data(self):
+        return self._has_data
+
+    def get_columns(self):
+        return [_StubColumn("x")]
+
+    def fetch_all(self):
+        self._consumed = True
+
+        return [_StubRow([0])]
+
+    def get_warnings(self):
+        if not self._consumed:
+            return []
+
+        return list(self._warnings)
+
+
+class _StubWarning:
+    """A warning as the shell hands one over: fields read by attribute.
+
+    Not a dict, deliberately. The shell returns a Row, and subscripting one
+    goes to the sequence path - warning["level"] raises "sequence index must
+    be integer", which is how the first version of this was caught.
+    """
+
+    def __init__(self, level, code, message):
+        self.level = level
+        self.code = code
+        self.message = message
+
+
+TRUNCATED = _StubWarning(
+    "Warning", 1292, "Truncated incorrect INTEGER value: 'not-a-number'"
+)
+TRUNCATED_JSON = {
+    "level": "Warning",
+    "code": 1292,
+    "message": "Truncated incorrect INTEGER value: 'not-a-number'",
+}
+
+
+def test_a_query_reports_the_warnings_it_produced():
+    """Both the count and the texts, and both only after the rows are read.
+
+    SELECT CAST('not-a-number' AS UNSIGNED) warns and returns a row. Reading
+    the count before fetching the rows answered 0 for it - and for every other
+    warning a SELECT has ever produced.
+    """
+    output = db_functions._serialize_result(_StubWarningResult([TRUNCATED]))
+
+    assert output["warnings_count"] == 1
+    assert output["warnings"] == [TRUNCATED_JSON]
+
+
+def test_a_statement_with_no_result_set_reports_its_warnings_too():
+    """DROP TABLE IF EXISTS on a table that is not there is the everyday one."""
+    unknown = _StubWarning("Note", 1051, "Unknown table 'x'")
+
+    output = db_functions._serialize_result(
+        _StubWarningResult([unknown], has_data=False)
+    )
+
+    assert output["warnings_count"] == 1
+    assert output["warnings"] == [{
+        "level": "Note",
+        "code": 1051,
+        "message": "Unknown table 'x'",
+    }]
+
+
+def test_a_statement_that_warned_about_nothing_carries_no_warnings_key():
+    """A key that is almost always empty is a key a client learns to skip."""
+    output = db_functions._serialize_result(_StubWarningResult([]))
+
+    assert output["warnings_count"] == 0
+    assert "warnings" not in output
+
+
+def test_a_shell_without_get_warnings_still_reports_the_count():
+    """The texts are the new part; the count has always been there.
+
+    _StubResult is exactly the old contract, and it has to go on working -
+    this runs against whatever shell is installed, not only the newest.
+    """
+    output = db_functions._serialize_result(_StubResult())
+
+    assert output["warnings_count"] == 0
+    assert "warnings" not in output
+
+
 # --- the reaper's lifetime --------------------------------------------------
 
 
