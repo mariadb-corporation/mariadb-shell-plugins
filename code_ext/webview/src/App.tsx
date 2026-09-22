@@ -34,6 +34,7 @@ import type {
     HostMessage,
     IActionRow,
     IResultSet,
+    IStatementSource,
     IViewState,
 } from "../../src/webview/protocol.js";
 import { createQueryBuilder } from "../../src/sql/resultSetQueryBuilder.js";
@@ -46,31 +47,88 @@ import { post } from "./vscodeApi.js";
 /** The id of the always-present Actions tab. */
 const ACTIONS_TAB = "actions";
 
+/** One error the bar shows, and what it takes the user to. */
+export interface IRunError {
+    /** What the server said about it. */
+    message: string;
+    /** The action row it is, so the grid can be carried to it. */
+    rowId?: string;
+    /** Where in the file it is, when there was an editor behind it. */
+    source?: IStatementSource;
+}
+
 /**
- * What to put in the error bar: the last thing that went wrong on the
- * connection.
+ * What to put in the error bar: everything that went wrong in the last
+ * thing the connection did, in the order the script hit them.
  *
- * Only the first row is looked at, that being the newest. The actions
- * keep everything, and an error two runs ago is not what the bar is
- * for - it says what just happened.
+ * Only the newest thing is reported. The actions keep everything, and an
+ * error two runs ago is not what the bar is for - it says what just
+ * happened. A run that worked therefore clears it.
+ *
+ * What "newest" means is **not** simply the first row. A run's row goes
+ * up before the connection it needs has been opened, and opening one is
+ * itself logged - so on the first execution on a connection an event
+ * sits in front of the run that failed. Everything that is neither a run
+ * nor a failure of its own is stepped over to find it.
  *
  * @param actions What happened, newest first.
  *
- * @returns The message, or undefined if the last thing went well.
+ * @returns One entry per failure, empty if the last thing went well.
  */
-export const lastErrorOf = (actions: IActionRow[]): string | undefined => {
-    const run = actions[0];
-    if (!run || run.kind !== "error") {
-        return undefined;
+export const errorsOf = (actions: IActionRow[]): IRunError[] => {
+    const newest = actions.find((row) => {
+        return row.role === "run" || row.kind === "error";
+    });
+    if (!newest || newest.kind !== "error") {
+        return [];
     }
 
-    // The statement that failed says what the server said; the run's own
-    // row only counts them. An event has no children and says it itself.
-    const failed = run.children?.findLast((child) => {
+    // An event has no children and no summary: it says it itself.
+    if (newest.role !== "run") {
+        return [{
+            message: newest.message,
+            rowId: newest.id,
+            source: newest.source,
+        }];
+    }
+
+    // The statements that failed say what the server said; the run's own
+    // row only counts them. They are already in the order they ran, which
+    // is the order they are worth being walked in.
+    const failed = (newest.children ?? []).filter((child) => {
         return child.kind === "error";
     });
+    if (failed.length === 0) {
+        return [{
+            message: newest.summary ?? newest.message,
+            rowId: newest.id,
+            source: newest.source,
+        }];
+    }
 
-    return failed?.message ?? run.summary ?? run.message;
+    return failed.map((child) => {
+        return {
+            message: child.message,
+            rowId: child.id,
+            source: child.source,
+        };
+    });
+};
+
+/**
+ * What tells one set of errors from another, so that state arriving
+ * while the user is part way through the set does not put them back at
+ * the first one. State arrives whenever anything at all happens on the
+ * connection, not only when a run finishes.
+ *
+ * @param errors The errors now being shown.
+ *
+ * @returns A key that changes only when the errors do.
+ */
+const errorKey = (errors: IRunError[]): string => {
+    return errors.map((error) => {
+        return `${error.rowId ?? ""}\u0001${error.message}`;
+    }).join("\u0000");
 };
 
 /** The value the session picker offers every connection together under. */
@@ -135,7 +193,39 @@ export const App = (): JSX.Element => {
     const [state, setState] = useState<IViewState | undefined>();
     const [activeTab, setActiveTab] = useState<string>(ACTIONS_TAB);
     const [notice, setNotice] = useState<string | undefined>();
-    const [error, setError] = useState<string | undefined>();
+    /** The failures of the last thing that ran, in the order it hit them. */
+    const [errors, setErrors] = useState<IRunError[]>([]);
+    /** Which of them the bar is on. It opens on the first. */
+    const [errorIndex, setErrorIndex] = useState(0);
+    /** Set by the bar's close button, cleared by the next set of errors. */
+    const [errorsHidden, setErrorsHidden] = useState(false);
+    /** The set the three above were last put in place for. */
+    const shownErrors = useRef<string>("");
+
+    /**
+     * Puts a set of errors in the bar, at the first of them.
+     *
+     * The same set arriving again leaves the bar exactly as it is. State
+     * arrives whenever anything at all happens on the connection - a
+     * schema listed while the user is part way through the errors - and
+     * that must not put them back at the first one, nor bring back a bar
+     * they have closed.
+     *
+     * @param found The errors to show, empty to take the bar down.
+     *
+     * @returns Nothing.
+     */
+    const showErrors = useCallback((found: IRunError[]): void => {
+        const key = errorKey(found);
+        if (key === shownErrors.current) {
+            return;
+        }
+
+        shownErrors.current = key;
+        setErrors(found);
+        setErrorIndex(0);
+        setErrorsHidden(false);
+    }, []);
     const [editing, setEditing] = useState<Record<string, IEditingState>>({});
     const [scrollToRowId, setScrollToRowId] = useState<string | undefined>();
     /** The strip of result tabs, measured for the paging buttons. */
@@ -183,13 +273,15 @@ export const App = (): JSX.Element => {
                         setActiveTab(message.state.resultSets[0]?.id
                             ?? ACTIONS_TAB);
                     }
-                    setError(lastErrorOf(message.state.actions));
+                    showErrors(errorsOf(message.state.actions));
                     break;
                 }
 
                 case "applied": {
                     if (message.error !== undefined) {
-                        setError(message.error);
+                        // An apply failure is one error with no row of
+                        // its own: it did not come from a run.
+                        showErrors([{ message: message.error }]);
                         setNotice(undefined);
                         // The preview is where the failing statement is,
                         // so that is where the user is taken.
@@ -212,7 +304,7 @@ export const App = (): JSX.Element => {
                             };
                         });
                     } else {
-                        setError(undefined);
+                        showErrors([]);
                         setNotice(
                             `Applied ${message.statements.length} statement`
                             + `${message.statements.length === 1 ? "" : "s"}.`,
@@ -401,7 +493,7 @@ export const App = (): JSX.Element => {
                 previewActive: false,
             };
         });
-        setError(undefined);
+        showErrors([]);
         setNotice(undefined);
     }, [active, updateState]);
 
@@ -457,6 +549,36 @@ export const App = (): JSX.Element => {
         }
     }, []);
 
+    /**
+     * Moves the error bar onto another of its errors, and takes the
+     * user to it.
+     *
+     * Stepping through errors is for fixing them, so a step is the same
+     * thing the arrow on the row does rather than only a change of text:
+     * the cursor goes to the statement, and the actions open on the row
+     * that reported it.
+     *
+     * @param index Which error to move to.
+     *
+     * @returns Nothing.
+     */
+    const goToError = useCallback((index: number): void => {
+        const error = errors[index];
+        if (!error) {
+            return;
+        }
+
+        setErrorIndex(index);
+        if (error.source) {
+            post({ type: "revealStatement", source: error.source });
+        }
+        if (error.rowId !== undefined) {
+            // The row is no use behind a result tab.
+            setActiveTab(ACTIONS_TAB);
+            setScrollToRowId(error.rowId);
+        }
+    }, [errors]);
+
     if (!state) {
         return (
             <div class="placeholder">
@@ -469,8 +591,63 @@ export const App = (): JSX.Element => {
 
     return (
         <div class="panel">
-            {error !== undefined && (
-                <div class="errorBar" role="alert">{error}</div>
+            {!errorsHidden && errors[errorIndex] !== undefined && (
+                <div class="errorBar" role="alert">
+                    {/*
+                      * The message itself is the way to the statement
+                      * that caused it - the thing the reader wants the
+                      * moment they have read it - so it is a button
+                      * rather than text with an arrow beside it.
+                      */}
+                    <button
+                        type="button"
+                        class="errorBarText"
+                        title="Go to the statement this came from"
+                        onClick={() => {
+                            goToError(errorIndex);
+                        }}
+                    >
+                        {errors[errorIndex].message}
+                    </button>
+                    {errors.length > 1 && (
+                        <div class="errorBarNav">
+                            <button
+                                type="button"
+                                class="errorBarStep codicon
+                                    codicon-chevron-left"
+                                title="The error before this one"
+                                aria-label="Previous error"
+                                disabled={errorIndex === 0}
+                                onClick={() => {
+                                    goToError(errorIndex - 1);
+                                }}
+                            />
+                            <span class="errorBarCount">
+                                {errorIndex + 1} of {errors.length}
+                            </span>
+                            <button
+                                type="button"
+                                class="errorBarStep codicon
+                                    codicon-chevron-right"
+                                title="The error after this one"
+                                aria-label="Next error"
+                                disabled={errorIndex === errors.length - 1}
+                                onClick={() => {
+                                    goToError(errorIndex + 1);
+                                }}
+                            />
+                        </div>
+                    )}
+                    <button
+                        type="button"
+                        class="errorBarClose codicon codicon-close"
+                        title="Hide these errors"
+                        aria-label="Hide these errors"
+                        onClick={() => {
+                            setErrorsHidden(true);
+                        }}
+                    />
+                </div>
             )}
 
             <section class="content">
@@ -483,6 +660,9 @@ export const App = (): JSX.Element => {
                             availableResultIds={availableResultIds}
                             onJumpToResult={jumpToResult}
                             onGoToStatement={goToStatement}
+                            onCopyText={(text) => {
+                                post({ type: "copyToClipboard", text });
+                            }}
                             scrollToRowId={scrollToRowId}
                         />
                     )

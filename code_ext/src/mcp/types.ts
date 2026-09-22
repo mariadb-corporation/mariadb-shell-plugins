@@ -100,9 +100,23 @@ export interface IObjectDetails {
  * satisfies the minimum version. Everything that reads them falls back to
  * what can be worked out without them.
  */
+/** One warning a statement produced, as `SHOW WARNINGS` reports it. */
+export interface IStatementWarning {
+    /** `Warning`, `Note` or `Error`, in the server's own words. */
+    level: string;
+    code: number;
+    message: string;
+}
+
 export interface IStatementResult {
     affected_items_count?: number;
     warnings_count?: number;
+    /**
+     * What each of those warnings said. Absent where the statement
+     * produced none, and where the shell is too old to report the texts -
+     * `warnings_count` is the older field and can be there without this.
+     */
+    warnings?: IStatementWarning[];
     session_restarted?: boolean;
     columns?: string[];
     rows?: Array<Record<string, unknown>>;

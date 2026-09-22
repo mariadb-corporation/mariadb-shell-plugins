@@ -696,8 +696,14 @@ export class ResultViewProvider
      * @returns Nothing.
      */
     #trim(results: IConnectionResults): void {
+        // Counted through the whole tree, not one level of it: a
+        // statement's warnings are rows of the log as much as the
+        // statement is, and a run of them would otherwise push the
+        // history well past the cap without the cap noticing.
         const sizeOf = (row: IActionRow): number => {
-            return 1 + (row.children?.length ?? 0);
+            return (row.children ?? []).reduce((sum, child) => {
+                return sum + sizeOf(child);
+            }, 1);
         };
 
         let total = results.actions.reduce((sum, row) => {

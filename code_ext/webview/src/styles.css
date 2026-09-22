@@ -202,17 +202,89 @@ button:focus-visible {
 }
 
 /* The first thing in the panel, above what it is about. */
+/*
+ * The bar leads the panel and holds one error at a time. Its controls
+ * are pinned to the top right (`align-items: flex-start`), because a
+ * long message scrolls under them and buttons that scrolled with it
+ * would be gone by the time they were wanted.
+ */
 .errorBar {
     flex: 0 0 auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
     padding: 3px 8px;
     color: var(--vscode-inputValidation-errorForeground,
             var(--vscode-errorForeground));
     background: var(--vscode-inputValidation-errorBackground);
     border-bottom: 1px solid var(--vscode-inputValidation-errorBorder,
             var(--vscode-panel-border));
+}
+
+/*
+ * A button, but drawn as the text it is: the whole message is the
+ * target, and an arrow beside it would be a smaller one for no reason.
+ * Left aligned, since it is a sentence and not a label.
+ */
+.errorBarText {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     max-height: 6em;
     overflow-y: auto;
+    cursor: pointer;
+}
+
+.errorBarText:hover {
+    text-decoration: underline;
+}
+
+/* Only there while there is more than one error to step between. */
+.errorBarNav {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/*
+ * How far through the errors this is. Without it the two chevrons say
+ * only that there are more, not how many are left to work through.
+ */
+.errorBarCount {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+}
+
+.errorBarStep,
+.errorBarClose {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    line-height: 18px;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: inherit;
+}
+
+.errorBarStep:hover:not(:disabled),
+.errorBarClose:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.errorBarStep:disabled {
+    opacity: 0.4;
+    cursor: default;
 }
 
 /* Tabs, in the bar that picks what is on show. */
@@ -450,6 +522,15 @@ button:focus-visible {
     border-right: none;
 }
 
+/*
+ * A row that knows where its statement is takes the cursor there when
+ * it is clicked, anywhere along it, as a row of the Problems panel
+ * does. Only such a row says so with the pointer; the rest are text.
+ */
+.actionsGridHost.tabulator .tabulator-row.goesSomewhere {
+    cursor: pointer;
+}
+
 .tabulator .tabulator-cell.actionMessage {
     padding-left: 5px;
 }
@@ -534,6 +615,107 @@ button:focus-visible {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+}
+
+/*
+ * An error is the one message that is not cut off. A server error runs
+ * to a sentence or two and is the thing the reader came for, so the row
+ * grows to hold all of it (the column is `variableHeight`) rather than
+ * ending in an ellipsis that has to be hovered to be read.
+ *
+ * Long words - a generated identifier, a path - break rather than push
+ * the column wider.
+ */
+.tabulator .tabulator-row.errorRow .actionMessageContent {
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/*
+ * With the message on several lines the marker goes beside the first of
+ * them. Centred, it would float halfway down the row and leave the
+ * column of markers that every other row lines up in - which is the one
+ * thing about this grid that has to hold.
+ *
+ * Time and Information stay centred against the block, which is not a
+ * choice: Tabulator writes `align-items` as an INLINE style for a
+ * column with a `vertAlign`, and no rule here can outrank that. It
+ * reads well enough - they are one fact about the whole row - and the
+ * alternative is dropping `vertAlign`, which every single-line row
+ * needs.
+ */
+.tabulator .tabulator-row.errorRow .actionMessageCell,
+.tabulator .tabulator-row.errorRow .tabulator-cell.actionMessage {
+    align-items: flex-start;
+}
+
+.actionInformationContent {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/*
+ * What stands in for a `title` on a cell that is cut off: the whole of
+ * the text, and a button that copies it. Drawn as VS Code's own hover
+ * widget, and placed against the window - which is why it has to be
+ * dismissed when the grid under it scrolls.
+ */
+.overflowPopup {
+    position: fixed;
+    z-index: 100;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    max-width: min(560px, calc(100vw - 16px));
+    max-height: 40vh;
+    padding: 4px 6px;
+    border: 1px solid var(--vscode-editorHoverWidget-border,
+            var(--vscode-panel-border));
+    border-radius: 3px;
+    background: var(--vscode-editorHoverWidget-background,
+            var(--vscode-editorWidget-background));
+    color: var(--vscode-editorHoverWidget-foreground,
+            var(--vscode-editorWidget-foreground, var(--vscode-foreground)));
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+
+/*
+ * Selectable as well as copyable: the button takes the whole of it, and
+ * dragging takes the part that was wanted.
+ */
+.overflowPopupText {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: auto;
+    max-height: calc(40vh - 10px);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.overflowPopupCopy {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    line-height: 18px;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
+}
+
+.overflowPopupCopy:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Said on the button rather than in a toast; the pointer is already here. */
+.overflowPopupCopy.copied {
+    color: var(--vscode-testing-iconPassed,
+            var(--vscode-charts-green, var(--vscode-foreground)));
 }
 
 .actionArrows {

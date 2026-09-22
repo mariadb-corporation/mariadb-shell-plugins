@@ -306,6 +306,106 @@ describe("ExecutionService.execute", () => {
         ]);
     });
 
+    it("hangs a statement's warnings under it, one row each", async () => {
+        const api = createFakeApi({
+            defaultResults: [{
+                affected_items_count: 0,
+                warnings_count: 1,
+                warnings: [{
+                    level: "Warning",
+                    code: 1292,
+                    message:
+                        "Truncated incorrect INTEGER value: 'not-a-number'",
+                }],
+                columns: ["n"],
+                rows: [{ n: 0 }],
+            }, {
+                affected_items_count: 0,
+                warnings_count: 2,
+                warnings: [
+                    { level: "Note", code: 1051, message: "Unknown table 'a'" },
+                    { level: "Note", code: 1051, message: "Unknown table 'b'" },
+                ],
+            }],
+        });
+
+        const report = await new ExecutionService(api).execute({
+            connectionUri: "dba@h",
+            connectionId: "id",
+            script: "SELECT CAST('not-a-number' AS UNSIGNED) AS n;"
+                + "DROP TABLE IF EXISTS a, b;",
+            runId: "run1",
+        });
+
+        const [query, drop] = statementsOf(report);
+        // The statement keeps its count in its message; the texts are
+        // the rows under it, which is what the count was no use without.
+        expect(query.message).toBe("1 row in set, 1 warning");
+        expect(query.kind).toBe("warning");
+        expect(query.children).toEqual([{
+            id: "run1-0-warning-0",
+            time: query.time,
+            connection: "dba@h",
+            connectionLabel: query.connectionLabel,
+            source: query.source,
+            role: "warning",
+            statement: "Warning 1292",
+            message: "Truncated incorrect INTEGER value: 'not-a-number'",
+            kind: "warning",
+        }]);
+
+        // One row per warning, whether or not the statement returned
+        // anything, and each keyed apart from the others.
+        expect(drop.children?.map((row) => {
+            return [row.id, row.statement, row.message];
+        })).toEqual([
+            ["run1-1-warning-0", "Note 1051", "Unknown table 'a'"],
+            ["run1-1-warning-1", "Note 1051", "Unknown table 'b'"],
+        ]);
+    });
+
+    it("leaves a statement that warned about nothing childless", async () => {
+        const api = createFakeApi({
+            defaultResults: [{ affected_items_count: 1, warnings_count: 0 }],
+        });
+
+        const report = await new ExecutionService(api).execute({
+            connectionUri: "dba@h",
+            connectionId: "id",
+            script: "SELECT 1;",
+            runId: "run1",
+        });
+
+        // No expander on a row with nothing behind it.
+        expect(statementsOf(report)[0].children).toBeUndefined();
+    });
+
+    it("keeps the count where the shell reports no warning texts",
+        async () => {
+            // Every shell before this feature: warnings_count has always
+            // been there, the texts have not. The count still shows and
+            // the row simply has nothing to open.
+            const api = createFakeApi({
+                defaultResults: [{
+                    affected_items_count: 1,
+                    warnings_count: 3,
+                }],
+            });
+
+            const report = await new ExecutionService(api).execute({
+                connectionUri: "dba@h",
+                connectionId: "id",
+                script: "INSERT INTO t VALUES (1);",
+                runId: "run1",
+            });
+
+            const [statement] = statementsOf(report);
+            expect(statement.message)
+                .toBe("Query OK, 1 row affected, 3 warnings");
+            expect(statement.kind).toBe("warning");
+            expect(statement.children).toBeUndefined();
+        });
+
     it("marks a derived result set read only", async () => {
         const api = createFakeApi({
             defaultResults: [{

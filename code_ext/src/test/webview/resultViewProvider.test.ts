@@ -545,6 +545,55 @@ describe("ResultViewProvider", () => {
                 return row.id;
             })).toEqual(["run2", "run1"]);
         });
+
+        it("counts a statement's warnings against that cap too", async () => {
+            const { api, provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            const context = {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            };
+
+            // Half the cap of statements, but every one of them carrying
+            // a warning of its own, so two runs are over it. Counting
+            // only the statements would have kept all three.
+            const perRun = Math.floor(MAX_ACTION_ROWS / 4);
+            for (let run = 0; run < 3; run += 1) {
+                await provider.showResults(editableReport({
+                    actions: [pendingRun({
+                        id: `run${run}`,
+                        kind: "warning",
+                        children: Array.from({ length: perRun }, (_v, i) => {
+                            return {
+                                id: `run${run}-${i}`,
+                                time: "12:00:00.000",
+                                connection: "dba@localhost:3310",
+                                role: "statement" as const,
+                                statement: "SELECT 1",
+                                message: "1 row in set, 1 warning",
+                                kind: "warning" as const,
+                                elapsedMs: 1,
+                                children: [{
+                                    id: `run${run}-${i}-warning-0`,
+                                    time: "12:00:00.000",
+                                    connection: "dba@localhost:3310",
+                                    role: "warning" as const,
+                                    statement: "Warning 1292",
+                                    message: "Truncated incorrect value",
+                                    kind: "warning" as const,
+                                }],
+                            };
+                        }),
+                    })],
+                    resultSets: [],
+                }), context);
+            }
+
+            expect(provider.actionsFor("dba@localhost:3310").map((row) => {
+                return row.id;
+            })).toEqual(["run2"]);
+        });
     });
 
     describe("the connection picker", () => {

@@ -25,6 +25,10 @@ import {
 } from "tabulator-tables";
 
 import type { IActionRow } from "../../src/webview/protocol.js";
+import {
+    attachOverflowPopup,
+    closeOverflowPopup,
+} from "./overflowPopup.js";
 
 interface IActionsGridProperties {
     /** One row per run, newest first, each holding its statements. */
@@ -41,6 +45,8 @@ interface IActionsGridProperties {
     onJumpToResult(resultId: string): void;
     /** Puts the cursor on the statement a row came from. */
     onGoToStatement(row: IActionRow): void;
+    /** Puts a cut-off cell's full text on the clipboard. */
+    onCopyText(text: string): void;
     /** A row to scroll into view, e.g. a run's first error. */
     scrollToRowId?: string;
 }
@@ -187,6 +193,7 @@ export const createGoToButton = (
 export const formatMessageCell = (
     cell: CellComponent,
     available: ReadonlySet<string>,
+    onCopy: (text: string) => void,
 ): HTMLElement => {
     const row = cell.getRow().getData() as IActionRow;
     const host = document.createElement("div");
@@ -207,6 +214,11 @@ export const formatMessageCell = (
     const content = document.createElement("div");
     content.className = "actionMessageContent";
     content.textContent = row.message;
+    // An error wraps instead - the whole of it is already on screen, and
+    // there is nothing for a popup to add.
+    if (row.kind !== "error") {
+        attachOverflowPopup(content, { text: row.message, onCopy });
+    }
     host.appendChild(content);
 
     const actions = document.createElement("span");
@@ -249,17 +261,22 @@ export const informationOf = (row: IActionRow): string => {
  *
  * @returns The cell's content.
  */
-export const formatInformationCell = (cell: CellComponent): HTMLElement => {
+export const formatInformationCell = (
+    cell: CellComponent,
+    onCopy: (text: string) => void,
+): HTMLElement => {
     const row = cell.getRow().getData() as IActionRow;
     const content = document.createElement("span");
+    content.className = "actionInformationContent";
     content.textContent = informationOf(row);
+    attachOverflowPopup(content, { text: informationOf(row), onCopy });
 
     return content;
 };
 
 /**
- * Tabulator reports a click on the whole cell, but both arrows share
- * their cell with the value beside them.
+ * Tabulator reports a click on the whole row, but the jump arrow shares
+ * it with everything else and means something narrower.
  *
  * @param event The click Tabulator reported.
  * @param selector The control the click has to have landed on.
@@ -270,6 +287,41 @@ export const clickedOn = (event: unknown, selector: string): boolean => {
     const target = (event as Event | undefined)?.target;
 
     return target instanceof Element && target.closest(selector) !== null;
+};
+
+/** What a click on a row of the actions asks for. */
+export type ActionClick = "jump" | "goTo" | undefined;
+
+/**
+ * What clicking a row means.
+ *
+ * The whole row is the target, as it is in the Problems panel: a row of
+ * the log stands for a statement, and the thing wanted on reading one is
+ * to be taken to it. The arrows stay because they say so, and because a
+ * run's arrow has a title of its own; clicking one is simply a click on
+ * the row, except for the jump, which goes somewhere else.
+ *
+ * Tabulator's twistie stops the click reaching here, so opening a run is
+ * still only opening it.
+ *
+ * @param event The click Tabulator reported.
+ * @param row The row it landed on.
+ * @param available The result sets whose tabs are still on show.
+ *
+ * @returns What to do, or nothing where the row knows nowhere to go.
+ */
+export const actionClick = (
+    event: unknown,
+    row: IActionRow,
+    available: ReadonlySet<string>,
+): ActionClick => {
+    if (row.resultId !== undefined
+        && available.has(row.resultId)
+        && clickedOn(event, ".jumpToResult")) {
+        return "jump";
+    }
+
+    return row.source ? "goTo" : undefined;
 };
 
 /**
@@ -319,8 +371,7 @@ export const timeOf = (row: IActionRow): string => {
  */
 export const buildActionColumns = (
     available: ReadonlySet<string>,
-    onJump: (resultId: string) => void,
-    onGoTo: (row: IActionRow) => void,
+    onCopy: (text: string) => void,
     showConnection = false,
 ): ColumnDefinition[] => {
     return [
@@ -330,19 +381,11 @@ export const buildActionColumns = (
             headerSort: false,
             widthGrow: 3,
             cssClass: "actionMessage",
+            // An error is the one thing that is not cut off: the row
+            // grows to hold it, which is what variableHeight is for.
+            variableHeight: true,
             formatter: (cell) => {
-                return formatMessageCell(cell, available);
-            },
-            cellClick: (event, cell) => {
-                const row = cell.getRow().getData() as IActionRow;
-                if (row.source && clickedOn(event, ".goToStatement")) {
-                    onGoTo(row);
-                }
-                if (row.resultId !== undefined
-                    && available.has(row.resultId)
-                    && clickedOn(event, ".jumpToResult")) {
-                    onJump(row.resultId);
-                }
+                return formatMessageCell(cell, available, onCopy);
             },
         },
         {
@@ -368,7 +411,9 @@ export const buildActionColumns = (
             cssClass: "actionInformation",
             headerTooltip:
                 "The statement that ran, or what the run came to",
-            formatter: formatInformationCell,
+            formatter: (cell) => {
+                return formatInformationCell(cell, onCopy);
+            },
         },
         // Last, where it labels the row without standing between the
         // marker and what it says.
@@ -388,42 +433,57 @@ export const buildActionColumns = (
 };
 
 /**
- * The run at the top of the log: the newest one, which is the one left
- * open.
+ * Which rows of the actions start out open.
  *
- * It is looked for rather than taken from the front of the list,
- * because the row in front may be an event - the connection a run
- * opened on the way is reported after the run's own row went up, and
- * so sits above it.
+ * The newest run, and inside it every statement carrying warnings. A
+ * warning the reader has to go looking for is a warning nobody reads,
+ * and the count in the statement's own message is no use without the
+ * text behind it. Nothing else opens, so a run still closes behind the
+ * one that follows it.
+ *
+ * The newest run is looked for rather than taken from the front of the
+ * list, because the row in front may be an event - the connection a run
+ * opened on the way is reported after the run's own row went up, and so
+ * sits above it.
  *
  * @param rows The actions, newest first.
  *
- * @returns The newest run's id, if there is a run at all.
+ * @returns The ids to open, empty where nothing has run.
  */
-export const latestRunOf = (rows: IActionRow[]): string | undefined => {
-    return rows.find((row) => {
+export const expandedIdsOf = (rows: IActionRow[]): Set<string> => {
+    const latest = rows.find((row) => {
         return row.role === "run";
-    })?.id;
+    });
+    if (!latest) {
+        return new Set();
+    }
+
+    const open = new Set([latest.id]);
+    for (const statement of latest.children ?? []) {
+        if ((statement.children?.length ?? 0) > 0) {
+            open.add(statement.id);
+        }
+    }
+
+    return open;
 };
 
 /**
- * Opens the newest run and closes the rest.
+ * Opens the rows above, and closes the rest.
  *
  * Tabulator asks this for every row it builds, and it rebuilds them all
- * on every data change, so the answer is read fresh each time: whatever
- * is now the newest run is open, and a run that was open before a newer
- * one arrived closes behind it.
+ * on every data change, so the answer is read fresh each time.
  *
  * @param rowId The row Tabulator is building.
- * @param latestRunId The newest run in the actions.
+ * @param expandedIds What `expandedIdsOf` said to open.
  *
  * @returns Whether that row starts out open.
  */
 export const startsExpanded = (
     rowId: unknown,
-    latestRunId: string | undefined,
+    expandedIds: ReadonlySet<string>,
 ): boolean => {
-    return latestRunId !== undefined && rowId === latestRunId;
+    return typeof rowId === "string" && expandedIds.has(rowId);
 };
 
 /**
@@ -498,8 +558,8 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
     const callbacks = useRef(props);
     callbacks.current = props;
     // Read by Tabulator as it builds each row, long after this render.
-    const latestRunId = useRef<string | undefined>(undefined);
-    latestRunId.current = latestRunOf(rows);
+    const expandedIds = useRef<ReadonlySet<string>>(new Set());
+    expandedIds.current = expandedIdsOf(rows);
 
     useLayoutEffect(() => {
         if (!host.current) {
@@ -510,11 +570,8 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             data: [...rows],
             columns: buildActionColumns(
                 availableResultIds,
-                (resultId) => {
-                    callbacks.current.onJumpToResult(resultId);
-                },
-                (actionRow) => {
-                    callbacks.current.onGoToStatement(actionRow);
+                (text) => {
+                    callbacks.current.onCopyText(text);
                 },
                 showConnection,
             ),
@@ -538,7 +595,7 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             dataTreeExpandElement: EXPAND_ELEMENT,
             dataTreeCollapseElement: COLLAPSE_ELEMENT,
             dataTreeStartExpanded: (row) => {
-                return startsExpanded(row.getIndex(), latestRunId.current);
+                return startsExpanded(row.getIndex(), expandedIds.current);
             },
             rowFormatter: (row) => {
                 const data = row.getData() as IActionRow;
@@ -549,7 +606,29 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
                 element.classList.toggle(
                     "warningRow", data.kind === "warning");
                 element.classList.toggle("runRow", data.role === "run");
+                // Only a row that knows where to go says so by the
+                // cursor; the rest are text.
+                element.classList.toggle("goesSomewhere",
+                    data.source !== undefined);
             },
+        });
+
+        // On the row rather than on a column's `cellClick`, so that any
+        // part of it is the target - the time and the statement as much
+        // as the message.
+        instance.on("rowClick", (event, row) => {
+            const data = row.getData() as IActionRow;
+            switch (actionClick(event, data, availableResultIds)) {
+                case "jump": {
+                    callbacks.current.onJumpToResult(data.resultId as string);
+                    break;
+                }
+
+                case "goTo": {
+                    callbacks.current.onGoToStatement(data);
+                    break;
+                }
+            }
         });
 
         instance.on("tableBuilt", () => {
@@ -569,6 +648,9 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             built.current = false;
             pendingRows.current = undefined;
             table.current = undefined;
+            // The popup is a child of the body, not of the cell it
+            // points at, so it would outlive the grid it belongs to.
+            closeOverflowPopup();
             try {
                 instance.destroy();
             } catch {

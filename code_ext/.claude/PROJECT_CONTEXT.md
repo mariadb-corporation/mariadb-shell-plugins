@@ -47,11 +47,14 @@ change belongs to up to date, and this table with it.
 - `MINIMUM_SHELL_VERSION` is 26.9.2, which is a **released** shell and
   therefore predates the `db.execute_sql_script` changes this extension
   asked for (`statement_index`, `execution_time`, per-statement `error`,
-  `stop_on_error`). Everything that reads them is optional and falls
-  back, so it works - but against such a shell there is no per-statement
-  timing, a failing script reports one error for the whole call with no
-  statement to jump to, and `stopOnError: false` is ignored. Raise the
-  minimum once a shell carrying the new plugin ships.
+  `stop_on_error`, `warnings`). Everything that reads them is optional
+  and falls back, so it works - but against such a shell there is no
+  per-statement timing, a failing script reports one error for the whole
+  call with no statement to jump to, `stopOnError: false` is ignored,
+  a statement's warnings have no rows under it (only the count in its
+  message), and that count is 0 for every statement that returned a
+  result set. Raise the minimum once a shell carrying the new plugin
+  ships.
 - The Connections view keeps a connection of its own per URI, so a URI
   being browsed and run on costs two of the server's
   `MAX_CONNECTIONS_PER_CLIENT` (16). Nine connections open at once is
