@@ -102,14 +102,14 @@ def _backup_connections() -> dict:
     return {
         (kind, uri): config.get_connection_password(uri, kind)
         for kind in config.SUPPORTED_CONNECTION_KINDS
-        for uri in config.list_connection_uris(kind)
+        for uri in config.list_stored_connection_uris(kind)
     }
 
 
 def _clear_connections() -> None:
     """Deletes every stored connection of every kind, best effort."""
     for kind in config.SUPPORTED_CONNECTION_KINDS:
-        for uri in config.list_connection_uris(kind):
+        for uri in config.list_stored_connection_uris(kind):
             try:
                 config.delete_connection(uri, kind)
             except Exception:  # noqa: BLE001 - best-effort cleanup
@@ -250,7 +250,7 @@ def sandbox():
     ctx = SimpleNamespace(
         port=port,
         sandbox_dir=sandbox_dir,
-        uri=f"root@127.0.0.1:{port}",
+        uri=f"mariadb://root@127.0.0.1:{port}",
         password="mcp_pytest_root",
         instance_dir=os.path.join(sandbox_dir, str(port)),
         # Set to True by test_sandbox_deploy on success; dependent tests skip

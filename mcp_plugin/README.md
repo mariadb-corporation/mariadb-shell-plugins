@@ -38,7 +38,9 @@ mariadb-shell -- mcp setup
 Everything below can also be given as command-line options instead, for use where there
 is no terminal — see [Non-interactive setup](#non-interactive-setup).
 
-- **Connections**: enter a MariaDB connection URI (e.g. `user@host:3306`). The
+- **Connections**: enter a MariaDB connection URI (e.g.
+  `mariadb://user@host:3306`). A URI with no scheme is read as `mariadb://`;
+  give `mariadb+ssh://` to reach the server through an SSH tunnel. The
   password is prompted for and the connection is verified with `shell.open_session()`
   before the password is stored in the shell secret store under the key
   `MCP:Connection:<uri>`, with the URI normalized first (see below), so that one
@@ -543,21 +545,40 @@ substitute for the authentication described above.
 
 ### Which URI names which connection
 
-`db.list_connections` hands out the configured URIs as `user@host:port`, but a
-client that composes a URI itself tends to write a scheme in front of it or leave
+`db.list_connections` hands out the configured URIs as `scheme://user@host:port`,
+but a client that composes a URI itself tends to leave the scheme off or leave
 out the default port. `db.connect` therefore resolves the URI it is given to the
 one the connection is configured under, rather than comparing the two as strings:
-a `mariadb://` or `mysql://` prefix, a missing port, the case of the host and a password written
-into the URI make no difference.
+a left-out scheme (which means `mariadb://`), a missing port, the case of the
+host and a password written into the URI make no difference.
 
 What the URI says beyond that does, and has to match: a URI naming a default
-schema or a connection option the configured connection does not name is refused
-rather than answered with the configured connection, which would quietly not do
-what it asked for - `?ssl-mode=REQUIRED` on a session opened without TLS being
-the case that matters.
+schema, a connection option or a different scheme than the configured connection
+is refused rather than answered with the configured connection, which would
+quietly not do what it asked for - `?ssl-mode=REQUIRED` on a session opened
+without TLS, or a `+ssh` tunnel that was never established, being the cases that
+matter.
 
 What is opened, logged and re-checked against the configuration is always the
 configured URI.
+
+#### Connections configured before MariaDB Shell 26.9.3
+
+Until 26.9.3 the shell's own parser rejected `mariadb://`, so connections were
+stored with the scheme stripped off. Nothing migrates them, and nothing has to:
+they keep their key, they resolve from either spelling, and the only visible
+difference is that `db.list_connections` now reports them with `mariadb://`
+filled in. Configuring such a connection again - `mcp.setup --addConnection`, or
+`db.add_connection` - moves it onto the new key and removes the old one, so a
+connection is never configured twice over.
+
+The scheme is kept from 26.9.3 on because it is the only way to ask for an SSH
+tunnel: `mariadb+ssh://user@db.internal?ssh-host=bastion.example.com`. The
+authority of such a URI is the DATABASE; the tunnel is described by the `ssh-*`
+options, of which a URI may carry `ssh-host`, `ssh-user`, `ssh-port`,
+`ssh-identity-file` and `ssh-config-file`. The two SSH passwords are deliberately
+not among them - a URI is what names a connection and what gets logged, so the
+shell keeps secrets out of it.
 
 ### Removing a connection revokes it
 

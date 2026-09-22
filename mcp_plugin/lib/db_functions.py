@@ -25,7 +25,8 @@ listed from, and their passwords read back from, the shell secret store (see
 :mod:`mcp_plugin.lib.config`). The URI ``db.connect`` is called with is resolved
 to the spelling it is configured under, so a client is not held to the exact one
 - it only has to name the same connection (see
-:func:`mcp_plugin.lib.config.normalize_connection_uri`).
+:func:`mcp_plugin.lib.config.normalize_connection_uri`), which among other
+things means a URI with no scheme names the ``mariadb://`` one.
 
 Open sessions are cached in-process, keyed by a UUID that ``db.connect``
 returns. That UUID identifies the connection for the ``db.execute_sql`` and
@@ -729,8 +730,10 @@ def _open_session(uri: str, kind=None):
     kind = config.normalize_connection_kind(kind)
 
     # The list is read from the secret store on each call, so it reflects what
-    # is configured now rather than what was configured when db.connect ran.
-    if uri not in config.list_connection_uris(kind):
+    # is configured now rather than what was configured when db.connect ran. The
+    # stored spellings, because this URI is one: it came from find_connection,
+    # and it is the key the password is about to be read under.
+    if uri not in config.list_stored_connection_uris(kind):
         raise mysqlsh.Error(
             f"'{uri}' is no longer a configured connection. Use "
             "db.list_connections to see the configured connections and "
@@ -1630,7 +1633,10 @@ def _register_connection_management_tools(tool) -> None:
         rather than failing, so this is safe to call again.
 
         Args:
-            uri: The connection URI to store, for example user@host:3306. It
+            uri: The connection URI to store, for example
+                mariadb://user@host:3306. A URI with no scheme is stored as
+                mariadb://, the MariaDB client-server protocol; give
+                mariadb+ssh:// to reach the server through an SSH tunnel. It
                 must NOT carry a password - normalization strips one, so it
                 would be stored without a password at all; pass it as the
                 password argument instead.
@@ -1679,12 +1685,30 @@ def _register_connection_management_tools(tool) -> None:
                     "anyway."
                 ) from error
 
-        replaced = normalized in config.list_connection_uris(kind)
+        # Asked before storing, since storing is what makes it true.
+        replaced = normalized in config.list_stored_connection_uris(kind)
+
         config.store_connection(normalized, password, kind)
+
+        # Any other spelling of the same connection goes, which is how a
+        # connection configured before the scheme was kept moves onto its new
+        # key instead of ending up configured twice over. What was open on the
+        # old key is closed, as it is for a deletion: that key is gone.
+        superseded = config.drop_superseded_spellings(normalized, kind)
+        dropped = sum(
+            _drop_connections_on(old_uri, kind) for old_uri in superseded
+        )
+        replaced = replaced or bool(superseded)
 
         general.log_event(
             f"db.add_connection: {'updated' if replaced else 'stored'} "
             f"'{normalized}' ({kind})"
+            + (
+                f", superseding {', '.join(superseded)} and dropping "
+                f"{dropped} open connection(s)"
+                if superseded
+                else ""
+            )
         )
 
         return normalized
@@ -1778,10 +1802,22 @@ def _register_connection_management_tools(tool) -> None:
         )
 
         # Written before the old one is removed, so a failure leaves the
-        # connection configured somewhere rather than nowhere.
+        # connection configured somewhere rather than nowhere. Storing may have
+        # taken the old key with it, where the new URI is another spelling of
+        # the same connection - a connection configured before the scheme was
+        # kept and saved again under it is exactly that - and deleting a secret
+        # that is not there raises, so it only goes if it survived.
         config.store_connection(target_uri, moved_password, target_kind)
-        config.delete_connection(configured_uri, kind)
+        superseded = config.drop_superseded_spellings(target_uri, target_kind)
+        if target_kind != kind or configured_uri not in superseded:
+            config.delete_connection(configured_uri, kind)
+
         dropped = _drop_connections_on(configured_uri, kind)
+        dropped += sum(
+            _drop_connections_on(old_uri, target_kind)
+            for old_uri in superseded
+            if old_uri != configured_uri
+        )
 
         general.log_event(
             f"db.update_connection: moved '{configured_uri}' ({kind}) to "
@@ -1805,8 +1841,10 @@ def _register_connection_management_tools(tool) -> None:
         db.add_connection.
 
         Args:
-            uri: The connection URI to try, for example user@host:3306. As
-                with db.add_connection it must not carry a password.
+            uri: The connection URI to try, for example
+                mariadb://user@host:3306. A URI with no scheme is read as
+                mariadb://. As with db.add_connection it must not carry a
+                password.
             password: The password to try. Left out, the password already
                 stored for this connection is used - which is what lets an
                 editor test a connection the user has not retyped the password
@@ -1960,11 +1998,11 @@ def register_db_tools(server, function_groups=()) -> None:
 
         Args:
             uri: A connection URI, as returned by db.list_connections. It does
-                not have to be spelled exactly as it is listed: a mariadb:// or
-                mysql:// prefix and a left-out default port name the same
-                connection. Anything the configured connection does not name -
-                a default schema, a connection option - does not, as it would
-                not be applied.
+                not have to be spelled exactly as it is listed: a left-out
+                scheme (which means mariadb://) and a left-out default port name
+                the same connection. Anything the configured connection does not
+                name - a default schema, a connection option, another scheme -
+                does not, as it would not be applied.
 
         Returns:
             The UUID identifying the open connection. Pass it to

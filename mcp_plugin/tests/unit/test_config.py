@@ -84,7 +84,7 @@ def test_config_allowed_paths(clean_config, tmp_path):
 
 def test_config_connection_secrets(clean_config):
     """Connections round-trip through the secret store."""
-    uri = "cfg_pytest@127.0.0.1:3306"
+    uri = "mariadb://cfg_pytest@127.0.0.1:3306"
 
     config.store_connection(uri, "s3cret")
     assert uri in config.list_connection_uris()
@@ -92,6 +92,17 @@ def test_config_connection_secrets(clean_config):
 
     config.delete_connection(uri)
     assert uri not in config.list_connection_uris()
+
+    # A connection stored before the scheme was kept has no scheme in its key.
+    # It is REPORTED with the default one filled in, which is the whole of what
+    # this change does to an existing configuration - the key is left alone, so
+    # the password is still read under it.
+    config.store_connection("cfg_pytest@127.0.0.1:3306", "s3cret")
+    assert "cfg_pytest@127.0.0.1:3306" in config.list_stored_connection_uris()
+    assert uri in config.list_connection_uris()
+    assert config.get_connection_password("cfg_pytest@127.0.0.1:3306") == "s3cret"
+
+    config.delete_connection("cfg_pytest@127.0.0.1:3306")
 
 
 def _empty_both_connection_lists():
@@ -102,7 +113,7 @@ def _empty_both_connection_lists():
     connections turn up in these assertions.
     """
     for kind in config.SUPPORTED_CONNECTION_KINDS:
-        for uri in config.list_connection_uris(kind):
+        for uri in config.list_stored_connection_uris(kind):
             config.delete_connection(uri, kind)
 
 
@@ -121,8 +132,9 @@ def test_the_two_connection_lists_are_kept_apart(clean_config):
     config.store_connection(uri, "mcp-secret")
     config.store_connection(uri, "gui-secret", config.CONNECTION_KIND_GUI)
 
-    assert config.list_connection_uris() == [uri]
-    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [uri]
+    reported = config.with_default_scheme(uri)
+    assert config.list_connection_uris() == [reported]
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [reported]
 
     assert config.get_connection_password(uri) == "mcp-secret"
     assert (
@@ -133,7 +145,7 @@ def test_the_two_connection_lists_are_kept_apart(clean_config):
     # Deleting one leaves the other exactly as it was.
     config.delete_connection(uri, config.CONNECTION_KIND_GUI)
     assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
-    assert config.list_connection_uris() == [uri]
+    assert config.list_connection_uris() == [reported]
     assert config.get_connection_password(uri) == "mcp-secret"
 
 
@@ -225,41 +237,128 @@ def test_connection_uris_reduce_to_one_spelling():
     """Every way of writing one connection normalizes to the same URI.
 
     db.list_connections hands out the stored spelling, but a client writing a
-    URI itself puts a scheme in front of it, leaves out the default port or
-    cases the host differently - and would be told a connection it can see
-    listed is not configured.
+    URI itself leaves the scheme off, leaves out the default port or cases the
+    host differently - and would be told a connection it can see listed is not
+    configured.
     """
     normalize = config.normalize_connection_uri
-    bare = "root@127.0.0.1:3306"
+    canonical = "mariadb://root@127.0.0.1:3306"
 
-    # mariadb:// is not a scheme the shell's own parser even accepts, which is
-    # why it has to be taken off before the URI is parsed.
-    assert normalize(bare) == bare
-    assert normalize("mariadb://" + bare) == bare
-    assert normalize("mysql://" + bare) == bare
-    assert normalize("MariaDB://root@127.0.0.1") == bare
+    # The scheme is what a URI without one means, written out, so that both
+    # spellings are the one connection.
+    assert normalize("root@127.0.0.1:3306") == canonical
+    assert normalize(canonical) == canonical
+    assert normalize("MariaDB://root@127.0.0.1") == canonical
     # The password is read from the secret store, so one in the URI says nothing
     # about which connection is meant; a trailing slash and padding say nothing
     # at all.
-    assert normalize("  root:ignored@127.0.0.1:3306/  ") == bare
+    assert normalize("  root:ignored@127.0.0.1:3306/  ") == canonical
     # Host names are case-insensitive - user names are not.
-    assert normalize("root@LOCALHOST") == "root@localhost:3306"
+    assert normalize("root@LOCALHOST") == "mariadb://root@localhost:3306"
 
     # Kept apart: another server, another user, another protocol, and a URI
-    # asking for something the configured connection would not give it.
-    assert normalize("root@127.0.0.1:3307") != bare
-    assert normalize("admin@127.0.0.1:3306") != bare
-    assert normalize("mysqlx://" + bare) != bare
-    assert normalize(bare + "/mysql") != bare
-    assert normalize(bare + "?ssl-mode=REQUIRED") != bare
+    # asking for something the configured connection would not give it. mysql://
+    # is among them - it is a synonym of mariadb:// to the shell, but keeping
+    # the scheme is what makes +ssh reachable, and folding only SOME schemes
+    # together would mean deciding which spelling a listing reports.
+    assert normalize("root@127.0.0.1:3307") != canonical
+    assert normalize("admin@127.0.0.1:3306") != canonical
+    assert normalize("mysql://root@127.0.0.1:3306") != canonical
+    assert normalize("mysqlx://root@127.0.0.1:3306") != canonical
+    assert normalize("root@127.0.0.1:3306/mysql") != canonical
+    assert normalize("root@127.0.0.1:3306?ssl-mode=REQUIRED") != canonical
+
+    # An SSH tunnel is asked for by scheme and nothing else, so the scheme has
+    # to survive normalization for one to be configurable at all. The authority
+    # of a +ssh URI is the database, so it takes the same default port.
+    assert (
+        normalize("mariadb+ssh://root@127.0.0.1")
+        == "mariadb+ssh://root@127.0.0.1:3306"
+    )
+    assert normalize("mariadb+ssh://root@127.0.0.1:3306") != canonical
+
+    # A socket is not a host, and a port on one would be nonsense.
+    assert normalize("root@%2Ftmp%2Fmysql.sock") == (
+        "mariadb://root@%2Ftmp%2Fmysql.sock"
+    )
 
     # Normalizing a normalized URI changes nothing: both the stored URIs and the
     # ones passed in go through this, so it has to be a fixed point.
-    assert normalize(normalize("mariadb://root@127.0.0.1")) == bare
+    for uri in (canonical, "mariadb+ssh://root@127.0.0.1:3306",
+                "mysqlx://root@127.0.0.1", "root@%2Ftmp%2Fmysql.sock"):
+        assert normalize(normalize(uri)) == normalize(uri)
 
     # Not a URI at all, so not something that could be opened either.
     for not_a_uri in ("", "   ", "mariadb://", "not a uri", None, 3306):
         assert normalize(not_a_uri) is None
+
+
+def test_filling_in_the_scheme_leaves_everything_else_alone():
+    """with_default_scheme is textual, and only ever adds what is missing.
+
+    It runs on URIs that are already in the form they are meant to keep - a
+    stored key on its way to being reported - so it must not re-render them,
+    and it has to survive a key this shell can no longer parse.
+    """
+    with_scheme = config.with_default_scheme
+
+    assert with_scheme("root@127.0.0.1:3306") == "mariadb://root@127.0.0.1:3306"
+    assert with_scheme("  root@127.0.0.1  ") == "mariadb://root@127.0.0.1"
+
+    # Already spelled with one, whichever it is, and nothing is re-rendered:
+    # no default port, no reordering.
+    for uri in (
+        "mariadb://root@127.0.0.1",
+        "mariadb+ssh://root@127.0.0.1",
+        "mysqlx://root@127.0.0.1",
+        "MariaDB://root@127.0.0.1",
+    ):
+        assert with_scheme(uri) == uri
+
+    # Nothing to name a connection with, handed back for the parser to refuse.
+    assert with_scheme("") == ""
+    assert with_scheme(None) is None
+
+
+def test_superseding_a_spelling_needs_one_it_can_recognize(clean_config):
+    """A URI this shell cannot parse names no connection, so it drops nothing.
+
+    Guessing would be worse: the key it would delete holds a password, and the
+    one thing known about it is that it cannot be shown to be the same one.
+    """
+    _empty_both_connection_lists()
+    config.store_connection("drop_pytest@127.0.0.1:3306", "s3cret")
+
+    assert config.drop_superseded_spellings("not a uri") == []
+    assert config.list_stored_connection_uris() == ["drop_pytest@127.0.0.1:3306"]
+
+
+def test_a_connection_stored_without_a_scheme_still_resolves(clean_config):
+    """The old spelling keeps working, and configuring it again replaces it.
+
+    Connections configured before MariaDB Shell 26.9.3 are stored with no
+    scheme at all, because the shell's parser rejected one. Nothing migrates
+    them, so every lookup has to reach them - and storing the new spelling has
+    to take the old key with it, or the two would sit side by side and the pair
+    would resolve to neither.
+    """
+    _empty_both_connection_lists()
+    old_key = "legacy_pytest@127.0.0.1:3306"
+    config.store_connection(old_key, "s3cret")
+
+    # Reported with the scheme, stored without it, and resolving either way.
+    assert config.list_stored_connection_uris() == [old_key]
+    assert config.list_connection_uris() == ["mariadb://" + old_key]
+    assert config.resolve_connection_uri(old_key) == old_key
+    assert config.resolve_connection_uri("mariadb://" + old_key) == old_key
+
+    # Configuring it again writes the canonical key and drops the old one.
+    canonical = config.normalize_connection_uri(old_key)
+    config.store_connection(canonical, "s3cret")
+    assert config.drop_superseded_spellings(canonical) == [old_key]
+
+    assert config.list_stored_connection_uris() == [canonical]
+    assert config.resolve_connection_uri(old_key) == canonical
 
 
 def test_a_connection_uri_resolves_to_the_configured_one(clean_config):
@@ -270,26 +369,30 @@ def test_a_connection_uri_resolves_to_the_configured_one(clean_config):
     """
     import mysqlsh
 
-    stored = "res_pytest@127.0.0.1:3306"
+    stored = "mariadb://res_pytest@127.0.0.1:3306"
     config.store_connection(stored, "s3cret")
 
     assert config.resolve_connection_uri(stored) == stored
-    assert config.resolve_connection_uri("mariadb://" + stored) == stored
+    assert config.resolve_connection_uri("res_pytest@127.0.0.1:3306") == stored
     assert config.resolve_connection_uri("res_pytest@127.0.0.1") == stored
 
     # No configured connection names any of these.
     assert config.resolve_connection_uri("res_pytest@127.0.0.1:3307") is None
     assert config.resolve_connection_uri("other@127.0.0.1:3306") is None
     assert config.resolve_connection_uri(stored + "/mysql") is None
+    assert config.resolve_connection_uri("mysqlx://res_pytest@127.0.0.1") is None
     assert config.resolve_connection_uri("not a uri") is None
 
     # The same connection configured twice, under two spellings: they can hold
     # different passwords, so which one was meant is not for this to guess.
-    duplicate = "mysql://" + stored
+    # Written straight to the store, because the way in through the plugin -
+    # storing and then dropping the superseded spellings - is what stops this
+    # state from arising in the first place.
+    duplicate = "res_pytest@127.0.0.1:3306"
     config.store_connection(duplicate, "another")
 
     with pytest.raises(mysqlsh.Error) as ambiguous:
-        config.resolve_connection_uri("mariadb://" + stored)
+        config.resolve_connection_uri("res_pytest@127.0.0.1")
 
     assert "more than one configured connection" in str(ambiguous.value)
 
@@ -301,7 +404,7 @@ def test_a_connection_uri_resolves_to_the_configured_one(clean_config):
     # And with the duplicate gone it resolves again: the ambiguity was in the
     # configuration, not in the URI.
     config.delete_connection(duplicate)
-    assert config.resolve_connection_uri("mariadb://" + stored) == stored
+    assert config.resolve_connection_uri("res_pytest@127.0.0.1") == stored
 
 
 # --- lib/setup.py (interactive flows) -------------------------------------
@@ -387,7 +490,7 @@ class _FakeShell:
 
 def _clear_config():
     """Removes all connections and the settings file for a clean start."""
-    for uri in config.list_connection_uris():
+    for uri in config.list_stored_connection_uris():
         config.delete_connection(uri)
     settings_path = config.get_settings_file_path()
     if os.path.exists(settings_path):
@@ -414,8 +517,11 @@ def test_setup_first_run(clean_config, tmp_path, monkeypatch):
 
     setup.run_setup()
 
-    assert "setup_a@127.0.0.1:3306" in config.list_connection_uris()
-    assert config.get_connection_password("setup_a@127.0.0.1:3306") == "secret"
+    assert "mariadb://setup_a@127.0.0.1:3306" in config.list_connection_uris()
+    assert (
+        config.get_connection_password("mariadb://setup_a@127.0.0.1:3306")
+        == "secret"
+    )
 
     # The four yes/no questions are the shell's own CONFIRM prompts, and the
     # password its own password prompt. That is the whole point of asking
@@ -453,7 +559,7 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
     setup.run_setup()
 
     # Both the added connection and path were removed again.
-    assert "setup_b@127.0.0.1:3306" not in config.list_connection_uris()
+    assert "mariadb://setup_b@127.0.0.1:3306" not in config.list_connection_uris()
     assert os.path.abspath(path) not in config.get_allowed_paths()
 
     # The migration tooling entry offers whatever applies to what is installed,
@@ -479,7 +585,7 @@ def test_setup_menu_add_and_delete(clean_config, tmp_path, monkeypatch, capsys):
     # order the menu drove them.
     assert [c for c in selects if c and c[-1] == setup_prompts.CANCEL_LABEL] == [
         [os.path.abspath(path), setup_prompts.CANCEL_LABEL],
-        ["setup_b@127.0.0.1:3306", setup_prompts.CANCEL_LABEL],
+        ["mariadb://setup_b@127.0.0.1:3306", setup_prompts.CANCEL_LABEL],
     ]
 
 
@@ -550,8 +656,10 @@ def test_setup_stores_a_connection_under_one_spelling(clean_config, monkeypatch)
     # Stored under the normalized URI rather than what was typed - and the
     # unparsable entry never reached the password prompt, which the scripted
     # answers are what prove: _FakeShell asserts on an unexpected prompt.
-    assert config.list_connection_uris() == ["setup_c@127.0.0.1:3306"]
-    assert config.get_connection_password("setup_c@127.0.0.1:3306") == "pw"
+    assert config.list_connection_uris() == ["mariadb://setup_c@127.0.0.1:3306"]
+    assert (
+        config.get_connection_password("mariadb://setup_c@127.0.0.1:3306") == "pw"
+    )
 
 
 def test_setup_requires_interactive_shell(clean_config, monkeypatch):

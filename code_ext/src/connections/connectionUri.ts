@@ -36,10 +36,85 @@
  * because that is what `db.list_connections` hands back for editing.
  */
 
-/** The protocol schemes the shell's URI parser accepts. */
-export const CONNECTION_SCHEMES = ["mysql", "mysqlx"] as const;
+/**
+ * The protocol schemes the shell's URI parser accepts.
+ *
+ * `mariadb` is the shell's own name for the classic client-server protocol and
+ * the one a URI without a scheme means; `mysql` is a synonym of it kept for
+ * URIs written for MySQL Shell. The `+ssh` forms are the same two protocols
+ * reached through an SSH tunnel, which is asked for by scheme and by nothing
+ * else - there is no option that turns one on.
+ */
+export const CONNECTION_SCHEMES = [
+    "mariadb",
+    "mariadb+ssh",
+    "mysql",
+    "mysql+ssh",
+    "mysqlx",
+] as const;
 
 export type ConnectionScheme = (typeof CONNECTION_SCHEMES)[number];
+
+/**
+ * The scheme a URI without one means, and what a new connection starts on.
+ *
+ * The MCP server fills this in when it normalizes a URI, so a connection is
+ * stored - and listed - with it whether or not it was written down.
+ */
+export const DEFAULT_SCHEME = "mariadb";
+
+/** The scheme extension that asks for an SSH tunnel. */
+export const SSH_SCHEME_SUFFIX = "+ssh";
+
+/** Matches the `scheme://` a URI starts with, if it has one. */
+const SCHEME_PREFIX = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+
+/**
+ * The same URI with {@link DEFAULT_SCHEME} filled in where it names none.
+ *
+ * What it is for is comparing a URI written down by an older version of this
+ * extension - the default-connection setting is one - against a URI
+ * `db.list_connections` reports now, which always carries its scheme. The two
+ * spell one connection and have to compare equal.
+ *
+ * @param uri The URI to read.
+ *
+ * @returns The URI with a scheme, or what was given if it already had one.
+ */
+export const withDefaultScheme = (uri: string): string => {
+    const trimmed = uri.trim();
+
+    return trimmed === "" || SCHEME_PREFIX.test(trimmed)
+        ? trimmed
+        : `${DEFAULT_SCHEME}://${trimmed}`;
+};
+
+/**
+ * Whether a scheme asks for an SSH tunnel.
+ *
+ * @param scheme The scheme to check.
+ *
+ * @returns True when it carries the `+ssh` extension.
+ */
+export const usesSshTunnel = (scheme: string): boolean => {
+    return scheme.endsWith(SSH_SCHEME_SUFFIX);
+};
+
+/**
+ * The same scheme with the SSH tunnel turned on or off.
+ *
+ * @param scheme The scheme to change. An empty one is the default.
+ * @param on Whether the result should tunnel.
+ *
+ * @returns The scheme to use.
+ */
+export const withSshTunnel = (scheme: string, on: boolean): string => {
+    const base = scheme === ""
+        ? DEFAULT_SCHEME
+        : scheme.replace(SSH_SCHEME_SUFFIX, "");
+
+    return on ? `${base}${SSH_SCHEME_SUFFIX}` : base;
+};
 
 /** The values `ssl-mode` takes, and how the editor captions them. */
 export const SSL_MODES = [
@@ -68,18 +143,34 @@ export const COMPRESSION_ALGORITHMS = [
 ] as const;
 
 /**
+ * The `ssh-*` options a URI may carry, and which field each one feeds.
+ *
+ * A separate set in the shell (`ssh_uri_query_attributes`), and deliberately
+ * not all of the SSH options it knows: the two passwords are left out there
+ * because a URI is an identity - it is what names a connection, what the
+ * credential store keys on and what gets logged - so they are prompted for
+ * rather than written down. They only mean anything on a `+ssh` URI; the shell
+ * refuses them on any other.
+ */
+export const SSH_URI_OPTIONS = {
+    "ssh-host": "sshHost",
+    "ssh-user": "sshUser",
+    "ssh-port": "sshPort",
+    "ssh-identity-file": "sshIdentityFile",
+    "ssh-config-file": "sshConfigFile",
+} as const;
+
+/**
  * Every option the shell allows in a URI's query string.
  *
- * Taken from `uri_connection_attributes` in the shell's
- * `mysqlshdk/libs/db/utils_connection.h`. It is deliberately the whole set
- * even though the editor gives only some of them a field of their own: the
- * rest are reachable through the "Other Connection Options" table, and this
- * is what tells a typo there from a real option.
+ * Taken from `uri_connection_attributes` and `ssh_uri_query_attributes` in the
+ * shell's `mysqlshdk/libs/db/utils_connection.h`. It is deliberately the whole
+ * set even though the editor gives only some of them a field of their own: the
+ * rest are reachable through the "Other Connection Options" table, and this is
+ * what tells a typo there from a real option.
  *
- * Note what is NOT here. The `ssh-*` options are a separate set in the shell
- * (`ssh_uri_connection_attributes`) and cannot be written into a URI at all,
- * which is why the editor has no SSH tunnel tab; and `sql-mode` is not a
- * connection option in the first place.
+ * Note what is NOT here: `sql-mode` is not a connection option in the first
+ * place, and the two SSH passwords are not options a URI may carry.
  */
 export const URI_OPTIONS = [
     "ssl-ca",
@@ -105,6 +196,7 @@ export const URI_OPTIONS = [
     "plugin-authentication-kerberos-client-mode",
     "oci-config-file",
     "authentication-oci-client-config-profile",
+    ...Object.keys(SSH_URI_OPTIONS),
 ] as const;
 
 /** The options the editor gives a field of its own, so the table skips them. */
@@ -118,6 +210,7 @@ const DEDICATED_OPTIONS = new Set<string>([
     "compression",
     "compression-level",
     "compression-algorithms",
+    ...Object.keys(SSH_URI_OPTIONS),
 ]);
 
 /** One row of the "Other Connection Options" table. */
@@ -128,7 +221,11 @@ export interface IExtraOption {
 
 /** Everything the connection editor edits, as plain strings. */
 export interface IConnectionFields {
-    /** "" means no scheme, which is the shell's default protocol. */
+    /**
+     * One of {@link CONNECTION_SCHEMES}. "" is accepted and means
+     * {@link DEFAULT_SCHEME}, which is what a URI stored before the scheme was
+     * kept parses to.
+     */
     scheme: string;
     host: string;
     /** Text rather than a number, so "not set" and 0 stay distinguishable. */
@@ -146,13 +243,19 @@ export interface IConnectionFields {
     compression: string;
     compressionLevel: string;
     compressionAlgorithms: string[];
+    /** The SSH tunnel, which only a `+ssh` scheme may ask for. */
+    sshHost: string;
+    sshUser: string;
+    sshPort: string;
+    sshIdentityFile: string;
+    sshConfigFile: string;
     extraOptions: IExtraOption[];
 }
 
 /** The fields a brand new connection starts from. */
 export const emptyConnectionFields = (): IConnectionFields => {
     return {
-        scheme: "",
+        scheme: DEFAULT_SCHEME,
         host: "localhost",
         port: "3306",
         socket: "",
@@ -167,6 +270,11 @@ export const emptyConnectionFields = (): IConnectionFields => {
         compression: "",
         compressionLevel: "",
         compressionAlgorithms: [],
+        sshHost: "",
+        sshUser: "",
+        sshPort: "",
+        sshIdentityFile: "",
+        sshConfigFile: "",
         extraOptions: [],
     };
 };
@@ -234,6 +342,15 @@ const optionsOf = (fields: IConnectionFields): Map<string, string> => {
     set("compression-level", fields.compressionLevel);
     set("compression-algorithms", fields.compressionAlgorithms.join(","));
 
+    // Only on a tunnelling URI: the shell refuses an ssh-* option on any other
+    // scheme, so carrying one over after the tunnel is switched off would make
+    // the connection unsaveable rather than simply untunnelled.
+    if (usesSshTunnel(fields.scheme)) {
+        for (const [option, field] of Object.entries(SSH_URI_OPTIONS)) {
+            set(option, fields[field]);
+        }
+    }
+
     // Last, so a row the user typed wins over a field - they can see the row.
     for (const option of fields.extraOptions) {
         const name = option.name.trim();
@@ -281,6 +398,21 @@ const validate = (
     for (const name of options.keys()) {
         if (!(URI_OPTIONS as readonly string[]).includes(name)) {
             return `'${name}' is not a connection option a URI can carry.`;
+        }
+
+        // Caught here rather than at the server, which would answer with the
+        // shell's own wording about a scheme extension the user never typed.
+        if (name in SSH_URI_OPTIONS && !usesSshTunnel(fields.scheme)) {
+            return `'${name}' needs an SSH tunnel. Tick "Connect through an `
+                + `SSH tunnel" on the SSH tab, or pick a '+ssh' protocol.`;
+        }
+    }
+
+    if (usesSshTunnel(fields.scheme) && fields.sshPort.trim() !== "") {
+        const port = Number(fields.sshPort);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            return `'${fields.sshPort}' is not an SSH port `
+                + "between 1 and 65535.";
         }
     }
 
@@ -362,12 +494,12 @@ export const parseConnectionUri = (uri: string): IConnectionFields => {
 
     let rest = uri.trim();
 
+    // Kept as written, lowercased - schemes are case-insensitive. A URI with
+    // none is one the MCP server stored before it kept them, and it means the
+    // default, which is what the field already holds.
     const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(rest);
     if (scheme) {
-        const name = scheme[1]!.toLowerCase();
-        // `mariadb://` means the same as no scheme at all to the MCP server,
-        // which strips it before parsing, so it leaves no field behind.
-        fields.scheme = name === "mariadb" ? "" : name;
+        fields.scheme = scheme[1]!.toLowerCase();
         rest = rest.slice(scheme[0].length);
     }
 
@@ -461,7 +593,14 @@ export const parseConnectionUri = (uri: string): IConnectionFields => {
             }
 
             default: {
-                fields.extraOptions.push({ name, value });
+                const sshField =
+                    (SSH_URI_OPTIONS as Record<string, string>)[name];
+                if (sshField === undefined) {
+                    fields.extraOptions.push({ name, value });
+                } else {
+                    fields[sshField as keyof IConnectionFields] =
+                        value as never;
+                }
             }
         }
     }

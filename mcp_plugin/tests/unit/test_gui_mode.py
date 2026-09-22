@@ -113,7 +113,7 @@ def _empty_both_connection_lists():
     connections turn up in these assertions.
     """
     for kind in config.SUPPORTED_CONNECTION_KINDS:
-        for uri in config.list_connection_uris(kind):
+        for uri in config.list_stored_connection_uris(kind):
             config.delete_connection(uri, kind)
 
 
@@ -238,17 +238,19 @@ def test_the_two_lists_are_reported_one_at_a_time(
     _empty_both_connection_lists()
     tools = _registered_tools(monkeypatch)
 
-    config.store_connection("mcp_one@127.0.0.1:3306", "pw")
+    config.store_connection("mariadb://mcp_one@127.0.0.1:3306", "pw")
     config.store_connection(
-        "gui_one@127.0.0.1:3306", "pw", config.CONNECTION_KIND_GUI
+        "mariadb://gui_one@127.0.0.1:3306", "pw", config.CONNECTION_KIND_GUI
     )
 
-    assert tools["db.list_connections"]() == ["mcp_one@127.0.0.1:3306"]
+    assert tools["db.list_connections"]() == [
+        "mariadb://mcp_one@127.0.0.1:3306"
+    ]
     assert tools["db.list_connections"](config.CONNECTION_KIND_MCP) == [
-        "mcp_one@127.0.0.1:3306"
+        "mariadb://mcp_one@127.0.0.1:3306"
     ]
     assert tools["db.list_connections"](config.CONNECTION_KIND_GUI) == [
-        "gui_one@127.0.0.1:3306"
+        "mariadb://gui_one@127.0.0.1:3306"
     ]
 
 
@@ -268,7 +270,7 @@ def test_adding_a_connection_stores_it_normalized(
         "mariadb://gui_add@127.0.0.1", "pw", config.CONNECTION_KIND_GUI, False
     )
 
-    assert stored == "gui_add@127.0.0.1:3306"
+    assert stored == "mariadb://gui_add@127.0.0.1:3306"
     assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [stored]
     assert (
         config.get_connection_password(stored, config.CONNECTION_KIND_GUI)
@@ -280,9 +282,15 @@ def test_adding_a_connection_stores_it_normalized(
     # Adding it again updates the password rather than failing: the extension
     # has no separate "change the password" call, and re-adding is how a user
     # corrects one they got wrong.
+    # Spelled as it would have been stored before the scheme was kept, which is
+    # also what proves an old key is REPLACED rather than left beside the new
+    # one: two spellings of one connection resolve to neither.
     tools["db.add_connection"](
         "gui_add@127.0.0.1:3306", "new-pw", config.CONNECTION_KIND_GUI, False
     )
+    assert config.list_stored_connection_uris(config.CONNECTION_KIND_GUI) == [
+        stored
+    ]
     assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [stored]
     assert (
         config.get_connection_password(stored, config.CONNECTION_KIND_GUI)
@@ -310,7 +318,8 @@ def test_a_connection_that_does_not_open_is_not_stored(
 
     with pytest.raises(ToolError) as failed:
         tools["db.add_connection"](
-            "gui_bad@127.0.0.1:3306", "wrong", config.CONNECTION_KIND_GUI
+            "mariadb://gui_bad@127.0.0.1:3306", "wrong",
+            config.CONNECTION_KIND_GUI,
         )
 
     assert "Access denied" in str(failed.value)
@@ -323,12 +332,13 @@ def test_a_connection_that_does_not_open_is_not_stored(
         setup_cli, "verify_connection", lambda uri, pw: verified.append((uri, pw))
     )
     tools["db.add_connection"](
-        "gui_bad@127.0.0.1:3306", "right", config.CONNECTION_KIND_GUI
+        "mariadb://gui_bad@127.0.0.1:3306", "right",
+        config.CONNECTION_KIND_GUI,
     )
 
-    assert verified == [("gui_bad@127.0.0.1:3306", "right")]
+    assert verified == [("mariadb://gui_bad@127.0.0.1:3306", "right")]
     assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [
-        "gui_bad@127.0.0.1:3306"
+        "mariadb://gui_bad@127.0.0.1:3306"
     ]
 
 
@@ -358,7 +368,7 @@ def test_deleting_a_connection_takes_only_the_list_it_names(
 ):
     """The same server can be in both lists; deleting one must not take both."""
     _empty_both_connection_lists()
-    uri = "gui_del@127.0.0.1:3306"
+    uri = "mariadb://gui_del@127.0.0.1:3306"
     config.store_connection(uri, "mcp-pw")
     config.store_connection(uri, "gui-pw", config.CONNECTION_KIND_GUI)
 
@@ -389,7 +399,7 @@ def test_deleting_a_connection_closes_what_is_open_on_it(
     connection in steady use is until it reaches CONNECTION_MAX_LIFETIME.
     """
     _empty_both_connection_lists()
-    uri = "gui_open@127.0.0.1:3306"
+    uri = "mariadb://gui_open@127.0.0.1:3306"
     config.store_connection(uri, "gui-pw", config.CONNECTION_KIND_GUI)
     config.store_connection(uri, "mcp-pw")
 
@@ -424,16 +434,18 @@ def test_updating_a_connection_carries_its_password_over(
     moves the secret without anybody seeing it.
     """
     _empty_both_connection_lists()
-    config.store_connection("old@127.0.0.1:3306", "kept", config.CONNECTION_KIND_GUI)
+    config.store_connection(
+        "mariadb://old@127.0.0.1:3306", "kept", config.CONNECTION_KIND_GUI
+    )
 
     tools = _registered_tools(monkeypatch)
 
     moved = tools["db.update_connection"](
-        "old@127.0.0.1:3306", "new@127.0.0.1:3307",
+        "mariadb://old@127.0.0.1:3306", "mariadb://new@127.0.0.1:3307",
         config.CONNECTION_KIND_GUI, None, None,
     )
 
-    assert moved == "new@127.0.0.1:3307"
+    assert moved == "mariadb://new@127.0.0.1:3307"
     assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == [moved]
     assert config.get_connection_password(moved, config.CONNECTION_KIND_GUI) == "kept"
 
@@ -443,7 +455,7 @@ def test_updating_moves_a_connection_between_the_two_lists(
 ):
     """Which is how the MCP access checkbox applies to an existing one."""
     _empty_both_connection_lists()
-    uri = "switch@127.0.0.1:3306"
+    uri = "mariadb://switch@127.0.0.1:3306"
     config.store_connection(uri, "pw", config.CONNECTION_KIND_GUI)
 
     tools = _registered_tools(monkeypatch)
@@ -469,7 +481,7 @@ def test_updating_can_replace_just_the_password(
 ):
     """Setting a new password must not disturb the key or the open state."""
     _empty_both_connection_lists()
-    uri = "pw@127.0.0.1:3306"
+    uri = "mariadb://pw@127.0.0.1:3306"
     config.store_connection(uri, "old", config.CONNECTION_KIND_GUI)
 
     tools = _registered_tools(monkeypatch)
@@ -490,7 +502,7 @@ def test_updating_can_replace_just_the_password(
 def test_updating_nothing_is_a_no_op(monkeypatch, gui_mode, clean_config):
     """A save that changed nothing must not briefly unconfigure it."""
     _empty_both_connection_lists()
-    uri = "same@127.0.0.1:3306"
+    uri = "mariadb://same@127.0.0.1:3306"
     config.store_connection(uri, "pw", config.CONNECTION_KIND_GUI)
 
     tools = _registered_tools(monkeypatch)
@@ -507,14 +519,18 @@ def test_updating_closes_what_was_open_on_the_old_key(
 ):
     """The connection that UUID was opened on no longer exists under that name."""
     _empty_both_connection_lists()
-    config.store_connection("moving@127.0.0.1:3306", "pw", config.CONNECTION_KIND_GUI)
+    config.store_connection(
+        "mariadb://moving@127.0.0.1:3306", "pw", config.CONNECTION_KIND_GUI
+    )
 
     tools = _registered_tools(monkeypatch)
     db_functions._sessions.clear()
-    connection_id = tools["db.connect"](STDIO_CONTEXT, "moving@127.0.0.1:3306")
+    connection_id = tools["db.connect"](
+        STDIO_CONTEXT, "mariadb://moving@127.0.0.1:3306"
+    )
 
     tools["db.update_connection"](
-        "moving@127.0.0.1:3306", "moved@127.0.0.1:3306",
+        "mariadb://moving@127.0.0.1:3306", "mariadb://moved@127.0.0.1:3306",
         config.CONNECTION_KIND_GUI, None, None,
     )
 
@@ -527,23 +543,26 @@ def test_updating_an_unknown_connection_is_refused(
 ):
     """And a new URI is held to the same rules as db.add_connection."""
     _empty_both_connection_lists()
-    config.store_connection("known@127.0.0.1:3306", "pw", config.CONNECTION_KIND_GUI)
+    config.store_connection(
+        "mariadb://known@127.0.0.1:3306", "pw", config.CONNECTION_KIND_GUI
+    )
 
     tools = _registered_tools(monkeypatch)
 
     with pytest.raises(ToolError) as missing:
-        tools["db.update_connection"]("nope@127.0.0.1:3306", None,
+        tools["db.update_connection"]("mariadb://nope@127.0.0.1:3306", None,
                                       config.CONNECTION_KIND_GUI, None, None)
     assert "not a configured 'gui' connection" in str(missing.value)
 
     with pytest.raises(ToolError) as carries:
-        tools["db.update_connection"]("known@127.0.0.1:3306",
+        tools["db.update_connection"]("mariadb://known@127.0.0.1:3306",
                                       "new:secret@127.0.0.1:3306",
                                       config.CONNECTION_KIND_GUI, None, None)
     assert "carries a password" in str(carries.value)
 
     with pytest.raises(ToolError) as invalid:
-        tools["db.update_connection"]("known@127.0.0.1:3306", "not a uri",
+        tools["db.update_connection"]("mariadb://known@127.0.0.1:3306",
+                                      "not a uri",
                                       config.CONNECTION_KIND_GUI, None, None)
     assert "not a valid connection URI" in str(invalid.value)
 
@@ -573,8 +592,8 @@ def test_testing_a_connection_stores_nothing(
 
     # Normalized before it is tried, so a test and a later store agree on
     # which connection was checked.
-    assert tried == [("tester@127.0.0.1:3306", "pw")]
-    assert "tester@127.0.0.1:3306" in message
+    assert tried == [("mariadb://tester@127.0.0.1:3306", "pw")]
+    assert "mariadb://tester@127.0.0.1:3306" in message
     assert config.list_connection_uris() == []
     assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
 
@@ -588,7 +607,9 @@ def test_testing_without_a_password_uses_the_stored_one(
     server-side - the same place db.update_connection moves one.
     """
     _empty_both_connection_lists()
-    config.store_connection("stored@127.0.0.1:3306", "kept", config.CONNECTION_KIND_GUI)
+    config.store_connection(
+        "mariadb://stored@127.0.0.1:3306", "kept", config.CONNECTION_KIND_GUI
+    )
 
     from mcp_plugin.lib import setup_cli
 
@@ -598,9 +619,9 @@ def test_testing_without_a_password_uses_the_stored_one(
     )
 
     tools = _registered_tools(monkeypatch)
-    tools["db.test_connection"]("stored@127.0.0.1:3306", None)
+    tools["db.test_connection"]("mariadb://stored@127.0.0.1:3306", None)
 
-    assert tried == [("stored@127.0.0.1:3306", "kept")]
+    assert tried == [("mariadb://stored@127.0.0.1:3306", "kept")]
 
 
 def test_testing_an_unknown_connection_without_a_password_says_so(
@@ -612,7 +633,7 @@ def test_testing_an_unknown_connection_without_a_password_says_so(
     tools = _registered_tools(monkeypatch)
 
     with pytest.raises(ToolError) as refused:
-        tools["db.test_connection"]("nobody@127.0.0.1:3306", None)
+        tools["db.test_connection"]("mariadb://nobody@127.0.0.1:3306", None)
 
     assert "no stored password" in str(refused.value)
 
@@ -633,7 +654,9 @@ def test_a_failed_test_reports_the_shell_and_stores_nothing(
     tools = _registered_tools(monkeypatch)
 
     with pytest.raises(ToolError) as failed:
-        tools["db.test_connection"]("tester@127.0.0.1:3306", "wrong")
+        tools["db.test_connection"](
+            "mariadb://tester@127.0.0.1:3306", "wrong"
+        )
 
     assert "Access denied" in str(failed.value)
     assert config.list_connection_uris() == []
@@ -671,8 +694,8 @@ def test_a_gui_connection_is_preferred_where_both_lists_name_it(
     would work now and fail later.
     """
     _empty_both_connection_lists()
-    shared = "gui_pref@127.0.0.1:3306"
-    mcp_only = "mcp_pref@127.0.0.1:3306"
+    shared = "mariadb://gui_pref@127.0.0.1:3306"
+    mcp_only = "mariadb://mcp_pref@127.0.0.1:3306"
 
     config.store_connection(shared, "mcp-pw")
     config.store_connection(shared, "gui-pw", config.CONNECTION_KIND_GUI)
@@ -697,7 +720,7 @@ def test_a_gui_connection_cannot_be_opened_without_gui_mode(
     monkeypatch, clean_config
 ):
     """The extension's own list is out of reach of an ordinary MCP client."""
-    uri = "gui_hidden@127.0.0.1:3306"
+    uri = "mariadb://gui_hidden@127.0.0.1:3306"
     config.store_connection(uri, "gui-pw", config.CONNECTION_KIND_GUI)
 
     tools = _registered_tools(monkeypatch)
@@ -716,7 +739,7 @@ def test_a_session_is_reopened_against_its_own_list(gui_mode, clean_config):
     list happens to name the same server - which it would not be if any list
     holding the URI counted.
     """
-    uri = "gui_revoke@127.0.0.1:3306"
+    uri = "mariadb://gui_revoke@127.0.0.1:3306"
     config.store_connection(uri, "mcp-pw")
 
     with pytest.raises(mysqlsh.Error) as refused:

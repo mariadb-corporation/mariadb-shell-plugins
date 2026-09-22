@@ -32,7 +32,7 @@ describe("createNotificationProgressHost", () => {
     it("shows the progress as a notification", async () => {
         const host = createNotificationProgressHost();
 
-        await host.withProgress("Installing MariaDB Shell 26.9.2",
+        await host.withProgress("Installing MariaDB Shell 26.9.3",
             async () => {
                 // Nothing to do - only the notification is under test.
             });
@@ -40,7 +40,7 @@ describe("createNotificationProgressHost", () => {
         expect(withProgressCalls).toHaveLength(1);
         expect(withProgressCalls[0].options).toEqual({
             location: ProgressLocation.Notification,
-            title: "Installing MariaDB Shell 26.9.2",
+            title: "Installing MariaDB Shell 26.9.3",
             cancellable: false,
         });
     });

@@ -192,7 +192,7 @@ describe("activate", () => {
     beforeEach(() => {
         resetVscodeMock();
         runtime.environmentOptions = {
-            versions: { "mariadb-shell": versionLine("26.9.2") },
+            versions: { "mariadb-shell": versionLine("26.9.3") },
         };
         runtime.environmentAfterInstall = undefined;
         runtime.runnerOutput = [];
@@ -429,12 +429,12 @@ describe("activate", () => {
     it("installs the shell when there is none, then starts the server",
         async () => {
             const prefix = "/Users/mzinner/.local/share/mariadb-shell";
-            const binary = `${prefix}/26.9.2/bin/mariadb-shell`;
+            const binary = `${prefix}/26.9.3/bin/mariadb-shell`;
             runtime.environmentOptions = {};
             runtime.environmentAfterInstall = {
-                directories: { [prefix]: ["26.9.2"] },
+                directories: { [prefix]: ["26.9.3"] },
                 files: [binary],
-                versions: { [binary]: versionLine("26.9.2") },
+                versions: { [binary]: versionLine("26.9.3") },
             };
             runtime.runnerOutput = ["==> Downloading", "==> Unpacking"];
 
@@ -445,10 +445,10 @@ describe("activate", () => {
             await provider.getChildren();
 
             expect(withProgressCalls[0].options.title)
-                .toBe("Installing MariaDB Shell 26.9.2");
+                .toBe("Installing MariaDB Shell 26.9.3");
             expect(withProgressCalls[0].reported).toContain("Downloading");
             expect(informationMessages)
-                .toEqual(["MariaDB Shell 26.9.2 was installed."]);
+                .toEqual(["MariaDB Shell 26.9.3 was installed."]);
             expect(runtime.connector?.commands[0].command).toBe(binary);
         });
 

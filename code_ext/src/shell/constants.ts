@@ -19,8 +19,13 @@
  * The oldest MariaDB Shell this extension can talk to. The MCP plugin's
  * stdio transport and the tool set the extension relies on only exist from
  * this release onwards.
+ *
+ * 26.9.3 is the floor because of the connection URI. Its parser is the first
+ * to accept the `mariadb://` scheme, and the MCP plugin now stores connections
+ * with their scheme - which is the only way to ask for a `mariadb+ssh://`
+ * tunnel. An older shell cannot parse the URIs this one stores.
  */
-export const MINIMUM_SHELL_VERSION = "26.9.2";
+export const MINIMUM_SHELL_VERSION = "26.9.3";
 
 /** Name of the shell executable, without a platform specific extension. */
 export const SHELL_BINARY_NAME = "mariadb-shell";

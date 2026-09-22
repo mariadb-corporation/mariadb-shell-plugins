@@ -48,33 +48,43 @@ describe("buildConnectionUri", () => {
     // spellings - which is what lets a URI built here compare equal to one
     // read back from db.list_connections without a round trip to normalize it.
     it("matches the shell's own spelling", () => {
-        expect(uriOf({ user: "dba" })).toBe("dba@localhost:3306");
+        expect(uriOf({ user: "dba" })).toBe("mariadb://dba@localhost:3306");
 
         expect(uriOf({ user: "dba", schema: "my db" }))
-            .toBe("dba@localhost:3306/my%20db");
+            .toBe("mariadb://dba@localhost:3306/my%20db");
 
         expect(uriOf({ user: "my user" }))
-            .toBe("my%20user@localhost:3306");
+            .toBe("mariadb://my%20user@localhost:3306");
 
         expect(uriOf({ user: "dba", scheme: "mysqlx" }))
             .toBe("mysqlx://dba@localhost:3306");
 
         expect(uriOf({ user: "dba", host: "::1" }))
-            .toBe("dba@[::1]:3306");
+            .toBe("mariadb://dba@[::1]:3306");
 
         expect(uriOf({ user: "dba", host: "", port: "", socket: "/tmp/mysql.sock" }))
-            .toBe("dba@%2Ftmp%2Fmysql.sock");
+            .toBe("mariadb://dba@%2Ftmp%2Fmysql.sock");
 
         expect(uriOf({
             user: "dba", sslMode: "VERIFY_CA", sslCa: "/etc/my ca.pem",
-        })).toBe("dba@localhost:3306?ssl-ca=%2Fetc%2Fmy%20ca.pem&ssl-mode=VERIFY_CA");
+        })).toBe("mariadb://dba@localhost:3306"
+            + "?ssl-ca=%2Fetc%2Fmy%20ca.pem&ssl-mode=VERIFY_CA");
 
         expect(uriOf({
             user: "dba", compression: "REQUIRED", compressionLevel: "3",
-        })).toBe("dba@localhost:3306?compression=REQUIRED&compression-level=3");
+        })).toBe("mariadb://dba@localhost:3306"
+            + "?compression=REQUIRED&compression-level=3");
 
         expect(uriOf({ user: "dba", compressionAlgorithms: ["zstd", "lz4"] }))
-            .toBe("dba@localhost:3306?compression-algorithms=zstd%2Clz4");
+            .toBe("mariadb://dba@localhost:3306"
+                + "?compression-algorithms=zstd%2Clz4");
+
+        // The tunnel is the scheme, and the ssh-* options ride along with it.
+        expect(uriOf({
+            user: "dba", host: "db.internal", scheme: "mariadb+ssh",
+            sshHost: "bastion.example.com", sshUser: "jump", sshPort: "2222",
+        })).toBe("mariadb+ssh://dba@db.internal:3306"
+            + "?ssh-host=bastion.example.com&ssh-port=2222&ssh-user=jump");
     });
 
     it("sorts the options, as the shell's encoder does", () => {
@@ -88,7 +98,7 @@ describe("buildConnectionUri", () => {
         });
 
         expect(uri).toBe(
-            "dba@localhost:3306"
+            "mariadb://dba@localhost:3306"
             + "?compression=PREFERRED&connect-timeout=5000&ssl-mode=REQUIRED",
         );
     });
@@ -96,15 +106,16 @@ describe("buildConnectionUri", () => {
     it("leaves empty fields out entirely", () => {
         // Not `?ssl-mode=&compression=`: an option that is set to nothing is
         // not the same connection as one that is not set at all.
-        expect(uriOf({ user: "dba" })).toBe("dba@localhost:3306");
-        expect(uriOf({ user: "dba", port: "" })).toBe("dba@localhost");
+        expect(uriOf({ user: "dba" })).toBe("mariadb://dba@localhost:3306");
+        expect(uriOf({ user: "dba", port: "" }))
+            .toBe("mariadb://dba@localhost");
     });
 
     it("prefers a socket over host and port", () => {
         expect(uriOf({
             user: "dba", host: "localhost", port: "3306",
             socket: "/var/run/mysqld/mysqld.sock",
-        })).toBe("dba@%2Fvar%2Frun%2Fmysqld%2Fmysqld.sock");
+        })).toBe("mariadb://dba@%2Fvar%2Frun%2Fmysqld%2Fmysqld.sock");
     });
 
     it("lets a typed option row override the field of the same name", () => {
@@ -113,7 +124,7 @@ describe("buildConnectionUri", () => {
             user: "dba",
             sslMode: "REQUIRED",
             extraOptions: [{ name: "ssl-mode", value: "DISABLED" }],
-        })).toBe("dba@localhost:3306?ssl-mode=DISABLED");
+        })).toBe("mariadb://dba@localhost:3306?ssl-mode=DISABLED");
     });
 
     it("refuses fields that name no connection", () => {
@@ -130,15 +141,19 @@ describe("buildConnectionUri", () => {
         expect(buildConnectionUri(fields({ user: "dba", port: "x" })).error)
             .toMatch(/not a port number/);
 
-        expect(buildConnectionUri(fields({ user: "dba", scheme: "mariadb" })).error)
+        expect(buildConnectionUri(fields({ user: "dba", scheme: "postgres" })).error)
             .toMatch(/not a protocol the shell accepts/);
+
+        expect(buildConnectionUri(fields({
+            user: "dba", scheme: "mariadb+ssh", sshPort: "0",
+        })).error).toMatch(/not an SSH port/);
     });
 
     it("refuses an option a URI cannot carry", () => {
-        // ssh-* is a separate set in the shell and never reaches a URI, and
-        // sql-mode is not a connection option at all - both are things the
-        // MySQL Shell's editor offers and this one must not.
-        for (const name of ["ssh", "ssh-identity-file", "sql-mode", "nonsense"]) {
+        // `ssh` and the two SSH passwords are not URI options in the shell,
+        // and sql-mode is not a connection option at all - all of them are
+        // things the MySQL Shell's editor offers and this one must not.
+        for (const name of ["ssh", "ssh-password", "sql-mode", "nonsense"]) {
             expect(buildConnectionUri(fields({
                 user: "dba",
                 extraOptions: [{ name, value: "x" }],
@@ -146,10 +161,27 @@ describe("buildConnectionUri", () => {
         }
     });
 
+    it("refuses an ssh-* option without the tunnel that gives it meaning", () => {
+        // The shell refuses it too, but with its own wording about a scheme
+        // extension the user never typed.
+        expect(buildConnectionUri(fields({
+            user: "dba",
+            extraOptions: [{ name: "ssh-host", value: "bastion" }],
+        })).error).toMatch(/needs an SSH tunnel/);
+
+        expect(buildConnectionUri(fields({
+            user: "dba",
+            scheme: "mariadb+ssh",
+            extraOptions: [{ name: "ssh-host", value: "bastion" }],
+        })).error).toBeUndefined();
+    });
+
     it("accepts every option the shell allows in a URI", () => {
         for (const name of URI_OPTIONS) {
             expect(buildConnectionUri(fields({
                 user: "dba",
+                // The ssh-* ones only mean anything on a tunnelling URI.
+                scheme: "mariadb+ssh",
                 extraOptions: [{ name, value: "1" }],
             })).error).toBeUndefined();
         }
@@ -161,16 +193,21 @@ describe("buildConnectionUri", () => {
         // The credentials are everything before the LAST @, and a password
         // would sit there after a colon. The port's colon is not that.
         const uri = uriOf({ user: "dba", schema: "s", sslCipher: "AES" });
-        expect(uri.slice(0, uri.lastIndexOf("@"))).toBe("dba");
-        expect(uri.slice(0, uri.lastIndexOf("@"))).not.toContain(":");
+        const credentials = uri.slice(
+            uri.indexOf("://") + 3, uri.lastIndexOf("@"),
+        );
+        expect(credentials).toBe("dba");
+        expect(credentials).not.toContain(":");
     });
 });
 
 describe("parseConnectionUri", () => {
     it("takes the shell's own spellings apart again", () => {
-        expect(parseConnectionUri("dba@localhost:3306")).toMatchObject({
-            user: "dba", host: "localhost", port: "3306", scheme: "",
-        });
+        expect(parseConnectionUri("mariadb://dba@localhost:3306"))
+            .toMatchObject({
+                user: "dba", host: "localhost", port: "3306",
+                scheme: "mariadb",
+            });
 
         expect(parseConnectionUri("mysqlx://dba@localhost:33060"))
             .toMatchObject({ scheme: "mysqlx", port: "33060" });
@@ -236,12 +273,40 @@ describe("parseConnectionUri", () => {
         expect(JSON.stringify(parsed)).not.toContain("hunter2");
     });
 
-    it("treats mariadb:// as no scheme, as the MCP server does", () => {
-        // The server strips it before parsing, since the shell's own parser
-        // rejects that scheme - so it must not come back as a field value the
-        // editor would then try to rebuild a URI from.
-        expect(parseConnectionUri("mariadb://dba@localhost:3306"))
-            .toMatchObject({ scheme: "", user: "dba", host: "localhost" });
+    it("keeps whichever scheme the URI names", () => {
+        // The scheme is part of what identifies a connection to the MCP
+        // server - mariadb:// and mysql:// are two of them - and the `+ssh`
+        // extension is the only way to ask for a tunnel, so none of it may be
+        // dropped on the way into the editor.
+        for (const scheme of ["mariadb", "mariadb+ssh", "mysql", "mysqlx"]) {
+            expect(parseConnectionUri(`${scheme}://dba@localhost:3306`))
+                .toMatchObject({ scheme, user: "dba", host: "localhost" });
+        }
+
+        // Schemes are case-insensitive, and the shell emits them lowercased.
+        expect(parseConnectionUri("MariaDB://dba@localhost:3306"))
+            .toMatchObject({ scheme: "mariadb" });
+
+        // A connection stored before the server kept schemes has none, and
+        // that means the default - which is the field's starting value.
+        expect(parseConnectionUri("dba@localhost:3306"))
+            .toMatchObject({ scheme: "mariadb" });
+    });
+
+    it("reads the ssh-* options into their own fields", () => {
+        expect(parseConnectionUri(
+            "mariadb+ssh://dba@db.internal:3306?ssh-config-file=%2Fetc%2Fssh"
+            + "&ssh-host=bastion&ssh-identity-file=%2Fk%2Fid&ssh-port=2222"
+            + "&ssh-user=jump",
+        )).toMatchObject({
+            scheme: "mariadb+ssh",
+            sshHost: "bastion",
+            sshUser: "jump",
+            sshPort: "2222",
+            sshIdentityFile: "/k/id",
+            sshConfigFile: "/etc/ssh",
+            extraOptions: [],
+        });
     });
 
     it("opens on a URI it cannot fully make sense of", () => {
