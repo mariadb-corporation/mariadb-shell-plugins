@@ -51,7 +51,8 @@ Actions tab has no such bar: there is no result set for one to be
 about.
 
 The error bar leads, above what it is about: it is read before the eye
-has gone looking for what went wrong.
+has gone looking for what went wrong. It steps through every error of
+the last run rather than showing one - see below.
 
 The tabs are **the editor's, not the activity bar's**: flat, with the
 one on show marked by a line under it in `textLink.foreground` rather
@@ -99,8 +100,9 @@ The two halves behave differently on purpose:
   rows is not taken away from them. The list is capped at
   `MAX_ACTION_ROWS` (2000) per connection, the oldest going first from
   the end, because a window can stay open for days. A run counts as
-  its own row plus its statements and is dropped whole: the tree
-  cannot keep half of one.
+  its own row plus everything under it - its statements **and their
+  warnings**, counted through the whole tree rather than one level of
+  it - and is dropped whole: the tree cannot keep half of one.
 - **Result sets are replaced.** The tabs stand for the *last* run, so
   starting a run clears them along with the apply context they were
   written back through. They are kept **per open connection**: a run on
@@ -293,11 +295,12 @@ belongs to the run.
 
 ### One row per run, opened to see its statements
 
-It is a **tree**, two levels deep, which is what `role` on a row says:
-one `run` row per execution, with a `statement` row per statement under
-it, and an `event` row of its own for everything else that happened. A
-run is therefore one line in the log until it is asked about, instead of
-a block of lines to be picked apart by eye.
+It is a **tree**, up to three levels deep, which is what `role` on a row
+says: one `run` row per execution, with a `statement` row per statement
+under it, a `warning` row under a statement for each warning it
+produced, and an `event` row of its own for everything else that
+happened. A run is therefore one line in the log until it is asked
+about, instead of a block of lines to be picked apart by eye.
 
 - `Actions` on a run says what ran and where (`Ran 5 statements on ...`,
   `Running 5 statements on ...` while it is under way); on a statement,
@@ -314,17 +317,75 @@ a block of lines to be picked apart by eye.
   that succeeded but raised warnings is a warning, and a run takes the
   worst of what its statements saw. `pending` is the spinning
   `codicon-loading`, as VS Code marks work in progress.
+- A **warning** row puts the server's own level and code
+  (`Warning 1292`, `Note 1051`) where a statement puts its SQL, leaving
+  the message column to the text, which is the thing being read. It
+  takes the statement's time, connection and source, so the arrow on it
+  goes to the statement that warned; it carries no duration of its own.
+  A warning whose level is `Error` - which the diagnostics area can
+  hold - is marked as one.
 
-**Only the newest run is open.** `dataTreeStartExpanded` is asked for
-every row Tabulator builds and answers `startsExpanded()`, which opens
-whatever `latestRunOf()` finds; since a data change rebuilds every row,
-a run that was open closes behind the one that follows it. The newest
-run is **looked for** rather than taken from the front of the list,
-because the row in front of it may be an event - a run's row goes up
-before the connection it needs has been opened, so the opening lands
-above it. A pending run
-carries `children: []` rather than nothing, so it already has its
-twistie and its message does not shift when the statements arrive.
+The texts come from `db.execute_sql_script`, which gained a `warnings`
+array per statement for this (`level`, `code`, `message`, as
+`SHOW WARNINGS` reports them). `warnings_count` is the older field and
+can arrive without it, so `warningRowsOf()` produces nothing against an
+older shell: the count still shows in the statement's message and the
+row simply has nothing to open. That same change was what fixed the
+count, which used to come back **0 for every statement that returned a
+result set** - it is `mysql_warning_count`, and the server does not
+have it until the rows have been read.
+
+### An error grows its row; everything else gets a popup
+
+An **error message is not cut off**. A server error runs to a sentence
+or two and is the thing the reader came for, so `.errorRow` wraps the
+message (`white-space: pre-wrap`, `overflow-wrap: anywhere`) and the
+row grows to hold it - Tabulator sizes a row to its tallest cell, so
+nothing more than the wrap is needed. The marker is pulled to the top
+of the block (`align-items: flex-start` on `.actionMessageCell`) to
+stay in the column of markers. Time and Information stay centred
+against the block whether or not that is wanted: Tabulator writes
+`align-items` as an **inline** style for a column with a `vertAlign`,
+which no rule in the stylesheet can outrank.
+
+**Every other cut-off cell gets a hover popup** (`overflowPopup.ts`)
+holding the whole text and a button that copies it - `title` would do
+none of the three things wanted, being unselectable, uncopyable and
+gone the moment the pointer moves. One popup is shared by the page,
+placed against the *window* rather than inside the cell, which is why
+it is dismissed on a captured `scroll`: what scrolls is the grid, and
+the popup would be left pointing at nothing. Whether a cell is cut off
+is asked on **each hover** (`isTruncated`), not once when it is built,
+because the columns are resizable and the panel is not. Leaving the
+cell starts a 150ms close that entering the popup cancels - without
+that grace the copy button could never be reached. The copy goes
+through the `copyToClipboard` message the host already had, so it is
+`vscode.env.clipboard` rather than the webview's own, and the button
+says so on itself rather than raising a notification.
+
+Neither can be tested under jsdom, which lays nothing out. What is
+tested directly is the arithmetic and the element building -
+`isTruncated`, `popupPosition`, `buildOverflowPopup`, and the hover
+wiring against stubbed `scrollWidth`/`clientWidth`. The **rendering**
+of both was checked the way the tree's was: the grid built into a
+throwaway page and screenshotted in headless Chrome, with VS Code's
+theme variables declared on `:root` (without them the popup's
+background chain ends in an undefined variable and the whole
+declaration drops, which is what the first screenshot showed).
+
+**Only the newest run is open, and inside it the statements that
+warned.** `dataTreeStartExpanded` is asked for every row Tabulator
+builds and answers `startsExpanded()` against the set `expandedIdsOf()`
+returns: the newest run, plus each of its statements that has children.
+A warning the reader has to go looking for is a warning nobody reads,
+and a count with no text behind it is no better. Since a data change
+rebuilds every row, a run that was open closes behind the one that
+follows it. The newest run is **looked for** rather than taken from the
+front of the list, because the row in front of it may be an event - a
+run's row goes up before the connection it needs has been opened, so
+the opening lands above it. A pending run carries `children: []` rather
+than nothing, so it already has its twistie and its message does not
+shift when the statements arrive.
 
 Three things about the tree had to be told to Tabulator:
 
@@ -374,14 +435,61 @@ is a flex row of the message and an `.actionArrows` span - so the text
 truncates before them, a row can show both, and neither can cover the
 other.
 
-Both share their cell with the message, so the column's `cellClick`
-handler checks what the click actually landed on (`clickedOn()`) instead
-of firing for anywhere in the cell.
+**The whole row is the target**, as a row of the Problems panel is: a
+click anywhere along one - the time and the statement as much as the
+message - takes the cursor to the statement it came from, and the row
+says so with a pointer (`goesSomewhere`, set by the `rowFormatter` on
+any row that has a `source`). `actionClick()` decides, off a table-level
+`rowClick` rather than a column's `cellClick`, so that every column
+counts. The jump arrow is the one exception, going to a result set
+instead; the go-to arrow now does nothing its row does not already do
+and stays only because it says so, and because a run's carries a title
+of its own.
 
-The error bar above the content follows the same reading:
-`lastErrorOf()`
-looks at the **newest row only** and reports what its failing statement
-said, not the run's count of errors. A run that worked clears it.
+Two things make that safe, both checked in a browser rather than
+reasoned about. Tabulator calls `stopPropagation()` on its
+expand/collapse element, so opening a run is still only opening it -
+and that holds for the **custom** chevrons this grid supplies, which
+carry `treeToggle` rather than Tabulator's own class. And the overflow
+popup hangs off the body rather than off the cell, so its copy button
+is not a click on the row either.
+
+The error bar above the content follows the same reading: `errorsOf()`
+looks at the **newest thing that happened** and reports what each of its
+failing statements said, not the run's count of errors. A run that
+worked clears it, and a run that failed before it could blame a
+statement falls back to the run's own summary. An event that failed on
+its own - a connection that could not be opened - has no children and
+says it itself.
+
+"Newest" is **not** the first row, and reading it that way was a bug
+worth remembering: a run's row goes up before the connection it needs
+has been opened, and opening one is itself logged, so on the **first**
+execution on a connection an event sits in front of the run. The bar
+stayed empty on that first run and appeared on the second - the
+connection being open by then, with no event logged. `errorsOf()` steps
+over everything that is neither a run nor a failure of its own, which is
+the same rule `expandedIdsOf()` in the grid already followed.
+
+The bar holds **one error at a time out of all of them**, and it opens
+on the **first**, which is usually what caused the rest and is where
+someone working through them starts. Two chevrons and an `n of m` step
+between them, and a step is not only a change of text: it is the same
+thing the arrow on a row does, putting the cursor on the statement and
+opening the actions on the row that reported it, because stepping
+through errors is for fixing them. Clicking the **message itself** does
+the same, which is why it is a button drawn as text rather than text
+with an arrow beside it - the whole message is the target.
+
+An `×` closes it. What that has to survive is that state arrives
+whenever *anything* happens on the connection, not only when a run
+finishes: `showErrors()` therefore compares the new set against
+`errorKey()` of the old one and does nothing when they match, so a
+reader part way through the errors is not put back at the first, and a
+bar they closed does not come back. A genuinely new set reopens it at
+its first error. The controls are pinned to the top right of the bar
+(`align-items: flex-start`), because a long message scrolls under them
+and buttons that scrolled with it would be gone when they were wanted.
 
 ## What the server had to report for this
 

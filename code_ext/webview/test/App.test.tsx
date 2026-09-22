@@ -20,7 +20,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { posted } from "./setup.js";
-import { App, lastErrorOf, pagingOf } from "../src/App.js";
+import { App, errorsOf, pagingOf } from "../src/App.js";
 import type {
     HostMessage,
     IActionRow,
@@ -196,7 +196,7 @@ afterEach(() => {
     render(null, host);
 });
 
-describe("lastErrorOf", () => {
+describe("errorsOf", () => {
     /**
      * @param overrides The fields that differ from a clean run.
      *
@@ -217,40 +217,112 @@ describe("lastErrorOf", () => {
         };
     };
 
+    /**
+     * @param id The statement row's id.
+     * @param message What the server said about it.
+     *
+     * @returns A failed statement of a run.
+     */
+    const failed = (id: string, message: string): IActionRow => {
+        return {
+            ...run({ id, role: "statement" }),
+            kind: "error",
+            message,
+            source: { uri: "file:///q.sql", line: 3, character: 0 },
+        };
+    };
+
     it("says nothing about a run that worked", () => {
-        expect(lastErrorOf([])).toBeUndefined();
-        expect(lastErrorOf([run()])).toBeUndefined();
+        expect(errorsOf([])).toEqual([]);
+        expect(errorsOf([run()])).toEqual([]);
     });
 
     it("reports what the server said, not the count of errors", () => {
-        expect(lastErrorOf([run({
+        expect(errorsOf([run({
             kind: "error",
             summary: "Finished with 1 error",
-            children: [{
-                ...run({ id: "run1-0", role: "statement" }),
-                kind: "error",
-                message: "Table 'nope.nope' doesn't exist",
-            }],
-        })])).toBe("Table 'nope.nope' doesn't exist");
+            children: [failed("run1-0", "Table 'nope.nope' doesn't exist")],
+        })])).toEqual([{
+            message: "Table 'nope.nope' doesn't exist",
+            rowId: "run1-0",
+            source: { uri: "file:///q.sql", line: 3, character: 0 },
+        }]);
+    });
+
+    it("reports every failure, in the order the script hit them", () => {
+        // Which is the order they are worth being walked in: the first
+        // is often what caused the rest.
+        expect(errorsOf([run({
+            kind: "error",
+            summary: "Finished with 3 errors",
+            children: [
+                failed("run1-0", "Unknown database 'nope'"),
+                { ...run({ id: "run1-1", role: "statement" }), kind: "info" },
+                failed("run1-2", "Table 'nope.a' doesn't exist"),
+                failed("run1-3", "Table 'nope.b' doesn't exist"),
+            ],
+        })]).map((error) => {
+            return [error.rowId, error.message];
+        })).toEqual([
+            ["run1-0", "Unknown database 'nope'"],
+            ["run1-2", "Table 'nope.a' doesn't exist"],
+            ["run1-3", "Table 'nope.b' doesn't exist"],
+        ]);
     });
 
     it("falls back to the run's own summary", () => {
         // A run that failed before it could blame a statement: the
         // connection was never opened.
-        expect(lastErrorOf([run({
+        expect(errorsOf([run({
             kind: "error",
             summary: "Execution failed: Access denied",
             children: [],
-        })])).toBe("Execution failed: Access denied");
+        })])).toEqual([{
+            message: "Execution failed: Access denied",
+            rowId: "run1",
+            source: undefined,
+        }]);
     });
 
-    it("leaves an earlier run's error behind", () => {
+    it("finds the run under the event that opening a connection logs", () => {
+        // The first execution on a connection has to open it, and that
+        // is logged AFTER the run's own row went up - so it lands above
+        // it. Reading only the newest row meant the bar stayed empty on
+        // a first run and appeared on the second, the connection being
+        // open by then.
+        expect(errorsOf([
+            { ...run({ id: "connect", role: "event" }), kind: "info" },
+            run({
+                kind: "error",
+                summary: "Finished with 1 error",
+                children: [failed("run1-0", "You have an error in your SQL")],
+            }),
+        ]).map((error) => {
+            return error.message;
+        })).toEqual(["You have an error in your SQL"]);
+    });
+
+    it("reports an event that failed on its own", () => {
+        // A connection that could not be opened has no run to blame and
+        // says it itself.
+        expect(errorsOf([{
+            ...run({ id: "connect", role: "event" }),
+            kind: "error",
+            message: "Access denied for user 'dba'",
+        }])).toEqual([{
+            message: "Access denied for user 'dba'",
+            rowId: "connect",
+            source: undefined,
+        }]);
+    });
+
+    it("leaves an earlier run's errors behind", () => {
         // The bar says what just happened; a run that worked clears
         // it. The newest is the first, so that is the one it reads.
-        expect(lastErrorOf([
+        expect(errorsOf([
             run({ id: "run2" }),
             run({ kind: "error", summary: "Finished with 1 error" }),
-        ])).toBeUndefined();
+        ])).toEqual([]);
     });
 });
 
@@ -854,8 +926,10 @@ describe("App", () => {
             const panel = host.querySelector(".panel");
             const first = panel?.firstElementChild;
             expect(first?.classList.contains("errorBar")).toBe(true);
-            expect(first?.textContent)
+            expect(first?.querySelector(".errorBarText")?.textContent)
                 .toBe("Duplicate entry '1' for key 'PRIMARY'");
+            // One error, so nothing to step between.
+            expect(first?.querySelector(".errorBarNav")).toBeNull();
             // The failing statement is in the preview, so that is where
             // the user is taken.
             expect(host.querySelector(".sqlPreview")).not.toBeNull();
@@ -913,8 +987,214 @@ describe("App", () => {
             },
         });
 
-        expect(host.querySelector(".errorBar")?.textContent)
+        expect(host.querySelector(".errorBarText")?.textContent)
             .toBe("Table 'nope.nope' doesn't exist");
+    });
+
+    /**
+     * Clicks one of the error bar's two chevrons.
+     *
+     * By class rather than by label: they are codicons and carry no
+     * text, so the button helper cannot tell them from any other.
+     *
+     * @param which 0 for back, 1 for on.
+     *
+     * @returns Nothing.
+     */
+    const stepErrors = async (which: number): Promise<void> => {
+        await act(async () => {
+            host.querySelectorAll<HTMLButtonElement>(".errorBarStep")
+                .item(which).click();
+            await Promise.resolve();
+        });
+    };
+
+    /**
+     * @param messages What the server said about each failed statement.
+     *
+     * @returns A run that failed that many times.
+     */
+    const failedRun = (messages: string[]): IViewState => {
+        return {
+            connections: ["dba@localhost:3310"],
+            connection: "dba@localhost:3310",
+            sessions: [{ label: "1", open: true }],
+            actions: [{
+                id: "run1",
+                time: "12:00:00.123",
+                connection: "dba@localhost:3310",
+                role: "run",
+                statement: "",
+                message: "Ran 3 statements on dba@localhost:3310",
+                summary: `Finished with ${messages.length} errors`,
+                kind: "error",
+                elapsedMs: 2,
+                children: messages.map((message, index) => {
+                    return {
+                        id: `run1-${index}`,
+                        time: "12:00:00.123",
+                        connection: "dba@localhost:3310",
+                        role: "statement" as const,
+                        statement: "SELECT 1",
+                        message,
+                        kind: "error" as const,
+                        elapsedMs: 2,
+                        source: {
+                            uri: "file:///q.sql",
+                            line: index,
+                            character: 0,
+                        },
+                    };
+                }),
+            }],
+            resultSets: [],
+        };
+    };
+
+    it("shows the bar on a first run, under the connect event", async () => {
+        await mount();
+        const failing = failedRun(["You have an error in your SQL syntax"]);
+
+        await send({
+            type: "state",
+            state: {
+                ...failing,
+                // What the first execution on a connection looks like:
+                // the run's row went up before the connection existed,
+                // so opening it is logged above the run.
+                actions: [{
+                    id: "connect-1",
+                    time: "12:00:00.100",
+                    connection: "dba@localhost:3310",
+                    role: "event",
+                    statement: "db.connect",
+                    message: "Connected to dba@localhost:3310",
+                    kind: "info",
+                }, ...failing.actions],
+            },
+        });
+
+        expect(host.querySelector(".errorBarText")?.textContent)
+            .toBe("You have an error in your SQL syntax");
+    });
+
+    it("opens on the first error and says how many there are", async () => {
+        await mount();
+
+        await send({
+            type: "state",
+            state: failedRun(["first went wrong", "then this", "and this"]),
+        });
+
+        // The first, not the last: it is usually what caused the rest,
+        // and it is where a reader working through them starts.
+        expect(host.querySelector(".errorBarText")?.textContent)
+            .toBe("first went wrong");
+        expect(host.querySelector(".errorBarCount")?.textContent)
+            .toBe("1 of 3");
+    });
+
+    it("steps through the errors, taking the user to each", async () => {
+        await mount();
+        await send({
+            type: "state",
+            state: failedRun(["first went wrong", "then this", "and this"]),
+        });
+        posted.length = 0;
+
+        await stepErrors(1);
+
+        expect(host.querySelector(".errorBarText")?.textContent)
+            .toBe("then this");
+        expect(host.querySelector(".errorBarCount")?.textContent)
+            .toBe("2 of 3");
+        // Stepping is for fixing, so it puts the cursor on the statement
+        // rather than only changing the text.
+        expect(posted).toEqual([{
+            type: "revealStatement",
+            source: { uri: "file:///q.sql", line: 1, character: 0 },
+        }]);
+    });
+
+    it("stops at either end of the errors", async () => {
+        await mount();
+        await send({
+            type: "state",
+            state: failedRun(["first went wrong", "then this"]),
+        });
+
+        const steps = [...host.querySelectorAll<HTMLButtonElement>(
+            ".errorBarStep")];
+        expect(steps).toHaveLength(2);
+        // Nothing before the first; the count says what is left.
+        expect(steps[0].disabled).toBe(true);
+        expect(steps[1].disabled).toBe(false);
+    });
+
+    it("goes to the statement when the message itself is clicked",
+        async () => {
+            await mount();
+            await send({
+                type: "state",
+                state: failedRun(["first went wrong", "then this"]),
+            });
+            posted.length = 0;
+
+            await act(async () => {
+                host.querySelector<HTMLButtonElement>(".errorBarText")
+                    ?.click();
+                await Promise.resolve();
+            });
+
+            expect(posted).toEqual([{
+                type: "revealStatement",
+                source: { uri: "file:///q.sql", line: 0, character: 0 },
+            }]);
+        });
+
+    it("closes the bar, and keeps it closed until the next failure",
+        async () => {
+            await mount();
+            await send({
+                type: "state",
+                state: failedRun(["first went wrong", "then this"]),
+            });
+
+            await act(async () => {
+                host.querySelector<HTMLButtonElement>(".errorBarClose")
+                    ?.click();
+                await Promise.resolve();
+            });
+
+            expect(host.querySelector(".errorBar")).toBeNull();
+
+            // State arrives whenever anything happens on the connection,
+            // and none of it should bring a closed bar back.
+            await send({
+                type: "state",
+                state: failedRun(["first went wrong", "then this"]),
+            });
+
+            expect(host.querySelector(".errorBar")).toBeNull();
+
+            await send({ type: "state", state: failedRun(["something new"]) });
+
+            expect(host.querySelector(".errorBarText")?.textContent)
+                .toBe("something new");
+        });
+
+    it("keeps its place while the connection carries on", async () => {
+        await mount();
+        const failing = failedRun(["first went wrong", "then this"]);
+        await send({ type: "state", state: failing });
+
+        await stepErrors(1);
+        // A schema listed, a connection opened - anything at all sends
+        // state again, and it must not put the reader back at the first.
+        await send({ type: "state", state: { ...failing } });
+
+        expect(host.querySelector(".errorBarCount")?.textContent)
+            .toBe("2 of 2");
     });
 
     it("marks a read-only result set and offers no editing", async () => {

@@ -16,10 +16,11 @@
  */
 
 import type { CellComponent } from "tabulator-tables";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import "./setup.js";
 import {
+    actionClick,
     buildActionColumns,
     clickedOn,
     formatElapsed,
@@ -27,12 +28,13 @@ import {
     formatMessageCell,
     createSeverityIcon,
     informationOf,
-    latestRunOf,
+    expandedIdsOf,
     runHolding,
     startsExpanded,
     timeOf,
 } from "../src/ActionsGrid.js";
 import type { IActionRow } from "../../src/webview/protocol.js";
+import { closeOverflowPopup } from "../src/overflowPopup.js";
 
 /**
  * Tabulator needs real layout and never builds under jsdom, so what it
@@ -133,12 +135,24 @@ const click = (target: Element): Event => {
     return { target } as unknown as Event;
 };
 
+/** Everything the cells were asked to copy, newest last. */
+const copied: string[] = [];
+
+/**
+ * @param text What a cell's copy button was given.
+ *
+ * @returns Nothing.
+ */
+const onCopy = (text: string): void => {
+    copied.push(text);
+};
+
 describe("formatMessageCell", () => {
     it("offers a go-to arrow for a row that knows where its statement is",
         () => {
             const rendered = formatMessageCell(cell(row({
                 source: { uri: "file:///q.sql", line: 3, character: 0 },
-            })), new Set());
+            })), new Set(), onCopy);
             const button = rendered.querySelector("button");
 
             expect(button?.className).toBe("goToStatement");
@@ -147,7 +161,7 @@ describe("formatMessageCell", () => {
 
     it("leads with the severity marker", () => {
         const rendered = formatMessageCell(cell(row({ kind: "error" })),
-            new Set());
+            new Set(), onCopy);
 
         // In the cell, after the twistie or the branch Tabulator puts
         // in front of it, rather than in a column of its own.
@@ -160,16 +174,60 @@ describe("formatMessageCell", () => {
         // branch, so without this its marker would sit where every
         // other row's message does.
         const rendered = formatMessageCell(cell(row({ role: "event" })),
-            new Set());
+            new Set(), onCopy);
 
         expect(rendered.firstElementChild?.className).toBe("treeSpacer");
         expect(rendered.querySelector(".markerIcon")).not.toBeNull();
+    });
+
+    it("gives a cut-off message a popup with the whole of it", () => {
+        const rendered = formatMessageCell(cell(row({
+            message: "Query OK, 1 row affected, 3 warnings",
+        })), new Set(), onCopy);
+        const content = rendered.querySelector<HTMLElement>(
+            ".actionMessageContent");
+        Object.defineProperty(content, "scrollWidth",
+            { configurable: true, value: 400 });
+        Object.defineProperty(content, "clientWidth",
+            { configurable: true, value: 120 });
+        document.body.appendChild(rendered);
+
+        content?.dispatchEvent(new Event("mouseenter"));
+
+        expect(document.querySelector(".overflowPopup")?.textContent)
+            .toContain("Query OK, 1 row affected, 3 warnings");
+
+        closeOverflowPopup();
+        rendered.remove();
+    });
+
+    it("leaves an error to wrap instead of hiding it behind a popup", () => {
+        const rendered = formatMessageCell(cell(row({
+            kind: "error",
+            message: "MySQL Error (1064): You have an error in your syntax",
+        })), new Set(), onCopy);
+        const content = rendered.querySelector<HTMLElement>(
+            ".actionMessageContent");
+        // Measured as cut off, which it would not be: the row grows to
+        // hold it. Nothing should open even so.
+        Object.defineProperty(content, "scrollWidth",
+            { configurable: true, value: 400 });
+        Object.defineProperty(content, "clientWidth",
+            { configurable: true, value: 120 });
+        document.body.appendChild(rendered);
+
+        content?.dispatchEvent(new Event("mouseenter"));
+
+        expect(document.querySelector(".overflowPopup")).toBeNull();
+
+        rendered.remove();
     });
 
     it("offers a jump where the result set is still on show", () => {
         const rendered = formatMessageCell(
             cell(row({ resultId: "run1-result-0" })),
             new Set(["run1-result-0"]),
+            onCopy,
         );
         const button = rendered.querySelector("button");
 
@@ -182,6 +240,7 @@ describe("formatMessageCell", () => {
         expect(formatMessageCell(
             cell(row({ resultId: "run1-result-0" })),
             new Set(["run2-result-0"]),
+            onCopy,
         ).querySelector("button")).toBeNull();
     });
 
@@ -189,7 +248,7 @@ describe("formatMessageCell", () => {
         const rendered = formatMessageCell(cell(row({
             resultId: "run1-result-0",
             source: { uri: "file:///q.sql", line: 3, character: 0 },
-        })), new Set(["run1-result-0"]));
+        })), new Set(["run1-result-0"]), onCopy);
 
         expect([...rendered.querySelectorAll(".actionArrows button")]
             .map((button) => { return button.className; }))
@@ -197,7 +256,7 @@ describe("formatMessageCell", () => {
     });
 
     it("offers nothing for a row with neither", () => {
-        const rendered = formatMessageCell(cell(row()), new Set());
+        const rendered = formatMessageCell(cell(row()), new Set(), onCopy);
 
         expect(rendered.querySelector("button")).toBeNull();
         expect(rendered.textContent).toBe("1 row in set");
@@ -209,7 +268,7 @@ describe("formatMessageCell", () => {
         const rendered = formatMessageCell(cell(run({
             source: { uri: "file:///q.sql", line: 3, character: 0 },
             jumpToRowId: "run1-2",
-        })), new Set());
+        })), new Set(), onCopy);
 
         expect(rendered.querySelector("button")?.title)
             .toBe("Go to the first error of this run");
@@ -291,39 +350,56 @@ describe("informationOf", () => {
         // Tabulator puts a formatter's string into the cell as HTML, and
         // this column holds SQL and server messages.
         const rendered = formatInformationCell(
-            cell(row({ statement: "SELECT a <> b FROM t" })));
+            cell(row({ statement: "SELECT a <> b FROM t" })), onCopy);
 
         expect(rendered.textContent).toBe("SELECT a <> b FROM t");
         expect(rendered.children).toHaveLength(0);
     });
 });
 
-describe("latestRunOf", () => {
-    it("finds the newest run, not merely the first row", () => {
+describe("expandedIdsOf", () => {
+    it("opens the newest run, not merely the first row", () => {
         // The row in front may be an event: the connection a run opens
         // on the way is reported after the run's own row went up.
-        expect(latestRunOf([
+        expect([...expandedIdsOf([
             row({ id: "event1", role: "event" }),
             run({ id: "run2" }),
             run({ id: "run1" }),
-        ])).toBe("run2");
+        ])]).toEqual(["run2"]);
     });
 
-    it("finds nothing in a log of events alone", () => {
-        expect(latestRunOf([row({ id: "event1", role: "event" })]))
-            .toBeUndefined();
-        expect(latestRunOf([])).toBeUndefined();
+    it("opens the statements of that run that carry warnings", () => {
+        const warned = row({
+            id: "run2-1",
+            kind: "warning",
+            children: [row({ id: "run2-1-warning-0", role: "warning" })],
+        });
+
+        // The plain statement beside it stays shut: only the ones with
+        // something under them open, so the run does not unroll whole.
+        expect([...expandedIdsOf([
+            run({ id: "run2", children: [row({ id: "run2-0" }), warned] }),
+            run({ id: "run1", children: [{ ...warned, id: "run1-1" }] }),
+        ])]).toEqual(["run2", "run2-1"]);
+    });
+
+    it("opens nothing in a log of events alone", () => {
+        expect(expandedIdsOf([row({ id: "event1", role: "event" })]).size)
+            .toBe(0);
+        expect(expandedIdsOf([]).size).toBe(0);
     });
 });
 
 describe("startsExpanded", () => {
-    it("opens the newest run and closes the rest", () => {
-        expect(startsExpanded("run2", "run2")).toBe(true);
-        expect(startsExpanded("run1", "run2")).toBe(false);
-        // A statement row is never a parent, and an empty grid has no
-        // newest run to open.
-        expect(startsExpanded("run1-0", "run2")).toBe(false);
-        expect(startsExpanded("run1", undefined)).toBe(false);
+    it("opens what expandedIdsOf named and closes the rest", () => {
+        const open = new Set(["run2", "run2-1"]);
+
+        expect(startsExpanded("run2", open)).toBe(true);
+        expect(startsExpanded("run2-1", open)).toBe(true);
+        expect(startsExpanded("run1", open)).toBe(false);
+        // Tabulator hands an index of whatever type the data carries.
+        expect(startsExpanded(2, open)).toBe(false);
+        expect(startsExpanded("run2", new Set())).toBe(false);
     });
 });
 
@@ -343,9 +419,6 @@ describe("runHolding", () => {
 });
 
 describe("buildActionColumns", () => {
-    const onJump = vi.fn();
-    const onGoTo = vi.fn();
-
     /**
      * @returns A click on a control of the given class.
      */
@@ -357,7 +430,7 @@ describe("buildActionColumns", () => {
     };
 
     it("leads with what happened", () => {
-        const columns = buildActionColumns(new Set(), onJump, onGoTo);
+        const columns = buildActionColumns(new Set(), onCopy);
 
         expect(columns.map((column) => {
             return column.title;
@@ -370,7 +443,7 @@ describe("buildActionColumns", () => {
     it("names the connection last, and only when several are on show",
         () => {
             const withConnection = buildActionColumns(
-                new Set(), onJump, onGoTo, true);
+                new Set(), onCopy, true);
 
             expect(withConnection.map((column) => {
                 return column.title;
@@ -382,13 +455,13 @@ describe("buildActionColumns", () => {
 
             // With one connection picked, a column repeating its name
             // the whole way down says nothing.
-            expect(buildActionColumns(new Set(), onJump, onGoTo)
+            expect(buildActionColumns(new Set(), onCopy)
                 .some((column) => { return column.title === "Conn"; }))
                 .toBe(false);
         });
 
     it("puts how long it took in the Time column", () => {
-        const columns = buildActionColumns(new Set(), onJump, onGoTo);
+        const columns = buildActionColumns(new Set(), onCopy);
         const format = columns[1].formatter as
             (cell: CellComponent) => string;
 
@@ -399,93 +472,54 @@ describe("buildActionColumns", () => {
         })))).toBe("20:44:13.431");
     });
 
-    it("jumps to the result set a row produced", () => {
-        const handler = vi.fn();
-        const columns = buildActionColumns(
-            new Set(["run1-result-0"]), handler, onGoTo);
-        const onClick = columns[0].cellClick as
-            (event: unknown, cell: CellComponent) => void;
-
-        onClick(clickOn("jumpToResult"),
-            cell(row({ resultId: "run1-result-0" })));
-
-        expect(handler).toHaveBeenCalledWith("run1-result-0");
+    it("takes a jump arrow as a jump to the result set", () => {
+        expect(actionClick(
+            clickOn("jumpToResult"),
+            row({ resultId: "run1-result-0" }),
+            new Set(["run1-result-0"]),
+        )).toBe("jump");
     });
 
     it("does not jump to a result set that is gone", () => {
-        const handler = vi.fn();
-        const columns = buildActionColumns(
-            new Set(["run2-result-0"]), handler, onGoTo);
-        const onClick = columns[0].cellClick as
-            (event: unknown, cell: CellComponent) => void;
-
-        onClick(clickOn("jumpToResult"),
-            cell(row({ resultId: "run1-result-0" })));
-
-        expect(handler).not.toHaveBeenCalled();
+        // A later run replaced the tabs. The click still counts as one
+        // on the row, which is where it landed.
+        expect(actionClick(
+            clickOn("jumpToResult"),
+            row({
+                resultId: "run1-result-0",
+                source: { uri: "file:///q.sql", line: 3, character: 0 },
+            }),
+            new Set(["run2-result-0"]),
+        )).toBe("goTo");
     });
 
-    it("does not jump from a row with no result set", () => {
-        const handler = vi.fn();
-        const columns = buildActionColumns(new Set(), handler, onGoTo);
-        const onClick = columns[0].cellClick as
-            (event: unknown, cell: CellComponent) => void;
-
-        onClick(clickOn("jumpToResult"), cell(row()));
-
-        expect(handler).not.toHaveBeenCalled();
-    });
-
-    it("does not jump when the click missed the arrow", () => {
-        // Both arrows now share the message's cell.
-        const handler = vi.fn();
-        const columns = buildActionColumns(
-            new Set(["run1-result-0"]), handler, onGoTo);
-        const onClick = columns[0].cellClick as
-            (event: unknown, cell: CellComponent) => void;
-
-        onClick(clickOn("actionMessageContent"),
-            cell(row({ resultId: "run1-result-0" })));
-
-        expect(handler).not.toHaveBeenCalled();
-    });
-
-    it("goes to the statement a row came from", () => {
-        const handler = vi.fn();
-        const columns = buildActionColumns(new Set(), onJump, handler);
-        const onClick = columns[0].cellClick as
-            (event: unknown, cell: CellComponent) => void;
+    it("takes a click anywhere else on the row to the statement", () => {
+        // The whole row is the target, as it is in the Problems panel -
+        // not the arrow alone, which is only what says so.
         const data = row({
             source: { uri: "file:///q.sql", line: 3, character: 0 },
         });
 
-        onClick(clickOn("goToStatement"), cell(data));
-
-        expect(handler).toHaveBeenCalledWith(data);
+        expect(actionClick(clickOn("actionMessageContent"), data, new Set()))
+            .toBe("goTo");
+        expect(actionClick(clickOn("actionTime"), data, new Set()))
+            .toBe("goTo");
+        expect(actionClick(clickOn("goToStatement"), data, new Set()))
+            .toBe("goTo");
     });
 
-    it("does not go anywhere from a row with no source", () => {
-        const handler = vi.fn();
-        const columns = buildActionColumns(new Set(), onJump, handler);
-        const onClick = columns[0].cellClick as
-            (event: unknown, cell: CellComponent) => void;
-
-        onClick(clickOn("goToStatement"), cell(row()));
-
-        expect(handler).not.toHaveBeenCalled();
+    it("takes a run's row to its first error, as its arrow does", () => {
+        expect(actionClick(clickOn("actionMessageContent"), run({
+            source: { uri: "file:///q.sql", line: 0, character: 0 },
+            jumpToRowId: "run1-2",
+        }), new Set())).toBe("goTo");
     });
 
-    it("does not go anywhere when the click missed the arrow", () => {
-        // The arrow now shares its cell with the message.
-        const handler = vi.fn();
-        const columns = buildActionColumns(new Set(), onJump, handler);
-        const onClick = columns[0].cellClick as
-            (event: unknown, cell: CellComponent) => void;
-
-        onClick(clickOn("actionMessageContent"), cell(row({
-            source: { uri: "file:///q.sql", line: 3, character: 0 },
-        })));
-
-        expect(handler).not.toHaveBeenCalled();
+    it("does nothing on a row that knows nowhere to go", () => {
+        // An event has no statement behind it.
+        expect(actionClick(clickOn("actionMessageContent"),
+            row({ role: "event", source: undefined }), new Set()))
+            .toBeUndefined();
     });
+
 });

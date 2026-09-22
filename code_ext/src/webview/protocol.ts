@@ -75,7 +75,7 @@ export interface IStatementSource {
  * apart by eye. An `event` - a connection opened, a schema listed - has
  * nothing under it and is a line of its own.
  */
-export type ActionRole = "run" | "statement" | "event";
+export type ActionRole = "run" | "statement" | "event" | "warning";
 
 /**
  * How an action row is marked. `pending` is a run that has been started
@@ -121,13 +121,17 @@ export interface IActionRow {
      * statements saw.
      */
     kind: ActionSeverity;
-    /** Whether this is a run, one of its statements, or an event. */
+    /**
+     * Whether this is a run, one of its statements, one of a statement's
+     * warnings, or an event.
+     */
     role: ActionRole;
     /**
-     * The statements of a run, as the grid's child rows. A run that has
-     * not reported back yet carries an empty array rather than nothing,
-     * so its row keeps the expander - and its place in the column - once
-     * the statements arrive.
+     * The rows nested under this one: the statements of a run, and the
+     * warnings of a statement. A run that has not reported back yet
+     * carries an empty array rather than nothing, so its row keeps the
+     * expander - and its place in the column - once the statements
+     * arrive.
      */
     children?: IActionRow[];
     /**

@@ -59,6 +59,44 @@ export const describeResult = (result: IStatementResult): string => {
 };
 
 /**
+ * Turns the warnings a statement produced into rows under its own.
+ *
+ * @param result The statement's result.
+ * @param statementId The id of the row they hang under, which its own
+ *                    ids are built from so they are unique across runs.
+ * @param row What every row of this run carries: when, where and on what.
+ *
+ * @returns One row per warning, or an empty array where there were none.
+ *
+ * A shell that reports `warnings_count` but not the texts - which is
+ * every shell that predates them - produces nothing here, and the
+ * statement row keeps its count in its message and loses only the
+ * expander.
+ */
+export const warningRowsOf = (
+    result: IStatementResult,
+    statementId: string,
+    row: Pick<IActionRow, "time" | "connection" | "connectionLabel"
+        | "source">,
+): IActionRow[] => {
+    return (result.warnings ?? []).map((warning, position): IActionRow => {
+        return {
+            ...row,
+            id: `${statementId}-warning-${position}`,
+            role: "warning",
+            // The level is the server's own word for it and goes where a
+            // statement puts its SQL, so the message column is left to
+            // the text - which is the thing being read.
+            statement: `${warning.level} ${warning.code}`,
+            message: warning.message,
+            kind: warning.level.toLowerCase() === "error"
+                ? "error"
+                : "warning",
+        };
+    });
+};
+
+/**
  * Formats a wall-clock time to the millisecond.
  *
  * The actions grid keeps rows from every run, so a row has to say when it
@@ -473,6 +511,14 @@ export class ExecutionService {
             const kind = (result.warnings_count ?? 0) > 0
                 ? "warning" as const
                 : "info" as const;
+            // And what each of them said hangs under it, so the count in
+            // the message is a row away from the text behind it.
+            const warnings = warningRowsOf(result, id, {
+                time: startedAt,
+                connection: connectionUri,
+                connectionLabel,
+                source,
+            });
 
             if (!result.columns) {
                 children.push({
@@ -486,6 +532,7 @@ export class ExecutionService {
                     kind,
                     elapsedMs,
                     source,
+                    ...(warnings.length > 0 ? { children: warnings } : {}),
                 });
                 continue;
             }
@@ -513,6 +560,7 @@ export class ExecutionService {
                 elapsedMs,
                 source,
                 resultId: resultSet.id,
+                ...(warnings.length > 0 ? { children: warnings } : {}),
             });
         }
 
