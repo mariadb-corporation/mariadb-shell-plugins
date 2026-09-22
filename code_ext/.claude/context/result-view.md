@@ -70,6 +70,16 @@ end, so the buttons can be disabled where there is nothing that way. A
 what ask it again. The scrollbar itself is hidden: the buttons are the
 control, and a bar under the tabs would cost a row of the panel.
 
+A button pages by most of the strip's width, as a smooth scroll, and
+two things are careful not to cut that scroll short. The tab switched
+to is brought into view from an effect **keyed on the active tab**, not
+from the tab's `ref` - Preact runs an inline `ref` on every render, so
+scrolling there meant the first frame of a page dragged the tab it
+started from straight back, and the strip moved a few pixels and
+stopped. And `measureTabs()` keeps the paging state it already has when
+nothing about it changed, so the scroll events a page fires do not each
+cost a render.
+
 Paddings are a couple of pixels throughout: the panel area is short, and
 every row spent on chrome is a row of data not shown.
 
