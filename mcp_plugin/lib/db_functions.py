@@ -1328,7 +1328,6 @@ def _serialize_result(
     """
     output = {
         "affected_items_count": result.affected_items_count,
-        "warnings_count": result.warnings_count,
     }
 
     if statement_index is not None:
@@ -1373,7 +1372,50 @@ def _serialize_result(
         output["columns"] = columns
         output["rows"] = rows
 
+    # Counted and read only NOW, after the rows above have been fetched. This
+    # is mysql_warning_count, which for a statement that returns a result set
+    # is not final until that set has been consumed - asking before the fetch
+    # answered 0 for every SELECT, however many warnings it went on to report.
+    output["warnings_count"] = result.warnings_count
+    warnings = _serialize_warnings(result)
+    if warnings:
+        output["warnings"] = warnings
+
     return output
+
+
+def _serialize_warnings(result) -> list:
+    """Reads the warnings a statement produced off its result.
+
+    Only called once the result set has been consumed, since the warnings are
+    not all there before it has been.
+
+    Args:
+        result: The result object returned by ``session.run_sql``.
+
+    Returns:
+        One dict per warning, each with level, code and message. Empty where
+        the statement produced none, or where the shell serving this session
+        is too old to report them.
+    """
+    # A shell that does not have get_warnings still has warnings_count, so the
+    # count is reported either way and only the texts go missing.
+    reader = getattr(result, "get_warnings", None)
+    if reader is None:
+        return []
+
+    # Read by ATTRIBUTE. A warning comes back as a shell Row, the same type a
+    # query result row is, and subscripting one takes the sequence path - so
+    # warning["level"] is an index, and raises rather than naming the field.
+    warnings = []
+    for warning in reader() or []:
+        warnings.append({
+            "level": warning.level,
+            "code": warning.code,
+            "message": warning.message,
+        })
+
+    return warnings
 
 
 def _abbreviate(text: str, limit: int = 2000) -> str:
@@ -2162,6 +2204,11 @@ def register_db_tools(server, function_groups=()) -> None:
             tables that both have an id, say - the later one is listed and keyed
             as label_2 (then _3, and so on), so that no column is lost.
 
+            warnings_count is how many warnings the statement produced, and
+            warnings - present only when there were any - lists them, each
+            with its level, code and message, as SHOW WARNINGS would report
+            them.
+
             If it contains session_restarted: true, this statement ran on a
             newly opened database session, because the previous one had been
             closed for being idle or lost. Nothing that only lived in that
@@ -2215,7 +2262,9 @@ def register_db_tools(server, function_groups=()) -> None:
             in the script (statement_index, counting the non-empty statements
             from 0) and how long it took (execution_time, in seconds). Two
             columns sharing one label are keyed apart as label and label_2, as
-            for db.execute_sql.
+            for db.execute_sql. Each entry also carries warnings_count, and
+            warnings - the level, code and message of each - where the
+            statement produced any.
 
             A statement that is nothing but a -- or # line comment is NOT run
             and has no entry, since it carries no SQL. It still takes up a
