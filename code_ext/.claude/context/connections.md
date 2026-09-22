@@ -152,6 +152,28 @@ dba@localhost:3310            connection (seal icon; "default" if default)
 - A connection in the shared MCP list is described `MCP` in the tree, and
   `MCP, default` when it is both. The view lists **both** lists: the checkbox
   says who else may open a connection, not whether this extension can.
+- A schema is described by its type **only where that is not `User
+  Schema`**, which is what `db.list_schemas` calls everything that is not
+  the server's own. Nearly every row is one, and a column of the same
+  word beside the schemas the user came for says nothing; `System Schema`
+  and `System Information Schema` are the ones worth marking. The
+  tooltip still names the type, so it is there to be read.
+- The view's welcome content is **two messages**, because an empty tree
+  means two different things. The list comes from the MCP server, which
+  has to be found and started first, so until it answers the view says
+  `Looking for MariaDB connections...`; only afterwards does it say
+  nothing is configured and point at the `$(add)` button in its
+  toolbar. What picks between them is the
+  `mariadb.connectionsListed` context key, which
+  `ConnectionsTreeProvider` sets once the root listing has come back -
+  **including when it failed**, since a view left looking for ever
+  would be as wrong as one claiming nothing is there, and the failure
+  is reported on its own. It used to be one message sending the user to
+  `mariadb-shell -- mcp setup` in a terminal, which the connection
+  editor has since made unnecessary.
+  `SqlEditorBinding.selectConnection` points at the same button when a
+  SQL file is asked what to run on and nothing is configured, naming it
+  in words rather than the codicon, a notification drawing none.
 
 ## Opening a connection
 

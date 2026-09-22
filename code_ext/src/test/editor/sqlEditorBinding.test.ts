@@ -232,7 +232,8 @@ describe("SqlEditorBinding", () => {
         await expect(binding.selectConnection(
             createEditor("SELECT 1;").document as never,
         )).resolves.toBeUndefined();
-        expect(warningMessages[0]).toContain("mcp setup");
+        expect(warningMessages[0])
+            .toContain("+ button in the MariaDB Connections view");
 
         binding.dispose();
     });

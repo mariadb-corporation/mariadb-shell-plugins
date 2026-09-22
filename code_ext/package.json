@@ -58,7 +58,13 @@
     "viewsWelcome": [
       {
         "view": "mariadb.connections",
-        "contents": "No MariaDB connections are configured yet.\nConfigure one by running `mariadb-shell -- mcp setup` in a terminal, then refresh this view."
+        "contents": "Looking for MariaDB connections...",
+        "when": "!mariadb.connectionsListed"
+      },
+      {
+        "view": "mariadb.connections",
+        "contents": "No MariaDB connections are configured yet.\nAdd one with the $(add) button in the toolbar of this view.",
+        "when": "mariadb.connectionsListed"
       }
     ],
     "configuration": {

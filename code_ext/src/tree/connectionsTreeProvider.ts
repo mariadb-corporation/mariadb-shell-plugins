@@ -31,6 +31,19 @@ import { createTreeItem, type IconResolver } from "./treeItems.js";
 export const CONNECTIONS_VIEW_ID = "mariadb.connections";
 
 /**
+ * The context key saying the configured connections have been listed.
+ *
+ * The view's welcome content is two messages and this is what picks
+ * between them. The list comes from the MCP server, which has to be
+ * found and started first, so an empty tree means "not asked yet" for
+ * as long as that takes - and telling the user in that window that
+ * nothing is configured would be telling them something untrue. It
+ * lives here rather than with the settings keys because nothing
+ * configures it: the tree is what knows.
+ */
+export const CONNECTIONS_LISTED_CONTEXT_KEY = "mariadb.connectionsListed";
+
+/**
  * Feeds the Connections view in the primary sidebar.
  *
  * The shape of the tree lives in ConnectionsModel; this only turns its
@@ -43,6 +56,8 @@ export class ConnectionsTreeProvider
     readonly #onDidChangeTreeData =
         new vscode.EventEmitter<ConnectionsNode | undefined>();
     readonly #unsubscribe: () => void;
+    /** Whether the roots have been asked for and answered, once. */
+    #listed = false;
 
     public readonly onDidChangeTreeData = this.#onDidChangeTreeData.event;
 
@@ -93,14 +108,41 @@ export class ConnectionsTreeProvider
         node?: ConnectionsNode,
     ): Promise<ConnectionsNode[]> {
         try {
-            return node === undefined
-                ? await this.#model.getRoots()
-                : await this.#model.getChildren(node);
+            if (node !== undefined) {
+                return await this.#model.getChildren(node);
+            }
+
+            const roots = await this.#model.getRoots();
+            this.#markListed();
+
+            return roots;
         } catch (error) {
             this.#report("populate the Connections view", error);
+            // The attempt is over, however it went. A view left saying
+            // it is still looking would be as wrong as one saying
+            // nothing is configured, and the failure has been reported.
+            this.#markListed();
 
             return [];
         }
+    }
+
+    /**
+     * Says, once, that the configured connections have been listed.
+     *
+     * @returns Nothing.
+     */
+    #markListed(): void {
+        if (this.#listed) {
+            return;
+        }
+
+        this.#listed = true;
+        void vscode.commands.executeCommand(
+            "setContext",
+            CONNECTIONS_LISTED_CONTEXT_KEY,
+            true,
+        );
     }
 
     /**
