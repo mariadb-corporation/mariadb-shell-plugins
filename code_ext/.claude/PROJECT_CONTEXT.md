@@ -83,6 +83,33 @@ change belongs to up to date, and this table with it.
   grid's mapping, formatters and cell callbacks are tested directly
   (`webview/test/ResultGrid.test.tsx`); its rendering is not.
 
+## Git state
+
+Checked at this checkpoint (2026-09-23):
+
+```
+$ git -C code_ext branch --show-current
+wip/code-ext
+
+$ git -C code_ext status --short
+(no output — clean)
+```
+
+- **The branch is `wip/code-ext`**, shared with [`mcp_plugin`](../../mcp_plugin):
+  a change needing both lands as one commit across the two. Pushed to
+  `origin/wip/code-ext` and in sync.
+- **`bc6c6aad` is the most recent** — "Keep the connection URI's scheme, so a
+  tunnel can be asked for". It raised `MINIMUM_SHELL_VERSION` to 26.9.3, gave
+  the connection editor its SSH tab, and taught `connectionUri.ts` the five
+  schemes and the `ssh-*` options; the server side of it is the plugin now
+  storing a URI's scheme rather than stripping it. Everything about the editor
+  is in [`context/connections.md`](context/connections.md).
+- Before it: `4f6b10e7` (the result view's output), `11450e44` (the Connections
+  view's welcome content), `87d6679e` (per-statement warnings), `12bf566f`
+  (paging the result tabs), `c2aa2f03` (connection activity logging).
+- Suite at this checkpoint: **794 pass across 41 files**, `npm run pretest`
+  (typecheck + eslint) and `npm run build` clean.
+
 ## Conventions
 
 - Four space indentation, double quotes, trailing semicolons, 80 columns.
