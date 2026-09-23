@@ -43,7 +43,10 @@ drives the shell lookup:
 
 1. **PATH** — run `mariadb-shell --version` (`mariadb-shell.exe` on
    Windows) and accept it if it reports at least `MINIMUM_SHELL_VERSION`
-   (currently **26.9.2**).
+   (currently **26.9.3**, and a HARD floor rather than a preference since
+   that release: it is the first shell whose parser accepts `mariadb://`,
+   and the MCP plugin stores connection URIs WITH their scheme from there
+   on, so an older shell cannot parse what it is handed).
 2. **Local installation** — look under the prefix the installer uses,
    `~/.local/share/mariadb-shell/<version>` on macOS and Linux and
    `%LOCALAPPDATA%\Programs\mariadb-shell\<version>` on Windows, honouring
@@ -96,6 +99,14 @@ autonomous agent, and that changes two things about the server:
   it needs, since a connection is deleted from the list it is in. The same
   server may be in both under different credentials; `db.connect` then
   opens the `gui` one.
+
+  What it reports is `scheme://user@host:port` from shell 26.9.3 on. A
+  connection configured before that is stored WITHOUT a scheme and is
+  reported with `mariadb://` filled in — the key is left alone, so nothing
+  had to migrate, and every tool resolves either spelling back to it. The
+  one place the difference shows in the extension is a URI IT wrote down
+  earlier: see `withDefaultScheme` in
+  [`connections.md`](connections.md).
 
 `MCP_SERVER_ARGS` in `src/shell/constants.ts` is where the flag is passed.
 A shell whose MCP plugin predates it **ignores it rather than failing** (the

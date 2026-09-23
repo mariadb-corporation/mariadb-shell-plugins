@@ -30,7 +30,11 @@ setup installs is in [migrator.md](migrator.md).
     ends up added, and `--removeMigrator --installMigrator` is the REINSTALL idiom rather
     than a contradiction. Fail-fast, leaving what succeeded in place.
   - **Adding an already-configured connection UPDATES its password** and says "updated" —
-    a provisioning script has to be safe to run twice.
+    a provisioning script has to be safe to run twice. That now holds across the
+    scheme change too: a connection configured before schemes were kept is stored under a
+    scheme-less key, and adding it again writes the canonical key and DELETES the old one
+    (`config.drop_superseded_spellings`), saying which spelling it replaced. Without that
+    the two would sit side by side and resolve to neither.
   - `--show` is exclusive of the action options; `--json` only applies to `--show` and
     prints nothing else on stdout so the whole of it parses.
   - **`_cli_name()` renders option names as the generated help spells them** (camelCase:

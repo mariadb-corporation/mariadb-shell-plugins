@@ -234,3 +234,13 @@ Stored in the `mariadb.defaultConnection` setting — in the workspace where
 there is one, so a project can default to its own database, and in the user
 settings otherwise. Set and cleared from a connection's context menu in the
 tree, and honoured by every SQL editor that has not picked its own.
+
+**It is the one URI the extension writes down itself, which is why it needs
+`withDefaultScheme`.** A setting written before shell 26.9.3 holds a
+scheme-less URI, and `db.list_connections` now reports every connection with a
+scheme, so a plain `===` would stop matching and the tree's default marker
+would quietly disappear — nothing fails, the star is just gone.
+`ConnectionsModel.getRoots` puts BOTH sides through the fill-in, which also
+covers the mirror case: a setting written now, against a connection still
+stored without one. Everything else that reads the setting hands it to
+`db.connect`, which resolves it server-side, so it needs nothing.

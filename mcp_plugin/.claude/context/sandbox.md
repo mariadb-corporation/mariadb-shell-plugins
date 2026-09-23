@@ -125,7 +125,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 1. **DECIDE: should `sandbox.deploy` / `sandbox.delete` survive an unusable secret store?**
    Found on Windows, NOT fixed, because it is pre-existing code outside the feature and
    changing it is the user's call. Both do their real work and THEN raise — `deploy` on
-   `config.store_connection`, `delete` on `config.list_connection_uris` — so a successful
+   `config.store_connection`, `delete` on `config.resolve_connection_uri` (it was
+   `list_connection_uris` before the scheme change) — so a successful
    deploy is reported as a failure while leaving a server running, and the client is never
    told the port. The download feature makes this far likelier to bite: machines with no
    MariaDB are exactly the ones that have not run `mcp.setup`. Options if the user wants
