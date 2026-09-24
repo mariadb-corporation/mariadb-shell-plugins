@@ -61,11 +61,22 @@ export interface IBusyMessage {
     busy: boolean;
 }
 
+/**
+ * What the clipboard held when the webview asked for it. A webview cannot
+ * read the clipboard itself without the user pressing the paste keys, so the
+ * Paste button asks the host.
+ */
+export interface IClipboardMessage {
+    type: "clipboard";
+    text: string;
+}
+
 export type EditorHostMessage =
     | ILoadMessage
     | ITestResultMessage
     | ISaveErrorMessage
-    | IBusyMessage;
+    | IBusyMessage
+    | IClipboardMessage;
 
 /** The webview is up and wants its state. */
 export interface IReadyMessage {
@@ -89,6 +100,11 @@ export interface ISaveMessage {
     mcpAccess: boolean;
 }
 
+/** Send the clipboard's text, to be taken as a connection URI. */
+export interface IPasteMessage {
+    type: "paste";
+}
+
 /** Close without saving. */
 export interface ICancelMessage {
     type: "cancel";
@@ -98,4 +114,5 @@ export type EditorWebviewMessage =
     | IReadyMessage
     | ITestMessage
     | ISaveMessage
+    | IPasteMessage
     | ICancelMessage;

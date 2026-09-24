@@ -171,6 +171,12 @@
         "icon": "$(edit)"
       },
       {
+        "command": "mariadb.copyConnectionUri",
+        "title": "Copy Connection URI",
+        "category": "MariaDB",
+        "icon": "$(copy)"
+      },
+      {
         "command": "mariadb.addConnection",
         "title": "Add Connection",
         "category": "MariaDB",
@@ -333,6 +339,11 @@
           "command": "mariadb.deleteConnection",
           "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
           "group": "3_manage@2"
+        },
+        {
+          "command": "mariadb.copyConnectionUri",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "4_clipboard@1"
         }
       ],
       "editor/title": [
@@ -425,6 +436,10 @@
         },
         {
           "command": "mariadb.deleteConnection",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.copyConnectionUri",
           "when": "false"
         }
       ]

@@ -25,6 +25,9 @@
  * pulling in Tabulator's.
  */
 
+/* The icon font VS Code draws its own buttons with. */
+@import "@vscode/codicons/dist/codicon.css";
+
 * {
     box-sizing: border-box;
 }
@@ -62,10 +65,6 @@ body {
     font-weight: 600;
 }
 
-.editor-subtitle {
-    margin: 0.25rem 0 0;
-    color: var(--vscode-descriptionForeground);
-}
 
 /* --- tabs ------------------------------------------------------------- */
 
@@ -96,10 +95,53 @@ body {
     font-weight: 600;
 }
 
+/* Holds the scrolling tab body and the fades laid over its edges. */
+.tab-scroller {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .tab-body {
     flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     padding-top: 0.5rem;
+}
+
+/*
+ * A fade over whichever edge has fields cut off past it, into the page's
+ * own background so it works in every theme. It lets clicks through. Its
+ * right edge is set inline to the scrollbar's measured width, so it stops
+ * at a classic scrollbar and runs to the edge under an overlay one.
+ */
+.scroll-fade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 4rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+}
+
+.scroll-fade.shown {
+    opacity: 1;
+}
+
+.scroll-fade.top {
+    top: 0;
+    height: 2.5rem;
+    background: linear-gradient(to top, transparent,
+            var(--vscode-editor-background));
+}
+
+.scroll-fade.bottom {
+    bottom: 0;
+    background: linear-gradient(to bottom, transparent,
+            var(--vscode-editor-background));
 }
 
 /* --- fields ----------------------------------------------------------- */
@@ -194,6 +236,65 @@ button:disabled {
     margin: 0;
     color: var(--vscode-descriptionForeground);
     font-size: 0.9em;
+}
+
+/* --- the connection URI --------------------------------------------- */
+
+.uri {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.uri-input {
+    font-family: var(--vscode-editor-font-family, monospace);
+}
+
+/*
+ * An icon button, square and as tall as the input beside it, so the row
+ * never has to wrap a caption.
+ */
+.icon-button {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem;
+    line-height: 1;
+}
+
+.uri-input.invalid {
+    border-color: var(--vscode-inputValidation-errorBorder, #f14c4c);
+}
+
+.uri-note {
+    margin: 0;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+}
+
+.uri-problem {
+    padding: 0.35rem 0.75rem;
+    border-left: 3px solid var(--vscode-errorForeground, #f14c4c);
+    background: var(--vscode-textBlockQuote-background);
+    color: var(--vscode-errorForeground);
+}
+
+.uri-problem p {
+    margin: 0 0 0.25rem;
+}
+
+.uri-problem code {
+    display: block;
+    overflow-wrap: anywhere;
+    color: var(--vscode-foreground);
+    font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.uri-problem mark {
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    color: inherit;
+    text-decoration: underline wavy var(--vscode-errorForeground, #f14c4c);
 }
 
 /* --- the other-options table ------------------------------------------ */

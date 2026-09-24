@@ -70,6 +70,38 @@ Five things about it are load bearing:
   its URI and by which list it is in, so changing the host or the MCP checkbox
   moves it. That is what `db.update_connection` is for: it moves the secret
   server-side, so an edit does not make the user retype the password.
+- **The URI is shown, and editable, above the tabs.** It shows
+  `previewConnectionUri(fields)` - the fields written out UNVALIDATED, so a
+  new connection reads `mariadb://@localhost:3306` rather than nothing -
+  with `buildConnectionUri`'s complaint as a muted note beneath. Typing into
+  it, or Paste URI (the host reads `vscode.env.clipboard`: a webview cannot
+  read it on a button press), goes through `checkConnectionUri`, the STRICT
+  counterpart of `parseConnectionUri`: a sound URI replaces the fields, an
+  unsound one is kept as a draft with the fields left as they were, and the
+  problem carries a `start`/`end` so the editor marks the offending part and
+  selects it. While a draft does not parse, Save / Create and Test
+  Connection refuse and select the problem instead of posting - they would
+  otherwise quietly act on the older fields. Editing any field drops the
+  draft; a sound draft gives way to the canonical spelling on blur. A
+  password in a typed or pasted URI is MOVED: `checkConnectionUri` returns
+  it separately (decoded; `dba:@db` is the empty password, not none), never
+  in `fields`, and the editor puts it in the Password field and drops the
+  draft at once, so the box stops showing it in the clear.
+- **The tab body says when it scrolls.** `.tab-body` is wrapped in
+  `.tab-scroller`, which lays a gradient (`.scroll-fade.top` / `.bottom`,
+  into `--vscode-editor-background`) over an edge only while content is
+  hidden past it. `useScrollFades` measures after every render AND on the
+  frame after, on scroll, on the area or its content resizing (content
+  re-watched by a MutationObserver when a tab switch swaps it), on window
+  resize, on fonts arriving, and on pointerenter as a last resort. That many
+  because a webview is sized and styled after its first render: with only
+  render + scroll + a ResizeObserver on the first content, a small window
+  showed no fade until the first scroll. Not reproduced outside VS Code -
+  plain Chrome under CDP showed the fade with late CSS, a hidden body and a
+  late resize alike. The fades' `right` is set inline to the measured
+  scrollbar width (`offsetWidth - clientWidth - borders`): 0 under macOS's
+  overlay scrollbars, where a fixed inset left an unfaded strip. There is no subtitle under the title any more - the
+  URI box says which connection is open.
 - **Saving does not verify**, as in the original. Test Connection is its own
   button; a server that is down must not stop its connection being configured.
 
@@ -143,7 +175,7 @@ Contributed into its own activity bar container, whose icon is the MariaDB
 seal (`images/mariadb-seal.svg`, kept as a vector). The tree is:
 
 ```
-dba@localhost:3310            connection (seal icon; "default" if default)
+dba@localhost:3310/world      connection (icon by scheme; "default" if default)
 └── world                     schema
     ├── Tables                object group, one per supported type
     │   └── city              object
@@ -161,6 +193,15 @@ dba@localhost:3310            connection (seal icon; "default" if default)
   disconnecting fires would open it straight back up.
 - A schema lists all seven object folders without querying anything; the
   query happens when a folder is opened.
+- **A connection row is labelled `connectionLabel(uri)`**: the URI without
+  its scheme and without its `?options`, so `user@host:port/schema`. The
+  scheme is shown by the icon instead - `connectionMariaDB`,
+  `connectionMariaDBSSH`, `connectionMySQL`, `connectionMySQLSSH` (`mysqlx`
+  borrows the MySQL one) - and the whole URI is the tooltip and what
+  Copy Connection URI puts on the clipboard. Two connections differing only
+  in scheme or options can therefore share a label; it is a caption, never
+  a key - everything still goes by `node.uri`. `mariadbConnection.svg` is
+  now only the view container's icon in `package.json`.
 - Icons are the MySQL Shell extension's, copied into `images/light` and
   `images/dark`. The upstream set has no sequence icon, so sequences fall
   back to the `symbol-numeric` codicon. Upstream's `light/schemaPrcoedure.svg`

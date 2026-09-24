@@ -41,6 +41,7 @@ import {
     setWorkspaceFolders,
     statusBarItems,
     statusBarMessages,
+    env,
     treeViews,
     Uri,
     withProgressCalls,
@@ -216,6 +217,7 @@ describe("activate", () => {
             "mariadb.clearDefaultConnection",
             "mariadb.clearResultView",
             "mariadb.connect",
+            "mariadb.copyConnectionUri",
             "mariadb.deleteConnection",
             "mariadb.disconnect",
             "mariadb.editConnection",
@@ -480,6 +482,20 @@ describe("activate", () => {
             expect(outputChannels[0].lines.join("\n"))
                 .toContain("The MCP server could not be started: "
                     + "MariaDB Shell 26.9.4 could not be installed");
+        });
+
+    it("copies a connection's whole URI, which the tree shortens",
+        async () => {
+            activate(createContext() as never);
+
+            await mockCommands.executeCommand("mariadb.copyConnectionUri", {
+                kind: "connection",
+                uri: "mariadb+ssh://dba@db:3310/world?ssh-host=bastion",
+            });
+
+            expect(env.clipboard.text)
+                .toBe("mariadb+ssh://dba@db:3310/world?ssh-host=bastion");
+            expect(statusBarMessages.at(-1)).toContain("Copied");
         });
 
     it("stores the default connection in the settings", async () => {

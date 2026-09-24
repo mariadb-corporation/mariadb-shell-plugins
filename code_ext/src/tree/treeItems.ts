@@ -17,6 +17,7 @@
 
 import * as vscode from "vscode";
 
+import { connectionLabel, schemeOf } from "../connections/connectionUri.js";
 import type { ObjectType } from "../mcp/types.js";
 import {
     OBJECT_GROUP_LABELS,
@@ -77,6 +78,18 @@ const OBJECT_ICONS: Record<ObjectType, string | vscode.ThemeIcon> = {
 };
 
 /**
+ * The icon shown for a connection, by the scheme of its URI. `mysqlx` has
+ * no picture of its own; it is MySQL's protocol, so it borrows MySQL's.
+ */
+const CONNECTION_ICONS: Record<string, string> = {
+    "mariadb": "connectionMariaDB.svg",
+    "mariadb+ssh": "connectionMariaDBSSH.svg",
+    "mysql": "connectionMySQL.svg",
+    "mysql+ssh": "connectionMySQLSSH.svg",
+    "mysqlx": "connectionMySQL.svg",
+};
+
+/**
  * The base of every item in the Connections tree, holding the node it
  * stands for and the icon lookup they all share.
  */
@@ -115,8 +128,11 @@ export class ConnectionTreeItem
     extends ConnectionBaseTreeItem<IConnectionNode> {
 
     public constructor(node: IConnectionNode, resolveIcon: IconResolver) {
-        super(node, node.uri, "mariadbConnection.svg", node.expandable,
-            resolveIcon);
+        // The label leaves out what the icon and the tooltip already say -
+        // the scheme and the options - so the row stays short.
+        super(node, connectionLabel(node.uri),
+            CONNECTION_ICONS[schemeOf(node.uri)] ?? "connectionMariaDB.svg",
+            node.expandable, resolveIcon);
 
         this.contextValue = [
             "mariadbConnection",

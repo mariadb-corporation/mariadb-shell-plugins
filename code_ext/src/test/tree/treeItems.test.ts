@@ -56,14 +56,48 @@ const connection = (
 };
 
 describe("createTreeItem for a connection", () => {
-    it("shows the URI with the seal icon", () => {
+    it("shows a URI without a scheme with the MariaDB icon", () => {
+        // One stored before the scheme was kept, which means mariadb://.
         const item = createTreeItem(connection(), resolveIcon);
 
         expect(item.label).toBe("dba@localhost:3310");
         expect(item.iconPath).toEqual({
-            light: Uri.file("/ext/images/light/mariadbConnection.svg"),
-            dark: Uri.file("/ext/images/dark/mariadbConnection.svg"),
+            light: Uri.file("/ext/images/light/connectionMariaDB.svg"),
+            dark: Uri.file("/ext/images/dark/connectionMariaDB.svg"),
         });
+    });
+
+    it("picks the icon by scheme and leaves the scheme out of the label",
+        () => {
+            for (const [scheme, icon] of [
+                ["mariadb", "connectionMariaDB.svg"],
+                ["mariadb+ssh", "connectionMariaDBSSH.svg"],
+                ["mysql", "connectionMySQL.svg"],
+                ["mysql+ssh", "connectionMySQLSSH.svg"],
+                ["mysqlx", "connectionMySQL.svg"],
+                ["MySQL+SSH", "connectionMySQLSSH.svg"],
+            ]) {
+                const item = createTreeItem(
+                    connection({ uri: `${scheme}://dba@localhost:3310` }),
+                    resolveIcon,
+                );
+
+                expect(item.label).toBe("dba@localhost:3310");
+                expect(item.iconPath).toEqual({
+                    light: Uri.file(`/ext/images/light/${icon}`),
+                    dark: Uri.file(`/ext/images/dark/${icon}`),
+                });
+            }
+        });
+
+    it("shows the port and schema but not the options", () => {
+        const uri = "mariadb+ssh://dba@db:3310/world"
+            + "?ssh-host=bastion&ssl-mode=REQUIRED";
+        const item = createTreeItem(connection({ uri }), resolveIcon);
+
+        expect(item.label).toBe("dba@db:3310/world");
+        // The tooltip is where the whole of it is still to be read.
+        expect(item.tooltip).toBe(uri);
     });
 
     it("has no twistie where the model says it has nothing to show", () => {

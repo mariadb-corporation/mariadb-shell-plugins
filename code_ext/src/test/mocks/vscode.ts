@@ -963,6 +963,9 @@ export const env = {
 
             return Promise.resolve();
         },
+        readText: (): Promise<string> => {
+            return Promise.resolve(env.clipboard.text);
+        },
     },
 };
 

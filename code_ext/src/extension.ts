@@ -359,6 +359,21 @@ export const activate = (context: vscode.ExtensionContext): void => {
         ),
 
         vscode.commands.registerCommand(
+            "mariadb.copyConnectionUri",
+            async (node?: IConnectionNode) => {
+                if (node === undefined) {
+                    return;
+                }
+
+                // The tree shows a shortened URI, so this is where the whole
+                // of it - scheme and options included - can be had.
+                await vscode.env.clipboard.writeText(node.uri);
+                vscode.window.setStatusBarMessage(
+                    "MariaDB: Copied the connection URI.", 3000);
+            },
+        ),
+
+        vscode.commands.registerCommand(
             "mariadb.connect",
             async (node?: IConnectionNode) => {
                 await guard(log, async () => {

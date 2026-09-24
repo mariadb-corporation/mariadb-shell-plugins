@@ -420,23 +420,17 @@ const validate = (
 };
 
 /**
- * Builds the connection URI the editor's fields describe.
+ * Writes the fields and options out as a URI, checking nothing.
  *
  * @param fields The editor's fields.
+ * @param options The options collected from them.
  *
- * @returns The URI, or the reason the fields do not name a connection. A
- *          password is never part of it: the MCP server refuses a URI that
- *          carries one, and it is stored separately.
+ * @returns The URI.
  */
-export const buildConnectionUri = (
+const composeUri = (
     fields: IConnectionFields,
-): IBuildResult => {
-    const options = optionsOf(fields);
-    const error = validate(fields, options);
-    if (error !== undefined) {
-        return { error };
-    }
-
+    options: Map<string, string>,
+): string => {
     let uri = fields.scheme === "" ? "" : `${fields.scheme}://`;
     uri += encodeComponent(fields.user.trim());
     uri += "@";
@@ -473,7 +467,43 @@ export const buildConnectionUri = (
         uri += `?${query}`;
     }
 
-    return { uri };
+    return uri;
+};
+
+/**
+ * Builds the connection URI the editor's fields describe.
+ *
+ * @param fields The editor's fields.
+ *
+ * @returns The URI, or the reason the fields do not name a connection. A
+ *          password is never part of it: the MCP server refuses a URI that
+ *          carries one, and it is stored separately.
+ */
+export const buildConnectionUri = (
+    fields: IConnectionFields,
+): IBuildResult => {
+    const options = optionsOf(fields);
+    const error = validate(fields, options);
+    if (error !== undefined) {
+        return { error };
+    }
+
+    return { uri: composeUri(fields, options) };
+};
+
+/**
+ * The URI the fields spell, whether or not it names a connection.
+ *
+ * What the editor shows while the user is still filling the fields in: a
+ * new connection has no user yet, and a URI reading `mariadb://@localhost`
+ * says so more plainly than an empty box would.
+ *
+ * @param fields The editor's fields.
+ *
+ * @returns The URI, unvalidated.
+ */
+export const previewConnectionUri = (fields: IConnectionFields): string => {
+    return composeUri(fields, optionsOf(fields));
 };
 
 /**
@@ -618,4 +648,302 @@ export const parseConnectionUri = (uri: string): IConnectionFields => {
  */
 export const isExtraOption = (name: string): boolean => {
     return !DEDICATED_OPTIONS.has(name);
+};
+
+/**
+ * The scheme a URI names, lowercased, or {@link DEFAULT_SCHEME} where it
+ * names none.
+ *
+ * @param uri The URI to read.
+ *
+ * @returns The scheme.
+ */
+export const schemeOf = (uri: string): string => {
+    const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(uri.trim());
+
+    return scheme ? scheme[1]!.toLowerCase() : DEFAULT_SCHEME;
+};
+
+/**
+ * What a connection is called where there is little room for it: the URI
+ * without its scheme and without its options, so `user@host:port/schema`.
+ *
+ * The scheme is left to an icon and the options to a tooltip. Two
+ * connections differing only in either come out the same here, which is
+ * why this is a caption and never a key.
+ *
+ * @param uri The connection's URI.
+ *
+ * @returns The caption.
+ */
+export const connectionLabel = (uri: string): string => {
+    let label = uri.trim().replace(SCHEME_PREFIX, "");
+    const query = label.indexOf("?");
+    if (query >= 0) {
+        label = label.slice(0, query);
+    }
+
+    // A socket path is stored percent-encoded, which nobody wants to read.
+    try {
+        return decodeURIComponent(label);
+    } catch {
+        return label;
+    }
+};
+
+/** Where in a URI the text is wrong, and what is wrong with it. */
+export interface IUriProblem {
+    message: string;
+    /** The offset of the first offending character in the text checked. */
+    start: number;
+    /** The offset just past the last one; never before `start`. */
+    end: number;
+}
+
+/** What `checkConnectionUri` answers with: one of the two is set. */
+export interface IUriCheck {
+    fields?: IConnectionFields;
+    /**
+     * The password the URI carried, if it had one. It is taken out rather
+     * than refused - a URI copied from elsewhere often has one - and is NOT
+     * in `fields`, which never hold a password.
+     */
+    password?: string;
+    problem?: IUriProblem;
+}
+
+/**
+ * Whether a port is a number the shell accepts.
+ *
+ * @param port The port as written.
+ *
+ * @returns True for 1 to 65535.
+ */
+const isPort = (port: string): boolean => {
+    if (!/^\d+$/.test(port)) {
+        return false;
+    }
+    const value = Number(port);
+
+    return value >= 1 && value <= 65535;
+};
+
+/**
+ * Whether a component's percent-encoding decodes.
+ *
+ * @param component The component as written.
+ *
+ * @returns True when `decodeURIComponent` accepts it.
+ */
+const decodes = (component: string): boolean => {
+    try {
+        decodeURIComponent(component);
+
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+/**
+ * Checks a URI the user typed or pasted, and takes it apart if it is sound.
+ *
+ * `parseConnectionUri` is lenient on purpose - it has to open the editor on
+ * whatever is stored. This is its strict counterpart for text coming the
+ * other way: it refuses what the shell would refuse, and says WHERE, so the
+ * editor can select the offending part rather than only describe it.
+ *
+ * @param text The URI as typed. Surrounding blanks are ignored.
+ *
+ * @returns The fields it describes and any password it carried, or the
+ *          problem with it.
+ */
+export const checkConnectionUri = (text: string): IUriCheck => {
+    const base = text.length - text.trimStart().length;
+    const uri = text.trim();
+    const fail = (message: string, start: number, end: number): IUriCheck => {
+        return {
+            problem: {
+                message,
+                start: base + start,
+                end: base + Math.max(start, end),
+            },
+        };
+    };
+
+    if (uri === "") {
+        return fail("Type or paste a connection URI, as "
+            + "mariadb://user@host:port/schema.", 0, 0);
+    }
+
+    let position = 0;
+    const scheme = /^([^:/?@]*):\/\//.exec(uri);
+    if (scheme) {
+        const name = scheme[1]!.toLowerCase();
+        if (!CONNECTION_SCHEMES.includes(name as ConnectionScheme)) {
+            return fail(`'${scheme[1]!}' is not a protocol the shell accepts. `
+                + `Use one of ${CONNECTION_SCHEMES.join(", ")}.`,
+            0, scheme[1]!.length);
+        }
+        position = scheme[0].length;
+    }
+
+    const query = uri.indexOf("?", position);
+    const authorityEnd = query < 0 ? uri.length : query;
+
+    const at = uri.lastIndexOf("@", authorityEnd - 1);
+    if (at < position) {
+        return fail("A user name is required: the URI has to read "
+            + "user@host.", position, authorityEnd);
+    }
+
+    const credentials = uri.slice(position, at);
+    if (credentials === "") {
+        return fail("The user name before the '@' is empty.", position,
+            at + 1);
+    }
+
+    // `user:password`, split on the first colon: a user name cannot hold
+    // one unencoded, a password can.
+    const colon = credentials.indexOf(":");
+    const user = colon < 0 ? credentials : credentials.slice(0, colon);
+    if (user === "") {
+        return fail("The user name before the password is empty.", position,
+            position + 1);
+    }
+    if (!decodes(user)) {
+        return fail(`'${user}' is not validly percent-encoded.`,
+            position, position + user.length);
+    }
+
+    let password: string | undefined;
+    if (colon >= 0) {
+        const raw = credentials.slice(colon + 1);
+        if (!decodes(raw)) {
+            return fail("The password is not validly percent-encoded.",
+                position + colon + 1, at);
+        }
+        password = decodeURIComponent(raw);
+    }
+
+    const hostStart = at + 1;
+    const address = uri.slice(hostStart, authorityEnd);
+    if (address === "") {
+        return fail("A host name, an IP address or a socket is required "
+            + "after the '@'.", at, hostStart);
+    }
+
+    // A path straight after the `@` is a socket, as is a component holding
+    // an encoded separator. Neither has a port or a schema to check.
+    const isSocket = address.startsWith("/")
+        || /%2f/i.test(address.split("/")[0]!);
+    if (isSocket) {
+        if (!decodes(address)) {
+            return fail(`'${address}' is not validly percent-encoded.`,
+                hostStart, authorityEnd);
+        }
+    } else {
+        const slash = address.indexOf("/");
+        const hostPort = slash < 0 ? address : address.slice(0, slash);
+
+        let portAt = -1;
+        if (hostPort.startsWith("[")) {
+            const close = hostPort.indexOf("]");
+            if (close < 0) {
+                return fail("The IPv6 address is missing its closing ']'.",
+                    hostStart, hostStart + hostPort.length);
+            }
+            const tail = hostPort.slice(close + 1);
+            if (tail !== "" && !tail.startsWith(":")) {
+                return fail(`'${tail}' cannot follow the IPv6 address; a `
+                    + "port is written ':port'.", hostStart + close + 1,
+                hostStart + hostPort.length);
+            }
+            portAt = tail === "" ? -1 : close + 1;
+        } else {
+            portAt = hostPort.lastIndexOf(":");
+            if (portAt === 0) {
+                return fail("The host name before the port is empty.",
+                    hostStart, hostStart + 1);
+            }
+            if (!decodes(portAt < 0 ? hostPort : hostPort.slice(0, portAt))) {
+                return fail("The host name is not validly percent-encoded.",
+                    hostStart, hostStart + (portAt < 0
+                        ? hostPort.length
+                        : portAt));
+            }
+        }
+
+        if (portAt >= 0) {
+            const port = hostPort.slice(portAt + 1);
+            if (!isPort(port)) {
+                return fail(`'${port}' is not a port number between 1 and `
+                    + "65535.", hostStart + portAt + 1,
+                hostStart + hostPort.length);
+            }
+        }
+
+        if (slash >= 0) {
+            const schema = address.slice(slash + 1);
+            if (!decodes(schema)) {
+                return fail(`'${schema}' is not validly percent-encoded.`,
+                    hostStart + slash + 1, authorityEnd);
+            }
+        }
+    }
+
+    const tunnels = usesSshTunnel(scheme ? scheme[1]!.toLowerCase() : "");
+    const seen = new Set<string>();
+    let pairStart = authorityEnd + 1;
+    for (const pair of query < 0 ? [] : uri.slice(query + 1).split("&")) {
+        const pairEnd = pairStart + pair.length;
+        const equals = pair.indexOf("=");
+        const rawName = equals < 0 ? pair : pair.slice(0, equals);
+        const nameEnd = pairStart + rawName.length;
+
+        if (pair === "") {
+            pairStart = pairEnd + 1;
+            continue;
+        }
+
+        if (!decodes(pair)) {
+            return fail(`'${pair}' is not validly percent-encoded.`,
+                pairStart, pairEnd);
+        }
+
+        const name = decodeURIComponent(rawName).toLowerCase();
+        if (!(URI_OPTIONS as readonly string[]).includes(name)) {
+            return fail(`'${rawName}' is not a connection option a URI can `
+                + "carry.", pairStart, nameEnd);
+        }
+        if (seen.has(name)) {
+            return fail(`'${rawName}' is given more than once.`, pairStart,
+                nameEnd);
+        }
+        seen.add(name);
+
+        if (name in SSH_URI_OPTIONS && !tunnels) {
+            return fail(`'${rawName}' needs an SSH tunnel, which only a `
+                + "'+ssh' protocol asks for.", pairStart, nameEnd);
+        }
+
+        if (name === "ssh-port"
+            && !isPort(decodeURIComponent(pair.slice(equals + 1)))) {
+            return fail("The SSH port is not a number between 1 and 65535.",
+                nameEnd + 1, pairEnd);
+        }
+
+        pairStart = pairEnd + 1;
+    }
+
+    const fields = parseConnectionUri(uri);
+
+    // Whatever the checks above let through and the builder still refuses
+    // has no single place to point at, so the whole URI is marked.
+    const built = buildConnectionUri(fields);
+    if (built.error !== undefined) {
+        return fail(built.error, 0, uri.length);
+    }
+
+    return password === undefined ? { fields } : { fields, password };
 };
