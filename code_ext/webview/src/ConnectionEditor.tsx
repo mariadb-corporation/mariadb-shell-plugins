@@ -570,8 +570,8 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                     Stores it in the shared MCP connection list, so
                                     any MCP client on this machine - an AI
                                     assistant, say - can open it with the
-                                    credentials kept here. Left unticked it belongs
-                                    to this extension alone.
+                                    credentials kept here. Left unticked if it
+                                    belongs to this extension alone.
                                 </p>
                             </div>
                         </section>
