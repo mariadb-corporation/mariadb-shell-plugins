@@ -151,6 +151,16 @@ export const managedBinaryPath = (
     );
 };
 
+/** Where the locator says what it looked at and why it passed it over. */
+export type LocatorLog = (message: string) => void;
+
+const ignore: LocatorLog = () => { /* not wanted */ };
+
+/** A probed binary: the version it is, or why it cannot be used. */
+type ProbeOutcome =
+    | { version: ShellVersion; problem?: undefined }
+    | { version?: undefined; problem: string };
+
 /**
  * Probes a binary and returns its version if it is new enough.
  *
@@ -158,25 +168,36 @@ export const managedBinaryPath = (
  * @param binaryPath The executable to probe.
  * @param minimum The lowest acceptable version.
  *
- * @returns The reported version, or undefined if the binary is missing,
- *          unreadable or too old.
+ * @returns The reported version, or why the binary is missing, unreadable
+ *          or too old.
  */
-const probeIfUsable = async (
+const probe = async (
     environment: ShellEnvironment,
     binaryPath: string,
     minimum: ShellVersion,
-): Promise<ShellVersion | undefined> => {
+): Promise<ProbeOutcome> => {
     const output = await environment.probeVersion(binaryPath);
     if (output === undefined) {
-        return undefined;
+        return { problem: "could not be run" };
     }
 
     const version = parseShellVersionOutput(output);
-    if (!version || !meetsMinimum(version, minimum)) {
-        return undefined;
+    if (!version) {
+        const first = output.trim().split("\n")[0];
+
+        return {
+            problem: `printed no version that could be read ("${first}")`,
+        };
     }
 
-    return version;
+    if (!meetsMinimum(version, minimum)) {
+        return {
+            problem: `is ${formatVersion(version)}, older than the `
+                + `${formatVersion(minimum)} this extension needs`,
+        };
+    }
+
+    return { version };
 };
 
 /**
@@ -184,20 +205,30 @@ const probeIfUsable = async (
  *
  * @param environment The environment to search in.
  * @param minimum The lowest acceptable version.
+ * @param log Where to say what was found there.
  *
  * @returns The location, or undefined if the PATH holds no usable shell.
  */
 export const findShellOnPath = async (
     environment: ShellEnvironment,
     minimum: ShellVersion,
+    log: LocatorLog = ignore,
 ): Promise<ShellLocation | undefined> => {
     const binaryPath = shellBinaryName(environment.platform);
-    const version = await probeIfUsable(environment, binaryPath, minimum);
-    if (!version) {
+    // The PATH an editor started from the dock or the start menu sees is
+    // not necessarily the terminal's, and it is the first thing to check
+    // when a shell that is installed was not found.
+    const searched = environment.env.PATH ?? environment.env.Path ?? "";
+    log(`Looking for ${binaryPath} on the PATH: ${searched}`);
+
+    const outcome = await probe(environment, binaryPath, minimum);
+    if (!outcome.version) {
+        log(`  ${binaryPath} on the PATH ${outcome.problem}; not used.`);
+
         return undefined;
     }
 
-    return { binaryPath, version, source: "path" };
+    return { binaryPath, version: outcome.version, source: "path" };
 };
 
 /**
@@ -206,15 +237,20 @@ export const findShellOnPath = async (
  *
  * @param environment The environment to search in.
  * @param minimum The lowest acceptable version.
+ * @param log Where to say what was found there.
  *
  * @returns The location, or undefined if no installed version qualifies.
  */
 export const findManagedShell = async (
     environment: ShellEnvironment,
     minimum: ShellVersion,
+    log: LocatorLog = ignore,
 ): Promise<ShellLocation | undefined> => {
     const prefix = installPrefix(environment);
     const entries = await environment.listDirectories(prefix);
+    log(entries.length === 0
+        ? `No local installations in ${prefix}.`
+        : `Local installations in ${prefix}: ${entries.join(", ")}`);
 
     // Only directories that name a version are ours; anything else below the
     // prefix belongs to something we did not put there.
@@ -223,8 +259,18 @@ export const findManagedShell = async (
             return { name, version: parseVersion(name) };
         })
         .filter((entry): entry is { name: string; version: ShellVersion } => {
-            return entry.version !== undefined
-                && meetsMinimum(entry.version, minimum);
+            if (entry.version === undefined) {
+                return false;
+            }
+
+            if (!meetsMinimum(entry.version, minimum)) {
+                log(`  ${entry.name} is older than `
+                    + `${formatVersion(minimum)}; not used.`);
+
+                return false;
+            }
+
+            return true;
         })
         .sort((a, b) => {
             return compareVersions(b.version, a.version);
@@ -233,18 +279,20 @@ export const findManagedShell = async (
     for (const candidate of candidates) {
         const binaryPath = managedBinaryPath(environment, candidate.name);
         if (!await environment.pathExists(binaryPath)) {
+            log(`  ${candidate.name} has no ${binaryPath}; not used.`);
             continue;
         }
 
         // The directory name is only a hint - what the binary reports wins,
         // and a binary that cannot be run at all is skipped rather than
         // handed on to the MCP server.
-        const version = await probeIfUsable(environment, binaryPath, minimum);
-        if (!version) {
+        const outcome = await probe(environment, binaryPath, minimum);
+        if (!outcome.version) {
+            log(`  ${binaryPath} ${outcome.problem}; not used.`);
             continue;
         }
 
-        return { binaryPath, version, source: "managed" };
+        return { binaryPath, version: outcome.version, source: "managed" };
     }
 
     return undefined;
@@ -256,12 +304,14 @@ export const findManagedShell = async (
  *
  * @param environment The environment to search in.
  * @param minimumVersion The lowest acceptable version.
+ * @param log Where to say what was looked at and why it was passed over.
  *
  * @returns The location, or undefined if the shell has to be installed.
  */
 export const locateShell = async (
     environment: ShellEnvironment,
     minimumVersion: string,
+    log: LocatorLog = ignore,
 ): Promise<ShellLocation | undefined> => {
     const minimum = parseVersion(minimumVersion);
     if (!minimum) {
@@ -270,8 +320,8 @@ export const locateShell = async (
         );
     }
 
-    return await findShellOnPath(environment, minimum)
-        ?? await findManagedShell(environment, minimum);
+    return await findShellOnPath(environment, minimum, log)
+        ?? await findManagedShell(environment, minimum, log);
 };
 
 /**

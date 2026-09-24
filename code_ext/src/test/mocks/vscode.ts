@@ -24,6 +24,9 @@
  * is recorded so tests can assert on it.
  */
 
+/** The editor version `vscode.version` reports. */
+export const version = "1.139.0";
+
 export enum ProgressLocation {
     SourceControl = 1,
     Window = 10,
@@ -59,13 +62,14 @@ export interface Progress<T> {
 }
 
 export interface ProgressOptions {
-    location: ProgressLocation;
+    location: ProgressLocation | { viewId: string };
     title?: string;
     cancellable?: boolean;
 }
 
 export interface CancellationToken {
     isCancellationRequested: boolean;
+    onCancellationRequested(listener: () => void): Disposable;
 }
 
 export interface Disposable {
@@ -151,6 +155,8 @@ export class EventEmitter<T> {
 export interface WithProgressCall {
     options: ProgressOptions;
     reported: string[];
+    /** Presses the notification's Cancel button. */
+    cancel: () => void;
 }
 
 /** Every `withProgress` call made since the last `resetVscodeMock()`. */
@@ -792,7 +798,25 @@ export const window = {
             token: CancellationToken,
         ) => Thenable<T>,
     ): Promise<T> => {
-        const call: WithProgressCall = { options, reported: [] };
+        const listeners = new Set<() => void>();
+        const token: CancellationToken = {
+            isCancellationRequested: false,
+            onCancellationRequested: (listener) => {
+                listeners.add(listener);
+
+                return { dispose: () => { listeners.delete(listener); } };
+            },
+        };
+        const call: WithProgressCall = {
+            options,
+            reported: [],
+            cancel: () => {
+                token.isCancellationRequested = true;
+                for (const listener of [...listeners]) {
+                    listener();
+                }
+            },
+        };
         withProgressCalls.push(call);
 
         return await task(
@@ -803,7 +827,7 @@ export const window = {
                     }
                 },
             },
-            { isCancellationRequested: false },
+            token,
         );
     },
 };

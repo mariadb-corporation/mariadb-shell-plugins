@@ -23,10 +23,14 @@ import {
 } from "../../connections/connectionManager.js";
 import {
     ConnectionsTreeProvider,
-    CONNECTIONS_LISTED_CONTEXT_KEY,
+    CONNECTIONS_VIEW_STATE_CONTEXT_KEY,
     CONNECTIONS_VIEW_ID,
 } from "../../tree/connectionsTreeProvider.js";
 import type { IconResolver } from "../../tree/treeItems.js";
+import type {
+    IServerStatus,
+    ServerPhase,
+} from "../../mcp/serverStarter.js";
 import {
     createFakeApi,
     createFakeSettings,
@@ -47,11 +51,37 @@ const resolveIcon: IconResolver = (name: string) => {
 };
 
 /**
+ * @returns A server status whose phase a test moves by hand.
+ */
+const createStatus = (): IServerStatus & {
+    set(phase: ServerPhase): void;
+} => {
+    const listeners = new Set<(phase: ServerPhase) => void>();
+    const status = {
+        phase: "stopped" as ServerPhase,
+        onDidChangePhase: (listener: (phase: ServerPhase) => void) => {
+            listeners.add(listener);
+
+            return () => { listeners.delete(listener); };
+        },
+        set: (phase: ServerPhase) => {
+            status.phase = phase;
+            for (const listener of listeners) {
+                listener(phase);
+            }
+        },
+    };
+
+    return status;
+};
+
+/**
  * @param connectOnOpen Whether expanding a closed connection opens it.
+ * @param status The server startup the view follows, if any.
  *
  * @returns A provider over a fake server with one connection.
  */
-const createProvider = (connectOnOpen = false) => {
+const createProvider = (connectOnOpen = false, status?: IServerStatus) => {
     const api = createFakeApi({
         connections: ["dba@localhost:3310"],
         connectionIds: { "dba@localhost:3310": "uuid-dba" },
@@ -69,7 +99,8 @@ const createProvider = (connectOnOpen = false) => {
     );
     const log = createRecordingLog();
     const provider = new ConnectionsTreeProvider(
-        connections, resolveIcon, log, () => { return connectOnOpen; });
+        connections, resolveIcon, log, () => { return connectOnOpen; },
+        status);
 
     return { api, connections, provider, log };
 };
@@ -181,28 +212,79 @@ describe("ConnectionsTreeProvider", () => {
         // an empty tree means "not asked yet" until this comes back -
         // and the welcome content says so rather than claiming there is
         // nothing configured.
-        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY))
-            .toBeUndefined();
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("looking");
 
         answer();
         await expect(roots).resolves.toEqual([]);
 
-        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY)).toBe(true);
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("listed");
 
         provider.dispose();
     });
 
-    it("says it has asked even where the asking failed", async () => {
-        const { api, provider } = createProvider();
+    it("says the listing failed rather than that nothing is there",
+        async () => {
+            const { api, provider } = createProvider();
+            api.listConnections = () => {
+                return Promise.reject(new Error("the shell is not running"));
+            };
+
+            await provider.getChildren();
+
+            // A view left looking for ever would be as wrong as one
+            // saying nothing is there.
+            expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+                .toBe("failed");
+
+            provider.dispose();
+        });
+
+    it("says the shell is being installed while it is", () => {
+        const status = createStatus();
+        const { provider } = createProvider(false, status);
+
+        status.set("locating");
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("looking");
+
+        status.set("installing");
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("installing");
+
+        status.set("starting");
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("looking");
+
+        provider.dispose();
+    });
+
+    it("says a server that did not start failed", () => {
+        const status = createStatus();
+        const { provider } = createProvider(false, status);
+
+        status.set("locating");
+        status.set("failed");
+
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("failed");
+
+        provider.dispose();
+    });
+
+    it("goes back to looking when a failed start is retried", async () => {
+        const status = createStatus();
+        const { api, provider } = createProvider(false, status);
         api.listConnections = () => {
             return Promise.reject(new Error("the shell is not running"));
         };
-
         await provider.getChildren();
 
-        // A view left looking for ever would be as wrong as one saying
-        // nothing is there; the failure itself is reported separately.
-        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY)).toBe(true);
+        status.set("locating");
+
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("looking");
 
         provider.dispose();
     });
@@ -220,7 +302,7 @@ describe("ConnectionsTreeProvider", () => {
             expect(errorMessages)
                 .toEqual(["MariaDB: the shell is not running"]);
             expect(log.lines.join("\n"))
-                .toContain("Failed to populate the Connections view");
+                .toContain("Failed to list the connections");
 
             provider.dispose();
         });

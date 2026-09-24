@@ -15,7 +15,8 @@ extension grows.
 | --- | --- |
 | `src/extension.ts` | Activation entry point. Wires everything together and registers the commands. |
 | `src/shell/` | Finding, installing and launching the MariaDB Shell. |
-| `src/mcp/` | The MCP client: session lifecycle, wire decoding, typed `db.*` API. |
+| `src/mcp/` | The MCP client: the one-at-a-time server startup, session lifecycle, wire decoding, typed `db.*` API. |
+| `src/errorMessages.ts` | The error notification every failure uses, with its Show Log button. |
 | `src/connections/` | Which connections are open on which URI and which is the default, what happens on each one, plus the connection editor: URI building, the store, the panel and its protocol. |
 | `src/tree/` | The Connections view: its data model and its tree items. |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
@@ -44,22 +45,18 @@ change belongs to up to date, and this table with it.
 
 ## Known gaps
 
-- `MINIMUM_SHELL_VERSION` is 26.9.3, raised from 26.9.2 because of the
-  connection URI: 26.9.3 is the first shell whose parser accepts the
-  `mariadb://` scheme, and the MCP plugin now stores connections WITH
-  their scheme, which is the only way to ask for a `mariadb+ssh://`
-  tunnel. An older shell cannot parse the URIs this one stores.
-  26.9.3 is still a **released** shell, so it predates the
-  `db.execute_sql_script` changes this extension asked for
-  (`statement_index`, `execution_time`, per-statement `error`,
-  `stop_on_error`, `warnings`). Everything that reads them is optional
-  and falls back, so it works - but against such a shell there is no
-  per-statement timing, a failing script reports one error for the whole
-  call with no statement to jump to, `stopOnError: false` is ignored,
-  a statement's warnings have no rows under it (only the count in its
-  message), and that count is 0 for every statement that returned a
-  result set. Raise the minimum again once a shell carrying the new
-  plugin ships.
+- `MINIMUM_SHELL_VERSION` is 26.9.4. 26.9.3 was the floor for the
+  connection URI (the first parser to accept `mariadb://`, which the MCP
+  plugin now stores); 26.9.4 is the first release whose bundled
+  `mcp_plugin` carries `db.test_connection` and the per-statement
+  `db.execute_sql_script` results (`statement_index`, `execution_time`,
+  per-statement `error`, `stop_on_error`, `warnings`) - checked by
+  installing it and diffing its plugin against this repo's. The readers
+  of those fields still fall back when they are missing, but no shell
+  the extension accepts lacks them any more.
+- The installer is run with `MARIADB_SHELL_TAG` pinned, so a release
+  marked **prerelease** on GitHub installs fine (every 26.9.x is one);
+  only an unpinned `install.sh` would skip it.
 - The Connections view keeps a connection of its own per URI, so a URI
   being browsed and run on costs two of the server's
   `MAX_CONNECTIONS_PER_CLIENT` (16). Nine connections open at once is

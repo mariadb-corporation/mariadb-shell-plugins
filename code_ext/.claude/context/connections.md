@@ -180,19 +180,30 @@ dba@localhost:3310            connection (seal icon; "default" if default)
   word beside the schemas the user came for says nothing; `System Schema`
   and `System Information Schema` are the ones worth marking. The
   tooltip still names the type, so it is there to be read.
-- The view's welcome content is **two messages**, because an empty tree
-  means two different things. The list comes from the MCP server, which
-  has to be found and started first, so until it answers the view says
-  `Looking for MariaDB connections...`; only afterwards does it say
-  nothing is configured and point at the `$(add)` button in its
-  toolbar. What picks between them is the
-  `mariadb.connectionsListed` context key, which
-  `ConnectionsTreeProvider` sets once the root listing has come back -
-  **including when it failed**, since a view left looking for ever
-  would be as wrong as one claiming nothing is there, and the failure
-  is reported on its own. It used to be one message sending the user to
-  `mariadb-shell -- mcp setup` in a terminal, which the connection
-  editor has since made unnecessary.
+- The view's welcome content is **four messages**, because an empty tree
+  means different things. The list comes from the MCP server, which has
+  to be found - or downloaded - and started first. What picks between
+  them is the `mariadb.connectionsView` context key
+  (`CONNECTIONS_VIEW_STATE_CONTEXT_KEY`), which `ConnectionsTreeProvider`
+  sets from its own listing and from the `ServerStarter`'s phase:
+
+  | state | when | says |
+  | --- | --- | --- |
+  | `looking` (and unset) | server being found or started | `Looking for MariaDB connections...` |
+  | `installing` | the installer is running | downloading and installing, + Show Log |
+  | `failed` | listing failed, or the server did not start | the log says why, + Show Log and Retry |
+  | `listed` | the roots came back | nothing configured, points at `$(add)` |
+
+  `failed` rather than `listed` on a failure: the view used to claim
+  nothing was configured when the shell could not even be installed.
+  A new start attempt (phase `locating`) clears a listing failure back
+  to `looking`. The view also shows its busy bar for the whole startup
+  (`withProgress` at `{ viewId }`, in `showStartupInView`). It cannot
+  show the failure's text: setting `TreeView.message` hides welcome
+  content (VS Code's `shouldShowWelcome` requires it empty), so the
+  reason goes to the notification and the log instead. It used to be
+  one message sending the user to `mariadb-shell -- mcp setup` in a
+  terminal, which the connection editor has since made unnecessary.
   `SqlEditorBinding.selectConnection` points at the same button when a
   SQL file is asked what to run on and nothing is configured, naming it
   in words rather than the codicon, a notification drawing none.

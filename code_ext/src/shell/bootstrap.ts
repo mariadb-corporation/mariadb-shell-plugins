@@ -23,6 +23,7 @@ import {
 } from "./installer.js";
 import {
     describeLocation,
+    installPrefix,
     locateShell,
     type ShellEnvironment,
     type ShellLocation,
@@ -35,6 +36,8 @@ export interface BootstrapDependencies {
     log: (message: string) => void;
     /** Overridable so tests need not pin themselves to the shipped value. */
     minimumVersion?: string;
+    /** Called when no usable shell was found and the installer starts. */
+    onInstalling?: () => void;
 }
 
 export interface BootstrapResult {
@@ -60,7 +63,8 @@ export const ensureShell = async (
     const minimumVersion = dependencies.minimumVersion
         ?? MINIMUM_SHELL_VERSION;
 
-    const existing = await locateShell(environment, minimumVersion);
+    log(`Looking for MariaDB Shell ${minimumVersion} or newer.`);
+    const existing = await locateShell(environment, minimumVersion, log);
     if (existing) {
         log(describeLocation(existing));
 
@@ -69,21 +73,24 @@ export const ensureShell = async (
 
     log(`No MariaDB Shell ${minimumVersion} or newer found. `
         + "Running the installer.");
+    dependencies.onInstalling?.();
 
     await installShell(
         {
             platform: environment.platform,
             runner,
             progress,
+            log,
         },
         minimumVersion,
     );
 
-    const installed = await locateShell(environment, minimumVersion);
+    const installed = await locateShell(environment, minimumVersion, log);
     if (!installed) {
         throw new Error(
             "The MariaDB Shell installer finished, but no MariaDB Shell "
-            + `${minimumVersion} or newer could be found afterwards.`,
+            + `${minimumVersion} or newer could be found afterwards in `
+            + `${installPrefix(environment)}.`,
         );
     }
 

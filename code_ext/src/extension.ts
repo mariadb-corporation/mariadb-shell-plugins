@@ -29,7 +29,12 @@ import {
 import { applyKeybindings } from "./editor/keybindings.js";
 import { SqlEditorBinding } from "./editor/sqlEditorBinding.js";
 import { StatementDecorator } from "./editor/statementDecorations.js";
+import { showErrorWithLog } from "./errorMessages.js";
 import { createSdkConnector } from "./mcp/sdkConnector.js";
+import {
+    ServerStarter,
+    type ServerStepPhase,
+} from "./mcp/serverStarter.js";
 import { McpSession } from "./mcp/session.js";
 import type { IMariaDbApi } from "./mcp/types.js";
 import { ensureShell } from "./shell/bootstrap.js";
@@ -70,19 +75,22 @@ let state: IExtensionState | undefined;
  *
  * @param session The session to start.
  * @param log Where to write progress and errors.
+ * @param onPhase Told when the installer starts and when the server does.
  *
  * @returns The typed API to call the server with.
  */
 const startServer = async (
     session: McpSession,
     log: (message: string) => void,
+    onPhase: (phase: ServerStepPhase) => void,
 ): Promise<IMariaDbApi> => {
     const { location, installed } = await ensureShell({
-        environment: createNodeShellEnvironment(),
+        environment: createNodeShellEnvironment(log),
         runner: createNodeProcessRunner(),
         progress: createNotificationProgressHost(),
         log,
         minimumVersion: MINIMUM_SHELL_VERSION,
+        onInstalling: () => { onPhase("installing"); },
     });
 
     if (installed) {
@@ -91,7 +99,40 @@ const startServer = async (
         );
     }
 
+    onPhase("starting");
+
     return await session.start(buildMcpServerCommand(location));
+};
+
+/**
+ * Shows the Connections view as busy for as long as the server is on its
+ * way up, which is the one sign of life the view itself can give while
+ * its welcome content says what is happening.
+ *
+ * @param starter The startup to follow.
+ *
+ * @returns Nothing.
+ */
+const showStartupInView = (starter: ServerStarter): void => {
+    let busy: (() => void) | undefined;
+    starter.onDidChangePhase((phase) => {
+        const underWay = phase === "locating"
+            || phase === "installing"
+            || phase === "starting";
+        if (underWay && !busy) {
+            void vscode.window.withProgress(
+                { location: { viewId: CONNECTIONS_VIEW_ID } },
+                () => {
+                    return new Promise<void>((resolve) => {
+                        busy = resolve;
+                    });
+                },
+            );
+        } else if (!underWay && busy) {
+            busy();
+            busy = undefined;
+        }
+    });
 };
 
 /**
@@ -114,7 +155,7 @@ const guard = async (
             ? error.message
             : String(error);
         log(message);
-        void vscode.window.showErrorMessage(`MariaDB: ${message}`);
+        void showErrorWithLog(message);
     }
 };
 
@@ -130,14 +171,26 @@ export const activate = (context: vscode.ExtensionContext): void => {
     context.subscriptions.push(output);
 
     const log = (message: string): void => {
-        output.appendLine(message);
+        output.appendLine(`[${new Date().toISOString()}] ${message}`);
     };
 
+    const packageJson = context.extension?.packageJSON as
+        | { version?: string }
+        | undefined;
+    log(`MariaDB extension ${packageJson?.version ?? "(unknown version)"} `
+        + `on VS Code ${vscode.version}, ${process.platform} `
+        + `${process.arch}, Node ${process.versions.node}. `
+        + `Needs MariaDB Shell ${MINIMUM_SHELL_VERSION} or newer.`);
+
     const session = new McpSession(createSdkConnector(), log);
+    const starter = new ServerStarter((onPhase) => {
+        return startServer(session, log, onPhase);
+    }, log);
+    showStartupInView(starter);
     const resultView = new ResultViewProvider(context.extensionUri, log);
     const connections = new ConnectionManager(
         async () => {
-            return session.api ?? await startServer(session, log);
+            return session.api ?? await starter.start();
         },
         createWorkspaceSettings(),
         // Everything that happens on an open connection is a row of that
@@ -151,6 +204,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         createIconResolver(context.extensionUri),
         log,
         connectOnOpen,
+        starter,
     );
     const editors = new SqlEditorBinding(connections, resultView, log);
     // Marks where each statement begins. The ranges come from the SQL
@@ -443,7 +497,11 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 await guard(log, async () => {
                     await connections.disconnectAll();
                     await session.stop();
-                    await startServer(session, log);
+                    starter.stopped();
+                    // Not refreshed on a failure: the tree would ask for
+                    // its roots, and that would start a second attempt.
+                    // The view says the start failed without it.
+                    await starter.start();
                     tree.refresh();
                 });
             },

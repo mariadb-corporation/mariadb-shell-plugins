@@ -25,6 +25,9 @@ import { LineReader } from "../shell/lineReader.js";
 import type { IToolResult } from "./protocol.js";
 import type { IMcpConnection, IMcpConnector } from "./session.js";
 
+/** How many of the server's last stderr lines a start failure quotes. */
+const STDERR_LINES_KEPT = 5;
+
 /** Identifies this extension to the server during the handshake. */
 const CLIENT_INFO = { name: "mariadb-vscode", version: "26.9.0" };
 
@@ -49,19 +52,51 @@ export const createSdkConnector = (): IMcpConnector => {
                 stderr: "pipe",
             });
 
-            const client = new Client(CLIENT_INFO, { capabilities: {} });
-            await client.connect(transport);
-
-            // Only available once the transport has spawned the process,
-            // which connect() has just done.
-            const reader = new LineReader(onLog);
+            // Attached before the process exists: the SDK hands out a
+            // stream up front for exactly this, and a server that dies
+            // while starting says why on stderr, before any handshake.
+            const recent: string[] = [];
+            const reader = new LineReader((line) => {
+                recent.push(line);
+                if (recent.length > STDERR_LINES_KEPT) {
+                    recent.shift();
+                }
+                onLog(line);
+            });
             // Typed as a bare Stream by the SDK, but `stderr: "pipe"` above
-            // makes it the process's stderr pipe, which is readable.
+            // makes it a readable PassThrough onto the process's stderr.
             const stderr = transport.stderr as Readable | null;
             stderr?.setEncoding("utf8");
             stderr?.on("data", (chunk: string) => {
                 reader.push(chunk);
             });
+
+            const client = new Client(CLIENT_INFO, { capabilities: {} });
+            try {
+                await client.connect(transport);
+            } catch (error) {
+                reader.flush();
+                const message = error instanceof Error
+                    ? error.message
+                    : String(error);
+                const said = recent.length > 0
+                    ? ` Its last output: ${recent.join(" | ")}`
+                    : "";
+                throw new Error(
+                    `The MCP server did not start (${command.command}): `
+                    + `${message}.${said}`,
+                );
+            }
+
+            // Only a close nobody asked for is news: the calls that follow
+            // will all fail, and this is the line that says why.
+            let closing = false;
+            client.onclose = () => {
+                if (!closing) {
+                    onLog("The MCP server exited unexpectedly. Run "
+                        + "'MariaDB: Restart MCP Server' to start it again.");
+                }
+            };
 
             return {
                 callTool: async (
@@ -75,6 +110,7 @@ export const createSdkConnector = (): IMcpConnector => {
                 },
 
                 close: async (): Promise<void> => {
+                    closing = true;
                     await client.close();
                     reader.flush();
                 },

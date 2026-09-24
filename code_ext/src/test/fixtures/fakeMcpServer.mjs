@@ -48,6 +48,11 @@ server.setRequestHandler(ListToolsRequestSchema, () => {
 });
 
 server.setRequestHandler(CallToolRequestSchema, (request) => {
+    // Dies mid-session, the way a crashing shell would.
+    if (request.params.name === "test.exit") {
+        process.exit(1);
+    }
+
     if (request.params.name === "db.list_connections") {
         return {
             content: [

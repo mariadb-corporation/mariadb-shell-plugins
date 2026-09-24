@@ -24,8 +24,13 @@
  * to accept the `mariadb://` scheme, and the MCP plugin now stores connections
  * with their scheme - which is the only way to ask for a `mariadb+ssh://`
  * tunnel. An older shell cannot parse the URIs this one stores.
+ *
+ * 26.9.4 is the first release whose MCP plugin carries what this extension
+ * asked of it: `db.test_connection` for the connection editor, and the
+ * per-statement results of `db.execute_sql_script` - `statement_index`,
+ * `execution_time`, `error`, `warnings` and `stop_on_error`.
  */
-export const MINIMUM_SHELL_VERSION = "26.9.3";
+export const MINIMUM_SHELL_VERSION = "26.9.4";
 
 /** Name of the shell executable, without a platform specific extension. */
 export const SHELL_BINARY_NAME = "mariadb-shell";

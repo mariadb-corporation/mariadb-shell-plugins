@@ -15,7 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ExecFileException } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 
@@ -27,11 +27,52 @@ import type { ShellEnvironment } from "./locator.js";
 const VERSION_PROBE_TIMEOUT_MS = 10_000;
 
 /**
+ * Says why a `--version` probe produced nothing, in words a log reader can
+ * act on.
+ *
+ * @param binaryPath The executable that was probed.
+ * @param error What `execFile` failed with.
+ * @param stderr What the binary wrote to stderr, if it ran at all.
+ *
+ * @returns One log line.
+ */
+const describeProbeFailure = (
+    binaryPath: string,
+    error: ExecFileException,
+    stderr: string,
+): string => {
+    const probe = `"${binaryPath} --version"`;
+    if (error.code === "ENOENT") {
+        return `${probe}: not found.`;
+    }
+
+    if (error.code === "EACCES") {
+        return `${probe}: not executable (EACCES).`;
+    }
+
+    if (error.killed) {
+        return `${probe}: gave no answer within `
+            + `${VERSION_PROBE_TIMEOUT_MS / 1000}s and was stopped.`;
+    }
+
+    const detail = stderr.trim().split("\n")[0];
+
+    return `${probe} failed: ${error.message.trim()}`
+        + (detail ? ` - ${detail}` : "");
+};
+
+/**
  * The real environment, backed by the file system and child processes.
+ *
+ * @param log Where to say why a binary that was probed could not be run.
+ *            The locator only learns that it could not; the reason - not
+ *            there, not executable, hung - is what a log reader needs.
  *
  * @returns A shell environment for the host this extension runs on.
  */
-export const createNodeShellEnvironment = (): ShellEnvironment => {
+export const createNodeShellEnvironment = (
+    log: (message: string) => void = () => { /* not wanted */ },
+): ShellEnvironment => {
     return {
         platform: process.platform,
         homeDir: os.homedir(),
@@ -48,6 +89,8 @@ export const createNodeShellEnvironment = (): ShellEnvironment => {
                         // executable or hangs is simply "not there" as far
                         // as the locator is concerned.
                         if (error) {
+                            log(describeProbeFailure(
+                                binaryPath, error, String(stderr)));
                             resolve(undefined);
 
                             return;
@@ -99,10 +142,17 @@ export const createNodeProcessRunner = (): ProcessRunner => {
         run: async (
             command: InstallCommand,
             onOutput: (line: string) => void,
+            signal?: AbortSignal,
         ) => {
             return await new Promise<number>((resolve, reject) => {
+                const posix = process.platform !== "win32";
                 const child = spawn(command.command, command.args, {
                     windowsHide: true,
+                    // Its own process group on POSIX, so that cancelling
+                    // ends the curl and bash the shell started as well as
+                    // the shell - killing the shell alone would leave the
+                    // download running with nobody reading its output.
+                    detached: posix,
                 });
 
                 const reader = new LineReader(onOutput);
@@ -115,9 +165,31 @@ export const createNodeProcessRunner = (): ProcessRunner => {
                     reader.push(chunk);
                 });
 
-                child.on("error", reject);
+                const abort = (): void => {
+                    try {
+                        if (posix && child.pid !== undefined) {
+                            process.kill(-child.pid, "SIGTERM");
+                        } else {
+                            child.kill();
+                        }
+                    } catch {
+                        // Already gone, which is what was wanted.
+                    }
+                };
+                signal?.addEventListener("abort", abort, { once: true });
+
+                child.on("error", (error) => {
+                    signal?.removeEventListener("abort", abort);
+                    reject(error);
+                });
                 child.on("close", (code) => {
+                    signal?.removeEventListener("abort", abort);
                     reader.flush();
+                    if (signal?.aborted) {
+                        reject(new Error("Cancelled."));
+
+                        return;
+                    }
                     resolve(code ?? -1);
                 });
             });
