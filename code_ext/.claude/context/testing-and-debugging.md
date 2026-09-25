@@ -16,6 +16,14 @@ platform, from a single host. `src/test/shell/nodeRuntime.test.ts` covers
 the real process adapter by spawning actual processes against a temporary
 directory.
 
+`src/test/mocks/vscode.ts` also stands in for file dialogs and files
+(`fileDialogs` answers `showSaveDialog` / `showOpenDialog`, `files` backs
+`workspace.fs`), records `vscode.open` calls (`openedWith`) and registered
+file system providers (`fileSystemProviders`), and has `FileType`,
+`FilePermission`, `FileChangeType`, `FileSystemError` and `Uri.from`; all
+are reset by `resetVscodeMock`. Its `Disposable` is only an interface, so
+code must return `{ dispose }` objects rather than `new vscode.Disposable`.
+
 The MCP decoding fixtures in `src/test/mcp/protocol.test.ts` are the shapes
 the running server actually answers with, so the mapping is pinned to the
 server rather than to an idea of it.

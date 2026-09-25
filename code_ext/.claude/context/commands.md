@@ -27,6 +27,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.startSandbox` | Start Sandbox | Inline on, and context menu of, a STOPPED sandbox |
 | `mariadb.stopSandbox` | Stop Sandbox | Inline on, and context menu of, a RUNNING sandbox |
 | `mariadb.deleteSandbox` | Delete Sandbox | Inline on, and context menu of, every sandbox not busy. Asks first; stops a running one before deleting |
+| `mariadb.selectRows` | Select Rows | Inline on (`toolbar-execute.svg`), and context menu of, a table or view in the Connections view. Runs `SELECT * FROM \`schema\`.\`name\`` and opens the result maximized, in an editor tab titled `schema.name`. Hidden from the palette |
 | `mariadb.clearResultView` | Clear Actions | Result view toolbar |
 | `mariadb.selectEditorConnection` | Select Connection for this SQL File | SQL editor toolbar, status bar |
 | `mariadb.runSqlFile` | Run SQL Script | SQL editor toolbar, `Ctrl`/`Cmd`+`Enter` |

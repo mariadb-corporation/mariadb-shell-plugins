@@ -22,7 +22,7 @@ extension grows.
 | `src/sandboxes/` | The New Sandbox dialog: its fields, protocol and panel. |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
 | `src/editor/` | The SQL editor toolbar, status bar entry and run command. |
-| `src/webview/` | The result view host, its message protocol and the edit-collection logic. |
+| `src/webview/` | The result view host, its message protocol and the edit-collection logic; a maximized result set's editor tab (`maximizedResult.ts`); grid values as files - saved / loaded (`valueFiles.ts`) and opened in editors (`valueDocuments.ts`). |
 | `webview/src/` | The three Preact frontends: the result view, the connection editor and New Sandbox. |
 | `src/test/` | The extension-side test suite, mirroring the source layout. |
 | `webview/test/` | The frontend test suite, run under jsdom. |
@@ -42,7 +42,9 @@ change belongs to up to date, and this table with it.
 | [`context/connections.md`](context/connections.md) | The several connections one URI can have open and the one the Connections view keeps, what is reported on them (General Actions), the cached connection list, the tree, folders, opening, the default connection. |
 | [`context/running-sql.md`](context/running-sql.md) | The two run commands and stop on error, which connection a file runs on, the statement scanner, splitting agreeing with the server, what makes a result set editable, the gutter markers. |
 | [`context/sandboxes.md`](context/sandboxes.md) | The Sandboxes view, its Start / Stop / Delete, the New Sandbox dialog, the per-call timeouts, and what it needs from the shell. |
-| [`context/result-view.md`](context/result-view.md) | The panel webview: layout, per-connection state, the two pickers (and when General Actions is shown), fonts and surfaces, the result grids, the SQL preview, the shared code. |
+| [`context/result-view.md`](context/result-view.md) | The panel webview: layout, per-connection state, the two pickers (and when General Actions is shown), fonts and surfaces, the SQL preview, the shared code. |
+| [`context/result-grid.md`](context/result-grid.md) | The result grid: Tabulator and its traps, value display (hex, data icons, NULL), the cell menu and Delete Row, freezing the primary key, saving / loading a BLOB, opening any value in a VS Code editor. |
+| [`context/result-set.md`](context/result-set.md) | One result set: its toolbar (the MySQL Shell's layout and icons), paging, maximizing into an editor tab. |
 | [`context/actions-grid.md`](context/actions-grid.md) | The actions grid: run rows and their statements, errors and popups, scrolling, the jump arrows, and what the server had to report for it. |
 | [`context/commands.md`](context/commands.md) | Every contributed command and where it appears. |
 | [`context/testing-and-debugging.md`](context/testing-and-debugging.md) | The interfaces everything external sits behind, and the F5 launch and watch task. |
@@ -89,10 +91,22 @@ change belongs to up to date, and this table with it.
   purpose. A tunnel needing one therefore cannot be configured here - use
   a key the agent has already unlocked.
 - The result grid edits every value as text; there is no type-aware editor
-  (date picker, NULL toggle, BLOB viewer) yet, and no cell context menu.
-- There is no paging. The MySQL Shell's result view pages through a result
-  set; `db.execute_sql_script` returns the whole thing at once, so there is
-  nothing to page through and the next/previous buttons were left out.
+  (date picker, BLOB viewer) yet. Its cell menu has Save / Load Value and
+  Set Field to Null only - none of the MySQL Shell's Copy items.
+- **Paging needs an unreleased shell too.** It relies on this repo's
+  `mcp_plugin` adding the LIMIT and reporting `has_more_pages`; an older
+  plugin silently drops the `limit` argument (the MCP SDK drops what a
+  tool does not declare), so every row comes back, no result set carries
+  a `page`, and the Pages buttons stay off - it degrades to the old
+  behaviour rather than breaking. Same decision as folders: raise
+  `MINIMUM_SHELL_VERSION` once a release carries it.
+- **Column types need the unreleased shell too**: the data icons and hex
+  display go by `column_types`, which only this repo's `mcp_plugin` sends.
+  Without it, only an editable single-table result - whose columns are
+  looked up - shows them; everything else is plain text, as before.
+- A VECTOR is recognised only from the table's own column type (the
+  server reports it as `BYTES`, like VARBINARY), so outside an editable
+  single-table result it shows as hex.
 - Tabulator measures the DOM to lay itself out, and jsdom reports every
   element as zero sized, so it never finishes building under test. The
   grid's mapping, formatters and cell callbacks are tested directly
@@ -100,45 +114,54 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-25, second of the day):
+Checked at this checkpoint (2026-09-25, third of the day):
 
 ```
 $ git -C code_ext branch --show-current
 wip/result-set-fixes-and-expansion
 
 $ git -C code_ext status --short   (one repository: mcp_plugin's lines too)
-?? images/dark/maximize.svg
-?? images/dark/minimize.svg
-?? images/light/maximize.svg
-?? images/light/minimize.svg
+ M  51 tracked files - package.json, src/, webview/, vite.webview.config.ts,
+    tests and these context files; mcp_plugin: lib/db_functions.py, two
+    test files, context/db-tools.md
+ M  images/{light,dark}/connection{MariaDB,MariaDBSSH,MySQL,MySQLSSH}.svg,
+    schema.svg                      (the user's updated icons)
+ D  images/{light,dark}/mariadbConnection.svg      (the user's deletion)
+?? src/webview/{maximizedResult,valueDocuments,valueFiles}.ts,
+   webview/src/ToolbarMenu.tsx, src/test/webview/value{Documents,Files}.test.ts,
+   ../mcp_plugin/tests/unit/test_db_paging.py
+?? ~140 icons under images/{light,dark}/   (see below)
 ```
 
-- **The branch is `wip/result-set-fixes-and-expansion`**, pushed and in sync.
-  The branches stack, each on the one before:
-  `wip/connection-update` <- `wip/connection-folders` (PR #28) <-
-  `wip/ext-sandbox-support` (PR #29, based on `wip/connection-folders`) <-
-  `wip/result-set-fixes-and-expansion` (no PR yet; one would target
-  `wip/ext-sandbox-support`).
-- Its commits past #29's `0842eed9` (the Sandboxes view and dialog, see
-  [`context/sandboxes.md`](context/sandboxes.md)):
-  - `32f0c23f` every result set of a CALL (a tab each, "N result sets" with a
-    child row per set), a view read without an error row (looked up as a
-    table, the not-found answer logged as INFO), the error bar's copy button,
-    and a Copy menu on actions cells - see
-    [`context/running-sql.md`](context/running-sql.md) and
-    [`context/actions-grid.md`](context/actions-grid.md);
-  - `77a072a4` mcp_plugin only: the test run kept off the developer's secret
-    store.
-- **The four untracked icons are NOT this session's** - they appeared in the
-  working tree during it and are the user's; left out of every commit.
-- Suite at this checkpoint: **1106 pass across 52 files**, `npm run pretest`
-  (typecheck + eslint) and `npm run build` clean.
-- NOT clicked through in a running VS Code: the Sandboxes view, the New
-  Sandbox dialog and the actions Copy menu. The server paths were verified
-  instead against the dev shell (`/Users/mzinner/git/mariadb-shell/build/bin`,
-  loading this repo's plugin via `~/.mariadb-shell/plugins`) through the real
-  SDK connector: sandbox list / deploy / stop / start / delete, `mcp_access`,
-  a view read (one call, logged as info) and a two-set CALL.
+- **The branch is `wip/result-set-fixes-and-expansion`**, stacked on
+  `wip/ext-sandbox-support` (PR #29) <- `wip/connection-folders` (PR #28)
+  <- `wip/connection-update`. This session's work is committed as
+  `daafbaf1` (mcp_plugin: paging, column types), `b58f02de` (code_ext) and
+  the context checkpoint after them, and opened as a PR against
+  `wip/ext-sandbox-support`. The status above is from before those commits.
+- This session (see result-set.md / result-grid.md for the detail): the
+  maximize/minimize tab; the MySQL Shell toolbar layout and icons; paging
+  (`mariadb.execute.pageSize`) with `limit`/`offset`/`has_more_pages` in
+  mcp_plugin; `column_types` from mcp_plugin and the data icons / hex
+  display; BLOB save/load and the cell menu; Open Value in Editor
+  (`mariadb-value` file system); Select Rows (`mariadb.selectRows`, inline
+  and context menu); freezing primary key columns
+  (`mariadb.resultSet.freezePrimaryKeyColumns`); Delete Row in the cell
+  menu (row header column removed); the default-connection icons;
+  auto-increment keys editable (split from `isGenerated`).
+- **Untracked icons**: the user added `maximize`, `minimize`,
+  `connection*Default`, `schemaCurrent`, `schemas`, `toolbar-add-row`,
+  `toolbar-kill_connection`; the session copied every MySQL Shell toolbar
+  icon (54, light + generated dark with `fill:white`) and five `data-*`
+  icons. The four MySQL names that exist here (`toolbar-execute*`,
+  `toolbar-stop_on_error-*`) were NOT overwritten.
+- Suite at this checkpoint: **1219 pass across 54 files**, `npm run
+  pretest` (typecheck + eslint) and `npm run build` clean. mcp_plugin:
+  **446 pass, 3 skipped, 98%**.
+- NOT clicked through in a running VS Code: everything this session added.
+  `test.datatype_test` (50 rows, every supported type, PNG/SVG in BLOBs)
+  was created on the Homebrew MariaDB at 3310 (socket login as
+  `mzinner@localhost`) to try it on; its generator is not in the repo.
 
 ## Conventions
 

@@ -23,8 +23,8 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **380 tests pass, 3 SKIPPED (~65s), 98% total coverage** (2126 statements,
-45 missed; re-measured at the second 2026-09-25 checkpoint on a run with `.coverage`
+Standard suite: **446 tests pass, 3 SKIPPED (~67s), 98% total coverage** (2231 statements,
+49 missed; re-measured at the third 2026-09-25 checkpoint on a run with `.coverage`
 DELETED first - ~65s since the run keeps its secrets in a plaintext file instead of the
 macOS keychain, see the isolation gotcha in `context/testing.md` — see the coverage trap in [`context/testing.md`](context/testing.md)). Of the
 three skipped, two are the OPT-IN end-to-end tests (`test_migration_e2e`,
@@ -69,31 +69,40 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-25, second of the day):
+Checked at this checkpoint (2026-09-25, third of the day):
 
 ```
 $ git -C mcp_plugin branch --show-current
 wip/result-set-fixes-and-expansion
 
-$ git -C mcp_plugin status --short   (mcp_plugin's own lines; none - the only
-                                      untracked files are four code_ext icons)
+$ git -C mcp_plugin status --short   (mcp_plugin's own lines; the rest is code_ext)
+ M .claude/context/db-tools.md
+ M lib/db_functions.py
+ M tests/unit/test_db_script.py
+ M tests/unit/test_db_sql.py
+?? tests/unit/test_db_paging.py
 ```
 
 - **The branch is `wip/result-set-fixes-and-expansion`**, shared with
-  [`code_ext`](../../code_ext), pushed and in sync. It stacks on
-  `wip/ext-sandbox-support` (PR #29), which stacks on `wip/connection-folders`
-  (PR #28); no PR for it yet.
-- Its commits past #29's `0842eed9` (`sandbox.list_instances` and the
-  `--gui`-only `mcp_access`, see [`context/sandbox.md`](context/sandbox.md)):
-  - `32f0c23f` every result set of a statement read - `additional_result_sets`
-    after the first, both `db.execute_sql` and `db.execute_sql_script` (see
-    [`context/db-tools.md`](context/db-tools.md));
-  - `77a072a4` **the test run kept off the developer's secret store**:
-    `run_tests.py` sets the plaintext credential helper in the run's config home,
-    and the fixtures' backup keeps each connection's folder. Before it, every
-    suite run moved the developer's filed connections to the top level (see the
-    first gotcha in [`context/testing.md`](context/testing.md)).
-- Suite at this checkpoint: **380 pass, 3 skipped, ~65s, 98% (2126 statements, 45
+  [`code_ext`](../../code_ext), stacked on `wip/ext-sandbox-support` (PR #29) <-
+  `wip/connection-folders` (PR #28). This session's work is committed as
+  `daafbaf1` (this plugin) and `b58f02de` (code_ext), with the context checkpoint
+  after them, and opened as a PR against `wip/ext-sandbox-support`. The status
+  above is from before those commits.
+- This session, both for the extension (see
+  [`context/db-tools.md`](context/db-tools.md)):
+  - **paging**: `db.execute_sql_script(limit=)` and `db.execute_sql(limit=, offset=)`.
+    A SELECT that can take one gets `\nLIMIT limit+1 [OFFSET n]`; the extra row is
+    dropped and `has_more_pages` (true/false, present only when the limit was
+    applied) says whether it came back. A 1064 on the limited form re-runs it as
+    written. The SELECT forms it skips (own LIMIT/FETCH/OFFSET, INTO, PROCEDURE,
+    FOR UPDATE/SHARE, LOCK IN SHARE MODE) were verified against a real server;
+  - **`column_types`** on every result set (`_column_type`: the shell's `Type` name,
+    `BLOB` for `BYTES` + the BLOB flag). Measured: VECTOR is indistinguishable from
+    VARBINARY in the shell's metadata.
+- Earlier commits on this branch: `32f0c23f` (`additional_result_sets`),
+  `77a072a4` (the test run kept off the developer's secret store).
+- Suite at this checkpoint: **446 pass, 3 skipped, ~67s, 98% (2231 statements, 49
   missed)**, `.coverage` deleted first. The third skip is still the environmental
   one: the migration tooling is not installed on this machine.
 - **Over the ~400-line split threshold and NOT split** (untouched this session, so

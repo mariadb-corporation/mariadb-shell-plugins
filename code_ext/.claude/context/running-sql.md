@@ -196,9 +196,16 @@ warnings. A CALL with one set stays a single row.
 Edits are held in the grid until **Apply**. `QueryBuilder` then generates
 `UPDATE`, `INSERT` and `DELETE` statements — modelled on the MySQL Shell's
 `QueryBuilder` — addressing each row by the primary key it had *before* the
-edit, leaving auto-increment and generated columns out of an `INSERT`, and
-running deletes last so a row that was edited and then removed is not
-updated after it is gone.
+edit (so a changed key is an ordinary `UPDATE ... SET id = new WHERE id =
+old`), leaving generated columns out of an `INSERT` and auto-increment ones
+too while the new row leaves them empty, and running deletes last so a row
+that was edited and then removed is not updated after it is gone.
+
+**Auto-increment is not generated** (`IResultColumn.isAutoIncrement` vs
+`isGenerated`): a generated (virtual/stored) column is computed by the
+server and gets no editor; an auto-increment one - usually the primary
+key - is edited like any column. Until 2026-09-25 `mapColumns` folded the
+two into `isGenerated`, which locked every auto-increment key.
 
 ## Statement markers in the gutter
 

@@ -18,6 +18,43 @@ handling are in [connections.md](connections.md).
   was read and the rest silently dropped (the next statement still ran:
   the shell drains them). `getattr` guards `next_result` for results that
   have none. Verified live against a sandbox, through both tools.
+- **Column types** (2026-09-25, for the extension's value display): every
+  result set carries `column_types`, one per column in the order of
+  `columns` (first set at the top level, the rest inside
+  `additional_result_sets`). `_column_type` is the name of the shell's
+  `Type` (`<Type.INTEGER>` -> `INTEGER`) with one refinement, `BLOB`:
+  measured on 12.3, BINARY, VARBINARY, every BLOB AND VECTOR are all
+  `BYTES`; only the `BLOB` flag (`get_flags()`) sets the blobs apart, and
+  nothing tells a VECTOR from a VARBINARY. JSON and the spatial types have
+  their own (`JSON`, `GEOMETRY`). Left out when no column reports a type
+  (stub results, an older shell). Values are unchanged: binary still comes
+  as hex.
+
+- **Paging** (2026-09-25, for the VS Code extension's result pages):
+  `db.execute_sql_script(limit=)` and `db.execute_sql(limit=, offset=)`.
+  `_limit_statement` appends `\nLIMIT n [OFFSET m]` (own line, so a
+  trailing `--` comment cannot swallow it) to a statement whose first word
+  is SELECT or WITH, judged on `_top_level_words` - a small scanner that
+  steps over strings, backtick identifiers and all comments and reports
+  each word with its paren depth. Left AS WRITTEN: anything else; a WITH
+  with a top-level INSERT/UPDATE/DELETE/REPLACE (or no SELECT); and any
+  top-level LIMIT, FETCH, OFFSET (limits itself already), INTO, PROCEDURE,
+  LOCK, FOR UPDATE / FOR SHARE (LIMIT must come BEFORE those, so appending
+  is a syntax error). `FOR SYSTEM_TIME` is not a locking FOR and is limited.
+  - `_run_limited` sends `limit + 1` rows' worth; `_page_result` drops the
+    extra row and sets `has_more_pages` (true/false). The key is present
+    ONLY when the limit was applied - that is how a client knows it can
+    page. snake_case like every other key on this wire.
+  - A limited statement refused with **1064** is re-run as written: a
+    syntax error means nothing ran, so it cannot take effect twice. Any
+    other error is NOT retried.
+  - `_check_paging`: non-negative ints only (a JSON `true` is refused), and
+    an offset needs a limit - refused before the session is touched.
+  - Tests: `test_db_paging.py` (the scanner and the rules, table-driven;
+    the tools over a stub session that honours LIMIT/OFFSET), plus a block
+    in `_db_flow` against the real server proving every limited form is
+    accepted WITH the LIMIT and the skipped ones still run.
+
 - **SQL exec**: `db.execute_sql` = single statement (+ optional `?` params, one result
   dict). `db.execute_sql_script` = multi-statement via `mysqlsh.mysql.split_script()`,
   returns a LIST; accepts `sql_script` XOR `file_path` (file must be an allowed path).
@@ -158,8 +195,9 @@ handling are in [connections.md](connections.md).
 - Tools: **31 total**, in 4 groups. migrator.* (**4**: `set_config`, `plan`, `run`,
   `resume`) — registered ONLY where the tooling is installed, see the migration bullet
   under Architecture. db.* (**8**: `list_connections`, `connect`, `list_schemas`, `list_objects`,
-  `get_object_details`, `execute_sql`, `execute_sql_script` — now with `stop_on_error`
-  and per-statement `statement_index`/`execution_time`/`error`, `close`),
+  `get_object_details`, `execute_sql` (+ `limit`/`offset`), `execute_sql_script` — now
+  with `stop_on_error`, `limit` and per-statement `statement_index`/`execution_time`/
+  `error`/`has_more_pages`; every result set carries `column_types` — `close`),
   msm.* (**12**, path-guarded, async — the 12th is `deploy_schema`, gated on the db group),
   sandbox.* (7, `sandbox_dir`-guarded, async, port required).
 
