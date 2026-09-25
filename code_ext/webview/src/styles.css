@@ -192,13 +192,255 @@ button:focus-visible {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 4px;
 }
 
-.toolbar .readOnly {
-    color: var(--vscode-descriptionForeground);
-    font-style: italic;
+/*
+ * The result set's toolbar, laid out as the MySQL Shell's result view
+ * lays out its own: sections headed by a label, and icon-only buttons of
+ * 20px with an 18px icon. The sections are set apart by a line, which
+ * the MySQL Shell's own spacers do not draw.
+ */
+.toolbar .toolbarLabel {
+    margin: 0 4px;
+    font-size: 0.8em;
     white-space: nowrap;
+    color: var(--vscode-descriptionForeground);
+}
+
+.toolbar .toolbarDivider {
+    flex: 0 0 1px;
+    height: 16px;
+    margin: 0 6px;
+    background: var(--vscode-panel-border,
+            var(--vscode-widget-border, currentColor));
+}
+
+/*
+ * The toolbar's icons: the MySQL Shell's own, and the extension's
+ * maximize and minimize. They are drawn as a mask over the button's
+ * colour, so only their shape is used: the light files serve every
+ * theme, and the dark copies beside them are not needed here.
+ */
+body {
+    --icon-grid: url("../../images/light/toolbar-grid.svg");
+    --icon-preview: url("../../images/light/toolbar-sql_preview.svg");
+    --icon-add-row: url("../../images/light/toolbar-add-row.svg");
+    --icon-edit: url("../../images/light/toolbar-edit.svg");
+    --icon-commit: url("../../images/light/toolbar-commit.svg");
+    --icon-rollback: url("../../images/light/toolbar-rollback.svg");
+    --icon-refresh: url("../../images/light/toolbar-refresh.svg");
+    --icon-menu: url("../../images/light/toolbar-menu.svg");
+    --icon-page-previous: url("../../images/light/toolbar-page_previous.svg");
+    --icon-page-next: url("../../images/light/toolbar-page_next.svg");
+    --icon-maximize: url("../../images/light/maximize.svg");
+    --icon-minimize: url("../../images/light/minimize.svg");
+}
+
+/* A toolbar button that is only an icon. */
+.toolbarIcon {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin: 0 4px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
+}
+
+button.toolbarIcon:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+button.toolbarIcon.toggled {
+    background: var(--vscode-toolbar-activeBackground,
+            var(--vscode-toolbar-hoverBackground));
+}
+
+button.toolbarIcon:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.toolbarIcon::before,
+.toolbarMenuIcon::before {
+    content: "";
+    display: block;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+}
+
+/*
+ * The Pages and Edit buttons draw the MySQL Shell's icons, whose 24x20
+ * canvas carries padding of its own: an 18px box left the picture itself
+ * too small beside the labels, so they are drawn a size up.
+ */
+.toolbar > button.toolbarIcon:is(.pagePreviousIcon, .pageNextIcon,
+    .editIcon, .addRowIcon, .previewIcon, .commitIcon, .rollbackIcon,
+    .refreshIcon) {
+    width: 24px;
+    height: 22px;
+    margin: 0 3px;
+}
+
+.toolbar > button.toolbarIcon:is(.pagePreviousIcon, .pageNextIcon,
+    .editIcon, .addRowIcon, .previewIcon, .commitIcon, .rollbackIcon,
+    .refreshIcon)::before {
+    width: 22px;
+    height: 18px;
+}
+
+/* A bare codicon draws itself; the mask is for the SVG icons only. */
+.toolbarIcon.codicon::before {
+    content: none;
+}
+
+.gridIcon::before {
+    mask-image: var(--icon-grid);
+}
+
+.previewIcon::before {
+    mask-image: var(--icon-preview);
+}
+
+.addRowIcon::before {
+    mask-image: var(--icon-add-row);
+}
+
+.editIcon::before {
+    mask-image: var(--icon-edit);
+}
+
+.commitIcon::before {
+    mask-image: var(--icon-commit);
+}
+
+.rollbackIcon::before {
+    mask-image: var(--icon-rollback);
+}
+
+.refreshIcon::before {
+    mask-image: var(--icon-refresh);
+}
+
+.menuIcon::before {
+    mask-image: var(--icon-menu);
+}
+
+.pagePreviousIcon::before {
+    mask-image: var(--icon-page-previous);
+}
+
+.pageNextIcon::before {
+    mask-image: var(--icon-page-next);
+}
+
+.maximizeIcon::before {
+    mask-image: var(--icon-maximize);
+}
+
+.minimizeIcon::before {
+    mask-image: var(--icon-minimize);
+}
+
+/* The View dropdown: the icon of what is on show, and a chevron. */
+.toolbarIcon.dropdownButton {
+    width: auto;
+    min-width: 40px;
+    margin: 0 9px 0 6px;
+    gap: 2px;
+}
+
+.toolbarIcon.dropdownButton::before {
+    width: 24px;
+}
+
+.dropdownChevron {
+    font-size: 12px;
+}
+
+.toolbarMenuHost {
+    display: flex;
+}
+
+/*
+ * Opened upwards: the bar runs along the bottom of the result set, so a
+ * list opened downwards would leave the view.
+ */
+.toolbarMenu {
+    position: fixed;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    min-width: 160px;
+    padding: 4px 0;
+    color: var(--vscode-menu-foreground, var(--vscode-foreground));
+    background: var(--vscode-menu-background,
+            var(--vscode-editorWidget-background));
+    border: 1px solid var(--vscode-menu-border,
+            var(--vscode-editorWidget-border, transparent));
+    border-radius: 4px;
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+}
+
+.toolbarMenuItem {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px 2px 6px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    white-space: nowrap;
+}
+
+button.toolbarMenuItem:hover:not(:disabled) {
+    color: var(--vscode-menu-selectionForeground, inherit);
+    background: var(--vscode-menu-selectionBackground,
+            var(--vscode-list-hoverBackground));
+}
+
+.toolbarMenuItem.selected {
+    font-weight: 600;
+}
+
+/*
+ * An item with no icon keeps the space, so its caption lines up with those
+ * that have one - but draws nothing there: a mask with no image to cut it
+ * would be a filled square.
+ */
+.toolbarMenuIcon.noIcon::before {
+    background-color: transparent;
+}
+
+/* A checkable item's check, in the same slot an icon takes. */
+.toolbarMenuCheck {
+    flex: 0 0 24px;
+    width: 24px;
+    text-align: center;
+}
+
+.toolbarMenuItem .toolbarMenuIcon::before {
+    width: 24px;
+}
+
+.toolbarMenuSeparator {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--vscode-menu-separatorBackground,
+            var(--vscode-panel-border));
 }
 
 /* The first thing in the panel, above what it is about. */
@@ -706,6 +948,13 @@ button:focus-visible {
             var(--vscode-list-activeSelectionForeground));
 }
 
+.copyMenuSeparator {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--vscode-menu-separatorBackground,
+            var(--vscode-panel-border));
+}
+
 .copyMenuItem:disabled {
     opacity: 0.4;
     cursor: default;
@@ -910,10 +1159,16 @@ button:focus-visible {
     padding: 2px 6px;
 }
 
+/* A primary key column: the codicon key after its name. */
 .tabulator .tabulator-header .tabulator-col.pkColumn
 .tabulator-col-title::after {
-    content: " \1F511";
-    font-size: 0.85em;
+    content: "\eb11";
+    margin-left: 4px;
+    font-family: "codicon";
+    font-size: 1em;
+    font-weight: normal;
+    vertical-align: text-bottom;
+    color: var(--vscode-descriptionForeground);
 }
 
 .tabulator .tabulator-tableholder {
@@ -1005,29 +1260,184 @@ button:focus-visible {
     opacity: 0.7;
 }
 
-.tabulator .tabulator-cell.rowHeaderCell {
-    padding: 0;
+/*
+ * Frozen primary key columns stay in place while the rest scroll under
+ * them, so they need a background of their own: the content's surface,
+ * with the row's state - hovered, selected, added, deleted, changed -
+ * laid over it as a second layer, since those colours are see-through.
+ */
+.resultGridHost {
+    --grid-surface: var(--vscode-sideBar-background,
+            var(--vscode-panel-background));
 }
 
-.rowDeleteToggle {
-    border: none;
-    border-radius: 0;
-    width: 100%;
-    padding: 0;
-    background: transparent;
-    color: var(--vscode-descriptionForeground);
+.resultGridHost .tabulator-header .tabulator-col.tabulator-frozen {
+    background-color: var(--grid-surface);
 }
 
-.rowDeleteToggle:hover {
-    color: var(--vscode-errorForeground);
-    background: transparent;
+.resultGridHost .tabulator-row .tabulator-cell.tabulator-frozen {
+    background-color: var(--grid-surface);
+    background-image: linear-gradient(var(--frozen-tint, transparent),
+            var(--frozen-tint, transparent));
 }
 
-.nullValue {
-    color: var(--vscode-descriptionForeground);
-    font-style: italic;
+.resultGridHost .tabulator-row.tabulator-selectable:hover
+.tabulator-cell.tabulator-frozen {
+    --frozen-tint: var(--vscode-list-hoverBackground);
+}
+
+.resultGridHost .tabulator-row.tabulator-selected
+.tabulator-cell.tabulator-frozen {
+    --frozen-tint: var(--vscode-list-activeSelectionBackground);
+}
+
+.resultGridHost .tabulator-row.addedRow .tabulator-cell.tabulator-frozen,
+.resultGridHost .tabulator-row .tabulator-cell.tabulator-frozen.dirtyCell {
+    --frozen-tint: var(--vscode-diffEditor-insertedTextBackground,
+            rgb(155 185 85 / 20%));
+}
+
+/* Faded by its colour, not its opacity, which would let the rest through. */
+.resultGridHost .tabulator-row.deletedRow .tabulator-cell.tabulator-frozen {
+    --frozen-tint: var(--vscode-diffEditor-removedTextBackground,
+            rgb(255 0 0 / 20%));
+    opacity: 1;
+    color: color-mix(in srgb, currentColor 70%, transparent);
+}
+
+/*
+ * Where the frozen columns end and the scrolling ones begin. Tabulator's
+ * theme draws that edge in #ddd, which glares in a dark theme; it is the
+ * grid lines' own colour here, twice their width.
+ */
+.resultGridHost .tabulator-frozen.tabulator-frozen-left {
+    box-shadow: 2px 0 3px -1px var(--vscode-widget-shadow, transparent);
+}
+
+.resultGridHost .tabulator-header .tabulator-frozen.tabulator-frozen-left,
+.resultGridHost .tabulator-row
+.tabulator-cell.tabulator-frozen.tabulator-frozen-left {
+    border-right: 2px solid var(--vscode-panel-border);
+}
+
+.resultGridHost .tabulator-header .tabulator-frozen.tabulator-frozen-right,
+.resultGridHost .tabulator-row
+.tabulator-cell.tabulator-frozen.tabulator-frozen-right {
+    border-left: 2px solid var(--vscode-panel-border);
 }
 
 .tabulator .tabulator-col-resize-handle {
     background: transparent;
+}
+
+/*
+ * NULL, and a BLOB, a spatial value or a vector, are the MySQL Shell's
+ * data icons. The cell keeps the word, so it is still what is copied and
+ * what a screen reader says, and the icon is drawn over it in the badge
+ * colour. Each is 13px high and as wide as its own picture.
+ */
+.resultGridHost .dataIcon {
+    display: inline-block;
+    height: 13px;
+    vertical-align: middle;
+    overflow: hidden;
+    font-size: 0;
+    color: transparent;
+    background-color: var(--vscode-badge-foreground,
+            var(--vscode-descriptionForeground));
+    mask-position: 0 center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+}
+
+.resultGridHost .nullValue {
+    width: 31px;
+    mask-image: url("../../images/light/data-null.svg");
+}
+
+.resultGridHost .blobValue {
+    width: 31px;
+    mask-image: url("../../images/light/data-blob.svg");
+}
+
+.resultGridHost .geometryValue {
+    width: 61px;
+    mask-image: url("../../images/light/data-geometry.svg");
+}
+
+/*
+ * A BLOB cell's Save and Load buttons, over its right-hand end while the
+ * pointer is on the cell - the MySQL Shell's toolbar icons, as masks.
+ */
+.resultGridHost .blobCell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 16px;
+}
+
+.resultGridHost .cellOverlay {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    display: none;
+    gap: 2px;
+    transform: translateY(-50%);
+}
+
+.resultGridHost .tabulator-cell:hover .cellOverlay {
+    display: flex;
+}
+
+.resultGridHost .cellOverlayButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--vscode-widget-border, transparent);
+    border-radius: 3px;
+    background: var(--vscode-editorWidget-background,
+            var(--vscode-editor-background));
+    color: var(--vscode-icon-foreground, var(--vscode-foreground));
+}
+
+.resultGridHost .cellOverlayButton:hover {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.resultGridHost .cellOverlayButton::before {
+    content: "";
+    width: 16px;
+    height: 14px;
+    background-color: currentColor;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+}
+
+.resultGridHost .cellOverlayButton.saveIcon::before {
+    mask-image: url("../../images/light/toolbar-save.svg");
+}
+
+.resultGridHost .cellOverlayButton.openIcon::before {
+    mask-image: url("../../images/light/toolbar-edit.svg");
+}
+
+/* The text a cell shows under its button, cut short as any cell's is. */
+.resultGridHost .openableCell .cellText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.resultGridHost .cellOverlayButton.loadIcon::before {
+    mask-image: url("../../images/light/toolbar-load.svg");
+}
+
+.resultGridHost .vectorValue {
+    width: 46px;
+    mask-image: url("../../images/light/data-vector.svg");
 }

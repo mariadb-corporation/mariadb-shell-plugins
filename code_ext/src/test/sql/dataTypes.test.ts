@@ -17,7 +17,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { baseTypeName, literalKind } from "../../sql/dataTypes.js";
+import {
+    baseTypeName,
+    literalKind,
+    valueDisplayOf,
+} from "../../sql/dataTypes.js";
 
 describe("baseTypeName", () => {
     it.each([
@@ -51,5 +55,33 @@ describe("literalKind", () => {
         ["timestamp", "temporal"],
     ] as const)("classifies %s as %s", (columnType, expected) => {
         expect(literalKind(columnType)).toBe(expected);
+    });
+});
+
+describe("valueDisplayOf", () => {
+    it("goes by the server's type where the table's is not known", () => {
+        expect(valueDisplayOf("BYTES")).toBe("binary");
+        expect(valueDisplayOf("BLOB")).toBe("blob");
+        expect(valueDisplayOf("GEOMETRY")).toBe("geometry");
+        // Shown as text, as the MySQL Shell shows it, but marked as JSON.
+        expect(valueDisplayOf("JSON")).toBe("json");
+        expect(valueDisplayOf(undefined, "json")).toBe("json");
+        expect(valueDisplayOf("STRING")).toBeUndefined();
+        expect(valueDisplayOf(null)).toBeUndefined();
+        expect(valueDisplayOf(undefined)).toBeUndefined();
+    });
+
+    it("knows a vector only by the table's own column type", () => {
+        // The server reports a VECTOR as BYTES, as it does a VARBINARY.
+        expect(valueDisplayOf("BYTES", "vector(3)")).toBe("vector");
+        expect(valueDisplayOf("BYTES", "varbinary(12)")).toBe("binary");
+    });
+
+    it("reads the table's column type for the rest too", () => {
+        expect(valueDisplayOf(undefined, "mediumblob")).toBe("blob");
+        expect(valueDisplayOf(undefined, "binary(16)")).toBe("binary");
+        expect(valueDisplayOf(undefined, "point")).toBe("geometry");
+        expect(valueDisplayOf(undefined, "multipolygon")).toBe("geometry");
+        expect(valueDisplayOf(undefined, "varchar(10)")).toBeUndefined();
     });
 });

@@ -21,15 +21,35 @@
  * apart.
  */
 
+import type { ValueDisplay } from "../sql/dataTypes.js";
+import type { IEditableRow } from "./changes.js";
+
+/** How a value is held in the grid, which decides how it is opened. */
+export type ValueKind = "text" | "json" | "binary";
+
 /** One column of a result set, with what the grid needs to edit it. */
 export interface IResultColumn {
     name: string;
     /** The MariaDB column type, where it is known. */
     datatype?: string;
+    /**
+     * How its values are shown where that is not as text: hex, or an
+     * icon standing for a BLOB, a spatial value or a vector.
+     */
+    display?: ValueDisplay;
     /** True when the column is part of the primary key. */
     isPrimary?: boolean;
-    /** True when the server fills the column in itself. */
+    /**
+     * True for a generated (virtual or stored) column, which the server
+     * computes and refuses to be given a value for.
+     */
     isGenerated?: boolean;
+    /**
+     * True for an AUTO_INCREMENT column. Unlike a generated one it can be
+     * written: edited like any column, and left out of an INSERT only
+     * where the new row leaves it empty, for the server to assign.
+     */
+    isAutoIncrement?: boolean;
     nullable?: boolean;
 }
 
@@ -37,6 +57,26 @@ export interface IResultColumn {
 export interface IResultTarget {
     schema?: string;
     table: string;
+}
+
+/**
+ * Which page of its statement's rows a result set holds. Present only on
+ * one the server paged - a SELECT without a LIMIT of its own - so a
+ * result set without it holds every row there is.
+ */
+export interface IResultPage {
+    /** Which page, from 0. */
+    index: number;
+    /** How many rows a page holds. */
+    size: number;
+    /** True when there are rows after this page. */
+    hasMore: boolean;
+    /**
+     * Counts the times the page was fetched. The same page fetched again
+     * - after an apply - is new rows, and the grid's edits are rebuilt
+     * from it.
+     */
+    loads: number;
 }
 
 /** One result set, shown as one tab. */
@@ -54,6 +94,8 @@ export interface IResultSet {
     readOnlyReason?: string;
     target?: IResultTarget;
     status: string;
+    /** Which page of the rows this is, where the server paged them. */
+    page?: IResultPage;
 }
 
 /** Where a statement sits in the file it came from. */
@@ -216,6 +258,16 @@ export interface IViewState {
     actions: IActionRow[];
     /** Its result sets, replaced by each execution. */
     resultSets: IResultSet[];
+    /**
+     * True in a result set's own editor tab, which holds that one result
+     * set and none of the view's pickers or tabs.
+     */
+    maximized?: boolean;
+    /**
+     * Whether a result set's primary key columns start out frozen - the
+     * extension's setting. Each result set can switch it for itself.
+     */
+    freezeKeyColumns?: boolean;
 }
 
 /**
@@ -244,7 +296,16 @@ export interface IGeneratedStatement {
 
 /** Messages the extension sends to the webview. */
 export type HostMessage =
-    | { type: "state"; state: IViewState }
+    | {
+        type: "state";
+        state: IViewState;
+        /**
+         * Pending edits to start a result set from, by its id, in place of
+         * its rows as they came: what a result set moved between the
+         * panel and an editor tab was part way through.
+         */
+        editing?: Record<string, IEditableRow[]>;
+    }
     | {
         type: "applied";
         resultId: string;
@@ -253,6 +314,32 @@ export type HostMessage =
         error?: string;
         /** The index of the statement that failed, where it is known. */
         failedIndex?: number;
+    }
+    /** Another page could not be fetched; the one on show stays. */
+    | { type: "pageFailed"; resultId: string; error: string }
+    /**
+     * The file asked for by `loadValue`, as hex. Neither `value` nor
+     * `error` means the user cancelled.
+     */
+    | {
+        type: "valueLoaded";
+        requestId: string;
+        value?: string;
+        error?: string;
+    }
+    /**
+     * A value opened in an editor was saved: put it into its cell, and
+     * answer with `valueEditResult`. `pageKey` is the page the value was
+     * opened from, so a cell whose page has since changed is refused.
+     */
+    | {
+        type: "valueEdited";
+        requestId: string;
+        resultId: string;
+        rowIndex: number;
+        column: string;
+        pageKey: string;
+        value: string;
     };
 
 /** Messages the webview sends to the extension. */
@@ -260,6 +347,17 @@ export type WebviewMessage =
     | { type: "ready" }
     | { type: "applyChanges"; resultId: string; changes: RowChange[] }
     | { type: "refresh"; resultId: string }
+    /**
+     * Move a result set out of the panel into an editor tab of its own,
+     * with the edits it has pending.
+     */
+    | { type: "maximize"; resultId: string; rows: IEditableRow[] }
+    /** Fetch another page of a result set's rows, from 0. */
+    | { type: "page"; resultId: string; page: number }
+    /** Close a result set: its tab in the panel, or its editor tab. */
+    | { type: "closeResult"; resultId: string }
+    /** Put a maximized result set back into the panel. */
+    | { type: "minimize"; resultId: string; rows: IEditableRow[] }
     /** Put the cursor on the statement an action row came from. */
     | { type: "revealStatement"; source: IStatementSource }
     /** Show another connection's actions and results. */
@@ -269,4 +367,29 @@ export type WebviewMessage =
      * all of them together when the session is left out.
      */
     | { type: "selectSession"; session?: string }
-    | { type: "copyToClipboard"; text: string };
+    | { type: "copyToClipboard"; text: string }
+    /**
+     * Save a cell's value to a file the user picks. `value` is as the
+     * grid holds it - hex for a binary value - and `name` what the file
+     * is called, without an extension; one is guessed from the content.
+     */
+    | { type: "saveValue"; value: string; name: string }
+    /** Ask the user for a file, answered by `valueLoaded`. */
+    | { type: "loadValue"; requestId: string }
+    /**
+     * Open a cell's value in an editor: beside a maximized result set, or
+     * as a tab of its own from the panel. `value` is as the grid holds it.
+     */
+    | {
+        type: "openValue";
+        resultId: string;
+        rowIndex: number;
+        column: string;
+        pageKey: string;
+        value: string | null;
+        kind: ValueKind;
+        name: string;
+        readOnly: boolean;
+    }
+    /** Whether a `valueEdited` could be put into its cell, and why not. */
+    | { type: "valueEditResult"; requestId: string; error?: string };

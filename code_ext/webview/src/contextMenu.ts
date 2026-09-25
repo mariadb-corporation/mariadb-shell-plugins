@@ -78,6 +78,13 @@ export const closeCopyMenu = (): void => {
     menu = undefined;
 };
 
+/** One entry of a cell's menu; a separator when it has no label. */
+export interface IContextMenuItem {
+    label?: string;
+    disabled?: boolean;
+    onClick?(): void;
+}
+
 /**
  * Opens the menu for one cell.
  *
@@ -91,6 +98,28 @@ export const openCopyMenu = (
     event: MouseEvent,
     content: ICopyMenuContent,
 ): HTMLElement => {
+    return openContextMenu(event, [{
+        label: "Copy",
+        disabled: content.text === "",
+        onClick: () => { content.onCopy(content.text); },
+    }]);
+};
+
+/**
+ * Opens a menu of the given items at the pointer. Only one is open at a
+ * time, whichever grid opened it, and it closes on a pick as it does on
+ * anything else happening.
+ *
+ * @param event The right-click. Its default is prevented here, which is
+ *              what keeps VS Code's Cut / Copy / Paste menu away.
+ * @param items What it offers, in order.
+ *
+ * @returns The menu element.
+ */
+export const openContextMenu = (
+    event: MouseEvent,
+    items: IContextMenuItem[],
+): HTMLElement => {
     event.preventDefault();
     closeCopyMenu();
 
@@ -98,17 +127,32 @@ export const openCopyMenu = (
     element.className = "copyMenu";
     element.setAttribute("role", "menu");
 
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "copyMenuItem";
-    item.setAttribute("role", "menuitem");
-    item.textContent = "Copy";
-    item.disabled = content.text === "";
-    item.addEventListener("click", () => {
-        content.onCopy(content.text);
-        closeCopyMenu();
-    });
-    element.append(item);
+    let first: HTMLButtonElement | undefined;
+    for (const entry of items) {
+        if (entry.label === undefined) {
+            const separator = document.createElement("div");
+            separator.className = "copyMenuSeparator";
+            separator.setAttribute("role", "separator");
+            element.append(separator);
+            continue;
+        }
+
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "copyMenuItem";
+        item.setAttribute("role", "menuitem");
+        item.textContent = entry.label;
+        item.disabled = entry.disabled ?? false;
+        item.addEventListener("click", () => {
+            closeCopyMenu();
+            entry.onClick?.();
+        });
+        element.append(item);
+        if (!first && !item.disabled) {
+            first = item;
+        }
+    }
+    const item = first ?? element;
 
     document.body.append(element);
     const position = menuPosition(

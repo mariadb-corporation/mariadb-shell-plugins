@@ -25,12 +25,14 @@ import type {
     IExecutionReport,
     IActionRow,
     IResultColumn,
+    IResultPage,
     IResultSet,
     IStatementSource,
     ActionSeverity,
     RowChange,
 } from "../webview/protocol.js";
 import { OBJECT_NOT_FOUND } from "../mcp/protocol.js";
+import { valueDisplayOf } from "./dataTypes.js";
 import { createQueryBuilder } from "./resultSetQueryBuilder.js";
 import { splitStatements } from "./splitStatements.js";
 import { findUpdatableTarget } from "./statementTarget.js";
@@ -111,6 +113,21 @@ export const warningRowsOf = (
  */
 const rowsInSet = (count: number): string => {
     return `${count} row${count === 1 ? "" : "s"} in set`;
+};
+
+/**
+ * What a result set's own bar says about it: its rows, and which page
+ * they are where there is more than one.
+ *
+ * @param count How many rows it holds.
+ * @param page Which page they are, where the server paged them.
+ *
+ * @returns `200 rows in set`, `200 rows in set (page 2)`.
+ */
+export const pageStatus = (count: number, page?: IResultPage): string => {
+    return page !== undefined && (page.index > 0 || page.hasMore)
+        ? `${rowsInSet(count)} (page ${page.index + 1})`
+        : rowsInSet(count);
 };
 
 /**
@@ -285,29 +302,38 @@ export const captionFor = (statement: string, limit = 40): string => {
  *
  * @param labels The result set's column labels, in order.
  * @param details The table's columns.
+ * @param types Each column's type as the server reported it, in order,
+ *              which is what decides how a value is shown where the
+ *              table's columns are not known.
  *
  * @returns The grid columns.
  */
 export const mapColumns = (
     labels: string[],
     details?: IColumnDetails[],
+    types?: Array<string | null>,
 ): IResultColumn[] => {
     const byName = new Map(details?.map((column) => {
         return [column.name, column];
     }));
 
-    return labels.map((name) => {
+    return labels.map((name, position) => {
         const column = byName.get(name);
+        const display = valueDisplayOf(types?.[position], column?.datatype);
+        const shown = display === undefined ? {} : { display };
         if (!column) {
-            return { name };
+            return { name, ...shown };
         }
 
         return {
             name,
+            ...shown,
             datatype: column.datatype,
             isPrimary: Boolean(column.is_primary),
-            isGenerated: Boolean(column.is_generated)
-                || column.id_generation === "auto_inc",
+            // Kept apart: a generated column cannot be written, an
+            // auto-increment one - a primary key, usually - can.
+            isGenerated: Boolean(column.is_generated),
+            isAutoIncrement: column.id_generation === "auto_inc",
             nullable: !column.not_null,
         };
     });
@@ -347,6 +373,12 @@ export interface IExecutionOptions {
     source?: IScriptSource;
     /** Whether a failing statement ends the script. */
     stopOnError?: boolean;
+    /**
+     * How many rows a result set holds at a time. A SELECT without a
+     * LIMIT of its own comes back one page long, and can be paged on.
+     * Left out, every row comes back.
+     */
+    pageSize?: number;
     /** What to call this run in its own row. */
     label?: string;
 }
@@ -478,7 +510,7 @@ export class ExecutionService {
         let results: IStatementResult[];
         try {
             results = await this.api.executeScript(
-                connectionId, script, options.stopOnError);
+                connectionId, script, options.stopOnError, options.pageSize);
         } catch (error) {
             // The call itself failed - a closed connection, a shell that
             // went away - so nothing ran and there is no statement to
@@ -574,6 +606,7 @@ export class ExecutionService {
                 describeResult(result),
                 currentSchema,
                 runId,
+                options.pageSize,
             );
             resultSets.push(resultSet);
 
@@ -692,6 +725,51 @@ export class ExecutionService {
     }
 
     /**
+     * Fetches another page of a result set's rows.
+     *
+     * Only the rows change: the columns, the table it writes back to and
+     * whether it can be edited are the statement's, and so the same on
+     * every page.
+     *
+     * @param connectionId The UUID to run on.
+     * @param resultSet The result set to page, which the server paged.
+     * @param index Which page to fetch, from 0.
+     *
+     * @returns The result set holding that page.
+     */
+    public async fetchPage(
+        connectionId: string,
+        resultSet: IResultSet,
+        index: number,
+    ): Promise<IResultSet> {
+        const current = resultSet.page;
+        if (current === undefined) {
+            throw new Error("This result set holds all of its rows.");
+        }
+
+        const page = Math.max(0, index);
+        const result = await this.api.executeSql(
+            connectionId,
+            resultSet.statement,
+            { limit: current.size, offset: page * current.size },
+        );
+        const rows = result.rows ?? [];
+        const next: IResultPage = {
+            index: page,
+            size: current.size,
+            hasMore: result.has_more_pages ?? false,
+            loads: current.loads + 1,
+        };
+
+        return {
+            ...resultSet,
+            rows,
+            page: next,
+            status: pageStatus(rows.length, next),
+        };
+    }
+
+    /**
      * Turns one result into a grid, looking up the source table's columns
      * where the statement allows the grid to be edited.
      *
@@ -711,16 +789,30 @@ export class ExecutionService {
         status: string,
         currentSchema: () => Promise<string | undefined>,
         runId: string,
+        pageSize?: number,
     ): Promise<IResultSet> {
         const labels = result.columns ?? [];
+        const rows = result.rows ?? [];
+        // Paged only where the server added the limit; anything else came
+        // back whole.
+        const page: IResultPage | undefined =
+            result.has_more_pages === undefined || pageSize === undefined
+                ? undefined
+                : {
+                    index: 0,
+                    size: pageSize,
+                    hasMore: result.has_more_pages,
+                    loads: 1,
+                };
         const base: IResultSet = {
             id: `${runId}-result-${ordinal}`,
             caption: `Result #${ordinal + 1}`,
             statement,
-            columns: mapColumns(labels),
-            rows: result.rows ?? [],
+            columns: mapColumns(labels, undefined, result.column_types),
+            rows,
             editable: false,
-            status,
+            status: page === undefined ? status : pageStatus(rows.length, page),
+            ...(page === undefined ? {} : { page }),
         };
 
         if (isProcedureCall(statement)) {
@@ -777,7 +869,8 @@ export class ExecutionService {
             };
         }
 
-        const columns = mapColumns(labels, details.columns);
+        const columns = mapColumns(
+            labels, details.columns, result.column_types);
 
         const hasKey = columns.some((column) => {
             return column.isPrimary;
@@ -822,7 +915,7 @@ export class ExecutionService {
             id: `${runId}-result-${ordinal}`,
             caption: `Result #${ordinal + 1}`,
             statement,
-            columns: mapColumns(set.columns),
+            columns: mapColumns(set.columns, undefined, set.column_types),
             rows: set.rows,
             editable: false,
             status: rowsInSet(set.rows.length),

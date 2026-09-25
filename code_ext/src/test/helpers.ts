@@ -24,6 +24,7 @@ import type {
     IObjectDetails,
     IObjectInfo,
     ISchemaInfo,
+    IPageRequest,
     IStatementResult,
 } from "../mcp/types.js";
 import type { InstallCommand, ProcessRunner } from "../shell/installer.js";
@@ -159,6 +160,11 @@ export interface FakeApiOptions {
     results?: Record<string, IStatementResult[]>;
     /** Runs for any script that `results` does not name. */
     defaultResults?: IStatementResult[];
+    /**
+     * The rows `executeSql` pages through, as a server would: it answers
+     * `limit` of them from `offset`, with `has_more_pages`.
+     */
+    pagedRows?: Array<Record<string, unknown>>;
 }
 
 export interface FakeApi extends IMariaDbApi {
@@ -188,6 +194,10 @@ export interface FakeApi extends IMariaDbApi {
     }>;
     /** What the last script was asked to do about a failing statement. */
     stopOnError?: boolean;
+    /** The limit the last script was run with. */
+    limit?: number;
+    /** Every `executeSql` call, in order. */
+    statements: Array<{ sql: string; page?: IPageRequest }>;
     /** Every `getObjectDetails` call, as `schema.name:type`. */
     lookups: string[];
 }
@@ -211,6 +221,7 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
 
     const api: FakeApi = {
         scripts,
+        statements: [],
         lookups: [],
         closed,
         added,
@@ -351,9 +362,11 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             _id: string,
             script: string,
             stopOnError?: boolean,
+            limit?: number,
         ) => {
             scripts.push(script);
             api.stopOnError = stopOnError;
+            api.limit = limit;
 
             const named = options.results?.[script.trim()];
 
@@ -361,6 +374,22 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
                 named ?? options.defaultResults
                 ?? [{ affected_items_count: 0, warnings_count: 0 }],
             );
+        },
+
+        executeSql: (_id: string, sql: string, page?: IPageRequest) => {
+            api.statements.push({ sql, ...(page ? { page } : {}) });
+            const all = options.pagedRows ?? [];
+            if (!page) {
+                return Promise.resolve({ columns: ["n"], rows: all });
+            }
+
+            const offset = page.offset ?? 0;
+
+            return Promise.resolve({
+                columns: Object.keys(all[0] ?? {}),
+                rows: all.slice(offset, offset + page.limit),
+                has_more_pages: all.length > offset + page.limit,
+            });
         },
     };
 

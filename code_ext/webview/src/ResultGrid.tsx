@@ -25,7 +25,12 @@ import {
 } from "tabulator-tables";
 
 import type { IEditableRow } from "../../src/webview/changes.js";
-import type { IResultSet } from "../../src/webview/protocol.js";
+import type { ValueDisplay } from "../../src/sql/dataTypes.js";
+import type {
+    IResultColumn,
+    IResultSet,
+} from "../../src/webview/protocol.js";
+import { openContextMenu } from "./contextMenu.js";
 
 /** The field Tabulator keys a row on, hidden from the user. */
 export const ROW_INDEX_FIELD = "__mariadbRowIndex";
@@ -35,36 +40,307 @@ export interface IGridCallbacks {
     onCellEdited(rowIndex: number, column: string, value: unknown): void;
     onToggleDeleted(rowIndex: number): void;
     onSelectionChanged(rowIndex: number | undefined): void;
+    /** Saves a cell's value to a file the user picks. */
+    onSaveValue?(rowIndex: number, column: string): void;
+    /** Loads a file the user picks into a cell. */
+    onLoadValue?(rowIndex: number, column: string): void;
+    /** Opens a cell's value in an editor. */
+    onOpenValue?(rowIndex: number, column: string): void;
 }
+
+/**
+ * The text length past which a value gets the Open in Editor button over
+ * it: long enough that a cell shows only its start.
+ */
+export const LONG_TEXT = 80;
+
+/** What a cell of the grid can have done to its value, and whether. */
+export interface ICellActions {
+    /** A BLOB with a value: there is something to save. */
+    canSave: boolean;
+    /** A BLOB of an editable row: a file can be loaded into it. */
+    canLoad: boolean;
+    /** An editable, nullable cell that is not NULL already. */
+    canSetNull: boolean;
+    /**
+     * Whether a value opened in an editor is read only there: a result
+     * that cannot be edited, a generated column, a row marked for
+     * deletion, or a spatial value or vector, which cannot be written
+     * back from the hex they are held as. Every value can be opened.
+     */
+    openReadOnly: boolean;
+}
+
+/**
+ * Works out what can be done with one cell's value, the rules the MySQL
+ * Shell's cell menu follows: saving and loading a file are for BLOBs, and
+ * anything that changes the value needs a row that can be edited.
+ *
+ * @param resultSet The result set the cell is in.
+ * @param column The cell's column.
+ * @param value The cell's value.
+ * @param deleted Whether its row is marked for deletion.
+ *
+ * @returns What its menu and its overlay offer.
+ */
+export const cellActionsOf = (
+    resultSet: IResultSet,
+    column: IResultColumn,
+    value: unknown,
+    deleted: boolean,
+): ICellActions => {
+    const blob = column.display === "blob";
+    const changeable = resultSet.editable && !column.isGenerated && !deleted;
+    const isNull = value === null || value === undefined;
+
+    return {
+        canSave: blob && !isNull,
+        canLoad: blob && changeable,
+        canSetNull: changeable && column.nullable !== false && !isNull,
+        openReadOnly: !changeable || !editableAsText(column.display),
+    };
+};
+
+/**
+ * Whether a cell's value is worth an Open in Editor button over it: a
+ * JSON value, or text a cell cannot show whole - several lines of it, or
+ * more than `LONG_TEXT` characters.
+ *
+ * @param value The cell's value.
+ * @param display How its column's values are shown.
+ *
+ * @returns True for such a value.
+ */
+export const worthOpening = (
+    value: unknown,
+    display?: ValueDisplay,
+): boolean => {
+    if (value === null || value === undefined) {
+        return false;
+    }
+
+    const text = String(value);
+
+    return display === "json" || text.includes("\n")
+        || text.length > LONG_TEXT;
+};
+
+/**
+ * A small button over a BLOB cell. It keeps its clicks to itself: they
+ * would otherwise reach the cell, and open its editor or select its row.
+ *
+ * @param icon The class that draws its icon.
+ * @param title What it does.
+ * @param onClick What happens on a click.
+ *
+ * @returns The button.
+ */
+const overlayButton = (
+    icon: string,
+    title: string,
+    onClick: () => void,
+): HTMLButtonElement => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `cellOverlayButton ${icon}`;
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    for (const kind of ["mousedown", "dblclick"]) {
+        button.addEventListener(kind, (event) => {
+            event.stopPropagation();
+        });
+    }
+    button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        onClick();
+    });
+
+    return button;
+};
+
+/**
+ * Renders a BLOB cell: its icon, and the Open, Save and Load buttons that
+ * show over it while the pointer is on it.
+ *
+ * @param value The cell's value.
+ * @param actions What can be done with it.
+ * @param onSave Saves it to a file.
+ * @param onLoad Loads a file into it.
+ * @param onOpen Opens it in an editor.
+ *
+ * @returns The cell's content.
+ */
+export const blobCell = (
+    value: unknown,
+    actions: ICellActions,
+    onSave: () => void,
+    onLoad: () => void,
+    onOpen?: () => void,
+): HTMLElement => {
+    const host = document.createElement("span");
+    host.className = "blobCell";
+    host.append(formatValue(value, "blob") as HTMLElement);
+
+    const openable = onOpen !== undefined && value !== null
+        && value !== undefined;
+    if (actions.canSave || actions.canLoad || openable) {
+        const overlay = document.createElement("span");
+        overlay.className = "cellOverlay";
+        if (openable) {
+            overlay.append(overlayButton("openIcon",
+                "Open Value in Editor", onOpen));
+        }
+        if (actions.canSave) {
+            overlay.append(overlayButton("saveIcon",
+                "Save Value to File...", onSave));
+        }
+        if (actions.canLoad) {
+            overlay.append(overlayButton("loadIcon",
+                "Load Value from File...", onLoad));
+        }
+        host.append(overlay);
+    }
+
+    return host;
+};
+
+/**
+ * Renders a text cell that holds more than it can show, with the Open in
+ * Editor button over it while the pointer is on it.
+ *
+ * @param value The cell's value.
+ * @param display How its column's values are shown.
+ * @param onOpen Opens it in an editor.
+ *
+ * @returns The cell's content.
+ */
+export const openableCell = (
+    value: unknown,
+    display: ValueDisplay | undefined,
+    onOpen: () => void,
+): HTMLElement => {
+    const host = document.createElement("span");
+    host.className = "blobCell openableCell";
+    const text = document.createElement("span");
+    text.className = "cellText";
+    text.textContent = formatValue(value, display) as string;
+    host.append(text);
+
+    const overlay = document.createElement("span");
+    overlay.className = "cellOverlay";
+    overlay.append(overlayButton("openIcon", "Open Value in Editor", onOpen));
+    host.append(overlay);
+
+    return host;
+};
 
 interface IResultGridProperties extends IGridCallbacks {
     resultSet: IResultSet;
     rows: IEditableRow[];
     /** Scroll to and highlight this row, e.g. from the SQL preview. */
     selectedRowIndex?: number;
+    /**
+     * Bumped by Start Editing: each new value opens the first editable
+     * cell of the first row not marked for deletion.
+     */
+    editRequest?: number;
+    /** Whether the primary key columns are frozen at the left. */
+    freezeKeys?: boolean;
 }
 
+/** How many hex digits of a binary value are shown before it is cut. */
+export const BINARY_DIGITS_SHOWN = 64;
+
+/** The icon each kind of value that is not shown as text stands under. */
+const VALUE_ICONS: Partial<Record<ValueDisplay, string>> = {
+    blob: "BLOB",
+    geometry: "GEOMETRY",
+    vector: "VECTOR",
+};
+
 /**
- * Renders a value for the grid. NULL gets a marker of its own, because an
- * empty cell would be indistinguishable from an empty string.
+ * A marker drawn as one of the MySQL Shell's data icons. The word it
+ * stands for stays in the cell as its text, so it is still what is copied
+ * and what a screen reader says; the stylesheet draws the icon over it.
+ *
+ * @param className The class that picks the icon.
+ * @param text The word it stands for.
+ *
+ * @returns The element.
+ */
+const valueIcon = (className: string, text: string): HTMLElement => {
+    const span = document.createElement("span");
+    span.className = `dataIcon ${className}`;
+    span.textContent = text;
+
+    return span;
+};
+
+/**
+ * Renders a value for the grid, as the MySQL Shell's result view does.
+ *
+ * NULL gets a marker of its own, because an empty cell would be
+ * indistinguishable from an empty string. A binary value - which arrives
+ * as hex - is shown as `0x` and its first 64 digits; a BLOB, a spatial
+ * value or a vector by an icon standing for it.
  *
  * @param value The value to show.
+ * @param display How the column's values are shown, if not as text.
  *
  * @returns The HTML for the cell.
  */
-export const formatCell = (cell: CellComponent): string | HTMLElement => {
-    const value = cell.getValue() as unknown;
+export const formatValue = (
+    value: unknown,
+    display?: ValueDisplay,
+): string | HTMLElement => {
     if (value === null || value === undefined) {
-        const span = document.createElement("span");
-        span.className = "nullValue";
-        span.textContent = "NULL";
+        const span = valueIcon("nullValue", "NULL");
 
         return span;
     }
 
-    return typeof value === "object"
+    const icon = display === undefined ? undefined : VALUE_ICONS[display];
+    if (icon !== undefined) {
+        return valueIcon(`${display}Value`, icon);
+    }
+
+    const text = typeof value === "object"
         ? JSON.stringify(value)
         : String(value);
+
+    if (display === "binary") {
+        return text.length > BINARY_DIGITS_SHOWN
+            ? `0x${text.slice(0, BINARY_DIGITS_SHOWN)}\u2026`
+            : `0x${text}`;
+    }
+
+    return text;
+};
+
+/**
+ * Renders a cell of a column shown as text.
+ *
+ * @param cell The cell.
+ *
+ * @returns The HTML for the cell.
+ */
+export const formatCell = (cell: CellComponent): string | HTMLElement => {
+    return formatValue(cell.getValue() as unknown);
+};
+
+/**
+ * Whether a column's values can be edited as text in the grid. A spatial
+ * value or a vector arrives as hex and would be written back as a quoted
+ * string, which is not the value it was; binary and BLOB values go back
+ * as hex, so those can.
+ *
+ * @param display How the column's values are shown.
+ *
+ * @returns True where the grid may open an editor on it.
+ */
+export const editableAsText = (display?: ValueDisplay): boolean => {
+    return display !== "geometry" && display !== "vector";
 };
 
 /**
@@ -75,52 +351,121 @@ export const formatCell = (cell: CellComponent): string | HTMLElement => {
  *
  * @returns The column definitions, including the row header.
  */
+/**
+ * The columns in the order the grid shows them: as the result set has
+ * them, or - with its primary key frozen - the key columns first. The
+ * grid can freeze columns only at its left-hand edge, so a key column
+ * that comes later in the result is moved there to be frozen.
+ *
+ * @param resultSet The result set.
+ * @param freezeKeys Whether its primary key columns are frozen.
+ *
+ * @returns Its columns, each with whether it is frozen.
+ */
+export const orderColumns = (
+    resultSet: IResultSet,
+    freezeKeys: boolean,
+): Array<{ column: IResultColumn; frozen: boolean }> => {
+    const keys = freezeKeys
+        ? resultSet.columns.filter((column) => { return column.isPrimary; })
+        : [];
+    const rest = resultSet.columns.filter((column) => {
+        return !keys.includes(column);
+    });
+
+    return [
+        ...keys.map((column) => { return { column, frozen: true }; }),
+        ...rest.map((column) => { return { column, frozen: false }; }),
+    ];
+};
+
 export const buildColumns = (
     resultSet: IResultSet,
     callbacks: IGridCallbacks,
+    freezeKeys = false,
 ): ColumnDefinition[] => {
     const columns: ColumnDefinition[] = [];
 
-    if (resultSet.editable) {
-        // The row header carries the delete toggle and the row state.
-        columns.push({
-            title: "",
-            field: ROW_INDEX_FIELD,
-            width: 34,
-            hozAlign: "center",
-            headerSort: false,
-            resizable: false,
-            frozen: true,
-            cssClass: "rowHeaderCell",
-            formatter: (cell) => {
-                const row = cell.getRow().getData() as Record<string, unknown>;
-                const deleted = Boolean(row.__deleted);
-                const button = document.createElement("button");
-                button.type = "button";
-                button.className = "rowDeleteToggle";
-                button.textContent = deleted ? "↺" : "✕";
-                button.title = deleted
-                    ? "Keep this row"
-                    : "Mark this row for deletion";
-
-                return button;
-            },
-            cellClick: (_event, cell) => {
-                const index = cell.getRow().getData()[ROW_INDEX_FIELD] as
-                    number;
-                callbacks.onToggleDeleted(index);
-            },
-        });
-    }
-
-    for (const column of resultSet.columns) {
+    for (const { column, frozen } of orderColumns(resultSet, freezeKeys)) {
         columns.push({
             title: column.name,
             field: column.name,
             headerTooltip: column.datatype ?? column.name,
             cssClass: column.isPrimary ? "pkColumn" : undefined,
-            formatter: formatCell,
+            frozen,
+            formatter: (cell: CellComponent) => {
+                const value = cell.getValue() as unknown;
+                const row = cell.getRow().getData() as Record<string, unknown>;
+                const index = row[ROW_INDEX_FIELD] as number;
+                const open = (): void => {
+                    callbacks.onOpenValue?.(index, column.name);
+                };
+
+                if (column.display === "blob") {
+                    return blobCell(
+                        value,
+                        cellActionsOf(resultSet, column, value,
+                            Boolean(row.__deleted)),
+                        () => { callbacks.onSaveValue?.(index, column.name); },
+                        () => { callbacks.onLoadValue?.(index, column.name); },
+                        open,
+                    );
+                }
+
+                return worthOpening(value, column.display)
+                    ? openableCell(value, column.display, open)
+                    : formatValue(value, column.display);
+            },
+            // The MySQL Shell's cell menu, as far as it applies here.
+            cellContext: (event: UIEvent, cell: CellComponent) => {
+                const value = cell.getValue() as unknown;
+                const row = cell.getRow().getData() as Record<string, unknown>;
+                const index = row[ROW_INDEX_FIELD] as number;
+                const actions = cellActionsOf(resultSet, column, value,
+                    Boolean(row.__deleted));
+
+                openContextMenu(event as MouseEvent, [
+                    {
+                        label: "Open Value in Editor",
+                        onClick: () => {
+                            callbacks.onOpenValue?.(index, column.name);
+                        },
+                    },
+                    {
+                        label: "Set Field to Null",
+                        disabled: !actions.canSetNull,
+                        onClick: () => {
+                            callbacks.onCellEdited(index, column.name, null);
+                        },
+                    },
+                    {},
+                    {
+                        label: "Save Value to File...",
+                        disabled: !actions.canSave,
+                        onClick: () => {
+                            callbacks.onSaveValue?.(index, column.name);
+                        },
+                    },
+                    {
+                        label: "Load Value from File...",
+                        disabled: !actions.canLoad,
+                        onClick: () => {
+                            callbacks.onLoadValue?.(index, column.name);
+                        },
+                    },
+                    {},
+                    {
+                        // The same item takes the mark back off.
+                        label: row.__deleted ? "Restore Row" : "Delete Row",
+                        disabled: !resultSet.editable,
+                        onClick: () => {
+                            callbacks.onToggleDeleted(index);
+                        },
+                    },
+                ]);
+            },
             editor: resultSet.editable && !column.isGenerated
+                && editableAsText(column.display)
                 ? "input"
                 : undefined,
             // Tabulator's own edit check runs per cell, which is where a
@@ -181,7 +526,13 @@ export const toTableData = (
  * @returns The rendered grid.
  */
 export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
-    const { resultSet, rows, selectedRowIndex } = props;
+    const {
+        resultSet,
+        rows,
+        selectedRowIndex,
+        editRequest,
+        freezeKeys = false,
+    } = props;
     const host = useRef<HTMLDivElement>(null);
     const table = useRef<Tabulator | undefined>(undefined);
     // Tabulator builds itself asynchronously, and every call that touches
@@ -207,10 +558,19 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                 onToggleDeleted: (index) => {
                     callbacks.current.onToggleDeleted(index);
                 },
+                onSaveValue: (index, column) => {
+                    callbacks.current.onSaveValue?.(index, column);
+                },
+                onLoadValue: (index, column) => {
+                    callbacks.current.onLoadValue?.(index, column);
+                },
+                onOpenValue: (index, column) => {
+                    callbacks.current.onOpenValue?.(index, column);
+                },
                 onSelectionChanged: (index) => {
                     callbacks.current.onSelectionChanged(index);
                 },
-            }),
+            }, freezeKeys),
             index: ROW_INDEX_FIELD,
             layout: "fitDataStretch",
             height: "100%",
@@ -267,10 +627,10 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                 // rather than being a no-op.
             }
         };
-        // Rebuilt only when the result set itself changes; the rows are
-        // pushed in by the effect below.
+        // Rebuilt only when the result set itself changes, or which of its
+        // columns are frozen; the rows are pushed in by the effect below.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [resultSet]);
+    }, [resultSet, freezeKeys]);
 
     useEffect(() => {
         const instance = table.current;
@@ -304,6 +664,24 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
             // The row is gone, which is not worth reporting.
         }
     }, [selectedRowIndex]);
+
+    useEffect(() => {
+        const instance = table.current;
+        if (!instance || !built.current || !editRequest) {
+            return;
+        }
+
+        const row = instance.getRows().find((candidate) => {
+            return !(candidate.getData() as Record<string, unknown>).__deleted;
+        });
+        const cell = row?.getCells().find((candidate) => {
+            return candidate.getColumn().getDefinition().editor !== undefined;
+        });
+        if (row && cell) {
+            void instance.scrollToRow(row, "top", false);
+            cell.edit(true);
+        }
+    }, [editRequest]);
 
     return <div class="resultGridHost" ref={host} />;
 };
