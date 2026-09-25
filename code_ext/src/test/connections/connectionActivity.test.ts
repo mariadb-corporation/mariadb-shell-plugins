@@ -44,9 +44,11 @@ const event = (
 };
 
 /**
+ * @param logAll Whether the calls on no connection are reported too.
+ *
  * @returns A logging API over a fake server, with what it reported.
  */
-const createLogging = () => {
+const createLogging = (logAll = false) => {
     const api = createFakeApi({
         connectionIds: { "dba@localhost:3310": "uuid-dba" },
         schemas: [
@@ -75,6 +77,7 @@ const createLogging = () => {
                 : undefined;
         },
         (reportedEvent) => { reported.push(reportedEvent); },
+        () => { return logAll; },
     );
 
     return { api, logging, reported };
@@ -183,6 +186,57 @@ describe("createLoggingApi", () => {
         // they are no part of a connection's log.
         expect(reported).toEqual([]);
     });
+
+    it("reports the calls on no connection under General Actions when asked",
+        async () => {
+            const { logging, reported } = createLogging(true);
+
+            await logging.listConnections("gui");
+            await logging.addConnection(
+                "a@b:1", "secret", "gui", false, "/Sandboxes");
+            await logging.updateConnection(
+                "a@b:1", undefined, "gui", "mcp", "secret", "/");
+            await logging.deleteConnection("a@b:1", "mcp");
+            await logging.testConnection("a@b:1", "secret");
+
+            expect(reported.map((row) => {
+                return [row.connection, row.label, row.call, row.message];
+            })).toEqual([
+                ["General Actions", "", "db.list_connections(kind=gui)",
+                    "Listed 0 connections"],
+                ["General Actions", "",
+                    "db.add_connection(a@b:1, kind=gui, verify=false, "
+                    + "path=/Sandboxes)",
+                    "Stored a@b:1"],
+                ["General Actions", "",
+                    "db.update_connection(a@b:1, kind=gui, new_kind=mcp, "
+                    + "password=***, new_path=/)",
+                    "Updated a@b:1"],
+                ["General Actions", "", "db.delete_connection(a@b:1, kind=mcp)",
+                    "Deleted a@b:1"],
+                ["General Actions", "", "db.test_connection(a@b:1)",
+                    "Connected to 'a@b:1' successfully."],
+            ]);
+            // Whatever else is reported, a password never is.
+            expect(JSON.stringify(reported)).not.toContain("secret");
+        });
+
+    it("reports a call on no connection that failed, and still throws",
+        async () => {
+            const { api, logging, reported } = createLogging(true);
+            api.deleteConnection = () => {
+                return Promise.reject(new Error("no such connection"));
+            };
+
+            await expect(logging.deleteConnection("a@b:1"))
+                .rejects.toThrow("no such connection");
+
+            expect(reported).toMatchObject([{
+                connection: "General Actions",
+                call: "db.delete_connection(a@b:1)",
+                error: "no such connection",
+            }]);
+        });
 
     it("leaves running SQL to report itself", async () => {
         const { logging, reported } = createLogging();

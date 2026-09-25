@@ -34,6 +34,9 @@ import {
     type IConnectionFields,
     type IUriProblem,
 } from "../../src/connections/connectionUri.js";
+import {
+    folderProblem,
+} from "../../src/connections/connectionFolders.js";
 import type {
     EditorHostMessage,
     EditorWebviewMessage,
@@ -223,6 +226,9 @@ export const ConnectionEditor = (): preact.JSX.Element => {
         useState<IConnectionFields>(emptyConnectionFields());
     const [tab, setTab] = useState<Tab>("Basic");
     const [mcpAccess, setMcpAccess] = useState(false);
+    // The folder as typed; the host normalizes it on save.
+    const [folder, setFolder] = useState("/");
+    const [folders, setFolders] = useState<string[]>([]);
     const [uri, setUri] = useState<string | undefined>(undefined);
     const [hasStoredPassword, setHasStoredPassword] = useState(false);
     // undefined means "keep the stored password", which is not the same as
@@ -287,6 +293,8 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                 case "load": {
                     setFields(message.fields);
                     setMcpAccess(message.mcpAccess);
+                    setFolder(message.path);
+                    setFolders(message.folders);
                     setUri(message.uri);
                     setHasStoredPassword(message.hasStoredPassword);
                     setPassword(undefined);
@@ -502,6 +510,36 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                 hint="Used instead of the host and port."
                             >
                                 {text("socket")}
+                            </Field>
+                            <Field
+                                caption="Folder"
+                                hint={folderProblem(folder)
+                                    ?? "Where the Connections view files it. "
+                                    + "'/' is the top level; "
+                                    + "/Sandboxes/note_app is a folder "
+                                    + "inside another."}
+                            >
+                                <input
+                                    type="text"
+                                    class={folderProblem(folder) === undefined
+                                        ? undefined
+                                        : "invalid"}
+                                    list="connection-folders"
+                                    value={folder}
+                                    placeholder="/"
+                                    spellcheck={false}
+                                    disabled={busy}
+                                    onInput={(event) => {
+                                        setFolder((event.target as
+                                            HTMLInputElement).value);
+                                        setSaveError(undefined);
+                                    }}
+                                />
+                                <datalist id="connection-folders">
+                                    {folders.map((path) => {
+                                        return <option key={path} value={path} />;
+                                    })}
+                                </datalist>
                             </Field>
 
                             <div class="group">
@@ -902,6 +940,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                         if (uriIsSound()) {
                             post<EditorWebviewMessage>({
                                 type: "save", fields, password, mcpAccess,
+                                path: folder,
                             });
                         }
                     }}

@@ -21,7 +21,11 @@ import type {
     IConnectionNode,
     IObjectNode,
 } from "../../tree/connectionsModel.js";
-import { createTreeItem, type IconResolver } from "../../tree/treeItems.js";
+import {
+    FolderTreeItem,
+    createTreeItem,
+    type IconResolver,
+} from "../../tree/treeItems.js";
 import {
     ThemeColor,
     ThemeIcon,
@@ -322,5 +326,40 @@ describe("createTreeItem for a connection's status", () => {
             new ThemeIcon("error", new ThemeColor("errorForeground")));
         // What puts the Retry button beside it.
         expect(item.contextValue).toBe("mariadbConnectionStatus.failed");
+    });
+});
+
+describe("createTreeItem for a folder", () => {
+    it("shows its name, open, with the folder icon", () => {
+        const item = createTreeItem({
+            kind: "folder", path: "/Sandboxes/note_app", name: "note_app",
+            empty: false,
+        }, resolveIcon);
+
+        expect(item.label).toBe("note_app");
+        expect(item.tooltip).toBe("/Sandboxes/note_app");
+        expect(item.iconPath).toEqual(new ThemeIcon("folder-opened"));
+        expect(item.collapsibleState).toBe(TreeItemCollapsibleState.Expanded);
+        expect(item.contextValue).toBe("mariadbFolder");
+        // Unique, so VS Code tells folders apart by it across refreshes.
+        expect(item.id).toBe("folder:/Sandboxes/note_app");
+    });
+
+    it("shows a closed folder closed", () => {
+        const item = new FolderTreeItem({
+            kind: "folder", path: "/Sandboxes", name: "Sandboxes", empty: false,
+        }, false);
+
+        expect(item.iconPath).toEqual(new ThemeIcon("folder"));
+        expect(item.collapsibleState)
+            .toBe(TreeItemCollapsibleState.Collapsed);
+    });
+
+    it("says it is empty, which is what offers Remove Folder", () => {
+        const item = createTreeItem({
+            kind: "folder", path: "/New", name: "New", empty: true,
+        }, resolveIcon);
+
+        expect(item.contextValue).toBe("mariadbFolder.empty");
     });
 });

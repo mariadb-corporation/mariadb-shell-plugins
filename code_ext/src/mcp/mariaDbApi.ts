@@ -22,8 +22,13 @@ import {
     decodeVoid,
     type IToolResult,
 } from "./protocol.js";
+import {
+    ALL_CONNECTION_KINDS,
+    CONNECTION_KINDS,
+} from "./types.js";
 import type {
     ConnectionKind,
+    IConnectionEntry,
     IMariaDbApi,
     IObjectDetails,
     IObjectInfo,
@@ -60,12 +65,49 @@ export class MariaDbApi implements IMariaDbApi {
      * @returns One URI per configured connection of that kind.
      */
     public async listConnections(kind?: ConnectionKind): Promise<string[]> {
-        const name = "db.list_connections";
+        return (await this.listConnectionEntries(kind)).map((entry) => {
+            return entry.uri;
+        });
+    }
 
-        return decodeList<string>(
+    /**
+     * Lists the configured connections of one kind with the folder each is
+     * filed in.
+     *
+     * A server started with `--gui` answers with `{ uri, path }` objects; one
+     * that predates folders, or runs without `--gui`, answers with bare URIs,
+     * which are read as filed at the top level.
+     *
+     * @param kind Which list to read, left out as `listConnections` does.
+     *             `"all"` reads both in one call, each entry naming its list;
+     *             a server that predates it refuses it.
+     *
+     * @returns One entry per configured connection of that kind.
+     */
+    public async listConnectionEntries(
+        kind?: ConnectionKind | typeof ALL_CONNECTION_KINDS,
+    ): Promise<IConnectionEntry[]> {
+        const name = "db.list_connections";
+        const listed = decodeList<string | Partial<IConnectionEntry>>(
             name,
             await this.caller.callTool(name, kind === undefined ? {} : { kind }),
         );
+
+        return listed.map((entry): IConnectionEntry => {
+            if (typeof entry === "string") {
+                return { uri: entry, path: "/" };
+            }
+
+            const listKind = CONNECTION_KINDS.find((known) => {
+                return known === entry.kind;
+            });
+
+            return {
+                uri: String(entry.uri),
+                path: entry.path || "/",
+                ...(listKind === undefined ? {} : { kind: listKind }),
+            };
+        });
     }
 
     /**
@@ -85,6 +127,9 @@ export class MariaDbApi implements IMariaDbApi {
      * @param verify Whether the server opens a session with the credentials
      *               first and stores them only if that works. Defaults to the
      *               server's own default, which is to verify.
+     * @param path The folder to file it in, such as `/Sandboxes`. Left out
+     *             when not given, so a server that predates folders is not
+     *             handed an argument it does not know.
      *
      * @returns The normalized URI the connection was stored under, which is
      *          the spelling `listConnections` then reports.
@@ -94,6 +139,7 @@ export class MariaDbApi implements IMariaDbApi {
         password: string,
         kind?: ConnectionKind,
         verify?: boolean,
+        path?: string,
     ): Promise<string> {
         const name = "db.add_connection";
 
@@ -102,6 +148,7 @@ export class MariaDbApi implements IMariaDbApi {
             password,
             ...(kind === undefined ? {} : { kind }),
             ...(verify === undefined ? {} : { verify }),
+            ...(path === undefined ? {} : { path }),
         }));
     }
 
@@ -145,6 +192,8 @@ export class MariaDbApi implements IMariaDbApi {
      * @param kind The list it is in now.
      * @param newKind The list to move it to, or undefined to keep it.
      * @param password A new password, or undefined to keep the stored one.
+     * @param newPath The folder to move it to (`/` is the top level), or
+     *                undefined to leave it where it is.
      *
      * @returns The URI the connection is now configured under.
      */
@@ -154,6 +203,7 @@ export class MariaDbApi implements IMariaDbApi {
         kind?: ConnectionKind,
         newKind?: ConnectionKind,
         password?: string,
+        newPath?: string,
     ): Promise<string> {
         const name = "db.update_connection";
 
@@ -165,6 +215,7 @@ export class MariaDbApi implements IMariaDbApi {
             ...(kind === undefined ? {} : { kind }),
             ...(newKind === undefined ? {} : { new_kind: newKind }),
             ...(password === undefined ? {} : { password }),
+            ...(newPath === undefined ? {} : { new_path: newPath }),
         }));
     }
 

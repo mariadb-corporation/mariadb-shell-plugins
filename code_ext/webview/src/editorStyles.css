@@ -263,6 +263,7 @@ button:disabled {
     line-height: 1;
 }
 
+input.invalid,
 .uri-input.invalid {
     border-color: var(--vscode-inputValidation-errorBorder, #f14c4c);
 }

@@ -54,6 +54,15 @@ change belongs to up to date, and this table with it.
   installing it and diffing its plugin against this repo's. The readers
   of those fields still fall back when they are missing, but no shell
   the extension accepts lacks them any more.
+- **Connection folders need a shell that is not released yet.** No shell
+  the extension accepts bundles an `mcp_plugin` with folder support, and an
+  older plugin SILENTLY ignores `path` / `new_path` (the MCP SDK drops
+  arguments a tool does not declare) - a folder change "saves" and does
+  nothing. Decided: no runtime detection; raise `MINIMUM_SHELL_VERSION` to
+  the first release that includes it once that is out. To try folders
+  before then, the shell in use has to load this repo's plugin, not its
+  bundled one (the installed 26.9.4 loads
+  `lib/mariadb-shell/plugins/mcp_plugin`, not `~/.mariadb-shell/plugins`).
 - The installer is run with `MARIADB_SHELL_TAG` pinned, so a release
   marked **prerelease** on GitHub installs fine (every 26.9.x is one);
   only an unpinned `install.sh` would skip it.

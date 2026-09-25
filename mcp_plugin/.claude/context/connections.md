@@ -70,6 +70,37 @@ produced most of this is in [security-review.md](security-review.md).
     RESOLVES rather than comparing, so an instance deployed before the change is still
     cleaned up.
 
+- **Folders are part of the KEY and nothing else** (`lib/config.py`). A connection may be
+  filed under a path, stored as `MCP:Connection:/Sandboxes/note_app:<uri>` (same for
+  `GUI:`); a top-level one keeps the plain `<prefix><uri>` key, so every existing key is
+  already a top-level connection and nothing is migrated. `_split_connection_key` tells the
+  two apart by the leading `/` (a URI never starts with one) and splits at the FIRST `:`,
+  which is why `normalize_connection_path` refuses a `:` in a folder name; `/` separates
+  folders, doubled/trailing slashes and blanks are dropped, None/`""`/`"/"` are the top
+  level (stored `""`, REPORTED `ROOT_CONNECTION_PATH` = `"/"`).
+  - **The URI is still the identity.** `list_stored_connection_uris`, `resolve_*`,
+    `find_connection`, `get_connection_password` and `delete_connection` all work by URI and
+    find the key through `_stored_keys_of`, so no caller outside config had to learn about
+    folders. One URI is in ONE folder per list: `store_connection(uri, pw, kind, path)`
+    writes the new key and then deletes any other key of that URI (a MOVE), and `path=None`
+    KEEPS the current folder - a password replaced (`mcp.setup`, re-adding) never moves it.
+  - **Only GUI mode sees a folder.** The GUI `db.list_connections` returns
+    `[{"uri", "path", "kind"}]` (`list_connections_with_paths`); the non-GUI one is still
+    the bare URI list, so an agent never sees a folder. `kind="all"`
+    (`CONNECTION_KIND_ALL`) reports BOTH lists in one call, MCP first, each entry's
+    `kind` saying which list it is in - the extension's one call instead of two. `all` is
+    a READ-only word: it is not in `SUPPORTED_CONNECTION_KINDS`, so
+    `normalize_connection_kind` still refuses it for storing or deleting. GUI `db.add_connection(..., path=None)` and
+    `db.update_connection(..., new_path=None)` take one; `new_path` left out keeps the
+    folder, including across a move to the other list (the MCP checkbox is not a re-filing).
+    The path is validated BEFORE `verify` runs, so a bad name costs nothing.
+  - `sandbox.deploy` files its connection under `SANDBOX_CONNECTION_PATH` (`/Sandboxes`).
+    `test_sandbox_servers.py` stubs `store_connection` with a lambda - it has to accept
+    `path=`.
+  - `delete_connection` / `get_connection_password` on a URI that is NOT stored fall back to
+    the top-level key on purpose, so the shell's own missing-secret error still surfaces
+    (`db.update_connection` relies on `delete_secret` raising).
+
 - **`db_functions.use_session(connection_id, client_address=None)`** is the PUBLIC accessor
   (a `@contextmanager`, NOT the old plain `get_session` — that name is GONE), so other tool
   modules (msm) can resolve a `db.connect` session without reaching into another module's
