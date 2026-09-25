@@ -44,4 +44,27 @@ describe("the webview build", () => {
         expect(output.assetFileNames?.({ names: ["codicon.ttf"] }))
             .toBe("[name][extname]");
     });
+
+    it("serves the icons as files, each theme in its own folder", () => {
+        const build = webviewConfig.build;
+        const output = build?.rollupOptions?.output as {
+            assetFileNames?: (asset: {
+                names?: string[];
+                originalFileNames?: string[];
+            }) => string;
+        };
+
+        // Not inlined: a light and a dark file are what the themes pick.
+        expect(build?.assetsInlineLimit).toBe(0);
+        // Both variants share a name, so the folder is what tells them
+        // apart - rather than a number Rollup would append to one.
+        expect(output.assetFileNames?.({
+            names: ["toolbar-grid.svg"],
+            originalFileNames: ["images/light/toolbar-grid.svg"],
+        })).toBe("icons/light/[name][extname]");
+        expect(output.assetFileNames?.({
+            names: ["toolbar-grid.svg"],
+            originalFileNames: ["images/dark/toolbar-grid.svg"],
+        })).toBe("icons/dark/[name][extname]");
+    });
 });

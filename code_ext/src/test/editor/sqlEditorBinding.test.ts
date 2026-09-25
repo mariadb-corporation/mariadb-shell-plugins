@@ -49,6 +49,7 @@ import {
     statusBarItems,
     Uri,
     warningMessages,
+    webviewPanels,
 } from "../mocks/vscode.js";
 
 /**
@@ -266,6 +267,44 @@ describe("SqlEditorBinding", () => {
 
         binding.dispose();
     });
+
+    it("reads a table's rows into an editor tab named after it",
+        async () => {
+            const { api, view, binding } = createBinding();
+
+            await binding.selectRows("dba@localhost:3310", "world", "ci`ty");
+
+            expect(api.scripts).toEqual(["SELECT * FROM `world`.`ci``ty`;"]);
+            expect(webviewPanels).toHaveLength(1);
+            expect(webviewPanels[0].title).toBe("world.ci`ty");
+            // Not a tab of the panel's, which is not brought up.
+            expect(view.shown).toBe(0);
+            const states = view.webview.posted.filter((message) => {
+                return (message as { type: string }).type === "state";
+            }) as Array<{ state: IViewState }>;
+            expect(states.at(-1)?.state.resultSets).toEqual([]);
+
+            binding.dispose();
+        });
+
+    it("asks for one page of rows, of the size the setting says",
+        async () => {
+            const { api, binding } = createBinding("dba@localhost:3310");
+
+            await binding.run(createEditor("SELECT 1 AS a;") as never);
+            expect(api.limit).toBe(200);
+
+            configuration.set("mariadb.execute.pageSize", 50);
+            await binding.run(createEditor("SELECT 1 AS a;") as never);
+            expect(api.limit).toBe(50);
+
+            // A value that is no count of rows falls back to the default.
+            configuration.set("mariadb.execute.pageSize", 0);
+            await binding.run(createEditor("SELECT 1 AS a;") as never);
+            expect(api.limit).toBe(200);
+
+            binding.dispose();
+        });
 
     it("runs only the selection when there is one", async () => {
         const { api, binding } = createBinding("dba@localhost:3310");

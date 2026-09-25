@@ -46,7 +46,7 @@ export const createQueryBuilder = (
             is_primary: column.isPrimary ? 1 : 0,
             is_unique: 0,
             is_generated: column.isGenerated ? 1 : 0,
-            id_generation: null,
+            id_generation: column.isAutoIncrement ? "auto_inc" : null,
             comment: "",
             column_default: null,
         };

@@ -31,12 +31,19 @@ import {
     ResultViewProvider,
     RESULT_VIEW_ID,
 } from "../../webview/resultViewProvider.js";
+import { TITLE_LENGTH } from "../../webview/maximizedResult.js";
 import { createFakeApi, createRecordingLog } from "../helpers.js";
 import {
+    configuration,
     env,
+    fileDialogs,
+    files,
     MockWebviewView,
+    openedWith,
+    ViewColumn,
     resetVscodeMock,
     Uri,
+    webviewPanels,
     webviewViews,
     window as mockWindow,
 } from "../mocks/vscode.js";
@@ -83,7 +90,7 @@ const editableReport = (
                     name: "ID",
                     datatype: "int(11)",
                     isPrimary: true,
-                    isGenerated: true,
+                    isAutoIncrement: true,
                     nullable: false,
                 },
                 {
@@ -349,6 +356,659 @@ describe("ResultViewProvider", () => {
         await vi.waitFor(() => {
             expect(reloaded).toEqual(["SELECT ID, Name FROM world.city"]);
         });
+    });
+
+    describe("a maximized result set", () => {
+        /**
+         * Shows the editable report and moves its result set into an
+         * editor tab, as the Maximize button does.
+         *
+         * @returns The provider, its view, the tab and the fake server.
+         */
+        const maximizeOne = async () => {
+            const resolved = createResolvedView();
+            const { api, provider, view } = resolved;
+            view.webview.receive({ type: "ready" });
+            await provider.showResults(editableReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+
+            view.webview.receive({
+                type: "maximize",
+                resultId: "run1-result-0",
+                rows: [{
+                    original: { ID: 1, Name: "Kabul" },
+                    current: { ID: 1, Name: "Kabul City" },
+                    added: false,
+                    deleted: false,
+                }],
+            });
+            await vi.waitFor(() => {
+                expect(webviewPanels).toHaveLength(1);
+            });
+            const panel = webviewPanels[0];
+            panel.webview.receive({ type: "ready" });
+
+            return { ...resolved, panel };
+        };
+
+        /**
+         * @param panel The tab to read from.
+         *
+         * @returns The last state message the tab was sent.
+         */
+        const lastMessage = (panel: { webview: { posted: unknown[] } }) => {
+            return panel.webview.posted.filter((message) => {
+                return (message as { type: string }).type === "state";
+            }).at(-1) as {
+                state: IViewState;
+                editing?: Record<string, unknown[]>;
+            } | undefined;
+        };
+
+        it("opens in an editor tab without running anything again",
+            async () => {
+                const { api, panel } = await maximizeOne();
+
+                expect(api.scripts).toEqual([]);
+                // The statement's start, and not the panel's "Result #1".
+                expect(panel.title).toBe("SELECT ID, Name FROM world.ci\u2026");
+                expect(panel.webview.html).toContain("dist/webview/main.js");
+                await vi.waitFor(() => {
+                    expect(lastMessage(panel)?.state.resultSets.map((set) => {
+                        return set.id;
+                    })).toEqual(["run1-result-0"]);
+                });
+                expect(lastMessage(panel)?.state.maximized).toBe(true);
+                // The edits it had pending go with the first state it is
+                // sent; what follows the tab's ready is the same tabs, which
+                // the page does not rebuild its edits for.
+                const first = panel.webview.posted[0] as {
+                    editing?: Record<string, unknown[]>;
+                };
+                expect(first.editing?.["run1-result-0"]).toHaveLength(1);
+            });
+
+        it("cuts a long statement short in the title", async () => {
+            const { api, provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            const report = editableReport();
+            report.resultSets[0].statement =
+                "SELECT ID, Name, CountryCode, District, Population "
+                + "FROM world.city";
+            await provider.showResults(report, {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+
+            view.webview.receive({
+                type: "maximize",
+                resultId: "run1-result-0",
+                rows: [],
+            });
+            await vi.waitFor(() => {
+                expect(webviewPanels).toHaveLength(1);
+            });
+
+            expect(webviewPanels[0].title).toHaveLength(TITLE_LENGTH);
+            expect(webviewPanels[0].title.endsWith("\u2026")).toBe(true);
+        });
+
+        it("opens a run straight into an editor tab", async () => {
+            const { api, provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            await provider.showResults(editableReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+            const shown = view.shown;
+
+            await provider.startRun("dba@localhost:3310", pendingRun({
+                id: "run2",
+            }), { title: "world.city" });
+            const again = editableReport();
+            await provider.showResults({
+                ...again,
+                actions: [{ ...again.actions[0], id: "run2" }],
+                resultSets: [{ ...again.resultSets[0], id: "run2-result-0" }],
+            }, {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+
+            expect(webviewPanels).toHaveLength(1);
+            expect(webviewPanels[0].title).toBe("world.city");
+            // The panel keeps the tabs it had, and stays where it is.
+            expect(view.shown).toBe(shown);
+            expect(lastState(view)?.resultSets.map((set) => {
+                return set.id;
+            })).toEqual(["run1-result-0"]);
+            expect(lastState(view)?.actions.map((row) => {
+                return row.id;
+            })).toEqual(["run2", "run1"]);
+        });
+
+        it("keeps the title it was opened with across a refresh",
+            async () => {
+                const { api, provider } = createResolvedView();
+                const service = new ExecutionService(api);
+                const context = {
+                    connectionUri: "dba@localhost:3310",
+                    connectionId: "uuid",
+                    service,
+                };
+                await provider.startRun("dba@localhost:3310", pendingRun(),
+                    { title: "world.city" });
+                await provider.showResults(editableReport(), context);
+                const panel = webviewPanels[0];
+
+                await provider.startRun("dba@localhost:3310",
+                    pendingRun({ id: "run2" }), "maximized1");
+                const again = editableReport();
+                await provider.showResults({
+                    ...again,
+                    actions: [{ ...again.actions[0], id: "run2" }],
+                    resultSets: [{
+                        ...again.resultSets[0],
+                        id: "run2-result-0",
+                        statement: "SELECT 1",
+                    }],
+                }, context);
+
+                expect(webviewPanels).toHaveLength(1);
+                expect(panel.title).toBe("world.city");
+            });
+
+        it("brings the panel up when the run opened nothing", async () => {
+            const { provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+
+            await provider.startRun("dba@localhost:3310", pendingRun(),
+                { title: "world.gone" });
+            await provider.showResults({
+                ...editableReport(),
+                actions: [{ ...pendingRun(), kind: "error",
+                    summary: "Execution failed: no such table" }],
+                resultSets: [],
+            });
+
+            expect(webviewPanels).toHaveLength(0);
+            expect(view.shown).toBeGreaterThan(0);
+            await vi.waitFor(() => {
+                expect(lastState(view)?.actions[0]?.kind).toBe("error");
+            });
+        });
+
+        it("leaves the panel's tabs while it is away", async () => {
+            const { view } = await maximizeOne();
+
+            await vi.waitFor(() => {
+                expect(lastState(view)?.resultSets).toEqual([]);
+            });
+        });
+
+        it("goes back to the panel, edits and all", async () => {
+            const { panel, provider, view } = await maximizeOne();
+
+            panel.webview.receive({
+                type: "minimize",
+                resultId: "run1-result-0",
+                rows: [{ original: {}, current: {}, added: true,
+                    deleted: false }],
+            });
+
+            await vi.waitFor(() => {
+                expect(panel.disposed).toBe(true);
+            });
+            await vi.waitFor(() => {
+                expect(lastState(view)?.resultSets.map((set) => {
+                    return set.id;
+                })).toEqual(["run1-result-0"]);
+            });
+            const last = view.webview.posted.at(-1) as {
+                editing?: Record<string, unknown[]>;
+            };
+            expect(last.editing?.["run1-result-0"]).toHaveLength(1);
+            expect(provider.resultSetsFor("dba@localhost:3310"))
+                .toHaveLength(1);
+        });
+
+        it("is gone with its tab when the tab is closed", async () => {
+            const { panel, provider } = await maximizeOne();
+
+            panel.dispose();
+
+            expect(provider.resultSetsFor("dba@localhost:3310"))
+                .toEqual([]);
+        });
+
+        it("refreshes into its own tab", async () => {
+            const { api, panel, provider, view } = await maximizeOne();
+            const targets: unknown[] = [];
+            provider.setRefreshHandler(async (resultSet, target) => {
+                targets.push(target);
+                // What the editor binding does: a run, sent back here.
+                await provider.startRun(target.connectionUri!, pendingRun({
+                    id: "run2",
+                }), target.into);
+                const again = editableReport();
+                await provider.showResults({
+                    ...again,
+                    actions: [{ ...again.actions[0], id: "run2" }],
+                    resultSets: [{
+                        ...again.resultSets[0],
+                        id: "run2-result-0",
+                        rows: [{ ID: 1, Name: "Kabul City" }],
+                    }],
+                }, {
+                    connectionUri: "dba@localhost:3310",
+                    connectionId: "uuid",
+                    service: new ExecutionService(api),
+                });
+                expect(resultSet.id).toBe("run1-result-0");
+            });
+
+            panel.webview.receive({
+                type: "refresh",
+                resultId: "run1-result-0",
+            });
+
+            await vi.waitFor(() => {
+                expect(lastMessage(panel)?.state.resultSets[0]?.id)
+                    .toBe("run2-result-0");
+            });
+            expect(targets).toEqual([{
+                connectionUri: "dba@localhost:3310",
+                into: "maximized1",
+            }]);
+            // The run is in the actions, but its result is not a tab of
+            // the panel's.
+            expect(lastState(view)?.actions.map((row) => {
+                return row.id;
+            })).toEqual(["run2", "run1"]);
+            expect(lastState(view)?.resultSets).toEqual([]);
+        });
+
+        it("writes its edits back and replies to its own tab",
+            async () => {
+                const { api, panel, view } = await maximizeOne();
+
+                panel.webview.receive({
+                    type: "applyChanges",
+                    resultId: "run1-result-0",
+                    changes: [{
+                        kind: "update",
+                        rowIndex: 0,
+                        keys: { ID: 1 },
+                        values: { Name: "Kabul City" },
+                    }],
+                });
+
+                await vi.waitFor(() => {
+                    expect(panel.webview.posted.at(-1)).toMatchObject({
+                        type: "applied",
+                        resultId: "run1-result-0",
+                    });
+                });
+                expect(api.scripts).toEqual([
+                    "UPDATE `world`.`city` SET `Name` = 'Kabul City' "
+                    + "WHERE `ID` = 1;",
+                ]);
+                expect(view.webview.posted.some((message) => {
+                    return (message as { type: string }).type === "applied";
+                })).toBe(false);
+            });
+
+        it("closes its tab on Close Result Set", async () => {
+            const { panel, provider } = await maximizeOne();
+
+            panel.webview.receive({
+                type: "closeResult",
+                resultId: "run1-result-0",
+            });
+
+            await vi.waitFor(() => {
+                expect(panel.disposed).toBe(true);
+            });
+            // Gone, not put back: minimize is what puts it back.
+            expect(provider.resultSetsFor("dba@localhost:3310"))
+                .toEqual([]);
+        });
+
+        it("is closed along with the view", async () => {
+            const { panel, provider } = await maximizeOne();
+
+            provider.dispose();
+
+            expect(panel.disposed).toBe(true);
+        });
+    });
+
+    describe("paging", () => {
+        const ROWS = Array.from({ length: 5 }, (_, n) => {
+            return { ID: n + 1, Name: `city ${n + 1}` };
+        });
+
+        /**
+         * @returns The editable report, its result set paged two rows at
+         *          a time and on its first page.
+         */
+        const pagedReport = (): IExecutionReport => {
+            const report = editableReport();
+            report.resultSets[0] = {
+                ...report.resultSets[0],
+                rows: ROWS.slice(0, 2),
+                page: { index: 0, size: 2, hasMore: true, loads: 1 },
+            };
+
+            return report;
+        };
+
+        it("fetches the page asked for into the tab", async () => {
+            const { provider, view } = createResolvedView();
+            const api = createFakeApi({ pagedRows: ROWS });
+            view.webview.receive({ type: "ready" });
+            await provider.showResults(pagedReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+
+            view.webview.receive({
+                type: "page",
+                resultId: "run1-result-0",
+                page: 2,
+            });
+
+            await vi.waitFor(() => {
+                expect(lastState(view)?.resultSets[0]?.page?.index).toBe(2);
+            });
+            const set = lastState(view)!.resultSets[0];
+            expect(set.id).toBe("run1-result-0");
+            expect(set.rows).toEqual(ROWS.slice(4));
+            expect(set.page).toMatchObject({ hasMore: false, loads: 2 });
+            expect(api.statements[0].page).toEqual({ limit: 2, offset: 4 });
+            // A call on the connection, so a row of its actions.
+            expect(lastState(view)?.actions[0]?.message)
+                .toBe("Page 3: 1 row in set (page 3)");
+        });
+
+        it("tells the grid when a page cannot be fetched", async () => {
+            const { provider, view } = createResolvedView();
+            const api = createFakeApi();
+            api.executeSql = () => {
+                return Promise.reject(new Error("gone away"));
+            };
+            view.webview.receive({ type: "ready" });
+            await provider.showResults(pagedReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+
+            view.webview.receive({
+                type: "page",
+                resultId: "run1-result-0",
+                page: 1,
+            });
+
+            await vi.waitFor(() => {
+                expect(view.webview.posted.at(-1)).toEqual({
+                    type: "pageFailed",
+                    resultId: "run1-result-0",
+                    error: "gone away",
+                });
+            });
+            // The page on show stays.
+            expect(lastState(view)?.resultSets[0]?.rows)
+                .toEqual(ROWS.slice(0, 2));
+        });
+
+        it("pages a maximized result set in its own tab", async () => {
+            const { provider, view } = createResolvedView();
+            const api = createFakeApi({ pagedRows: ROWS });
+            view.webview.receive({ type: "ready" });
+            await provider.showResults(pagedReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+            view.webview.receive({
+                type: "maximize",
+                resultId: "run1-result-0",
+                rows: [],
+            });
+            await vi.waitFor(() => {
+                expect(webviewPanels).toHaveLength(1);
+            });
+            const panel = webviewPanels[0];
+            panel.webview.receive({ type: "ready" });
+
+            panel.webview.receive({
+                type: "page",
+                resultId: "run1-result-0",
+                page: 1,
+            });
+
+            await vi.waitFor(() => {
+                const states = panel.webview.posted.filter((message) => {
+                    return (message as { type: string }).type === "state";
+                }) as Array<{ state: IViewState }>;
+                expect(states.at(-1)?.state.resultSets[0]?.rows)
+                    .toEqual(ROWS.slice(2, 4));
+            });
+        });
+    });
+
+    describe("saving and loading a value", () => {
+        it("saves a value to the file the user picks", async () => {
+            const { view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            fileDialogs.saveAnswer = Uri.file("/tmp/out.png");
+
+            view.webview.receive({
+                type: "saveValue",
+                value: "89504e47",
+                name: "items-image-1",
+            });
+
+            await vi.waitFor(() => {
+                expect(files.get("/tmp/out.png")).toEqual(
+                    new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+            });
+        });
+
+        it("answers a load with the file, as hex", async () => {
+            const { view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            files.set("/tmp/in.bin", new Uint8Array([1, 2, 255]));
+            fileDialogs.openAnswer = [Uri.file("/tmp/in.bin")];
+
+            view.webview.receive({ type: "loadValue", requestId: "load1" });
+
+            await vi.waitFor(() => {
+                expect(view.webview.posted.at(-1)).toEqual({
+                    type: "valueLoaded",
+                    requestId: "load1",
+                    value: "0102ff",
+                });
+            });
+        });
+
+        it("says when the file could not be read", async () => {
+            const { view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            fileDialogs.openAnswer = [Uri.file("/tmp/gone.bin")];
+
+            view.webview.receive({ type: "loadValue", requestId: "load2" });
+
+            await vi.waitFor(() => {
+                expect(view.webview.posted.at(-1)).toMatchObject({
+                    type: "valueLoaded",
+                    requestId: "load2",
+                    error: "No such file: /tmp/gone.bin",
+                });
+            });
+        });
+    });
+
+    describe("opening a value in an editor", () => {
+        const openValue = {
+            type: "openValue",
+            resultId: "run1-result-0",
+            rowIndex: 0,
+            column: "Name",
+            pageKey: "",
+            value: "Kabul",
+            kind: "text",
+            name: "city-Name-1",
+            readOnly: false,
+        };
+
+        it("opens it as a tab of its own from the panel", async () => {
+            const { provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+
+            view.webview.receive(openValue);
+
+            await vi.waitFor(() => {
+                expect(openedWith).toHaveLength(1);
+            });
+            expect(openedWith[0].uri.path.endsWith("/city-Name-1.txt"))
+                .toBe(true);
+            expect(openedWith[0].options).toEqual({
+                viewColumn: ViewColumn.Active, preview: false,
+            });
+            expect(new TextDecoder().decode(
+                provider.valueDocuments.readFile(openedWith[0].uri as never)))
+                .toBe("Kabul");
+        });
+
+        it("opens it beside a maximized result set", async () => {
+            const { api, provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            await provider.showResults(editableReport(), {
+                connectionUri: "dba@localhost:3310",
+                connectionId: "uuid",
+                service: new ExecutionService(api),
+            });
+            view.webview.receive({
+                type: "maximize", resultId: "run1-result-0", rows: [],
+            });
+            await vi.waitFor(() => {
+                expect(webviewPanels).toHaveLength(1);
+            });
+            const panel = webviewPanels[0];
+            panel.webview.receive({ type: "ready" });
+
+            panel.webview.receive(openValue);
+
+            await vi.waitFor(() => {
+                expect(openedWith).toHaveLength(1);
+            });
+            expect(openedWith[0].options).toMatchObject({
+                viewColumn: ViewColumn.Beside,
+            });
+        });
+
+        it("writes a save back through the page it came from", async () => {
+            const { provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            view.webview.receive(openValue);
+            await vi.waitFor(() => {
+                expect(openedWith).toHaveLength(1);
+            });
+
+            const saved = provider.valueDocuments.writeFile(
+                openedWith[0].uri as never, new TextEncoder().encode("Herat"));
+            await vi.waitFor(() => {
+                expect(view.webview.posted.at(-1)).toMatchObject({
+                    type: "valueEdited",
+                    resultId: "run1-result-0",
+                    rowIndex: 0,
+                    column: "Name",
+                    value: "Herat",
+                });
+            });
+            const { requestId } = view.webview.posted.at(-1) as {
+                requestId: string;
+            };
+            view.webview.receive({ type: "valueEditResult", requestId });
+
+            await expect(saved).resolves.toBeUndefined();
+        });
+
+        it("fails the save with the page's reason", async () => {
+            const { provider, view } = createResolvedView();
+            view.webview.receive({ type: "ready" });
+            view.webview.receive(openValue);
+            await vi.waitFor(() => {
+                expect(openedWith).toHaveLength(1);
+            });
+
+            const saved = provider.valueDocuments.writeFile(
+                openedWith[0].uri as never, new TextEncoder().encode("x"));
+            await vi.waitFor(() => {
+                expect(view.webview.posted.at(-1)).toMatchObject({
+                    type: "valueEdited",
+                });
+            });
+            const { requestId } = view.webview.posted.at(-1) as {
+                requestId: string;
+            };
+            view.webview.receive({
+                type: "valueEditResult",
+                requestId,
+                error: "The page this value came from is no longer on show.",
+            });
+
+            await expect(saved).rejects.toMatchObject({
+                message: "The page this value came from is no longer on show.",
+            });
+        });
+    });
+
+    it("tells the page whether to freeze primary key columns", async () => {
+        const { api, provider, view } = createResolvedView();
+        view.webview.receive({ type: "ready" });
+        const context = {
+            connectionUri: "dba@localhost:3310",
+            connectionId: "uuid",
+            service: new ExecutionService(api),
+        };
+
+        await provider.showResults(editableReport(), context);
+        expect(lastState(view)?.freezeKeyColumns).toBe(true);
+
+        configuration.set("mariadb.resultSet.freezePrimaryKeyColumns", false);
+        await provider.showResults(editableReport(), context);
+        expect(lastState(view)?.freezeKeyColumns).toBe(false);
+    });
+
+    it("closes a result set's tab in the panel", async () => {
+        const { api, provider, view } = createResolvedView();
+        view.webview.receive({ type: "ready" });
+        await provider.showResults(editableReport(), {
+            connectionUri: "dba@localhost:3310",
+            connectionId: "uuid",
+            service: new ExecutionService(api),
+        });
+
+        view.webview.receive({
+            type: "closeResult",
+            resultId: "run1-result-0",
+        });
+
+        await vi.waitFor(() => {
+            expect(lastState(view)?.resultSets).toEqual([]);
+        });
+        // The run that produced it is still in the actions.
+        expect(lastState(view)?.actions).toHaveLength(1);
     });
 
     it("logs, rather than throws, when a refresh fails", async () => {

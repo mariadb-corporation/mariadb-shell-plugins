@@ -127,6 +127,51 @@ const button = (
 };
 
 /**
+ * @param label The accessible name of an icon-only button.
+ *
+ * @returns The button, if it is on screen.
+ */
+const iconButton = (label: string): HTMLButtonElement | undefined => {
+    return host.querySelector<HTMLButtonElement>(
+        `button[aria-label="${label}"]`) ?? undefined;
+};
+
+/**
+ * Clicks an icon-only button by its accessible name.
+ *
+ * @param label The button's aria-label.
+ *
+ * @returns Nothing.
+ */
+const clickIcon = async (label: string): Promise<void> => {
+    const target = iconButton(label);
+    if (!target) {
+        throw new Error(`No "${label}" button.`);
+    }
+
+    await act(async () => {
+        target.click();
+        await Promise.resolve();
+    });
+};
+
+/**
+ * Adds a row with the toolbar's button, as the user would.
+ *
+ * @returns Nothing.
+ */
+const addRow = async (): Promise<void> => {
+    await clickIcon("Add New Row");
+};
+
+/**
+ * @returns What the result set's bar says on its left.
+ */
+const statusText = (): string | null | undefined => {
+    return host.querySelector(".statusBar .status")?.textContent;
+};
+
+/**
  * @returns A view state with one action row and an editable result set.
  */
 const report = (): IViewState => {
@@ -166,7 +211,7 @@ const report = (): IViewState => {
                     name: "ID",
                     datatype: "int(11)",
                     isPrimary: true,
-                    isGenerated: true,
+                    isAutoIncrement: true,
                     nullable: false,
                 },
                 {
@@ -717,10 +762,8 @@ describe("App", () => {
         + "connection", async () => {
             await mount();
             await send({ type: "state", state: report() });
-            await click((label) => { return label.startsWith("+ Row"); });
-            expect(button((label) => {
-                return label.startsWith("Apply");
-            })?.disabled).toBe(false);
+            await addRow();
+            expect(iconButton("Apply Changes")?.disabled).toBe(false);
 
             // A schema listed in the tree sends state like anything
             // else, and the grid is still being edited.
@@ -741,9 +784,7 @@ describe("App", () => {
                 },
             });
 
-            expect(button((label) => {
-                return label.startsWith("Apply");
-            })?.disabled).toBe(false);
+            expect(iconButton("Apply Changes")?.disabled).toBe(false);
         });
 
     it("leaves clearing to the view's toolbar", async () => {
@@ -812,30 +853,384 @@ describe("App", () => {
         await mount();
         await send({ type: "state", state: report() });
 
-        await click((label) => {
-            return label.includes("Preview SQL");
-        });
+        // Nothing to preview yet, so the button is off.
+        expect(iconButton("Preview Changes")?.disabled).toBe(true);
+        await addRow();
+
+        await clickIcon("Preview Changes");
 
         expect(host.querySelector(".sqlPreview")).not.toBeNull();
-        expect(host.textContent).toContain("No changes to preview.");
+        expect(iconButton("Preview Changes")?.getAttribute("aria-pressed"))
+            .toBe("true");
 
+        // The View dropdown goes back as well as the button does.
+        await clickIcon("View");
         await click((label) => {
-            return label.includes("Grid");
+            return label === "Data Grid";
         });
 
         expect(host.querySelector(".sqlPreview")).toBeNull();
+    });
+
+    it("lays the bar out as the MySQL Shell does", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+
+        const order = [...host.querySelectorAll(
+            ".toolbar > .toolbarLabel, .toolbar > button, "
+            + ".toolbar > .toolbarMenuHost > button, .toolbar > .toolbarDivider",
+        )].map((node) => {
+            return node.getAttribute("aria-label")
+                ?? (node.classList.contains("toolbarDivider")
+                    ? "|"
+                    : node.textContent);
+        });
+        expect(order).toEqual([
+            "View:", "View", "|",
+            "Pages:", "Previous Page", "Next Page", "|",
+            "Edit:", "Start Editing", "Add New Row", "Preview Changes",
+            "Apply Changes",
+            "Rollback Changes", "Refresh", "|",
+            "Maximize", "|",
+            "Show Action Menu",
+        ]);
+    });
+
+    describe("paging", () => {
+        /**
+         * @param index Which page is on show.
+         * @param hasMore Whether there are rows after it.
+         * @param loads How often it was fetched.
+         *
+         * @returns `report()` with its result set paged.
+         */
+        const paged = (index: number, hasMore: boolean, loads = 1) => {
+            const state = report();
+            state.resultSets[0] = {
+                ...state.resultSets[0],
+                page: { index, size: 2, hasMore, loads },
+            };
+
+            return state;
+        };
+
+        it("offers no paging for a result set that holds every row",
+            async () => {
+                await mount();
+                await send({ type: "state", state: report() });
+
+                expect(iconButton("Previous Page")?.disabled).toBe(true);
+                expect(iconButton("Next Page")?.disabled).toBe(true);
+            });
+
+        it("offers the next page while there is one", async () => {
+            await mount();
+            await send({ type: "state", state: paged(0, true) });
+
+            expect(iconButton("Previous Page")?.disabled).toBe(true);
+            expect(iconButton("Next Page")?.disabled).toBe(false);
+            expect(iconButton("Next Page")?.classList
+                .contains("pageNextIcon")).toBe(true);
+
+            await clickIcon("Next Page");
+
+            expect(posted.at(-1)).toEqual({
+                type: "page", resultId: "run1-result-0", page: 1,
+            });
+        });
+
+        it("goes back from a later page, and not on from the last",
+            async () => {
+                await mount();
+                await send({ type: "state", state: paged(2, false) });
+
+                expect(iconButton("Next Page")?.disabled).toBe(true);
+                await clickIcon("Previous Page");
+
+                expect(posted.at(-1)).toEqual({
+                    type: "page", resultId: "run1-result-0", page: 1,
+                });
+            });
+
+        it("keeps paging off while edits would be lost", async () => {
+            await mount();
+            await send({ type: "state", state: paged(1, true) });
+
+            await addRow();
+
+            expect(iconButton("Previous Page")?.disabled).toBe(true);
+            expect(iconButton("Next Page")?.disabled).toBe(true);
+        });
+
+        it("rebuilds the grid's edits from a new page", async () => {
+            await mount();
+            await send({ type: "state", state: paged(0, true) });
+            await addRow();
+            expect(iconButton("Apply Changes")?.disabled).toBe(false);
+
+            // The same result set, the same id: only the page differs.
+            await send({ type: "state", state: paged(1, true, 2) });
+
+            expect(iconButton("Apply Changes")?.disabled).toBe(true);
+        });
+
+        it("reloads the page it is on after an apply", async () => {
+            await mount();
+            await send({ type: "state", state: paged(3, true) });
+
+            await send({
+                type: "applied",
+                resultId: "run1-result-0",
+                statements: ["DELETE FROM t"],
+            });
+
+            expect(posted.at(-1)).toEqual({
+                type: "page", resultId: "run1-result-0", page: 3,
+            });
+        });
+
+        it("shows a page that could not be fetched in the error bar",
+            async () => {
+                await mount();
+                await send({ type: "state", state: paged(0, true) });
+
+                await send({
+                    type: "pageFailed",
+                    resultId: "run1-result-0",
+                    error: "gone away",
+                });
+
+                expect(host.querySelector(".errorBar")?.textContent)
+                    .toContain("gone away");
+            });
+    });
+
+    describe("a value saved in an editor", () => {
+        /**
+         * @param overrides What differs from the first row of `report()`.
+         *
+         * @returns The message a save sends.
+         */
+        const edited = (overrides: Record<string, unknown> = {}) => {
+            return {
+                type: "valueEdited" as const,
+                requestId: "edit1",
+                resultId: "run1-result-0",
+                rowIndex: 0,
+                column: "Name",
+                pageKey: "",
+                value: "Kabul City",
+                ...overrides,
+            };
+        };
+
+        it("goes into its cell as a pending edit", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+
+            await send(edited());
+
+            expect(posted.at(-1)).toEqual({
+                type: "valueEditResult", requestId: "edit1",
+            });
+            expect(iconButton("Apply Changes")?.disabled).toBe(false);
+        });
+
+        it("is no edit where it says what the cell said", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+
+            // The ID is the number 1; saved back, it is the text "1".
+            await send(edited({ column: "ID", value: "1" }));
+
+            expect(iconButton("Apply Changes")?.disabled).toBe(true);
+        });
+
+        it("is refused once its result set or page is gone", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+
+            await send(edited({ resultId: "run0-result-0" }));
+            expect(posted.at(-1)).toMatchObject({
+                error: expect.stringContaining("result set"),
+            });
+
+            await send(edited({ pageKey: "3/1" }));
+            expect(posted.at(-1)).toMatchObject({
+                error: expect.stringContaining("page"),
+            });
+            expect(iconButton("Apply Changes")?.disabled).toBe(true);
+        });
+    });
+
+    describe("a BLOB's file", () => {
+        /**
+         * @returns `report()` with a BLOB column in its result set.
+         */
+        const withBlob = () => {
+            const state = report();
+            state.resultSets[0] = {
+                ...state.resultSets[0],
+                columns: [
+                    ...state.resultSets[0].columns,
+                    { name: "image", display: "blob", nullable: true },
+                ],
+                rows: [
+                    { ID: 1, Name: "Kabul", image: "89504e47" },
+                    { ID: 2, Name: "Herat", image: null },
+                ],
+            };
+
+            return state;
+        };
+
+        it("ignores an answer to a load it did not ask for", async () => {
+            // The grid's Load button starts a load, and Tabulator never
+            // builds under jsdom, so only the answering half is here.
+            await mount();
+            await send({ type: "state", state: withBlob() });
+
+            await send({
+                type: "valueLoaded",
+                requestId: "load99",
+                value: "ffd8ff",
+            });
+
+            expect(iconButton("Apply Changes")?.disabled).toBe(true);
+            expect(host.querySelector(".errorBar")).toBeNull();
+        });
+
+        it("shows a file that could not be read in the error bar",
+            async () => {
+                await mount();
+                await send({ type: "state", state: withBlob() });
+
+                await send({
+                    type: "valueLoaded",
+                    requestId: "load1",
+                    error: "permission denied",
+                });
+
+                expect(host.querySelector(".errorBar")?.textContent)
+                    .toContain("Could not load the file: permission denied");
+            });
+    });
+
+    it("says what the pending edits come to", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+        expect(statusText()).toBe("2 rows in set");
+
+        await addRow();
+
+        expect(statusText()).toBe(
+            "Editing, 1 row affected (0 fields changed, 1 row added)");
+    });
+
+    it("keeps Refresh off while there are edits it would lose",
+        async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+            expect(iconButton("Refresh")?.disabled).toBe(false);
+
+            await addRow();
+
+            expect(iconButton("Refresh")?.disabled).toBe(true);
+        });
+
+    describe("freezing the primary key columns", () => {
+        /**
+         * @returns The action menu's Freeze item, the menu opened.
+         */
+        const freezeItem = async (): Promise<HTMLButtonElement | undefined> => {
+            await clickIcon("Show Action Menu");
+
+            return [...host.querySelectorAll<HTMLButtonElement>(
+                ".toolbarMenuItem")].find((item) => {
+                return item.textContent === "Freeze Primary Key Columns";
+            });
+        };
+
+        it("starts from the extension's setting", async () => {
+            await mount();
+            await send({
+                type: "state",
+                state: { ...report(), freezeKeyColumns: false },
+            });
+
+            const item = await freezeItem();
+
+            expect(item?.getAttribute("role")).toBe("menuitemcheckbox");
+            expect(item?.getAttribute("aria-checked")).toBe("false");
+        });
+
+        it("is switched for the result set from its menu", async () => {
+            await mount();
+            await send({
+                type: "state",
+                state: { ...report(), freezeKeyColumns: true },
+            });
+            expect((await freezeItem())?.getAttribute("aria-checked"))
+                .toBe("true");
+
+            await act(async () => {
+                (await freezeItem())?.click();
+            });
+            // The menu closed on the pick; opened again, it says so.
+            const again = await freezeItem();
+
+            expect(again?.getAttribute("aria-checked")).toBe("false");
+        });
+
+        it("is off where no primary key is known", async () => {
+            await mount();
+            const keyless = report();
+            keyless.resultSets[0] = {
+                ...keyless.resultSets[0],
+                columns: keyless.resultSets[0].columns.map((column) => {
+                    return { ...column, isPrimary: false };
+                }),
+            };
+            await send({ type: "state", state: keyless });
+
+            expect((await freezeItem())?.disabled).toBe(true);
+        });
+    });
+
+    it("leaves the icon slot of an item without one blank", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+
+        await clickIcon("Show Action Menu");
+        const close = [...host.querySelectorAll(".toolbarMenuItem")]
+            .find((item) => {
+                return item.textContent === "Close Result Set";
+            });
+
+        // noIcon is what keeps the mask from drawing a filled square.
+        expect(close?.querySelector(".toolbarMenuIcon")?.classList
+            .contains("noIcon")).toBe(true);
+    });
+
+    it("asks the host to close the result set from the menu", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+
+        await clickIcon("Show Action Menu");
+        await click((label) => {
+            return label === "Close Result Set";
+        });
+
+        expect(posted.at(-1))
+            .toEqual({ type: "closeResult", resultId: "run1-result-0" });
     });
 
     it("previews the SQL an added row would run", async () => {
         await mount();
         await send({ type: "state", state: report() });
 
-        await click((label) => {
-            return label.includes("+ Row");
-        });
-        await click((label) => {
-            return label.includes("Preview SQL");
-        });
+        await addRow();
+        await clickIcon("Preview Changes");
 
         // Generated by the same builder the extension executes with.
         expect(host.querySelector("code")?.textContent)
@@ -847,29 +1242,20 @@ describe("App", () => {
         await send({ type: "state", state: report() });
 
         const applyOf = () => {
-            return button((label) => {
-                return label.startsWith("Apply");
-            });
+            return iconButton("Apply Changes");
         };
         expect(applyOf()?.disabled).toBe(true);
 
-        await click((label) => {
-            return label.includes("+ Row");
-        });
+        await addRow();
 
         expect(applyOf()?.disabled).toBe(false);
-        expect(applyOf()?.textContent).toBe("Apply (1)");
     });
 
     it("sends the changes when Apply is pressed", async () => {
         await mount();
         await send({ type: "state", state: report() });
-        await click((label) => {
-            return label.includes("+ Row");
-        });
-        await click((label) => {
-            return label.startsWith("Apply");
-        });
+        await addRow();
+        await clickIcon("Apply Changes");
 
         expect(posted.at(-1)).toEqual({
             type: "applyChanges",
@@ -885,28 +1271,201 @@ describe("App", () => {
     it("discards the pending changes on Revert", async () => {
         await mount();
         await send({ type: "state", state: report() });
-        await click((label) => {
-            return label.includes("+ Row");
-        });
-        await click((label) => {
-            return label === "Revert";
-        });
+        await addRow();
+        await clickIcon("Rollback Changes");
 
-        expect(button((label) => {
-            return label.startsWith("Apply");
-        })?.disabled).toBe(true);
+        expect(iconButton("Apply Changes")?.disabled).toBe(true);
     });
 
     it("asks for a reload when Refresh is pressed", async () => {
         await mount();
         await send({ type: "state", state: report() });
 
-        await click((label) => {
-            return label === "Refresh";
-        });
+        await clickIcon("Refresh");
 
         expect(posted.at(-1))
             .toEqual({ type: "refresh", resultId: "run1-result-0" });
+    });
+
+    it("draws the buttons as icons, not labels", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+
+        const refresh = iconButton("Refresh");
+        expect(refresh?.classList.contains("refreshIcon")).toBe(true);
+        expect(refresh?.textContent).toBe("");
+        expect(iconButton("Apply Changes")?.classList
+            .contains("commitIcon")).toBe(true);
+        expect(iconButton("Rollback Changes")?.classList
+            .contains("rollbackIcon")).toBe(true);
+    });
+
+    describe("maximizing", () => {
+        /**
+         * @returns The result set of `report()` in its own editor tab.
+         */
+        const maximizedState = (): IViewState => {
+            return {
+                connections: [],
+                connection: "dba@localhost:3310",
+                sessions: [],
+                actions: [],
+                resultSets: report().resultSets,
+                maximized: true,
+            };
+        };
+
+        it("offers Maximize right of Refresh in the panel", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+
+            const buttons = [...host.querySelectorAll(".toolbar button")];
+            const refresh = buttons.indexOf(iconButton("Refresh")!);
+            expect(buttons[refresh + 1]).toBe(iconButton("Maximize"));
+            expect(iconButton("Maximize")?.classList
+                .contains("maximizeIcon")).toBe(true);
+            expect(iconButton("Minimize")).toBeUndefined();
+        });
+
+        it("moves the result set out with its pending edits", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+            await addRow();
+
+            await clickIcon("Maximize");
+
+            const message = posted.at(-1) as {
+                type: string;
+                resultId: string;
+                rows: Array<{ added: boolean }>;
+            };
+            expect(message.type).toBe("maximize");
+            expect(message.resultId).toBe("run1-result-0");
+            expect(message.rows.map((row) => {
+                return row.added;
+            })).toEqual([false, false, true]);
+        });
+
+        it("shows one result set, with nothing to pick", async () => {
+            await mount();
+            await send({ type: "state", state: maximizedState() });
+
+            expect(host.querySelector(".contentSelectionBar")).toBeNull();
+            expect(host.querySelector(".statusBar")).not.toBeNull();
+            expect(iconButton("Minimize")?.classList
+                .contains("minimizeIcon")).toBe(true);
+            expect(iconButton("Maximize")).toBeUndefined();
+        });
+
+        it("starts from the edits it was sent", async () => {
+            await mount();
+            await send({
+                type: "state",
+                state: maximizedState(),
+                editing: {
+                    "run1-result-0": [{
+                        original: { ID: 1, Name: "Kabul" },
+                        current: { ID: 1, Name: "Kabul City" },
+                        added: false,
+                        deleted: false,
+                    }],
+                },
+            });
+
+            expect(statusText()).toBe(
+                "Editing, 1 row affected (1 field changed)");
+        });
+
+        it("keeps every feature of the tab", async () => {
+            await mount();
+            await send({ type: "state", state: maximizedState() });
+
+            for (const label of ["View", "Start Editing", "Add New Row",
+                "Preview Changes",
+                "Apply Changes", "Rollback Changes", "Show Action Menu"]) {
+                expect(iconButton(label)).toBeDefined();
+            }
+            await clickIcon("Refresh");
+            expect(posted.at(-1))
+                .toEqual({ type: "refresh", resultId: "run1-result-0" });
+        });
+
+        it("goes back to the panel with its pending edits", async () => {
+            await mount();
+            await send({ type: "state", state: maximizedState() });
+            await addRow();
+
+            await clickIcon("Minimize");
+
+            expect(posted.at(-1)).toMatchObject({
+                type: "minimize",
+                resultId: "run1-result-0",
+            });
+            expect(posted.at(-1)?.rows)
+                .toHaveLength(3);
+        });
+
+        it("keeps the other tabs' edits when one leaves", async () => {
+            await mount();
+            const two = report();
+            two.resultSets.push({
+                ...two.resultSets[0],
+                id: "run1-result-1",
+                caption: "Result #2",
+            });
+            await send({ type: "state", state: two });
+            await click((label) => {
+                return label === "Result #2";
+            });
+            await addRow();
+
+            const left = report();
+            left.resultSets = [two.resultSets[1]];
+            await send({ type: "state", state: left });
+
+            expect(iconButton("Apply Changes")?.disabled).toBe(false);
+        });
+
+        it("shows a result set that comes back", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+            await click((label) => {
+                return label.startsWith("Actions");
+            });
+
+            const back = report();
+            back.resultSets.push({
+                ...back.resultSets[0],
+                id: "run1-result-1",
+                caption: "Result #2",
+            });
+            await send({ type: "state", state: back });
+
+            expect(host.querySelector(".tab.active")?.textContent)
+                .toBe("Result #2");
+        });
+
+        it("stays on the result set when an error is stepped to",
+            async () => {
+                await mount();
+                await send({
+                    type: "state",
+                    state: {
+                        ...maximizedState(),
+                        actions: [{
+                            ...report().actions[0],
+                            kind: "error",
+                            summary: "Execution failed: gone away",
+                        }],
+                    },
+                });
+
+                await click((label) => {
+                    return label.includes("gone away");
+                });
+
+                expect(host.querySelector(".statusBar")).not.toBeNull();
+            });
     });
 
     it("shows an apply failure at the very top and opens the preview",
@@ -1261,13 +1820,13 @@ describe("App", () => {
         };
         await send({ type: "state", state: readOnly });
 
-        expect(host.querySelector(".readOnly")?.textContent).toBe("read only");
-        const labels = [...host.querySelectorAll("button")].map((node) => {
-            return node.textContent;
-        });
-        expect(labels.some((label) => {
-            return label?.startsWith("Apply");
-        })).toBe(false);
-        expect(labels).toContain("Refresh");
+        // Why is said on the Edit button, as the MySQL Shell does.
+        const start = iconButton("Start Editing");
+        expect(start?.disabled).toBe(true);
+        expect(start?.title).toBe("Read only: not a single table.");
+        expect(iconButton("Add New Row")?.disabled).toBe(true);
+        expect(iconButton("Add New Row")?.title)
+            .toBe("Read only: not a single table.");
+        expect(iconButton("Refresh")?.disabled).toBe(false);
     });
 });
