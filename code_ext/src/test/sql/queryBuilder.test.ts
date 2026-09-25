@@ -117,6 +117,8 @@ describe("QueryBuilder.formatValue", () => {
 
     it("writes binary values as hex", () => {
         expect(builder.formatValue("b", "cafe00")).toBe("0xcafe00");
+        // As the grid shows it, 0x and all.
+        expect(builder.formatValue("b", "0xCAFE")).toBe("0xCAFE");
         expect(builder.formatValue("b", "")).toBe("0x00");
     });
 
@@ -161,6 +163,25 @@ describe("QueryBuilder", () => {
         expect(() => {
             return cityBuilder().buildUpdate({ ID: 1 }, {});
         }).toThrow(/at least one changed column/);
+    });
+
+    it("writes an auto-increment value the user gave", () => {
+        expect(cityBuilder().buildInsert({
+            ID: 5000,
+            Name: "Springfield",
+            Population: 30000,
+        })).toBe(
+            "INSERT INTO `world`.`city` (`ID`, `Name`, `Population`) "
+            + "VALUES (5000, 'Springfield', 30000)",
+        );
+        // An emptied cell is no value either: the server assigns one.
+        expect(cityBuilder().buildInsert({ ID: "", Name: "x" }))
+            .toBe("INSERT INTO `world`.`city` (`Name`) VALUES ('x')");
+    });
+
+    it("changes a primary key with an UPDATE addressed by the old one", () => {
+        expect(cityBuilder().buildUpdate({ ID: 1 }, { ID: 4080 }))
+            .toBe("UPDATE `world`.`city` SET `ID` = 4080 WHERE `ID` = 1");
     });
 
     it("leaves auto-increment columns out of an INSERT", () => {

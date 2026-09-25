@@ -18,17 +18,21 @@
 import type {
     IColumnDetails,
     IMariaDbApi,
+    IResultSetData,
     IStatementResult,
 } from "../mcp/types.js";
 import type {
     IExecutionReport,
     IActionRow,
     IResultColumn,
+    IResultPage,
     IResultSet,
     IStatementSource,
     ActionSeverity,
     RowChange,
 } from "../webview/protocol.js";
+import { OBJECT_NOT_FOUND } from "../mcp/protocol.js";
+import { valueDisplayOf } from "./dataTypes.js";
 import { createQueryBuilder } from "./resultSetQueryBuilder.js";
 import { splitStatements } from "./splitStatements.js";
 import { findUpdatableTarget } from "./statementTarget.js";
@@ -45,6 +49,12 @@ export const describeResult = (result: IStatementResult): string => {
     const warnings = warningCount > 0
         ? `, ${warningCount} warning${warningCount === 1 ? "" : "s"}`
         : "";
+
+    // Each set has a row of its own under this one saying what is in it.
+    const sets = 1 + (result.additional_result_sets?.length ?? 0);
+    if (result.rows && sets > 1) {
+        return `${sets} result sets${warnings}`;
+    }
 
     if (result.rows) {
         const count = result.rows.length;
@@ -94,6 +104,42 @@ export const warningRowsOf = (
                 : "warning",
         };
     });
+};
+
+/**
+ * @param count How many rows a result set has.
+ *
+ * @returns `1 row in set`, `4 rows in set`.
+ */
+const rowsInSet = (count: number): string => {
+    return `${count} row${count === 1 ? "" : "s"} in set`;
+};
+
+/**
+ * What a result set's own bar says about it: its rows, and which page
+ * they are where there is more than one.
+ *
+ * @param count How many rows it holds.
+ * @param page Which page they are, where the server paged them.
+ *
+ * @returns `200 rows in set`, `200 rows in set (page 2)`.
+ */
+export const pageStatus = (count: number, page?: IResultPage): string => {
+    return page !== undefined && (page.index > 0 || page.hasMore)
+        ? `${rowsInSet(count)} (page ${page.index + 1})`
+        : rowsInSet(count);
+};
+
+/**
+ * Whether a statement calls a stored procedure, whose result sets are
+ * whatever it chose to SELECT: none of them is a table's rows to edit.
+ *
+ * @param statement The statement, comments and all.
+ *
+ * @returns True for a CALL.
+ */
+export const isProcedureCall = (statement: string): boolean => {
+    return /^call\b/i.test(dropLeadingComments(statement).trimStart());
 };
 
 /**
@@ -256,29 +302,38 @@ export const captionFor = (statement: string, limit = 40): string => {
  *
  * @param labels The result set's column labels, in order.
  * @param details The table's columns.
+ * @param types Each column's type as the server reported it, in order,
+ *              which is what decides how a value is shown where the
+ *              table's columns are not known.
  *
  * @returns The grid columns.
  */
 export const mapColumns = (
     labels: string[],
     details?: IColumnDetails[],
+    types?: Array<string | null>,
 ): IResultColumn[] => {
     const byName = new Map(details?.map((column) => {
         return [column.name, column];
     }));
 
-    return labels.map((name) => {
+    return labels.map((name, position) => {
         const column = byName.get(name);
+        const display = valueDisplayOf(types?.[position], column?.datatype);
+        const shown = display === undefined ? {} : { display };
         if (!column) {
-            return { name };
+            return { name, ...shown };
         }
 
         return {
             name,
+            ...shown,
             datatype: column.datatype,
             isPrimary: Boolean(column.is_primary),
-            isGenerated: Boolean(column.is_generated)
-                || column.id_generation === "auto_inc",
+            // Kept apart: a generated column cannot be written, an
+            // auto-increment one - a primary key, usually - can.
+            isGenerated: Boolean(column.is_generated),
+            isAutoIncrement: column.id_generation === "auto_inc",
             nullable: !column.not_null,
         };
     });
@@ -318,6 +373,12 @@ export interface IExecutionOptions {
     source?: IScriptSource;
     /** Whether a failing statement ends the script. */
     stopOnError?: boolean;
+    /**
+     * How many rows a result set holds at a time. A SELECT without a
+     * LIMIT of its own comes back one page long, and can be paged on.
+     * Left out, every row comes back.
+     */
+    pageSize?: number;
     /** What to call this run in its own row. */
     label?: string;
 }
@@ -449,7 +510,7 @@ export class ExecutionService {
         let results: IStatementResult[];
         try {
             results = await this.api.executeScript(
-                connectionId, script, options.stopOnError);
+                connectionId, script, options.stopOnError, options.pageSize);
         } catch (error) {
             // The call itself failed - a closed connection, a shell that
             // went away - so nothing ran and there is no statement to
@@ -545,8 +606,44 @@ export class ExecutionService {
                 describeResult(result),
                 currentSchema,
                 runId,
+                options.pageSize,
             );
             resultSets.push(resultSet);
+
+            // A procedure's other result sets: a tab each, and a row each
+            // under the statement's, beside its warnings, saying what is in
+            // it and jumping to it. The first set gets one too, so every
+            // set is a row away.
+            const extra = result.additional_result_sets ?? [];
+            const setRows: IActionRow[] = [];
+            if (extra.length > 0) {
+                const sets: IResultSetData[] = [
+                    { columns: result.columns, rows: result.rows ?? [] },
+                    ...extra,
+                ];
+                for (const [position, set] of sets.entries()) {
+                    const shown = position === 0
+                        ? resultSet
+                        : this.#procedureResultSet(statement, set,
+                            resultSets.length, runId);
+                    if (position > 0) {
+                        resultSets.push(shown);
+                    }
+                    setRows.push({
+                        id: `${id}-set-${position}`,
+                        time: startedAt,
+                        connection: connectionUri,
+                        connectionLabel,
+                        role: "statement",
+                        statement: shown.caption,
+                        message: rowsInSet(set.rows.length),
+                        kind: "info",
+                        source,
+                        resultId: shown.id,
+                    });
+                }
+            }
+            const nested = [...setRows, ...warnings];
 
             children.push({
                 id,
@@ -560,7 +657,7 @@ export class ExecutionService {
                 elapsedMs,
                 source,
                 resultId: resultSet.id,
-                ...(warnings.length > 0 ? { children: warnings } : {}),
+                ...(nested.length > 0 ? { children: nested } : {}),
             });
         }
 
@@ -628,6 +725,51 @@ export class ExecutionService {
     }
 
     /**
+     * Fetches another page of a result set's rows.
+     *
+     * Only the rows change: the columns, the table it writes back to and
+     * whether it can be edited are the statement's, and so the same on
+     * every page.
+     *
+     * @param connectionId The UUID to run on.
+     * @param resultSet The result set to page, which the server paged.
+     * @param index Which page to fetch, from 0.
+     *
+     * @returns The result set holding that page.
+     */
+    public async fetchPage(
+        connectionId: string,
+        resultSet: IResultSet,
+        index: number,
+    ): Promise<IResultSet> {
+        const current = resultSet.page;
+        if (current === undefined) {
+            throw new Error("This result set holds all of its rows.");
+        }
+
+        const page = Math.max(0, index);
+        const result = await this.api.executeSql(
+            connectionId,
+            resultSet.statement,
+            { limit: current.size, offset: page * current.size },
+        );
+        const rows = result.rows ?? [];
+        const next: IResultPage = {
+            index: page,
+            size: current.size,
+            hasMore: result.has_more_pages ?? false,
+            loads: current.loads + 1,
+        };
+
+        return {
+            ...resultSet,
+            rows,
+            page: next,
+            status: pageStatus(rows.length, next),
+        };
+    }
+
+    /**
      * Turns one result into a grid, looking up the source table's columns
      * where the statement allows the grid to be edited.
      *
@@ -647,17 +789,39 @@ export class ExecutionService {
         status: string,
         currentSchema: () => Promise<string | undefined>,
         runId: string,
+        pageSize?: number,
     ): Promise<IResultSet> {
         const labels = result.columns ?? [];
+        const rows = result.rows ?? [];
+        // Paged only where the server added the limit; anything else came
+        // back whole.
+        const page: IResultPage | undefined =
+            result.has_more_pages === undefined || pageSize === undefined
+                ? undefined
+                : {
+                    index: 0,
+                    size: pageSize,
+                    hasMore: result.has_more_pages,
+                    loads: 1,
+                };
         const base: IResultSet = {
             id: `${runId}-result-${ordinal}`,
             caption: `Result #${ordinal + 1}`,
             statement,
-            columns: mapColumns(labels),
-            rows: result.rows ?? [],
+            columns: mapColumns(labels, undefined, result.column_types),
+            rows,
             editable: false,
-            status,
+            status: page === undefined ? status : pageStatus(rows.length, page),
+            ...(page === undefined ? {} : { page }),
         };
+
+        if (isProcedureCall(statement)) {
+            return {
+                ...base,
+                readOnlyReason:
+                    "Read only: the result set of a stored procedure.",
+            };
+        }
 
         const target = findUpdatableTarget(statement);
         if (!target) {
@@ -679,6 +843,11 @@ export class ExecutionService {
             };
         }
 
+        // Asked as a table outright: the common case costs one call. A view
+        // - mysql.user is one - is found out by the answer being no such
+        // table, which the activity log reports as that answer rather than
+        // as an error. Nothing more is asked about a view: its columns
+        // would only give the header tooltips their types.
         let details;
         try {
             details = await this.api.getObjectDetails(
@@ -687,18 +856,22 @@ export class ExecutionService {
                 target.table,
                 "table",
             );
-        } catch {
-            // A view, a temporary table or a table in another schema than
-            // the one guessed: the grid simply stays read only.
+        } catch (error) {
+            const text = error instanceof Error ? error.message : String(error);
+
             return {
                 ...base,
-                readOnlyReason:
-                    `Read only: the columns of ${target.table} could not `
+                readOnlyReason: OBJECT_NOT_FOUND.test(text)
+                    ? `Read only: ${schema}.${target.table} is not a table - `
+                    + "a view, say."
+                    : `Read only: the columns of ${target.table} could not `
                     + "be looked up.",
             };
         }
 
-        const columns = mapColumns(labels, details.columns);
+        const columns = mapColumns(
+            labels, details.columns, result.column_types);
+
         const hasKey = columns.some((column) => {
             return column.isPrimary;
         });
@@ -718,6 +891,35 @@ export class ExecutionService {
             columns,
             target: { schema, table: target.table },
             editable: true,
+        };
+    }
+
+    /**
+     * A result set a procedure returned after its first: read only, and
+     * captioned as the next result along.
+     *
+     * @param statement The CALL that returned it.
+     * @param set Its columns and rows.
+     * @param ordinal The index of this result set among the run's.
+     * @param runId The run it belongs to.
+     *
+     * @returns The result set to show.
+     */
+    #procedureResultSet(
+        statement: string,
+        set: IResultSetData,
+        ordinal: number,
+        runId: string,
+    ): IResultSet {
+        return {
+            id: `${runId}-result-${ordinal}`,
+            caption: `Result #${ordinal + 1}`,
+            statement,
+            columns: mapColumns(set.columns, undefined, set.column_types),
+            rows: set.rows,
+            editable: false,
+            status: rowsInSet(set.rows.length),
+            readOnlyReason: "Read only: the result set of a stored procedure.",
         };
     }
 

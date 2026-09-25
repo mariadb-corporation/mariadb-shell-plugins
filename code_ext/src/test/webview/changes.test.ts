@@ -40,7 +40,7 @@ const citySet = (rows: Array<Record<string, unknown>> = []): IResultSet => {
                 name: "ID",
                 datatype: "int(11)",
                 isPrimary: true,
-                isGenerated: true,
+                isAutoIncrement: true,
                 nullable: false,
             },
             {
@@ -89,6 +89,23 @@ describe("blankRow", () => {
             added: true,
             deleted: false,
         });
+    });
+});
+
+describe("collectChanges on a changed key", () => {
+    it("addresses the row by the key it had", () => {
+        const set = {
+            id: "r", caption: "", statement: "", editable: true, status: "",
+            columns: [{ name: "ID", isPrimary: true, isAutoIncrement: true },
+                { name: "Name" }],
+            rows: [{ ID: 1, Name: "Kabul" }],
+        };
+        const rows = initialRows(set);
+        rows[0] = { ...rows[0], current: { ID: 4080, Name: "Kabul" } };
+
+        expect(collectChanges(set, rows)).toEqual([{
+            kind: "update", rowIndex: 0, keys: { ID: 1 }, values: { ID: 4080 },
+        }]);
     });
 });
 

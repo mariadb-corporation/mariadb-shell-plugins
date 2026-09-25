@@ -43,7 +43,7 @@
         {
           "id": "mariadb.connections",
           "name": "Connections",
-          "icon": "images/light/mariadbConnection.svg"
+          "icon": "images/light/connectionMariaDB.svg"
         },
         {
           "id": "mariadb.sandboxes",
@@ -55,7 +55,7 @@
           "id": "mariadb.results",
           "name": "Results",
           "type": "webview",
-          "icon": "images/light/mariadbConnection.svg"
+          "icon": "images/light/connectionMariaDB.svg"
         }
       ]
     },
@@ -131,6 +131,17 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Whether a failing statement ends the script. Turn this off to run every statement and collect all the failures, which suits a script of independent statements. A single file can be switched from the editor's toolbar without changing this; it starts out doing whatever this says."
+        },
+        "mariadb.execute.pageSize": {
+          "type": "integer",
+          "default": 200,
+          "minimum": 1,
+          "markdownDescription": "How many rows of a result set are fetched and shown at a time. A `SELECT` without a `LIMIT` of its own is given one, and the result set's toolbar pages through the rest."
+        },
+        "mariadb.resultSet.freezePrimaryKeyColumns": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Whether a result set's primary key columns are frozen: moved to the front of the grid and kept in place while the rest scrolls sideways. A result set can switch this for itself in its toolbar's action menu; each starts out doing what this says."
         },
         "mariadb.keybindings.runScript": {
           "type": "string",
@@ -254,6 +265,15 @@
         "icon": "$(debug-disconnect)"
       },
       {
+        "command": "mariadb.selectRows",
+        "title": "Select Rows",
+        "category": "MariaDB",
+        "icon": {
+          "light": "images/light/toolbar-execute.svg",
+          "dark": "images/dark/toolbar-execute.svg"
+        }
+      },
+      {
         "command": "mariadb.newSqlEditor",
         "title": "New SQL Editor",
         "category": "MariaDB",
@@ -311,7 +331,10 @@
         "command": "mariadb.selectEditorConnection",
         "title": "Select Connection for this SQL File",
         "category": "MariaDB",
-        "icon": "$(database)"
+        "icon": {
+          "light": "images/light/connectionMariaDB.svg",
+          "dark": "images/dark/connectionMariaDB.svg"
+        }
       },
       {
         "command": "mariadb.runSqlFile",
@@ -490,6 +513,16 @@
           "group": "1_connection@1"
         },
         {
+          "command": "mariadb.selectRows",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbObject\\.(table|view)$/",
+          "group": "1_data@1"
+        },
+        {
+          "command": "mariadb.selectRows",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbObject\\.(table|view)$/",
+          "group": "inline@1"
+        },
+        {
           "command": "mariadb.startSandbox",
           "when": "view == mariadb.sandboxes && viewItem == mariadbSandbox.stopped",
           "group": "inline@1"
@@ -560,6 +593,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "mariadb.selectRows",
+          "when": "false"
+        },
         {
           "command": "mariadb.connect",
           "when": "false"

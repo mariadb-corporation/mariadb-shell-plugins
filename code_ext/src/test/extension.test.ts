@@ -47,6 +47,7 @@ import {
     inputBoxCalls,
     Uri,
     withProgressCalls,
+    fileSystemProviders,
 } from "./mocks/vscode.js";
 
 // The Node backed runtime and the MCP SDK are replaced wholesale, so
@@ -256,6 +257,12 @@ describe("activate", () => {
         runtime.sandboxes = [];
     });
 
+    it("serves grid values opened in editors", () => {
+        activate(createContext() as never);
+
+        expect(fileSystemProviders.has("mariadb-value")).toBe(true);
+    });
+
     it("registers the Connections and Sandboxes views and every command", () => {
         const context = createContext();
 
@@ -287,6 +294,7 @@ describe("activate", () => {
             "mariadb.runSqlFile",
             "mariadb.runSqlStatement",
             "mariadb.selectEditorConnection",
+            "mariadb.selectRows",
             "mariadb.setDefaultConnection",
             "mariadb.showMcpServerLog",
             "mariadb.startSandbox",

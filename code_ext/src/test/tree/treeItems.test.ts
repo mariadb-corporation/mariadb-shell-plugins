@@ -15,6 +15,10 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -23,6 +27,7 @@ import type {
 } from "../../tree/connectionsModel.js";
 import {
     FolderTreeItem,
+    connectionIconFor,
     createTreeItem,
     type IconResolver,
 } from "../../tree/treeItems.js";
@@ -32,6 +37,10 @@ import {
     TreeItemCollapsibleState,
     Uri,
 } from "../mocks/vscode.js";
+
+/** The extension's own folder, where `images/` is. */
+const EXTENSION_ROOT = join(
+    dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 /** Resolves an icon name to a recognisable pair of paths. */
 const resolveIcon: IconResolver = (name: string) => {
@@ -176,6 +185,45 @@ describe("createTreeItem for a connection", () => {
 
         expect(item.description).toBe("default");
         expect(item.tooltip).toContain("default connection");
+        expect(item.iconPath).toEqual({
+            light: Uri.file("/ext/images/light/connectionMariaDBDefault.svg"),
+            dark: Uri.file("/ext/images/dark/connectionMariaDBDefault.svg"),
+        });
+    });
+
+    it("gives every scheme's default its own icon", () => {
+        for (const [scheme, icon] of [
+            ["mariadb", "connectionMariaDBDefault.svg"],
+            ["mariadb+ssh", "connectionMariaDBSSHDefault.svg"],
+            ["mysql", "connectionMySQLDefault.svg"],
+            ["mysql+ssh", "connectionMySQLSSHDefault.svg"],
+            ["mysqlx", "connectionMySQLDefault.svg"],
+        ]) {
+            const item = createTreeItem(connection({
+                uri: `${scheme}://dba@localhost:3310`,
+                isDefault: true,
+            }), resolveIcon);
+
+            expect(item.iconPath).toEqual({
+                light: Uri.file(`/ext/images/light/${icon}`),
+                dark: Uri.file(`/ext/images/dark/${icon}`),
+            });
+        }
+    });
+
+    it("ships every icon a connection can be shown with", () => {
+        const schemes = ["mariadb", "mariadb+ssh", "mysql", "mysql+ssh",
+            "mysqlx", "unknown"];
+        for (const scheme of schemes) {
+            for (const isDefault of [false, true]) {
+                const file = connectionIconFor(
+                    `${scheme}://dba@h`, isDefault);
+                for (const theme of ["light", "dark"]) {
+                    expect(existsSync(join(EXTENSION_ROOT, "images", theme,
+                        file)), `${theme}/${file}`).toBe(true);
+                }
+            }
+        }
     });
 
     it("leaves a non-default connection undecorated", () => {

@@ -108,6 +108,18 @@ export interface IStatementWarning {
     message: string;
 }
 
+/** One result set: its column labels and its rows, keyed by them. */
+export interface IResultSetData {
+    columns: string[];
+    rows: Array<Record<string, unknown>>;
+    /**
+     * Each column's type as the server reported it, in the order of
+     * `columns`: `INTEGER`, `STRING`, `BYTES` (BINARY/VARBINARY), `BLOB`,
+     * `JSON`, `GEOMETRY`, ... Absent on a shell that predates it.
+     */
+    column_types?: Array<string | null>;
+}
+
 export interface IStatementResult {
     affected_items_count?: number;
     warnings_count?: number;
@@ -120,6 +132,15 @@ export interface IStatementResult {
     session_restarted?: boolean;
     columns?: string[];
     rows?: Array<Record<string, unknown>>;
+    /** Each column's type, as for `IResultSetData.column_types`. */
+    column_types?: Array<string | null>;
+    /**
+     * The result sets after the first, where the statement returned more
+     * than one - a CALL of a procedure that runs several SELECTs. The first
+     * is `columns` and `rows`, as for any statement. Absent otherwise, and
+     * on a shell that predates it, which drops them.
+     */
+    additional_result_sets?: IResultSetData[];
 
     /** Its position among the script's non-empty statements, from 0. */
     statement_index?: number;
@@ -132,6 +153,22 @@ export interface IStatementResult {
     error?: string;
     /** The failing statement's text, abbreviated. */
     statement?: string;
+    /**
+     * Set where the call's limit was added to the statement: true when
+     * there are rows past the ones returned, false on the last page.
+     * Absent where the statement ran as written - it limits itself, or
+     * is no SELECT - and on a shell that predates paging, whose rows are
+     * then all of them.
+     */
+    has_more_pages?: boolean;
+}
+
+/** Which rows of a statement's result to fetch. */
+export interface IPageRequest {
+    /** The most rows to return. */
+    limit: number;
+    /** How many rows to skip first. */
+    offset?: number;
 }
 
 /**
@@ -197,5 +234,11 @@ export interface IMariaDbApi {
         connectionId: string,
         sqlScript: string,
         stopOnError?: boolean,
+        limit?: number,
     ): Promise<IStatementResult[]>;
+    executeSql(
+        connectionId: string,
+        sql: string,
+        page?: IPageRequest,
+    ): Promise<IStatementResult>;
 }

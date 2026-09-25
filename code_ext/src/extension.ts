@@ -78,11 +78,13 @@ import type {
     IConnectionNode,
     IConnectionStatusNode,
     IFolderNode,
+    IObjectNode,
 } from "./tree/connectionsModel.js";
 import {
     ResultViewProvider,
     RESULT_VIEW_ID,
 } from "./webview/resultViewProvider.js";
+import { VALUE_SCHEME } from "./webview/valueDocuments.js";
 
 /**
  * Everything the extension builds on activation, kept together so
@@ -285,8 +287,8 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // Marks where each statement begins. The ranges come from the SQL
     // scanner for now; a language server would report the same thing.
     const statementDots = new StatementDecorator(context.extensionUri);
-    resultView.setRefreshHandler(async (resultSet) => {
-        await editors.refreshResultSet(resultSet);
+    resultView.setRefreshHandler(async (resultSet, target) => {
+        await editors.refreshResultSet(resultSet, target);
     });
     resultView.setConnectionLister(async () => {
         return await connections.listConnections();
@@ -333,6 +335,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
         statementDots,
         resultView,
         connectionsView,
+        // Grid values opened in editors, as files of their own scheme.
+        vscode.workspace.registerFileSystemProvider(
+            VALUE_SCHEME,
+            resultView.valueDocuments,
+            { isCaseSensitive: true },
+        ),
         vscode.window.registerWebviewViewProvider(
             RESULT_VIEW_ID,
             resultView,
@@ -402,6 +410,17 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     undefined,
                     folderOf(node),
                 );
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.selectRows",
+            async (node?: IObjectNode) => {
+                if (node?.kind !== "object") {
+                    return;
+                }
+
+                await editors.selectRows(node.uri, node.schema, node.name);
             },
         ),
 

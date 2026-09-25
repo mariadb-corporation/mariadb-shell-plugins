@@ -33,6 +33,7 @@ import type {
     IObjectDetails,
     IObjectInfo,
     ISchemaInfo,
+    IPageRequest,
     IStatementResult,
     ObjectType,
 } from "./types.js";
@@ -369,6 +370,9 @@ export class MariaDbApi implements IMariaDbApi {
      * @param stopOnError Whether a failing statement ends the script.
      *                    Defaults to the server's own default, which is
      *                    to stop.
+     * @param limit The most rows each SELECT returns; one without a LIMIT
+     *              of its own is given this one, and says in
+     *              `has_more_pages` whether there are more.
      *
      * @returns One result per statement that ran, in order.
      */
@@ -376,6 +380,7 @@ export class MariaDbApi implements IMariaDbApi {
         connectionId: string,
         sqlScript: string,
         stopOnError?: boolean,
+        limit?: number,
     ): Promise<IStatementResult[]> {
         const name = "db.execute_sql_script";
 
@@ -389,6 +394,40 @@ export class MariaDbApi implements IMariaDbApi {
                 ...(stopOnError === undefined
                     ? {}
                     : { stop_on_error: stopOnError }),
+                ...(limit === undefined ? {} : { limit }),
+            }),
+        );
+    }
+
+    /**
+     * Runs one statement, optionally one page of its rows.
+     *
+     * @param connectionId The UUID returned by `connect`.
+     * @param sql The statement.
+     * @param page Which of its rows to return. A SELECT without a LIMIT
+     *             of its own is given this one; anything else runs as
+     *             written and has no `has_more_pages`.
+     *
+     * @returns What the statement produced.
+     */
+    public async executeSql(
+        connectionId: string,
+        sql: string,
+        page?: IPageRequest,
+    ): Promise<IStatementResult> {
+        const name = "db.execute_sql";
+
+        return decodeObject<IStatementResult>(
+            name,
+            await this.caller.callTool(name, {
+                connection_id: connectionId,
+                sql,
+                ...(page === undefined
+                    ? {}
+                    : {
+                        limit: page.limit,
+                        ...(page.offset ? { offset: page.offset } : {}),
+                    }),
             }),
         );
     }

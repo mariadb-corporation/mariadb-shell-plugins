@@ -145,8 +145,11 @@ dba@localhost:3310/world      connection (icon by scheme; "default" if default)
   borrows the MySQL one) - and the whole URI is the tooltip and what
   Copy Connection URI puts on the clipboard. Two connections differing only
   in scheme or options can therefore share a label; it is a caption, never
-  a key - everything still goes by `node.uri`. `mariadbConnection.svg` is
-  now only the view container's icon in `package.json`.
+  a key - everything still goes by `node.uri`. The DEFAULT connection
+  gets the `...Default.svg` variant of its scheme's icon
+  (`connectionIconFor`), as well as "default" in its description.
+  `mariadbConnection.svg` is gone; the Connections and Results views'
+  own icons in `package.json` are `connectionMariaDB.svg`.
 - Icons are the MySQL Shell extension's, copied into `images/light` and
   `images/dark`. The upstream set has no sequence icon, so sequences fall
   back to the `symbol-numeric` codicon. Upstream's `light/schemaPrcoedure.svg`

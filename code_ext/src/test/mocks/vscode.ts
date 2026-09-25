@@ -95,6 +95,10 @@ export class Uri {
             : new Uri("file", value);
     }
 
+    public static from(parts: { scheme: string; path: string }): Uri {
+        return new Uri(parts.scheme, parts.path);
+    }
+
     public static joinPath(base: Uri, ...parts: string[]): Uri {
         const path = [base.path.replace(/\/$/, ""), ...parts].join("/");
 
@@ -150,6 +154,48 @@ export class TreeItem {
         TreeItemCollapsibleState.None,
     ) { }
 }
+
+export enum FileType {
+    Unknown = 0,
+    File = 1,
+    Directory = 2,
+}
+
+export enum FileChangeType {
+    Changed = 1,
+    Created = 2,
+    Deleted = 3,
+}
+
+export enum FilePermission {
+    Readonly = 1,
+}
+
+/** A stand-in for FileSystemError, telling its kinds apart by `code`. */
+export class FileSystemError extends Error {
+    public constructor(message: string, public readonly code: string) {
+        super(message);
+    }
+
+    public static FileNotFound(what?: unknown): FileSystemError {
+        return new FileSystemError(`Not found: ${String(what)}`,
+            "FileNotFound");
+    }
+
+    public static NoPermissions(what?: unknown): FileSystemError {
+        return new FileSystemError(String(what), "NoPermissions");
+    }
+
+    public static Unavailable(what?: unknown): FileSystemError {
+        return new FileSystemError(String(what), "Unavailable");
+    }
+}
+
+/** Every `vscode.open` call: what was opened, and where. */
+export const openedWith: Array<{ uri: Uri; options: unknown }> = [];
+
+/** The file system providers registered, by scheme. */
+export const fileSystemProviders = new Map<string, unknown>();
 
 export class EventEmitter<T> {
     readonly #listeners = new Set<(value: T) => void>();
@@ -660,7 +706,30 @@ export const fireActiveEditorChange = (editor: unknown): void => {
     }
 };
 
+/** What the save and open dialogs answer, and what they were asked. */
+export const fileDialogs = {
+    saveAnswer: undefined as Uri | undefined,
+    openAnswer: undefined as Uri[] | undefined,
+    saveCalls: [] as unknown[],
+    openCalls: [] as unknown[],
+};
+
+/** The files `workspace.fs` holds, by path: written, or put there. */
+export const files = new Map<string, Uint8Array>();
+
 export const window = {
+    showSaveDialog: (options: unknown): Promise<Uri | undefined> => {
+        fileDialogs.saveCalls.push(options);
+
+        return Promise.resolve(fileDialogs.saveAnswer);
+    },
+
+    showOpenDialog: (options: unknown): Promise<Uri[] | undefined> => {
+        fileDialogs.openCalls.push(options);
+
+        return Promise.resolve(fileDialogs.openAnswer);
+    },
+
     activeTextEditor: undefined as unknown,
     visibleTextEditors: [] as MockTextEditor[],
 
@@ -883,6 +952,22 @@ export const window = {
 export const workspace = {
     workspaceFolders: undefined as Array<{ name: string }> | undefined,
 
+    fs: {
+        writeFile: (uri: Uri, content: Uint8Array): Promise<void> => {
+            files.set(uri.fsPath, content);
+
+            return Promise.resolve();
+        },
+
+        readFile: (uri: Uri): Promise<Uint8Array> => {
+            const content = files.get(uri.fsPath);
+
+            return content === undefined
+                ? Promise.reject(new Error(`No such file: ${uri.fsPath}`))
+                : Promise.resolve(content);
+        },
+    },
+
     openTextDocument: (
         target: Uri | { language?: string; content?: string },
     ): Promise<MockTextDocument> => {
@@ -919,6 +1004,19 @@ export const workspace = {
                 }
 
                 return Promise.resolve();
+            },
+        };
+    },
+
+    registerFileSystemProvider: (
+        scheme: string,
+        provider: unknown,
+    ): Disposable => {
+        fileSystemProviders.set(scheme, provider);
+
+        return {
+            dispose: () => {
+                fileSystemProviders.delete(scheme);
             },
         };
     },
@@ -985,6 +1083,12 @@ export const commands = {
             return undefined;
         }
 
+        if (command === "vscode.open") {
+            openedWith.push({ uri: args[0] as Uri, options: args[1] });
+
+            return undefined;
+        }
+
         // VS Code registers a `<viewId>.focus` command for every view it
         // knows about, which is how a webview view gets resolved.
         const focus = /^(.+)\.focus$/.exec(command);
@@ -1044,6 +1148,13 @@ export const resolveWebviewView = (viewType: string): MockWebviewView => {
  * @returns Nothing.
  */
 export const resetVscodeMock = (): void => {
+    openedWith.length = 0;
+    fileSystemProviders.clear();
+    fileDialogs.saveAnswer = undefined;
+    fileDialogs.openAnswer = undefined;
+    fileDialogs.saveCalls.length = 0;
+    fileDialogs.openCalls.length = 0;
+    files.clear();
     withProgressCalls.length = 0;
     informationMessages.length = 0;
     warningMessages.length = 0;

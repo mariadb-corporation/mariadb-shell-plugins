@@ -48,6 +48,9 @@ export default defineConfig({
         emptyOutDir: true,
         sourcemap: true,
         target: "es2022",
+        // The icons are served as files, in a light and a dark variant,
+        // rather than folded into the stylesheet as data URIs.
+        assetsInlineLimit: 0,
         rollupOptions: {
             input: "webview/src/main.tsx",
             output: {
@@ -56,10 +59,21 @@ export default defineConfig({
                 // references it from the webview's HTML. Everything else
                 // - the codicon font, above all - keeps its own name,
                 // since the stylesheet points at it by that.
+                //
+                // An icon keeps its theme folder: the light and dark
+                // variants share a name, and would otherwise be told
+                // apart by a number Rollup appends.
                 assetFileNames: (asset) => {
-                    return asset.names?.[0]?.endsWith(".css") ?? false
-                        ? "main.css"
-                        : "[name][extname]";
+                    if (asset.names?.[0]?.endsWith(".css") ?? false) {
+                        return "main.css";
+                    }
+
+                    const theme = /(?:^|[\\/])images[\\/](light|dark)[\\/]/
+                        .exec(asset.originalFileNames?.[0] ?? "")?.[1];
+
+                    return theme === undefined
+                        ? "[name][extname]"
+                        : `icons/${theme}/[name][extname]`;
                 },
                 format: "es",
             },

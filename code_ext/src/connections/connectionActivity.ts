@@ -16,6 +16,7 @@
  */
 
 import { formatTime } from "../sql/executionService.js";
+import { OBJECT_NOT_FOUND } from "../mcp/protocol.js";
 import type { IMariaDbApi } from "../mcp/types.js";
 import type { IActionRow } from "../webview/protocol.js";
 
@@ -236,6 +237,7 @@ export const createLoggingApi = (
         call: string,
         describe: (value: T) => string,
         work: () => Promise<T>,
+        expected?: (message: string) => string | undefined,
     ): Promise<T> => {
         const session = sessionOf(connectionId);
         const when = new Date();
@@ -256,6 +258,11 @@ export const createLoggingApi = (
 
             return value;
         } catch (error) {
+            const text = error instanceof Error ? error.message : String(error);
+            // An answer the caller asked in order to find out - "there is
+            // no such table" - is reported as the answer it is, not as a
+            // failure of the connection. The caller still gets the error.
+            const answer = expected?.(text);
             if (session) {
                 report({
                     connection: session.uri,
@@ -263,10 +270,9 @@ export const createLoggingApi = (
                     call,
                     when,
                     elapsedMs: Date.now() - startedMs,
-                    message: "",
-                    error: error instanceof Error
-                        ? error.message
-                        : String(error),
+                    ...(answer === undefined
+                        ? { message: "", error: text }
+                        : { message: answer }),
                 });
             }
 
@@ -390,12 +396,24 @@ export const createLoggingApi = (
                     return api.getObjectDetails(connectionId, schemaName,
                         objectName, objectType);
                 },
+                // Asking is how a SELECT's source is found out to be no
+                // table - a view, say - so that answer is no error.
+                (message) => {
+                    return OBJECT_NOT_FOUND.test(message)
+                        ? `No ${objectType} ${schemaName}.${objectName}`
+                        : undefined;
+                },
             );
         },
 
         // Reported as a run, by the execution service.
-        executeScript: (connectionId, sqlScript, stopOnError) => {
-            return api.executeScript(connectionId, sqlScript, stopOnError);
+        executeScript: (connectionId, sqlScript, stopOnError, limit) => {
+            return api.executeScript(
+                connectionId, sqlScript, stopOnError, limit);
+        },
+        // Reported by the result view, as the page it fetched.
+        executeSql: (connectionId, sql, page) => {
+            return api.executeSql(connectionId, sql, page);
         },
     };
 };

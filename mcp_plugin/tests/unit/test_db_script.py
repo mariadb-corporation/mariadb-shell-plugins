@@ -252,3 +252,136 @@ def test_a_leading_comment_does_not_swallow_the_restart_flag(tools):
     results = tools.run(GENERATED_FILE)
 
     assert results[0]["session_restarted"] is True
+
+
+class _MultiSetResult:
+    """A result over several result sets, walked as the shell walks them.
+
+    Each entry of ``sets`` is ``(columns, rows)`` for a set with data, or
+    None for one without - the status a CALL ends on.
+    """
+
+    affected_items_count = 0
+    warnings_count = 0
+
+    def __init__(self, sets):
+        self._sets = sets
+        self._at = 0
+
+    def has_data(self):
+        return self._sets[self._at] is not None
+
+    def get_columns(self):
+        return [
+            SimpleNamespace(get_column_label=lambda label=label: label)
+            for label in self._sets[self._at][0]
+        ]
+
+    def fetch_all(self):
+        return self._sets[self._at][1]
+
+    def next_result(self):
+        self._at += 1
+        return self._at < len(self._sets)
+
+    def get_warnings(self):
+        return []
+
+
+def test_every_result_set_of_a_call_is_read():
+    """The first set stays in columns/rows; the rest follow, in order."""
+    result = _MultiSetResult([
+        (["a"], [[1]]),
+        (["b", "c"], [[2, 3], [4, 5]]),
+        None,
+    ])
+
+    output = db_functions._serialize_result(result)
+
+    assert output["columns"] == ["a"]
+    assert output["rows"] == [{"a": 1}]
+    assert output["additional_result_sets"] == [
+        {"columns": ["b", "c"], "rows": [{"b": 2, "c": 3}, {"b": 4, "c": 5}]}
+    ]
+
+
+class _TypedColumn:
+    """A column that reports a type, and flags, as the shell's do."""
+
+    def __init__(self, label, kind, flags=""):
+        self.label = label
+        self.kind = kind
+        self.flags = flags
+
+    def get_column_label(self):
+        return self.label
+
+    def get_type(self):
+        return f"<Type.{self.kind}>"
+
+    def get_flags(self):
+        return self.flags
+
+
+def test_each_column_says_its_type():
+    """BYTES with the BLOB flag is a BLOB; without it, BINARY or VARBINARY."""
+    result = _MultiSetResult([(["a"], [[1, b"\x00\xff", b"x", "{}", None]])])
+    result.get_columns = lambda: [
+        _TypedColumn("i", "INTEGER", "NOT_NULL NUM"),
+        _TypedColumn("vb", "BYTES", "BINARY "),
+        _TypedColumn("b", "BYTES", "BLOB BINARY "),
+        _TypedColumn("j", "JSON"),
+        _TypedColumn("g", "GEOMETRY", "BLOB BINARY "),
+    ]
+
+    output = db_functions._serialize_result(result)
+
+    assert output["column_types"] == ["INTEGER", "BYTES", "BLOB", "JSON",
+                                      "GEOMETRY"]
+    # Binary values still come as hex text.
+    assert output["rows"][0]["vb"] == "00ff"
+
+
+def test_a_column_that_names_no_type_leaves_the_types_out():
+    """Where no column says - a stub, an older shell - there is no key."""
+    output = db_functions._serialize_result(_MultiSetResult([(["a"], [[1]])]))
+
+    assert "column_types" not in output
+
+
+def test_every_result_set_of_a_call_has_its_own_types():
+    result = _MultiSetResult([(["a"], [[1]]), (["b"], [[b"x"]]), None])
+    kinds = iter([[_TypedColumn("a", "INTEGER")],
+                  [_TypedColumn("b", "BYTES", "BLOB BINARY")]])
+    result.get_columns = lambda: next(kinds)
+
+    output = db_functions._serialize_result(result)
+
+    assert output["column_types"] == ["INTEGER"]
+    assert output["additional_result_sets"][0]["column_types"] == ["BLOB"]
+
+
+def test_a_result_with_no_data_has_no_result_sets():
+    """A statement with no result set reports none, and no empty extra list."""
+    output = db_functions._serialize_result(_MultiSetResult([None]))
+
+    assert "columns" not in output
+    assert "additional_result_sets" not in output
+
+
+def test_a_result_that_cannot_walk_on_reads_its_one_set():
+    """A result without next_result is read as the one set it has."""
+    result = _MultiSetResult([(["a"], [[1]])])
+    del_next = SimpleNamespace(
+        has_data=result.has_data,
+        get_columns=result.get_columns,
+        fetch_all=result.fetch_all,
+        affected_items_count=0,
+        warnings_count=0,
+        get_warnings=result.get_warnings,
+    )
+
+    output = db_functions._serialize_result(del_next)
+
+    assert output["rows"] == [{"a": 1}]
+    assert "additional_result_sets" not in output

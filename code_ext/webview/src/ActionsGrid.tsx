@@ -29,6 +29,7 @@ import {
     attachOverflowPopup,
     closeOverflowPopup,
 } from "./overflowPopup.js";
+import { closeCopyMenu, openCopyMenu } from "./contextMenu.js";
 
 interface IActionsGridProperties {
     /** One row per run, newest first, each holding its statements. */
@@ -433,6 +434,39 @@ export const buildActionColumns = (
 };
 
 /**
+ * What a right-click on a cell copies: the cell's text as it is shown -
+ * the message, the time line, the statement or summary, the connection.
+ *
+ * @param field The cell's column.
+ * @param row The row it is in.
+ *
+ * @returns The text, or empty for a column that shows none.
+ */
+export const cellCopyText = (field: string, row: IActionRow): string => {
+    switch (field) {
+        case "message": {
+            return row.message;
+        }
+
+        case "time": {
+            return timeOf(row);
+        }
+
+        case "statement": {
+            return informationOf(row);
+        }
+
+        case "connectionLabel": {
+            return row.connectionLabel ?? "";
+        }
+
+        default: {
+            return "";
+        }
+    }
+};
+
+/**
  * Which rows of the actions start out open.
  *
  * The newest run, and inside it every statement carrying warnings. A
@@ -631,6 +665,19 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             }
         });
 
+        // A right-click on a cell offers to copy it, in place of VS Code's
+        // own menu, whose Copy acts on a selection the grid never makes.
+        instance.on("cellContext", (event, cell) => {
+            closeOverflowPopup();
+            openCopyMenu(event as MouseEvent, {
+                text: cellCopyText(cell.getField(),
+                    cell.getRow().getData() as IActionRow),
+                onCopy: (text) => {
+                    callbacks.current.onCopyText(text);
+                },
+            });
+        });
+
         instance.on("tableBuilt", () => {
             built.current = true;
             const rowsToApply = pendingRows.current;
@@ -648,9 +695,10 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             built.current = false;
             pendingRows.current = undefined;
             table.current = undefined;
-            // The popup is a child of the body, not of the cell it
-            // points at, so it would outlive the grid it belongs to.
+            // The popup and the menu are children of the body, not of the
+            // cell they point at, so they would outlive the grid.
             closeOverflowPopup();
+            closeCopyMenu();
             try {
                 instance.destroy();
             } catch {

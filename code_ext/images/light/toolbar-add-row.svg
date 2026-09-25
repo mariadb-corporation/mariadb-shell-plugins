@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 24 20" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:affinity="https://www.affinity.studio/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g transform="matrix(1,0,0,1,-644,-128)">
+        <g id="Menu">
+        </g>
+        <g id="Expand">
+        </g>
+        <g id="Grid">
+        </g>
+        <g id="Word-Wrap" affinity:id="Word Wrap">
+        </g>
+        <g id="Special-Chars" affinity:id="Special Chars">
+        </g>
+        <g id="Search">
+        </g>
+        <g id="SQL-Beautifier" affinity:id="SQL Beautifier">
+        </g>
+        <g id="SQL-Beautifier1" affinity:id="SQL Beautifier">
+        </g>
+        <g id="Add-Row" affinity:id="Add Row" transform="matrix(1,0,0,1,-1.930818,0)">
+            <path d="M657.931,129C662.901,129 666.931,133.03 666.931,138C666.931,142.971 662.901,147 657.931,147C652.96,147 648.931,142.971 648.931,138C648.931,133.03 652.96,129 657.931,129ZM656.388,136.536L653.862,136.536C653.027,136.536 652.349,137.214 652.349,138.049C652.349,138.884 653.027,139.562 653.862,139.562L656.388,139.562L656.388,142.087C656.388,142.922 657.066,143.6 657.901,143.6C658.736,143.6 659.414,142.922 659.414,142.087L659.414,139.562L661.939,139.562C662.774,139.562 663.452,138.884 663.452,138.049C663.452,137.214 662.774,136.536 661.939,136.536L659.414,136.536L659.414,134.01C659.414,133.175 658.736,132.497 657.901,132.497C657.066,132.497 656.388,133.175 656.388,134.01L656.388,136.536Z"/>
+        </g>
+        <g id="Auto-Commit" affinity:id="Auto Commit">
+        </g>
+        <g id="Stop-on-Error" affinity:id="Stop on Error">
+        </g>
+        <g id="Execute-Explain" affinity:id="Execute Explain">
+        </g>
+        <g id="Execute-Current" affinity:id="Execute Current">
+        </g>
+        <g id="Execute-and-Next-Cmd" affinity:id="Execute and Next Cmd">
+        </g>
+        <g id="Kill-Connection-2" affinity:id="Kill Connection 2">
+        </g>
+        <g id="Sleeping-Connections" affinity:id="Sleeping Connections">
+        </g>
+        <g id="Kill-Connection" affinity:id="Kill Connection">
+        </g>
+        <g id="Kill-Query" affinity:id="Kill Query">
+        </g>
+        <g id="Show-Details" affinity:id="Show Details">
+        </g>
+        <g id="Infos">
+        </g>
+        <g id="Background-Threads" affinity:id="Background Threads">
+        </g>
+        <g id="refresh">
+        </g>
+        <g id="New-File" affinity:id="New File">
+        </g>
+        <g id="Minimize">
+        </g>
+        <g id="Maximize">
+        </g>
+        <g id="Close">
+        </g>
+        <g id="load">
+        </g>
+        <g id="save">
+        </g>
+        <g id="Execute-on-Heatwave" affinity:id="Execute on Heatwave">
+        </g>
+        <g id="Execute-Current-on-Heatwave" affinity:id="Execute Current on Heatwave">
+        </g>
+        <g id="Trace-Heatwave-Query" affinity:id="Trace Heatwave Query">
+        </g>
+        <g id="Layer3">
+        </g>
+        <g id="New-Shell-Console" affinity:id="New Shell Console">
+        </g>
+        <g id="New-File-Selector" affinity:id="New File Selector">
+        </g>
+        <g id="saveNotebook">
+        </g>
+        <g id="saveNotebook1" affinity:id="saveNotebook">
+        </g>
+        <g id="sqlPreview">
+        </g>
+        <g id="historyBack">
+        </g>
+        <g id="historyForward">
+        </g>
+    </g>
+</svg>

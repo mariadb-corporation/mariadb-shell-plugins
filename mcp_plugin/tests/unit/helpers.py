@@ -31,6 +31,8 @@ import subprocess
 import time
 from contextlib import asynccontextmanager
 
+from mcp_plugin.lib import config
+
 # Two connections used by the connection round-trip test. The URIs only need to
 # be unique keys for the secret store; the round-trip test does not open them.
 # Spelled as they normalize, scheme included, so that what is stored is what
@@ -473,3 +475,50 @@ def tool_payload(result):
     if len(values) == 1:
         return values[0]
     return values
+
+
+# --- the secret store around a test ------------------------------------------
+
+
+def backup_connections() -> dict:
+    """Returns every stored connection of every kind, with its password and folder.
+
+    Keyed by ``(kind, uri)`` because the two lists can hold the same URI under
+    two different passwords, and a backup that collapsed them would restore the
+    wrong one.
+
+    The folder is part of what is backed up. It is stored in the key, so a
+    restore that re-stores without it files the connection at the top level -
+    which, run against a developer's own secret store, emptied their
+    /Sandboxes folder on every test run.
+
+    Returns:
+        A dict mapping ``(kind, uri)`` to ``(password, path)``.
+    """
+    return {
+        (kind, uri): (
+            config.get_connection_password(uri, kind),
+            config.get_connection_path(uri, kind),
+        )
+        for kind in config.SUPPORTED_CONNECTION_KINDS
+        for uri in config.list_stored_connection_uris(kind)
+    }
+
+
+def clear_connections() -> None:
+    """Deletes every stored connection of every kind, best effort."""
+    for kind in config.SUPPORTED_CONNECTION_KINDS:
+        for uri in config.list_stored_connection_uris(kind):
+            try:
+                config.delete_connection(uri, kind)
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
+
+
+def restore_connections(connections: dict) -> None:
+    """Re-stores what :func:`backup_connections` returned, best effort."""
+    for (kind, uri), (password, path) in connections.items():
+        try:
+            config.store_connection(uri, password, kind, path)
+        except Exception:  # noqa: BLE001 - best-effort restore
+            pass
