@@ -305,6 +305,62 @@ def test_every_result_set_of_a_call_is_read():
     ]
 
 
+class _TypedColumn:
+    """A column that reports a type, and flags, as the shell's do."""
+
+    def __init__(self, label, kind, flags=""):
+        self.label = label
+        self.kind = kind
+        self.flags = flags
+
+    def get_column_label(self):
+        return self.label
+
+    def get_type(self):
+        return f"<Type.{self.kind}>"
+
+    def get_flags(self):
+        return self.flags
+
+
+def test_each_column_says_its_type():
+    """BYTES with the BLOB flag is a BLOB; without it, BINARY or VARBINARY."""
+    result = _MultiSetResult([(["a"], [[1, b"\x00\xff", b"x", "{}", None]])])
+    result.get_columns = lambda: [
+        _TypedColumn("i", "INTEGER", "NOT_NULL NUM"),
+        _TypedColumn("vb", "BYTES", "BINARY "),
+        _TypedColumn("b", "BYTES", "BLOB BINARY "),
+        _TypedColumn("j", "JSON"),
+        _TypedColumn("g", "GEOMETRY", "BLOB BINARY "),
+    ]
+
+    output = db_functions._serialize_result(result)
+
+    assert output["column_types"] == ["INTEGER", "BYTES", "BLOB", "JSON",
+                                      "GEOMETRY"]
+    # Binary values still come as hex text.
+    assert output["rows"][0]["vb"] == "00ff"
+
+
+def test_a_column_that_names_no_type_leaves_the_types_out():
+    """Where no column says - a stub, an older shell - there is no key."""
+    output = db_functions._serialize_result(_MultiSetResult([(["a"], [[1]])]))
+
+    assert "column_types" not in output
+
+
+def test_every_result_set_of_a_call_has_its_own_types():
+    result = _MultiSetResult([(["a"], [[1]]), (["b"], [[b"x"]]), None])
+    kinds = iter([[_TypedColumn("a", "INTEGER")],
+                  [_TypedColumn("b", "BYTES", "BLOB BINARY")]])
+    result.get_columns = lambda: next(kinds)
+
+    output = db_functions._serialize_result(result)
+
+    assert output["column_types"] == ["INTEGER"]
+    assert output["additional_result_sets"][0]["column_types"] == ["BLOB"]
+
+
 def test_a_result_with_no_data_has_no_result_sets():
     """A statement with no result set reports none, and no empty extra list."""
     output = db_functions._serialize_result(_MultiSetResult([None]))
