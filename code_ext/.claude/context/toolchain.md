@@ -1,6 +1,6 @@
 # Toolchain
 
-How `code_ext` is built, tested and shipped: the two Vite builds, the two
+How `code_ext` is built, tested and shipped: the Vite builds, the two
 Vitest projects, the pinned Node, the Marketplace icon and CI.
 
 Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
@@ -9,7 +9,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `src/extension.ts` into a single CommonJS `dist/extension.js` for the
   extension host, with `vscode` and the Node built-ins external.
   `vite.webview.config.ts` builds the Preact frontend into
-  `dist/webview/main.js` and `main.css` for the browser. The extension
+  `dist/webview/main.js` and `main.css` for the browser. The two dialogs
+  are a build each as well - `vite.editor.config.ts` (the connection
+  editor, `editor.js`/`editor.css`) and `vite.sandbox.config.ts` (New
+  Sandbox, `sandbox.js`/`sandbox.css`) - because one build with several
+  entries hoists a shared chunk that a webview's script nonce refuses (see
+  [connection-editor.md](connection-editor.md)). `build:webview` runs all three. The extension
   build has `emptyOutDir: false` on purpose: it runs again on every change
   in watch mode, and emptying `dist/` would delete the panel's assets out
   from under a running extension host. `npm run clean` wipes `dist/`, and

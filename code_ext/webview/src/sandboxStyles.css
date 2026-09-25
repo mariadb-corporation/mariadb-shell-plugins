@@ -1,0 +1,119 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/*
+ * What the New Sandbox dialog has on top of the connection editor's
+ * stylesheet, which it loads first.
+ */
+
+textarea {
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--vscode-input-border, transparent);
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: inherit;
+    resize: vertical;
+}
+
+textarea:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+textarea:disabled {
+    opacity: 0.6;
+}
+
+/* A field's hint turns into its problem, and reads as one. */
+input.invalid + .field-hint,
+input.invalid ~ .field-hint,
+.combo:has(input.invalid) ~ .field-hint {
+    color: var(--vscode-errorForeground, #f14c4c);
+}
+
+/* --- the combo box (ComboBox.tsx) ------------------------------------ */
+
+.combo {
+    position: relative;
+}
+
+.combo-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    max-height: 14rem;
+    overflow-y: auto;
+    margin: 2px 0 0;
+    padding: 2px 0;
+    list-style: none;
+    border: 1px solid var(--vscode-dropdown-border, var(--vscode-focusBorder));
+    background: var(--vscode-dropdown-background, var(--vscode-input-background));
+    color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+}
+
+.combo-choice {
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
+}
+
+.combo-choice.highlighted {
+    background: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
+.combo-choice[aria-selected="true"] {
+    font-weight: 600;
+}
+
+/* --- the header and the connection line ------------------------------ */
+
+/* What the dialog makes, said once under the title and a little larger
+   than a field's hint, since it is the first thing read. */
+.editor-description {
+    margin: 0.35rem 0 0;
+    color: var(--vscode-descriptionForeground);
+    font-size: 1.05em;
+    line-height: 1.4;
+}
+
+/* The caption above the URI, as a field's is: rows closer than fields'. */
+.sandbox-connection {
+    row-gap: 0.25rem;
+    align-items: center;
+}
+
+.sandbox-connection-caption {
+    grid-column: 1 / -1;
+}
+
+.sandbox-uri {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 1.05em;
+    user-select: all;
+    /* Its column is half the dialog now; a long one wraps inside it. */
+    overflow-wrap: anywhere;
+}
+
+/* Under both password boxes, across the two columns. */
+.password-note {
+    grid-column: 1 / -1;
+    margin-top: -0.25rem;
+}

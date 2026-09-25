@@ -836,8 +836,8 @@ describe("ResultViewProvider", () => {
             return created;
         };
 
-        it("offers General Actions first, without switching to it",
-            async () => {
+        it("offers General Actions first, showing it until a connection "
+            + "reports", async () => {
                 const { provider, view } = createWithSessions();
                 provider.setConnectionLister(() => {
                     return Promise.resolve(["dba@localhost:3310"]);
@@ -850,10 +850,15 @@ describe("ResultViewProvider", () => {
                     message: "Listed 1 connection",
                 }));
 
-                // Not what the view comes up on: it is there to be looked
-                // up, not to take the view over.
-                expect(view.description ?? "").not.toBe("General Actions");
+                // With nothing else to show, the first action logged is
+                // shown rather than an empty panel.
+                expect(view.description).toBe("General Actions");
+                expect(lastState(view)?.actions).toMatchObject([{
+                    statement: "db.list_connections(kind=gui)",
+                }]);
 
+                // A connection reporting takes the view over: General
+                // Actions is there to be looked up, not to stand in front.
                 await provider.appendEvent(anEvent());
                 const state = lastState(view);
                 expect(state?.connections).toEqual([
@@ -867,6 +872,32 @@ describe("ResultViewProvider", () => {
                     statement: "db.list_connections(kind=gui)",
                     message: "Listed 1 connection",
                 }]);
+            });
+
+        it("keeps General Actions on show once it was picked", async () => {
+            const { provider, view } = createWithSessions();
+            await provider.appendEvent(anEvent({
+                connection: "General Actions", label: "",
+                call: "sandbox.list_instances()", message: "Listed 0 sandboxes",
+            }));
+            await provider.selectConnection("General Actions");
+
+            await provider.appendEvent(anEvent());
+
+            expect(view.description).toBe("General Actions");
+        });
+
+        it("leaves a connection on show when a general action comes in",
+            async () => {
+                const { provider, view } = createWithSessions();
+                await provider.appendEvent(anEvent());
+
+                await provider.appendEvent(anEvent({
+                    connection: "General Actions", label: "",
+                    call: "sandbox.start(port=3310)", message: "Started.",
+                }));
+
+                expect(view.description).toBe("dba@localhost:3310");
             });
 
         it("gathers what happens outside a run", async () => {

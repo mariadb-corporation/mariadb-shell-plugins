@@ -102,11 +102,13 @@ export const createSdkConnector = (): IMcpConnector => {
                 callTool: async (
                     name: string,
                     args: Record<string, unknown>,
+                    timeoutMs?: number,
                 ): Promise<IToolResult> => {
-                    return await client.callTool({
-                        name,
-                        arguments: args,
-                    }) as IToolResult;
+                    return await client.callTool(
+                        { name, arguments: args },
+                        undefined,
+                        timeoutMs === undefined ? undefined : { timeout: timeoutMs },
+                    ) as IToolResult;
                 },
 
                 close: async (): Promise<void> => {
