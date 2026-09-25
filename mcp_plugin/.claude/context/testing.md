@@ -11,6 +11,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - Tests (tests/unit/, no `__init__`): `test_sandbox` (deploy FIRST, shutdown LAST +
   path-reject), `test_config` (9), `test_msm` (5: create_project, elicit-accept,
   elicit-decline, deploy-needs-db-group, lifecycle), `test_db_sql`, `test_rest_sql`,
+  NEW `test_db_paging` (**63** - `_top_level_words` / `_limit_statement`
+  table-driven over the SELECT forms that take a LIMIT and those left alone,
+  `_check_paging`, `_page_result`, the 1064 retry, and both tools over a
+  `_TableSession` stub that honours LIMIT/OFFSET),
   `test_transport_http` (**5**: list_connections, a full connect/execute/close db flow over
   HTTP, `..._ignores_a_forwarded_for_header` for S1,
   `..._binds_a_connection_to_its_mcp_session` for S3, and
