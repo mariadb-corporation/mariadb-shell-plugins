@@ -89,69 +89,6 @@ def non_interactive_shell():
     yield
 
 
-def _backup_connections() -> dict:
-    """Returns every stored connection of every kind, with its password.
-
-    Keyed by ``(kind, uri)`` because the two lists can hold the same URI under
-    two different passwords, and a backup that collapsed them would restore the
-    wrong one.
-
-    Returns:
-        A dict mapping ``(kind, uri)`` to the stored password.
-    """
-    return {
-        (kind, uri): config.get_connection_password(uri, kind)
-        for kind in config.SUPPORTED_CONNECTION_KINDS
-        for uri in config.list_stored_connection_uris(kind)
-    }
-
-
-def _clear_connections() -> None:
-    """Deletes every stored connection of every kind, best effort."""
-    for kind in config.SUPPORTED_CONNECTION_KINDS:
-        for uri in config.list_stored_connection_uris(kind):
-            try:
-                config.delete_connection(uri, kind)
-            except Exception:  # noqa: BLE001 - best-effort cleanup
-                pass
-
-
-def _restore_connections(connections: dict) -> None:
-    """Re-stores what :func:`_backup_connections` returned, best effort."""
-    for (kind, uri), password in connections.items():
-        try:
-            config.store_connection(uri, password, kind)
-        except Exception:  # noqa: BLE001 - best-effort restore
-            pass
-
-
-def _backup_connection_details():
-    """Returns connections.json as it is, or None if there is none.
-
-    Taken as the file's bytes rather than read through config: deleting a
-    connection drops its details, so a test clearing the lists would otherwise
-    lose the developer's folders, captions and colors for good.
-    """
-    path = config.get_connections_file_path()
-    if not os.path.exists(path):
-        return None
-
-    with open(path, "rb") as details_file:
-        return details_file.read()
-
-
-def _restore_connection_details(content) -> None:
-    """Puts back what :func:`_backup_connection_details` returned."""
-    path = config.get_connections_file_path()
-    if content is None:
-        if os.path.exists(path):
-            os.remove(path)
-        return
-
-    with open(path, "wb") as details_file:
-        details_file.write(content)
-
-
 @pytest.fixture
 def gui_mode():
     """Serves the rest of the test as a server started with ``--gui``.
@@ -185,9 +122,8 @@ def stored_connections():
     """
     # Back up the connections that existed prior to the test, then remove them
     # so the test starts from a clean, known set.
-    original_connections = _backup_connections()
-    original_details = _backup_connection_details()
-    _clear_connections()
+    original_connections = helpers.backup_connections()
+    helpers.clear_connections()
 
     for uri in helpers.TEST_CONNECTION_URIS:
         config.store_connection(uri, helpers.TEST_CONNECTION_PASSWORD)
@@ -196,9 +132,8 @@ def stored_connections():
 
     # Restore the original set of connections exactly: drop everything that is
     # currently stored, then re-store the backed-up connections.
-    _clear_connections()
-    _restore_connections(original_connections)
-    _restore_connection_details(original_details)
+    helpers.clear_connections()
+    helpers.restore_connections(original_connections)
 
 
 @pytest.fixture
@@ -232,22 +167,20 @@ def allowed_temp_dir():
 def clean_config():
     """Isolates connection secrets, their details and settings.json for a test.
 
-    The current connections (URI + password), their details and the
+    The current connections (URI, password and details) and the
     allowed-paths settings are
     backed up before the test and restored exactly afterwards, so a test may
     freely add, clear or delete connections and paths.
     """
-    original_connections = _backup_connections()
-    original_details = _backup_connection_details()
+    original_connections = helpers.backup_connections()
     had_settings = config.settings_file_exists()
     original_paths = config.get_allowed_paths()
 
     try:
         yield
     finally:
-        _clear_connections()
-        _restore_connections(original_connections)
-        _restore_connection_details(original_details)
+        helpers.clear_connections()
+        helpers.restore_connections(original_connections)
         if had_settings:
             config.set_allowed_paths(original_paths)
         else:

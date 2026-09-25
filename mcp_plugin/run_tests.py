@@ -22,10 +22,16 @@
 # MARIADB_SHELL to the mariadb-shell found in PATH
 # MARIADB_SHELL_USER_CONFIG_HOME to a temporary directory
 #
+# Either way the run keeps its secrets in that home, with the shell's
+# plaintext credential helper, never in the OS secret store: the tests store,
+# clear and restore connections, and on the OS store those are the
+# developer's own.
+#
 
 # cSpell:ignore mysqlsh mariadb userhome
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -44,6 +50,35 @@ def _resolve_shell(explicit):
         "--shell."
     )
     return str(shell)
+
+
+def _isolate_secret_store(user_home: Path) -> None:
+    """Keeps the run's secrets in its own config home.
+
+    The shell's secret store is the OS one by default - the macOS keychain,
+    the Windows credential manager - which a config home does not change. The
+    tests store, clear and restore connections through it, so a run against
+    it works on the developer's own connections: a restore that lost their
+    folders filed every one of them at the top level. The plaintext helper
+    keeps the secrets in ``.mariadb-secret-store-plaintext.json`` under the
+    config home instead, where every process of the run - this one, and the
+    MCP servers the tests start - reads the same ones, and nothing outside
+    the run sees them.
+
+    Args:
+        user_home (Path): The run's shell user config home.
+
+    Returns:
+        None
+    """
+    options_path = user_home / "options.json"
+    options = {}
+    if options_path.exists():
+        with open(options_path, encoding="utf-8") as options_file:
+            options = json.load(options_file)
+    options["credentialStore.helper"] = "plaintext"
+    with open(options_path, "w", encoding="utf-8") as options_file:
+        json.dump(options, options_file, indent=4)
 
 
 def _create_symlink(target: Path, link_name: Path) -> None:
@@ -109,6 +144,7 @@ def main() -> int:
     )
     plugins_dir = user_home / "plugins"
     plugins_dir.mkdir(parents=True, exist_ok=True)
+    _isolate_secret_store(user_home)
 
     # The server subprocess launched by the tests loads the plugins from the
     # user config home, so this plugin and the sibling plugins it relies on must
