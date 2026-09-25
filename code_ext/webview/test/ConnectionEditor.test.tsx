@@ -58,6 +58,8 @@ const load = async (
         fields: { ...emptyConnectionFields(), ...overrides },
         mcpAccess: false,
         hasStoredPassword: false,
+        path: "/",
+        folders: [],
         ...rest,
     } as EditorHostMessage);
 };
@@ -679,5 +681,47 @@ describe("ConnectionEditor", () => {
         await load({ user: "dba" });
 
         expect(host.querySelectorAll(".scroll-fade.shown")).toHaveLength(0);
+    });
+
+    describe("the folder", () => {
+        const folderBox = (): HTMLInputElement => {
+            return host.querySelector("input[list=connection-folders]") as
+                HTMLInputElement;
+        };
+
+        it("shows where the connection is filed, offering the others",
+            async () => {
+                await mount();
+                await load({ user: "dba" }, {
+                    path: "/Sandboxes", folders: ["/Sandboxes", "/Work"],
+                });
+
+                expect(folderBox().value).toBe("/Sandboxes");
+                expect([...host.querySelectorAll("#connection-folders option")]
+                    .map((option) => {
+                        return (option as HTMLOptionElement).value;
+                    })).toEqual(["/Sandboxes", "/Work"]);
+            });
+
+        it("saves the folder that was typed", async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            await type("Folder", "/Sandboxes/note_app");
+            await click("Create");
+
+            expect(lastPosted<ISaveMessage>("save")?.path)
+                .toBe("/Sandboxes/note_app");
+        });
+
+        it("says at once why a folder name cannot hold a colon", async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            await type("Folder", "/a:b");
+
+            expect(folderBox().classList.contains("invalid")).toBe(true);
+            expect(host.textContent).toContain("contains a ':'");
+        });
     });
 });

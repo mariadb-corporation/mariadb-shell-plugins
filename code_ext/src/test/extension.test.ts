@@ -43,6 +43,8 @@ import {
     statusBarMessages,
     env,
     treeViews,
+    inputBoxAnswers,
+    inputBoxCalls,
     Uri,
     withProgressCalls,
 } from "./mocks/vscode.js";
@@ -124,6 +126,26 @@ vi.mock("../mcp/sdkConnector.js", async () => {
         createSdkConnector: () => {
             runtime.connector = helpers.createFakeConnector((name, args) => {
                 if (name === "db.list_connections") {
+                    // Both lists at once, each entry naming its list, as a
+                    // server that knows `kind: "all"` answers.
+                    if (args.kind === "all") {
+                        return {
+                            content: [
+                                ...runtime.connections.map((uri) => {
+                                    return { uri, path: "/", kind: "mcp" };
+                                }),
+                                ...runtime.guiConnections.map((uri) => {
+                                    return { uri, path: "/", kind: "gui" };
+                                }),
+                            ].map((entry) => {
+                                return {
+                                    type: "text",
+                                    text: JSON.stringify(entry),
+                                };
+                            }),
+                        };
+                    }
+
                     const uris = args.kind === "gui"
                         ? runtime.guiConnections
                         : runtime.connections;
@@ -221,8 +243,12 @@ describe("activate", () => {
             "mariadb.deleteConnection",
             "mariadb.disconnect",
             "mariadb.editConnection",
+            "mariadb.newFolder",
+            "mariadb.newFolderWithSelection",
             "mariadb.newSqlEditor",
             "mariadb.refreshConnections",
+            "mariadb.removeFolder",
+            "mariadb.renameFolder",
             "mariadb.restartMcpServer",
             "mariadb.retryConnection",
             "mariadb.runSqlFile",
@@ -343,6 +369,251 @@ describe("activate", () => {
             expect(webviewPanels[0].webview.posted[0])
                 .toMatchObject({ mcpAccess: true });
         });
+    });
+
+    it("reads the connection list again only when Refresh is pressed",
+        async () => {
+            activate(createContext() as never);
+            const provider = (treeViews[0]!.options as {
+                treeDataProvider: { getChildren(): Promise<unknown[]> };
+            }).treeDataProvider;
+            const reads = () => {
+                return (runtime.connector?.connections ?? []).flatMap(
+                    (connection) => {
+                        return connection.calls.filter((call) => {
+                            return call.name === "db.list_connections";
+                        });
+                    }).length;
+            };
+
+            await provider.getChildren();
+            await provider.getChildren();
+            // One call for both lists.
+            expect(reads()).toBe(1);
+
+            await mockCommands.executeCommand("mariadb.refreshConnections");
+            await provider.getChildren();
+            expect(reads()).toBe(2);
+        });
+
+    it("lets several connections be picked and dragged", () => {
+        activate(createContext() as never);
+
+        const options = treeViews[0]!.options as {
+            canSelectMany?: boolean;
+            dragAndDropController?: unknown;
+            treeDataProvider?: unknown;
+        };
+        expect(options.canSelectMany).toBe(true);
+        expect(options.dragAndDropController)
+            .toBe(options.treeDataProvider);
+    });
+
+    it("starts a new connection in the folder of the row it came from",
+        async () => {
+            activate(createContext() as never);
+
+            await mockCommands.executeCommand("mariadb.addConnection", {
+                kind: "connection", uri: "dba@localhost:3310",
+                path: "/Sandboxes", connected: false, isDefault: false,
+                connectionKind: "mcp", expandable: false,
+            });
+
+            webviewPanels[0].webview.receive({ type: "ready" });
+            await vi.waitFor(() => {
+                expect(webviewPanels[0].webview.posted[0])
+                    .toMatchObject({ path: "/Sandboxes" });
+            });
+        });
+
+    /**
+     * @returns The Connections view's provider.
+     */
+    const treeProvider = () => {
+        return (treeViews[0]!.options as {
+            treeDataProvider: {
+                getChildren(node?: unknown): Promise<Array<{
+                    kind: string;
+                    path?: string;
+                    empty?: boolean;
+                }>>;
+            };
+        }).treeDataProvider;
+    };
+
+    it("makes a folder inside the one it was asked from", async () => {
+        activate(createContext() as never);
+        inputBoxAnswers.push("note app/v2");
+
+        await mockCommands.executeCommand("mariadb.newFolder", {
+            kind: "folder", path: "/Sandboxes", name: "Sandboxes", empty: true,
+        });
+
+        expect(inputBoxCalls[0]!.prompt).toContain("in /Sandboxes");
+        const roots = await treeProvider().getChildren();
+        expect(roots[0]).toMatchObject({
+            kind: "folder", path: "/Sandboxes", empty: true,
+        });
+        const [inner] = await treeProvider().getChildren(roots[0]);
+        expect(inner).toMatchObject({ path: "/Sandboxes/note app" });
+    });
+
+    it("refuses an empty name or one with a colon, and makes nothing on cancel",
+        async () => {
+            activate(createContext() as never);
+            inputBoxAnswers.push(undefined);
+
+            await mockCommands.executeCommand("mariadb.newFolder");
+
+            const validate = inputBoxCalls[0]!.validateInput!;
+            expect(validate(" / ")).toBe("Enter a folder name.");
+            expect(validate("a:b")).toContain("contains a ':'");
+            expect(validate("Work")).toBeUndefined();
+            expect((await treeProvider().getChildren()).filter((node) => {
+                return node.kind === "folder";
+            })).toEqual([]);
+        });
+
+    it("renames a folder to a name that stays where it is", async () => {
+        activate(createContext() as never);
+        inputBoxAnswers.push("Old");
+        await mockCommands.executeCommand("mariadb.newFolder");
+        inputBoxAnswers.push(" New ");
+
+        await mockCommands.executeCommand("mariadb.renameFolder", {
+            kind: "folder", path: "/Old", name: "Old", empty: true,
+        });
+
+        const validate = inputBoxCalls[1]!.validateInput!;
+        expect(validate("")).toBe("Enter a folder name.");
+        expect(validate("a/b")).toContain("cannot contain '/'");
+        expect(validate("a:b")).toContain("contains a ':'");
+        expect((await treeProvider().getChildren())[0])
+            .toMatchObject({ path: "/New" });
+    });
+
+    it("renames nothing on cancel, or without a folder", async () => {
+        activate(createContext() as never);
+        inputBoxAnswers.push("Old");
+        await mockCommands.executeCommand("mariadb.newFolder");
+        inputBoxAnswers.push(undefined);
+
+        await mockCommands.executeCommand("mariadb.renameFolder", {
+            kind: "folder", path: "/Old", name: "Old", empty: true,
+        });
+        await mockCommands.executeCommand("mariadb.renameFolder");
+
+        expect((await treeProvider().getChildren())[0])
+            .toMatchObject({ path: "/Old" });
+        expect(inputBoxCalls).toHaveLength(2);
+    });
+
+    /**
+     * @param uri The connection.
+     * @param path Its folder.
+     *
+     * @returns Its row.
+     */
+    const connectionRow = (uri: string, path: string) => {
+        return {
+            kind: "connection", uri, path, connected: false, isDefault: false,
+            connectionKind: "mcp", expandable: false,
+        };
+    };
+
+    /**
+     * @returns Each folder move sent to the server, as uri and folder.
+     */
+    const folderMoves = () => {
+        return (runtime.connector?.connections ?? []).flatMap((connection) => {
+            return connection.calls.filter((call) => {
+                return call.name === "db.update_connection";
+            }).map((call) => {
+                return [call.args.uri, call.args.new_path];
+            });
+        });
+    };
+
+    it("files the selection in a new folder inside the one it is in",
+        async () => {
+            activate(createContext() as never);
+            inputBoxAnswers.push("Picked");
+            const first = connectionRow("dba@localhost:3310", "/Sandboxes");
+            const second = connectionRow("app@localhost:3311", "/Sandboxes");
+
+            await mockCommands.executeCommand(
+                "mariadb.newFolderWithSelection", first,
+                [first, second, { kind: "folder", path: "/X", name: "X" }]);
+
+            expect(inputBoxCalls[0]!.prompt).toContain("in /Sandboxes");
+            expect(folderMoves()).toEqual([
+                ["dba@localhost:3310", "/Sandboxes/Picked"],
+                ["app@localhost:3311", "/Sandboxes/Picked"],
+            ]);
+        });
+
+    it("puts the new folder in the deepest folder a mixed selection shares",
+        async () => {
+            activate(createContext() as never);
+            inputBoxAnswers.push("Both");
+            const first = connectionRow("dba@localhost:3310", "/A/B");
+            const second = connectionRow("app@localhost:3311", "/A/C");
+
+            await mockCommands.executeCommand(
+                "mariadb.newFolderWithSelection", first, [first, second]);
+
+            expect(folderMoves()).toEqual([
+                ["dba@localhost:3310", "/A/Both"],
+                ["app@localhost:3311", "/A/Both"],
+            ]);
+        });
+
+    it("files the one row a menu was opened on, at the top level",
+        async () => {
+            activate(createContext() as never);
+            inputBoxAnswers.push("Solo");
+
+            await mockCommands.executeCommand(
+                "mariadb.newFolderWithSelection",
+                connectionRow("dba@localhost:3310", "/"));
+
+            expect(inputBoxCalls[0]!.prompt).not.toContain(" in ");
+            expect(folderMoves()).toEqual([["dba@localhost:3310", "/Solo"]]);
+        });
+
+    it("moves nothing on cancel, or without a connection selected",
+        async () => {
+            activate(createContext() as never);
+            inputBoxAnswers.push(undefined);
+
+            await mockCommands.executeCommand(
+                "mariadb.newFolderWithSelection",
+                connectionRow("dba@localhost:3310", "/"));
+            await mockCommands.executeCommand(
+                "mariadb.newFolderWithSelection",
+                { kind: "folder", path: "/X", name: "X" });
+
+            expect(inputBoxCalls).toHaveLength(1);
+            expect(folderMoves()).toEqual([]);
+        });
+
+    it("removes an empty folder, and only an empty one", async () => {
+        activate(createContext() as never);
+        inputBoxAnswers.push("Old");
+        await mockCommands.executeCommand("mariadb.newFolder");
+
+        await mockCommands.executeCommand("mariadb.removeFolder", {
+            kind: "folder", path: "/Old", name: "Old", empty: false,
+        });
+        expect((await treeProvider().getChildren())[0])
+            .toMatchObject({ path: "/Old" });
+
+        await mockCommands.executeCommand("mariadb.removeFolder", {
+            kind: "folder", path: "/Old", name: "Old", empty: true,
+        });
+        expect((await treeProvider().getChildren()).filter((node) => {
+            return node.kind === "folder";
+        })).toEqual([]);
     });
 
     it("does nothing when edit or delete arrive without a connection",

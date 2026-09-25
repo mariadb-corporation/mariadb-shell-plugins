@@ -7,9 +7,14 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | Command | Title | Where |
 | --- | --- | --- |
 | `mariadb.refreshConnections` | Refresh | Connections view title |
-| `mariadb.addConnection` | Add Connection | Connections view title (`+`) |
+| `mariadb.addConnection` | New Connection… | Connections view title (`+`) |
 | `mariadb.editConnection` | Edit Connection | Connection context menu |
 | `mariadb.deleteConnection` | Delete Connection | Connection context menu |
+| `mariadb.addConnection` (on a folder) | New Connection… | Inline on, and context menu of, a folder: the new connection starts in it |
+| `mariadb.newFolder` | New Folder… | View toolbar; context menu of folders. Prompts for a name, relative to that folder |
+| `mariadb.newFolderWithSelection` | New Folder with Selection… | Context menu of connections. Prompts for a name and files the selected connections in the new folder, inside the folder they share |
+| `mariadb.renameFolder` | Rename Folder… | Context menu of every folder. Re-files everything in and below it |
+| `mariadb.removeFolder` | Remove Folder | Context menu of an EMPTY folder only |
 | `mariadb.retryConnection` | Retry | Inline on, and context menu of, a connection's failed-to-open row |
 | `mariadb.copyConnectionUri` | Copy Connection URI | Connection context menu (the whole URI, which the tree shortens) |
 | `mariadb.connect` | Connect | Connection context menu; the inline button only in the explicit connect mode |

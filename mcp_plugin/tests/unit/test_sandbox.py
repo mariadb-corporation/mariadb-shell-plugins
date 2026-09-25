@@ -38,6 +38,7 @@ import pytest
 # The MCP client SDK is required to talk to the stdio server.
 pytest.importorskip("mcp")
 
+from mcp_plugin.lib import config
 import mcp_plugin.tests.unit.helpers as helpers
 
 # A deploy initializes a data directory and starts the server, so it needs a
@@ -80,6 +81,11 @@ def test_sandbox_deploy(sandbox):
         helpers.call_tool(function_groups=["db"], tool_name="db.list_connections")
     )
     assert sandbox.uri in listed
+
+    # Filed in the Sandboxes folder, which the list above does not show: an
+    # agent sees a plain URI, and only the extension sees the folder.
+    stored = config.resolve_connection_uri(sandbox.uri)
+    assert config.get_connection_path(stored) == config.SANDBOX_CONNECTION_PATH
 
     # The deployed instance reports a vendor and a version.
     vendor = helpers.tool_payload(

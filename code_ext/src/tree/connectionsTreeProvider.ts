@@ -21,19 +21,57 @@ import {
     UI_BACKEND_SESSION,
     type ConnectionManager,
 } from "../connections/connectionManager.js";
+import {
+    ROOT_FOLDER,
+    folderNames,
+    normalizeFolder,
+} from "../connections/connectionFolders.js";
+import {
+    fileConnections,
+    type IFiling,
+    type IStoredConnection,
+} from "../connections/connectionStore.js";
 import { showErrorWithLog } from "../errorMessages.js";
 import type { IServerStatus } from "../mcp/serverStarter.js";
 import {
     ConnectionsModel,
     type ConnectionsNode,
     type IConnectionNode,
+    type IFolderNode,
     type IConnectionStatusNode,
     type IOpenAttempt,
 } from "./connectionsModel.js";
-import { createTreeItem, type IconResolver } from "./treeItems.js";
+import {
+    COLLAPSED_FOLDERS_KEY,
+    FolderSet,
+    isWithin,
+    rebase,
+} from "./customFolders.js";
+import {
+    FolderTreeItem,
+    createTreeItem,
+    type IconResolver,
+} from "./treeItems.js";
+
+/** What the tree needs of the folders the user made. */
+export interface ICustomFolders {
+    list(): string[];
+    move(from: string, to: string): Promise<void>;
+}
 
 /** The id the Connections view is contributed under. */
 export const CONNECTIONS_VIEW_ID = "mariadb.connections";
+
+/**
+ * What a drag out of the Connections view carries: the connection and
+ * folder rows dragged.
+ *
+ * Deliberately NOT the tree's own `application/vnd.code.tree.<view id>`:
+ * VS Code fills that one in by itself, with the handles of whatever is
+ * dragged, so reading it back as rows breaks on anything this did not put
+ * there.
+ */
+export const CONNECTIONS_DRAG_MIME = "application/vnd.mariadb.connections";
 
 /**
  * The context key saying what the Connections view is waiting for, which
@@ -70,7 +108,12 @@ export type ConnectionsViewState =
  * nodes into VS Code items and refreshes when the connection state changes.
  */
 export class ConnectionsTreeProvider
-    implements vscode.TreeDataProvider<ConnectionsNode>, vscode.Disposable {
+    implements vscode.TreeDataProvider<ConnectionsNode>,
+    vscode.TreeDragAndDropController<ConnectionsNode>,
+    vscode.Disposable {
+
+    public readonly dragMimeTypes = [CONNECTIONS_DRAG_MIME];
+    public readonly dropMimeTypes = [CONNECTIONS_DRAG_MIME];
 
     readonly #model: ConnectionsModel;
     readonly #onDidChangeTreeData =
@@ -96,6 +139,11 @@ export class ConnectionsTreeProvider
      * @param connectOnOpen Whether expanding a closed connection opens it.
      * @param status How the server's startup is going, which is what the
      *               view says while it has nothing to list yet.
+     * @param customFolders The folders the user made that may be empty.
+     * @param collapsedFolders The folders the user collapsed, persisted so a
+     *        restart comes back as it was left. Folders are drawn open, so
+     *        the ones NOT here are open - which picks each one's state and
+     *        icon on the very first draw.
      */
     public constructor(
         private readonly connections: ConnectionManager,
@@ -103,9 +151,13 @@ export class ConnectionsTreeProvider
         private readonly log: (message: string) => void,
         private readonly connectOnOpen: () => boolean,
         private readonly status?: IServerStatus,
+        private readonly customFolders: ICustomFolders = new FolderSet(),
+        private readonly collapsedFolders =
+        new FolderSet(undefined, COLLAPSED_FOLDERS_KEY),
     ) {
         this.#model = new ConnectionsModel(connections, connectOnOpen,
-            (uri) => { return this.#attempts.get(uri); });
+            (uri) => { return this.#attempts.get(uri); },
+            () => { return customFolders.list(); });
         this.#unsubscribe = connections.onDidChange(() => {
             this.refresh();
         });
@@ -137,7 +189,26 @@ export class ConnectionsTreeProvider
      * @returns The item VS Code should draw for it.
      */
     public getTreeItem(node: ConnectionsNode): vscode.TreeItem {
+        if (node.kind === "folder") {
+            return new FolderTreeItem(node,
+                !this.collapsedFolders.has(node.path));
+        }
+
         return createTreeItem(node, this.resolveIcon);
+    }
+
+    /**
+     * Notes a folder the user collapsed, and redraws it closed.
+     *
+     * @param node The node that was collapsed.
+     *
+     * @returns Nothing.
+     */
+    public async collapsed(node: ConnectionsNode): Promise<void> {
+        if (node.kind === "folder") {
+            await this.collapsedFolders.add(node.path);
+            this.refresh(node);
+        }
     }
 
     /**
@@ -227,6 +298,16 @@ export class ConnectionsTreeProvider
      * @returns Nothing.
      */
     public async expanded(node: ConnectionsNode): Promise<void> {
+        if (node.kind === "folder") {
+            // Redrawn open; only a folder that was closed needs it. Its own
+            // entry only: the folders inside it keep theirs.
+            if (await this.collapsedFolders.delete(node.path)) {
+                this.refresh(node);
+            }
+
+            return;
+        }
+
         if (node.kind !== "connection") {
             return;
         }
@@ -282,6 +363,186 @@ export class ConnectionsTreeProvider
     }
 
     /**
+     * Starts a drag of the connections and folders selected. What is under
+     * an open connection stays: it is the connection's database, not the
+     * view's to rearrange.
+     *
+     * @param source The rows being dragged, all of the selection.
+     * @param dataTransfer What the drag carries.
+     *
+     * @returns Nothing.
+     */
+    public handleDrag(
+        source: readonly ConnectionsNode[],
+        dataTransfer: vscode.DataTransfer,
+    ): void {
+        const dragged = source.filter((node) => {
+            return node.kind === "connection" || node.kind === "folder";
+        });
+        if (dragged.length > 0) {
+            dataTransfer.set(CONNECTIONS_DRAG_MIME,
+                new vscode.DataTransferItem(dragged));
+        }
+    }
+
+    /**
+     * Files what was dragged where it was dropped: in the folder dropped on,
+     * in the folder of the connection dropped on, or at the top level when
+     * dropped on empty space.
+     *
+     * A folder moves whole and keeps its name: every connection in or below
+     * it is re-filed under its new path, and so are the empty folders made
+     * inside it. A folder dropped into itself or into a folder of its own is
+     * left where it is, and so is a connection dragged along with the folder
+     * it is in - it moves with that folder.
+     *
+     * @param target The row dropped on, or undefined for empty space.
+     * @param dataTransfer What the drag carries.
+     *
+     * @returns Nothing.
+     */
+    public async handleDrop(
+        target: ConnectionsNode | undefined,
+        dataTransfer: vscode.DataTransfer,
+    ): Promise<void> {
+        // Checked rather than trusted: anything this did not put there
+        // carries no rows, and nothing then moves.
+        const carried: unknown = dataTransfer.get(CONNECTIONS_DRAG_MIME)?.value;
+        const rows = Array.isArray(carried)
+            ? (carried as Array<ConnectionsNode | undefined>)
+            : [];
+        const into = dropFolder(target);
+        if (into === undefined) {
+            return;
+        }
+
+        // A folder into itself or below itself has nowhere to go, and one
+        // already in the target goes nowhere; a folder inside another that
+        // is dragged too moves with that one.
+        const candidates = rows.filter((node): node is IFolderNode => {
+            return node?.kind === "folder" && !isWithin(into, node.path)
+                && parentOf(node.path) !== into;
+        });
+        const folders = candidates.filter((folder) => {
+            return !candidates.some((other) => {
+                return other !== folder && isWithin(folder.path, other.path);
+            });
+        });
+        const connections = rows.filter((node): node is IConnectionNode => {
+            return node?.kind === "connection" && !folders.some((folder) => {
+                return isWithin(node.path ?? ROOT_FOLDER, folder.path);
+            });
+        });
+        if (folders.length === 0 && connections.length === 0) {
+            return;
+        }
+
+        await this.#refile(
+            folders.map((folder) => {
+                return { from: folder.path, to: movedPath(folder, into) };
+            }),
+            connections.map((node) => {
+                return { connection: storedOf(node), path: into };
+            }),
+            `move to '${into}'`,
+        );
+    }
+
+    /**
+     * Files connections in a folder - what New Folder with Selection does
+     * once the folder is named.
+     *
+     * @param nodes The connection rows to move.
+     * @param path The folder to file them in.
+     *
+     * @returns Nothing.
+     */
+    public async fileInFolder(
+        nodes: IConnectionNode[],
+        path: string,
+    ): Promise<void> {
+        const folder = normalizeFolder(path);
+
+        await this.#refile([], nodes.map((node) => {
+            return { connection: storedOf(node), path: folder };
+        }), `move to '${folder}'`);
+    }
+
+    /**
+     * Renames a folder, re-filing every connection in and below it and the
+     * empty folders made inside it. A folder of the new name already there
+     * is merged with, as a drop onto it would be.
+     *
+     * @param folder The folder to rename.
+     * @param name Its new name: one folder name, no `/`.
+     *
+     * @returns Nothing.
+     */
+    public async renameFolder(folder: IFolderNode, name: string): Promise<void> {
+        const renamed = normalizeFolder(`${parentOf(folder.path)}/${name}`);
+        if (renamed === folder.path || renamed === ROOT_FOLDER) {
+            return;
+        }
+
+        await this.#refile(
+            [{ from: folder.path, to: renamed }], [],
+            `rename '${folder.path}'`);
+    }
+
+    /**
+     * Moves folders and connections, and redraws the tree.
+     *
+     * @param folders Each folder to move, from its path to its new one.
+     *                Everything in or below it goes along.
+     * @param filings Connections to file somewhere of their own.
+     * @param what What is being done, for the log if it fails.
+     *
+     * @returns Nothing.
+     */
+    async #refile(
+        folders: Array<{ from: string; to: string }>,
+        filings: IFiling[],
+        what: string,
+    ): Promise<void> {
+        try {
+            const api = await this.connections.api();
+            const all = [...filings];
+
+            if (folders.length > 0) {
+                // Everything in the moved folders, not only what is in
+                // sight: a closed folder's connections go too.
+                const stored = await this.connections.listStoredConnections();
+                for (const { from, to } of folders) {
+                    for (const connection of stored) {
+                        const path = connection.path ?? ROOT_FOLDER;
+                        if (isWithin(path, from)) {
+                            all.push({
+                                connection, path: rebase(path, from, to),
+                            });
+                        }
+                    }
+                }
+            }
+
+            for (const connection of await fileConnections(api, all)) {
+                this.log(`Moved '${connection.uri}' to '${connection.path}'.`);
+            }
+
+            for (const { from, to } of folders) {
+                await this.customFolders.move(from, to);
+                // A collapsed folder stays collapsed where it went.
+                await this.collapsedFolders.move(from, to);
+                this.log(`Moved the folder '${from}' to '${to}'.`);
+            }
+        } catch (error) {
+            this.#report(what, error);
+        } finally {
+            // Whatever made it, including a part-way failure.
+            this.refresh();
+        }
+    }
+
+    /**
      * Surfaces a failure the tree itself cannot show.
      *
      * A tree that throws shows nothing and says nothing, so the reason
@@ -311,3 +572,65 @@ export class ConnectionsTreeProvider
         this.#onDidChangeTreeData.dispose();
     }
 }
+
+/**
+ * The folder a drop on a row files into.
+ *
+ * @param target The row dropped on, or undefined for empty space.
+ *
+ * @returns The folder, or undefined where a drop means nothing - on a
+ *          schema or an object, say, which belong to a connection's database.
+ */
+const dropFolder = (target: ConnectionsNode | undefined): string | undefined => {
+    if (target === undefined) {
+        return ROOT_FOLDER;
+    }
+
+    switch (target.kind) {
+        case "folder": {
+            return target.path;
+        }
+
+        case "connection": {
+            return target.path ?? ROOT_FOLDER;
+        }
+
+        default: {
+            return undefined;
+        }
+    }
+};
+
+/**
+ * The folder a path sits in.
+ *
+ * @param path The folder.
+ *
+ * @returns Its parent; `/` for a top-level folder.
+ */
+const parentOf = (path: string): string => {
+    return normalizeFolder(folderNames(path).slice(0, -1).join("/"));
+};
+
+/**
+ * Where a folder ends up when dropped into another: inside it, same name.
+ *
+ * @param folder The folder moved.
+ * @param into The folder it is dropped into.
+ *
+ * @returns Its new path.
+ */
+const movedPath = (folder: IFolderNode, into: string): string => {
+    return normalizeFolder(`${into}/${folder.name}`);
+};
+
+/**
+ * A connection row as the store knows the connection.
+ *
+ * @param node The row.
+ *
+ * @returns The connection.
+ */
+const storedOf = (node: IConnectionNode): IStoredConnection => {
+    return { uri: node.uri, kind: node.connectionKind, path: node.path };
+};

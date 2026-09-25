@@ -149,6 +149,110 @@ def test_the_two_connection_lists_are_kept_apart(clean_config):
     assert config.get_connection_password(uri) == "mcp-secret"
 
 
+def test_a_connection_folder_is_normalized():
+    """One folder, one spelling: the top level, and the leading slash."""
+    for top in (None, "", "/", "//", " / "):
+        assert config.normalize_connection_path(top) == ""
+
+    assert config.normalize_connection_path("Sandboxes") == "/Sandboxes"
+    assert config.normalize_connection_path("/Sandboxes/") == "/Sandboxes"
+    assert (
+        config.normalize_connection_path(" /Sandboxes// note app /")
+        == "/Sandboxes/note app"
+    )
+
+
+def test_a_colon_in_a_folder_name_is_refused():
+    """A ':' ends the path in the stored key, so a name cannot hold one."""
+    with pytest.raises(mysqlsh.Error, match="contains a ':'"):
+        config.normalize_connection_path("/Sand:boxes")
+
+    with pytest.raises(mysqlsh.Error, match="must be a string"):
+        config.normalize_connection_path(42)
+
+
+def test_a_folder_is_part_of_the_key_and_nothing_else(clean_config):
+    """The folder is written into the key; the URI still names the connection.
+
+    Everything that works by URI - reading the password, deleting, resolving -
+    finds a filed connection without being told its folder, and the URI lists
+    report no folder at all, which is what keeps folders invisible outside the
+    extension.
+    """
+    _empty_both_connection_lists()
+    uri = "mariadb://folder_pytest@127.0.0.1:3306"
+
+    config.store_connection(uri, "pw", path="/Sandboxes/note_app")
+
+    prefix = config.connection_secret_prefix()
+    keys = [
+        key for key in mysqlsh.globals.shell.list_secrets()
+        if key.startswith(prefix)
+    ]
+    assert keys == [f"{prefix}/Sandboxes/note_app:{uri}"]
+
+    assert config.list_stored_connection_uris() == [uri]
+    assert config.list_connection_uris() == [uri]
+    assert config.get_connection_path(uri) == "/Sandboxes/note_app"
+    assert config.list_connections_with_paths() == [
+        {"uri": uri, "path": "/Sandboxes/note_app", "kind": "mcp"}
+    ]
+    assert config.get_connection_password(uri) == "pw"
+    assert config.resolve_connection_uri("folder_pytest@127.0.0.1") == uri
+
+    config.delete_connection(uri)
+    assert config.list_connections_with_paths() == []
+
+
+def test_storing_a_connection_again_keeps_or_moves_its_folder(clean_config):
+    """Left out, the folder stays; given, the connection moves to it.
+
+    A password replaced must not move a connection back to the top level, and
+    one URI is in ONE folder: moving it must not leave the old key behind.
+    """
+    _empty_both_connection_lists()
+    uri = "mariadb://move_pytest@127.0.0.1:3306"
+
+    config.store_connection(uri, "one", path="/Sandboxes")
+    config.store_connection(uri, "two")
+    assert config.list_connections_with_paths() == [
+        {"uri": uri, "path": "/Sandboxes", "kind": "mcp"}
+    ]
+    assert config.get_connection_password(uri) == "two"
+
+    config.store_connection(uri, "three", path="/Work")
+    assert config.list_connections_with_paths() == [
+        {"uri": uri, "path": "/Work", "kind": "mcp"}
+    ]
+
+    config.store_connection(uri, "four", path="/")
+    assert config.list_connections_with_paths() == [
+        {"uri": uri, "path": config.ROOT_CONNECTION_PATH, "kind": "mcp"}
+    ]
+    prefix = config.connection_secret_prefix()
+    assert [
+        key for key in mysqlsh.globals.shell.list_secrets()
+        if key.startswith(prefix)
+    ] == [f"{prefix}{uri}"]
+    assert config.get_connection_password(uri) == "four"
+
+
+def test_a_folder_is_kept_per_list(clean_config):
+    """The same URI in both lists can be filed differently in each."""
+    _empty_both_connection_lists()
+    uri = "mariadb://both_pytest@127.0.0.1:3306"
+
+    config.store_connection(uri, "mcp", path="/Shared")
+    config.store_connection(uri, "gui", config.CONNECTION_KIND_GUI, "/Mine")
+
+    assert config.get_connection_path(uri) == "/Shared"
+    assert config.get_connection_path(uri, config.CONNECTION_KIND_GUI) == "/Mine"
+
+    config.delete_connection(uri, config.CONNECTION_KIND_GUI)
+    assert config.get_connection_path(uri) == "/Shared"
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
+
+
 def test_an_unknown_connection_kind_is_refused():
     """A kind that names neither list is an error, never a silent default.
 

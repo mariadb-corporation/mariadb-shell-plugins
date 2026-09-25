@@ -40,6 +40,10 @@ export interface ILoadMessage {
     mcpAccess: boolean;
     /** Whether a password is already stored for it. */
     hasStoredPassword: boolean;
+    /** The folder it is filed in: `/` for the top level. */
+    path: string;
+    /** Every folder in use, to offer as a choice. */
+    folders: string[];
 }
 
 /** The answer to a Test Connection. */
@@ -98,6 +102,8 @@ export interface ISaveMessage {
     /** Undefined keeps the stored password; a string replaces it. */
     password?: string;
     mcpAccess: boolean;
+    /** The folder to file it in, as typed; empty or `/` is the top level. */
+    path: string;
 }
 
 /** Send the clipboard's text, to be taken as a connection URI. */

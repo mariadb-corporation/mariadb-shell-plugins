@@ -24,11 +24,26 @@ import {
 import {
     ConnectionsModel,
     OBJECT_GROUP_LABELS,
+    type ConnectionsNode,
     type IConnectionNode,
     type IObjectGroupNode,
     type ISchemaNode,
 } from "../../tree/connectionsModel.js";
 import { createFakeApi, createFakeSettings } from "../helpers.js";
+
+/**
+ * The roots of a model whose connections are all at the top level, typed as
+ * the connection rows they then are.
+ *
+ * @param model The model.
+ *
+ * @returns Its root nodes.
+ */
+const connectionRoots = async (
+    model: ConnectionsModel,
+): Promise<IConnectionNode[]> => {
+    return (await model.getRoots()) as IConnectionNode[];
+};
 
 /**
  * @param defaultConnection The default connection, if any.
@@ -74,6 +89,141 @@ const createModel = (defaultConnection?: string, connectOnOpen = false) => {
     };
 };
 
+describe("ConnectionsModel folders", () => {
+    /**
+     * @returns A model over connections filed in nested folders, and the
+     *          fake behind it.
+     */
+    const createFiled = () => {
+        const api = createFakeApi({
+            connections: [
+                "top@localhost:1",
+                "sb1@localhost:2",
+                "note@localhost:3",
+                "deep@localhost:4",
+            ],
+            guiConnections: ["mine@localhost:5"],
+            paths: {
+                "sb1@localhost:2": "/Sandboxes",
+                "note@localhost:3": "/Sandboxes/note_app",
+                "deep@localhost:4": "/Archive/2025/q4",
+                "mine@localhost:5": "/Sandboxes",
+            },
+        });
+        const model = new ConnectionsModel(
+            new ConnectionManager(
+                () => { return Promise.resolve(api); },
+                createFakeSettings(),
+            ),
+            () => { return false; },
+        );
+
+        return { api, model };
+    };
+
+    /**
+     * @param nodes Tree nodes.
+     *
+     * @returns What each row is, briefly.
+     */
+    const describeNodes = (nodes: ConnectionsNode[]): string[] => {
+        return nodes.map((node) => {
+            return node.kind === "folder"
+                ? `folder ${node.path}`
+                : `connection ${node.uri}`;
+        });
+    };
+
+    it("puts the top-level folders first, then the top-level connections",
+        async () => {
+            const { model } = createFiled();
+
+            expect(describeNodes(await model.getRoots())).toEqual([
+                "folder /Archive",
+                "folder /Sandboxes",
+                "connection top@localhost:1",
+            ]);
+        });
+
+    it("opens a folder onto its subfolders and its connections, of both lists",
+        async () => {
+            const { model } = createFiled();
+            const roots = await model.getRoots();
+            const sandboxes = roots[1]!;
+
+            const children = await model.getChildren(sandboxes);
+
+            expect(sandboxes).toEqual({
+                kind: "folder", path: "/Sandboxes", name: "Sandboxes",
+                empty: false,
+            });
+            expect(describeNodes(children)).toEqual([
+                "folder /Sandboxes/note_app",
+                "connection sb1@localhost:2",
+                "connection mine@localhost:5",
+            ]);
+            expect(describeNodes(await model.getChildren(children[0]!)))
+                .toEqual(["connection note@localhost:3"]);
+        });
+
+    it("shows a folder that only holds other folders", async () => {
+        // Nothing is filed in /Archive or /Archive/2025 themselves; they
+        // exist because /Archive/2025/q4 does.
+        const { model } = createFiled();
+        const [archive] = await model.getRoots();
+
+        const [year] = await model.getChildren(archive!);
+        const [quarter] = await model.getChildren(year!);
+
+        expect(year).toMatchObject({ path: "/Archive/2025", name: "2025" });
+        expect(describeNodes(await model.getChildren(quarter!)))
+            .toEqual(["connection deep@localhost:4"]);
+    });
+
+    it("shows the folders the user made, empty until something is in them",
+        async () => {
+            const api = createFakeApi({
+                connections: ["a@b:1"],
+                paths: { "a@b:1": "/Work" },
+            });
+            const model = new ConnectionsModel(
+                new ConnectionManager(
+                    () => { return Promise.resolve(api); },
+                    createFakeSettings(),
+                ),
+                () => { return false; },
+                undefined,
+                () => { return ["/Empty/Inner", "/Work"]; },
+            );
+
+            const roots = await model.getRoots();
+
+            expect(roots).toEqual([
+                { kind: "folder", path: "/Empty", name: "Empty", empty: true },
+                { kind: "folder", path: "/Work", name: "Work", empty: false },
+            ]);
+            expect(await model.getChildren(roots[0]!)).toEqual([{
+                kind: "folder", path: "/Empty/Inner", name: "Inner", empty: true,
+            }]);
+        });
+
+    it("opens a folder from the listing the roots came from", async () => {
+        const { api, model } = createFiled();
+        const roots = await model.getRoots();
+        let listed = 0;
+        const listEntries = api.listConnectionEntries.bind(api);
+        api.listConnectionEntries = (kind) => {
+            listed += 1;
+
+            return listEntries(kind);
+        };
+
+        await model.getChildren(roots[1]!);
+
+        expect(listed).toBe(0);
+    });
+});
+
 describe("ConnectionsModel.getRoots", () => {
     it("lists both connection lists, each knowing which it came from",
         async () => {
@@ -93,7 +243,7 @@ describe("ConnectionsModel.getRoots", () => {
                 () => { return false; },
             );
 
-            expect((await model.getRoots()).map((node) => {
+            expect((await connectionRoots(model)).map((node) => {
                 return [node.uri, node.connectionKind];
             })).toEqual([
                 ["shared@localhost:3306", "mcp"],
@@ -104,10 +254,11 @@ describe("ConnectionsModel.getRoots", () => {
     it("lists one node per configured connection", async () => {
         const { model } = createModel();
 
-        await expect(model.getRoots()).resolves.toEqual([
+        await expect(connectionRoots(model)).resolves.toEqual([
             {
                 kind: "connection",
                 uri: "dba@localhost:3310",
+                path: "/",
                 connected: false,
                 isDefault: false,
                 connectionKind: "mcp",
@@ -116,6 +267,7 @@ describe("ConnectionsModel.getRoots", () => {
             {
                 kind: "connection",
                 uri: "app@localhost:3311",
+                path: "/",
                 connected: false,
                 isDefault: false,
                 connectionKind: "mcp",
@@ -128,8 +280,8 @@ describe("ConnectionsModel.getRoots", () => {
         async () => {
             // The twistie is the whole gesture in that mode, and a twistie
             // that can never show anything is a dead end in the other.
-            const explicit = await createModel().model.getRoots();
-            const onOpen = await createModel(undefined, true).model.getRoots();
+            const explicit = await connectionRoots(createModel().model);
+            const onOpen = await connectionRoots(createModel(undefined, true).model);
 
             expect(explicit.map((node) => { return node.expandable; }))
                 .toEqual([false, false]);
@@ -141,13 +293,13 @@ describe("ConnectionsModel.getRoots", () => {
         const { manager, model } = createModel();
         await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
-        expect((await model.getRoots())[0].expandable).toBe(true);
+        expect((await connectionRoots(model))[0].expandable).toBe(true);
     });
 
     it("marks the default connection", async () => {
         const { model } = createModel("app@localhost:3311");
 
-        const roots = await model.getRoots();
+        const roots = await connectionRoots(model);
 
         expect(roots.map((node) => {
             return node.isDefault;
@@ -160,9 +312,9 @@ describe("ConnectionsModel.getRoots", () => {
         // connection, so the marker has to survive the difference - either
         // way round, since a setting written now carries the scheme and a
         // connection stored before the change is still listed without one.
-        const withScheme = await createModel(
+        const withScheme = await connectionRoots(createModel(
             "mariadb://app@localhost:3311",
-        ).model.getRoots();
+        ).model);
 
         expect(withScheme.map((node) => { return node.isDefault; }))
             .toEqual([false, true]);
@@ -178,14 +330,14 @@ describe("ConnectionsModel.getRoots", () => {
             () => { return false; },
         );
 
-        expect((await listed.getRoots())[0].isDefault).toBe(true);
+        expect((await connectionRoots(listed))[0].isDefault).toBe(true);
     });
 
     it("marks an open connection", async () => {
         const { manager, model } = createModel();
         await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
-        const roots = await model.getRoots();
+        const roots = await connectionRoots(model);
 
         expect(roots[0].connected).toBe(true);
         expect(roots[1].connected).toBe(false);
@@ -228,7 +380,7 @@ describe("ConnectionsModel.getChildren", () => {
             const { manager, model } = createModel();
             await manager.connect("dba@localhost:3310");
 
-            const [node] = await model.getRoots();
+            const [node] = await connectionRoots(model);
 
             // What the row says, and what disconnecting it closes, is
             // the whole of what is open on the connection.

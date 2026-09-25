@@ -87,9 +87,9 @@ const loadedFields = (): IConnectionFields => {
 /** Drives one message in, as the webview would, and lets promises settle. */
 const receive = async (message: EditorWebviewMessage): Promise<void> => {
     currentPanel().webview.receive(message);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    // A macrotask, so every promise the handler chains - the ready handler
+    // lists the folders before it answers - has settled.
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
 };
 
 describe("buildEditorHtml", () => {
@@ -255,6 +255,7 @@ describe("ConnectionEditorPanel", () => {
             fields: { ...loadedFields(), user: "dba" },
             password: "pw",
             mcpAccess: true,
+            path: "/",
         });
 
         expect(api.added).toEqual([{
@@ -274,7 +275,7 @@ describe("ConnectionEditorPanel", () => {
                 // No user name, so this builds no URI at all.
                 fields: loadedFields(),
                 password: "pw",
-                mcpAccess: false,
+                mcpAccess: false, path: "/",
             });
 
             expect(posted()).toContainEqual({
@@ -309,6 +310,85 @@ describe("ConnectionEditorPanel", () => {
             type: "clipboard", text: "mariadb://dba@db:3310/world",
         });
         expect(currentPanel().disposed).toBe(false);
+    });
+
+    it("offers the folders in use, and starts in the one it was asked from",
+        async () => {
+            const { host } = createHost({
+                connections: ["a@b:1", "c@d:2"],
+                paths: { "a@b:1": "/Sandboxes/note_app", "c@d:2": "/Work" },
+            });
+
+            ConnectionEditorPanel.show(
+                extensionUri as never, host, undefined, "/Sandboxes");
+            await receive({ type: "ready" });
+
+            expect(posted()[0]).toMatchObject({
+                type: "load",
+                path: "/Sandboxes",
+                folders: ["/Sandboxes", "/Sandboxes/note_app", "/Work"],
+            });
+        });
+
+    it("opens an existing connection in its own folder, and moves it",
+        async () => {
+            const { host, api } = createHost({
+                guiConnections: ["mariadb://dba@localhost:3306"],
+            });
+
+            ConnectionEditorPanel.show(extensionUri as never, host, {
+                uri: "mariadb://dba@localhost:3306", kind: "gui", path: "/Old",
+            });
+            await receive({ type: "ready" });
+            expect(posted()[0]).toMatchObject({ path: "/Old" });
+
+            await receive({
+                type: "save",
+                fields: loadedFields(),
+                mcpAccess: false,
+                path: "/New",
+            });
+
+            expect(api.updated).toEqual([{
+                uri: "mariadb://dba@localhost:3306",
+                newUri: undefined,
+                kind: "gui",
+                newKind: undefined,
+                password: undefined,
+                newPath: "/New",
+            }]);
+        });
+
+    it("offers the folders from the list as last read, where it has one",
+        async () => {
+            const { host, api } = createHost();
+            let listed = 0;
+            api.listConnectionEntries = () => {
+                listed += 1;
+
+                return Promise.resolve([]);
+            };
+            host.listStored = () => {
+                return Promise.resolve([
+                    { uri: "a@b:1", kind: "gui", path: "/Cached" },
+                ]);
+            };
+
+            ConnectionEditorPanel.show(extensionUri as never, host);
+            await receive({ type: "ready" });
+
+            expect(posted()[0]).toMatchObject({ folders: ["/Cached"] });
+            expect(listed).toBe(0);
+        });
+
+    it("still opens when the folders cannot be listed", async () => {
+        const { host } = createHost();
+        host.api = () => { return Promise.reject(new Error("no server")); };
+
+        ConnectionEditorPanel.show(extensionUri as never, host);
+        await receive({ type: "ready" });
+
+        expect(posted()[0]).toMatchObject({ type: "load", folders: [] });
     });
 
     it("lets a new panel open after the last one was closed", () => {

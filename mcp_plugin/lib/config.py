@@ -28,6 +28,15 @@ Two kinds of configuration are persisted:
   was so have no scheme in their key; they are reported with the default one
   filled in and resolve either way, so nothing has to be migrated.
 
+  A connection may also sit in a *folder*, a path such as ``/Sandboxes`` or
+  ``/Sandboxes/note_app``, which is written into the key in front of the URI:
+  ``MCP:Connection:/Sandboxes:<uri>``. A connection at the top level has no
+  path in its key, which is how every connection stored before folders existed
+  reads, so again nothing is migrated. The folder is presentation for the VS
+  Code extension and nothing else: a connection is still identified by its URI
+  alone, one URI is in one folder per list, and outside GUI mode the folder is
+  never reported (see :func:`list_connections_with_paths`).
+
   There are two lists of them, told apart by a *kind* and stored under a prefix
   of their own: :data:`CONNECTION_KIND_MCP`, the connections ``mcp.setup``
   curates and any MCP client may open, and :data:`CONNECTION_KIND_GUI`, the ones
@@ -70,6 +79,12 @@ CONNECTION_KIND_MCP = "mcp"
 CONNECTION_KIND_GUI = "gui"
 SUPPORTED_CONNECTION_KINDS = (CONNECTION_KIND_MCP, CONNECTION_KIND_GUI)
 
+# Not a list of its own: what db.list_connections takes in GUI mode to report
+# both lists in one call, each entry saying which it is in. Nothing is stored
+# under it, which is why it is not among SUPPORTED_CONNECTION_KINDS and
+# normalize_connection_kind refuses it.
+CONNECTION_KIND_ALL = "all"
+
 # The list everything that does not say otherwise means. Every caller that
 # predates the GUI list - mcp.setup, sandbox.deploy, the migrator tools - works
 # on the MCP connections, so leaving the kind out has to go on meaning that.
@@ -106,6 +121,19 @@ DEFAULT_PORT = 3306
 # Matches the ``scheme://`` a URI starts with, if it has one. The scheme
 # grammar is RFC 3986's, which allows the ``+`` that ``mariadb+ssh`` uses.
 _SCHEME_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+
+# The folder a connection at the top level is reported in. Never written into
+# a key: a top-level connection is stored as ``<prefix><uri>``, exactly as every
+# connection was before folders existed.
+ROOT_CONNECTION_PATH = "/"
+
+# The folder sandbox.deploy files the connections it registers under.
+SANDBOX_CONNECTION_PATH = "/Sandboxes"
+
+# The characters a folder name may not hold. ``/`` separates folders, so it
+# cannot also be part of one; ``:`` ends the path in a stored key, which is how
+# the path and the URI after it are told apart.
+_PATH_ELEMENT_FORBIDDEN = (":",)
 
 # Name of the settings file inside the plugin data directory.
 SETTINGS_FILE_NAME = "settings.json"
@@ -185,6 +213,180 @@ def usable_connection_kinds() -> tuple:
     return (CONNECTION_KIND_MCP,)
 
 
+def normalize_connection_path(path) -> str:
+    """Returns a connection folder in the one form it is stored and reported in.
+
+    Args:
+        path: The folder, as a caller wrote it: ``/Sandboxes/note_app``. The
+            leading slash may be left out, and empty elements - a doubled or a
+            trailing slash - are dropped, as are blanks around an element. None,
+            ``""`` and ``"/"`` all mean the top level.
+
+    Returns:
+        ``""`` for the top level, otherwise ``/`` followed by the folder names
+        joined with ``/``.
+
+    Raises:
+        mysqlsh.Error: If a folder name holds a ``:``, which would end the
+            path early in the stored key, or the path is not a string.
+    """
+    if path is None:
+        return ""
+
+    if not isinstance(path, str):
+        raise mysqlsh.Error(
+            f"The connection folder must be a string such as '/Sandboxes', "
+            f"not {path!r}."
+        )
+
+    elements = [element.strip() for element in path.split("/")]
+    elements = [element for element in elements if element != ""]
+
+    for element in elements:
+        if any(char in element for char in _PATH_ELEMENT_FORBIDDEN):
+            raise mysqlsh.Error(
+                f"The folder name '{element}' contains a ':', which a folder "
+                "name may not. Use '/' to put a folder inside another."
+            )
+
+    return "".join(f"/{element}" for element in elements)
+
+
+def _split_connection_key(suffix) -> tuple:
+    """Takes the part of a secret key after its prefix apart.
+
+    Args:
+        suffix (str): ``<uri>`` or ``/path:<uri>``. A URI never starts with a
+            slash - it starts with a scheme or a user name - so a leading slash
+            is what says a path comes first, and the first ``:`` after it ends
+            the path, since no folder name may hold one.
+
+    Returns:
+        A ``(uri, path)`` tuple, the path ``""`` for the top level.
+    """
+    if suffix.startswith("/"):
+        colon = suffix.find(":")
+        if colon > 0:
+            return (suffix[colon + 1:], suffix[:colon])
+
+    return (suffix, "")
+
+
+def _connection_key(uri, kind, path) -> str:
+    """Returns the secret key a connection is stored under.
+
+    Args:
+        uri (str): The connection URI, as it is stored.
+        kind: The connection kind.
+        path (str): The folder, normalized; ``""`` for the top level.
+
+    Returns:
+        The key.
+    """
+    prefix = connection_secret_prefix(kind)
+
+    return f"{prefix}{path}:{uri}" if path else f"{prefix}{uri}"
+
+
+def _list_stored_connections(kind=None) -> list:
+    """Returns every stored connection of one kind as ``(uri, path)`` pairs.
+
+    Args:
+        kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
+
+    Returns:
+        The pairs, sorted by URI.
+    """
+    prefix = connection_secret_prefix(kind)
+
+    return sorted(
+        _split_connection_key(key[len(prefix):])
+        for key in _shell().list_secrets()
+        if key.startswith(prefix)
+    )
+
+
+def _stored_keys_of(uri, kind=None) -> list:
+    """Returns the secret keys a stored URI is filed under.
+
+    One, ordinarily. More only where the store was edited behind this plugin's
+    back and one URI ended up in two folders.
+
+    Args:
+        uri (str): The connection URI, exactly as it is stored.
+        kind: The connection kind.
+
+    Returns:
+        The keys, empty if the URI is not stored in that list.
+    """
+    return [
+        _connection_key(stored_uri, kind, path)
+        for stored_uri, path in _list_stored_connections(kind)
+        if stored_uri == uri
+    ]
+
+
+def get_connection_path(uri, kind=None) -> str:
+    """Returns the folder a stored connection is filed in.
+
+    Args:
+        uri (str): The connection URI, exactly as it is stored.
+        kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
+
+    Returns:
+        The folder, normalized; ``""`` for the top level or a URI not stored.
+    """
+    for stored_uri, path in _list_stored_connections(kind):
+        if stored_uri == uri:
+            return path
+
+    return ""
+
+
+def list_connections_with_paths(kind=None) -> list:
+    """Returns the configured connections of one kind with their folders.
+
+    What the VS Code extension lists in GUI mode. Nothing else reports a
+    folder: outside GUI mode :func:`list_connection_uris` is the list, and the
+    folders are invisible to an agent.
+
+    Args:
+        kind: The connection kind to list, or None for
+            :data:`DEFAULT_CONNECTION_KIND`. :data:`CONNECTION_KIND_ALL`
+            lists every kind, the MCP list first.
+
+    Returns:
+        A list of ``{"uri": ..., "path": ..., "kind": ...}`` dicts, sorted by
+        URI within each kind: the URI reported as :func:`list_connection_uris`
+        reports it, the path :data:`ROOT_CONNECTION_PATH` for the top level,
+        and the kind the list it is in - half of what identifies it, since one
+        URI can be in both.
+    """
+    if (
+        isinstance(kind, str)
+        and kind.strip().lower() == CONNECTION_KIND_ALL
+    ):
+        return [
+            connection
+            for each in SUPPORTED_CONNECTION_KINDS
+            for connection in list_connections_with_paths(each)
+        ]
+
+    kind = normalize_connection_kind(kind)
+
+    return sorted(
+        (
+            {
+                "uri": with_default_scheme(uri),
+                "path": path or ROOT_CONNECTION_PATH,
+                "kind": kind,
+            }
+            for uri, path in _list_stored_connections(kind)
+        ),
+        key=lambda connection: connection["uri"],
+    )
+
+
 def list_stored_connection_uris(kind=None) -> list:
     """Returns the connection URIs of one kind exactly as they are stored.
 
@@ -200,15 +402,10 @@ def list_stored_connection_uris(kind=None) -> list:
             :data:`DEFAULT_CONNECTION_KIND`.
 
     Returns:
-        The sorted list of stored connection URIs of that kind.
+        The sorted list of stored connection URIs of that kind, without the
+        folder any of them is filed in.
     """
-    prefix = connection_secret_prefix(kind)
-
-    return sorted(
-        key[len(prefix):]
-        for key in _shell().list_secrets()
-        if key.startswith(prefix)
-    )
+    return sorted(uri for uri, _ in _list_stored_connections(kind))
 
 
 def list_connection_uris(kind=None) -> list:
@@ -507,27 +704,49 @@ def get_connection_password(uri: str, kind=None) -> str:
     Returns:
         The stored password.
     """
-    return _shell().read_secret(connection_secret_prefix(kind) + uri)
+    keys = _stored_keys_of(uri, kind)
+    # A URI not stored is read at the top-level key, which is what fails with
+    # the shell's own error for a missing secret.
+    return _shell().read_secret(keys[0] if keys else _connection_key(uri, kind, ""))
 
 
-def store_connection(uri: str, password: str, kind=None) -> None:
+def store_connection(uri: str, password: str, kind=None, path=None) -> None:
     """Stores the password for the given connection URI.
 
-    A plain write, under exactly the key it is given. Anything CONFIGURING a
+    A plain write, under exactly the URI it is given. Anything CONFIGURING a
     connection - as opposed to restoring or moving one - follows it with
     :func:`drop_superseded_spellings`, which is what keeps one connection to one
     key.
+
+    One URI is in one folder, so storing it under a new folder MOVES it: the
+    new key is written first and the old one deleted after, which leaves the
+    connection configured under one of the two if anything fails in between.
 
     Args:
         uri (str): The connection URI.
         password (str): The password to store.
         kind: The connection kind to store it as, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
+        path: The folder to file it in (see :func:`normalize_connection_path`).
+            None keeps the folder it is already in, or the top level for a new
+            connection - so replacing a password never moves a connection.
 
     Returns:
         None
     """
-    _shell().store_secret(connection_secret_prefix(kind) + uri, password)
+    old_keys = _stored_keys_of(uri, kind)
+    folder = (
+        get_connection_path(uri, kind)
+        if path is None
+        else normalize_connection_path(path)
+    )
+    key = _connection_key(uri, kind, folder)
+
+    _shell().store_secret(key, password)
+
+    for old_key in old_keys:
+        if old_key != key:
+            _shell().delete_secret(old_key)
 
 
 def drop_superseded_spellings(uri, kind=None) -> list:
@@ -587,7 +806,11 @@ def delete_connection(uri: str, kind=None) -> None:
     Returns:
         None
     """
-    _shell().delete_secret(connection_secret_prefix(kind) + uri)
+    keys = _stored_keys_of(uri, kind)
+    # A URI not stored goes to the top-level key, which is what raises the
+    # shell's own error for a missing secret - callers rely on that.
+    for key in keys or [_connection_key(uri, kind, "")]:
+        _shell().delete_secret(key)
 
 
 # --- Allowed paths (stored in settings.json) ------------------------------

@@ -19,14 +19,42 @@ import {
     UI_BACKEND_SESSION,
     type ConnectionManager,
 } from "../connections/connectionManager.js";
+import {
+    ROOT_FOLDER,
+    allFolders,
+    folderNames,
+} from "../connections/connectionFolders.js";
+import type { IStoredConnection } from "../connections/connectionStore.js";
 import { withDefaultScheme } from "../connections/connectionUri.js";
 import { OBJECT_TYPES, type ConnectionKind, type ObjectType }
     from "../mcp/types.js";
 
-/** A connection, shown at the root of the tree. */
+/**
+ * A folder of connections. Folders exist as the paths connections are filed
+ * under, plus the ones the user made with New Folder and has not filled yet,
+ * which the extension keeps for itself (see `FolderSet`).
+ */
+export interface IFolderNode {
+    kind: "folder";
+    /** The whole path, `/Sandboxes/note_app`. */
+    path: string;
+    /** The last name in it, which is what the row shows: `note_app`. */
+    name: string;
+    /**
+     * Whether no connection is filed in it or below it - one the user made
+     * with New Folder and has not moved anything into yet. Only such a
+     * folder can be removed: a folder with connections in it is not a thing
+     * of its own but where they are filed.
+     */
+    empty: boolean;
+}
+
+/** A connection, shown at the root of the tree or in its folder. */
 export interface IConnectionNode {
     kind: "connection";
     uri: string;
+    /** The folder it is filed in; `/` for the top level. */
+    path?: string;
     connected: boolean;
     isDefault: boolean;
     /**
@@ -95,6 +123,7 @@ export interface IObjectNode {
 }
 
 export type ConnectionsNode =
+    | IFolderNode
     | IConnectionNode
     | IConnectionStatusNode
     | ISchemaNode
@@ -127,6 +156,8 @@ export class ConnectionsModel {
      *   the tree is up.
      * @param openAttempt How the tree's attempt to open a connection is
      *   going, by URI; undefined where none is under way or failed.
+     * @param customFolders The folders the user made that the connections
+     *   may not imply yet. Read on every call.
      */
     public constructor(
         private readonly connections: ConnectionManager,
@@ -135,15 +166,79 @@ export class ConnectionsModel {
             (uri: string) => IOpenAttempt | undefined = () => {
                 return undefined;
             },
+        private readonly customFolders: () => string[] = () => { return []; },
     ) { }
 
     /**
-     * The root of the tree: one node per configured connection.
+     * The connections as last listed for the roots. A folder's children come
+     * from the same listing, so a folder and the roots it sits in cannot
+     * disagree - and opening a folder costs no call to the server.
+     */
+    #listing?: Promise<IStoredConnection[]>;
+
+    /**
+     * The root of the tree: the top-level folders, then the connections filed
+     * at the top level.
+     *
+     * @returns The root nodes.
+     */
+    public async getRoots(): Promise<Array<IFolderNode | IConnectionNode>> {
+        this.#listing = this.connections.listStoredConnections();
+
+        return this.#contentsOf(ROOT_FOLDER, await this.#listing);
+    }
+
+    /**
+     * What one folder holds: its subfolders, sorted by name, then the
+     * connections filed directly in it, in listing order.
+     *
+     * @param folder The folder; `/` for the top level.
+     * @param stored Every configured connection.
+     *
+     * @returns Its nodes.
+     */
+    #contentsOf(
+        folder: string,
+        stored: IStoredConnection[],
+    ): Array<IFolderNode | IConnectionNode> {
+        const depth = folderNames(folder).length;
+        const filedIn = stored.map((connection) => {
+            return connection.path ?? ROOT_FOLDER;
+        });
+        const subfolders = allFolders([
+            ...filedIn,
+            ...this.customFolders(),
+        ]).filter((path) => {
+            const names = folderNames(path);
+
+            return names.length === depth + 1
+                && (depth === 0 || path.startsWith(`${folder}/`));
+        }).map((path): IFolderNode => {
+            return {
+                kind: "folder",
+                path,
+                name: folderNames(path).at(-1)!,
+                empty: !filedIn.some((filed) => {
+                    return filed === path || filed.startsWith(`${path}/`);
+                }),
+            };
+        });
+
+        const filed = stored.filter((connection) => {
+            return (connection.path ?? ROOT_FOLDER) === folder;
+        });
+
+        return [...subfolders, ...this.#connectionNodes(filed)];
+    }
+
+    /**
+     * Turns configured connections into their rows.
+     *
+     * @param stored The connections.
      *
      * @returns The connection nodes.
      */
-    public async getRoots(): Promise<IConnectionNode[]> {
-        const stored = await this.connections.listStoredConnections();
+    #connectionNodes(stored: IStoredConnection[]): IConnectionNode[] {
         // The setting may have been written before connections carried their
         // scheme, and what is listed now always does. Both sides go through
         // the same fill-in, or the default connection loses its marker.
@@ -160,6 +255,7 @@ export class ConnectionsModel {
             return {
                 kind: "connection",
                 uri: connection.uri,
+                path: connection.path ?? ROOT_FOLDER,
                 connected,
                 isDefault: withDefaultScheme(connection.uri) === defaultUri,
                 connectionKind: connection.kind,
@@ -187,6 +283,12 @@ export class ConnectionsModel {
         node: ConnectionsNode,
     ): Promise<ConnectionsNode[]> {
         switch (node.kind) {
+            case "folder": {
+                this.#listing ??= this.connections.listStoredConnections();
+
+                return this.#contentsOf(node.path, await this.#listing);
+            }
+
             case "connection": {
                 return await this.#schemasOf(node);
             }

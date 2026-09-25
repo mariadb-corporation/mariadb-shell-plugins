@@ -1601,20 +1601,23 @@ def _register_connection_management_tools(tool) -> None:
 
     @tool(name="db.list_connections")
     def list_connections(kind: str = config.DEFAULT_CONNECTION_KIND) -> list:
-        """Lists the configured database connection URIs of one kind.
+        """Lists the configured database connections of one kind.
 
         Args:
             kind: Which list of connections to return. "mcp" (the default) is
                 the shared list that mcp.setup curates and every MCP client can
                 open; "gui" is the list the MariaDB VS Code extension manages
-                for itself with db.add_connection and db.delete_connection.
-                Call this once per kind to see both.
+                for itself with db.add_connection and db.delete_connection;
+                "all" returns both in one call, the "mcp" list first.
 
         Returns:
-            The list of connection URIs of that kind. Any of these can be
-            passed to db.connect.
+            One entry per connection, each an object with the connection
+            "uri" - which can be passed to db.connect - the "path" of the
+            folder it is filed in ("/" for the top level, for example
+            "/Sandboxes/note_app" for a nested folder), and the "kind" of the
+            list it is in, "mcp" or "gui".
         """
-        return config.list_connection_uris(kind)
+        return config.list_connections_with_paths(kind)
 
     @tool(name="db.add_connection")
     def add_connection(
@@ -1622,6 +1625,7 @@ def _register_connection_management_tools(tool) -> None:
         password: str = "",
         kind: str = config.DEFAULT_CONNECTION_KIND,
         verify: bool = True,
+        path: str = None,
     ) -> str:
         """Stores a database connection and its password.
 
@@ -1649,11 +1653,20 @@ def _register_connection_management_tools(tool) -> None:
             verify: Whether to open a session with the credentials first and
                 store them only if that works, which is the default. Pass false
                 to store a connection to a server that is not up yet.
+            path: The folder to file the connection in, such as "/Sandboxes"
+                or "/Sandboxes/note_app" for a folder inside another. "/" or
+                leaving it out means the top level, except that a connection
+                already stored keeps its folder when this is left out. A '/'
+                separates folders, so a folder name cannot contain one, and it
+                cannot contain a ':' either.
 
         Returns:
             The normalized connection URI the connection was stored under.
         """
         kind = config.normalize_connection_kind(kind)
+        # Checked before anything is verified or written, so a bad folder
+        # name costs nothing.
+        folder = None if path is None else config.normalize_connection_path(path)
 
         # Refused rather than used or quietly dropped, as mcp.setup refuses it:
         # normalization strips a password out of the URI, so using it would
@@ -1688,7 +1701,7 @@ def _register_connection_management_tools(tool) -> None:
         # Asked before storing, since storing is what makes it true.
         replaced = normalized in config.list_stored_connection_uris(kind)
 
-        config.store_connection(normalized, password, kind)
+        config.store_connection(normalized, password, kind, folder)
 
         # Any other spelling of the same connection goes, which is how a
         # connection configured before the scheme was kept moves onto its new
@@ -1720,6 +1733,7 @@ def _register_connection_management_tools(tool) -> None:
         kind: str = config.DEFAULT_CONNECTION_KIND,
         new_kind: str = None,
         password: str = None,
+        new_path: str = None,
     ) -> str:
         """Re-keys a configured connection, keeping its password.
 
@@ -1745,6 +1759,9 @@ def _register_connection_management_tools(tool) -> None:
                 out, the list does not change.
             password: A new password. Left out, the stored one is kept - which
                 is the point of this tool.
+            new_path: The folder to move it to, such as "/Sandboxes"; "/" is
+                the top level. Left out, it stays in the folder it is in,
+                including when it moves to the other list.
 
         Returns:
             The URI the connection is now configured under.
@@ -1752,6 +1769,9 @@ def _register_connection_management_tools(tool) -> None:
         kind = config.normalize_connection_kind(kind)
         target_kind = config.normalize_connection_kind(
             kind if new_kind is None else new_kind
+        )
+        target_path = (
+            None if new_path is None else config.normalize_connection_path(new_path)
         )
 
         configured_uri = config.resolve_connection_uri(uri, kind)
@@ -1779,16 +1799,44 @@ def _register_connection_management_tools(tool) -> None:
                     f"'{new_uri}' is not a valid connection URI."
                 )
 
+        current_path = config.get_connection_path(configured_uri, kind)
+        # The folder it keeps, when none was asked for - including across a
+        # move to the other list, which is a checkbox and not a re-filing.
+        if target_path is None:
+            target_path = current_path
+
         if target_uri == configured_uri and target_kind == kind:
-            if password is None:
+            if password is None and target_path == current_path:
                 # Nothing to do, and saying so beats a delete-then-store that
                 # briefly leaves the connection not configured at all.
                 return configured_uri
 
-            config.store_connection(configured_uri, password, kind)
+            # The same key, or the same URI in another folder, which
+            # store_connection moves - the secret goes along either way,
+            # read here and never returned.
+            config.store_connection(
+                configured_uri,
+                (
+                    config.get_connection_password(configured_uri, kind)
+                    if password is None
+                    else password
+                ),
+                kind,
+                target_path,
+            )
             general.log_event(
-                f"db.update_connection: replaced the password of "
-                f"'{configured_uri}' ({kind})"
+                "db.update_connection: "
+                + (
+                    "replaced the password of "
+                    if password is not None
+                    else "re-filed "
+                )
+                + f"'{configured_uri}' ({kind})"
+                + (
+                    f" in '{target_path or config.ROOT_CONNECTION_PATH}'"
+                    if target_path != current_path
+                    else ""
+                )
             )
 
             return configured_uri
@@ -1807,7 +1855,9 @@ def _register_connection_management_tools(tool) -> None:
         # the same connection - a connection configured before the scheme was
         # kept and saved again under it is exactly that - and deleting a secret
         # that is not there raises, so it only goes if it survived.
-        config.store_connection(target_uri, moved_password, target_kind)
+        config.store_connection(
+            target_uri, moved_password, target_kind, target_path
+        )
         superseded = config.drop_superseded_spellings(target_uri, target_kind)
         if target_kind != kind or configured_uri not in superseded:
             config.delete_connection(configured_uri, kind)

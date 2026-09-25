@@ -139,13 +139,35 @@ export interface IStatementResult {
  * behind an interface is what lets the tree, the editor toolbar and the
  * result panel be tested without a shell.
  */
+/**
+ * A configured connection and the folder it is filed in, as
+ * `db.list_connections` reports it in GUI mode.
+ */
+export interface IConnectionEntry {
+    uri: string;
+    /** `/` for the top level, otherwise `/Folder/Subfolder`. */
+    path: string;
+    /**
+     * The list it is in, where the server said. It does in answer to
+     * `kind: "all"`; a server that predates that says nothing.
+     */
+    kind?: ConnectionKind;
+}
+
+/** What `db.list_connections` takes in GUI mode to report both lists. */
+export const ALL_CONNECTION_KINDS = "all";
+
 export interface IMariaDbApi {
     listConnections(kind?: ConnectionKind): Promise<string[]>;
+    listConnectionEntries(
+        kind?: ConnectionKind | typeof ALL_CONNECTION_KINDS,
+    ): Promise<IConnectionEntry[]>;
     addConnection(
         uri: string,
         password: string,
         kind?: ConnectionKind,
         verify?: boolean,
+        path?: string,
     ): Promise<string>;
     deleteConnection(uri: string, kind?: ConnectionKind): Promise<string>;
     testConnection(uri: string, password?: string): Promise<string>;
@@ -155,6 +177,7 @@ export interface IMariaDbApi {
         kind?: ConnectionKind,
         newKind?: ConnectionKind,
         password?: string,
+        newPath?: string,
     ): Promise<string>;
     connect(uri: string): Promise<string>;
     close(connectionId: string): Promise<void>;

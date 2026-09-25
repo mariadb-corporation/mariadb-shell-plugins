@@ -47,6 +47,15 @@ export interface IActivityEvent {
 export type ActivityReporter = (event: IActivityEvent) => void;
 
 /**
+ * What the calls made on no open connection are filed under - listing,
+ * adding, editing, deleting and testing connections. It stands where a
+ * connection URI would, which is how it becomes an entry of the panel's
+ * connection picker; they are only reported where the user asked for it
+ * (`mariadb.actions.logAllCalls`).
+ */
+export const GENERAL_ACTIONS = "General Actions";
+
+/**
  * Turns an event into the row the actions grid shows it as.
  *
  * An event is a row of its own with nothing under it, which is what
@@ -86,6 +95,24 @@ const counted = (count: number, singular: string): string => {
     return `${count} ${singular}${count === 1 ? "" : "s"}`;
 };
 
+/**
+ * The arguments of a call as the Information column shows them, the ones
+ * not given left out: `uri, kind=gui`. A `uri` is shown bare, as the first
+ * argument of the tools that take one.
+ *
+ * @param args The arguments, by name.
+ *
+ * @returns Them, joined.
+ */
+const arguments_ = (args: Record<string, unknown>): string => {
+    return Object.entries(args)
+        .filter(([, value]) => { return value !== undefined; })
+        .map(([name, value]) => {
+            return name === "uri" ? String(value) : `${name}=${String(value)}`;
+        })
+        .join(", ");
+};
+
 /** What resolves an open connection's UUID back to what it is called. */
 export type SessionLookup = (
     connectionId: string,
@@ -102,9 +129,17 @@ export type SessionLookup = (
  * what each one came to - which no wrapper could produce from a call and
  * its return value.
  *
+ * The calls made on no open connection - the connection list and what
+ * changes it - are reported too where `logAllCalls` says so, under
+ * {@link GENERAL_ACTIONS}. They are off by default because the list is read
+ * often: every tree refresh and every look at the panel's picker. A
+ * password never appears in what is reported.
+ *
  * @param api The API to wrap.
  * @param sessionOf Resolves a connection UUID to the connection it is.
  * @param report Where to send what happened.
+ * @param logAllCalls Whether the calls on no connection are reported. Read
+ *                    on every call, since the setting behind it can change.
  *
  * @returns The same API, reporting as it goes.
  */
@@ -112,7 +147,52 @@ export const createLoggingApi = (
     api: IMariaDbApi,
     sessionOf: SessionLookup,
     report: ActivityReporter,
+    logAllCalls: () => boolean = () => { return false; },
 ): IMariaDbApi => {
+    /**
+     * Times one call made on no connection and reports it under
+     * {@link GENERAL_ACTIONS}, where that is asked for.
+     *
+     * @param call The tool and its arguments, never a password.
+     * @param describe Says what the answer was.
+     * @param work The call itself.
+     *
+     * @returns Whatever the call returned.
+     */
+    const watchGeneral = async <T>(
+        call: string,
+        describe: (value: T) => string,
+        work: () => Promise<T>,
+    ): Promise<T> => {
+        if (!logAllCalls()) {
+            return await work();
+        }
+
+        const when = new Date();
+        const startedMs = Date.now();
+        const event = { connection: GENERAL_ACTIONS, label: "", call, when };
+
+        try {
+            const value = await work();
+            report({
+                ...event,
+                elapsedMs: Date.now() - startedMs,
+                message: describe(value),
+            });
+
+            return value;
+        } catch (error) {
+            report({
+                ...event,
+                elapsedMs: Date.now() - startedMs,
+                message: "",
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            throw error;
+        }
+    };
+
     /**
      * Times one call and reports what it did.
      *
@@ -172,20 +252,67 @@ export const createLoggingApi = (
 
     return {
         // Not connection scoped: these work on the configured list, not
-        // on anything that is open, so they are no part of a
-        // connection's log.
-        listConnections: (kind) => { return api.listConnections(kind); },
-        addConnection: (uri, password, kind, verify) => {
-            return api.addConnection(uri, password, kind, verify);
+        // on anything that is open, so they are no part of a connection's
+        // log - only of the general one, where that is kept.
+        listConnections: (kind) => {
+            return watchGeneral(
+                `db.list_connections(${arguments_({ kind })})`,
+                (uris) => {
+                    return `Listed ${counted(uris.length, "connection")}`;
+                },
+                () => { return api.listConnections(kind); },
+            );
+        },
+        listConnectionEntries: (kind) => {
+            // `kind=all` for both lists at once.
+            return watchGeneral(
+                `db.list_connections(${arguments_({ kind })})`,
+                (entries) => {
+                    return `Listed ${counted(entries.length, "connection")}`;
+                },
+                () => { return api.listConnectionEntries(kind); },
+            );
+        },
+        addConnection: (uri, password, kind, verify, path) => {
+            return watchGeneral(
+                `db.add_connection(${arguments_({ uri, kind, verify, path })})`,
+                (stored) => { return `Stored ${stored}`; },
+                () => {
+                    return api.addConnection(uri, password, kind, verify, path);
+                },
+            );
         },
         deleteConnection: (uri, kind) => {
-            return api.deleteConnection(uri, kind);
+            return watchGeneral(
+                `db.delete_connection(${arguments_({ uri, kind })})`,
+                (deleted) => { return `Deleted ${deleted}`; },
+                () => { return api.deleteConnection(uri, kind); },
+            );
         },
         testConnection: (uri, password) => {
-            return api.testConnection(uri, password);
+            return watchGeneral(
+                `db.test_connection(${arguments_({ uri })})`,
+                (answer) => { return answer; },
+                () => { return api.testConnection(uri, password); },
+            );
         },
-        updateConnection: (uri, newUri, kind, newKind, password) => {
-            return api.updateConnection(uri, newUri, kind, newKind, password);
+        updateConnection: (uri, newUri, kind, newKind, password, newPath) => {
+            return watchGeneral(
+                `db.update_connection(${arguments_({
+                    uri,
+                    new_uri: newUri,
+                    kind,
+                    new_kind: newKind,
+                    // Whether one was given, never what it is.
+                    password: password === undefined ? undefined : "***",
+                    new_path: newPath,
+                })})`,
+                (updated) => { return `Updated ${updated}`; },
+                () => {
+                    return api.updateConnection(
+                        uri, newUri, kind, newKind, password, newPath);
+                },
+            );
         },
 
         // Reported by the manager, which knows what the connection is

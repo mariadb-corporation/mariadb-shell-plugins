@@ -50,11 +50,23 @@ import {
     CONNECTIONS_VIEW_ID,
 } from "./tree/connectionsTreeProvider.js";
 import { createIconResolver } from "./tree/treeItems.js";
+import {
+    COLLAPSED_FOLDERS_KEY,
+    FolderSet,
+} from "./tree/customFolders.js";
+import {
+    ROOT_FOLDER,
+    commonFolder,
+    folderProblem,
+    normalizeFolder,
+} from "./connections/connectionFolders.js";
 import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
 import { deleteConnection } from "./connections/connectionStore.js";
 import type {
+    ConnectionsNode,
     IConnectionNode,
     IConnectionStatusNode,
+    IFolderNode,
 } from "./tree/connectionsModel.js";
 import {
     ResultViewProvider,
@@ -202,12 +214,20 @@ export const activate = (context: vscode.ExtensionContext): void => {
     );
     state = { session, connections, resultView };
 
+    // The folders made with New Folder, kept until a connection is in them
+    // and after: the server only knows a folder as a connection's path.
+    const customFolders = new FolderSet(context.globalState);
+    // Which folders were left closed, so a restart comes back as it was.
+    const collapsedFolders =
+        new FolderSet(context.globalState, COLLAPSED_FOLDERS_KEY);
     const tree = new ConnectionsTreeProvider(
         connections,
         createIconResolver(context.extensionUri),
         log,
         connectOnOpen,
         starter,
+        customFolders,
+        collapsedFolders,
     );
     const editors = new SqlEditorBinding(connections, resultView, log);
     // Marks where each statement begins. The ranges come from the SQL
@@ -231,6 +251,10 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const connectionsView = vscode.window.createTreeView(CONNECTIONS_VIEW_ID, {
         treeDataProvider: tree,
         showCollapseAll: true,
+        // Several connections can be picked at once, which is what dragging
+        // a handful of them into a folder needs.
+        canSelectMany: true,
+        dragAndDropController: tree,
     });
 
     // Where connecting is implicit, this is what makes it happen: opening a
@@ -238,6 +262,11 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // the mode in force means anything by it.
     connectionsView.onDidExpandElement((event) => {
         void tree.expanded(event.element);
+    });
+    // A folder's icon shows whether it is open, which VS Code does not
+    // swap by itself.
+    connectionsView.onDidCollapseElement((event) => {
+        void tree.collapsed(event.element);
     });
 
     context.subscriptions.push(
@@ -292,16 +321,129 @@ export const activate = (context: vscode.ExtensionContext): void => {
 
     context.subscriptions.push(
         vscode.commands.registerCommand("mariadb.refreshConnections", () => {
+            // The one thing that reads the list again on its own account:
+            // everything else works from what was read last.
+            connections.invalidateStoredConnections();
             tree.refresh();
         }),
 
-        vscode.commands.registerCommand("mariadb.addConnection", () => {
-            ConnectionEditorPanel.show(context.extensionUri, {
-                api: () => { return connections.api(); },
-                onSaved: () => { tree.refresh(); },
-                log,
-            });
-        }),
+        vscode.commands.registerCommand(
+            "mariadb.addConnection",
+            (node?: IFolderNode | IConnectionNode) => {
+                // From a row, the new connection starts in that row's folder.
+                ConnectionEditorPanel.show(
+                    context.extensionUri,
+                    {
+                        api: () => { return connections.api(); },
+                        listStored: () => {
+                            return connections.listStoredConnections();
+                        },
+                        onSaved: () => { tree.refresh(); },
+                        log,
+                    },
+                    undefined,
+                    folderOf(node),
+                );
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.newFolder",
+            async (node?: IFolderNode | IConnectionNode) => {
+                const path = await askForNewFolder(
+                    "New Folder", folderOf(node) ?? ROOT_FOLDER);
+                if (path === undefined) {
+                    return;
+                }
+
+                await customFolders.add(path);
+                log(`Created the folder '${path}'.`);
+                tree.refresh();
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.newFolderWithSelection",
+            async (node?: ConnectionsNode, selection?: ConnectionsNode[]) => {
+                // A menu on a multi-select tree is handed the row it was
+                // opened on and the whole selection; only connections move.
+                const picked = (selection && selection.length > 0
+                    ? selection
+                    : node === undefined ? [] : [node]
+                ).filter((row): row is IConnectionNode => {
+                    return row.kind === "connection";
+                });
+                if (picked.length === 0) {
+                    return;
+                }
+
+                // Inside the folder they are in already, or the deepest one
+                // they share when they come from several.
+                const path = await askForNewFolder(
+                    "New Folder with Selection",
+                    commonFolder(picked.map((row) => {
+                        return row.path ?? ROOT_FOLDER;
+                    })),
+                );
+                if (path === undefined) {
+                    return;
+                }
+
+                // Kept as made even if a move below fails, so the folder the
+                // user named is there to try again with.
+                await customFolders.add(path);
+                log(`Created the folder '${path}'.`);
+                await tree.fileInFolder(picked, path);
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.renameFolder",
+            async (node?: IFolderNode) => {
+                if (node?.kind !== "folder") {
+                    return;
+                }
+
+                const name = await vscode.window.showInputBox({
+                    title: "Rename Folder",
+                    prompt: `The new name of ${node.path}. Every connection `
+                        + "in it and below it moves along.",
+                    value: node.name,
+                    validateInput: (value) => {
+                        if (value.trim() === "") {
+                            return "Enter a folder name.";
+                        }
+
+                        // A rename stays where it is; moving is a drag.
+                        return value.includes("/")
+                            ? "A folder name cannot contain '/'. Drag the "
+                            + "folder to move it into another."
+                            : folderProblem(value);
+                    },
+                });
+                if (name === undefined) {
+                    return;
+                }
+
+                await tree.renameFolder(node, name.trim());
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.removeFolder",
+            async (node?: IFolderNode) => {
+                // Offered on an empty folder only: one with connections in
+                // it is not a thing of its own but where they are filed.
+                if (node?.kind !== "folder" || !node.empty) {
+                    return;
+                }
+
+                await customFolders.remove(node.path);
+                await collapsedFolders.remove(node.path);
+                log(`Removed the folder '${node.path}'.`);
+                tree.refresh();
+            },
+        ),
 
         vscode.commands.registerCommand(
             "mariadb.editConnection",
@@ -316,10 +458,17 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     context.extensionUri,
                     {
                         api: () => { return connections.api(); },
+                        listStored: () => {
+                            return connections.listStoredConnections();
+                        },
                         onSaved: () => { tree.refresh(); },
                         log,
                     },
-                    { uri: node.uri, kind: node.connectionKind },
+                    {
+                        uri: node.uri,
+                        kind: node.connectionKind,
+                        path: node.path,
+                    },
                 );
             },
         ),
@@ -563,4 +712,62 @@ export const deactivate = async (): Promise<void> => {
 
     await current.connections.disconnectAll();
     await current.session.stop();
+};
+
+/**
+ * The folder a command invoked on a row works in: the folder itself, or the
+ * one a connection is filed in.
+ *
+ * @param node The row, or undefined when invoked from the toolbar.
+ *
+ * @returns The folder, or undefined for none in particular.
+ */
+const folderOf = (
+    node: IFolderNode | IConnectionNode | undefined,
+): string | undefined => {
+    switch (node?.kind) {
+        case "folder": {
+            return node.path;
+        }
+
+        case "connection": {
+            return node.path;
+        }
+
+        default: {
+            return undefined;
+        }
+    }
+};
+
+/**
+ * Asks for the name of a new folder inside another.
+ *
+ * @param title What the prompt is for.
+ * @param parent The folder it goes in; `/` for the top level.
+ *
+ * @returns The new folder's path, or undefined when the user cancelled.
+ */
+const askForNewFolder = async (
+    title: string,
+    parent: string,
+): Promise<string | undefined> => {
+    const name = await vscode.window.showInputBox({
+        title,
+        prompt: parent === ROOT_FOLDER
+            ? "The name of the new folder. A '/' makes a folder inside "
+            + "another."
+            : `The name of the new folder in ${parent}. A '/' makes a folder `
+            + "inside another.",
+        placeHolder: "Sandboxes",
+        validateInput: (value) => {
+            return normalizeFolder(value) === ROOT_FOLDER
+                ? "Enter a folder name."
+                : folderProblem(value);
+        },
+    });
+
+    return name === undefined
+        ? undefined
+        : normalizeFolder(`${parent}/${name}`);
 };
