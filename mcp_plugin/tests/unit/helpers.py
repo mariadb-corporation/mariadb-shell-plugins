@@ -170,8 +170,8 @@ def call_tool(
     )
 
 
-async def _alist_tool_names(function_groups, timeout, gui=False):
-    """Lists the tool names a server exposes for the given function groups."""
+async def _alist_tools(function_groups, timeout, gui=False):
+    """Lists the tools a server exposes for the given function groups."""
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client
 
@@ -182,7 +182,33 @@ async def _alist_tool_names(function_groups, timeout, gui=False):
             await session.initialize()
             result = await asyncio.wait_for(session.list_tools(), timeout=timeout)
 
-            return [tool.name for tool in result.tools]
+            return result.tools
+
+
+async def _alist_tool_names(function_groups, timeout, gui=False):
+    """Lists the tool names a server exposes for the given function groups."""
+    return [tool.name for tool in await _alist_tools(function_groups, timeout, gui)]
+
+
+def list_tools(function_groups, timeout=None, gui=False):
+    """Returns the tools a server advertises over stdio, schemas included.
+
+    Args:
+        function_groups (list): The function groups the server should expose.
+        timeout (float): Round-trip timeout in seconds.
+        gui (bool): Whether to start the server with --gui.
+
+    Returns:
+        The tools, by name.
+    """
+    tools = asyncio.run(
+        _alist_tools(
+            function_groups,
+            timeout if timeout is not None else _MCP_TIMEOUT,
+            gui,
+        )
+    )
+    return {tool.name: tool for tool in tools}
 
 
 def list_tool_names(function_groups, timeout=None, gui=False):

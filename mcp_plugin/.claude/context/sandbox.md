@@ -54,6 +54,36 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     for a non-PATH server, the `mariadbd_path` for `sandbox.start` AND the fact that
     shutdown needs `sandbox.kill` (see Gotchas: the shell's `stop` takes no `mariadbdPath`).
 
+- **`sandbox.list_instances` lists the DEFAULT sandbox path only** — by the user's
+  decision, so it takes no `sandbox_dir` and is sync with no `ctx` (nothing to
+  authorize). Returns `[{port, version, status}]` sorted by port. The shell has no
+  listing, so the plugin reads its layout: an instance is `<sandboxDir>/<port>/my.cnf`
+  (the shell's own test in `sandbox.version`), which skips the non-numeric boilerplate
+  directory. The path is `shell.options["sandboxDir"]` — the shell's
+  `default_sandbox_base_dir()` reads the same option. `version` comes from
+  `sandbox.version(port)` (None when undeterminable); `status` is `running` when
+  localhost:port accepts a TCP connection, the same check `stop`/`delete` make. An optional
+  `port` asks about that one instance alone - no directory walk, one version
+  lookup, one probe - for the extension to refresh a single row; the answer
+  is still a LIST (one entry, or `[]` when there is no sandbox there), so a
+  caller reads it the same way. An older plugin drops the undeclared argument
+  and answers with every instance, which is why the extension picks the port
+  out of the answer rather than trusting it to be the only entry. Tested
+  in-process in `tests/unit/test_sandbox.py` against stand-in `sandbox`/`shell`
+  globals, and verified by hand against two real instances (one running, one stopped).
+
+- **`sandbox.deploy` takes `mcp_access` in `--gui` mode ONLY** (default
+  True = the shared `mcp` list, as before; False = the extension's own `gui`
+  list, still in `/Sandboxes`). Without `--gui` it is not ADVERTISED:
+  `_register_deploy` trims it from the function's `__signature__` (which
+  the SDK builds the schema from; `functools.wraps` in `tool_registrar`
+  carries it) and its `{mcp_access_doc}` line from the docstring, and the
+  function keeps the parameter at its default - an agent's sandbox must be
+  one the agent can open. `test_deploy_offers_mcp_access_only_with_gui`
+  checks both advertised schemas over stdio. `sandbox.delete` now removes
+  the sandbox's connection from BOTH lists. Verified live: deploy with
+  `mcp_access=False` lands in `gui` / `/Sandboxes`, delete removes it.
+
 ## Files that matter
 
 - lib/sandbox_servers.py -> EVERYTHING about getting a server of a requested version:

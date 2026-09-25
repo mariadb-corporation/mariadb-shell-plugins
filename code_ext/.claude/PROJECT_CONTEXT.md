@@ -15,14 +15,15 @@ extension grows.
 | --- | --- |
 | `src/extension.ts` | Activation entry point. Wires everything together and registers the commands. |
 | `src/shell/` | Finding, installing and launching the MariaDB Shell. |
-| `src/mcp/` | The MCP client: the one-at-a-time server startup, session lifecycle, wire decoding, typed `db.*` API. |
+| `src/mcp/` | The MCP client: the one-at-a-time server startup, session lifecycle, wire decoding, typed `db.*` and `sandbox.*` APIs. |
 | `src/errorMessages.ts` | The error notification every failure uses, with its Show Log button. |
 | `src/connections/` | Which connections are open on which URI and which is the default, what happens on each one, plus the connection editor: URI building, the store, the panel and its protocol. |
-| `src/tree/` | The Connections view: its data model and its tree items. |
+| `src/tree/` | The Connections view: its data model and its tree items; the Sandboxes view. |
+| `src/sandboxes/` | The New Sandbox dialog: its fields, protocol and panel. |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
 | `src/editor/` | The SQL editor toolbar, status bar entry and run command. |
 | `src/webview/` | The result view host, its message protocol and the edit-collection logic. |
-| `webview/src/` | The two Preact frontends: the result view and the connection editor. |
+| `webview/src/` | The three Preact frontends: the result view, the connection editor and New Sandbox. |
 | `src/test/` | The extension-side test suite, mirroring the source layout. |
 | `webview/test/` | The frontend test suite, run under jsdom. |
 | `images/` | Icons: `light/` and `dark/` variants, the activity bar seal, and `marketplace-icon.png`. |
@@ -37,9 +38,12 @@ change belongs to up to date, and this table with it.
 | --- | --- |
 | [`context/toolchain.md`](context/toolchain.md) | The two Vite builds and two Vitest projects, the npm scripts, the pinned Node and the lockfile churn, the Marketplace icon, CI. |
 | [`context/shell-and-mcp.md`](context/shell-and-mcp.md) | `src/shell/` and `src/mcp/` file by file, the lazy startup and shell lookup, GUI mode (`--gui`) and the two connection lists, the MCP wire format. |
-| [`context/connections.md`](context/connections.md) | The connection editor and what it deliberately leaves out, the several connections one URI can have open and the one the Connections view keeps, the tree, the default connection. |
+| [`context/connection-editor.md`](context/connection-editor.md) | The connection editor: its files and tabs, what it deliberately leaves out, the URI box and its rules, its own vite build. |
+| [`context/connections.md`](context/connections.md) | The several connections one URI can have open and the one the Connections view keeps, what is reported on them (General Actions), the cached connection list, the tree, folders, opening, the default connection. |
 | [`context/running-sql.md`](context/running-sql.md) | The two run commands and stop on error, which connection a file runs on, the statement scanner, splitting agreeing with the server, what makes a result set editable, the gutter markers. |
-| [`context/result-view.md`](context/result-view.md) | The panel webview: layout, per-connection state, the two pickers, the actions grid and what the server had to report for it, fonts and surfaces, the result grids, the SQL preview, the shared code. |
+| [`context/sandboxes.md`](context/sandboxes.md) | The Sandboxes view, its Start / Stop / Delete, the New Sandbox dialog, the per-call timeouts, and what it needs from the shell. |
+| [`context/result-view.md`](context/result-view.md) | The panel webview: layout, per-connection state, the two pickers (and when General Actions is shown), fonts and surfaces, the result grids, the SQL preview, the shared code. |
+| [`context/actions-grid.md`](context/actions-grid.md) | The actions grid: run rows and their statements, errors and popups, scrolling, the jump arrows, and what the server had to report for it. |
 | [`context/commands.md`](context/commands.md) | Every contributed command and where it appears. |
 | [`context/testing-and-debugging.md`](context/testing-and-debugging.md) | The interfaces everything external sits behind, and the F5 launch and watch task. |
 
@@ -63,6 +67,11 @@ change belongs to up to date, and this table with it.
   before then, the shell in use has to load this repo's plugin, not its
   bundled one (the installed 26.9.4 loads
   `lib/mariadb-shell/plugins/mcp_plugin`, not `~/.mariadb-shell/plugins`).
+- **The Sandboxes view needs an unreleased shell too.** It lists through
+  `sandbox.list_instances`, which only this repo's `mcp_plugin` has; on
+  any released shell the view shows "could not be listed". Same decision
+  as folders: raise `MINIMUM_SHELL_VERSION` once a release carries it. See
+  [`context/sandboxes.md`](context/sandboxes.md).
 - The installer is run with `MARIADB_SHELL_TAG` pinned, so a release
   marked **prerelease** on GitHub installs fine (every 26.9.x is one);
   only an unpinned `install.sh` would skip it.
@@ -91,30 +100,53 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-23):
+Checked at this checkpoint (2026-09-25):
 
 ```
 $ git -C code_ext branch --show-current
-wip/code-ext
+wip/connection-folders
 
-$ git -C code_ext status --short
-(no output — clean)
+$ git -C code_ext status --short   (one repository: mcp_plugin's lines too)
+ M .claude/PROJECT_CONTEXT.md, context/commands.md, connections.md, result-view.md,
+   shell-and-mcp.md, toolchain.md
+ M package.json
+ M src/connections/connectionActivity.ts, connectionEditorPanel.ts
+ M src/extension.ts, src/mcp/mariaDbApi.ts, sdkConnector.ts, session.ts
+ M src/webview/resultViewProvider.ts, webview/src/ConnectionEditor.tsx, vscodeApi.ts
+ M src/test/extension.test.ts, fixtures/fakeMcpServer.mjs, mcp/sdkConnector.test.ts,
+   mcp/session.test.ts, webview/resultViewProvider.test.ts
+ M ../mcp_plugin/.claude/PROJECT_CONTEXT.md, context/sandbox.md, context/testing.md,
+   lib/sandbox_functions.py,
+   tests/unit/helpers.py, tests/unit/test_sandbox.py
+?? .claude/context/sandboxes.md, actions-grid.md, connection-editor.md
+?? vite.sandbox.config.ts
+?? src/mcp/sandboxApi.ts, src/sandboxes/, src/tree/sandboxesTreeProvider.ts
+?? webview/src/ComboBox.tsx, SandboxEditor.tsx, dialogParts.tsx, sandbox.tsx,
+   sandboxStyles.css
+?? src/test/mcp/sandboxApi.test.ts, src/test/sandboxes/,
+   src/test/tree/sandboxesTreeProvider.test.ts, webview/test/SandboxEditor.test.tsx
 ```
 
-- **The branch is `wip/code-ext`**, shared with [`mcp_plugin`](../../mcp_plugin):
-  a change needing both lands as one commit across the two. Pushed to
-  `origin/wip/code-ext` and in sync.
-- **`bc6c6aad` is the most recent** — "Keep the connection URI's scheme, so a
-  tunnel can be asked for". It raised `MINIMUM_SHELL_VERSION` to 26.9.3, gave
-  the connection editor its SSH tab, and taught `connectionUri.ts` the five
-  schemes and the `ssh-*` options; the server side of it is the plugin now
-  storing a URI's scheme rather than stripping it. Everything about the editor
-  is in [`context/connections.md`](context/connections.md).
-- Before it: `4f6b10e7` (the result view's output), `11450e44` (the Connections
-  view's welcome content), `87d6679e` (per-statement warnings), `12bf566f`
-  (paging the result tabs), `c2aa2f03` (connection activity logging).
-- Suite at this checkpoint: **794 pass across 41 files**, `npm run pretest`
+- **The branch is `wip/connection-folders`** (it was `wip/code-ext` at the last
+  checkpoint), shared with [`mcp_plugin`](../../mcp_plugin). HEAD is `486f30ed`
+  "File connections in folders, and read the connection list once".
+- **Everything from this session is UNCOMMITTED**: the Sandboxes view and New
+  Sandbox dialog, the sandbox list caching, `sandbox.*` calls as General
+  Actions, the General-Actions-shows-first rule, the port suggestion, and the
+  plugin side (`sandbox.list_instances` with its optional `port`, the
+  `--gui`-only `mcp_access` of `sandbox.deploy`). One commit across both
+  projects when the user asks for it. All of it is in
+  [`context/sandboxes.md`](context/sandboxes.md).
+- **The context was split further at this checkpoint**: `connection-editor.md`
+  out of `connections.md` (was 459 lines) and `actions-grid.md` out of
+  `result-view.md` (was 583), moved verbatim with headings promoted.
+- Suite at this checkpoint: **1085 pass across 51 files**, `npm run pretest`
   (typecheck + eslint) and `npm run build` clean.
+- NOT clicked through in a running VS Code. Verified instead by driving
+  `SandboxApi` through the real SDK connector against the dev shell
+  (`/Users/mzinner/git/mariadb-shell/build/bin`, loading this repo's plugin
+  via `~/.mariadb-shell/plugins`): list, deploy, stop, start, delete, the
+  single-port listing, and `mcp_access=false` landing in the `gui` list.
 
 ## Conventions
 

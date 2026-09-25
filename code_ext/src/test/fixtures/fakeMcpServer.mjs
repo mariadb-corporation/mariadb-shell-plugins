@@ -53,6 +53,15 @@ server.setRequestHandler(CallToolRequestSchema, (request) => {
         process.exit(1);
     }
 
+    // Answers only after a while, for a caller's own timeout to cut short.
+    if (request.params.name === "test.slow") {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                resolve({ content: [{ type: "text", text: "done" }] });
+            }, 2000);
+        });
+    }
+
     if (request.params.name === "db.list_connections") {
         return {
             content: [

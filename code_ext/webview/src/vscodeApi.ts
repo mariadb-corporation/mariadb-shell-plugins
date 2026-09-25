@@ -17,6 +17,8 @@
 
 import type { EditorWebviewMessage }
     from "../../src/connections/editorProtocol.js";
+import type { SandboxWebviewMessage }
+    from "../../src/sandboxes/sandboxProtocol.js";
 import type { WebviewMessage } from "../../src/webview/protocol.js";
 
 /** The bridge VS Code injects into every webview. */
@@ -35,8 +37,9 @@ const api = acquireVsCodeApi();
 /**
  * Sends a message to the extension.
  *
- * The two webviews - the result view and the connection editor - speak
- * different protocols but load the same module, so this accepts either. A
+ * The webviews - the result view, the connection editor and New Sandbox -
+ * speak different protocols but load the same module, so this accepts any
+ * of them. A
  * webview only ever sends one of them, and the type parameter is what keeps
  * a call site honest about which.
  *
@@ -44,7 +47,9 @@ const api = acquireVsCodeApi();
  *
  * @returns Nothing.
  */
-export const post = <T extends WebviewMessage | EditorWebviewMessage>(
+export const post = <
+    T extends WebviewMessage | EditorWebviewMessage | SandboxWebviewMessage,
+>(
     message: T,
 ): void => {
     api.postMessage(message);

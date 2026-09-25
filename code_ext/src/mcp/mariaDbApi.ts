@@ -42,9 +42,17 @@ import type {
  * transport, which keeps the SDK out of everything below it.
  */
 export interface IToolCaller {
+    /**
+     * @param name The tool to call.
+     * @param args Its arguments.
+     * @param timeoutMs How long to wait for the answer, for a tool that
+     *                  can take longer than the transport's own default
+     *                  (a minute). Left out, that default applies.
+     */
     callTool(
         name: string,
         args: Record<string, unknown>,
+        timeoutMs?: number,
     ): Promise<IToolResult>;
 }
 

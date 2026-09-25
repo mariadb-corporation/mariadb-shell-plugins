@@ -22,6 +22,11 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.newSqlEditor` | New SQL Editor | Connection row, beside Connect |
 | `mariadb.setDefaultConnection` | Set as Default Connection | Connection context menu |
 | `mariadb.clearDefaultConnection` | Clear Default Connection | Connection context menu |
+| `mariadb.addSandbox` | New Sandbox… | Sandboxes view title (`+`); the view's welcome content |
+| `mariadb.refreshSandboxes` | Refresh | Sandboxes view title; Retry in its failed welcome content |
+| `mariadb.startSandbox` | Start Sandbox | Inline on, and context menu of, a STOPPED sandbox |
+| `mariadb.stopSandbox` | Stop Sandbox | Inline on, and context menu of, a RUNNING sandbox |
+| `mariadb.deleteSandbox` | Delete Sandbox | Inline on, and context menu of, every sandbox not busy. Asks first; stops a running one before deleting |
 | `mariadb.clearResultView` | Clear Actions | Result view toolbar |
 | `mariadb.selectEditorConnection` | Select Connection for this SQL File | SQL editor toolbar, status bar |
 | `mariadb.runSqlFile` | Run SQL Script | SQL editor toolbar, `Ctrl`/`Cmd`+`Enter` |

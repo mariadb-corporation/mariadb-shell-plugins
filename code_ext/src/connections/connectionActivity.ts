@@ -91,7 +91,7 @@ export const activityRow = (
  *
  * @returns `1 schema`, `4 schemas`.
  */
-const counted = (count: number, singular: string): string => {
+export const counted = (count: number, singular: string): string => {
     return `${count} ${singular}${count === 1 ? "" : "s"}`;
 };
 
@@ -104,13 +104,79 @@ const counted = (count: number, singular: string): string => {
  *
  * @returns Them, joined.
  */
-const arguments_ = (args: Record<string, unknown>): string => {
+export const callArguments = (args: Record<string, unknown>): string => {
     return Object.entries(args)
         .filter(([, value]) => { return value !== undefined; })
         .map(([name, value]) => {
             return name === "uri" ? String(value) : `${name}=${String(value)}`;
         })
         .join(", ");
+};
+
+/**
+ * Times a call made on no open connection.
+ *
+ * @param call The tool and its arguments, never a password.
+ * @param describe Says what the answer was.
+ * @param work The call itself.
+ *
+ * @returns Whatever the call returned.
+ */
+export type GeneralWatcher = <T>(
+    call: string,
+    describe: (value: T) => string,
+    work: () => Promise<T>,
+) => Promise<T>;
+
+/**
+ * Builds what reports a call made on no open connection under
+ * {@link GENERAL_ACTIONS}, where that is asked for: the connection list
+ * and what changes it, and the sandbox tools. Both wrappers use it, so a
+ * general action reads the same whichever API made it.
+ *
+ * @param report Where to send what happened.
+ * @param logAllCalls Whether such calls are reported. Read on every call,
+ *                    since the setting behind it can change.
+ *
+ * @returns The watcher.
+ */
+export const createGeneralWatcher = (
+    report: ActivityReporter,
+    logAllCalls: () => boolean,
+): GeneralWatcher => {
+    return async <T>(
+        call: string,
+        describe: (value: T) => string,
+        work: () => Promise<T>,
+    ): Promise<T> => {
+        if (!logAllCalls()) {
+            return await work();
+        }
+
+        const when = new Date();
+        const startedMs = Date.now();
+        const event = { connection: GENERAL_ACTIONS, label: "", call, when };
+
+        try {
+            const value = await work();
+            report({
+                ...event,
+                elapsedMs: Date.now() - startedMs,
+                message: describe(value),
+            });
+
+            return value;
+        } catch (error) {
+            report({
+                ...event,
+                elapsedMs: Date.now() - startedMs,
+                message: "",
+                error: error instanceof Error ? error.message : String(error),
+            });
+
+            throw error;
+        }
+    };
 };
 
 /** What resolves an open connection's UUID back to what it is called. */
@@ -149,49 +215,7 @@ export const createLoggingApi = (
     report: ActivityReporter,
     logAllCalls: () => boolean = () => { return false; },
 ): IMariaDbApi => {
-    /**
-     * Times one call made on no connection and reports it under
-     * {@link GENERAL_ACTIONS}, where that is asked for.
-     *
-     * @param call The tool and its arguments, never a password.
-     * @param describe Says what the answer was.
-     * @param work The call itself.
-     *
-     * @returns Whatever the call returned.
-     */
-    const watchGeneral = async <T>(
-        call: string,
-        describe: (value: T) => string,
-        work: () => Promise<T>,
-    ): Promise<T> => {
-        if (!logAllCalls()) {
-            return await work();
-        }
-
-        const when = new Date();
-        const startedMs = Date.now();
-        const event = { connection: GENERAL_ACTIONS, label: "", call, when };
-
-        try {
-            const value = await work();
-            report({
-                ...event,
-                elapsedMs: Date.now() - startedMs,
-                message: describe(value),
-            });
-
-            return value;
-        } catch (error) {
-            report({
-                ...event,
-                elapsedMs: Date.now() - startedMs,
-                message: "",
-                error: error instanceof Error ? error.message : String(error),
-            });
-
-            throw error;
-        }
-    };
+    const watchGeneral = createGeneralWatcher(report, logAllCalls);
 
     /**
      * Times one call and reports what it did.
@@ -256,7 +280,7 @@ export const createLoggingApi = (
         // log - only of the general one, where that is kept.
         listConnections: (kind) => {
             return watchGeneral(
-                `db.list_connections(${arguments_({ kind })})`,
+                `db.list_connections(${callArguments({ kind })})`,
                 (uris) => {
                     return `Listed ${counted(uris.length, "connection")}`;
                 },
@@ -266,7 +290,7 @@ export const createLoggingApi = (
         listConnectionEntries: (kind) => {
             // `kind=all` for both lists at once.
             return watchGeneral(
-                `db.list_connections(${arguments_({ kind })})`,
+                `db.list_connections(${callArguments({ kind })})`,
                 (entries) => {
                     return `Listed ${counted(entries.length, "connection")}`;
                 },
@@ -275,7 +299,7 @@ export const createLoggingApi = (
         },
         addConnection: (uri, password, kind, verify, path) => {
             return watchGeneral(
-                `db.add_connection(${arguments_({ uri, kind, verify, path })})`,
+                `db.add_connection(${callArguments({ uri, kind, verify, path })})`,
                 (stored) => { return `Stored ${stored}`; },
                 () => {
                     return api.addConnection(uri, password, kind, verify, path);
@@ -284,21 +308,21 @@ export const createLoggingApi = (
         },
         deleteConnection: (uri, kind) => {
             return watchGeneral(
-                `db.delete_connection(${arguments_({ uri, kind })})`,
+                `db.delete_connection(${callArguments({ uri, kind })})`,
                 (deleted) => { return `Deleted ${deleted}`; },
                 () => { return api.deleteConnection(uri, kind); },
             );
         },
         testConnection: (uri, password) => {
             return watchGeneral(
-                `db.test_connection(${arguments_({ uri })})`,
+                `db.test_connection(${callArguments({ uri })})`,
                 (answer) => { return answer; },
                 () => { return api.testConnection(uri, password); },
             );
         },
         updateConnection: (uri, newUri, kind, newKind, password, newPath) => {
             return watchGeneral(
-                `db.update_connection(${arguments_({
+                `db.update_connection(${callArguments({
                     uri,
                     new_uri: newUri,
                     kind,

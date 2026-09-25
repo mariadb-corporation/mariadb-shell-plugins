@@ -61,6 +61,17 @@ import {
     normalizeFolder,
 } from "./connections/connectionFolders.js";
 import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
+import { withDefaultScheme } from "./connections/connectionUri.js";
+import type { ISandboxApi } from "./mcp/sandboxApi.js";
+import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
+import { SandboxStore } from "./sandboxes/sandboxStore.js";
+import { SandboxEditorPanel } from "./sandboxes/sandboxEditorPanel.js";
+import { sandboxConnectionUri } from "./sandboxes/sandboxFields.js";
+import {
+    SandboxesTreeProvider,
+    SANDBOXES_VIEW_ID,
+    type ISandboxNode,
+} from "./tree/sandboxesTreeProvider.js";
 import { deleteConnection } from "./connections/connectionStore.js";
 import type {
     ConnectionsNode,
@@ -120,8 +131,8 @@ const startServer = async (
 };
 
 /**
- * Shows the Connections view as busy for as long as the server is on its
- * way up, which is the one sign of life the view itself can give while
+ * Shows the Connections and Sandboxes views as busy for as long as the
+ * server is on its way up, which is the one sign of life the view itself can give while
  * its welcome content says what is happening.
  *
  * @param starter The startup to follow.
@@ -135,14 +146,16 @@ const showStartupInView = (starter: ServerStarter): void => {
             || phase === "installing"
             || phase === "starting";
         if (underWay && !busy) {
-            void vscode.window.withProgress(
-                { location: { viewId: CONNECTIONS_VIEW_ID } },
-                () => {
-                    return new Promise<void>((resolve) => {
-                        busy = resolve;
-                    });
-                },
-            );
+            const done = new Promise<void>((resolve) => {
+                busy = resolve;
+            });
+            // Both views wait on the same server.
+            for (const viewId of [CONNECTIONS_VIEW_ID, SANDBOXES_VIEW_ID]) {
+                void vscode.window.withProgress(
+                    { location: { viewId } },
+                    () => { return done; },
+                );
+            }
         } else if (!underWay && busy) {
             busy();
             busy = undefined;
@@ -203,11 +216,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
     }, log);
     showStartupInView(starter);
     const resultView = new ResultViewProvider(context.extensionUri, log);
+    const settings = createWorkspaceSettings();
     const connections = new ConnectionManager(
         async () => {
             return session.api ?? await starter.start();
         },
-        createWorkspaceSettings(),
+        settings,
         // Everything that happens on an open connection is a row of that
         // connection's output, not only the SQL an editor runs on it.
         (event) => { void resultView.appendEvent(event); },
@@ -229,6 +243,44 @@ export const activate = (context: vscode.ExtensionContext): void => {
         customFolders,
         collapsedFolders,
     );
+    // The sandbox tools come with the server, so asking for them is asking
+    // for the server. Every call is a General Action: none is made on an
+    // open connection.
+    const sandboxApi = async (): Promise<ISandboxApi> => {
+        if (session.sandboxApi === undefined) {
+            await starter.start();
+        }
+        if (session.sandboxApi === undefined) {
+            throw new Error("The MCP server is not running.");
+        }
+
+        return createLoggingSandboxApi(
+            session.sandboxApi,
+            (event) => { void resultView.appendEvent(event); },
+            () => { return settings.logAllCalls?.() ?? false; },
+        );
+    };
+    const sandboxStore = new SandboxStore(sandboxApi);
+    const sandboxes = new SandboxesTreeProvider(sandboxStore, log, starter);
+    // A deploy registers a connection to the new sandbox and a delete
+    // removes it, both server-side, so the Connections view reads its list
+    // again.
+    const connectionsChanged = (): void => {
+        connections.invalidateStoredConnections();
+        tree.refresh();
+    };
+    // Whatever the extension has open on a sandbox stops working when the
+    // server does, so it is closed first rather than left to fail on its
+    // next use. Compared with the scheme filled in: a sandbox deployed
+    // before the scheme was kept is stored without one.
+    const disconnectSandbox = async (port: number): Promise<void> => {
+        const uri = sandboxConnectionUri(String(port));
+        for (const open of connections.openConnections) {
+            if (withDefaultScheme(open) === uri) {
+                await connections.disconnect(open);
+            }
+        }
+    };
     const editors = new SqlEditorBinding(connections, resultView, log);
     // Marks where each statement begins. The ranges come from the SQL
     // scanner for now; a language server would report the same thing.
@@ -269,8 +321,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
         void tree.collapsed(event.element);
     });
 
+    const sandboxesView = vscode.window.createTreeView(SANDBOXES_VIEW_ID, {
+        treeDataProvider: sandboxes,
+    });
+
     context.subscriptions.push(
         tree,
+        sandboxes,
+        sandboxesView,
         editors,
         statementDots,
         resultView,
@@ -510,6 +568,104 @@ export const activate = (context: vscode.ExtensionContext): void => {
             },
         ),
 
+        vscode.commands.registerCommand("mariadb.refreshSandboxes", () => {
+            // The one thing that reads the list again on its own account,
+            // as Refresh is for the connections.
+            sandboxes.reload();
+        }),
+
+        vscode.commands.registerCommand("mariadb.addSandbox", () => {
+            SandboxEditorPanel.show(context.extensionUri, {
+                store: sandboxStore,
+                // The list the Connections view keeps, so opening the
+                // dialog costs no listing.
+                connectionUris: async () => {
+                    return (await connections.listStoredConnections())
+                        .map((stored) => { return stored.uri; });
+                },
+                withProgress: (work) => {
+                    return Promise.resolve(vscode.window.withProgress(
+                        { location: { viewId: SANDBOXES_VIEW_ID } },
+                        work,
+                    ));
+                },
+                onCreated: (message) => {
+                    // The store has dropped its list, so this reads it.
+                    sandboxes.refresh();
+                    connectionsChanged();
+                    void vscode.window.showInformationMessage(
+                        `MariaDB: ${message}`);
+                },
+                log,
+            });
+        }),
+
+        vscode.commands.registerCommand(
+            "mariadb.startSandbox",
+            async (node?: ISandboxNode) => {
+                if (node?.kind !== "sandbox") {
+                    return;
+                }
+
+                await guard(log, async () => {
+                    await sandboxes.start(node);
+                });
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.stopSandbox",
+            async (node?: ISandboxNode) => {
+                if (node?.kind !== "sandbox") {
+                    return;
+                }
+
+                await guard(log, async () => {
+                    await disconnectSandbox(node.port);
+                    await sandboxes.stop(node);
+                });
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.deleteSandbox",
+            async (node?: ISandboxNode) => {
+                if (node?.kind !== "sandbox") {
+                    return;
+                }
+
+                // Modal, because a sandbox's data directory goes with it
+                // and there is no undo.
+                const confirmed = await vscode.window.showWarningMessage(
+                    `Delete the sandbox on port ${node.port}?`,
+                    {
+                        modal: true,
+                        detail: (node.status === "running"
+                            ? "It is running and will be stopped first. "
+                            : "")
+                            + "Its data directory is deleted, and its "
+                            + "connection is removed from the Connections "
+                            + "view.",
+                    },
+                    "Delete",
+                );
+                if (confirmed !== "Delete") {
+                    return;
+                }
+
+                await guard(log, async () => {
+                    await disconnectSandbox(node.port);
+                    try {
+                        await sandboxes.delete(node);
+                    } finally {
+                        // Even a failed delete may have got as far as
+                        // removing the connection.
+                        connectionsChanged();
+                    }
+                });
+            },
+        ),
+
         vscode.commands.registerCommand(
             "mariadb.retryConnection",
             async (node?: IConnectionStatusNode) => {
@@ -709,6 +865,7 @@ export const deactivate = async (): Promise<void> => {
     // Before the session goes: the panel's buttons reach for the API, and
     // one left open across a reload would be bound to a server that is gone.
     ConnectionEditorPanel.disposeCurrent();
+    SandboxEditorPanel.disposeCurrent();
 
     await current.connections.disconnectAll();
     await current.session.stop();
