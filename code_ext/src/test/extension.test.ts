@@ -75,6 +75,12 @@ const runtime = vi.hoisted(() => {
          */
         connections: [] as string[],
         guiConnections: [] as string[],
+        /** What `sandbox.list_instances` answers with. */
+        sandboxes: [] as Array<{
+            port: number;
+            version: string | null;
+            status: string;
+        }>,
     };
 });
 
@@ -175,6 +181,29 @@ vi.mock("../mcp/sdkConnector.js", async () => {
                     };
                 }
 
+                if (name === "sandbox.list_instances") {
+                    return {
+                        content: runtime.sandboxes.filter((instance) => {
+                            return args.port === undefined
+                                || instance.port === args.port;
+                        }).map((instance) => {
+                            return {
+                                type: "text",
+                                text: JSON.stringify(instance),
+                            };
+                        }),
+                    };
+                }
+
+                if (name.startsWith("sandbox.")) {
+                    const text = `${name} on port ${String(args.port)}`;
+
+                    return {
+                        content: [{ type: "text", text }],
+                        structuredContent: { result: text },
+                    };
+                }
+
                 if (name === "db.connect") {
                     return {
                         content: [{
@@ -224,29 +253,33 @@ describe("activate", () => {
         runtime.connector = undefined;
         runtime.connections = ["dba@localhost:3310"];
         runtime.guiConnections = [];
+        runtime.sandboxes = [];
     });
 
-    it("registers the Connections view and every command", () => {
+    it("registers the Connections and Sandboxes views and every command", () => {
         const context = createContext();
 
         activate(context as never);
 
         expect(treeViews.map((view) => {
             return view.id;
-        })).toEqual(["mariadb.connections"]);
+        })).toEqual(["mariadb.connections", "mariadb.sandboxes"]);
         expect([...registeredCommands.keys()].sort()).toEqual([
             "mariadb.addConnection",
+            "mariadb.addSandbox",
             "mariadb.clearDefaultConnection",
             "mariadb.clearResultView",
             "mariadb.connect",
             "mariadb.copyConnectionUri",
             "mariadb.deleteConnection",
+            "mariadb.deleteSandbox",
             "mariadb.disconnect",
             "mariadb.editConnection",
             "mariadb.newFolder",
             "mariadb.newFolderWithSelection",
             "mariadb.newSqlEditor",
             "mariadb.refreshConnections",
+            "mariadb.refreshSandboxes",
             "mariadb.removeFolder",
             "mariadb.renameFolder",
             "mariadb.restartMcpServer",
@@ -256,8 +289,10 @@ describe("activate", () => {
             "mariadb.selectEditorConnection",
             "mariadb.setDefaultConnection",
             "mariadb.showMcpServerLog",
+            "mariadb.startSandbox",
             "mariadb.stopOnError.disable",
             "mariadb.stopOnError.enable",
+            "mariadb.stopSandbox",
         ]);
     });
 
@@ -668,6 +703,316 @@ describe("activate", () => {
             });
         });
         expect(errorMessages).toEqual([]);
+    });
+
+    describe("sandboxes", () => {
+        /** The Sandboxes view's provider, as activation registered it. */
+        const sandboxesProvider = (): {
+            getChildren(): Promise<Array<{ port: number; status: string }>>;
+        } => {
+            const view = treeViews.find((candidate) => {
+                return candidate.id === "mariadb.sandboxes";
+            });
+
+            return (view!.options as {
+                treeDataProvider: ReturnType<typeof sandboxesProvider>;
+            }).treeDataProvider;
+        };
+
+        const running = {
+            kind: "sandbox", port: 3310, version: "12.3.2", status: "running",
+        };
+        const stopped = { ...running, status: "stopped" };
+
+        const sandboxCalls = (): Array<{ name: string; args: unknown }> => {
+            return toolCalls().filter((call) => {
+                return call.name.startsWith("sandbox.");
+            });
+        };
+
+        it("lists the sandboxes, starting the server to do it", async () => {
+            runtime.sandboxes = [
+                { port: 3310, version: "12.3.2", status: "running" },
+            ];
+            activate(createContext() as never);
+
+            const rows = await sandboxesProvider().getChildren();
+
+            expect(rows).toEqual([{
+                kind: "sandbox", port: 3310, version: "12.3.2",
+                status: "running",
+            }]);
+            expect(contextKeys.get("mariadb.sandboxesView")).toBe("listed");
+        });
+
+        it("opens the New Sandbox dialog", () => {
+            activate(createContext() as never);
+
+            void mockCommands.executeCommand("mariadb.addSandbox");
+
+            expect(webviewPanels.map((panel) => {
+                return panel.viewType;
+            })).toEqual(["mariadb.sandboxEditor"]);
+        });
+
+        it("starts a stopped sandbox from its row", async () => {
+            activate(createContext() as never);
+
+            await mockCommands.executeCommand("mariadb.startSandbox", stopped);
+
+            expect(sandboxCalls()).toContainEqual({
+                name: "sandbox.start", args: { port: 3310 },
+            });
+            expect(errorMessages).toEqual([]);
+        });
+
+        it("closes what is open on a sandbox before stopping it", async () => {
+            activate(createContext() as never);
+            // The connection deploy registered for it, spelled as the
+            // plugin stores it.
+            await mockCommands.executeCommand("mariadb.connect", {
+                kind: "connection", uri: "mariadb://root@127.0.0.1:3310",
+            });
+
+            await mockCommands.executeCommand("mariadb.stopSandbox", running);
+
+            const names = toolCalls().map((call) => { return call.name; });
+            expect(names).toContain("sandbox.stop");
+            expect(names.indexOf("db.close"))
+                .toBeLessThan(names.indexOf("sandbox.stop"));
+            expect(names.indexOf("db.close")).toBeGreaterThanOrEqual(0);
+        });
+
+        it("leaves other connections open when a sandbox stops", async () => {
+            activate(createContext() as never);
+            await mockCommands.executeCommand("mariadb.connect", {
+                kind: "connection", uri: "mariadb://root@127.0.0.1:3320",
+            });
+
+            await mockCommands.executeCommand("mariadb.stopSandbox", running);
+
+            expect(toolCalls().map((call) => { return call.name; }))
+                .not.toContain("db.close");
+        });
+
+        it("asks before deleting a sandbox, and stops if told no",
+            async () => {
+                activate(createContext() as never);
+
+                await mockCommands.executeCommand(
+                    "mariadb.deleteSandbox", running);
+
+                expect(warningMessages).toEqual([
+                    "Delete the sandbox on port 3310?",
+                ]);
+                expect(sandboxCalls()).toEqual([]);
+            });
+
+        it("stops a running sandbox before deleting it, then re-reads the "
+            + "connections", async () => {
+            activate(createContext() as never);
+            setWarningMessageAnswer("Delete");
+            const tree = (treeViews[0].options as {
+                treeDataProvider: { getChildren(): Promise<unknown[]> };
+            }).treeDataProvider;
+            await tree.getChildren();
+            const listed = (): number => {
+                return toolCalls().filter((call) => {
+                    return call.name === "db.list_connections";
+                }).length;
+            };
+            const before = listed();
+
+            await mockCommands.executeCommand("mariadb.deleteSandbox", running);
+
+            expect(sandboxCalls().map((call) => { return call.name; }))
+                .toEqual(["sandbox.stop", "sandbox.delete"]);
+            // The delete took its connection away server-side.
+            await tree.getChildren();
+            expect(listed()).toBeGreaterThan(before);
+            expect(errorMessages).toEqual([]);
+        });
+
+        it("deletes a stopped sandbox without stopping it", async () => {
+            activate(createContext() as never);
+            setWarningMessageAnswer("Delete");
+
+            await mockCommands.executeCommand("mariadb.deleteSandbox", stopped);
+
+            expect(sandboxCalls().map((call) => { return call.name; }))
+                .toEqual(["sandbox.delete"]);
+        });
+
+        it("ignores the row commands without a sandbox", async () => {
+            activate(createContext() as never);
+
+            for (const command of [
+                "mariadb.startSandbox",
+                "mariadb.stopSandbox",
+                "mariadb.deleteSandbox",
+            ]) {
+                await mockCommands.executeCommand(command);
+                await mockCommands.executeCommand(command, {
+                    kind: "connection", uri: "dba@localhost:3310",
+                });
+            }
+
+            expect(sandboxCalls()).toEqual([]);
+            expect(warningMessages).toEqual([]);
+        });
+
+        it("lists the sandboxes once, and again only on Refresh", async () => {
+            runtime.sandboxes = [
+                { port: 3310, version: "12.3.2", status: "running" },
+            ];
+            activate(createContext() as never);
+            const lists = (): number => {
+                return sandboxCalls().filter((call) => {
+                    return call.name === "sandbox.list_instances";
+                }).length;
+            };
+
+            await sandboxesProvider().getChildren();
+            await sandboxesProvider().getChildren();
+            // An action redraws the view twice; neither redraw lists.
+            await mockCommands.executeCommand("mariadb.stopSandbox", running);
+            expect((await sandboxesProvider().getChildren())[0]?.status)
+                .toBe("stopped");
+            expect(lists()).toBe(1);
+
+            await mockCommands.executeCommand("mariadb.refreshSandboxes");
+            await sandboxesProvider().getChildren();
+            expect(lists()).toBe(2);
+        });
+
+        it("re-reads the connections once a deploy has succeeded", async () => {
+            activate(createContext() as never);
+            const tree = (treeViews[0].options as {
+                treeDataProvider: { getChildren(): Promise<unknown[]> };
+            }).treeDataProvider;
+            await tree.getChildren();
+            let redraws = 0;
+            (tree as unknown as {
+                onDidChangeTreeData(listener: () => void): void;
+            }).onDidChangeTreeData(() => { redraws += 1; });
+
+            void mockCommands.executeCommand("mariadb.addSandbox");
+            webviewPanels.at(-1)!.webview.receive({
+                type: "create",
+                fields: {
+                    port: "3399", password: "", passwordConfirmation: "",
+                    serverVersion: "Server on the PATH",
+                    allowRootFrom: "127.0.0.1", serverId: "", ssl: false,
+                    mariadbdOptions: "", timeout: "",
+                },
+            });
+            await vi.waitFor(() => {
+                expect(webviewPanels.at(-1)!.disposed).toBe(true);
+            });
+            // The deploy registered its connection in /Sandboxes on the
+            // server; the tree reads the list again to show it.
+            expect(redraws).toBeGreaterThan(0);
+            await tree.getChildren();
+
+            const names = toolCalls().map((call) => { return call.name; });
+            expect(names.lastIndexOf("db.list_connections"))
+                .toBeGreaterThan(names.indexOf("sandbox.deploy"));
+            // The new sandbox is asked about alone, not the whole list.
+            expect(sandboxCalls().filter((call) => {
+                return call.name === "sandbox.list_instances";
+            }).map((call) => { return call.args; }))
+                .toEqual([{ port: 3399 }]);
+            expect(informationMessages).toEqual([
+                "MariaDB: sandbox.deploy on port 3399",
+            ]);
+        });
+
+        it("suggests 3311 when a connection is on localhost:3310", async () => {
+            runtime.connections = ["mariadb://dba@localhost:3310"];
+            activate(createContext() as never);
+
+            void mockCommands.executeCommand("mariadb.addSandbox");
+            webviewPanels.at(-1)!.webview.receive({ type: "ready" });
+
+            await vi.waitFor(() => {
+                expect(webviewPanels.at(-1)!.webview.posted[0])
+                    .toMatchObject({ type: "load", fields: { port: "3311" } });
+            });
+        });
+
+        it("lists the server versions once, however often the dialog opens",
+            async () => {
+                activate(createContext() as never);
+
+                for (let open = 0; open < 2; open += 1) {
+                    void mockCommands.executeCommand("mariadb.addSandbox");
+                    webviewPanels.at(-1)!.webview.receive({ type: "ready" });
+                    await vi.waitFor(() => {
+                        expect(webviewPanels.at(-1)!.webview.posted)
+                            .toHaveLength(1);
+                    });
+                    webviewPanels.at(-1)!.dispose();
+                }
+
+                expect(sandboxCalls().filter((call) => {
+                    return call.name === "sandbox.list_available_versions";
+                })).toHaveLength(1);
+            });
+
+        it("logs the sandbox calls as General Actions when asked to, and "
+            + "shows them", async () => {
+            configuration.set("mariadb.actions.logAllCalls", true);
+            activate(createContext() as never);
+            const view = resolveWebviewView("mariadb.results");
+            view.webview.receive({ type: "ready" });
+
+            await sandboxesProvider().getChildren();
+            await mockCommands.executeCommand("mariadb.startSandbox", stopped);
+
+            // The first action logged is what the panel comes up on,
+            // rather than an empty grid.
+            await vi.waitFor(() => {
+                expect(view.description).toBe("General Actions");
+            });
+            const message = [...view.webview.posted].reverse().find((posted) => {
+                return (posted as { type: string }).type === "state";
+            }) as { state: { actions: Array<{ statement: string }> } }
+                | undefined;
+            // Newest first. The panel's own look at the connection list,
+            // for its picker, is a general action too, and is left out.
+            expect(message?.state.actions.map((row) => {
+                return row.statement;
+            }).filter((call) => { return call.startsWith("sandbox."); }))
+                .toEqual([
+                    "sandbox.start(port=3310)",
+                    "sandbox.list_instances()",
+                ]);
+        });
+
+        it("logs no sandbox call while the setting is off", async () => {
+            activate(createContext() as never);
+            const view = resolveWebviewView("mariadb.results");
+            view.webview.receive({ type: "ready" });
+
+            await sandboxesProvider().getChildren();
+            await mockCommands.executeCommand("mariadb.startSandbox", stopped);
+
+            expect(view.description ?? "").not.toBe("General Actions");
+        });
+
+        it("refreshes the Sandboxes view on request", async () => {
+            activate(createContext() as never);
+            await sandboxesProvider().getChildren();
+            runtime.sandboxes = [
+                { port: 3320, version: null, status: "stopped" },
+            ];
+
+            await mockCommands.executeCommand("mariadb.refreshSandboxes");
+
+            expect((await sandboxesProvider().getChildren()).map((row) => {
+                return row.port;
+            })).toEqual([3320]);
+        });
     });
 
     it("starts no shell until something needs the server", () => {

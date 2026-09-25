@@ -35,6 +35,9 @@ this machine does not have yet.
 
 # cSpell:ignore mysqlsh MariaDB mcpserver sandboxlib mariadbd openssl
 
+import inspect
+import os
+import socket
 from typing import Optional
 
 import mysqlsh
@@ -53,6 +56,63 @@ _SERVER_SOURCE_DESCRIPTIONS = {
 }
 
 
+def _is_listening(port: int) -> bool:
+    """Returns True if something accepts TCP connections on localhost:port.
+
+    The same check the shell's sandbox makes to decide whether an instance is
+    running, so a status reported here agrees with what sandbox.stop and
+    sandbox.delete will find.
+    """
+    try:
+        with socket.create_connection(("localhost", port), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+
+# The part of sandbox.deploy's description only a --gui server gives, with the
+# argument it describes.
+_MCP_ACCESS_DOC = """            mcp_access: Whether the connection registered for the instance
+                goes into the shared MCP connection list, which every MCP
+                client on this machine can open (the default), or into the
+                MariaDB VS Code extension's own list only.
+"""
+
+
+def _register_deploy(tool, deploy) -> None:
+    """Registers sandbox.deploy, with ``mcp_access`` in GUI mode only.
+
+    Which list a sandbox's connection goes into is a choice only the MariaDB
+    VS Code extension can make: its own list exists for it alone. Without
+    ``--gui`` the argument is taken out of the signature the SDK builds the
+    tool's schema from - and its line out of the description - so the tool
+    does not ADVERTISE it, rather than advertising it and refusing it. The
+    function keeps the parameter, at its default of the shared list, which
+    is where an agent's sandbox has to go for the agent to open it.
+
+    Args:
+        tool: The tool decorator factory of the server.
+        deploy: The sandbox.deploy implementation.
+
+    Returns:
+        None
+    """
+    if general.is_gui_mode():
+        deploy.__doc__ = deploy.__doc__.replace("{mcp_access_doc}", _MCP_ACCESS_DOC)
+    else:
+        deploy.__doc__ = deploy.__doc__.replace("{mcp_access_doc}", "")
+        signature = inspect.signature(deploy)
+        deploy.__signature__ = signature.replace(
+            parameters=[
+                parameter
+                for parameter in signature.parameters.values()
+                if parameter.name != "mcp_access"
+            ]
+        )
+
+    tool(name="sandbox.deploy")(deploy)
+
+
 def register_sandbox_tools(server, function_groups=()) -> None:
     """Registers the sandbox management tools on the given server.
 
@@ -65,7 +125,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         None
     """
     from mcp.server.mcpserver import Context
-    from mysqlsh.globals import sandbox
+    from mysqlsh.globals import sandbox, shell
 
     tool = tool_registrar(server)
 
@@ -106,7 +166,6 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """
         return sandbox_servers.available_versions(series)
 
-    @tool(name="sandbox.deploy")
     async def deploy(
         ctx: Context,
         port: int,
@@ -120,6 +179,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         mariadbd_path: Optional[str] = None,
         mariadbd_options: Optional[list] = None,
         timeout: Optional[int] = None,
+        mcp_access: bool = True,
     ) -> str:
         """Deploys a new MariaDB sandbox instance on localhost.
 
@@ -156,7 +216,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             mariadbd_options: Additional server options for the [mysqld]
                 section, as 'option=value' strings.
             timeout: Seconds to wait for the instance to start. Defaults to 60.
-
+{mcp_access_doc}
         Returns:
             A message confirming the deployment, naming the server version it
             runs when one was requested.
@@ -199,9 +259,18 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         # password provided to deploy is stored (empty string when none was
         # given). It is filed in the Sandboxes folder, which only the VS Code
         # extension shows; to an agent the folder is invisible.
+        #
+        # Into the shared MCP list unless the extension asked otherwise: an
+        # agent deploying a sandbox has to be able to open it, and without
+        # --gui there is no other list to put it in.
         config.store_connection(
             _sandbox_connection_uri(port),
             password if password is not None else "",
+            kind=(
+                config.CONNECTION_KIND_MCP
+                if mcp_access
+                else config.CONNECTION_KIND_GUI
+            ),
             path=config.SANDBOX_CONNECTION_PATH,
         )
 
@@ -226,6 +295,8 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             )
 
         return message
+
+    _register_deploy(tool, deploy)
 
     @tool(name="sandbox.start")
     async def start(
@@ -321,14 +392,76 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         await general.require_allowed_path(ctx, sandbox_dir)
         sandbox.delete(port, _options(sandboxDir=sandbox_dir))
 
-        # Remove the connection registered for this instance by deploy, if any.
-        # Resolved rather than compared: an instance deployed before the scheme
-        # was kept is stored under the spelling of that day.
-        uri = config.resolve_connection_uri(_sandbox_connection_uri(port))
-        if uri is not None:
-            config.delete_connection(uri)
+        # Remove the connection registered for this instance by deploy, if any,
+        # from whichever list it went into - the shared one, or the extension's
+        # own when it was deployed without MCP access. Resolved rather than
+        # compared: an instance deployed before the scheme was kept is stored
+        # under the spelling of that day.
+        for kind in config.SUPPORTED_CONNECTION_KINDS:
+            uri = config.resolve_connection_uri(
+                _sandbox_connection_uri(port), kind
+            )
+            if uri is not None:
+                config.delete_connection(uri, kind)
 
         return f"Sandbox instance on port {port} deleted."
+
+    # Sync, and with no ctx or sandbox_dir: it only ever looks in the default
+    # sandbox path, so there is no path to authorize and nothing to ask.
+    @tool(name="sandbox.list_instances")
+    def list_instances(port: Optional[int] = None) -> list:
+        """Lists the sandbox instances deployed in the default sandbox path.
+
+        Instances deployed with an explicit sandbox_dir are not listed.
+
+        Listing every instance asks each one for its version and probes its
+        port, so pass a port to look at that one instance alone - after
+        starting, stopping or deploying it, say.
+
+        Args:
+            port: The port of the one instance to report. Leave empty to list
+                every instance.
+
+        Returns:
+            One object per instance, ordered by port, each with its 'port', its
+            server 'version' as major.minor.patch (None if it cannot be
+            determined) and its 'status', 'running' or 'stopped'. With a port,
+            a list of that one instance, or an empty list when there is no
+            sandbox on it.
+        """
+        # The shell has no listing of its own, so its layout is read directly:
+        # an instance is a <sandboxDir>/<port> directory holding a my.cnf, the
+        # same test sandbox.version applies. The boilerplate data directory
+        # the shell keeps beside the instances has no numeric name.
+        base_dir = os.path.abspath(
+            os.path.expanduser(shell.options["sandboxDir"])
+        )
+
+        def is_instance(name: str) -> bool:
+            return name.isdigit() and os.path.isfile(
+                os.path.join(base_dir, name, "my.cnf")
+            )
+
+        if port is not None:
+            # A list either way, so a caller reads one answer the way it
+            # reads all of them. No directory is walked: the one asked about
+            # is the only one looked at.
+            ports = [port] if is_instance(str(port)) else []
+        else:
+            try:
+                entries = os.listdir(base_dir)
+            except FileNotFoundError:
+                return []
+            ports = sorted(int(entry) for entry in entries if is_instance(entry))
+
+        return [
+            {
+                "port": port,
+                "version": sandbox.version(port, {"sandboxDir": base_dir}),
+                "status": "running" if _is_listening(port) else "stopped",
+            }
+            for port in ports
+        ]
 
     @tool(name="sandbox.vendor")
     async def vendor(

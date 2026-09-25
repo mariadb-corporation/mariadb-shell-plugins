@@ -106,6 +106,22 @@ describe("createSdkConnector", () => {
         }
     }, 30_000);
 
+    it("gives up on a call that outlasts the timeout it was given", async () => {
+        const connection = await createSdkConnector()
+            .open(command, () => {
+                // Log output is checked separately.
+            });
+
+        try {
+            // Far short of the transport's own minute, which is the point:
+            // the timeout passed is the one that applies.
+            await expect(connection.callTool("test.slow", {}, 100))
+                .rejects.toThrow(/timed out/i);
+        } finally {
+            await connection.close();
+        }
+    }, 30_000);
+
     it("rejects when the server cannot be started", async () => {
         await expect(createSdkConnector().open(
             { command: "/nonexistent/mariadb-shell", args: [] },

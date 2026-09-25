@@ -17,6 +17,7 @@
 
 import type { McpServerCommand } from "../shell/mcpServer.js";
 import { MariaDbApi, type IToolCaller } from "./mariaDbApi.js";
+import { SandboxApi, type ISandboxApi } from "./sandboxApi.js";
 import type { IMariaDbApi } from "./types.js";
 
 /**
@@ -56,6 +57,7 @@ export class McpSession {
     #connection?: IMcpConnection;
     #starting?: Promise<IMariaDbApi>;
     #api?: IMariaDbApi;
+    #sandboxApi?: ISandboxApi;
 
     public constructor(
         private readonly connector: IMcpConnector,
@@ -74,6 +76,15 @@ export class McpSession {
      */
     public get api(): IMariaDbApi | undefined {
         return this.#api;
+    }
+
+    /**
+     * @returns The `sandbox.*` API on the same server, if one is already
+     *          running, else undefined. It comes up with `api` and goes
+     *          with it: one server serves both.
+     */
+    public get sandboxApi(): ISandboxApi | undefined {
+        return this.#sandboxApi;
     }
 
     /**
@@ -106,6 +117,7 @@ export class McpSession {
         const connection = this.#connection;
         this.#connection = undefined;
         this.#api = undefined;
+        this.#sandboxApi = undefined;
         if (!connection) {
             return;
         }
@@ -135,6 +147,7 @@ export class McpSession {
         });
         this.#connection = connection;
         this.#api = new MariaDbApi(connection);
+        this.#sandboxApi = new SandboxApi(connection);
         this.log("MCP server ready.");
 
         return this.#api;

@@ -177,6 +177,12 @@ export class ResultViewProvider
     /** The connection whose actions and results are on show. */
     #active?: string;
     /**
+     * Whether General Actions is on show only because it was the first
+     * thing logged, rather than because the user picked it - in which case
+     * the first connection to report anything takes the view over.
+     */
+    #generalByDefault = false;
+    /**
      * Which connection open on it is on show, or undefined for all of
      * them together - which is what the view opens on.
      */
@@ -415,10 +421,18 @@ export class ResultViewProvider
 
         // The first thing to happen at all is what the view comes up on,
         // so a tree that was browsed before anything was run is not
-        // looking at an empty panel - unless it is a general action, which
-        // is there to be looked up rather than to take the view over.
-        if (event.connection !== GENERAL_ACTIONS) {
-            this.#active ??= event.connection;
+        // looking at an empty panel. General Actions only holds the view
+        // until a connection reports something: with the logging on, it
+        // is often first - listing the connections is - and an empty panel
+        // is no better for it, but it is there to be looked up rather than
+        // to stand in front of the connection being worked on.
+        if (this.#active === undefined) {
+            this.#active = event.connection;
+            this.#generalByDefault = event.connection === GENERAL_ACTIONS;
+        } else if (this.#generalByDefault
+            && event.connection !== GENERAL_ACTIONS) {
+            this.#active = event.connection;
+            this.#generalByDefault = false;
         }
 
         if (event.connection === this.#active) {
@@ -435,6 +449,7 @@ export class ResultViewProvider
      */
     public async selectConnection(connection: string): Promise<void> {
         this.#active = connection;
+        this.#generalByDefault = false;
         // Another connection's connections are not this one's, so the
         // filter goes back to showing all of them.
         this.#activeSession = undefined;
@@ -538,6 +553,7 @@ export class ResultViewProvider
         this.#view = undefined;
         this.#byConnection.clear();
         this.#active = undefined;
+        this.#generalByDefault = false;
         this.#activeSession = undefined;
         this.#pending = [];
     }
@@ -681,6 +697,7 @@ export class ResultViewProvider
      */
     #show(connection: string, label: string): void {
         this.#active = connection;
+        this.#generalByDefault = false;
         if (this.#activeSession !== undefined
             && this.#activeSession !== label) {
             this.#activeSession = undefined;

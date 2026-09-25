@@ -44,6 +44,10 @@
           "id": "mariadb.connections",
           "name": "Connections",
           "icon": "images/light/mariadbConnection.svg"
+        },
+        {
+          "id": "mariadb.sandboxes",
+          "name": "Sandboxes"
         }
       ],
       "mariadb-panel": [
@@ -75,6 +79,26 @@
         "view": "mariadb.connections",
         "contents": "No MariaDB connections are configured yet.\n[New Connection…](command:mariadb.addConnection)\n[New Folder…](command:mariadb.newFolder)",
         "when": "mariadb.connectionsView == listed"
+      },
+      {
+        "view": "mariadb.sandboxes",
+        "contents": "Looking for MariaDB sandboxes...",
+        "when": "mariadb.sandboxesView != installing && mariadb.sandboxesView != failed && mariadb.sandboxesView != listed"
+      },
+      {
+        "view": "mariadb.sandboxes",
+        "contents": "Waiting for the MariaDB Shell to be installed.\n[Show Log](command:mariadb.showMcpServerLog)",
+        "when": "mariadb.sandboxesView == installing"
+      },
+      {
+        "view": "mariadb.sandboxes",
+        "contents": "The sandboxes could not be listed. The log says why.\n[Show Log](command:mariadb.showMcpServerLog)\n[Retry](command:mariadb.refreshSandboxes)",
+        "when": "mariadb.sandboxesView == failed"
+      },
+      {
+        "view": "mariadb.sandboxes",
+        "contents": "A sandbox is a MariaDB server of its own, on this machine, for trying things out. None has been deployed yet.\n[New Sandbox…](command:mariadb.addSandbox)",
+        "when": "mariadb.sandboxesView == listed"
       }
     ],
     "configuration": {
@@ -248,6 +272,36 @@
         "icon": "$(star-full)"
       },
       {
+        "command": "mariadb.refreshSandboxes",
+        "title": "Refresh",
+        "category": "MariaDB",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mariadb.addSandbox",
+        "title": "New Sandbox…",
+        "category": "MariaDB",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mariadb.startSandbox",
+        "title": "Start Sandbox",
+        "category": "MariaDB",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "mariadb.stopSandbox",
+        "title": "Stop Sandbox",
+        "category": "MariaDB",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "mariadb.deleteSandbox",
+        "title": "Delete Sandbox",
+        "category": "MariaDB",
+        "icon": "$(trash)"
+      },
+      {
         "command": "mariadb.clearResultView",
         "title": "Clear Actions",
         "category": "MariaDB",
@@ -322,6 +376,16 @@
           "command": "mariadb.refreshConnections",
           "when": "view == mariadb.connections",
           "group": "navigation"
+        },
+        {
+          "command": "mariadb.addSandbox",
+          "when": "view == mariadb.sandboxes",
+          "group": "navigation@0"
+        },
+        {
+          "command": "mariadb.refreshSandboxes",
+          "when": "view == mariadb.sandboxes",
+          "group": "navigation@1"
         },
         {
           "command": "mariadb.clearResultView",
@@ -424,6 +488,36 @@
           "command": "mariadb.retryConnection",
           "when": "view == mariadb.connections && viewItem == mariadbConnectionStatus.failed",
           "group": "1_connection@1"
+        },
+        {
+          "command": "mariadb.startSandbox",
+          "when": "view == mariadb.sandboxes && viewItem == mariadbSandbox.stopped",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.stopSandbox",
+          "when": "view == mariadb.sandboxes && viewItem == mariadbSandbox.running",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.deleteSandbox",
+          "when": "view == mariadb.sandboxes && viewItem =~ /^mariadbSandbox\\.(running|stopped)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "mariadb.startSandbox",
+          "when": "view == mariadb.sandboxes && viewItem == mariadbSandbox.stopped",
+          "group": "1_sandbox@1"
+        },
+        {
+          "command": "mariadb.stopSandbox",
+          "when": "view == mariadb.sandboxes && viewItem == mariadbSandbox.running",
+          "group": "1_sandbox@1"
+        },
+        {
+          "command": "mariadb.deleteSandbox",
+          "when": "view == mariadb.sandboxes && viewItem =~ /^mariadbSandbox\\.(running|stopped)$/",
+          "group": "2_manage@1"
         }
       ],
       "editor/title": [
@@ -537,6 +631,22 @@
         {
           "command": "mariadb.newFolderWithSelection",
           "when": "false"
+        },
+        {
+          "command": "mariadb.startSandbox",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.stopSandbox",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.deleteSandbox",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.refreshSandboxes",
+          "when": "false"
         }
       ]
     },
@@ -618,7 +728,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "build:extension": "vite build",
-    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts",
+    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts && vite build --config vite.sandbox.config.ts",
     "watch:webview": "vite build --config vite.webview.config.ts --watch",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
   },
