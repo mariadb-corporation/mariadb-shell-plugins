@@ -100,53 +100,45 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-25):
+Checked at this checkpoint (2026-09-25, second of the day):
 
 ```
 $ git -C code_ext branch --show-current
-wip/connection-folders
+wip/result-set-fixes-and-expansion
 
 $ git -C code_ext status --short   (one repository: mcp_plugin's lines too)
- M .claude/PROJECT_CONTEXT.md, context/commands.md, connections.md, result-view.md,
-   shell-and-mcp.md, toolchain.md
- M package.json
- M src/connections/connectionActivity.ts, connectionEditorPanel.ts
- M src/extension.ts, src/mcp/mariaDbApi.ts, sdkConnector.ts, session.ts
- M src/webview/resultViewProvider.ts, webview/src/ConnectionEditor.tsx, vscodeApi.ts
- M src/test/extension.test.ts, fixtures/fakeMcpServer.mjs, mcp/sdkConnector.test.ts,
-   mcp/session.test.ts, webview/resultViewProvider.test.ts
- M ../mcp_plugin/.claude/PROJECT_CONTEXT.md, context/sandbox.md, context/testing.md,
-   lib/sandbox_functions.py,
-   tests/unit/helpers.py, tests/unit/test_sandbox.py
-?? .claude/context/sandboxes.md, actions-grid.md, connection-editor.md
-?? vite.sandbox.config.ts
-?? src/mcp/sandboxApi.ts, src/sandboxes/, src/tree/sandboxesTreeProvider.ts
-?? webview/src/ComboBox.tsx, SandboxEditor.tsx, dialogParts.tsx, sandbox.tsx,
-   sandboxStyles.css
-?? src/test/mcp/sandboxApi.test.ts, src/test/sandboxes/,
-   src/test/tree/sandboxesTreeProvider.test.ts, webview/test/SandboxEditor.test.tsx
+?? images/dark/maximize.svg
+?? images/dark/minimize.svg
+?? images/light/maximize.svg
+?? images/light/minimize.svg
 ```
 
-- **The branch is `wip/connection-folders`** (it was `wip/code-ext` at the last
-  checkpoint), shared with [`mcp_plugin`](../../mcp_plugin). HEAD is `486f30ed`
-  "File connections in folders, and read the connection list once".
-- **Everything from this session is UNCOMMITTED**: the Sandboxes view and New
-  Sandbox dialog, the sandbox list caching, `sandbox.*` calls as General
-  Actions, the General-Actions-shows-first rule, the port suggestion, and the
-  plugin side (`sandbox.list_instances` with its optional `port`, the
-  `--gui`-only `mcp_access` of `sandbox.deploy`). One commit across both
-  projects when the user asks for it. All of it is in
-  [`context/sandboxes.md`](context/sandboxes.md).
-- **The context was split further at this checkpoint**: `connection-editor.md`
-  out of `connections.md` (was 459 lines) and `actions-grid.md` out of
-  `result-view.md` (was 583), moved verbatim with headings promoted.
-- Suite at this checkpoint: **1085 pass across 51 files**, `npm run pretest`
+- **The branch is `wip/result-set-fixes-and-expansion`**, pushed and in sync.
+  The branches stack, each on the one before:
+  `wip/connection-update` <- `wip/connection-folders` (PR #28) <-
+  `wip/ext-sandbox-support` (PR #29, based on `wip/connection-folders`) <-
+  `wip/result-set-fixes-and-expansion` (no PR yet; one would target
+  `wip/ext-sandbox-support`).
+- Its commits past #29's `0842eed9` (the Sandboxes view and dialog, see
+  [`context/sandboxes.md`](context/sandboxes.md)):
+  - `32f0c23f` every result set of a CALL (a tab each, "N result sets" with a
+    child row per set), a view read without an error row (looked up as a
+    table, the not-found answer logged as INFO), the error bar's copy button,
+    and a Copy menu on actions cells - see
+    [`context/running-sql.md`](context/running-sql.md) and
+    [`context/actions-grid.md`](context/actions-grid.md);
+  - `77a072a4` mcp_plugin only: the test run kept off the developer's secret
+    store.
+- **The four untracked icons are NOT this session's** - they appeared in the
+  working tree during it and are the user's; left out of every commit.
+- Suite at this checkpoint: **1106 pass across 52 files**, `npm run pretest`
   (typecheck + eslint) and `npm run build` clean.
-- NOT clicked through in a running VS Code. Verified instead by driving
-  `SandboxApi` through the real SDK connector against the dev shell
-  (`/Users/mzinner/git/mariadb-shell/build/bin`, loading this repo's plugin
-  via `~/.mariadb-shell/plugins`): list, deploy, stop, start, delete, the
-  single-port listing, and `mcp_access=false` landing in the `gui` list.
+- NOT clicked through in a running VS Code: the Sandboxes view, the New
+  Sandbox dialog and the actions Copy menu. The server paths were verified
+  instead against the dev shell (`/Users/mzinner/git/mariadb-shell/build/bin`,
+  loading this repo's plugin via `~/.mariadb-shell/plugins`) through the real
+  SDK connector: sandbox list / deploy / stop / start / delete, `mcp_access`,
+  a view read (one call, logged as info) and a two-set CALL.
 
 ## Conventions
 

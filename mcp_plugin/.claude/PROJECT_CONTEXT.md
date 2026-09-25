@@ -23,9 +23,10 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **375 tests pass, 3 SKIPPED (~200s), 98% total coverage** (2115 statements,
-45 missed; re-measured at the 2026-09-25 checkpoint on a run with `.coverage` DELETED
-first — see the coverage trap in [`context/testing.md`](context/testing.md)). Of the
+Standard suite: **380 tests pass, 3 SKIPPED (~65s), 98% total coverage** (2126 statements,
+45 missed; re-measured at the second 2026-09-25 checkpoint on a run with `.coverage`
+DELETED first - ~65s since the run keeps its secrets in a plaintext file instead of the
+macOS keychain, see the isolation gotcha in `context/testing.md` — see the coverage trap in [`context/testing.md`](context/testing.md)). Of the
 three skipped, two are the OPT-IN end-to-end tests (`test_migration_e2e`,
 `test_a_sandbox_really_runs_a_downloaded_server`) and the third is environmental:
 `test_a_refusal_reaches_the_client_with_its_own_words` skips because the migration
@@ -68,41 +69,35 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-25):
+Checked at this checkpoint (2026-09-25, second of the day):
 
 ```
 $ git -C mcp_plugin branch --show-current
-wip/connection-folders
+wip/result-set-fixes-and-expansion
 
-$ git -C mcp_plugin status --short   (mcp_plugin's own lines; the rest is code_ext)
- M .claude/PROJECT_CONTEXT.md
- M .claude/context/sandbox.md
- M .claude/context/testing.md
- M lib/sandbox_functions.py
- M tests/unit/helpers.py
- M tests/unit/test_sandbox.py
+$ git -C mcp_plugin status --short   (mcp_plugin's own lines; none - the only
+                                      untracked files are four code_ext icons)
 ```
 
-- **The branch is `wip/connection-folders`** (it was `wip/code-ext` at the last
-  checkpoint), shared with [`code_ext`](../../code_ext); HEAD `486f30ed`.
-- **This session's work is UNCOMMITTED**, and lands with the extension's in one
-  commit when the user asks:
-  - `sandbox.list_instances(port=None)`: the instances in the DEFAULT sandbox path
-    only (the user's decision), `[{port, version, status}]` by port; with `port`,
-    that one instance or `[]`.
-  - `sandbox.deploy(..., mcp_access=True)`, advertised in `--gui` mode ONLY
-    (`_register_deploy` trims it from `__signature__` otherwise); False files the
-    sandbox's connection in the `gui` list. `sandbox.delete` now removes the
-    connection from both lists.
-  - `tests/unit/helpers.py` gained `list_tools` (schemas as advertised).
-  - All of it is in [`context/sandbox.md`](context/sandbox.md).
-- Suite at this checkpoint: **375 pass, 3 skipped, ~200s, 98% (2115 statements,
-  45 missed)**, `.coverage` deleted first. `lib/sandbox_functions.py` is 94%: the
-  6 missed lines are the `sandbox.start` / `sandbox.kill` bodies, uncovered before
-  this session too.
-- Two leftover test sandboxes (ports 49715/49740 under `$TMPDIR/mcp_sandbox_*`,
-  started 2026-09-20 by interrupted suite runs) were killed and removed at the
-  user's request. An interrupted run leaves its shared sandbox RUNNING - worth
-  checking `ps` for `mcp_sandbox_` after one.
+- **The branch is `wip/result-set-fixes-and-expansion`**, shared with
+  [`code_ext`](../../code_ext), pushed and in sync. It stacks on
+  `wip/ext-sandbox-support` (PR #29), which stacks on `wip/connection-folders`
+  (PR #28); no PR for it yet.
+- Its commits past #29's `0842eed9` (`sandbox.list_instances` and the
+  `--gui`-only `mcp_access`, see [`context/sandbox.md`](context/sandbox.md)):
+  - `32f0c23f` every result set of a statement read - `additional_result_sets`
+    after the first, both `db.execute_sql` and `db.execute_sql_script` (see
+    [`context/db-tools.md`](context/db-tools.md));
+  - `77a072a4` **the test run kept off the developer's secret store**:
+    `run_tests.py` sets the plaintext credential helper in the run's config home,
+    and the fixtures' backup keeps each connection's folder. Before it, every
+    suite run moved the developer's filed connections to the top level (see the
+    first gotcha in [`context/testing.md`](context/testing.md)).
+- Suite at this checkpoint: **380 pass, 3 skipped, ~65s, 98% (2126 statements, 45
+  missed)**, `.coverage` deleted first. The third skip is still the environmental
+  one: the migration tooling is not installed on this machine.
+- **Over the ~400-line split threshold and NOT split** (untouched this session, so
+  not read for a seam): `context/connections.md` (458), `context/history.md` (466,
+  an archive), `context/security-review.md` (402), `context/migrator.md` (401).
 - [`context/history.md`](context/history.md) is deliberately NOT updated, as by
   every session since `wip/sandbox-binaries`; this section is the current record.
