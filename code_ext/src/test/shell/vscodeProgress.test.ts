@@ -41,9 +41,23 @@ describe("createNotificationProgressHost", () => {
         expect(withProgressCalls[0].options).toEqual({
             location: ProgressLocation.Notification,
             title: "Installing MariaDB Shell 26.9.3",
-            cancellable: false,
+            cancellable: true,
         });
     });
+
+    it("aborts the task's signal when the notification is cancelled",
+        async () => {
+            const host = createNotificationProgressHost();
+
+            const aborted = await host.withProgress("Installing",
+                async (_report, signal) => {
+                    withProgressCalls[0].cancel();
+
+                    return await Promise.resolve(signal.aborted);
+                });
+
+            expect(aborted).toBe(true);
+        });
 
     it("forwards the reported messages", async () => {
         const host = createNotificationProgressHost();

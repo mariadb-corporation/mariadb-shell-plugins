@@ -59,12 +59,22 @@
       {
         "view": "mariadb.connections",
         "contents": "Looking for MariaDB connections...",
-        "when": "!mariadb.connectionsListed"
+        "when": "mariadb.connectionsView != installing && mariadb.connectionsView != failed && mariadb.connectionsView != listed"
+      },
+      {
+        "view": "mariadb.connections",
+        "contents": "Downloading and installing the MariaDB Shell, which this extension runs on. This happens once and can take a minute; the notification shows how far it has got.\n[Show Log](command:mariadb.showMcpServerLog)",
+        "when": "mariadb.connectionsView == installing"
+      },
+      {
+        "view": "mariadb.connections",
+        "contents": "The connections could not be listed, because the MariaDB Shell could not be installed or started. The log says why.\n[Show Log](command:mariadb.showMcpServerLog)\n[Retry](command:mariadb.restartMcpServer)",
+        "when": "mariadb.connectionsView == failed"
       },
       {
         "view": "mariadb.connections",
         "contents": "No MariaDB connections are configured yet.\nAdd one with the $(add) button in the toolbar of this view.",
-        "when": "mariadb.connectionsListed"
+        "when": "mariadb.connectionsView == listed"
       }
     ],
     "configuration": {
@@ -159,6 +169,18 @@
         "title": "Edit Connection",
         "category": "MariaDB",
         "icon": "$(edit)"
+      },
+      {
+        "command": "mariadb.retryConnection",
+        "title": "Retry",
+        "category": "MariaDB",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mariadb.copyConnectionUri",
+        "title": "Copy Connection URI",
+        "category": "MariaDB",
+        "icon": "$(copy)"
       },
       {
         "command": "mariadb.addConnection",
@@ -323,6 +345,21 @@
           "command": "mariadb.deleteConnection",
           "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
           "group": "3_manage@2"
+        },
+        {
+          "command": "mariadb.copyConnectionUri",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "4_clipboard@1"
+        },
+        {
+          "command": "mariadb.retryConnection",
+          "when": "view == mariadb.connections && viewItem == mariadbConnectionStatus.failed",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.retryConnection",
+          "when": "view == mariadb.connections && viewItem == mariadbConnectionStatus.failed",
+          "group": "1_connection@1"
         }
       ],
       "editor/title": [
@@ -415,6 +452,14 @@
         },
         {
           "command": "mariadb.deleteConnection",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.copyConnectionUri",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.retryConnection",
           "when": "false"
         }
       ]

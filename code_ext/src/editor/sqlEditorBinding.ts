@@ -22,6 +22,7 @@ import {
     stopOnError,
     STOP_ON_ERROR_CONTEXT_KEY,
 } from "../connections/settings.js";
+import { showErrorWithLog } from "../errorMessages.js";
 import {
     captionFor,
     describeRun,
@@ -488,7 +489,7 @@ export class SqlEditorBinding implements vscode.Disposable {
                 ? error.message
                 : String(error);
             this.log(`Failed to run the script on ${uri}: ${message}`);
-            void vscode.window.showErrorMessage(`MariaDB: ${message}`);
+            void showErrorWithLog(message);
             // Shown without an apply context: the failure happened
             // before there was anything editable to write back. It
             // closes off the run that was put up above - same id - so

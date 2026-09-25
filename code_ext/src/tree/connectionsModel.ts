@@ -42,6 +42,31 @@ export interface IConnectionNode {
     expandable: boolean;
 }
 
+/**
+ * How the tree's attempt to open a connection is going, while it is not
+ * open: `connecting` until the server answers, `failed` with the reason
+ * once it has refused.
+ */
+export interface IOpenAttempt {
+    state: "connecting" | "failed";
+    /** Why it failed; set only when it did. */
+    message?: string;
+}
+
+/**
+ * The one row a connection shows while its opening is under way or has
+ * failed, standing in for the schemas it does not have yet.
+ */
+export interface IConnectionStatusNode extends IOpenAttempt {
+    kind: "connectionStatus";
+    uri: string;
+    /**
+     * The row it sits under, as the tree holds it. A retry redraws that
+     * row, and VS Code knows a node by identity, not by value.
+     */
+    parent: IConnectionNode;
+}
+
 /** A schema of an open connection. */
 export interface ISchemaNode {
     kind: "schema";
@@ -71,6 +96,7 @@ export interface IObjectNode {
 
 export type ConnectionsNode =
     | IConnectionNode
+    | IConnectionStatusNode
     | ISchemaNode
     | IObjectGroupNode
     | IObjectNode;
@@ -99,10 +125,16 @@ export class ConnectionsModel {
      * @param connectOnOpen Whether expanding a closed connection opens it.
      *   Read on every call, because the setting behind it can change while
      *   the tree is up.
+     * @param openAttempt How the tree's attempt to open a connection is
+     *   going, by URI; undefined where none is under way or failed.
      */
     public constructor(
         private readonly connections: ConnectionManager,
         private readonly connectOnOpen: () => boolean,
+        private readonly openAttempt:
+            (uri: string) => IOpenAttempt | undefined = () => {
+                return undefined;
+            },
     ) { }
 
     /**
@@ -178,13 +210,28 @@ export class ConnectionsModel {
      *
      * @param node The connection node.
      *
-     * @returns Its schema nodes.
+     * @returns Its schema nodes, or the status of opening it while it is
+     *          not open.
      */
-    async #schemasOf(node: IConnectionNode): Promise<ISchemaNode[]> {
+    async #schemasOf(
+        node: IConnectionNode,
+    ): Promise<Array<ISchemaNode | IConnectionStatusNode>> {
         const connectionId = this.connections.connectionIdFor(
             node.uri, UI_BACKEND_SESSION);
         if (connectionId === undefined) {
-            return [];
+            // Not open yet: an attempt under way, or one that failed, is
+            // shown in place of the schemas - an expanded row with nothing
+            // under it looks like nothing is happening.
+            const attempt = this.openAttempt(node.uri);
+
+            return attempt === undefined
+                ? []
+                : [{
+                    kind: "connectionStatus",
+                    uri: node.uri,
+                    parent: node,
+                    ...attempt,
+                }];
         }
 
         const api = await this.connections.api();

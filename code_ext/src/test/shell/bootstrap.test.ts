@@ -62,13 +62,16 @@ const createRecordingProgress = (): ProgressHost & {
         messages,
         withProgress: async <T>(
             title: string,
-            task: (report: (message: string) => void) => Promise<T>,
+            task: (
+                report: (message: string) => void,
+                signal: AbortSignal,
+            ) => Promise<T>,
         ) => {
             titles.push(title);
 
             return await task((message) => {
                 messages.push(message);
-            });
+            }, new AbortController().signal);
         },
     };
 };
@@ -93,7 +96,7 @@ describe("ensureShell", () => {
         expect(result.location.source).toBe("path");
         // Nothing was downloaded.
         expect(runner.calls).toEqual([]);
-        expect(log.lines[0]).toContain("found on the PATH");
+        expect(log.lines.at(-1)).toContain("found on the PATH");
     });
 
     it("uses a local installation when the PATH has no usable shell",
@@ -184,7 +187,8 @@ describe("ensureShell", () => {
         expect(progress.messages).toContain(
             "Unpacking into /Users/mzinner/.local/share/mariadb-shell",
         );
-        expect(log.lines[0]).toContain("No MariaDB Shell 26.9.3 or newer");
+        expect(log.lines.join("\n"))
+            .toContain("No MariaDB Shell 26.9.3 or newer");
     });
 
     it("installs the shell when the PATH version is too old", async () => {
@@ -217,8 +221,54 @@ describe("ensureShell", () => {
             log: createRecordingLog(),
             minimumVersion: MINIMUM,
         })).rejects.toThrow(
-            "The MariaDB Shell installer exited with code 127.",
+            "MariaDB Shell 26.9.3 could not be installed: no curl "
+            + "(the installer exited with code 127).",
         );
+    });
+
+    it("says in the log where it looked and why nothing there would do",
+        async () => {
+            const environment = createFakeEnvironment({
+                env: { PATH: "/usr/bin:/opt/homebrew/bin" },
+                directories: { [PREFIX]: ["26.8.0", "26.9.3"] },
+                files: [MANAGED_BINARY],
+                versions: { "mariadb-shell": versionLine("26.9.1") },
+            });
+            const log = createRecordingLog();
+
+            await expect(ensureShell({
+                environment,
+                runner: createFakeRunner([], 0),
+                progress: createRecordingProgress(),
+                log,
+                minimumVersion: MINIMUM,
+            })).rejects.toThrow(/could be found afterwards in/);
+
+            const text = log.lines.join("\n");
+            expect(text).toContain(
+                "Looking for mariadb-shell on the PATH: "
+                + "/usr/bin:/opt/homebrew/bin");
+            expect(text).toContain("mariadb-shell on the PATH is 26.9.1, "
+                + "older than the 26.9.3 this extension needs; not used.");
+            expect(text).toContain("26.8.0 is older than 26.9.3; not used.");
+            expect(text).toContain(`${MANAGED_BINARY} could not be run; `
+                + "not used.");
+            expect(text).toContain("The installer exited with code 0");
+        });
+
+    it("says when it starts the installer", async () => {
+        const phases: string[] = [];
+
+        await expect(ensureShell({
+            environment: createFakeEnvironment(),
+            runner: createFakeRunner([], 1),
+            progress: createRecordingProgress(),
+            log: createRecordingLog(),
+            minimumVersion: MINIMUM,
+            onInstalling: () => { phases.push("installing"); },
+        })).rejects.toThrow();
+
+        expect(phases).toEqual(["installing"]);
     });
 
     it("uses the PowerShell installer on Windows", async () => {
@@ -252,6 +302,6 @@ describe("ensureShell", () => {
         })).rejects.toThrow();
 
         expect(runner.calls[0].args.at(-1))
-            .toContain("MARIADB_SHELL_TAG=v26.9.3");
+            .toContain("MARIADB_SHELL_TAG=v26.9.4");
     });
 });

@@ -23,6 +23,7 @@ import type {
 } from "../../tree/connectionsModel.js";
 import { createTreeItem, type IconResolver } from "../../tree/treeItems.js";
 import {
+    ThemeColor,
     ThemeIcon,
     TreeItemCollapsibleState,
     Uri,
@@ -56,14 +57,48 @@ const connection = (
 };
 
 describe("createTreeItem for a connection", () => {
-    it("shows the URI with the seal icon", () => {
+    it("shows a URI without a scheme with the MariaDB icon", () => {
+        // One stored before the scheme was kept, which means mariadb://.
         const item = createTreeItem(connection(), resolveIcon);
 
         expect(item.label).toBe("dba@localhost:3310");
         expect(item.iconPath).toEqual({
-            light: Uri.file("/ext/images/light/mariadbConnection.svg"),
-            dark: Uri.file("/ext/images/dark/mariadbConnection.svg"),
+            light: Uri.file("/ext/images/light/connectionMariaDB.svg"),
+            dark: Uri.file("/ext/images/dark/connectionMariaDB.svg"),
         });
+    });
+
+    it("picks the icon by scheme and leaves the scheme out of the label",
+        () => {
+            for (const [scheme, icon] of [
+                ["mariadb", "connectionMariaDB.svg"],
+                ["mariadb+ssh", "connectionMariaDBSSH.svg"],
+                ["mysql", "connectionMySQL.svg"],
+                ["mysql+ssh", "connectionMySQLSSH.svg"],
+                ["mysqlx", "connectionMySQL.svg"],
+                ["MySQL+SSH", "connectionMySQLSSH.svg"],
+            ]) {
+                const item = createTreeItem(
+                    connection({ uri: `${scheme}://dba@localhost:3310` }),
+                    resolveIcon,
+                );
+
+                expect(item.label).toBe("dba@localhost:3310");
+                expect(item.iconPath).toEqual({
+                    light: Uri.file(`/ext/images/light/${icon}`),
+                    dark: Uri.file(`/ext/images/dark/${icon}`),
+                });
+            }
+        });
+
+    it("shows the port and schema but not the options", () => {
+        const uri = "mariadb+ssh://dba@db:3310/world"
+            + "?ssh-host=bastion&ssl-mode=REQUIRED";
+        const item = createTreeItem(connection({ uri }), resolveIcon);
+
+        expect(item.label).toBe("dba@db:3310/world");
+        // The tooltip is where the whole of it is still to be read.
+        expect(item.tooltip).toBe(uri);
     });
 
     it("has no twistie where the model says it has nothing to show", () => {
@@ -251,5 +286,41 @@ describe("createTreeItem for an object", () => {
             .tooltip).toBe("Cities");
         expect(createTreeItem(object({ comment: "" }), resolveIcon).tooltip)
             .toBeUndefined();
+    });
+});
+
+describe("createTreeItem for a connection's status", () => {
+    const parent = connection({ connected: false, expandable: true });
+
+    it("spins while the connection opens", () => {
+        const item = createTreeItem({
+            kind: "connectionStatus",
+            uri: parent.uri,
+            parent,
+            state: "connecting",
+        }, resolveIcon);
+
+        expect(item.label).toBe("Connecting...");
+        expect(item.iconPath).toEqual(new ThemeIcon("loading~spin"));
+        expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
+        expect(item.contextValue).toBe("mariadbConnectionStatus.connecting");
+    });
+
+    it("shows the reason's first line with the error icon", () => {
+        const item = createTreeItem({
+            kind: "connectionStatus",
+            uri: parent.uri,
+            parent,
+            state: "failed",
+            message: "  Access denied for user 'dba'  \nat line 2",
+        }, resolveIcon);
+
+        expect(item.label).toBe("Access denied for user 'dba'");
+        expect(item.tooltip)
+            .toBe("  Access denied for user 'dba'  \nat line 2");
+        expect(item.iconPath).toEqual(
+            new ThemeIcon("error", new ThemeColor("errorForeground")));
+        // What puts the Retry button beside it.
+        expect(item.contextValue).toBe("mariadbConnectionStatus.failed");
     });
 });

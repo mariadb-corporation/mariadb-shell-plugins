@@ -85,3 +85,24 @@ as zero sized - so a test that needs a size states it itself, as
 
 The problem matcher parses esbuild's `<abs path>:<line>:<col>: ERROR: msg`
 form, which is uppercase and absolute - hence `fileLocation: "absolute"`.
+
+## F5 hangs with "Extension host did not start in 10 seconds"
+
+That line, in the development window's `renderer.log`, together with
+`Could not connect to debug target at http://localhost:<port>` from
+`ms-vscode.js-debug` in the launching window's, means the debugger never
+attached to the `--inspect-brk` extension host. None of the extension ran:
+there is no MariaDB output channel and no install progress. It is not the
+shell download - check the logs under
+`~/Library/Application Support/Code/logs/<session>/window*/renderer.log`
+before looking at `src/shell/`.
+
+Seen on **VS Code 1.139.0** (js-debug 1.117.0): a known regression,
+[vscode-js-debug#2420](https://github.com/microsoft/vscode-js-debug/issues/2420).
+js-debug probes `127.0.0.1` and `[::1]` in parallel; the inspector listens
+on IPv4 only, the IPv6 refusal comes back first as an error type it does
+not expect, and that cancels the IPv4 probe that would have worked. No
+launch.json setting avoids it. The fix used on 2026-09-24 was going back
+to 1.138.0 (`https://update.code.visualstudio.com/1.138.0/darwin-arm64/stable`)
+with `"update.mode": "none"`; Run Without Debugging (Ctrl+F5) also works
+on 1.139.0, since nothing waits for a debugger.

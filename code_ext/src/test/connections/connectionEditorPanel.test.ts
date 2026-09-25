@@ -30,6 +30,7 @@ import type {
 } from "../../connections/editorProtocol.js";
 import {
     MockWebview,
+    env,
     resetVscodeMock,
     Uri,
     webviewPanels,
@@ -293,6 +294,21 @@ describe("ConnectionEditorPanel", () => {
         expect(api.added).toEqual([]);
         expect(api.updated).toEqual([]);
         expect(currentPanel().disposed).toBe(true);
+    });
+
+    it("hands the webview the clipboard when asked to paste", async () => {
+        // The webview cannot read the clipboard on a button press itself.
+        const { host } = createHost();
+        env.clipboard.text = "mariadb://dba@db:3310/world";
+
+        ConnectionEditorPanel.show(extensionUri as never, host);
+        await receive({ type: "ready" });
+        await receive({ type: "paste" });
+
+        expect(posted().at(-1)).toEqual({
+            type: "clipboard", text: "mariadb://dba@db:3310/world",
+        });
+        expect(currentPanel().disposed).toBe(false);
     });
 
     it("lets a new panel open after the last one was closed", () => {
