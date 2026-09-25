@@ -121,6 +121,124 @@ async def _db_flow(uri, script_dir):
             assert isinstance(entry["execution_time"], float)
             assert entry["execution_time"] >= 0
 
+        # Every column says its type, a BLOB told from a VARBINARY by its flag.
+        typed_payload = helpers.tool_payload(
+            await call(
+                "db.execute_sql",
+                {
+                    "connection_id": connection_id,
+                    "sql": (
+                        "SELECT 1 AS i, 'x' AS s, x'00ff' AS h, "
+                        "JSON_OBJECT('a', 1) AS j, "
+                        "ST_GeomFromText('POINT(1 1)') AS g"
+                    ),
+                },
+            )
+        )
+        assert typed_payload["column_types"] == [
+            "INTEGER", "STRING", "BYTES", "JSON", "GEOMETRY",
+        ]
+        assert typed_payload["rows"][0]["h"] == "00ff"
+        await call(
+            "db.execute_sql_script",
+            {
+                "connection_id": connection_id,
+                "sql_script": (
+                    f"CREATE TABLE `{schema}`.`blobs` "
+                    "(id INT PRIMARY KEY, b BLOB, vb VARBINARY(255));"
+                    f"INSERT INTO `{schema}`.`blobs` VALUES (1, 'a', 'b');"
+                ),
+            },
+        )
+        blob_payload = helpers.tool_payload(
+            await call(
+                "db.execute_sql",
+                {
+                    "connection_id": connection_id,
+                    "sql": f"SELECT b, vb FROM `{schema}`.`blobs`",
+                },
+            )
+        )
+        assert blob_payload["column_types"] == ["BLOB", "BYTES"]
+        await call(
+            "db.execute_sql",
+            {
+                "connection_id": connection_id,
+                "sql": f"DROP TABLE `{schema}`.`blobs`",
+            },
+        )
+
+        # Paging: a limit makes each SELECT come back a page at a time, with
+        # has_more_pages saying whether there is another, and the extra row
+        # asked for to find that out is not among the rows returned.
+        paged_result = await call(
+            "db.execute_sql_script",
+            {
+                "connection_id": connection_id,
+                "sql_script": (
+                    f"SELECT id FROM `{schema}`.`items` ORDER BY id;"
+                    f"SELECT id FROM `{schema}`.`items` ORDER BY id LIMIT 3;"
+                ),
+                "limit": 2,
+            },
+        )
+        paged = helpers.tool_payload(paged_result)
+        assert [row["id"] for row in paged[0]["rows"]] == [1, 2]
+        assert paged[0]["has_more_pages"] is True
+        # A LIMIT of its own: run as written, nothing to page.
+        assert len(paged[1]["rows"]) == 3
+        assert "has_more_pages" not in paged[1]
+
+        last_page = helpers.tool_payload(
+            await call(
+                "db.execute_sql",
+                {
+                    "connection_id": connection_id,
+                    "sql": f"SELECT id FROM `{schema}`.`items` ORDER BY id",
+                    "limit": 2,
+                    "offset": 2,
+                },
+            )
+        )
+        assert [row["id"] for row in last_page["rows"]] == [3]
+        assert last_page["has_more_pages"] is False
+
+        # Every form that is given a LIMIT is one the server accepts with it,
+        # and every form left alone still runs - a real server is the only
+        # judge of either.
+        forms = [
+            "SELECT 1 UNION SELECT 2",
+            "(SELECT 1) UNION (SELECT 2)",
+            "WITH c AS (SELECT 1 AS a) SELECT * FROM c",
+            f"SELECT * FROM (SELECT id FROM `{schema}`.`items` LIMIT 2) AS d",
+            f"SELECT id, ROW_NUMBER() OVER w FROM `{schema}`.`items` "
+            "WINDOW w AS (ORDER BY id)",
+            # The newline keeps the delimiter the forms are joined with out
+            # of the comment, which would otherwise run on into the next.
+            f"SELECT id FROM `{schema}`.`items` -- trailing comment\n",
+            f"SELECT id FROM `{schema}`.`items` FOR UPDATE",
+            f"SELECT id FROM `{schema}`.`items` LOCK IN SHARE MODE",
+            f"SELECT id INTO @paging_probe FROM `{schema}`.`items` LIMIT 1",
+            f"SELECT id FROM `{schema}`.`items` ORDER BY id "
+            "FETCH FIRST 1 ROWS ONLY",
+        ]
+        forms_result = await call(
+            "db.execute_sql_script",
+            {
+                "connection_id": connection_id,
+                "sql_script": ";\n".join(forms) + ";",
+                "limit": 1,
+                "stop_on_error": False,
+            },
+        )
+        form_entries = helpers.tool_payload(forms_result)
+        assert [entry.get("error") for entry in form_entries] == [None] * len(
+            forms
+        )
+        assert [entry.get("has_more_pages") for entry in form_entries] == [
+            True, True, False, True, True, True, None, None, None, None,
+        ]
+
         # A whole-line comment is not a statement to run. The shell's splitter
         # returns one as a statement of its own and the server accepts it as a
         # query rather than rejecting it, so this is asserted against a real
@@ -678,6 +796,7 @@ async def _db_flow(uri, script_dir):
                     {
                         "columns": ["letter", "answer"],
                         "rows": [{"letter": "x", "answer": 42}],
+                        "column_types": ["STRING", "INTEGER"],
                     }
                 ]
 
