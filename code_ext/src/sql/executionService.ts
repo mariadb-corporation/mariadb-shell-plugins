@@ -18,6 +18,7 @@
 import type {
     IColumnDetails,
     IMariaDbApi,
+    IResultSetData,
     IStatementResult,
 } from "../mcp/types.js";
 import type {
@@ -29,6 +30,7 @@ import type {
     ActionSeverity,
     RowChange,
 } from "../webview/protocol.js";
+import { OBJECT_NOT_FOUND } from "../mcp/protocol.js";
 import { createQueryBuilder } from "./resultSetQueryBuilder.js";
 import { splitStatements } from "./splitStatements.js";
 import { findUpdatableTarget } from "./statementTarget.js";
@@ -45,6 +47,12 @@ export const describeResult = (result: IStatementResult): string => {
     const warnings = warningCount > 0
         ? `, ${warningCount} warning${warningCount === 1 ? "" : "s"}`
         : "";
+
+    // Each set has a row of its own under this one saying what is in it.
+    const sets = 1 + (result.additional_result_sets?.length ?? 0);
+    if (result.rows && sets > 1) {
+        return `${sets} result sets${warnings}`;
+    }
 
     if (result.rows) {
         const count = result.rows.length;
@@ -94,6 +102,27 @@ export const warningRowsOf = (
                 : "warning",
         };
     });
+};
+
+/**
+ * @param count How many rows a result set has.
+ *
+ * @returns `1 row in set`, `4 rows in set`.
+ */
+const rowsInSet = (count: number): string => {
+    return `${count} row${count === 1 ? "" : "s"} in set`;
+};
+
+/**
+ * Whether a statement calls a stored procedure, whose result sets are
+ * whatever it chose to SELECT: none of them is a table's rows to edit.
+ *
+ * @param statement The statement, comments and all.
+ *
+ * @returns True for a CALL.
+ */
+export const isProcedureCall = (statement: string): boolean => {
+    return /^call\b/i.test(dropLeadingComments(statement).trimStart());
 };
 
 /**
@@ -548,6 +577,41 @@ export class ExecutionService {
             );
             resultSets.push(resultSet);
 
+            // A procedure's other result sets: a tab each, and a row each
+            // under the statement's, beside its warnings, saying what is in
+            // it and jumping to it. The first set gets one too, so every
+            // set is a row away.
+            const extra = result.additional_result_sets ?? [];
+            const setRows: IActionRow[] = [];
+            if (extra.length > 0) {
+                const sets: IResultSetData[] = [
+                    { columns: result.columns, rows: result.rows ?? [] },
+                    ...extra,
+                ];
+                for (const [position, set] of sets.entries()) {
+                    const shown = position === 0
+                        ? resultSet
+                        : this.#procedureResultSet(statement, set,
+                            resultSets.length, runId);
+                    if (position > 0) {
+                        resultSets.push(shown);
+                    }
+                    setRows.push({
+                        id: `${id}-set-${position}`,
+                        time: startedAt,
+                        connection: connectionUri,
+                        connectionLabel,
+                        role: "statement",
+                        statement: shown.caption,
+                        message: rowsInSet(set.rows.length),
+                        kind: "info",
+                        source,
+                        resultId: shown.id,
+                    });
+                }
+            }
+            const nested = [...setRows, ...warnings];
+
             children.push({
                 id,
                 time: startedAt,
@@ -560,7 +624,7 @@ export class ExecutionService {
                 elapsedMs,
                 source,
                 resultId: resultSet.id,
-                ...(warnings.length > 0 ? { children: warnings } : {}),
+                ...(nested.length > 0 ? { children: nested } : {}),
             });
         }
 
@@ -659,6 +723,14 @@ export class ExecutionService {
             status,
         };
 
+        if (isProcedureCall(statement)) {
+            return {
+                ...base,
+                readOnlyReason:
+                    "Read only: the result set of a stored procedure.",
+            };
+        }
+
         const target = findUpdatableTarget(statement);
         if (!target) {
             return {
@@ -679,6 +751,11 @@ export class ExecutionService {
             };
         }
 
+        // Asked as a table outright: the common case costs one call. A view
+        // - mysql.user is one - is found out by the answer being no such
+        // table, which the activity log reports as that answer rather than
+        // as an error. Nothing more is asked about a view: its columns
+        // would only give the header tooltips their types.
         let details;
         try {
             details = await this.api.getObjectDetails(
@@ -687,18 +764,21 @@ export class ExecutionService {
                 target.table,
                 "table",
             );
-        } catch {
-            // A view, a temporary table or a table in another schema than
-            // the one guessed: the grid simply stays read only.
+        } catch (error) {
+            const text = error instanceof Error ? error.message : String(error);
+
             return {
                 ...base,
-                readOnlyReason:
-                    `Read only: the columns of ${target.table} could not `
+                readOnlyReason: OBJECT_NOT_FOUND.test(text)
+                    ? `Read only: ${schema}.${target.table} is not a table - `
+                    + "a view, say."
+                    : `Read only: the columns of ${target.table} could not `
                     + "be looked up.",
             };
         }
 
         const columns = mapColumns(labels, details.columns);
+
         const hasKey = columns.some((column) => {
             return column.isPrimary;
         });
@@ -718,6 +798,35 @@ export class ExecutionService {
             columns,
             target: { schema, table: target.table },
             editable: true,
+        };
+    }
+
+    /**
+     * A result set a procedure returned after its first: read only, and
+     * captioned as the next result along.
+     *
+     * @param statement The CALL that returned it.
+     * @param set Its columns and rows.
+     * @param ordinal The index of this result set among the run's.
+     * @param runId The run it belongs to.
+     *
+     * @returns The result set to show.
+     */
+    #procedureResultSet(
+        statement: string,
+        set: IResultSetData,
+        ordinal: number,
+        runId: string,
+    ): IResultSet {
+        return {
+            id: `${runId}-result-${ordinal}`,
+            caption: `Result #${ordinal + 1}`,
+            statement,
+            columns: mapColumns(set.columns),
+            rows: set.rows,
+            editable: false,
+            status: rowsInSet(set.rows.length),
+            readOnlyReason: "Read only: the result set of a stored procedure.",
         };
     }
 

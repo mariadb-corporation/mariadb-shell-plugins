@@ -24,6 +24,7 @@ import {
     describeRun,
     dropLeadingComments,
     ExecutionService,
+    isProcedureCall,
     mapColumns,
     pendingRunRow,
 } from "../../sql/executionService.js";
@@ -166,6 +167,19 @@ describe("dropLeadingComments", () => {
 
     it("leaves a bare -- alone, which is a subtraction", () => {
         expect(dropLeadingComments("--2 + 3")).toBe("--2 + 3");
+    });
+});
+
+describe("isProcedureCall", () => {
+    it("knows a CALL, in any case and after comments", () => {
+        expect(isProcedureCall("CALL p()")).toBe(true);
+        expect(isProcedureCall("call world.p")).toBe(true);
+        expect(isProcedureCall("-- run it\n/* twice */ CALL p()")).toBe(true);
+    });
+
+    it("knows what is not one", () => {
+        expect(isProcedureCall("SELECT caller FROM t")).toBe(false);
+        expect(isProcedureCall("CALLER()")).toBe(false);
     });
 });
 
@@ -536,8 +550,9 @@ describe("ExecutionService.execute", () => {
             });
 
         expect(report.resultSets[0].editable).toBe(false);
+        // No such table, as the server words it: a view, or gone.
         expect(report.resultSets[0].readOnlyReason)
-            .toContain("could not be looked up");
+            .toBe("Read only: world.mystery is not a table - a view, say.");
     });
 
     it("stays read only when the primary key was not selected", async () => {
@@ -1217,5 +1232,138 @@ describe("ExecutionService.applyChanges", () => {
         await expect(new ExecutionService(api).applyChanges("id", set, [
             { kind: "delete", rowIndex: 0, keys: { ID: 1 } },
         ])).rejects.toThrow(/not bound to a single table/);
+    });
+});
+
+
+describe("ExecutionService looking up where a SELECT read from", () => {
+    const rows = {
+        affected_items_count: 0,
+        warnings_count: 0,
+        columns: ["Host", "User"],
+        rows: [{ Host: "localhost", User: "root" }],
+    };
+
+    const run = async (
+        api: ReturnType<typeof createFakeApi>,
+        script: string,
+    ): Promise<IExecutionReport> => {
+        return await new ExecutionService(api).execute({
+            connectionUri: "mariadb://root@127.0.0.1:3311",
+            connectionId: "id",
+            script,
+            runId: "run1",
+        });
+    };
+
+    it("finds a view out by asking for a table, in one call", async () => {
+        // mysql.user has been a view since MariaDB 10.4.
+        const api = createFakeApi({ defaultResults: [rows] });
+
+        const [set] = (await run(api, "SELECT * FROM mysql.user;")).resultSets;
+
+        expect(api.lookups).toEqual(["mysql.user:table"]);
+        expect(set!.editable).toBe(false);
+        expect(set!.readOnlyReason)
+            .toBe("Read only: mysql.user is not a table - a view, say.");
+        expect(set!.columns.map((col) => { return col.name; }))
+            .toEqual(["Host", "User"]);
+        // Nothing else was asked on the way.
+        expect(api.scripts.some((script) => {
+            return script.includes("information_schema");
+        })).toBe(false);
+    });
+
+    it("says it could not look a table up when the lookup itself failed",
+        async () => {
+            const api = createFakeApi({ defaultResults: [rows] });
+            api.getObjectDetails = () => {
+                return Promise.reject(new Error("The connection was closed."));
+            };
+
+            const [set] = (await run(api, "SELECT * FROM world.city;"))
+                .resultSets;
+
+            expect(set!.readOnlyReason)
+                .toBe("Read only: the columns of city could not be looked up.");
+        });
+});
+
+describe("ExecutionService with a stored procedure", () => {
+    const call = (
+        extra: Array<{ columns: string[]; rows: Array<Record<string, unknown>> }>,
+    ) => {
+        return [{
+            affected_items_count: 0,
+            warnings_count: 0,
+            statement_index: 0,
+            columns: ["id"],
+            rows: [{ id: 1 }, { id: 2 }],
+            ...(extra.length > 0 ? { additional_result_sets: extra } : {}),
+        }];
+    };
+
+    it("shows every result set a CALL returned, each a row away",
+        async () => {
+            const api = createFakeApi({
+                defaultResults: call([
+                    { columns: ["letter"], rows: [{ letter: "x" }] },
+                    { columns: ["n"], rows: [] },
+                ]),
+            });
+
+            const report = await new ExecutionService(api).execute({
+                connectionUri: "dba@h",
+                connectionId: "id",
+                script: "CALL world.three_sets();",
+                runId: "run1",
+            });
+
+            expect(report.resultSets.map((set) => {
+                return [set.caption, set.rows.length, set.editable];
+            })).toEqual([
+                ["Result #1", 2, false],
+                ["Result #2", 1, false],
+                ["Result #3", 0, false],
+            ]);
+            expect(new Set(report.resultSets.map((set) => {
+                return set.readOnlyReason;
+            }))).toEqual(new Set([
+                "Read only: the result set of a stored procedure.",
+            ]));
+
+            const statement = report.actions[0]!.children![0]!;
+            expect(statement.message).toBe("3 result sets");
+            expect(statement.resultId).toBe(report.resultSets[0]!.id);
+            expect(statement.children!.map((row) => {
+                return [row.statement, row.message, row.resultId];
+            })).toEqual(report.resultSets.map((set) => {
+                return [set.caption, `${set.rows.length} row`
+                    + `${set.rows.length === 1 ? "" : "s"} in set`, set.id];
+            }));
+
+            // No table was looked for, and so nothing failed on the way.
+            expect(api.lookups).toEqual([]);
+            expect(api.scripts.some((script) => {
+                return script.includes("information_schema");
+            })).toBe(false);
+        });
+
+    it("keeps a CALL with one result set to a single row", async () => {
+        const api = createFakeApi({ defaultResults: call([]) });
+
+        const report = await new ExecutionService(api).execute({
+            connectionUri: "dba@h",
+            connectionId: "id",
+            script: "CALL world.one_set();",
+            runId: "run1",
+        });
+
+        expect(report.resultSets).toHaveLength(1);
+        expect(report.resultSets[0]!.readOnlyReason)
+            .toBe("Read only: the result set of a stored procedure.");
+        const statement = report.actions[0]!.children![0]!;
+        expect(statement.message).toBe("2 rows in set");
+        expect(statement.children).toBeUndefined();
     });
 });

@@ -238,6 +238,23 @@ carry `treeToggle` rather than Tabulator's own class. And the overflow
 popup hangs off the body rather than off the cell, so its copy button
 is not a click on the row either.
 
+### Right-click copies a cell
+
+VS Code puts a Cut / Copy / Paste menu on every webview, and its Copy acts
+on the text SELECTION - clicking a grid cell selects nothing, so it copied
+nothing. Tabulator's `cellContext` now opens `contextMenu.ts`'s menu
+instead: one item, **Copy**, for that cell's text as shown
+(`cellCopyText`: the message, `timeOf`, `informationOf`, the connection
+label), through the same `copyToClipboard` message. Its `preventDefault()`
+is what keeps VS Code's menu away - the webview shows it only for an
+unhandled event. One menu for the page, positioned at the pointer inside
+the window (`menuPosition`), in the `--vscode-menu-*` colours; Escape, a
+click elsewhere, a scroll, a resize or a blur closes it, and the grid's
+teardown does too. An empty cell's Copy is disabled. The result grids
+still get VS Code's own menu. Not yet seen in a running VS Code - jsdom
+cannot build Tabulator, so the wiring is untested there; the menu and
+`cellCopyText` are tested directly.
+
 The error bar above the content follows the same reading: `errorsOf()`
 looks at the **newest thing that happened** and reports what each of its
 failing statements said, not the run's count of errors. A run that

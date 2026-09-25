@@ -188,6 +188,8 @@ export interface FakeApi extends IMariaDbApi {
     }>;
     /** What the last script was asked to do about a failing statement. */
     stopOnError?: boolean;
+    /** Every `getObjectDetails` call, as `schema.name:type`. */
+    lookups: string[];
 }
 
 /**
@@ -209,6 +211,7 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
 
     const api: FakeApi = {
         scripts,
+        lookups: [],
         closed,
         added,
         deleted,
@@ -321,12 +324,24 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             );
         },
 
-        getObjectDetails: (_id: string, schema: string, name: string) => {
+        getObjectDetails: (
+            _id: string,
+            schema: string,
+            name: string,
+            objectType: string,
+        ) => {
+            api.lookups.push(`${schema}.${name}:${objectType}`);
             const details = options.details?.[`${schema}.${name}`];
-            if (!details) {
-                return Promise.reject(
-                    new Error(`No table '${name}' in schema '${schema}'.`),
-                );
+            // Asked for as the wrong kind, the server finds nothing either.
+            if (!details || (details.basic.type ?? "table") !== objectType) {
+                // Worded as the server words it, which is what tells a
+                // view apart from a failure.
+                return Promise.reject(new Error(
+                    `Error executing tool db.get_object_details: Shell `
+                    + `Error: No ${objectType} '${name}' found in schema `
+                    + `'${schema}'. Use db.list_objects to list the `
+                    + `${objectType}s of a schema.`,
+                ));
             }
 
             return Promise.resolve(details);
@@ -339,6 +354,7 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
         ) => {
             scripts.push(script);
             api.stopOnError = stopOnError;
+
             const named = options.results?.[script.trim()];
 
             return Promise.resolve(

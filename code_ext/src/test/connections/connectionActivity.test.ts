@@ -148,13 +148,32 @@ describe("createLoggingApi", () => {
     });
 
     it("reports a call that failed, and still raises it", async () => {
-        const { logging, reported } = createLogging();
+        const { api, logging, reported } = createLogging();
+        api.getObjectDetails = () => {
+            return Promise.reject(new Error("The connection was closed."));
+        };
 
         await expect(logging.getObjectDetails(
-            "uuid-dba", "world", "nope", "table")).rejects.toThrow();
+            "uuid-dba", "world", "city", "table")).rejects.toThrow();
 
-        expect(reported[0].error).toBe("No table 'nope' in schema 'world'.");
+        expect(reported[0].error).toBe("The connection was closed.");
     });
+
+    it("reports no such object as the answer it is, not as an error",
+        async () => {
+            // How a SELECT on a view - mysql.user - is found out to be no
+            // table: the lookup is how the question is asked.
+            const { logging, reported } = createLogging();
+
+            await expect(logging.getObjectDetails(
+                "uuid-dba", "world", "nope", "table")).rejects.toThrow(
+                "No table 'nope' found in schema 'world'");
+
+            expect(reported).toHaveLength(1);
+            expect(reported[0]!.error).toBeUndefined();
+            expect(reported[0]!.message).toBe("No table world.nope");
+            expect(activityRow(reported[0]!, "e1").kind).toBe("info");
+        });
 
     it("times what it reports", async () => {
         const { logging, reported } = createLogging();

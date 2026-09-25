@@ -1308,6 +1308,46 @@ def _unique_column_labels(columns) -> list:
     return labels
 
 
+def _read_result_set(result) -> dict:
+    """Reads the result set a result is on now: its columns and every row.
+
+    Args:
+        result: The result object returned by ``session.run_sql``, on a
+            result set that has data.
+
+    Returns:
+        A dict with the column labels (columns) and the rows (rows), each row
+        a dict keyed by those labels.
+    """
+    columns = _unique_column_labels(result.get_columns())
+    rows = []
+    for row in result.fetch_all():
+        item = {}
+        # Read by POSITION, not by label. Asking for a field by name cannot
+        # reach the second of two columns that share one - it answers with
+        # the first every time - so a value would be lost before there was
+        # anything to key it on.
+        for index, column in enumerate(columns):
+            value = row[index]
+            # Values that are not natively JSON-serializable have to be
+            # converted, as the tool result is returned as JSON. The shell
+            # hands the types that have no JSON equivalent of their own -
+            # decimals, dates and times - back as text already, so only
+            # binary data needs converting; anything else the shell might
+            # return in a type of its own falls back to its text form
+            # rather than failing to serialize.
+            if isinstance(value, (bytes, bytearray)):
+                value = value.hex()
+            elif value is not None and not isinstance(
+                value, (bool, int, float, str)
+            ):
+                value = str(value)
+            item[column] = value
+        rows.append(item)
+
+    return {"columns": columns, "rows": rows}
+
+
 def _serialize_result(
     result,
     session_restarted: bool = False,
@@ -1328,6 +1368,9 @@ def _serialize_result(
 
     Returns:
         A dict with the result set (columns and rows) and execution metadata.
+        A statement that returned more than one result set - a CALL of a
+        procedure that runs several SELECTs - has its first as columns and
+        rows and the others, in order, as additional_result_sets.
     """
     output = {
         "affected_items_count": result.affected_items_count,
@@ -1346,34 +1389,25 @@ def _serialize_result(
     if session_restarted:
         output["session_restarted"] = True
 
-    if result.has_data():
-        columns = _unique_column_labels(result.get_columns())
-        rows = []
-        for row in result.fetch_all():
-            item = {}
-            # Read by POSITION, not by label. Asking for a field by name cannot
-            # reach the second of two columns that share one - it answers with
-            # the first every time - so a value would be lost before there was
-            # anything to key it on.
-            for index, column in enumerate(columns):
-                value = row[index]
-                # Values that are not natively JSON-serializable have to be
-                # converted, as the tool result is returned as JSON. The shell
-                # hands the types that have no JSON equivalent of their own -
-                # decimals, dates and times - back as text already, so only
-                # binary data needs converting; anything else the shell might
-                # return in a type of its own falls back to its text form
-                # rather than failing to serialize.
-                if isinstance(value, (bytes, bytearray)):
-                    value = value.hex()
-                elif value is not None and not isinstance(
-                    value, (bool, int, float, str)
-                ):
-                    value = str(value)
-                item[column] = value
-            rows.append(item)
-        output["columns"] = columns
-        output["rows"] = rows
+    # A statement can return several result sets - a CALL returns one per
+    # SELECT the procedure runs, then a status that carries none - and every
+    # one of them is read. The first stays where a single statement's has
+    # always been, so a client that knows nothing of the rest still reads it;
+    # the others follow in order. Reading only the first would drop the rest
+    # without a word.
+    result_sets = []
+    while True:
+        if result.has_data():
+            result_sets.append(_read_result_set(result))
+        next_result = getattr(result, "next_result", None)
+        if next_result is None or not next_result():
+            break
+
+    if result_sets:
+        output["columns"] = result_sets[0]["columns"]
+        output["rows"] = result_sets[0]["rows"]
+    if len(result_sets) > 1:
+        output["additional_result_sets"] = result_sets[1:]
 
     # Counted and read only NOW, after the rows above have been fetched. This
     # is mysql_warning_count, which for a statement that returns a result set
@@ -2291,6 +2325,9 @@ def register_db_tools(server, function_groups=()) -> None:
             Where a query selects two columns with the same label - joining two
             tables that both have an id, say - the later one is listed and keyed
             as label_2 (then _3, and so on), so that no column is lost.
+            A CALL of a procedure that returns several result sets has its
+            first as columns and rows and the others, in order, as
+            additional_result_sets - a list of dicts with columns and rows.
 
             warnings_count is how many warnings the statement produced, and
             warnings - present only when there were any - lists them, each
@@ -2352,7 +2389,10 @@ def register_db_tools(server, function_groups=()) -> None:
             columns sharing one label are keyed apart as label and label_2, as
             for db.execute_sql. Each entry also carries warnings_count, and
             warnings - the level, code and message of each - where the
-            statement produced any.
+            statement produced any. A statement that returned several result
+            sets - a CALL of a procedure that runs more than one SELECT - has
+            the first as columns and rows and the others, in order, as
+            additional_result_sets (a list of dicts with columns and rows).
 
             A statement that is nothing but a -- or # line comment is NOT run
             and has no entry, since it carries no SQL. It still takes up a

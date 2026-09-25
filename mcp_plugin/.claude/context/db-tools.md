@@ -9,6 +9,15 @@ handling are in [connections.md](connections.md).
 
 ## Architecture / key decisions
 
+- **Every result set of a statement is read** (`_serialize_result` loops
+  `result.next_result()`, `_read_result_set` reads one). A CALL returns one
+  set per SELECT the procedure runs, then a status with none. The FIRST
+  stays in `columns`/`rows`, so a client that knows nothing more still reads
+  it; the rest go, in order, in `additional_result_sets` (`[{columns,
+  rows}]`), present only when there is more than one. Before, only the first
+  was read and the rest silently dropped (the next statement still ran:
+  the shell drains them). `getattr` guards `next_result` for results that
+  have none. Verified live against a sandbox, through both tools.
 - **SQL exec**: `db.execute_sql` = single statement (+ optional `?` params, one result
   dict). `db.execute_sql_script` = multi-statement via `mysqlsh.mysql.split_script()`,
   returns a LIST; accepts `sql_script` XOR `file_path` (file must be an allowed path).

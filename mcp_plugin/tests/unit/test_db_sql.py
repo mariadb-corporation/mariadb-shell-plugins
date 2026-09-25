@@ -640,6 +640,55 @@ async def _db_flow(uri, script_dir):
             )
             one_rows = helpers.tool_payload(one_result)["rows"]
             assert len(one_rows) == 1 and one_rows[0]["name"] == "b"
+
+            # A procedure that runs two SELECTs returns two result sets from
+            # one CALL. The first is where a single statement's has always
+            # been; the second follows it rather than being dropped.
+            procedure_result = await call(
+                "db.execute_sql",
+                {
+                    "connection_id": connection_id,
+                    "sql": (
+                        f"CREATE PROCEDURE `{schema}`.`two_sets`() BEGIN "
+                        f"SELECT id FROM `{schema}`.`items` WHERE id < 3 "
+                        "ORDER BY id; "
+                        "SELECT 'x' AS letter, 42 AS answer; END"
+                    ),
+                },
+            )
+            assert procedure_result.is_error is False
+
+            for tool, sql_key in (
+                ("db.execute_sql", "sql"),
+                ("db.execute_sql_script", "sql_script"),
+            ):
+                call_result = await call(
+                    tool,
+                    {
+                        "connection_id": connection_id,
+                        sql_key: f"CALL `{schema}`.`two_sets`()",
+                    },
+                )
+                assert call_result.is_error is False
+                payload = helpers.tool_payload(call_result)
+                entry = payload[0] if isinstance(payload, list) else payload
+                assert entry["columns"] == ["id"]
+                assert entry["rows"] == [{"id": 1}, {"id": 2}]
+                assert entry["additional_result_sets"] == [
+                    {
+                        "columns": ["letter", "answer"],
+                        "rows": [{"letter": "x", "answer": 42}],
+                    }
+                ]
+
+            # A statement with one result set carries no empty extra list.
+            single = helpers.tool_payload(
+                await call(
+                    "db.execute_sql",
+                    {"connection_id": connection_id, "sql": "SELECT 1 AS one"},
+                )
+            )
+            assert "additional_result_sets" not in single
         finally:
             # Drop the test schema.
             drop_result = await call(
