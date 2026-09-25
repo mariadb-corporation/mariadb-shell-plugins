@@ -145,6 +145,29 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Gotchas / things not to repeat
 
+- **THE SUITE USED TO RUN ON THE DEVELOPER'S OWN SECRET STORE, and every run
+  moved their filed connections to the top level.** A config home does not
+  change the secret store - it is the macOS keychain / Windows credential
+  manager by default - and `stored_connections` / `clean_config` back up, clear
+  and restore every stored connection. The backup kept `(kind, uri) ->
+  password` but not the folder, which is part of the KEY, so the restore filed
+  everything at `/`: a user's sandbox connection left `/Sandboxes` after every
+  run (found 2026-09-25; it looked like the extension losing the folder on a
+  restart). Two fixes, both needed:
+  - `run_tests.py` `_isolate_secret_store` sets `credentialStore.helper` to
+    `plaintext` in the run's config home (merged into an existing
+    `options.json`, so `--userhome` gets it too). Secrets then live in
+    `<home>/.mariadb-secret-store-plaintext.json`, shared by the test process
+    and the MCP servers it starts, invisible outside the run - and the run is
+    ~3x faster (65 s, was ~180 s) without the keychain.
+    `test_the_run_keeps_its_secrets_to_itself` fails a run without it.
+  - `helpers.backup_connections` (moved out of conftest, with
+    `clear_connections` / `restore_connections`) keeps `(password, path)`, and
+    the restore passes the path. `test_a_backup_and_restore_keeps_each_
+    connection_in_its_folder` pins it.
+  Verify isolation by comparing `shell.list_secrets()` on the real store before
+  and after a run - it must be identical.
+
 - **`run_tests.py --only "a or b"` silently loses its quoting.** `main()` builds the pytest
   command as an f-string and runs it with `shell=True`, so a multi-word `-k` expression is
   re-split by the shell and pytest reports `file or directory not found: or`. Work around

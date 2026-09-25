@@ -778,3 +778,48 @@ def test_setup_requires_interactive_shell(clean_config, monkeypatch):
 
     with pytest.raises(mysqlsh.Error):
         setup.run_setup()
+
+
+def test_a_backup_and_restore_keeps_each_connection_in_its_folder(clean_config):
+    """The fixtures' round trip keeps a connection's folder.
+
+    It used to restore every connection at the top level: the folder is
+    stored in the key and was not backed up, so a run against a developer's
+    own secret store emptied their /Sandboxes folder every time.
+    """
+    helpers.clear_connections()
+    config.store_connection(
+        "mariadb://root@127.0.0.1:3311", "pw", config.CONNECTION_KIND_MCP,
+        "/Sandboxes"
+    )
+    config.store_connection(
+        "mariadb://dba@localhost:3306", "pw2", config.CONNECTION_KIND_GUI,
+        "/Work/Reports"
+    )
+    config.store_connection("mariadb://app@localhost:3307", "pw3")
+
+    backup = helpers.backup_connections()
+    helpers.clear_connections()
+    helpers.restore_connections(backup)
+
+    assert config.list_connections_with_paths(config.CONNECTION_KIND_MCP) == [
+        {"uri": "mariadb://app@localhost:3307", "path": "/", "kind": "mcp"},
+        {"uri": "mariadb://root@127.0.0.1:3311", "path": "/Sandboxes", "kind": "mcp"},
+    ]
+    assert config.get_connection_path(
+        "mariadb://dba@localhost:3306", config.CONNECTION_KIND_GUI
+    ) == "/Work/Reports"
+    assert config.get_connection_password(
+        "mariadb://dba@localhost:3306", config.CONNECTION_KIND_GUI
+    ) == "pw2"
+
+
+def test_the_run_keeps_its_secrets_to_itself():
+    """The suite never works on the developer's own secret store.
+
+    run_tests.py sets the plaintext credential helper in the run's config
+    home, so the connections the tests store, clear and restore are the run's
+    own - not the macOS keychain's or the Windows credential manager's. A
+    run without it would be working on real connections.
+    """
+    assert mysqlsh.globals.shell.options["credentialStore.helper"] == "plaintext"

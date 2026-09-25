@@ -89,42 +89,6 @@ def non_interactive_shell():
     yield
 
 
-def _backup_connections() -> dict:
-    """Returns every stored connection of every kind, with its password.
-
-    Keyed by ``(kind, uri)`` because the two lists can hold the same URI under
-    two different passwords, and a backup that collapsed them would restore the
-    wrong one.
-
-    Returns:
-        A dict mapping ``(kind, uri)`` to the stored password.
-    """
-    return {
-        (kind, uri): config.get_connection_password(uri, kind)
-        for kind in config.SUPPORTED_CONNECTION_KINDS
-        for uri in config.list_stored_connection_uris(kind)
-    }
-
-
-def _clear_connections() -> None:
-    """Deletes every stored connection of every kind, best effort."""
-    for kind in config.SUPPORTED_CONNECTION_KINDS:
-        for uri in config.list_stored_connection_uris(kind):
-            try:
-                config.delete_connection(uri, kind)
-            except Exception:  # noqa: BLE001 - best-effort cleanup
-                pass
-
-
-def _restore_connections(connections: dict) -> None:
-    """Re-stores what :func:`_backup_connections` returned, best effort."""
-    for (kind, uri), password in connections.items():
-        try:
-            config.store_connection(uri, password, kind)
-        except Exception:  # noqa: BLE001 - best-effort restore
-            pass
-
-
 @pytest.fixture
 def gui_mode():
     """Serves the rest of the test as a server started with ``--gui``.
@@ -158,8 +122,8 @@ def stored_connections():
     """
     # Back up the connections that existed prior to the test, then remove them
     # so the test starts from a clean, known set.
-    original_connections = _backup_connections()
-    _clear_connections()
+    original_connections = helpers.backup_connections()
+    helpers.clear_connections()
 
     for uri in helpers.TEST_CONNECTION_URIS:
         config.store_connection(uri, helpers.TEST_CONNECTION_PASSWORD)
@@ -168,8 +132,8 @@ def stored_connections():
 
     # Restore the original set of connections exactly: drop everything that is
     # currently stored, then re-store the backed-up connections.
-    _clear_connections()
-    _restore_connections(original_connections)
+    helpers.clear_connections()
+    helpers.restore_connections(original_connections)
 
 
 @pytest.fixture
@@ -207,15 +171,15 @@ def clean_config():
     backed up before the test and restored exactly afterwards, so a test may
     freely add, clear or delete connections and paths.
     """
-    original_connections = _backup_connections()
+    original_connections = helpers.backup_connections()
     had_settings = config.settings_file_exists()
     original_paths = config.get_allowed_paths()
 
     try:
         yield
     finally:
-        _clear_connections()
-        _restore_connections(original_connections)
+        helpers.clear_connections()
+        helpers.restore_connections(original_connections)
         if had_settings:
             config.set_allowed_paths(original_paths)
         else:
