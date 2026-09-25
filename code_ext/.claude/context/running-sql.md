@@ -161,12 +161,37 @@ no longer maps row for row onto stored rows. Literals and comments are
 stripped first so a keyword inside either cannot be mistaken for the real
 thing.
 
-For a statement that passes, the table's columns are fetched with
-`db.get_object_details` — that is where the primary key, the data types and
-the auto-increment flags come from. An unqualified table name is resolved
+For a statement that passes, the name is looked up AS A TABLE outright:
+one `db.get_object_details(..., "table")`, the common case in one call. A
+view - `mysql.user` is one since MariaDB 10.4 - is found out by the answer
+being no such table. `OBJECT_NOT_FOUND` (`src/mcp/protocol.ts`) matches
+the server's wording, `No table 'user' found in schema 'mysql'`, anywhere
+in the text since the SDK prefixes its own; the grid then reads "Read only:
+mysql.user is not a table - a view, say.", and `createLoggingApi` reports
+that call as an INFO row, "No table mysql.user", not as an error - asking
+is how the question is answered. Any other failure is still an error, and
+the grid says the columns could not be looked up. Nothing more is asked
+about a view: its columns would only feed the header tooltips.
+
+(Two rounds before this: first the table lookup failed and was logged as
+an ERROR row for a SELECT that had worked; then an `information_schema`
+query asked each name's kind first. That told a view from a system view
+or a temporary table, but cost a table SELECT two round trips instead of
+one, so it was dropped for this.)
+
+For a table, its columns come from `db.get_object_details` — that is where
+the primary key, the data types and the auto-increment flags come from. An unqualified table name is resolved
 against `SELECT DATABASE()`, asked at most once per execution. Without a
 primary key in the result the grid stays read only, since there would be no
 way to address a row.
+
+**A stored procedure's result sets** (`isProcedureCall`, a leading `CALL`
+after comments) are all read only ("the result set of a stored procedure")
+and nothing is looked up for them. A CALL returning several - the server's
+`additional_result_sets` - gets a tab per set; its statement row says
+`N result sets`, points at the first, and has a child row per set
+(`Result #n`, `k rows in set`, each with its jump button), ahead of its
+warnings. A CALL with one set stays a single row.
 
 Edits are held in the grid until **Apply**. `QueryBuilder` then generates
 `UPDATE`, `INSERT` and `DELETE` statements — modelled on the MySQL Shell's

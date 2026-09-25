@@ -37,6 +37,14 @@ export interface IToolResult {
     isError?: boolean;
 }
 
+/**
+ * How the MCP server says an object it was asked to describe does not
+ * exist: `No table 'user' found in schema 'mysql'. Use db.list_objects...`
+ * (`db.get_object_details` in `mcp_plugin/lib/db_functions.py`). Matched
+ * anywhere in the text, since the SDK puts its own words in front.
+ */
+export const OBJECT_NOT_FOUND = /No (\w+) '([^']*)' found in schema '([^']*)'/;
+
 /** Raised when a tool reported a failure. */
 export class McpToolError extends Error {
     public constructor(public readonly toolName: string, message: string) {

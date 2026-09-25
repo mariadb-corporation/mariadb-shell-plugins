@@ -51,6 +51,12 @@ also what leaves the row of tabs the room to be a row of tabs. The
 Actions tab has no such bar: there is no result set for one to be
 about.
 
+The error bar has a **copy** button (`errorBarCopy`, `codicon-copy`)
+just before its close button: it copies the error on show through
+`copyToClipboard` and turns into a check, "Copied", for `COPIED_FOR_MS`
+(1.2 s, shared with the overflow popup), resetting when another error is
+stepped to.
+
 The error bar leads, above what it is about: it is read before the eye
 has gone looking for what went wrong. It steps through every error of
 the last run rather than showing one - see below.

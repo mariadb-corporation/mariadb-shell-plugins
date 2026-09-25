@@ -42,6 +42,7 @@ import { ActionsGrid } from "./ActionsGrid.js";
 import { ResultGrid } from "./ResultGrid.js";
 import { ResultStatusBar } from "./ResultStatusBar.js";
 import { SqlPreview } from "./SqlPreview.js";
+import { COPIED_FOR_MS } from "./overflowPopup.js";
 import { post } from "./vscodeApi.js";
 
 /** The id of the always-present Actions tab. */
@@ -199,6 +200,21 @@ export const App = (): JSX.Element => {
     const [errorIndex, setErrorIndex] = useState(0);
     /** Set by the bar's close button, cleared by the next set of errors. */
     const [errorsHidden, setErrorsHidden] = useState(false);
+    /** Set by the bar's copy button for a moment, so it can say it did. */
+    const [errorCopied, setErrorCopied] = useState(false);
+    useEffect(() => {
+        if (!errorCopied) {
+            return undefined;
+        }
+        const timer = setTimeout(() => { setErrorCopied(false); },
+            COPIED_FOR_MS);
+
+        return () => { clearTimeout(timer); };
+    }, [errorCopied]);
+    // Another error on show has not been copied.
+    useEffect(() => {
+        setErrorCopied(false);
+    }, [errorIndex, errors]);
     /** The set the three above were last put in place for. */
     const shownErrors = useRef<string>("");
 
@@ -638,6 +654,25 @@ export const App = (): JSX.Element => {
                             />
                         </div>
                     )}
+                    {/* Says it copied on itself, as the overflow popup's
+                        button does, rather than raising a notification. */}
+                    <button
+                        type="button"
+                        class={`errorBarCopy codicon ${errorCopied
+                            ? "codicon-check"
+                            : "codicon-copy"}`}
+                        title={errorCopied
+                            ? "Copied"
+                            : "Copy this error message to the clipboard"}
+                        aria-label="Copy this error message"
+                        onClick={() => {
+                            post({
+                                type: "copyToClipboard",
+                                text: errors[errorIndex]!.message,
+                            });
+                            setErrorCopied(true);
+                        }}
+                    />
                     <button
                         type="button"
                         class="errorBarClose codicon codicon-close"

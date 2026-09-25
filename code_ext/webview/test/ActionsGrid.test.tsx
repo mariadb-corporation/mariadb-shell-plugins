@@ -22,6 +22,7 @@ import "./setup.js";
 import {
     actionClick,
     buildActionColumns,
+    cellCopyText,
     clickedOn,
     formatElapsed,
     formatInformationCell,
@@ -110,6 +111,36 @@ describe("formatElapsed", () => {
     it("shows seconds above one", () => {
         expect(formatElapsed(1000)).toBe("1.000s");
         expect(formatElapsed(1234)).toBe("1.234s");
+    });
+});
+
+describe("cellCopyText", () => {
+    it("copies each cell as it is shown", () => {
+        const statement = row({
+            message: "Table 'world.nope' doesn't exist",
+            statement: "SELECT * FROM world.nope",
+            connectionLabel: "UI Backend",
+        });
+
+        expect(cellCopyText("message", statement))
+            .toBe("Table 'world.nope' doesn't exist");
+        expect(cellCopyText("time", statement)).toBe(timeOf(statement));
+        expect(cellCopyText("statement", statement))
+            .toBe("SELECT * FROM world.nope");
+        expect(cellCopyText("connectionLabel", statement)).toBe("UI Backend");
+    });
+
+    it("copies a run's summary from its Information cell", () => {
+        const ran = run();
+
+        expect(cellCopyText("statement", ran)).toBe(informationOf(ran));
+        expect(cellCopyText("statement", ran))
+            .toBe("Finished 1 statement successfully");
+    });
+
+    it("copies nothing from a column that shows none", () => {
+        expect(cellCopyText("connectionLabel", row())).toBe("");
+        expect(cellCopyText("nope", row())).toBe("");
     });
 });
 

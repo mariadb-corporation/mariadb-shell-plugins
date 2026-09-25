@@ -108,6 +108,12 @@ export interface IStatementWarning {
     message: string;
 }
 
+/** One result set: its column labels and its rows, keyed by them. */
+export interface IResultSetData {
+    columns: string[];
+    rows: Array<Record<string, unknown>>;
+}
+
 export interface IStatementResult {
     affected_items_count?: number;
     warnings_count?: number;
@@ -120,6 +126,13 @@ export interface IStatementResult {
     session_restarted?: boolean;
     columns?: string[];
     rows?: Array<Record<string, unknown>>;
+    /**
+     * The result sets after the first, where the statement returned more
+     * than one - a CALL of a procedure that runs several SELECTs. The first
+     * is `columns` and `rows`, as for any statement. Absent otherwise, and
+     * on a shell that predates it, which drops them.
+     */
+    additional_result_sets?: IResultSetData[];
 
     /** Its position among the script's non-empty statements, from 0. */
     statement_index?: number;

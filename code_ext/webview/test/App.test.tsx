@@ -17,7 +17,7 @@
 
 import { render } from "preact";
 import { act } from "preact/test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { posted } from "./setup.js";
 import { App, errorsOf, pagingOf } from "../src/App.js";
@@ -1151,6 +1151,59 @@ describe("App", () => {
                 source: { uri: "file:///q.sql", line: 0, character: 0 },
             }]);
         });
+
+    it("copies the error on show, and says so for a moment", async () => {
+        vi.useFakeTimers();
+        try {
+            await mount();
+            await send({
+                type: "state",
+                state: failedRun(["first went wrong", "then this"]),
+            });
+            const copy = (): HTMLButtonElement => {
+                return host.querySelector<HTMLButtonElement>(".errorBarCopy")!;
+            };
+            // Beside the close button, before it.
+            expect(copy().nextElementSibling?.classList
+                .contains("errorBarClose")).toBe(true);
+            expect(copy().classList.contains("codicon-copy")).toBe(true);
+            posted.length = 0;
+
+            await act(async () => {
+                copy().click();
+                await Promise.resolve();
+            });
+
+            expect(posted).toEqual([{
+                type: "copyToClipboard", text: "first went wrong",
+            }]);
+            expect(copy().classList.contains("codicon-check")).toBe(true);
+            expect(copy().title).toBe("Copied");
+
+            await act(async () => {
+                vi.advanceTimersByTime(1200);
+                await Promise.resolve();
+            });
+            expect(copy().classList.contains("codicon-copy")).toBe(true);
+
+            // The next error along is copied as itself.
+            await act(async () => {
+                host.querySelectorAll<HTMLButtonElement>(".errorBarStep")[1]!
+                    .click();
+                await Promise.resolve();
+            });
+            posted.length = 0;
+            await act(async () => {
+                copy().click();
+                await Promise.resolve();
+            });
+            expect(posted.find((message) => {
+                return message.type === "copyToClipboard";
+            })).toEqual({ type: "copyToClipboard", text: "then this" });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 
     it("closes the bar, and keeps it closed until the next failure",
         async () => {

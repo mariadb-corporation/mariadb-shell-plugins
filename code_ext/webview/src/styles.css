@@ -265,6 +265,7 @@ button:focus-visible {
 }
 
 .errorBarStep,
+.errorBarCopy,
 .errorBarClose {
     flex: 0 0 auto;
     width: 18px;
@@ -278,6 +279,7 @@ button:focus-visible {
 }
 
 .errorBarStep:hover:not(:disabled),
+.errorBarCopy:hover,
 .errorBarClose:hover {
     background: var(--vscode-toolbar-hoverBackground);
 }
@@ -663,6 +665,52 @@ button:focus-visible {
  * widget, and placed against the window - which is why it has to be
  * dismissed when the grid under it scrolls.
  */
+/*
+ * The menu a right-click on an actions cell opens (contextMenu.ts), drawn
+ * as VS Code draws its own menus.
+ */
+.copyMenu {
+    position: fixed;
+    z-index: 110;
+    min-width: 120px;
+    padding: 4px 0;
+    border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border,
+            transparent));
+    border-radius: 5px;
+    background: var(--vscode-menu-background,
+            var(--vscode-editorWidget-background));
+    color: var(--vscode-menu-foreground, var(--vscode-foreground));
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+
+.copyMenuItem {
+    display: block;
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 3px 20px;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.copyMenuItem:hover:not(:disabled),
+.copyMenuItem:focus-visible {
+    outline: none;
+    background: var(--vscode-menu-selectionBackground,
+            var(--vscode-list-activeSelectionBackground));
+    color: var(--vscode-menu-selectionForeground,
+            var(--vscode-list-activeSelectionForeground));
+}
+
+.copyMenuItem:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
 .overflowPopup {
     position: fixed;
     z-index: 100;
