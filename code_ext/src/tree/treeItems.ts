@@ -23,6 +23,7 @@ import {
     OBJECT_GROUP_LABELS,
     type ConnectionsNode,
     type IConnectionNode,
+    type IConnectionStatusNode,
     type IObjectGroupNode,
     type IObjectNode,
     type ISchemaNode,
@@ -167,6 +168,36 @@ export class ConnectionTreeItem
 }
 
 /**
+ * The row under a connection that is being opened, or failed to open.
+ *
+ * Connecting shows the spinning codicon VS Code's own views use, so an
+ * expand that takes a while visibly does something. A failure shows the
+ * reason's first line with the error icon - the whole of it is in the
+ * tooltip - and its context value puts a Retry button beside it.
+ */
+export class ConnectionStatusTreeItem
+    extends vscode.TreeItem {
+
+    public constructor(public readonly node: IConnectionStatusNode) {
+        const failed = node.state === "failed";
+        const message = node.message ?? "The connection could not be opened.";
+        super(
+            failed ? message.split("\n")[0]!.trim() : "Connecting...",
+            vscode.TreeItemCollapsibleState.None,
+        );
+
+        this.iconPath = failed
+            ? new vscode.ThemeIcon("error",
+                new vscode.ThemeColor("errorForeground"))
+            : new vscode.ThemeIcon("loading~spin");
+        this.contextValue = failed
+            ? "mariadbConnectionStatus.failed"
+            : "mariadbConnectionStatus.connecting";
+        this.tooltip = failed ? message : `Opening ${node.uri}`;
+    }
+}
+
+/**
  * What `db.list_schemas` calls a schema that is none of the server's own.
  * It is what nearly every row is, so it is the one type left unsaid.
  */
@@ -226,6 +257,10 @@ export const createTreeItem = (
     switch (node.kind) {
         case "connection": {
             return new ConnectionTreeItem(node, resolveIcon);
+        }
+
+        case "connectionStatus": {
+            return new ConnectionStatusTreeItem(node);
         }
 
         case "schema": {

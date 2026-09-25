@@ -275,6 +275,22 @@ the `onOpen` mode, where it duplicates the twistie; the context menu
 entry stays in both modes, since the palette and the keyboard need it.
 Disconnect is untouched - nothing implicit closes a connection.
 
+**Opening shows itself under the row.** `ConnectionsTreeProvider.#open`
+(behind both `expanded` and `retry`) records an `IOpenAttempt` per URI and
+redraws the row at once, and while the tree's own connection is not open
+`ConnectionsModel` answers the row's children with ONE
+`IConnectionStatusNode` instead of `[]`: `Connecting...` with the
+`loading~spin` codicon, then - on failure - the reason's first line with
+the `error` codicon (whole text in the tooltip) and an inline Retry
+(`mariadb.retryConnection`, on `viewItem == mariadbConnectionStatus.failed`).
+A failed open is logged but NOT notified any more: the user is looking at
+the row. A second expand while one is connecting is ignored. The status
+node carries its `parent` row because VS Code knows elements by identity,
+and a retry has to redraw the very object the tree holds. Success deletes
+the attempt; the manager's own change event has already listed the schemas.
+The Connect command does not use this - its row is collapsed, so there is
+nothing to show a spinner in.
+
 Whether a node is drawn with a twistie is `IConnectionNode.expandable`,
 which the model works out (`connected || connectOnOpen()`), not something
 `treeItems.ts` decides: the shape of the tree stays in one place, and the

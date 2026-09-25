@@ -26,6 +26,9 @@ import type { IServerStatus } from "../mcp/serverStarter.js";
 import {
     ConnectionsModel,
     type ConnectionsNode,
+    type IConnectionNode,
+    type IConnectionStatusNode,
+    type IOpenAttempt,
 } from "./connectionsModel.js";
 import { createTreeItem, type IconResolver } from "./treeItems.js";
 
@@ -78,6 +81,11 @@ export class ConnectionsTreeProvider
     #listing: "unasked" | "listed" | "failed" = "unasked";
     /** The state last handed to the context key. */
     #shownState?: ConnectionsViewState;
+    /**
+     * The tree's attempts at opening a connection, by URI, while they are
+     * under way and after they failed. Cleared once one succeeds.
+     */
+    readonly #attempts = new Map<string, IOpenAttempt>();
 
     public readonly onDidChangeTreeData = this.#onDidChangeTreeData.event;
 
@@ -96,7 +104,8 @@ export class ConnectionsTreeProvider
         private readonly connectOnOpen: () => boolean,
         private readonly status?: IServerStatus,
     ) {
-        this.#model = new ConnectionsModel(connections, connectOnOpen);
+        this.#model = new ConnectionsModel(connections, connectOnOpen,
+            (uri) => { return this.#attempts.get(uri); });
         this.#unsubscribe = connections.onDidChange(() => {
             this.refresh();
         });
@@ -226,14 +235,49 @@ export class ConnectionsTreeProvider
             return;
         }
 
-        if (this.connections.isConnected(node.uri, UI_BACKEND_SESSION)) {
+        await this.#open(node);
+    }
+
+    /**
+     * Tries again to open the connection a failed status row stands under.
+     *
+     * @param node The failed status row.
+     *
+     * @returns Nothing.
+     */
+    public async retry(node: IConnectionStatusNode): Promise<void> {
+        await this.#open(node.parent);
+    }
+
+    /**
+     * Opens the tree's own connection on a connection row, showing how it
+     * goes under the row: a spinner while it is under way, the reason if it
+     * fails. The failure is shown there rather than in a notification - the
+     * user is looking at the row, and it has a Retry button beside it.
+     *
+     * @param node The connection row, as the tree holds it.
+     *
+     * @returns Nothing.
+     */
+    async #open(node: IConnectionNode): Promise<void> {
+        if (this.connections.isConnected(node.uri, UI_BACKEND_SESSION)
+            || this.#attempts.get(node.uri)?.state === "connecting") {
             return;
         }
 
+        this.#attempts.set(node.uri, { state: "connecting" });
+        this.refresh(node);
         try {
             await this.connections.connect(node.uri, UI_BACKEND_SESSION);
+            // Opening fired the refresh that lists the schemas already.
+            this.#attempts.delete(node.uri);
         } catch (error) {
-            this.#report(`open '${node.uri}'`, error);
+            const message = error instanceof Error
+                ? error.message
+                : String(error);
+            this.log(`Failed to open '${node.uri}': ${message}`);
+            this.#attempts.set(node.uri, { state: "failed", message });
+            this.refresh(node);
         }
     }
 

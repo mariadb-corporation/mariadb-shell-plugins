@@ -23,6 +23,7 @@ import type {
 } from "../../tree/connectionsModel.js";
 import { createTreeItem, type IconResolver } from "../../tree/treeItems.js";
 import {
+    ThemeColor,
     ThemeIcon,
     TreeItemCollapsibleState,
     Uri,
@@ -285,5 +286,41 @@ describe("createTreeItem for an object", () => {
             .tooltip).toBe("Cities");
         expect(createTreeItem(object({ comment: "" }), resolveIcon).tooltip)
             .toBeUndefined();
+    });
+});
+
+describe("createTreeItem for a connection's status", () => {
+    const parent = connection({ connected: false, expandable: true });
+
+    it("spins while the connection opens", () => {
+        const item = createTreeItem({
+            kind: "connectionStatus",
+            uri: parent.uri,
+            parent,
+            state: "connecting",
+        }, resolveIcon);
+
+        expect(item.label).toBe("Connecting...");
+        expect(item.iconPath).toEqual(new ThemeIcon("loading~spin"));
+        expect(item.collapsibleState).toBe(TreeItemCollapsibleState.None);
+        expect(item.contextValue).toBe("mariadbConnectionStatus.connecting");
+    });
+
+    it("shows the reason's first line with the error icon", () => {
+        const item = createTreeItem({
+            kind: "connectionStatus",
+            uri: parent.uri,
+            parent,
+            state: "failed",
+            message: "  Access denied for user 'dba'  \nat line 2",
+        }, resolveIcon);
+
+        expect(item.label).toBe("Access denied for user 'dba'");
+        expect(item.tooltip)
+            .toBe("  Access denied for user 'dba'  \nat line 2");
+        expect(item.iconPath).toEqual(
+            new ThemeIcon("error", new ThemeColor("errorForeground")));
+        // What puts the Retry button beside it.
+        expect(item.contextValue).toBe("mariadbConnectionStatus.failed");
     });
 });

@@ -40,6 +40,7 @@ import {
     contextKeys,
     errorMessages,
     resetVscodeMock,
+    ThemeIcon,
     Uri,
 } from "../mocks/vscode.js";
 
@@ -352,23 +353,94 @@ describe("ConnectionsTreeProvider", () => {
             provider.dispose();
         });
 
-    it("says why a connection the user expanded would not open",
+    it("says under the row why a connection would not open", async () => {
+        const { api, connections, provider, log } = createProvider(true);
+        const [root] = await provider.getChildren();
+        api.connect = () => {
+            return Promise.reject(new Error("access denied\nmore detail"));
+        };
+
+        await provider.expanded(root);
+
+        expect(connections.isConnected("dba@localhost:3310")).toBe(false);
+        const [status] = await provider.getChildren(root);
+        expect(status).toMatchObject({
+            kind: "connectionStatus",
+            state: "failed",
+            message: "access denied\nmore detail",
+        });
+        const item = provider.getTreeItem(status!);
+        expect(item.label).toBe("access denied");
+        expect(item.tooltip).toBe("access denied\nmore detail");
+        expect(item.contextValue).toBe("mariadbConnectionStatus.failed");
+        // Under the row the user is looking at, not in a notification too.
+        expect(errorMessages).toEqual([]);
+        expect(log.lines.join("\n"))
+            .toContain("Failed to open 'dba@localhost:3310': access denied");
+
+        provider.dispose();
+    });
+
+    it("shows a spinner under the row while the connection opens",
         async () => {
-            const { api, connections, provider, log } = createProvider(true);
+            const { api, provider } = createProvider(true);
             const [root] = await provider.getChildren();
-            api.connect = () => {
-                return Promise.reject(new Error("access denied"));
+            const connect = api.connect.bind(api);
+            let release = (): void => { /* set below */ };
+            api.connect = (...args: Parameters<typeof connect>) => {
+                return new Promise((resolve, reject) => {
+                    release = () => { connect(...args).then(resolve, reject); };
+                });
             };
+            const redrawn: unknown[] = [];
+            provider.onDidChangeTreeData((node) => { redrawn.push(node); });
 
-            await provider.expanded(root);
+            const opening = provider.expanded(root!);
 
-            expect(connections.isConnected("dba@localhost:3310")).toBe(false);
-            expect(errorMessages).toEqual(["MariaDB: access denied"]);
-            expect(log.lines.join("\n"))
-                .toContain("Failed to open 'dba@localhost:3310'");
+            // Redrawn at once, not when the server answers.
+            expect(redrawn).toEqual([root]);
+            const [status] = await provider.getChildren(root);
+            expect(status).toMatchObject({
+                kind: "connectionStatus", state: "connecting",
+            });
+            const item = provider.getTreeItem(status!);
+            expect(item.label).toBe("Connecting...");
+            expect(item.iconPath).toEqual(new ThemeIcon("loading~spin"));
+
+            // A second expand while it is under way does not open another.
+            await provider.expanded(root!);
+
+            release();
+            await opening;
+
+            const children = await provider.getChildren(root);
+            expect(children).toHaveLength(1);
+            expect(children[0]).toMatchObject({ kind: "schema" });
 
             provider.dispose();
         });
+
+    it("opens the connection on a retry of a failed attempt", async () => {
+        const { api, connections, provider } = createProvider(true);
+        const [root] = await provider.getChildren();
+        const connect = api.connect.bind(api);
+        api.connect = () => {
+            return Promise.reject(new Error("the server is down"));
+        };
+        await provider.expanded(root!);
+        const [status] = await provider.getChildren(root);
+
+        api.connect = connect;
+        await provider.retry(status as never);
+
+        expect(connections.isConnected(
+            "dba@localhost:3310", UI_BACKEND_SESSION)).toBe(true);
+        expect(await provider.getChildren(root)).toMatchObject([
+            { kind: "schema", schema: "world" },
+        ]);
+
+        provider.dispose();
+    });
 
     it("ignores the expansion of anything but a connection", async () => {
         const { connections, provider } = createProvider(true);

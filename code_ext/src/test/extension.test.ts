@@ -224,6 +224,7 @@ describe("activate", () => {
             "mariadb.newSqlEditor",
             "mariadb.refreshConnections",
             "mariadb.restartMcpServer",
+            "mariadb.retryConnection",
             "mariadb.runSqlFile",
             "mariadb.runSqlStatement",
             "mariadb.selectEditorConnection",

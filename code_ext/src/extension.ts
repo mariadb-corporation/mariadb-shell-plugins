@@ -52,7 +52,10 @@ import {
 import { createIconResolver } from "./tree/treeItems.js";
 import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
 import { deleteConnection } from "./connections/connectionStore.js";
-import type { IConnectionNode } from "./tree/connectionsModel.js";
+import type {
+    IConnectionNode,
+    IConnectionStatusNode,
+} from "./tree/connectionsModel.js";
 import {
     ResultViewProvider,
     RESULT_VIEW_ID,
@@ -355,6 +358,15 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     log(`Deleted the connection '${node.uri}'.`);
                     tree.refresh();
                 });
+            },
+        ),
+
+        vscode.commands.registerCommand(
+            "mariadb.retryConnection",
+            async (node?: IConnectionStatusNode) => {
+                if (node?.kind === "connectionStatus") {
+                    await tree.retry(node);
+                }
             },
         ),
 

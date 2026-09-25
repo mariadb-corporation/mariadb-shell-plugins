@@ -110,8 +110,15 @@ export class Uri {
     }
 }
 
-export class ThemeIcon {
+export class ThemeColor {
     public constructor(public readonly id: string) { }
+}
+
+export class ThemeIcon {
+    public constructor(
+        public readonly id: string,
+        public readonly color?: ThemeColor,
+    ) { }
 }
 
 export class TreeItem {
