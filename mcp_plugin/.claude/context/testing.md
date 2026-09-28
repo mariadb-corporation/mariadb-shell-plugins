@@ -154,7 +154,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   change the secret store - it is the macOS keychain / Windows credential
   manager by default - and `stored_connections` / `clean_config` back up, clear
   and restore every stored connection. The backup kept `(kind, uri) ->
-  password` but not the folder, which is part of the KEY, so the restore filed
+  password` but not the folder (then part of the KEY, now in
+  `connections.json`, which a delete drops), so the restore filed
   everything at `/`: a user's sandbox connection left `/Sandboxes` after every
   run (found 2026-09-25; it looked like the extension losing the folder on a
   restart). Two fixes, both needed:
@@ -166,9 +167,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     ~3x faster (65 s, was ~180 s) without the keychain.
     `test_the_run_keeps_its_secrets_to_itself` fails a run without it.
   - `helpers.backup_connections` (moved out of conftest, with
-    `clear_connections` / `restore_connections`) keeps `(password, path)`, and
-    the restore passes the path. `test_a_backup_and_restore_keeps_each_
-    connection_in_its_folder` pins it.
+    `clear_connections` / `restore_connections`) keeps `(password, details)` -
+    folder, caption and color from `get_connection_details` - and the restore
+    passes them back to `store_connection`.
+    `test_a_backup_and_restore_keeps_each_connection_as_it_was` pins it.
   Verify isolation by comparing `shell.list_secrets()` on the real store before
   and after a run - it must be identical.
 

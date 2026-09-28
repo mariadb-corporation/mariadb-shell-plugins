@@ -105,10 +105,6 @@ export class Uri {
             : new Uri("file", value);
     }
 
-    public static from(parts: { scheme: string; path: string }): Uri {
-        return new Uri(parts.scheme, parts.path);
-    }
-
     public static joinPath(base: Uri, ...parts: string[]): Uri {
         const path = [base.path.replace(/\/$/, ""), ...parts].join("/");
 
