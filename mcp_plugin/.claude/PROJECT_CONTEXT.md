@@ -89,6 +89,17 @@ wip/connection-folders
   `GUI:Connection:` keys once per process. No downgrade path, by decision.
   Both in [`context/connections.md`](context/connections.md). The reviewer
   was asked to look again.
+- **The commit after that moves the details out of the key** (2026-09-28):
+  folder, caption and color live in `connections.json` next to
+  `settings.json`, keyed by list and stored URI; the key is `<prefix><uri>`
+  again, so only the URI counts against the 256 bytes, a `:` is allowed in a
+  folder name, and re-filing never touches the secret store. GUI
+  `db.list_connections` entries gained `caption` and `color`;
+  `db.add_connection` takes `caption`/`color`, `db.update_connection`
+  `new_caption`/`new_color`. Non-GUI listing is still bare URIs. Keys in the
+  folder-in-key format are migrated by `upgrade_connection_keys`. Suite:
+  **380 pass, 3 skipped, 98%**. See
+  [`context/connections.md`](context/connections.md).
 - **Suite at this checkpoint**, shell 26.9.3, `.coverage` deleted first:
   **374 pass, 2 skipped, ~190s, 98% (2132 statements, 46 missed)**. The four
   uncovered lines in `lib/config.py` are still the unparse-failure and

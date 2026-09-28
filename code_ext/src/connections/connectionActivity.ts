@@ -273,12 +273,15 @@ export const createLoggingApi = (
                 () => { return api.listConnectionEntries(kind); },
             );
         },
-        addConnection: (uri, password, kind, verify, path) => {
+        addConnection: (uri, password, kind, verify, details) => {
             return watchGeneral(
-                `db.add_connection(${arguments_({ uri, kind, verify, path })})`,
+                `db.add_connection(${arguments_({
+                    uri, kind, verify, ...details,
+                })})`,
                 (stored) => { return `Stored ${stored}`; },
                 () => {
-                    return api.addConnection(uri, password, kind, verify, path);
+                    return api.addConnection(
+                        uri, password, kind, verify, details);
                 },
             );
         },
@@ -296,7 +299,7 @@ export const createLoggingApi = (
                 () => { return api.testConnection(uri, password); },
             );
         },
-        updateConnection: (uri, newUri, kind, newKind, password, newPath) => {
+        updateConnection: (uri, newUri, kind, newKind, password, newDetails) => {
             return watchGeneral(
                 `db.update_connection(${arguments_({
                     uri,
@@ -305,12 +308,14 @@ export const createLoggingApi = (
                     new_kind: newKind,
                     // Whether one was given, never what it is.
                     password: password === undefined ? undefined : "***",
-                    new_path: newPath,
+                    new_path: newDetails?.path,
+                    new_caption: newDetails?.caption,
+                    new_color: newDetails?.color,
                 })})`,
                 (updated) => { return `Updated ${updated}`; },
                 () => {
                     return api.updateConnection(
-                        uri, newUri, kind, newKind, password, newPath);
+                        uri, newUri, kind, newKind, password, newDetails);
                 },
             );
         },

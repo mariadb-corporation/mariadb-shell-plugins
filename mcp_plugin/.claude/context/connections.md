@@ -70,47 +70,66 @@ produced most of this is in [security-review.md](security-review.md).
     RESOLVES rather than comparing, so an instance deployed before the change is still
     cleaned up.
 
-- **Folders are part of the KEY and nothing else** (`lib/config.py`). A connection may be
-  filed under a path, stored as `MCP:CONN:/Sandboxes/note_app:<uri>` (same for
-  `GUI:`); a top-level one keeps the plain `<prefix><uri>` key, so every existing key is
-  already a top-level connection and nothing is migrated. `_split_connection_key` tells the
-  two apart by the leading `/` (a URI never starts with one) and splits at the FIRST `:`,
-  which is why `normalize_connection_path` refuses a `:` in a folder name; `/` separates
-  folders, doubled/trailing slashes and blanks are dropped, None/`""`/`"/"` are the top
-  level (stored `""`, REPORTED `ROOT_CONNECTION_PATH` = `"/"`).
-  - **The URI is still the identity.** `list_stored_connection_uris`, `resolve_*`,
-    `find_connection`, `get_connection_password` and `delete_connection` all work by URI and
-    find the key through `_stored_keys_of`, so no caller outside config had to learn about
-    folders. One URI is in ONE folder per list: `store_connection(uri, pw, kind, path)`
-    writes the new key and then deletes any other key of that URI (a MOVE), and `path=None`
-    KEEPS the current folder - a password replaced (`mcp.setup`, re-adding) never moves it.
-  - **Only GUI mode sees a folder.** The GUI `db.list_connections` returns
-    `[{"uri", "path", "kind"}]` (`list_connections_with_paths`); the non-GUI one is still
-    the bare URI list, so an agent never sees a folder. `kind="all"`
-    (`CONNECTION_KIND_ALL`) reports BOTH lists in one call, MCP first, each entry's
-    `kind` saying which list it is in - the extension's one call instead of two. `all` is
-    a READ-only word: it is not in `SUPPORTED_CONNECTION_KINDS`, so
-    `normalize_connection_kind` still refuses it for storing or deleting. GUI `db.add_connection(..., path=None)` and
-    `db.update_connection(..., new_path=None)` take one; `new_path` left out keeps the
-    folder, including across a move to the other list (the MCP checkbox is not a re-filing).
-    The path is validated BEFORE `verify` runs, so a bad name costs nothing.
+- **Details - folder, caption, color - live in `connections.json`, NOT in the key**
+  (`lib/config.py`, reworked after the PR #28 review). The key is only `<prefix><uri>`;
+  `connections.json` in the plugin data dir (next to `settings.json`, which stays a file of
+  its own because allowed paths are an access control) holds
+  `{"version": 1, "mcp": {<stored uri>: {path?, caption?, color?}}, "gui": {...}}`, each
+  field written only when non-empty and an empty entry dropped.
+  - **The secret store is the only record of what EXISTS.** Details are a hint: a stored
+    connection with none is at the top level with no caption; details of a URI not stored
+    are ignored on read and pruned by `_write_connections_file` (which lists the secrets
+    once via `_stored_uris_by_kind`, bypassing the upgrade so the upgrade can write details
+    itself). An unreadable/odd-shaped file reads as no details (logged), never an error.
+    Writes go to `connections.json.tmp` + `os.replace`. No cross-process lock: a lost
+    update between two shells only loses a cosmetic change.
+  - **Write order keeps drift cosmetic**: `store_connection` writes the secret, THEN the
+    details; `delete_connection` deletes the secret, THEN drops the details (best effort).
+    So a failure in between is at worst a connection shown at the top level.
+  - `store_connection(uri, pw, kind, path, caption, color)`: None keeps what the
+    connection has (or none for a new one) - a password replaced never moves it; `""`
+    clears. `set_connection_details` changes details WITHOUT touching the secret, which is
+    what `db.update_connection` does when only folder/caption/color change (no keychain
+    write at all). `drop_superseded_spellings` passes the details of a superseded spelling
+    on to the kept URI when that has none, so re-saving a scheme-less connection keeps its
+    folder.
+  - `normalize_connection_path`: `/` separates, doubled/trailing slashes and blanks
+    dropped, None/`""`/`"/"` the top level (stored as no `path`, REPORTED `"/"`). A `:` is
+    allowed again. `normalize_connection_caption`: trimmed, one line, <= 100 chars
+    (`MAX_CONNECTION_CAPTION_LENGTH`). `normalize_connection_color`: one of
+    `CONNECTION_COLORS` (red, orange, yellow, green, blue, purple - names, so each client
+    maps them onto its own palette), any case, `""` for none. All are checked BEFORE
+    `verify` or any write.
+  - **Only GUI mode sees details.** The GUI `db.list_connections` returns
+    `[{"uri", "path", "kind", "caption", "color"}]` (`list_connections_with_details`,
+    caption/color `""` for none); the non-GUI one is still the bare URI list and the tools
+    that take details are not registered there, so an agent never sees any of it
+    (`test_the_details_of_a_connection_are_reported_in_gui_mode_only` pins both).
+    `kind="all"` (`CONNECTION_KIND_ALL`) reports BOTH lists in one call, MCP first; it is
+    READ-only (not in `SUPPORTED_CONNECTION_KINDS`). GUI `db.add_connection(..., path,
+    caption, color)` and `db.update_connection(..., new_path, new_caption, new_color)`;
+    each left out keeps what is there, including across a move to the other list.
+  - **The old folder-in-key format is migrated**: `upgrade_connection_keys` also moves
+    `<prefix>/path:<uri>` keys (written by PR #28's first version, under either the legacy
+    or the current prefix) to `<prefix><uri>` and puts the folder in the file - new keys
+    first, then one file write, then the old keys deleted. A folder already in the file
+    wins (it was set later). `_split_folder_key` survives only for this.
   - **A key is at most 256 BYTES** (`MAX_CONNECTION_KEY_BYTES`, PR #28 review). The shell's
     Windows credential helper (`mysql-secret-store/windows-credential/`) stores the whole key
     as a `CREDENTIAL_ATTRIBUTE` value, capped at `CRED_MAX_VALUE_SIZE` = 256 bytes, and
-    `CredWrite` fails with no useful reason past it. Both prefixes are 9 bytes, so folder +
-    `:` + URI get 247. `check_connection_key_length(uri, kind, path)` counts UTF-8 bytes and
-    is enforced on EVERY platform (a connection configurable on one machine is on any), at
-    the top of `store_connection`, before anything is written, so a refused move leaves the
-    connection where it was. `db.add_connection`, `mcp.setup` (menu) and
-    `--addConnection` also call it early, before verifying or asking for the password,
-    measuring with the folder a re-add would keep. `db.update_connection` needs no call of
-    its own: `store_connection` is its first write.
+    `CredWrite` fails with no useful reason past it. Both prefixes are 9 bytes, so the URI
+    gets 247; the details do not count. `check_connection_key_length(uri, kind)` counts
+    UTF-8 bytes and is enforced on EVERY platform, at the top of `store_connection`, before
+    anything is written. `db.add_connection`, `mcp.setup` (menu) and `--addConnection` also
+    call it early, before verifying or asking for the password.
   - `sandbox.deploy` files its connection under `SANDBOX_CONNECTION_PATH` (`/Sandboxes`).
     `test_sandbox_servers.py` stubs `store_connection` with a lambda - it has to accept
     `path=`.
-  - `delete_connection` / `get_connection_password` on a URI that is NOT stored fall back to
-    the top-level key on purpose, so the shell's own missing-secret error still surfaces
-    (`db.update_connection` relies on `delete_secret` raising).
+  - `delete_connection` / `get_connection_password` on a URI that is NOT stored raise the
+    shell's own missing-secret error (`db.update_connection` relies on `delete_secret`
+    raising).
+  - The test fixtures (`clean_config`, `stored_connections`) back up `connections.json` as
+    BYTES and put it back, because clearing the lists drops details for good.
 
 - **`db_functions.use_session(connection_id, client_address=None)`** is the PUBLIC accessor
   (a `@contextmanager`, NOT the old plain `get_session` — that name is GONE), so other tool
@@ -121,7 +140,7 @@ produced most of this is in [security-review.md](security-review.md).
   bypass of the address check.
 
 - **The prefixes were shortened** from `MCP:Connection:` / `GUI:Connection:` (15 bytes) to
-  `MCP:CONN:` / `GUI:CONN:` (9) to leave the folder and URI more of the 256. There is NO
+  `MCP:CONN:` / `GUI:CONN:` (9) to leave the URI more of the 256. There is NO
   downgrade path, by decision: everyone is expected to run the latest shell, and an older
   one simply sees no connections. `upgrade_connection_keys()` moves the legacy keys, once
   per process, from the top of `_list_stored_connections` - the one place the store is

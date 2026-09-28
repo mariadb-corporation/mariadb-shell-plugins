@@ -35,13 +35,18 @@ import {
     type IUriProblem,
 } from "../../src/connections/connectionUri.js";
 import {
+    MAX_CAPTION_LENGTH,
+    captionProblem,
     connectionKeyProblem,
-    folderProblem,
-} from "../../src/connections/connectionFolders.js";
+} from "../../src/connections/connectionDetails.js";
 import type {
     EditorHostMessage,
     EditorWebviewMessage,
 } from "../../src/connections/editorProtocol.js";
+import {
+    CONNECTION_COLORS,
+    type ConnectionColor,
+} from "../../src/mcp/types.js";
 import { post } from "./vscodeApi.js";
 
 /**
@@ -227,9 +232,11 @@ export const ConnectionEditor = (): preact.JSX.Element => {
         useState<IConnectionFields>(emptyConnectionFields());
     const [tab, setTab] = useState<Tab>("Basic");
     const [mcpAccess, setMcpAccess] = useState(false);
-    // The folder as typed; the host normalizes it on save.
+    // The folder and caption as typed; the host normalizes them on save.
     const [folder, setFolder] = useState("/");
     const [folders, setFolders] = useState<string[]>([]);
+    const [caption, setCaption] = useState("");
+    const [color, setColor] = useState<ConnectionColor | "">("");
     const [uri, setUri] = useState<string | undefined>(undefined);
     const [hasStoredPassword, setHasStoredPassword] = useState(false);
     // undefined means "keep the stored password", which is not the same as
@@ -296,6 +303,8 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                     setMcpAccess(message.mcpAccess);
                     setFolder(message.path);
                     setFolders(message.folders);
+                    setCaption(message.caption);
+                    setColor(message.color);
                     setUri(message.uri);
                     setHasStoredPassword(message.hasStoredPassword);
                     setPassword(undefined);
@@ -373,11 +382,10 @@ export const ConnectionEditor = (): preact.JSX.Element => {
     const draftProblem = uriDraft === undefined
         ? undefined
         : checkConnectionUri(uriDraft).problem;
-    const pathProblem = folderProblem(folder);
-    // Folder and URI together, so it is only asked once each is sound.
-    const keyProblem = built.uri === undefined || pathProblem !== undefined
+    const keyProblem = built.uri === undefined
         ? undefined
-        : connectionKeyProblem(built.uri, folder);
+        : connectionKeyProblem(built.uri);
+    const nameProblem = captionProblem(caption);
 
     useEffect(() => {
         const input = uriInput.current;
@@ -491,6 +499,28 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                 <div class="tab-body" ref={tabBody}>
                     {tab === "Basic" ? (
                         <section class="grid">
+                            <Field
+                                caption="Caption"
+                                hint={nameProblem
+                                    ?? "What the Connections view shows "
+                                    + "instead of the URI. Left empty, it "
+                                    + "shows the URI."}
+                            >
+                                <input
+                                    type="text"
+                                    class={nameProblem === undefined
+                                        ? undefined
+                                        : "invalid"}
+                                    value={caption}
+                                    maxLength={MAX_CAPTION_LENGTH}
+                                    disabled={busy}
+                                    onInput={(event) => {
+                                        setCaption((event.target as
+                                            HTMLInputElement).value);
+                                        setSaveError(undefined);
+                                    }}
+                                />
+                            </Field>
                             <Field caption="Host Name or IP Address">
                                 {text("host", "localhost")}
                             </Field>
@@ -525,18 +555,13 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                             </Field>
                             <Field
                                 caption="Folder"
-                                hint={pathProblem
-                                    ?? "Where the Connections view files it. "
+                                hint={"Where the Connections view files it. "
                                     + "'/' is the top level; "
                                     + "/Sandboxes/note_app is a folder "
                                     + "inside another."}
                             >
                                 <input
                                     type="text"
-                                    class={pathProblem === undefined
-                                        && keyProblem === undefined
-                                        ? undefined
-                                        : "invalid"}
                                     list="connection-folders"
                                     value={folder}
                                     placeholder="/"
@@ -554,6 +579,63 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                     })}
                                 </datalist>
                             </Field>
+                            {/* Not a Field: a <label> hands a click anywhere
+                                in it to its first button. */}
+                            <div class="field">
+                                <span class="field-caption" id="color-caption">
+                                    Color
+                                </span>
+                                <div
+                                    class="row wrap colors"
+                                    role="radiogroup"
+                                    aria-labelledby="color-caption"
+                                >
+                                    {(["", ...CONNECTION_COLORS] as const)
+                                        .map((choice) => {
+                                            const name = choice === ""
+                                                ? "None"
+                                                : choice[0]!.toUpperCase()
+                                                + choice.slice(1);
+
+                                            return (
+                                                <button
+                                                    key={choice || "none"}
+                                                    type="button"
+                                                    role="radio"
+                                                    aria-checked={color === choice}
+                                                    aria-label={name}
+                                                    title={name}
+                                                    class={color === choice
+                                                        ? "swatch selected"
+                                                        : "swatch"}
+                                                    style={choice === ""
+                                                        ? undefined
+                                                        : {
+                                                            background: "var("
+                                                                + "--vscode-charts-"
+                                                                + `${choice})`,
+                                                        }}
+                                                    disabled={busy}
+                                                    onClick={() => {
+                                                        setColor(choice);
+                                                        setSaveError(undefined);
+                                                    }}
+                                                >
+                                                    {choice === "" ? (
+                                                        <span
+                                                            class={"codicon "
+                                                                + "codicon-circle-slash"}
+                                                            aria-hidden="true"
+                                                        />
+                                                    ) : null}
+                                                </button>
+                                            );
+                                        })}
+                                </div>
+                                <span class="field-hint">
+                                    The color the Connections view draws it in.
+                                </span>
+                            </div>
 
                             <div class="group">
                                 <h2>Password</h2>
@@ -953,16 +1035,17 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                         if (!uriIsSound()) {
                             return;
                         }
-                        if (keyProblem !== undefined) {
-                            // Shown already, under the URI; saying it again
+                        const problem = keyProblem ?? nameProblem;
+                        if (problem !== undefined) {
+                            // Shown already, by its field; saying it again
                             // by the button is what answers the click.
-                            setSaveError(keyProblem);
+                            setSaveError(problem);
 
                             return;
                         }
                         post<EditorWebviewMessage>({
                             type: "save", fields, password, mcpAccess,
-                            path: folder,
+                            path: folder, caption, color,
                         });
                     }}
                 >

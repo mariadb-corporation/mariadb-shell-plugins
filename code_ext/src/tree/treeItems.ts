@@ -19,6 +19,7 @@ import * as vscode from "vscode";
 
 import { connectionLabel, schemeOf } from "../connections/connectionUri.js";
 import type { ObjectType } from "../mcp/types.js";
+import { colorUriOf } from "./connectionColors.js";
 import {
     OBJECT_GROUP_LABELS,
     type ConnectionsNode,
@@ -164,10 +165,19 @@ export class ConnectionTreeItem
 
     public constructor(node: IConnectionNode, resolveIcon: IconResolver) {
         // The label leaves out what the icon and the tooltip already say -
-        // the scheme and the options - so the row stays short.
-        super(node, connectionLabel(node.uri),
+        // the scheme and the options - so the row stays short. A caption
+        // replaces it, and it moves into the description instead.
+        const address = connectionLabel(node.uri);
+        super(node, node.caption ?? address,
             CONNECTION_ICONS[schemeOf(node.uri)] ?? "connectionMariaDB.svg",
             node.expandable, resolveIcon);
+
+        // The color is drawn by `ConnectionColorDecorations`, which a row
+        // reaches through its resource URI.
+        if (node.color !== undefined) {
+            this.resourceUri = colorUriOf(
+                node.color, node.connectionKind, node.uri);
+        }
 
         this.contextValue = [
             "mariadbConnection",
@@ -186,7 +196,11 @@ export class ConnectionTreeItem
             marks.push("default");
         }
 
-        this.description = marks.length > 0 ? marks.join(", ") : undefined;
+        const description = [
+            ...(node.caption === undefined ? [] : [address]),
+            ...(marks.length > 0 ? [marks.join(", ")] : []),
+        ].join(" · ");
+        this.description = description === "" ? undefined : description;
 
         const notes: string[] = [];
         if (node.connectionKind === "mcp") {
@@ -195,9 +209,12 @@ export class ConnectionTreeItem
         if (node.isDefault) {
             notes.push("default connection");
         }
-        this.tooltip = notes.length > 0
+        const where = notes.length > 0
             ? `${node.uri} (${notes.join(", ")})`
             : node.uri;
+        this.tooltip = node.caption === undefined
+            ? where
+            : `${node.caption}\n${where}`;
     }
 }
 

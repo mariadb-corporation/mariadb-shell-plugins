@@ -17,16 +17,18 @@
 
 import {
     ALL_CONNECTION_KINDS,
+    type ConnectionColor,
     type ConnectionKind,
+    type IConnectionDetails,
+    type IConnectionEntry,
     type IMariaDbApi,
 } from "../mcp/types.js";
 import {
-    ROOT_FOLDER,
+    captionProblem,
     connectionKeyProblem,
-    filingProblem,
-    folderProblem,
-    normalizeFolder,
-} from "./connectionFolders.js";
+    normalizeCaption,
+} from "./connectionDetails.js";
+import { ROOT_FOLDER, normalizeFolder } from "./connectionFolders.js";
 import {
     buildConnectionUri,
     parseConnectionUri,
@@ -49,10 +51,10 @@ import {
  *   the user is a re-key, not an update in place. `db.update_connection` does
  *   that server-side precisely so the password does not have to come back out
  *   to be re-stored - nothing can read a stored password, by design.
- * * **The folder is not part of the identity.** It is where the connection
- *   is filed and nothing more, so moving one only sends the folder, and one
- *   left at the top level sends none - which keeps a server that predates
- *   folders working for everything else.
+ * * **The folder, caption and color are not part of the identity.** They
+ *   are how the connection is shown and nothing more, so changing one only
+ *   sends that one, and a connection that has none sends none - which keeps
+ *   a server that predates them working for everything else.
  * * **Saving does not verify.** The editor has a Test Connection button for
  *   that, as the MySQL Shell's editor does; a server that happens to be down
  *   must not stop its connection being configured.
@@ -64,7 +66,7 @@ export const GUI_KIND: ConnectionKind = "gui";
 
 /**
  * A connection as the extension knows it: its URI, which list it is in and
- * the folder it is filed in.
+ * how it is shown.
  */
 export interface IStoredConnection {
     uri: string;
@@ -75,6 +77,10 @@ export interface IStoredConnection {
      * kind - and read as the top level when left out.
      */
     path?: string;
+    /** What to show instead of the URI; undefined for none. */
+    caption?: string;
+    /** The color to show it in; undefined for none. */
+    color?: ConnectionColor;
 }
 
 /** What the editor asks to be saved. */
@@ -89,6 +95,10 @@ export interface ISaveRequest {
     mcpAccess: boolean;
     /** The folder to file it in, as typed; empty or `/` is the top level. */
     path?: string;
+    /** The caption, as typed; empty for none. */
+    caption?: string;
+    /** The color; undefined or empty for none. */
+    color?: ConnectionColor | "";
     /** The connection being edited, or undefined when adding a new one. */
     original?: IStoredConnection;
 }
@@ -100,6 +110,8 @@ export interface ISaveResult {
     kind?: ConnectionKind;
     /** The folder it is filed in. */
     path?: string;
+    caption?: string;
+    color?: ConnectionColor;
     /** Set instead when the save could not be made. */
     error?: string;
 }
@@ -138,13 +150,7 @@ export const listConnections = async (
         // edited or deleted - one that does not came from a server that
         // did not understand the question.
         if (all.every((entry) => { return entry.kind !== undefined; })) {
-            return all.map((entry): IStoredConnection => {
-                return {
-                    uri: entry.uri,
-                    kind: entry.kind!,
-                    path: normalizeFolder(entry.path),
-                };
-            });
+            return all.map((entry) => { return storedOf(entry, entry.kind!); });
         }
     } catch {
         // Refused as an unknown kind by a server that predates it; the two
@@ -158,17 +164,30 @@ export const listConnections = async (
     ]);
 
     return [
-        ...mcp.map((entry): IStoredConnection => {
-            return {
-                uri: entry.uri, kind: MCP_KIND, path: normalizeFolder(entry.path),
-            };
-        }),
-        ...gui.map((entry): IStoredConnection => {
-            return {
-                uri: entry.uri, kind: GUI_KIND, path: normalizeFolder(entry.path),
-            };
-        }),
+        ...mcp.map((entry) => { return storedOf(entry, MCP_KIND); }),
+        ...gui.map((entry) => { return storedOf(entry, GUI_KIND); }),
     ];
+};
+
+/**
+ * A listed connection as the extension keeps it.
+ *
+ * @param entry What the server listed.
+ * @param kind The list it is in.
+ *
+ * @returns The connection, its details left out where it has none.
+ */
+const storedOf = (
+    entry: IConnectionEntry,
+    kind: ConnectionKind,
+): IStoredConnection => {
+    return {
+        uri: entry.uri,
+        kind,
+        path: normalizeFolder(entry.path),
+        ...(entry.caption ? { caption: entry.caption } : {}),
+        ...(entry.color === undefined ? {} : { color: entry.color }),
+    };
 };
 
 /**
@@ -214,7 +233,7 @@ export const saveConnection = async (
         return { error: built.error };
     }
 
-    const problem = folderProblem(request.path ?? "");
+    const problem = captionProblem(request.caption ?? "");
     if (problem !== undefined) {
         return { error: problem };
     }
@@ -222,8 +241,16 @@ export const saveConnection = async (
     const uri = built.uri!;
     const kind = kindFor(request.mcpAccess);
     const path = normalizeFolder(request.path ?? "");
+    const caption = normalizeCaption(request.caption ?? "");
+    const color = request.color ?? "";
+    const saved: ISaveResult = {
+        kind,
+        path,
+        ...(caption === "" ? {} : { caption }),
+        ...(color === "" ? {} : { color }),
+    };
 
-    const tooLong = connectionKeyProblem(uri, path);
+    const tooLong = connectionKeyProblem(uri);
     if (tooLong !== undefined) {
         return { error: tooLong };
     }
@@ -237,24 +264,36 @@ export const saveConnection = async (
         // own, and a server that is down must not block configuring it.
         const stored = await api.addConnection(
             uri, request.password ?? "", kind, false,
-            path === ROOT_FOLDER ? undefined : path,
+            {
+                ...(path === ROOT_FOLDER ? {} : { path }),
+                ...(caption === "" ? {} : { caption }),
+                ...(color === "" ? {} : { color }),
+            },
         );
 
-        return { uri: stored, kind, path };
+        return { ...saved, uri: stored };
     }
 
+    // Only what changed, so the server keeps the rest as it has it.
+    const original = request.original;
+    const changes: IConnectionDetails = {
+        ...(path === normalizeFolder(original.path ?? ROOT_FOLDER)
+            ? {}
+            : { path }),
+        ...(caption === (original.caption ?? "") ? {} : { caption }),
+        ...(color === (original.color ?? "") ? {} : { color }),
+    };
+
     const stored = await api.updateConnection(
-        request.original.uri,
-        uri === request.original.uri ? undefined : uri,
-        request.original.kind,
-        kind === request.original.kind ? undefined : kind,
+        original.uri,
+        uri === original.uri ? undefined : uri,
+        original.kind,
+        kind === original.kind ? undefined : kind,
         request.password,
-        path === normalizeFolder(request.original.path ?? ROOT_FOLDER)
-            ? undefined
-            : path,
+        Object.keys(changes).length === 0 ? undefined : changes,
     );
 
-    return { uri: stored, kind, path };
+    return { ...saved, uri: stored };
 };
 
 /**
@@ -292,29 +331,18 @@ export interface IFiling {
 /**
  * Files each connection in its own folder - what moving a folder does to
  * the connections in and below it. Otherwise as `moveConnections`: one
- * update each, those already in place left alone.
+ * update each, those already in place left alone. A folder is not part of
+ * the stored key, so no move can make a connection too long to store.
  *
  * @param api The database API.
  * @param filings Each connection with the folder it goes in.
  *
  * @returns The connections that were moved, each with its new folder.
- *
- * @throws Before anything is moved, when any of them would make a stored
- *         key too long for the secret store (see `filingProblem`).
  */
 export const fileConnections = async (
     api: IMariaDbApi,
     filings: IFiling[],
 ): Promise<IStoredConnection[]> => {
-    // All of them before any: a folder moved half way, some of it at the
-    // new path and some left at the old, is worse than one not moved.
-    const tooLong = filingProblem(filings.map(({ connection, path }) => {
-        return { uri: connection.uri, path };
-    }));
-    if (tooLong !== undefined) {
-        throw new Error(`Nothing was moved. ${tooLong}`);
-    }
-
     const moved: IStoredConnection[] = [];
 
     for (const { connection, path } of filings) {
@@ -325,7 +353,7 @@ export const fileConnections = async (
 
         await api.updateConnection(
             connection.uri, undefined, connection.kind, undefined, undefined,
-            folder,
+            { path: folder },
         );
         moved.push({ ...connection, path: folder });
     }
@@ -353,14 +381,23 @@ export const deleteConnection = async (
  *
  * @param connection The connection to edit.
  *
- * @returns Its fields, whether MCP clients may open it and its folder.
+ * @returns Its fields, whether MCP clients may open it, and its folder,
+ *          caption and color - `""` for none.
  */
 export const fieldsOf = (
     connection: IStoredConnection,
-): { fields: IConnectionFields; mcpAccess: boolean; path: string } => {
+): {
+    fields: IConnectionFields;
+    mcpAccess: boolean;
+    path: string;
+    caption: string;
+    color: ConnectionColor | "";
+} => {
     return {
         fields: parseConnectionUri(connection.uri),
         mcpAccess: connection.kind === MCP_KIND,
         path: normalizeFolder(connection.path ?? ROOT_FOLDER),
+        caption: connection.caption ?? "",
+        color: connection.color ?? "",
     };
 };

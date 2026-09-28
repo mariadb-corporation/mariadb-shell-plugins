@@ -105,6 +105,17 @@ def _registered_tools(monkeypatch, opened=None):
     return tools.tools
 
 
+def _entry(uri, kind, path="/", caption="", color=""):
+    """One GUI-mode db.list_connections entry, the details defaulted to none."""
+    return {
+        "uri": uri,
+        "path": path,
+        "kind": kind,
+        "caption": caption,
+        "color": color,
+    }
+
+
 def _empty_both_connection_lists():
     """Empties both connection lists so a test can assert on them exactly.
 
@@ -244,13 +255,13 @@ def test_the_two_lists_are_reported_one_at_a_time(
     )
 
     assert tools["db.list_connections"]() == [
-        {"uri": "mariadb://mcp_one@127.0.0.1:3306", "path": "/", "kind": "mcp"}
+        _entry("mariadb://mcp_one@127.0.0.1:3306", "mcp", "/")
     ]
     assert tools["db.list_connections"](config.CONNECTION_KIND_MCP) == [
-        {"uri": "mariadb://mcp_one@127.0.0.1:3306", "path": "/", "kind": "mcp"}
+        _entry("mariadb://mcp_one@127.0.0.1:3306", "mcp", "/")
     ]
     assert tools["db.list_connections"](config.CONNECTION_KIND_GUI) == [
-        {"uri": "mariadb://gui_one@127.0.0.1:3306", "path": "/", "kind": "gui"}
+        _entry("mariadb://gui_one@127.0.0.1:3306", "gui", "/")
     ]
 
 
@@ -318,10 +329,10 @@ def test_both_lists_are_reported_in_one_call_each_entry_saying_which(
     )
 
     assert tools["db.list_connections"](" ALL ") == [
-        {"uri": "mariadb://both@127.0.0.1:3306", "path": "/", "kind": "mcp"},
-        {"uri": "mariadb://mcp_a@127.0.0.1:3306", "path": "/", "kind": "mcp"},
-        {"uri": "mariadb://mcp_b@127.0.0.1:3306", "path": "/", "kind": "mcp"},
-        {"uri": both, "path": "/Mine", "kind": "gui"},
+        _entry("mariadb://both@127.0.0.1:3306", "mcp", "/"),
+        _entry("mariadb://mcp_a@127.0.0.1:3306", "mcp", "/"),
+        _entry("mariadb://mcp_b@127.0.0.1:3306", "mcp", "/"),
+        _entry(both, "gui", "/Mine"),
     ]
 
 
@@ -339,70 +350,82 @@ def test_all_names_no_list_a_connection_can_be_stored_in(
         )
 
 
-def test_the_folder_of_a_connection_is_reported_in_gui_mode_only(
+def test_the_details_of_a_connection_are_reported_in_gui_mode_only(
     monkeypatch, gui_mode, clean_config
 ):
-    """The extension shows folders; an agent never sees one.
+    """The extension shows folders, captions and colors; an agent never does.
 
     Outside GUI mode db.list_connections is the plain URI list it always was,
-    so a filed connection reads exactly like any other there.
+    so a connection with details reads exactly like any other there - not a
+    folder, caption or color reaches an MCP client that is not the extension.
     """
     _empty_both_connection_lists()
     uri = "mariadb://filed@127.0.0.1:3306"
-    config.store_connection(uri, "pw", path="/Sandboxes/note_app")
+    config.store_connection(
+        uri, "pw", path="/Sandboxes/note_app", caption="Notes", color="green"
+    )
 
     tools = _registered_tools(monkeypatch)
     assert tools["db.list_connections"]() == [
-        {"uri": uri, "path": "/Sandboxes/note_app", "kind": "mcp"}
+        _entry(uri, "mcp", "/Sandboxes/note_app", "Notes", "green")
     ]
 
     general.set_gui_mode(False)
     plain = _registered_tools(monkeypatch)
-    assert plain["db.list_connections"]() == [uri]
+    listed = plain["db.list_connections"]()
+    assert listed == [uri]
+    assert all(isinstance(entry, str) for entry in listed)
+    # And nothing else served there can set or read them either.
+    assert not [name for name in plain if name.endswith("_connection")]
 
 
 def test_adding_a_connection_files_it_in_a_folder(
     monkeypatch, gui_mode, clean_config
 ):
-    """The folder goes into the key; re-adding without one keeps it there."""
+    """Re-adding without a folder, caption or color keeps what it had."""
     _empty_both_connection_lists()
     tools = _registered_tools(monkeypatch)
     gui = config.CONNECTION_KIND_GUI
 
     stored = tools["db.add_connection"](
-        "mariadb://foldered@127.0.0.1", "pw", gui, False, "Sandboxes/note_app/"
+        "mariadb://foldered@127.0.0.1", "pw", gui, False, "Sandboxes/note_app/",
+        " Notes ", "Purple",
     )
 
     assert tools["db.list_connections"](gui) == [
-        {"uri": stored, "path": "/Sandboxes/note_app", "kind": "gui"}
+        _entry(stored, "gui", "/Sandboxes/note_app", "Notes", "purple")
     ]
 
     # A password corrected by adding again must not move it to the top.
     tools["db.add_connection"](stored, "new-pw", gui, False)
     assert tools["db.list_connections"](gui) == [
-        {"uri": stored, "path": "/Sandboxes/note_app", "kind": "gui"}
+        _entry(stored, "gui", "/Sandboxes/note_app", "Notes", "purple")
     ]
     assert config.get_connection_password(stored, gui) == "new-pw"
 
-    tools["db.add_connection"](stored, "new-pw", gui, False, "/")
+    tools["db.add_connection"](stored, "new-pw", gui, False, "/", "", "")
     assert tools["db.list_connections"](gui) == [
-        {"uri": stored, "path": "/", "kind": "gui"}
+        _entry(stored, "gui", "/")
     ]
 
 
-def test_a_folder_name_with_a_colon_is_refused_before_anything_is_stored(
+def test_a_bad_caption_or_color_is_refused_before_anything_is_stored(
     monkeypatch, gui_mode, clean_config
 ):
     _empty_both_connection_lists()
     tools = _registered_tools(monkeypatch)
+    gui = config.CONNECTION_KIND_GUI
 
-    with pytest.raises(ToolError, match="contains a ':'"):
+    with pytest.raises(ToolError, match="not a connection color"):
         tools["db.add_connection"](
-            "mariadb://colon@127.0.0.1", "pw", config.CONNECTION_KIND_GUI,
-            False, "/a:b",
+            "mariadb://bad@127.0.0.1", "pw", gui, False, "/a", None, "teal"
+        )
+    with pytest.raises(ToolError, match="single line"):
+        tools["db.add_connection"](
+            "mariadb://bad@127.0.0.1", "pw", gui, False, None, "a\nb"
         )
 
-    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
+    assert config.list_connection_uris(gui) == []
 
 
 def test_a_connection_key_too_long_is_refused_before_it_is_verified(
@@ -420,16 +443,16 @@ def test_a_connection_key_too_long_is_refused_before_it_is_verified(
 
     monkeypatch.setattr(setup_cli, "verify_connection", must_not_verify)
 
-    uri = "mariadb://long@127.0.0.1:3306/" + "s" * 150
+    uri = "mariadb://long@127.0.0.1:3306/" + "s" * 220
     with pytest.raises(ToolError, match="at most 247 bytes"):
-        tools["db.add_connection"](uri, "pw", gui, True, "/" + "f" * 80)
+        tools["db.add_connection"](uri, "pw", gui, True, "/f")
     assert config.list_connection_uris(gui) == []
 
 
 def test_updating_into_a_key_too_long_leaves_the_connection_alone(
     monkeypatch, gui_mode, clean_config
 ):
-    """Neither a new folder nor a new URI too long moves anything."""
+    """A new URI too long moves nothing; a long folder does not count."""
     _empty_both_connection_lists()
     gui = config.CONNECTION_KIND_GUI
     uri = "mariadb://stays@127.0.0.1:3306"
@@ -438,15 +461,11 @@ def test_updating_into_a_key_too_long_leaves_the_connection_alone(
 
     with pytest.raises(ToolError, match="at most 247 bytes"):
         tools["db.update_connection"](
-            uri, None, gui, None, None, "/" + "x" * 230
-        )
-    with pytest.raises(ToolError, match="at most 247 bytes"):
-        tools["db.update_connection"](
             uri, uri + "/" + "s" * 220, gui, config.CONNECTION_KIND_MCP,
         )
 
     assert tools["db.list_connections"]("all") == [
-        {"uri": uri, "path": "/Here", "kind": "gui"}
+        _entry(uri, "gui", "/Here")
     ]
     assert config.get_connection_password(uri, gui) == "kept"
 
@@ -454,39 +473,80 @@ def test_updating_into_a_key_too_long_leaves_the_connection_alone(
 def test_updating_moves_a_connection_to_another_folder(
     monkeypatch, gui_mode, clean_config
 ):
-    """A move keeps the password and leaves no key behind in the old folder."""
+    """A move keeps the password, and the caption and color go along."""
     _empty_both_connection_lists()
     gui = config.CONNECTION_KIND_GUI
     uri = "mariadb://mover@127.0.0.1:3306"
-    config.store_connection(uri, "kept", gui, "/Old")
+    config.store_connection(uri, "kept", gui, "/Old", "Mover", "red")
     tools = _registered_tools(monkeypatch)
 
     assert tools["db.update_connection"](
         uri, None, gui, None, None, "/New/Nested"
     ) == uri
     assert tools["db.list_connections"](gui) == [
-        {"uri": uri, "path": "/New/Nested", "kind": "gui"}
+        _entry(uri, "gui", "/New/Nested", "Mover", "red")
     ]
     assert config.get_connection_password(uri, gui) == "kept"
     assert config.list_stored_connection_uris(gui) == [uri]
 
-    # Changing the URI or the list without naming a folder keeps it.
+    # Changing the URI or the list without naming a detail keeps it.
     moved = tools["db.update_connection"](
         uri, "mariadb://mover@127.0.0.1:3307", gui, config.CONNECTION_KIND_MCP,
     )
     assert tools["db.list_connections"](config.CONNECTION_KIND_MCP) == [
-        {"uri": moved, "path": "/New/Nested", "kind": "mcp"}
+        _entry(moved, "mcp", "/New/Nested", "Mover", "red")
     ]
+    # The old URI's details went with its key.
+    assert config.get_connection_details(uri, gui) == {
+        "path": "", "caption": "", "color": "",
+    }
     assert tools["db.list_connections"](gui) == []
 
-    # And "/" takes it back to the top level.
+    # "/" takes it back to the top level, and "" clears a caption or color.
     tools["db.update_connection"](
-        moved, None, config.CONNECTION_KIND_MCP, None, None, "/"
+        moved, None, config.CONNECTION_KIND_MCP, None, None, "/", "", "blue"
     )
     assert tools["db.list_connections"](config.CONNECTION_KIND_MCP) == [
-        {"uri": moved, "path": "/", "kind": "mcp"}
+        _entry(moved, "mcp", "/", "", "blue")
     ]
     assert config.get_connection_password(moved) == "kept"
+
+
+def test_changing_only_the_details_leaves_the_secret_alone(
+    monkeypatch, gui_mode, clean_config
+):
+    """Folder, caption and color are not in the key, so the key is not written."""
+    _empty_both_connection_lists()
+    gui = config.CONNECTION_KIND_GUI
+    uri = "mariadb://details_only@127.0.0.1:3306"
+    config.store_connection(uri, "kept", gui)
+    tools = _registered_tools(monkeypatch)
+
+    def must_not_write(*args, **kwargs):
+        raise AssertionError("the secret store was written")
+
+    monkeypatch.setattr(config, "_shell", lambda: _NoWrites(must_not_write))
+    assert tools["db.update_connection"](
+        uri, None, gui, None, None, "/F", "Caption", "yellow"
+    ) == uri
+    monkeypatch.undo()
+
+    assert config.list_connections_with_details(gui) == [
+        _entry(uri, "gui", "/F", "Caption", "yellow")
+    ]
+    assert config.get_connection_password(uri, gui) == "kept"
+
+
+class _NoWrites:
+    """The real shell, with every write to the secret store refused."""
+
+    def __init__(self, refuse):
+        self._refuse = refuse
+
+    def __getattr__(self, name):
+        if name in ("store_secret", "delete_secret"):
+            return self._refuse
+        return getattr(mysqlsh.globals.shell, name)
 
 
 def test_a_connection_that_does_not_open_is_not_stored(

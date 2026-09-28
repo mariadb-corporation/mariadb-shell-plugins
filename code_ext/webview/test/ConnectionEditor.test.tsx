@@ -60,6 +60,8 @@ const load = async (
         hasStoredPassword: false,
         path: "/",
         folders: [],
+        caption: "",
+        color: "",
         ...rest,
     } as EditorHostMessage);
 };
@@ -714,37 +716,92 @@ describe("ConnectionEditor", () => {
                 .toBe("/Sandboxes/note_app");
         });
 
-        it("says at once why a folder name cannot hold a colon", async () => {
-            await mount();
-            await load({ user: "dba" });
+        it("takes any folder, however long: it is not in the key",
+            async () => {
+                await mount();
+                await load({ user: "dba" });
 
-            await type("Folder", "/a:b");
+                await type("Folder", `/a:b/${"f".repeat(300)}`);
 
-            expect(folderBox().classList.contains("invalid")).toBe(true);
-            expect(host.textContent).toContain("contains a ':'");
-        });
+                expect(folderBox().classList.contains("invalid")).toBe(false);
+                await click("Create");
+                expect(lastPosted<ISaveMessage>("save")?.path)
+                    .toBe(`/a:b/${"f".repeat(300)}`);
+            });
 
-        it("says at once when folder and URI are too long to store, and "
-            + "will not save them", async () => {
+        it("says at once when the URI is too long to store, and will not "
+            + "save it", async () => {
             await mount();
             await load({ user: "dba", host: "localhost" });
 
-            // mariadb://dba@localhost:3306 is 28 bytes, the folder's ':'
-            // one more, and 247 is the budget.
-            await type("Folder", `/${"f".repeat(217)}`);
-            expect(folderBox().classList.contains("invalid")).toBe(false);
+            // mariadb://dba@localhost:3306/ is 29 bytes, and 247 the budget.
+            await type("Default Schema", "s".repeat(218));
             expect(host.querySelector(".uri-problem")).toBeNull();
 
-            await type("Folder", `/${"f".repeat(218)}`);
-            expect(folderBox().classList.contains("invalid")).toBe(true);
+            await type("Default Schema", "s".repeat(219));
             expect(host.querySelector(".uri-problem")?.textContent)
-                .toContain("at most 247 bytes together, and they take 248");
+                .toContain("at most 247 bytes, and it takes 248");
 
             posted.length = 0;
             await click("Create");
             expect(lastPosted("save")).toBeUndefined();
             expect(host.querySelector(".message.error")?.textContent)
-                .toContain("Use a shorter folder path or URI.");
+                .toContain("Use a shorter URI.");
+        });
+    });
+
+    describe("caption and color", () => {
+        const swatch = (name: string): HTMLButtonElement => {
+            return host.querySelector(`button.swatch[aria-label=${name}]`) as
+                HTMLButtonElement;
+        };
+
+        it("shows what the connection has, and saves what was picked",
+            async () => {
+                await mount();
+                await load({ user: "dba" }, { caption: "Shop", color: "red" });
+
+                expect((host.querySelector("input[maxlength]") as HTMLInputElement)
+                    .value).toBe("Shop");
+                expect(swatch("Red").getAttribute("aria-checked")).toBe("true");
+                expect(swatch("None").getAttribute("aria-checked"))
+                    .toBe("false");
+
+                await type("Caption", "Shop DB");
+                await act(async () => {
+                    swatch("Blue").click();
+                    await Promise.resolve();
+                });
+                await click("Create");
+
+                expect(lastPosted<ISaveMessage>("save")).toMatchObject({
+                    caption: "Shop DB", color: "blue",
+                });
+            });
+
+        it("clears the color with None", async () => {
+            await mount();
+            await load({ user: "dba" }, { color: "green" });
+
+            await act(async () => {
+                swatch("None").click();
+                await Promise.resolve();
+            });
+            await click("Create");
+
+            expect(lastPosted<ISaveMessage>("save")?.color).toBe("");
+        });
+
+        it("will not save a caption of more than 100 characters", async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            await type("Caption", "c".repeat(101));
+            expect(host.textContent).toContain("at most 100 characters");
+
+            posted.length = 0;
+            await click("Create");
+            expect(lastPosted("save")).toBeUndefined();
         });
     });
 });

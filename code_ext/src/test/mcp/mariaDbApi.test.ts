@@ -162,25 +162,65 @@ describe("MariaDbApi", () => {
         ]);
     });
 
-    it("sends a folder only when there is one to send", async () => {
-        await api.addConnection("a@b:1", "pw", "gui", false, "/Sandboxes");
-        expect(caller.calls[0]!.args).toEqual({
-            uri: "a@b:1",
-            password: "pw",
-            kind: "gui",
-            verify: false,
-            path: "/Sandboxes",
+    it("sends a folder, caption or color only when there is one to send",
+        async () => {
+            await api.addConnection("a@b:1", "pw", "gui", false, {
+                path: "/Sandboxes", caption: "Shop",
+            });
+            expect(caller.calls[0]!.args).toEqual({
+                uri: "a@b:1",
+                password: "pw",
+                kind: "gui",
+                verify: false,
+                path: "/Sandboxes",
+                caption: "Shop",
+            });
+
+            // Only what was sent matters; this fake has no answer to decode.
+            await api.updateConnection(
+                "a@b:1", undefined, "gui", undefined, undefined,
+                { path: "/", caption: "", color: "blue" },
+            ).catch(() => { /* nothing to decode */ });
+            expect(caller.calls[1]).toEqual({
+                name: "db.update_connection",
+                args: {
+                    uri: "a@b:1",
+                    kind: "gui",
+                    new_path: "/",
+                    new_caption: "",
+                    new_color: "blue",
+                },
+            });
         });
 
-        // Only what was sent matters; this fake has no answer to decode.
-        await api.updateConnection(
-            "a@b:1", undefined, "gui", undefined, undefined, "/",
-        ).catch(() => { /* nothing to decode */ });
-        expect(caller.calls[1]).toEqual({
-            name: "db.update_connection",
-            args: { uri: "a@b:1", kind: "gui", new_path: "/" },
+    it("reads each connection's caption and color, where it has them",
+        async () => {
+            const looks = new MariaDbApi(createCaller({
+                "db.list_connections": {
+                    content: [
+                        {
+                            type: "text",
+                            text: '{"uri":"a@b:1","path":"/","kind":"gui",'
+                                + '"caption":"Shop","color":"green"}',
+                        },
+                        {
+                            type: "text",
+                            text: '{"uri":"c@d:2","path":"/","kind":"gui",'
+                                + '"caption":"","color":"teal"}',
+                        },
+                    ],
+                },
+            }));
+
+            await expect(looks.listConnectionEntries("gui")).resolves.toEqual([
+                {
+                    uri: "a@b:1", path: "/", kind: "gui",
+                    caption: "Shop", color: "green",
+                },
+                // None, and a color this does not know is none either.
+                { uri: "c@d:2", path: "/", kind: "gui" },
+            ]);
         });
-    });
 
     it("deletes a connection from the list it names", async () => {
         await expect(api.deleteConnection("dba@localhost:3310", "gui"))

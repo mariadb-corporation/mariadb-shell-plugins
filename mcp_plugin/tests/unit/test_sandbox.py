@@ -85,7 +85,10 @@ def test_sandbox_deploy(sandbox):
     # Filed in the Sandboxes folder, which the list above does not show: an
     # agent sees a plain URI, and only the extension sees the folder.
     stored = config.resolve_connection_uri(sandbox.uri)
-    assert config.get_connection_path(stored) == config.SANDBOX_CONNECTION_PATH
+    assert (
+        config.get_connection_details(stored)["path"]
+        == config.SANDBOX_CONNECTION_PATH
+    )
 
     # The deployed instance reports a vendor and a version.
     vendor = helpers.tool_payload(

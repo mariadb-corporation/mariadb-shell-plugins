@@ -23,9 +23,7 @@ import {
 } from "../connections/connectionManager.js";
 import {
     ROOT_FOLDER,
-    filingProblem,
     folderNames,
-    folderProblem,
     normalizeFolder,
 } from "../connections/connectionFolders.js";
 import {
@@ -558,40 +556,6 @@ export class ConnectionsTreeProvider
         }
 
         return all;
-    }
-
-    /**
-     * Why a folder cannot take a new name, if it cannot: a connection in or
-     * below it would no longer fit in the secret store's key. What Rename
-     * Folder checks as the name is typed, so the refusal comes before the
-     * attempt rather than after.
-     *
-     * @param folder The folder to rename.
-     * @param name Its new name, as typed.
-     *
-     * @returns The complaint, or undefined when the name is fine; a listing
-     *          that fails says nothing, and the rename itself then reports.
-     */
-    public async renameProblem(
-        folder: IFolderNode,
-        name: string,
-    ): Promise<string | undefined> {
-        const renamed = normalizeFolder(`${parentOf(folder.path)}/${name}`);
-        const problem = folderProblem(renamed);
-        if (problem !== undefined || renamed === folder.path) {
-            return problem;
-        }
-
-        try {
-            const filings = await this.#filingsOf(
-                [{ from: folder.path, to: renamed }], []);
-
-            return filingProblem(filings.map(({ connection, path }) => {
-                return { uri: connection.uri, path };
-            }));
-        } catch {
-            return undefined;
-        }
     }
 
     /**

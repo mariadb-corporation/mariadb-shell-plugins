@@ -509,3 +509,27 @@ describe("ConnectionsModel.getChildren", () => {
         })).resolves.toEqual([]);
     });
 });
+
+describe("a connection's caption and color", () => {
+    it("reaches the connection's node", async () => {
+        const api = createFakeApi({
+            connections: ["shop@localhost:1", "plain@localhost:2"],
+            looks: { "shop@localhost:1": { caption: "Shop", color: "red" } },
+        });
+        const model = new ConnectionsModel(
+            new ConnectionManager(
+                () => { return Promise.resolve(api); },
+                createFakeSettings(),
+            ),
+            () => { return false; },
+        );
+
+        const [shop, plain] = await model.getRoots();
+
+        expect(shop).toMatchObject({
+            uri: "shop@localhost:1", caption: "Shop", color: "red",
+        });
+        expect(plain).not.toHaveProperty("caption");
+        expect(plain).not.toHaveProperty("color");
+    });
+});

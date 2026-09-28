@@ -26,8 +26,12 @@ import {
 } from "../connections/connectionFolders.js";
 import type { IStoredConnection } from "../connections/connectionStore.js";
 import { withDefaultScheme } from "../connections/connectionUri.js";
-import { OBJECT_TYPES, type ConnectionKind, type ObjectType }
-    from "../mcp/types.js";
+import {
+    OBJECT_TYPES,
+    type ConnectionColor,
+    type ConnectionKind,
+    type ObjectType,
+} from "../mcp/types.js";
 
 /**
  * A folder of connections. Folders exist as the paths connections are filed
@@ -55,6 +59,10 @@ export interface IConnectionNode {
     uri: string;
     /** The folder it is filed in; `/` for the top level. */
     path?: string;
+    /** What the row shows instead of the URI; undefined for none. */
+    caption?: string;
+    /** The color the row is drawn in; undefined for none. */
+    color?: ConnectionColor;
     connected: boolean;
     isDefault: boolean;
     /**
@@ -256,6 +264,12 @@ export class ConnectionsModel {
                 kind: "connection",
                 uri: connection.uri,
                 path: connection.path ?? ROOT_FOLDER,
+                ...(connection.caption === undefined
+                    ? {}
+                    : { caption: connection.caption }),
+                ...(connection.color === undefined
+                    ? {}
+                    : { color: connection.color }),
                 connected,
                 isDefault: withDefaultScheme(connection.uri) === defaultUri,
                 connectionKind: connection.kind,

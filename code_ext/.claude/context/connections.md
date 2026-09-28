@@ -291,20 +291,43 @@ dba@localhost:3310/world      connection (icon by scheme; "default" if default)
 ## Folders
 
 A connection can be filed in a folder - `/Sandboxes`, `/Sandboxes/note_app` -
-which the MCP server stores in the connection's key and reports from the GUI
-`db.list_connections` as `{ uri, path }` (a server that predates folders
-answers bare URIs, read as `/`). The folder is presentation only: everything
-still goes by URI and kind.
+and given a caption and a color. The MCP server keeps all three in
+`connections.json`, outside the secret store (the key is only prefix + URI),
+and reports them from the GUI `db.list_connections` as `{ uri, path, kind,
+caption, color }` (a server that predates folders answers bare URIs, read as
+`/`; one that predates captions leaves them out). They are presentation only:
+everything still goes by URI and kind.
 
 - `connectionFolders.ts` mirrors the server's `normalize_connection_path`
-  (`normalizeFolder`, `folderProblem` for the `:` it refuses, `allFolders`
-  for every folder a set of paths implies, parents included).
+  (`normalizeFolder`, `allFolders` for every folder a set of paths implies,
+  parents included). Any folder name goes except the `/` separator, and a
+  folder has no length limit.
+- `connectionDetails.ts` mirrors the rest: `connectionKeyProblem(uri)` (see
+  below), `captionProblem` / `normalizeCaption` (one line, <= 100 chars,
+  trimmed) and `isConnectionColor`. The colors are `CONNECTION_COLORS` in
+  `mcp/types.ts` - red, orange, yellow, green, blue, purple, the server's
+  names.
 - `IMariaDbApi.listConnections` still returns URIs, for its many callers;
-  `listConnectionEntries` is the same tool with the folders.
-  `addConnection(..., path)` and `updateConnection(..., newPath)` send the
-  folder ONLY when there is one to send - a top-level add sends none, an edit
-  sends `new_path` only when it changed - so an older server keeps working
-  wherever folders are not used.
+  `listConnectionEntries` is the same tool with the details (a color it does
+  not know is dropped). `addConnection(..., details)` and
+  `updateConnection(..., newDetails)` take an `IConnectionDetails`
+  `{ path?, caption?, color? }` and send each field ONLY when it is set - a
+  top-level add with no caption sends none, an edit sends only what changed
+  (`saveConnection` compares with `original`) - so an older server keeps
+  working wherever they are not used. `""` clears a caption or color.
+- **A row shows the caption as its label** with the address moved into the
+  description (`address · MCP, default`), and the caption on the tooltip's
+  first line. **The color** cannot tint the SVG connection icons, so a
+  colored row gets a `resourceUri` of scheme `mariadb-connection`
+  (`colorUriOf` in `tree/connectionColors.ts`), and
+  `ConnectionColorDecorations`, registered in `activate` as a file
+  decoration provider, colors its label with the theme's `charts.<color>`
+  and adds a `●` badge. Rows are still in listing order, not sorted by
+  caption.
+- The editor's Basic tab has **Caption** (first field) and **Color** (a
+  radiogroup of swatches drawn with `--vscode-charts-<color>`, plus None). The
+  Color block is a `div.field`, not a `Field`: a `<label>` hands any click in
+  it to its first button.
 - `ConnectionsModel.getRoots` returns the top-level folders (sorted), then the
   top-level connections; a folder's children are its subfolders then its
   connections, of BOTH lists. A folder exists only as a path something is
@@ -383,28 +406,18 @@ still goes by URI and kind.
   that fails, then `ConnectionsTreeProvider.fileInFolder` moves them.
 - The editor's **Folder** field (Basic tab) offers every folder in use through
   a `<datalist>`; the panel lists them on `ready`, and a failed listing just
-  leaves the list empty. A `:` marks the field invalid at once, and
-  `saveConnection` refuses it before anything is sent.
+  leaves the list empty.
 
 - **The stored key is at most 256 bytes**, which the server enforces (its
   Windows credential helper cannot store more; see mcp_plugin's
-  `context/connections.md`). Folder + `:` + URI get
-  `CONNECTION_KEY_BUDGET` (247, the prefixes being 9 bytes) in UTF-8 bytes. `connectionFolders.ts` mirrors
-  the check: `connectionKeyBytes`, `connectionKeyProblem`, `filingProblem` for
-  a batch, and `folderProblem` refuses a folder that alone leaves no room for
-  a URI. Where it is checked:
-  - the editor shows it live under the URI box, marks the Folder field
-    invalid and refuses Create/Save; `saveConnection` refuses it too. It
-    measures the URI as BUILT, and the server normalizes (adds `:3306` when
-    no port is given), so the server's refusal stays the last word;
-  - `fileConnections` checks EVERY filing before moving any, so a drop,
-    Rename Folder or New Folder with Selection is all or nothing ("Nothing
-    was moved. ...") rather than a folder split across two paths. The empty
-    folders `#refile` carries are moved after, so they stay put too;
-  - Rename Folder's `validateInput` is `tree.renameProblem`, async, which
-    re-files the subtree on paper (`#filingsOf`, shared with `#refile`) and
-    reports before the attempt; New Folder validates the whole
-    `<parent>/<name>` path, not just the name.
+  `context/connections.md`). Only the URI counts: it gets
+  `CONNECTION_KEY_BUDGET` (247, the prefixes being 9 bytes) in UTF-8 bytes,
+  checked by `connectionKeyProblem(uri)`. The editor shows it live under the
+  URI box and refuses Create/Save; `saveConnection` refuses it too. It
+  measures the URI as BUILT, and the server normalizes (adds `:3306` when no
+  port is given), so the server's refusal stays the last word. Moving,
+  renaming and New Folder with Selection need no check at all any more - a
+  folder is not in the key.
 
 ## Opening a connection
 

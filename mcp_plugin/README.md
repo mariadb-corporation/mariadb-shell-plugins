@@ -49,6 +49,11 @@ is no terminal — see [Non-interactive setup](#non-interactive-setup).
 - **Allowed paths**: choose the local directories the server may access (the current
   directory is suggested as the default, shown as a full path). These are stored in a
   `settings.json` file in the plugin data directory.
+- **Connection details** (VS Code extension only): the folder a connection is filed
+  in, its caption and its color are kept in a `connections.json` file next to
+  `settings.json`, never in the secret store. They are reported only by a server
+  started with `--gui`; everywhere else `db.list_connections` stays the plain list
+  of URIs.
 - **Migration tooling** (menu only, Linux and macOS only): downloads the
   [MySQL-to-MariaDB migration tooling](https://github.com/mariadb-corporation/Mysql-to-MariaDB-Migration)
   and extracts it into `~/.local/share/mariadb-migrator/<version>`.

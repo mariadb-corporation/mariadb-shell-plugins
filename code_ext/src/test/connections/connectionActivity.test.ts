@@ -193,9 +193,11 @@ describe("createLoggingApi", () => {
 
             await logging.listConnections("gui");
             await logging.addConnection(
-                "a@b:1", "secret", "gui", false, "/Sandboxes");
+                "a@b:1", "secret", "gui", false,
+                { path: "/Sandboxes", caption: "Shop" });
             await logging.updateConnection(
-                "a@b:1", undefined, "gui", "mcp", "secret", "/");
+                "a@b:1", undefined, "gui", "mcp", "secret",
+                { path: "/", color: "red" });
             await logging.deleteConnection("a@b:1", "mcp");
             await logging.testConnection("a@b:1", "secret");
 
@@ -206,11 +208,11 @@ describe("createLoggingApi", () => {
                     "Listed 0 connections"],
                 ["General Actions", "",
                     "db.add_connection(a@b:1, kind=gui, verify=false, "
-                    + "path=/Sandboxes)",
+                    + "path=/Sandboxes, caption=Shop)",
                     "Stored a@b:1"],
                 ["General Actions", "",
                     "db.update_connection(a@b:1, kind=gui, new_kind=mcp, "
-                    + "password=***, new_path=/)",
+                    + "password=***, new_path=/, new_color=red)",
                     "Updated a@b:1"],
                 ["General Actions", "", "db.delete_connection(a@b:1, kind=mcp)",
                     "Deleted a@b:1"],

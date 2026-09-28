@@ -54,11 +54,11 @@ change belongs to up to date, and this table with it.
   installing it and diffing its plugin against this repo's. The readers
   of those fields still fall back when they are missing, but no shell
   the extension accepts lacks them any more.
-- **Connection folders need a shell that is not released yet.** No shell
-  the extension accepts bundles an `mcp_plugin` with folder support, and an
-  older plugin SILENTLY ignores `path` / `new_path` (the MCP SDK drops
-  arguments a tool does not declare) - a folder change "saves" and does
-  nothing. Decided: no runtime detection; raise `MINIMUM_SHELL_VERSION` to
+- **Connection folders, captions and colors need a shell that is not
+  released yet.** No shell the extension accepts bundles an `mcp_plugin`
+  with them, and an older plugin SILENTLY ignores `path` / `caption` /
+  `color` and their `new_` forms (the MCP SDK drops arguments a tool does
+  not declare) - such a change "saves" and does nothing. Decided: no runtime detection; raise `MINIMUM_SHELL_VERSION` to
   the first release that includes it once that is out. To try folders
   before then, the shell in use has to load this repo's plugin, not its
   bundled one (the installed 26.9.4 loads
@@ -112,8 +112,18 @@ wip/connection-folders
   Rename Folder validates the subtree as the name is typed. See
   [`context/connections.md`](context/connections.md), "The stored key is at
   most 256 bytes".
-- Suite at this checkpoint: **950 pass across 44 files**, `npm run pretest`
-  (typecheck + eslint) and `npm run build` clean.
+- **The commit after that** (2026-09-28) follows the plugin moving folder,
+  caption and color out of the key into `connections.json`: only the URI
+  counts against the 247 bytes now, so the drop / rename / New Folder
+  length checks and the `:` rule are gone (`filingProblem`, `folderProblem`,
+  `renameProblem` removed; `connectionKeyProblem(uri)` moved to
+  `connectionDetails.ts`). A connection has a **Caption** (the row's label)
+  and a **Color** (the row's label color and a `●` badge, via a file
+  decoration). `addConnection` / `updateConnection` take an
+  `IConnectionDetails` object instead of a trailing path.
+- Suite at this checkpoint: **961 pass across 45 files**, `npm run pretest`
+  (typecheck + eslint) and `npm run build` clean. NOT clicked through in a
+  running VS Code.
 
 ## Conventions
 

@@ -15,6 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import type { ConnectionColor } from "../mcp/types.js";
 import type { IConnectionFields } from "./connectionUri.js";
 
 /**
@@ -44,6 +45,10 @@ export interface ILoadMessage {
     path: string;
     /** Every folder in use, to offer as a choice. */
     folders: string[];
+    /** The caption to show instead of the URI; `""` for none. */
+    caption: string;
+    /** The color to show it in; `""` for none. */
+    color: ConnectionColor | "";
 }
 
 /** The answer to a Test Connection. */
@@ -104,6 +109,10 @@ export interface ISaveMessage {
     mcpAccess: boolean;
     /** The folder to file it in, as typed; empty or `/` is the top level. */
     path: string;
+    /** The caption, as typed; empty for none. */
+    caption: string;
+    /** The color; `""` for none. */
+    color: ConnectionColor | "";
 }
 
 /** Send the clipboard's text, to be taken as a connection URI. */

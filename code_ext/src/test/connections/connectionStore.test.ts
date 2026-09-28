@@ -149,38 +149,111 @@ describe("folders", () => {
             expect(fake.updated[1]!.newPath).toBe("/");
         });
 
-    it("refuses a folder name with a colon, storing nothing", async () => {
+    it("refuses a URI too long to store, storing nothing", async () => {
         const fake = api();
+        const original = {
+            uri: "mariadb://dba@localhost:3306", kind: "gui", path: "/",
+        } as const;
+        const long = fields({ user: "dba", schema: "s".repeat(220) });
 
-        const result = await saveConnection(fake, {
-            fields: fields({ user: "dba" }), mcpAccess: false, path: "/a:b",
+        const added = await saveConnection(fake, {
+            fields: long, mcpAccess: false,
+        });
+        const edited = await saveConnection(fake, {
+            fields: long, mcpAccess: false, original,
         });
 
-        expect(result.error).toContain("contains a ':'");
+        expect(added.error).toContain("at most 247 bytes");
+        expect(edited.error).toContain("at most 247 bytes");
         expect(fake.added).toEqual([]);
+        expect(fake.updated).toEqual([]);
     });
 
-    it("refuses a folder and URI too long to store, storing nothing",
+    it("lets a folder be as long as it likes", async () => {
+        const fake = api();
+        const folder = `/${"f".repeat(300)}`;
+
+        const result = await saveConnection(fake, {
+            fields: fields({ user: "dba" }), mcpAccess: false, path: folder,
+        });
+
+        expect(result.error).toBeUndefined();
+        expect(fake.added[0]!.path).toBe(folder);
+    });
+});
+
+describe("captions and colors", () => {
+    it("reports each connection's caption and color", async () => {
+        const fake = api({
+            connections: ["a@b:1", "c@d:2"],
+            looks: { "a@b:1": { caption: "Shop", color: "green" } },
+        });
+
+        await expect(listConnections(fake)).resolves.toEqual([
+            {
+                uri: "a@b:1", kind: "mcp", path: "/",
+                caption: "Shop", color: "green",
+            },
+            { uri: "c@d:2", kind: "mcp", path: "/" },
+        ]);
+    });
+
+    it("sends a new connection's caption and color, and none when empty",
+        async () => {
+            const fake = api();
+
+            const result = await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                caption: "  Shop ", color: "blue",
+            });
+            await saveConnection(fake, {
+                fields: fields({ user: "top" }), mcpAccess: false,
+                caption: " ", color: "",
+            });
+
+            expect(result).toMatchObject({ caption: "Shop", color: "blue" });
+            expect(fake.added[0]).toMatchObject({
+                caption: "Shop", color: "blue",
+            });
+            expect(fake.added[1]).not.toHaveProperty("caption");
+            expect(fake.added[1]).not.toHaveProperty("color");
+        });
+
+    it("sends an edited connection's caption and color only when changed",
         async () => {
             const fake = api();
             const original = {
-                uri: "mariadb://dba@localhost:3306", kind: "gui", path: "/",
+                uri: "mariadb://dba@localhost:3306", kind: "gui",
+                caption: "Shop", color: "red",
             } as const;
-            const folder = `/${"f".repeat(220)}`;
 
-            const added = await saveConnection(fake, {
+            await saveConnection(fake, {
                 fields: fields({ user: "dba" }), mcpAccess: false,
-                path: folder,
+                caption: "Shop", color: "red", original,
             });
-            const edited = await saveConnection(fake, {
+            await saveConnection(fake, {
                 fields: fields({ user: "dba" }), mcpAccess: false,
-                path: folder, original,
+                caption: "", color: "yellow", original,
             });
 
-            expect(added.error).toContain("at most 247 bytes");
-            expect(edited.error).toContain("at most 247 bytes");
+            expect(fake.updated[0]).not.toHaveProperty("newCaption");
+            expect(fake.updated[0]).not.toHaveProperty("newColor");
+            expect(fake.updated[1]).toMatchObject({
+                newCaption: "", newColor: "yellow",
+            });
+        });
+
+    it("refuses a caption of more than one line, storing nothing",
+        async () => {
+            const fake = api();
+
+            const result = await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                caption: "a\nb",
+            });
+
+            expect(result.error).toContain("single line");
             expect(fake.added).toEqual([]);
-            expect(fake.updated).toEqual([]);
         });
 });
 
@@ -406,6 +479,8 @@ describe("fieldsOf", () => {
         })).toEqual({
             mcpAccess: true,
             path: "/",
+            caption: "",
+            color: "",
             fields: fields({
                 user: "dba",
                 host: "db.example.com",

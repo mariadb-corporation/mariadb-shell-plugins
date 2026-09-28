@@ -24,10 +24,12 @@ import {
 } from "./protocol.js";
 import {
     ALL_CONNECTION_KINDS,
+    CONNECTION_COLORS,
     CONNECTION_KINDS,
 } from "./types.js";
 import type {
     ConnectionKind,
+    IConnectionDetails,
     IConnectionEntry,
     IMariaDbApi,
     IObjectDetails,
@@ -71,12 +73,13 @@ export class MariaDbApi implements IMariaDbApi {
     }
 
     /**
-     * Lists the configured connections of one kind with the folder each is
-     * filed in.
+     * Lists the configured connections of one kind with how each is shown:
+     * its folder, caption and color.
      *
-     * A server started with `--gui` answers with `{ uri, path }` objects; one
-     * that predates folders, or runs without `--gui`, answers with bare URIs,
-     * which are read as filed at the top level.
+     * A server started with `--gui` answers with `{ uri, path, kind, caption,
+     * color }` objects; one that predates folders, or runs without `--gui`,
+     * answers with bare URIs, which are read as filed at the top level. One
+     * that predates captions and colors leaves them out.
      *
      * @param kind Which list to read, left out as `listConnections` does.
      *             `"all"` reads both in one call, each entry naming its list;
@@ -101,11 +104,17 @@ export class MariaDbApi implements IMariaDbApi {
             const listKind = CONNECTION_KINDS.find((known) => {
                 return known === entry.kind;
             });
+            // A color this extension has no way to show is shown as none.
+            const color = CONNECTION_COLORS.find((known) => {
+                return known === entry.color;
+            });
 
             return {
                 uri: String(entry.uri),
                 path: entry.path || "/",
                 ...(listKind === undefined ? {} : { kind: listKind }),
+                ...(entry.caption ? { caption: String(entry.caption) } : {}),
+                ...(color === undefined ? {} : { color }),
             };
         });
     }
@@ -127,9 +136,10 @@ export class MariaDbApi implements IMariaDbApi {
      * @param verify Whether the server opens a session with the credentials
      *               first and stores them only if that works. Defaults to the
      *               server's own default, which is to verify.
-     * @param path The folder to file it in, such as `/Sandboxes`. Left out
-     *             when not given, so a server that predates folders is not
-     *             handed an argument it does not know.
+     * @param details The folder to file it in, such as `/Sandboxes`, its
+     *                caption and its color. Each one left out when not given,
+     *                so a server that predates it is not handed an argument
+     *                it does not know, and one already stored keeps its own.
      *
      * @returns The normalized URI the connection was stored under, which is
      *          the spelling `listConnections` then reports.
@@ -139,7 +149,7 @@ export class MariaDbApi implements IMariaDbApi {
         password: string,
         kind?: ConnectionKind,
         verify?: boolean,
-        path?: string,
+        details?: IConnectionDetails,
     ): Promise<string> {
         const name = "db.add_connection";
 
@@ -148,7 +158,7 @@ export class MariaDbApi implements IMariaDbApi {
             password,
             ...(kind === undefined ? {} : { kind }),
             ...(verify === undefined ? {} : { verify }),
-            ...(path === undefined ? {} : { path }),
+            ...detailArguments(details, ""),
         }));
     }
 
@@ -192,8 +202,9 @@ export class MariaDbApi implements IMariaDbApi {
      * @param kind The list it is in now.
      * @param newKind The list to move it to, or undefined to keep it.
      * @param password A new password, or undefined to keep the stored one.
-     * @param newPath The folder to move it to (`/` is the top level), or
-     *                undefined to leave it where it is.
+     * @param newDetails The folder to move it to (`/` is the top level), the
+     *                   caption and the color to give it; each one undefined
+     *                   is left as it is.
      *
      * @returns The URI the connection is now configured under.
      */
@@ -203,7 +214,7 @@ export class MariaDbApi implements IMariaDbApi {
         kind?: ConnectionKind,
         newKind?: ConnectionKind,
         password?: string,
-        newPath?: string,
+        newDetails?: IConnectionDetails,
     ): Promise<string> {
         const name = "db.update_connection";
 
@@ -215,7 +226,7 @@ export class MariaDbApi implements IMariaDbApi {
             ...(kind === undefined ? {} : { kind }),
             ...(newKind === undefined ? {} : { new_kind: newKind }),
             ...(password === undefined ? {} : { password }),
-            ...(newPath === undefined ? {} : { new_path: newPath }),
+            ...detailArguments(newDetails, "new_"),
         }));
     }
 
@@ -385,3 +396,28 @@ export class MariaDbApi implements IMariaDbApi {
         );
     }
 }
+
+/**
+ * The tool arguments for a connection's details, each one left out when it
+ * is undefined.
+ *
+ * @param details The details, or undefined for none.
+ * @param prefix What the tool's argument names start with: `new_` for
+ *               `db.update_connection`, nothing for `db.add_connection`.
+ *
+ * @returns The arguments.
+ */
+const detailArguments = (
+    details: IConnectionDetails | undefined,
+    prefix: string,
+): Record<string, string> => {
+    const args: Record<string, string> = {};
+    for (const field of ["path", "caption", "color"] as const) {
+        const value = details?.[field];
+        if (value !== undefined) {
+            args[`${prefix}${field}`] = value;
+        }
+    }
+
+    return args;
+};

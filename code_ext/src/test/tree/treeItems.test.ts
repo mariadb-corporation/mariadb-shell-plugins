@@ -22,11 +22,16 @@ import type {
     IObjectNode,
 } from "../../tree/connectionsModel.js";
 import {
+    CONNECTION_COLOR_SCHEME,
+    ConnectionColorDecorations,
+} from "../../tree/connectionColors.js";
+import {
     FolderTreeItem,
     createTreeItem,
     type IconResolver,
 } from "../../tree/treeItems.js";
 import {
+    FileDecoration,
     ThemeColor,
     ThemeIcon,
     TreeItemCollapsibleState,
@@ -181,6 +186,44 @@ describe("createTreeItem for a connection", () => {
     it("leaves a non-default connection undecorated", () => {
         expect(createTreeItem(connection(), resolveIcon).description)
             .toBeUndefined();
+    });
+});
+
+describe("a connection's caption and color", () => {
+    it("shows the caption as the label and the address beside it", () => {
+        const item = createTreeItem(connection({
+            uri: "mariadb://dba@localhost:3310?ssl-mode=REQUIRED",
+            caption: "Shop",
+            connectionKind: "mcp",
+            isDefault: true,
+        }), resolveIcon);
+
+        expect(item.label).toBe("Shop");
+        expect(item.description).toBe("dba@localhost:3310 · MCP, default");
+        expect(item.tooltip).toBe("Shop\nmariadb://dba@localhost:3310"
+            + "?ssl-mode=REQUIRED (MCP access allowed, default connection)");
+    });
+
+    it("carries its color to the decorations, and no color none", () => {
+        const plain = createTreeItem(connection(), resolveIcon);
+        const colored = createTreeItem(
+            connection({ color: "green" }), resolveIcon);
+
+        expect(plain.resourceUri).toBeUndefined();
+        const decoration = new ConnectionColorDecorations()
+            .provideFileDecoration(colored.resourceUri as never);
+        expect(decoration).toEqual(
+            new FileDecoration("●", undefined, new ThemeColor("charts.green")));
+    });
+
+    it("decorates nothing but a known color of its own scheme", () => {
+        const decorations = new ConnectionColorDecorations();
+
+        expect(decorations.provideFileDecoration(
+            Uri.file("/green/gui") as never)).toBeUndefined();
+        expect(decorations.provideFileDecoration(Uri.from({
+            scheme: CONNECTION_COLOR_SCHEME, path: "/teal/gui",
+        }) as never)).toBeUndefined();
     });
 });
 

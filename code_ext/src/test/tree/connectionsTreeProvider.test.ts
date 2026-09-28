@@ -859,51 +859,27 @@ describe("ConnectionsTreeProvider", () => {
             expect(redrawn).toEqual([]);
         });
 
-        it("moves nothing of a folder renamed too long for what is in it",
+        it("moves into a folder of any length: it is not in the key",
             async () => {
                 const folders = new FolderSet();
-                await folders.add("/Sandboxes/note_app/empty");
+                const deep = `/${"d".repeat(300)}`;
+                await folders.add(deep);
                 const { api, provider } = createFiled(folders);
-                const [sandboxes] = await provider.getChildren();
-                // '/<name>/note_app:note@localhost:4' has 27 bytes on top.
-                const fits = "n".repeat(220);
-                const tooLong = "n".repeat(221);
+                const roots = await provider.getChildren();
+                const target = roots.find((node) => {
+                    return node.kind === "folder" && node.path === deep;
+                });
+                const top = roots.find((node) => {
+                    return node.kind === "connection";
+                });
 
-                await expect(provider.renameProblem(sandboxes as never, fits))
-                    .resolves.toBeUndefined();
-                await expect(
-                    provider.renameProblem(sandboxes as never, tooLong),
-                ).resolves.toContain(
-                    `'note@localhost:4' cannot be stored in the folder `
-                    + `'/${tooLong}/note_app'`);
+                await provider.handleDrop(
+                    target, drag(provider, [top!]) as never);
 
-                await provider.renameFolder(sandboxes as never, tooLong);
-
-                // Not even the connection that would have fitted.
-                expect(api.updated).toEqual([]);
-                expect(folders.list()).toEqual(["/Sandboxes/note_app/empty"]);
-                expect(errorMessages).toHaveLength(1);
-                expect(errorMessages[0]).toContain("Nothing was moved.");
+                expect(movesOf(api)).toEqual([[(top as { uri: string }).uri,
+                    deep]]);
+                expect(errorMessages).toEqual([]);
             });
-
-        it("moves nothing dropped into a folder too long for it", async () => {
-            const folders = new FolderSet();
-            const deep = `/${"d".repeat(235)}`;
-            await folders.add(deep);
-            const { api, provider } = createFiled(folders);
-            const roots = await provider.getChildren();
-            const target = roots.find((node) => {
-                return node.kind === "folder" && node.path === deep;
-            });
-            const top = roots.find((node) => {
-                return node.kind === "connection";
-            });
-
-            await provider.handleDrop(target, drag(provider, [top!]) as never);
-
-            expect(api.updated).toEqual([]);
-            expect(errorMessages[0]).toContain("at most 247 bytes");
-        });
 
         it("says why a move failed, and redraws what did move", async () => {
             const { api, provider, log } = createFiled();

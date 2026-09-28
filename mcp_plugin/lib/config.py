@@ -28,14 +28,22 @@ Two kinds of configuration are persisted:
   was so have no scheme in their key; they are reported with the default one
   filled in and resolve either way, so nothing has to be migrated.
 
-  A connection may also sit in a *folder*, a path such as ``/Sandboxes`` or
-  ``/Sandboxes/note_app``, which is written into the key in front of the URI:
-  ``MCP:CONN:/Sandboxes:<uri>``. A connection at the top level has no
-  path in its key, which is how every connection stored before folders existed
-  reads, so again nothing is migrated. The folder is presentation for the VS
-  Code extension and nothing else: a connection is still identified by its URI
-  alone, one URI is in one folder per list, and outside GUI mode the folder is
-  never reported (see :func:`list_connections_with_paths`).
+  A connection may also have *details*: the *folder* it is filed in, a path
+  such as ``/Sandboxes`` or ``/Sandboxes/note_app``, a *caption* to show
+  instead of the URI and a *color* (see :func:`get_connection_details`). They
+  are presentation for the VS Code extension and nothing else, and are kept
+  out of the secret store, in a ``connections.json`` file next to
+  ``settings.json``, keyed by the list and the stored URI. The secret store
+  stays the one record of which connections exist: a connection with no
+  details is at the top level with no caption, and details of a connection
+  that is not stored are ignored and dropped on the next write, so the two can
+  never disagree about anything but how a connection is shown. Outside GUI
+  mode the details are never reported (see
+  :func:`list_connections_with_details`).
+
+  Folders used to be written into the key, ``MCP:CONN:/Sandboxes:<uri>``; such
+  keys are moved to the plain key, their folder into ``connections.json``, the
+  first time the store is read (see :func:`upgrade_connection_keys`).
 
   There are two lists of them, told apart by a *kind* and stored under a prefix
   of their own: :data:`CONNECTION_KIND_MCP`, the connections ``mcp.setup``
@@ -48,13 +56,16 @@ Two kinds of configuration are persisted:
 
   The prefixes used to be spelled out, ``MCP:Connection:`` and
   ``GUI:Connection:``. They were shortened because a key is limited to
-  :data:`MAX_CONNECTION_KEY_BYTES` and every byte of prefix is one the folder
-  and URI cannot have; connections stored under the old ones are moved to the
+  :data:`MAX_CONNECTION_KEY_BYTES` and every byte of prefix is one the URI
+  cannot have; connections stored under the old ones are moved to the
   new ones the first time the store is read (see
   :func:`upgrade_connection_keys`).
 * **Allowed paths**: the local directories the MCP server is allowed to
   access. These are stored in a ``settings.json`` file inside the plugin data
   directory (see :func:`mcp_plugin.lib.general.get_mcp_plugin_data_path`).
+  A file of their own rather than a section of ``connections.json``: they are
+  an access control, the details are cosmetic, and a write of one must never
+  be able to lose the other.
 """
 
 # cSpell:ignore mysqlsh MariaDB mysqlx unparse
@@ -145,30 +156,44 @@ DEFAULT_PORT = 3306
 # grammar is RFC 3986's, which allows the ``+`` that ``mariadb+ssh`` uses.
 _SCHEME_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 
-# The folder a connection at the top level is reported in. Never written into
-# a key: a top-level connection is stored as ``<prefix><uri>``, exactly as every
-# connection was before folders existed.
+# The folder a connection at the top level is reported in. Never stored: a
+# connection with no folder in connections.json is at the top level.
 ROOT_CONNECTION_PATH = "/"
 
 # The folder sandbox.deploy files the connections it registers under.
 SANDBOX_CONNECTION_PATH = "/Sandboxes"
 
-# The characters a folder name may not hold. ``/`` separates folders, so it
-# cannot also be part of one; ``:`` ends the path in a stored key, which is how
-# the path and the URI after it are told apart.
-_PATH_ELEMENT_FORBIDDEN = (":",)
-
-# The most bytes a stored key - prefix, folder and URI together - may take.
-# The shell's Windows credential helper stores the key as a CREDENTIAL_ATTRIBUTE
+# The most bytes a stored key - prefix and URI together - may take. The
+# shell's Windows credential helper stores the key as a CREDENTIAL_ATTRIBUTE
 # value, which Windows caps at CRED_MAX_VALUE_SIZE (256 bytes); a longer one
 # fails in CredWrite with nothing to say why. It is enforced on every platform
 # rather than only on Windows, so a connection that can be configured on one
 # machine can be configured on any, and the limit is in UTF-8 BYTES, so a
-# non-ASCII folder name uses it up faster than its length suggests.
+# non-ASCII URI uses it up faster than its length suggests.
 MAX_CONNECTION_KEY_BYTES = 256
+
+# The colors a connection may be given, by name, so that every client can map
+# them onto its own palette - the VS Code extension onto its theme's chart
+# colors, which is what keeps them readable in a light and a dark theme alike.
+CONNECTION_COLORS = ("red", "orange", "yellow", "green", "blue", "purple")
+
+# The most characters a connection caption may have. It is a label for a tree
+# row, not a description.
+MAX_CONNECTION_CAPTION_LENGTH = 100
 
 # Name of the settings file inside the plugin data directory.
 SETTINGS_FILE_NAME = "settings.json"
+
+# Name of the file inside the plugin data directory that holds the details of
+# the stored connections (see get_connection_details).
+CONNECTIONS_FILE_NAME = "connections.json"
+
+# The version of the connections.json format, written into the file so that a
+# later format can tell an older file apart.
+_CONNECTIONS_FILE_VERSION = 1
+
+# The details a connection can have, each stored only when it is not empty.
+_CONNECTION_DETAIL_FIELDS = ("path", "caption", "color")
 
 # Key used in settings.json for the list of allowed directories.
 _ALLOWED_PATHS_KEY = "allowedPaths"
@@ -259,8 +284,7 @@ def normalize_connection_path(path) -> str:
         joined with ``/``.
 
     Raises:
-        mysqlsh.Error: If a folder name holds a ``:``, which would end the
-            path early in the stored key, or the path is not a string.
+        mysqlsh.Error: If the path is not a string.
     """
     if path is None:
         return ""
@@ -272,55 +296,88 @@ def normalize_connection_path(path) -> str:
         )
 
     elements = [element.strip() for element in path.split("/")]
-    elements = [element for element in elements if element != ""]
 
-    for element in elements:
-        if any(char in element for char in _PATH_ELEMENT_FORBIDDEN):
-            raise mysqlsh.Error(
-                f"The folder name '{element}' contains a ':', which a folder "
-                "name may not. Use '/' to put a folder inside another."
-            )
-
-    return "".join(f"/{element}" for element in elements)
+    return "".join(f"/{element}" for element in elements if element != "")
 
 
-def _split_connection_key(suffix) -> tuple:
-    """Takes the part of a secret key after its prefix apart.
+def normalize_connection_caption(caption) -> str:
+    """Returns a connection caption in the one form it is stored in.
 
     Args:
-        suffix (str): ``<uri>`` or ``/path:<uri>``. A URI never starts with a
-            slash - it starts with a scheme or a user name - so a leading slash
-            is what says a path comes first, and the first ``:`` after it ends
-            the path, since no folder name may hold one.
+        caption: The caption, as a caller wrote it. None and blanks mean none.
 
     Returns:
-        A ``(uri, path)`` tuple, the path ``""`` for the top level.
+        The caption without surrounding blanks, ``""`` for none.
+
+    Raises:
+        mysqlsh.Error: If it is not a string, holds a line break or other
+            control character, or is longer than
+            :data:`MAX_CONNECTION_CAPTION_LENGTH`.
     """
-    if suffix.startswith("/"):
-        colon = suffix.find(":")
-        if colon > 0:
-            return (suffix[colon + 1:], suffix[:colon])
+    if caption is None:
+        return ""
 
-    return (suffix, "")
+    if not isinstance(caption, str):
+        raise mysqlsh.Error(
+            f"The connection caption must be a string, not {caption!r}."
+        )
+
+    caption = caption.strip()
+    if any(ord(char) < 32 or ord(char) == 127 for char in caption):
+        raise mysqlsh.Error(
+            "The connection caption must be a single line of text."
+        )
+
+    if len(caption) > MAX_CONNECTION_CAPTION_LENGTH:
+        raise mysqlsh.Error(
+            "The connection caption may have at most "
+            f"{MAX_CONNECTION_CAPTION_LENGTH} characters, and it has "
+            f"{len(caption)}."
+        )
+
+    return caption
 
 
-def _connection_key(uri, kind, path) -> str:
+def normalize_connection_color(color) -> str:
+    """Returns a connection color in the one form it is stored in.
+
+    Args:
+        color: One of :data:`CONNECTION_COLORS`, in any case. None and ``""``
+            mean none.
+
+    Returns:
+        The color name in lower case, ``""`` for none.
+
+    Raises:
+        mysqlsh.Error: If it names no color in :data:`CONNECTION_COLORS`.
+    """
+    if color is None:
+        return ""
+
+    normalized = str(color).strip().lower()
+    if normalized and normalized not in CONNECTION_COLORS:
+        raise mysqlsh.Error(
+            f"'{color}' is not a connection color. Use one of: "
+            f"{', '.join(CONNECTION_COLORS)}, or '' for none."
+        )
+
+    return normalized
+
+
+def _connection_key(uri, kind) -> str:
     """Returns the secret key a connection is stored under.
 
     Args:
         uri (str): The connection URI, as it is stored.
         kind: The connection kind.
-        path (str): The folder, normalized; ``""`` for the top level.
 
     Returns:
         The key.
     """
-    prefix = connection_secret_prefix(kind)
-
-    return f"{prefix}{path}:{uri}" if path else f"{prefix}{uri}"
+    return f"{connection_secret_prefix(kind)}{uri}"
 
 
-def check_connection_key_length(uri, kind=None, path="") -> None:
+def check_connection_key_length(uri, kind=None) -> None:
     """Refuses a connection whose stored key would be too long to store.
 
     Called before anything is written, so a connection that cannot be stored
@@ -330,7 +387,6 @@ def check_connection_key_length(uri, kind=None, path="") -> None:
     Args:
         uri (str): The connection URI, exactly as it is to be stored.
         kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
-        path (str): The folder, normalized; ``""`` for the top level.
 
     Returns:
         None
@@ -339,42 +395,258 @@ def check_connection_key_length(uri, kind=None, path="") -> None:
         mysqlsh.Error: If the key would take more than
             :data:`MAX_CONNECTION_KEY_BYTES`.
     """
-    key_bytes = len(_connection_key(uri, kind, path).encode("utf-8"))
+    key_bytes = len(_connection_key(uri, kind).encode("utf-8"))
     if key_bytes <= MAX_CONNECTION_KEY_BYTES:
         return
 
-    budget = MAX_CONNECTION_KEY_BYTES - len(
-        connection_secret_prefix(kind).encode("utf-8")
-    )
-    excess = key_bytes - MAX_CONNECTION_KEY_BYTES
-    where = f"in the folder '{path}'" if path else "at the top level"
+    prefix_bytes = len(connection_secret_prefix(kind).encode("utf-8"))
     raise mysqlsh.Error(
-        f"The connection '{uri}' cannot be stored {where}: its folder and URI "
-        f"may take at most {budget} bytes together, and they take "
-        f"{budget + excess}. The secret store keys the password by both, and "
-        f"Windows allows no more than {MAX_CONNECTION_KEY_BYTES} bytes per key. "
-        "Use a shorter folder path or URI."
+        f"The connection '{uri}' cannot be stored: its URI may take at most "
+        f"{MAX_CONNECTION_KEY_BYTES - prefix_bytes} bytes, and it takes "
+        f"{key_bytes - prefix_bytes}. "
+        "The secret store keys the password by it, and Windows allows no more "
+        f"than {MAX_CONNECTION_KEY_BYTES} bytes per key. Use a shorter URI."
     )
+
+
+# --- Connection details (stored in connections.json) ----------------------
+
+
+def get_connections_file_path() -> str:
+    """Returns the full path of the connections.json file."""
+    return os.path.join(general.get_plugin_data_path(), CONNECTIONS_FILE_NAME)
+
+
+def _stored_uris_by_kind() -> dict:
+    """Returns the stored URIs of every kind, read with one listing.
+
+    Straight from the secret store and without the upgrade, which is what lets
+    :func:`upgrade_connection_keys` itself write details.
+
+    Returns:
+        A dict of kind to the set of URIs stored under its prefix.
+    """
+    keys = list(_shell().list_secrets())
+
+    return {
+        kind: {key[len(prefix):] for key in keys if key.startswith(prefix)}
+        for kind, prefix in _CONNECTION_SECRET_PREFIXES.items()
+    }
+
+
+def _read_connections_file() -> dict:
+    """Returns the details of every connection, as connections.json has them.
+
+    Read defensively: the file only ever says how a connection is SHOWN, so
+    one that is missing, unreadable or of an unknown shape means no details,
+    not an error that would stop the connections from being listed.
+
+    Returns:
+        A dict of kind to a dict of stored URI to that connection's non-empty
+        details.
+    """
+    path = get_connections_file_path()
+    if not os.path.exists(path):
+        return {}
+
+    try:
+        with open(path, "r", encoding="utf-8") as connections_file:
+            content = json.load(connections_file)
+    except (OSError, ValueError) as error:
+        general.log_event(f"config: could not read '{path}': {error}")
+        return {}
+
+    if not isinstance(content, dict):
+        return {}
+
+    details = {}
+    for kind in SUPPORTED_CONNECTION_KINDS:
+        entries = content.get(kind)
+        if not isinstance(entries, dict):
+            continue
+
+        details[kind] = {
+            uri: {
+                field: value
+                for field, value in entry.items()
+                if field in _CONNECTION_DETAIL_FIELDS
+                and isinstance(value, str)
+                and value
+            }
+            for uri, entry in entries.items()
+            if isinstance(entry, dict)
+        }
+
+    return details
+
+
+def _write_connections_file(details: dict) -> None:
+    """Persists the details of every connection to connections.json.
+
+    Details of a connection that is no longer stored are dropped on the way,
+    which is what keeps the file from collecting whatever was deleted behind
+    this plugin's back (by an older shell, say). The file is replaced whole
+    and atomically, so a reader never sees half of it.
+
+    Args:
+        details (dict): What :func:`_read_connections_file` returns, changed.
+
+    Returns:
+        None
+    """
+    stored = _stored_uris_by_kind()
+    content = {"version": _CONNECTIONS_FILE_VERSION}
+    for kind in SUPPORTED_CONNECTION_KINDS:
+        content[kind] = {
+            uri: entry
+            for uri, entry in sorted(details.get(kind, {}).items())
+            if entry and uri in stored[kind]
+        }
+
+    path = get_connections_file_path()
+    temporary = f"{path}.tmp"
+    with open(temporary, "w", encoding="utf-8") as connections_file:
+        json.dump(content, connections_file, indent=4)
+    os.replace(temporary, path)
+
+
+def get_connection_details(uri, kind=None) -> dict:
+    """Returns how a stored connection is shown: its folder, caption and color.
+
+    Args:
+        uri (str): The connection URI, exactly as it is stored.
+        kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
+
+    Returns:
+        A dict with ``path`` (normalized, ``""`` for the top level),
+        ``caption`` and ``color``, each ``""`` where the connection has none -
+        which is everything for a URI that is not stored.
+    """
+    entry = _read_connections_file().get(normalize_connection_kind(kind), {})
+
+    return _details_of(entry.get(uri, {}))
+
+
+def _details_of(entry: dict) -> dict:
+    """Returns one connection's stored details with every field filled in."""
+    return {field: entry.get(field, "") for field in _CONNECTION_DETAIL_FIELDS}
+
+
+def set_connection_details(
+    uri, kind=None, path=None, caption=None, color=None
+) -> dict:
+    """Changes how a stored connection is shown, leaving its password alone.
+
+    Args:
+        uri (str): The connection URI, exactly as it is stored.
+        kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
+        path: The folder to file it in (see :func:`normalize_connection_path`).
+        caption: The caption to show (see :func:`normalize_connection_caption`).
+        color: The color to show (see :func:`normalize_connection_color`).
+            For each of the three, None keeps what the connection has and
+            ``""`` clears it.
+
+    Returns:
+        The connection's details as they now are, as
+        :func:`get_connection_details` reports them.
+
+    Raises:
+        mysqlsh.Error: If a detail is not valid, before anything is written.
+    """
+    kind = normalize_connection_kind(kind)
+    changes = _normalized_details(path, caption, color)
+
+    details = _read_connections_file()
+    entry = dict(details.setdefault(kind, {}).get(uri, {}))
+    if changes:
+        entry.update(changes)
+        entry = {field: value for field, value in entry.items() if value}
+        details[kind][uri] = entry
+        _write_connections_file(details)
+
+    return _details_of(entry)
+
+
+def _normalized_details(path, caption, color) -> dict:
+    """Returns the details a caller asked for, normalized; None ones left out.
+
+    Raises:
+        mysqlsh.Error: If a detail is not valid.
+    """
+    changes = {}
+    if path is not None:
+        changes["path"] = normalize_connection_path(path)
+    if caption is not None:
+        changes["caption"] = normalize_connection_caption(caption)
+    if color is not None:
+        changes["color"] = normalize_connection_color(color)
+
+    return changes
+
+
+def _drop_connection_details(uri, kind) -> None:
+    """Forgets the details of a connection that was deleted.
+
+    Best effort: the secret is already gone, and details nothing is stored
+    under are ignored anyway and dropped on the next write.
+    """
+    details = _read_connections_file()
+    if uri not in details.get(kind, {}):
+        return
+
+    del details[kind][uri]
+    try:
+        _write_connections_file(details)
+    except OSError as error:
+        general.log_event(
+            f"config: could not forget the details of '{uri}' ({kind}): {error}"
+        )
+
+
+# --- Connections (stored as shell secrets), continued ----------------------
+
+
+def _split_folder_key(suffix) -> tuple:
+    """Takes a key suffix apart that may still carry a folder.
+
+    Only for :func:`upgrade_connection_keys`: folders used to be written into
+    the key as ``/path:<uri>``. A URI never starts with a slash - it starts
+    with a scheme or a user name - so a leading slash is what said a path came
+    first, and the first ``:`` after it ended the path, since no folder name
+    could hold one then.
+
+    Args:
+        suffix (str): The part of a key after its prefix.
+
+    Returns:
+        A ``(uri, path)`` tuple, the path ``""`` where there was none.
+    """
+    if suffix.startswith("/"):
+        colon = suffix.find(":")
+        if colon > 0:
+            return (suffix[colon + 1:], suffix[:colon])
+
+    return (suffix, "")
 
 
 def upgrade_connection_keys() -> int:
-    """Moves the connections stored under the legacy prefixes to the new ones.
+    """Moves the connections stored under an earlier key format to the current.
 
-    Connections used to be stored under ``MCP:Connection:`` and
-    ``GUI:Connection:``; they are now under :data:`CONNECTION_SECRET_PREFIX`
-    and :data:`GUI_CONNECTION_SECRET_PREFIX`. Everything after the prefix -
-    the folder and the URI - is kept as it is.
+    Two earlier formats are read: the legacy prefixes ``MCP:Connection:`` and
+    ``GUI:Connection:``, now :data:`CONNECTION_SECRET_PREFIX` and
+    :data:`GUI_CONNECTION_SECRET_PREFIX`, and a folder written into the key,
+    ``<prefix>/path:<uri>``, which now goes into connections.json while the key
+    becomes ``<prefix><uri>``. A key can be in both.
 
-    Run once per process, from :func:`_list_stored_connections`, which every
-    read and write of a connection goes through - so it happens whichever
-    entry point is used first, and only once the store is actually needed,
-    rather than on every shell start.
+    Run once per process, from everything that reads or writes a connection,
+    so it happens whichever entry point is used first, and only once the store
+    is actually needed, rather than on every shell start.
 
-    Each key is written under the new prefix BEFORE the old one is deleted, so
-    an interruption leaves a connection under both rather than under neither;
-    the next run then finds the new key there and only deletes the old one. A
-    key that cannot be moved is logged and left where it is, and the upgrade is
-    tried again on the next read.
+    Every new key is written first, then the folders, then the old keys are
+    deleted, so an interruption leaves a connection under both keys rather than
+    under neither; the next run then finds the new key there and only deletes
+    the old one. A key that cannot be moved is logged and left where it is, and
+    the upgrade is tried again on the next read.
 
     Returns:
         The number of connections moved.
@@ -386,36 +658,71 @@ def upgrade_connection_keys() -> int:
     shell = _shell()
     keys = list(shell.list_secrets())
     present = set(keys)
-    moved = 0
+    old_keys = []
+    folders = []
     failed = False
 
-    for kind, legacy_prefix in _LEGACY_CONNECTION_SECRET_PREFIXES.items():
+    for kind in SUPPORTED_CONNECTION_KINDS:
         prefix = connection_secret_prefix(kind)
-        for key in keys:
-            if not key.startswith(legacy_prefix):
-                continue
+        for old_prefix in (_LEGACY_CONNECTION_SECRET_PREFIXES[kind], prefix):
+            for key in keys:
+                if not key.startswith(old_prefix):
+                    continue
 
-            new_key = prefix + key[len(legacy_prefix):]
-            try:
-                # Already there means an earlier run was interrupted after
-                # writing it; it was written from this one, so it is kept.
-                if new_key not in present:
-                    shell.store_secret(new_key, shell.read_secret(key))
-                    present.add(new_key)
-                shell.delete_secret(key)
-                moved += 1
-            except Exception as error:  # noqa: BLE001 - one key must not stop the rest
-                failed = True
-                general.log_event(
-                    f"config: could not move the connection '{key}' to the "
-                    f"'{prefix}' prefix: {error}"
-                )
+                uri, path = _split_folder_key(key[len(old_prefix):])
+                new_key = prefix + uri
+                if new_key == key:
+                    continue
+
+                try:
+                    # Already there means an earlier run was interrupted after
+                    # writing it, or the connection was stored again since;
+                    # either way it is the newer one, so it is kept.
+                    if new_key not in present:
+                        shell.store_secret(new_key, shell.read_secret(key))
+                        present.add(new_key)
+                    old_keys.append(key)
+                    if path:
+                        folders.append((kind, uri, path))
+                except Exception as error:  # noqa: BLE001 - one key must not stop the rest
+                    failed = True
+                    general.log_event(
+                        f"config: could not move the connection '{key}' to "
+                        f"'{new_key}': {error}"
+                    )
+
+    if folders:
+        details = _read_connections_file()
+        for kind, uri, path in folders:
+            # A folder already in the file was set after the key was written.
+            details.setdefault(kind, {}).setdefault(uri, {}).setdefault(
+                "path", path
+            )
+        try:
+            _write_connections_file(details)
+        except OSError as error:
+            general.log_event(
+                f"config: could not keep the folders of the moved connections: "
+                f"{error}"
+            )
+
+    moved = 0
+    for key in old_keys:
+        try:
+            shell.delete_secret(key)
+            moved += 1
+        except Exception as error:  # noqa: BLE001 - one key must not stop the rest
+            failed = True
+            general.log_event(
+                f"config: could not delete the old connection key '{key}': "
+                f"{error}"
+            )
 
     if moved:
         general.log_event(
             f"config: moved {moved} connection(s) to the "
-            f"'{CONNECTION_SECRET_PREFIX}' and '{GUI_CONNECTION_SECRET_PREFIX}' "
-            "secret key prefixes"
+            f"'{CONNECTION_SECRET_PREFIX}<uri>' and "
+            f"'{GUI_CONNECTION_SECRET_PREFIX}<uri>' secret keys"
         )
 
     _connection_keys_upgraded = not failed
@@ -424,67 +731,30 @@ def upgrade_connection_keys() -> int:
 
 
 def _list_stored_connections(kind=None) -> list:
-    """Returns every stored connection of one kind as ``(uri, path)`` pairs.
+    """Returns every stored connection URI of one kind, exactly as stored.
 
     Args:
         kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
 
     Returns:
-        The pairs, sorted by URI.
+        The URIs, sorted.
     """
     upgrade_connection_keys()
     prefix = connection_secret_prefix(kind)
 
     return sorted(
-        _split_connection_key(key[len(prefix):])
+        key[len(prefix):]
         for key in _shell().list_secrets()
         if key.startswith(prefix)
     )
 
 
-def _stored_keys_of(uri, kind=None) -> list:
-    """Returns the secret keys a stored URI is filed under.
+def list_connections_with_details(kind=None) -> list:
+    """Returns the configured connections of one kind with their details.
 
-    One, ordinarily. More only where the store was edited behind this plugin's
-    back and one URI ended up in two folders.
-
-    Args:
-        uri (str): The connection URI, exactly as it is stored.
-        kind: The connection kind.
-
-    Returns:
-        The keys, empty if the URI is not stored in that list.
-    """
-    return [
-        _connection_key(stored_uri, kind, path)
-        for stored_uri, path in _list_stored_connections(kind)
-        if stored_uri == uri
-    ]
-
-
-def get_connection_path(uri, kind=None) -> str:
-    """Returns the folder a stored connection is filed in.
-
-    Args:
-        uri (str): The connection URI, exactly as it is stored.
-        kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
-
-    Returns:
-        The folder, normalized; ``""`` for the top level or a URI not stored.
-    """
-    for stored_uri, path in _list_stored_connections(kind):
-        if stored_uri == uri:
-            return path
-
-    return ""
-
-
-def list_connections_with_paths(kind=None) -> list:
-    """Returns the configured connections of one kind with their folders.
-
-    What the VS Code extension lists in GUI mode. Nothing else reports a
-    folder: outside GUI mode :func:`list_connection_uris` is the list, and the
-    folders are invisible to an agent.
+    What the VS Code extension lists in GUI mode. Nothing else reports the
+    details: outside GUI mode :func:`list_connection_uris` is the list, and the
+    folders, captions and colors are invisible to an agent.
 
     Args:
         kind: The connection kind to list, or None for
@@ -492,11 +762,12 @@ def list_connections_with_paths(kind=None) -> list:
             lists every kind, the MCP list first.
 
     Returns:
-        A list of ``{"uri": ..., "path": ..., "kind": ...}`` dicts, sorted by
-        URI within each kind: the URI reported as :func:`list_connection_uris`
-        reports it, the path :data:`ROOT_CONNECTION_PATH` for the top level,
-        and the kind the list it is in - half of what identifies it, since one
-        URI can be in both.
+        A list of ``{"uri", "path", "kind", "caption", "color"}`` dicts,
+        sorted by URI within each kind: the URI reported as
+        :func:`list_connection_uris` reports it, the path
+        :data:`ROOT_CONNECTION_PATH` for the top level, the kind the list it is
+        in - half of what identifies it, since one URI can be in both - and the
+        caption and color, ``""`` for none.
     """
     if (
         isinstance(kind, str)
@@ -505,22 +776,28 @@ def list_connections_with_paths(kind=None) -> list:
         return [
             connection
             for each in SUPPORTED_CONNECTION_KINDS
-            for connection in list_connections_with_paths(each)
+            for connection in list_connections_with_details(each)
         ]
 
     kind = normalize_connection_kind(kind)
+    # Listed first: that is what runs the upgrade, which may write the file.
+    uris = _list_stored_connections(kind)
+    entries = _read_connections_file().get(kind, {})
 
-    return sorted(
-        (
+    connections = []
+    for uri in uris:
+        details = _details_of(entries.get(uri, {}))
+        connections.append(
             {
                 "uri": with_default_scheme(uri),
-                "path": path or ROOT_CONNECTION_PATH,
+                "path": details["path"] or ROOT_CONNECTION_PATH,
                 "kind": kind,
+                "caption": details["caption"],
+                "color": details["color"],
             }
-            for uri, path in _list_stored_connections(kind)
-        ),
-        key=lambda connection: connection["uri"],
-    )
+        )
+
+    return sorted(connections, key=lambda connection: connection["uri"])
 
 
 def list_stored_connection_uris(kind=None) -> list:
@@ -541,7 +818,7 @@ def list_stored_connection_uris(kind=None) -> list:
         The sorted list of stored connection URIs of that kind, without the
         folder any of them is filed in.
     """
-    return sorted(uri for uri, _ in _list_stored_connections(kind))
+    return _list_stored_connections(kind)
 
 
 def list_connection_uris(kind=None) -> list:
@@ -840,23 +1117,25 @@ def get_connection_password(uri: str, kind=None) -> str:
     Returns:
         The stored password.
     """
-    keys = _stored_keys_of(uri, kind)
-    # A URI not stored is read at the top-level key, which is what fails with
-    # the shell's own error for a missing secret.
-    return _shell().read_secret(keys[0] if keys else _connection_key(uri, kind, ""))
+    upgrade_connection_keys()
+
+    # A URI not stored fails with the shell's own error for a missing secret.
+    return _shell().read_secret(_connection_key(uri, kind))
 
 
-def store_connection(uri: str, password: str, kind=None, path=None) -> None:
-    """Stores the password for the given connection URI.
+def store_connection(
+    uri: str, password: str, kind=None, path=None, caption=None, color=None
+) -> None:
+    """Stores the password for the given connection URI, and its details.
 
     A plain write, under exactly the URI it is given. Anything CONFIGURING a
     connection - as opposed to restoring or moving one - follows it with
     :func:`drop_superseded_spellings`, which is what keeps one connection to one
     key.
 
-    One URI is in one folder, so storing it under a new folder MOVES it: the
-    new key is written first and the old one deleted after, which leaves the
-    connection configured under one of the two if anything fails in between.
+    The password is written first and the details after, so a failure in
+    between leaves a connection that is stored and merely shown at the top
+    level.
 
     Args:
         uri (str): The connection URI.
@@ -864,30 +1143,29 @@ def store_connection(uri: str, password: str, kind=None, path=None) -> None:
         kind: The connection kind to store it as, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
         path: The folder to file it in (see :func:`normalize_connection_path`).
-            None keeps the folder it is already in, or the top level for a new
-            connection - so replacing a password never moves a connection.
+        caption: The caption to show for it.
+        color: The color to show it in (one of :data:`CONNECTION_COLORS`).
+            For each of the three, None keeps what the connection has, or
+            none for a new connection - so replacing a password never moves a
+            connection - and ``""`` clears it.
 
     Returns:
         None
 
     Raises:
-        mysqlsh.Error: If the folder and URI make a key longer than
-            :data:`MAX_CONNECTION_KEY_BYTES`, before anything is written.
+        mysqlsh.Error: If the URI makes a key longer than
+            :data:`MAX_CONNECTION_KEY_BYTES`, or a detail is not valid, before
+            anything is written.
     """
-    old_keys = _stored_keys_of(uri, kind)
-    folder = (
-        get_connection_path(uri, kind)
-        if path is None
-        else normalize_connection_path(path)
-    )
-    check_connection_key_length(uri, kind, folder)
-    key = _connection_key(uri, kind, folder)
+    kind = normalize_connection_kind(kind)
+    changes = _normalized_details(path, caption, color)
+    check_connection_key_length(uri, kind)
+    upgrade_connection_keys()
 
-    _shell().store_secret(key, password)
+    _shell().store_secret(_connection_key(uri, kind), password)
 
-    for old_key in old_keys:
-        if old_key != key:
-            _shell().delete_secret(old_key)
+    if changes:
+        set_connection_details(uri, kind, **changes)
 
 
 def drop_superseded_spellings(uri, kind=None) -> list:
@@ -930,6 +1208,21 @@ def drop_superseded_spellings(uri, kind=None) -> list:
         and normalize_connection_uri(configured_uri) == normalized
     ]
 
+    # The connection kept is the one being configured, so how it was shown
+    # goes with it - unless it has details of its own already.
+    inherited = next(
+        (
+            details
+            for details in (
+                get_connection_details(old_uri, kind) for old_uri in superseded
+            )
+            if any(details.values())
+        ),
+        None,
+    )
+    if inherited and not any(get_connection_details(uri, kind).values()):
+        set_connection_details(uri, kind, **inherited)
+
     for old_uri in superseded:
         delete_connection(old_uri, kind)
 
@@ -937,7 +1230,7 @@ def drop_superseded_spellings(uri, kind=None) -> list:
 
 
 def delete_connection(uri: str, kind=None) -> None:
-    """Deletes the stored password for the given connection URI.
+    """Deletes the stored password for the given connection URI, and its details.
 
     Args:
         uri (str): The connection URI.
@@ -947,11 +1240,13 @@ def delete_connection(uri: str, kind=None) -> None:
     Returns:
         None
     """
-    keys = _stored_keys_of(uri, kind)
-    # A URI not stored goes to the top-level key, which is what raises the
-    # shell's own error for a missing secret - callers rely on that.
-    for key in keys or [_connection_key(uri, kind, "")]:
-        _shell().delete_secret(key)
+    kind = normalize_connection_kind(kind)
+    upgrade_connection_keys()
+
+    # A URI not stored raises the shell's own error for a missing secret -
+    # callers rely on that. The details go only once the secret has.
+    _shell().delete_secret(_connection_key(uri, kind))
+    _drop_connection_details(uri, kind)
 
 
 # --- Allowed paths (stored in settings.json) ------------------------------

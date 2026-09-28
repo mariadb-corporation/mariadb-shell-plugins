@@ -76,12 +76,22 @@ export interface Disposable {
     dispose(): unknown;
 }
 
-/** A stand-in for `vscode.Uri`, keeping only the path. */
+/** A stand-in for `vscode.Uri`, keeping only the path and the query. */
 export class Uri {
     private constructor(
         public readonly scheme: string,
         public readonly path: string,
+        public readonly query = "",
     ) { }
+
+    public static from(components: {
+        scheme: string;
+        path?: string;
+        query?: string;
+    }): Uri {
+        return new Uri(
+            components.scheme, components.path ?? "", components.query ?? "");
+    }
 
     public static file(path: string): Uri {
         return new Uri("file", path);
@@ -130,6 +140,14 @@ export class ThemeColor {
     public constructor(public readonly id: string) { }
 }
 
+export class FileDecoration {
+    public constructor(
+        public readonly badge?: string,
+        public readonly tooltip?: string,
+        public readonly color?: ThemeColor,
+    ) { }
+}
+
 export class ThemeIcon {
     public constructor(
         public readonly id: string,
@@ -143,6 +161,7 @@ export class TreeItem {
     public description?: string | boolean;
     public tooltip?: string;
     public command?: unknown;
+    public resourceUri?: Uri;
 
     public constructor(
         public label: string,
@@ -227,6 +246,9 @@ export const shownEditors: Array<{
 }> = [];
 /** The decoration types that were created. */
 export const decorationTypes: MockDecorationType[] = [];
+
+/** Every `registerFileDecorationProvider` call's provider, in order. */
+export const fileDecorationProviders: unknown[] = [];
 /** What `window.visibleTextEditors` reports. */
 export let visibleTextEditors: MockTextEditor[] = [];
 
@@ -685,6 +707,12 @@ export const window = {
         };
     },
 
+    registerFileDecorationProvider: (provider: unknown): Disposable => {
+        fileDecorationProviders.push(provider);
+
+        return { dispose: () => { /* nothing to undo in a test */ } };
+    },
+
     createOutputChannel: (name: string): MockOutputChannel => {
         const channel = new MockOutputChannel(name);
         outputChannels.push(channel);
@@ -1066,6 +1094,7 @@ export const resetVscodeMock = (): void => {
     shownDocuments.length = 0;
     shownEditors.length = 0;
     decorationTypes.length = 0;
+    fileDecorationProviders.length = 0;
     visibleEditorListeners.clear();
     changeDocumentListeners.clear();
     setVisibleTextEditors([]);

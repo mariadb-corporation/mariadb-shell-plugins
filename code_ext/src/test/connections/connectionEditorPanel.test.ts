@@ -256,6 +256,8 @@ describe("ConnectionEditorPanel", () => {
             password: "pw",
             mcpAccess: true,
             path: "/",
+            caption: "",
+            color: "",
         });
 
         expect(api.added).toEqual([{
@@ -275,7 +277,7 @@ describe("ConnectionEditorPanel", () => {
                 // No user name, so this builds no URI at all.
                 fields: loadedFields(),
                 password: "pw",
-                mcpAccess: false, path: "/",
+                mcpAccess: false, path: "/", caption: "", color: "",
             });
 
             expect(posted()).toContainEqual({
@@ -283,6 +285,39 @@ describe("ConnectionEditorPanel", () => {
             });
             expect(api.added).toEqual([]);
             expect(currentPanel().disposed).toBe(false);
+        });
+
+    it("opens with the connection's caption and color, and saves new ones",
+        async () => {
+            const { host, api } = createHost({
+                guiConnections: ["mariadb://dba@localhost:3306"],
+            });
+
+            ConnectionEditorPanel.show(extensionUri as never, host, {
+                uri: "mariadb://dba@localhost:3306", kind: "gui",
+                caption: "Shop", color: "red",
+            });
+            await receive({ type: "ready" });
+            expect(posted()[0]).toMatchObject({ caption: "Shop", color: "red" });
+
+            await receive({
+                type: "save",
+                fields: loadedFields(),
+                mcpAccess: false,
+                path: "/",
+                caption: "Shop DB",
+                color: "",
+            });
+
+            expect(api.updated).toEqual([{
+                uri: "mariadb://dba@localhost:3306",
+                newUri: undefined,
+                kind: "gui",
+                newKind: undefined,
+                password: undefined,
+                newCaption: "Shop DB",
+                newColor: "",
+            }]);
         });
 
     it("closes without saving on cancel", async () => {
@@ -347,6 +382,8 @@ describe("ConnectionEditorPanel", () => {
                 fields: loadedFields(),
                 mcpAccess: false,
                 path: "/New",
+                caption: "",
+                color: "",
             });
 
             expect(api.updated).toEqual([{

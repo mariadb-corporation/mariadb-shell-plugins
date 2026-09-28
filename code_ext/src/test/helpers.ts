@@ -19,7 +19,9 @@ import type { IConnectionSettings } from "../connections/connectionManager.js";
 import type { IToolResult } from "../mcp/protocol.js";
 import type { IMcpConnection, IMcpConnector } from "../mcp/session.js";
 import type {
+    ConnectionColor,
     ConnectionKind,
+    IConnectionDetails,
     IMariaDbApi,
     IObjectDetails,
     IObjectInfo,
@@ -144,6 +146,8 @@ export interface FakeApiOptions {
     guiConnections?: string[];
     /** Connection URI -> the folder it is filed in; `/` when not named. */
     paths?: Record<string, string>;
+    /** Connection URI -> its caption and color, where it has them. */
+    looks?: Record<string, { caption?: string; color?: ConnectionColor }>;
     /** Refuse `kind: "all"`, as a server that predates it does. */
     noAllKind?: boolean;
     /** Makes `testConnection` reject with this message instead of passing. */
@@ -172,6 +176,8 @@ export interface FakeApi extends IMariaDbApi {
         password: string;
         kind?: ConnectionKind;
         path?: string;
+        caption?: string;
+        color?: ConnectionColor | "";
     }>;
     /** The connections that were deleted, in order. */
     deleted: Array<{ uri: string; kind?: ConnectionKind }>;
@@ -185,6 +191,8 @@ export interface FakeApi extends IMariaDbApi {
         newKind?: ConnectionKind;
         password?: string;
         newPath?: string;
+        newCaption?: string;
+        newColor?: ConnectionColor | "";
     }>;
     /** What the last script was asked to do about a failing statement. */
     stopOnError?: boolean;
@@ -226,7 +234,12 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
         listConnectionEntries: (kind?: ConnectionKind | "all") => {
             const entries = (list: string[] | undefined, of: ConnectionKind) => {
                 return (list ?? []).map((uri) => {
-                    return { uri, path: options.paths?.[uri] ?? "/", kind: of };
+                    return {
+                        uri,
+                        path: options.paths?.[uri] ?? "/",
+                        kind: of,
+                        ...options.looks?.[uri],
+                    };
                 });
             };
 
@@ -250,11 +263,9 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             password: string,
             kind?: ConnectionKind,
             _verify?: boolean,
-            path?: string,
+            details?: IConnectionDetails,
         ) => {
-            added.push({
-                uri, password, kind, ...(path === undefined ? {} : { path }),
-            });
+            added.push({ uri, password, kind, ...details });
 
             return Promise.resolve(uri);
         },
@@ -271,11 +282,19 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             kind?: ConnectionKind,
             newKind?: ConnectionKind,
             password?: string,
-            newPath?: string,
+            newDetails?: IConnectionDetails,
         ) => {
             updated.push({
                 uri, newUri, kind, newKind, password,
-                ...(newPath === undefined ? {} : { newPath }),
+                ...(newDetails?.path === undefined
+                    ? {}
+                    : { newPath: newDetails.path }),
+                ...(newDetails?.caption === undefined
+                    ? {}
+                    : { newCaption: newDetails.caption }),
+                ...(newDetails?.color === undefined
+                    ? {}
+                    : { newColor: newDetails.color }),
             });
 
             return Promise.resolve(newUri ?? uri);

@@ -57,11 +57,11 @@ import {
 import {
     ROOT_FOLDER,
     commonFolder,
-    folderProblem,
     normalizeFolder,
 } from "./connections/connectionFolders.js";
 import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
 import { deleteConnection } from "./connections/connectionStore.js";
+import { ConnectionColorDecorations } from "./tree/connectionColors.js";
 import type {
     ConnectionsNode,
     IConnectionNode,
@@ -270,6 +270,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
     });
 
     context.subscriptions.push(
+        // Draws a connection's color on its row (see connectionColors.ts).
+        vscode.window.registerFileDecorationProvider(
+            new ConnectionColorDecorations()),
         tree,
         editors,
         statementDots,
@@ -415,12 +418,10 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         }
 
                         // A rename stays where it is; moving is a drag.
-                        // The rest - the ':' and whether everything in it
-                        // still fits the secret store - the tree checks.
                         return value.includes("/")
                             ? "A folder name cannot contain '/'. Drag the "
                             + "folder to move it into another."
-                            : tree.renameProblem(node, value);
+                            : undefined;
                     },
                 });
                 if (name === undefined) {
@@ -763,10 +764,9 @@ const askForNewFolder = async (
             + "inside another.",
         placeHolder: "Sandboxes",
         validateInput: (value) => {
-            // The whole path, since its length is what can be too much.
             return normalizeFolder(value) === ROOT_FOLDER
                 ? "Enter a folder name."
-                : folderProblem(`${parent}/${value}`);
+                : undefined;
         },
     });
 

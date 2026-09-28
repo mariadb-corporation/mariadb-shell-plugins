@@ -42,6 +42,7 @@ import {
     statusBarItems,
     statusBarMessages,
     env,
+    fileDecorationProviders,
     treeViews,
     inputBoxAnswers,
     inputBoxCalls,
@@ -234,6 +235,8 @@ describe("activate", () => {
         expect(treeViews.map((view) => {
             return view.id;
         })).toEqual(["mariadb.connections"]);
+        // What draws a connection's color on its row.
+        expect(fileDecorationProviders).toHaveLength(1);
         expect([...registeredCommands.keys()].sort()).toEqual([
             "mariadb.addConnection",
             "mariadb.clearDefaultConnection",
@@ -458,7 +461,7 @@ describe("activate", () => {
         expect(inner).toMatchObject({ path: "/Sandboxes/note app" });
     });
 
-    it("refuses an empty name or one with a colon, and makes nothing on cancel",
+    it("refuses an empty name, and makes nothing on cancel",
         async () => {
             activate(createContext() as never);
             inputBoxAnswers.push(undefined);
@@ -467,10 +470,9 @@ describe("activate", () => {
 
             const validate = inputBoxCalls[0]!.validateInput!;
             expect(validate(" / ")).toBe("Enter a folder name.");
-            expect(validate("a:b")).toContain("contains a ':'");
-            expect(validate("Work")).toBeUndefined();
-            expect(validate("n".repeat(250)))
-                .toContain("leaves no room for a URI");
+            // Neither is in the stored key, so neither is refused.
+            expect(validate("a:b")).toBeUndefined();
+            expect(validate("n".repeat(250))).toBeUndefined();
             expect((await treeProvider().getChildren()).filter((node) => {
                 return node.kind === "folder";
             })).toEqual([]);
@@ -489,11 +491,8 @@ describe("activate", () => {
         const validate = inputBoxCalls[1]!.validateInput!;
         expect(validate("")).toBe("Enter a folder name.");
         expect(validate("a/b")).toContain("cannot contain '/'");
-        // Asked of the tree, which answers asynchronously.
-        await expect(validate("a:b")).resolves.toContain("contains a ':'");
-        await expect(validate("Newer")).resolves.toBeUndefined();
-        await expect(validate("n".repeat(250)))
-            .resolves.toContain("leaves no room for a URI");
+        expect(validate("a:b")).toBeUndefined();
+        expect(validate("n".repeat(250))).toBeUndefined();
         expect((await treeProvider().getChildren())[0])
             .toMatchObject({ path: "/New" });
     });

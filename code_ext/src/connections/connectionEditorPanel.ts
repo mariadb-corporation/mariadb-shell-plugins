@@ -30,6 +30,7 @@ import {
 import type {
     EditorHostMessage,
     EditorWebviewMessage,
+    ISaveMessage,
 } from "./editorProtocol.js";
 
 /**
@@ -263,6 +264,8 @@ export class ConnectionEditorPanel {
                         fields: emptyConnectionFields(),
                         mcpAccess: false,
                         path: this.#newIn,
+                        caption: "",
+                        color: "" as const,
                     }
                     : fieldsOf(this.#connection);
 
@@ -277,6 +280,8 @@ export class ConnectionEditorPanel {
                     hasStoredPassword: this.#connection !== undefined,
                     path: state.path,
                     folders: await this.#folders(),
+                    caption: state.caption,
+                    color: state.color,
                 });
                 break;
             }
@@ -287,10 +292,7 @@ export class ConnectionEditorPanel {
             }
 
             case "save": {
-                await this.#save(
-                    message.fields, message.password, message.mcpAccess,
-                    message.path,
-                );
+                await this.#save(message);
                 break;
             }
 
@@ -361,27 +363,24 @@ export class ConnectionEditorPanel {
     /**
      * Stores the connection and closes the editor.
      *
-     * @param fields The fields as they are on screen.
-     * @param password The password typed, or undefined to keep the stored one.
-     * @param mcpAccess Whether MCP clients may open it.
-     * @param path The folder to file it in, as typed.
+     * @param message What the editor asked to be saved: the fields as they
+     *                are on screen, the password typed (undefined keeps the
+     *                stored one), whether MCP clients may open it, and its
+     *                folder, caption and color.
      *
      * @returns Nothing.
      */
-    async #save(
-        fields: Parameters<typeof testConnection>[1],
-        password: string | undefined,
-        mcpAccess: boolean,
-        path: string,
-    ): Promise<void> {
+    async #save(message: ISaveMessage): Promise<void> {
         this.#post({ type: "busy", busy: true });
         try {
             const api = await this.host.api();
             const result = await saveConnection(api, {
-                fields,
-                password,
-                mcpAccess,
-                path,
+                fields: message.fields,
+                password: message.password,
+                mcpAccess: message.mcpAccess,
+                path: message.path,
+                caption: message.caption,
+                color: message.color,
                 original: this.#connection,
             });
 
