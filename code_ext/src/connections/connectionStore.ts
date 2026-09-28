@@ -22,6 +22,8 @@ import {
 } from "../mcp/types.js";
 import {
     ROOT_FOLDER,
+    connectionKeyProblem,
+    filingProblem,
     folderProblem,
     normalizeFolder,
 } from "./connectionFolders.js";
@@ -221,6 +223,11 @@ export const saveConnection = async (
     const kind = kindFor(request.mcpAccess);
     const path = normalizeFolder(request.path ?? "");
 
+    const tooLong = connectionKeyProblem(uri, path);
+    if (tooLong !== undefined) {
+        return { error: tooLong };
+    }
+
     if (request.original === undefined) {
         // A new connection has no stored password to fall back on, so an
         // omitted one is an empty one - which is what a server with no
@@ -291,11 +298,23 @@ export interface IFiling {
  * @param filings Each connection with the folder it goes in.
  *
  * @returns The connections that were moved, each with its new folder.
+ *
+ * @throws Before anything is moved, when any of them would make a stored
+ *         key too long for the secret store (see `filingProblem`).
  */
 export const fileConnections = async (
     api: IMariaDbApi,
     filings: IFiling[],
 ): Promise<IStoredConnection[]> => {
+    // All of them before any: a folder moved half way, some of it at the
+    // new path and some left at the old, is worse than one not moved.
+    const tooLong = filingProblem(filings.map(({ connection, path }) => {
+        return { uri: connection.uri, path };
+    }));
+    if (tooLong !== undefined) {
+        throw new Error(`Nothing was moved. ${tooLong}`);
+    }
+
     const moved: IStoredConnection[] = [];
 
     for (const { connection, path } of filings) {

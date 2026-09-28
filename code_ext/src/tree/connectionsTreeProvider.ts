@@ -23,7 +23,9 @@ import {
 } from "../connections/connectionManager.js";
 import {
     ROOT_FOLDER,
+    filingProblem,
     folderNames,
+    folderProblem,
     normalizeFolder,
 } from "../connections/connectionFolders.js";
 import {
@@ -506,23 +508,7 @@ export class ConnectionsTreeProvider
     ): Promise<void> {
         try {
             const api = await this.connections.api();
-            const all = [...filings];
-
-            if (folders.length > 0) {
-                // Everything in the moved folders, not only what is in
-                // sight: a closed folder's connections go too.
-                const stored = await this.connections.listStoredConnections();
-                for (const { from, to } of folders) {
-                    for (const connection of stored) {
-                        const path = connection.path ?? ROOT_FOLDER;
-                        if (isWithin(path, from)) {
-                            all.push({
-                                connection, path: rebase(path, from, to),
-                            });
-                        }
-                    }
-                }
-            }
+            const all = await this.#filingsOf(folders, filings);
 
             for (const connection of await fileConnections(api, all)) {
                 this.log(`Moved '${connection.uri}' to '${connection.path}'.`);
@@ -539,6 +525,72 @@ export class ConnectionsTreeProvider
         } finally {
             // Whatever made it, including a part-way failure.
             this.refresh();
+        }
+    }
+
+    /**
+     * Every connection a move re-files: those named, and everything in or
+     * below the moved folders - not only what is in sight, a closed
+     * folder's connections go too.
+     *
+     * @param folders Each folder to move, from its path to its new one.
+     * @param filings Connections to file somewhere of their own.
+     *
+     * @returns Each connection with the folder it goes to.
+     */
+    async #filingsOf(
+        folders: Array<{ from: string; to: string }>,
+        filings: IFiling[],
+    ): Promise<IFiling[]> {
+        const all = [...filings];
+        if (folders.length === 0) {
+            return all;
+        }
+
+        const stored = await this.connections.listStoredConnections();
+        for (const { from, to } of folders) {
+            for (const connection of stored) {
+                const path = connection.path ?? ROOT_FOLDER;
+                if (isWithin(path, from)) {
+                    all.push({ connection, path: rebase(path, from, to) });
+                }
+            }
+        }
+
+        return all;
+    }
+
+    /**
+     * Why a folder cannot take a new name, if it cannot: a connection in or
+     * below it would no longer fit in the secret store's key. What Rename
+     * Folder checks as the name is typed, so the refusal comes before the
+     * attempt rather than after.
+     *
+     * @param folder The folder to rename.
+     * @param name Its new name, as typed.
+     *
+     * @returns The complaint, or undefined when the name is fine; a listing
+     *          that fails says nothing, and the rename itself then reports.
+     */
+    public async renameProblem(
+        folder: IFolderNode,
+        name: string,
+    ): Promise<string | undefined> {
+        const renamed = normalizeFolder(`${parentOf(folder.path)}/${name}`);
+        const problem = folderProblem(renamed);
+        if (problem !== undefined || renamed === folder.path) {
+            return problem;
+        }
+
+        try {
+            const filings = await this.#filingsOf(
+                [{ from: folder.path, to: renamed }], []);
+
+            return filingProblem(filings.map(({ connection, path }) => {
+                return { uri: connection.uri, path };
+            }));
+        } catch {
+            return undefined;
         }
     }
 

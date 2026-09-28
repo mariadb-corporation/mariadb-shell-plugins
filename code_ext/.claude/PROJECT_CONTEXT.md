@@ -91,29 +91,28 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-23):
+Checked at this checkpoint (2026-09-28):
 
 ```
-$ git -C code_ext branch --show-current
-wip/code-ext
-
-$ git -C code_ext status --short
-(no output — clean)
+$ git branch --show-current
+wip/connection-folders
 ```
 
-- **The branch is `wip/code-ext`**, shared with [`mcp_plugin`](../../mcp_plugin):
-  a change needing both lands as one commit across the two. Pushed to
-  `origin/wip/code-ext` and in sync.
-- **`bc6c6aad` is the most recent** — "Keep the connection URI's scheme, so a
-  tunnel can be asked for". It raised `MINIMUM_SHELL_VERSION` to 26.9.3, gave
-  the connection editor its SSH tab, and taught `connectionUri.ts` the five
-  schemes and the `ssh-*` options; the server side of it is the plugin now
-  storing a URI's scheme rather than stripping it. Everything about the editor
-  is in [`context/connections.md`](context/connections.md).
-- Before it: `4f6b10e7` (the result view's output), `11450e44` (the Connections
-  view's welcome content), `87d6679e` (per-statement warnings), `12bf566f`
-  (paging the result tabs), `c2aa2f03` (connection activity logging).
-- Suite at this checkpoint: **794 pass across 41 files**, `npm run pretest`
+- **The branch is `wip/connection-folders`**, PR #28, shared with
+  [`mcp_plugin`](../../mcp_plugin): a change needing both lands as one commit
+  across the two. It targets PR #27's `wip/connection-update` and moves to
+  `main` once #27 is merged.
+- **`486f30ed`** added folders to the Connections view (drag and drop,
+  Rename / New / Remove Folder, New Folder with Selection, the editor's
+  Folder field), the cached connection list and General Actions logging.
+- **The commit after it answers the PR #28 review**: a stored key is at most
+  256 bytes, so folder + `:` + URI get 247 (the prefixes are now 9 bytes).
+  The editor flags it live and refuses to save; `fileConnections` checks a
+  whole drop / rename / New Folder with Selection before moving anything;
+  Rename Folder validates the subtree as the name is typed. See
+  [`context/connections.md`](context/connections.md), "The stored key is at
+  most 256 bytes".
+- Suite at this checkpoint: **950 pass across 44 files**, `npm run pretest`
   (typecheck + eslint) and `npm run build` clean.
 
 ## Conventions

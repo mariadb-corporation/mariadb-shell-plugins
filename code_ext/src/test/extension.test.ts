@@ -469,6 +469,8 @@ describe("activate", () => {
             expect(validate(" / ")).toBe("Enter a folder name.");
             expect(validate("a:b")).toContain("contains a ':'");
             expect(validate("Work")).toBeUndefined();
+            expect(validate("n".repeat(250)))
+                .toContain("leaves no room for a URI");
             expect((await treeProvider().getChildren()).filter((node) => {
                 return node.kind === "folder";
             })).toEqual([]);
@@ -487,7 +489,11 @@ describe("activate", () => {
         const validate = inputBoxCalls[1]!.validateInput!;
         expect(validate("")).toBe("Enter a folder name.");
         expect(validate("a/b")).toContain("cannot contain '/'");
-        expect(validate("a:b")).toContain("contains a ':'");
+        // Asked of the tree, which answers asynchronously.
+        await expect(validate("a:b")).resolves.toContain("contains a ':'");
+        await expect(validate("Newer")).resolves.toBeUndefined();
+        await expect(validate("n".repeat(250)))
+            .resolves.toContain("leaves no room for a URI");
         expect((await treeProvider().getChildren())[0])
             .toMatchObject({ path: "/New" });
     });

@@ -1682,6 +1682,17 @@ def _register_connection_management_tools(tool) -> None:
         if normalized is None:
             raise mysqlsh.Error(f"'{uri}' is not a valid connection URI.")
 
+        # Checked before verifying, which would be wasted on a connection the
+        # secret store cannot hold. store_connection checks again; this only
+        # makes it fail first. A connection already stored keeps its folder.
+        config.check_connection_key_length(
+            normalized,
+            kind,
+            config.get_connection_path(normalized, kind)
+            if folder is None
+            else folder,
+        )
+
         if verify:
             # The same check mcp.setup makes, through the same function: a
             # connection has to be accepted on identical terms however it was

@@ -129,8 +129,8 @@ autonomous agent, and that changes two things about the server:
 
   | kind | who owns it | secret prefix |
   | --- | --- | --- |
-  | `mcp` (the default) | `mcp.setup`; every MCP client can open these | `MCP:Connection:` |
-  | `gui` | this extension, via the tools above | `GUI:Connection:` |
+  | `mcp` (the default) | `mcp.setup`; every MCP client can open these | `MCP:CONN:` |
+  | `gui` | this extension, via the tools above | `GUI:CONN:` |
 
   `db.list_connections` reports **one kind per call**, so the extension
   asks twice to see both and always knows which list an entry is in — which

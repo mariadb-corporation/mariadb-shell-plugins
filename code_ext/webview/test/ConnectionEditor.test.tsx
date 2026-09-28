@@ -723,5 +723,28 @@ describe("ConnectionEditor", () => {
             expect(folderBox().classList.contains("invalid")).toBe(true);
             expect(host.textContent).toContain("contains a ':'");
         });
+
+        it("says at once when folder and URI are too long to store, and "
+            + "will not save them", async () => {
+            await mount();
+            await load({ user: "dba", host: "localhost" });
+
+            // mariadb://dba@localhost:3306 is 28 bytes, the folder's ':'
+            // one more, and 247 is the budget.
+            await type("Folder", `/${"f".repeat(217)}`);
+            expect(folderBox().classList.contains("invalid")).toBe(false);
+            expect(host.querySelector(".uri-problem")).toBeNull();
+
+            await type("Folder", `/${"f".repeat(218)}`);
+            expect(folderBox().classList.contains("invalid")).toBe(true);
+            expect(host.querySelector(".uri-problem")?.textContent)
+                .toContain("at most 247 bytes together, and they take 248");
+
+            posted.length = 0;
+            await click("Create");
+            expect(lastPosted("save")).toBeUndefined();
+            expect(host.querySelector(".message.error")?.textContent)
+                .toContain("Use a shorter folder path or URI.");
+        });
     });
 });

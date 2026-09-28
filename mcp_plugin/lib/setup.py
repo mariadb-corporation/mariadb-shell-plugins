@@ -83,6 +83,15 @@ def _add_connection() -> None:
     if uri != entered_uri:
         print(f"The connection will be stored as '{uri}'.")
 
+    # Asked before the password, which would be wasted on a connection the
+    # secret store cannot hold. A connection already stored keeps its folder.
+    try:
+        config.check_connection_key_length(uri, path=config.get_connection_path(uri))
+    except mysqlsh.Error as error:
+        print(error)
+        print("The connection was not stored.")
+        return
+
     password = prompts.password(f"Enter the password for '{uri}': ")
 
     # Verify the credentials by opening (and immediately closing) a session.

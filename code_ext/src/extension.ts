@@ -415,10 +415,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         }
 
                         // A rename stays where it is; moving is a drag.
+                        // The rest - the ':' and whether everything in it
+                        // still fits the secret store - the tree checks.
                         return value.includes("/")
                             ? "A folder name cannot contain '/'. Drag the "
                             + "folder to move it into another."
-                            : folderProblem(value);
+                            : tree.renameProblem(node, value);
                     },
                 });
                 if (name === undefined) {
@@ -761,9 +763,10 @@ const askForNewFolder = async (
             + "inside another.",
         placeHolder: "Sandboxes",
         validateInput: (value) => {
+            // The whole path, since its length is what can be too much.
             return normalizeFolder(value) === ROOT_FOLDER
                 ? "Enter a folder name."
-                : folderProblem(value);
+                : folderProblem(`${parent}/${value}`);
         },
     });
 

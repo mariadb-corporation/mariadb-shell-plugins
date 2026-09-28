@@ -10,8 +10,8 @@ produced most of this is in [security-review.md](security-review.md).
 ## Architecture / key decisions
 
 - **Two connection lists, told apart by a `kind`** (`lib/config.py`): `mcp`
-  (`MCP:Connection:`, curated with `mcp.setup`, openable by any client) and `gui`
-  (`GUI:Connection:`, the extension's own). Neither prefix is a prefix of the other, so
+  (`MCP:CONN:`, curated with `mcp.setup`, openable by any client) and `gui`
+  (`GUI:CONN:`, the extension's own). Neither prefix is a prefix of the other, so
   the listings cannot bleed. Every connection function takes `kind` and **defaults it to
   `mcp`**, which is what every caller written before this means — `mcp.setup`,
   `sandbox.deploy` and the migrator tools were therefore not touched and stay MCP-only.
@@ -71,7 +71,7 @@ produced most of this is in [security-review.md](security-review.md).
     cleaned up.
 
 - **Folders are part of the KEY and nothing else** (`lib/config.py`). A connection may be
-  filed under a path, stored as `MCP:Connection:/Sandboxes/note_app:<uri>` (same for
+  filed under a path, stored as `MCP:CONN:/Sandboxes/note_app:<uri>` (same for
   `GUI:`); a top-level one keeps the plain `<prefix><uri>` key, so every existing key is
   already a top-level connection and nothing is migrated. `_split_connection_key` tells the
   two apart by the leading `/` (a URI never starts with one) and splits at the FIRST `:`,
@@ -94,6 +94,17 @@ produced most of this is in [security-review.md](security-review.md).
     `db.update_connection(..., new_path=None)` take one; `new_path` left out keeps the
     folder, including across a move to the other list (the MCP checkbox is not a re-filing).
     The path is validated BEFORE `verify` runs, so a bad name costs nothing.
+  - **A key is at most 256 BYTES** (`MAX_CONNECTION_KEY_BYTES`, PR #28 review). The shell's
+    Windows credential helper (`mysql-secret-store/windows-credential/`) stores the whole key
+    as a `CREDENTIAL_ATTRIBUTE` value, capped at `CRED_MAX_VALUE_SIZE` = 256 bytes, and
+    `CredWrite` fails with no useful reason past it. Both prefixes are 9 bytes, so folder +
+    `:` + URI get 247. `check_connection_key_length(uri, kind, path)` counts UTF-8 bytes and
+    is enforced on EVERY platform (a connection configurable on one machine is on any), at
+    the top of `store_connection`, before anything is written, so a refused move leaves the
+    connection where it was. `db.add_connection`, `mcp.setup` (menu) and
+    `--addConnection` also call it early, before verifying or asking for the password,
+    measuring with the folder a re-add would keep. `db.update_connection` needs no call of
+    its own: `store_connection` is its first write.
   - `sandbox.deploy` files its connection under `SANDBOX_CONNECTION_PATH` (`/Sandboxes`).
     `test_sandbox_servers.py` stubs `store_connection` with a lambda - it has to accept
     `path=`.
@@ -109,7 +120,18 @@ produced most of this is in [security-review.md](security-review.md).
   `last_used` on exit. `msm.deploy_schema` goes through it too — otherwise it would be a
   bypass of the address check.
 
-- **Connections**: shell secrets keyed `MCP:Connection:<uri>`. `db.connect` only allows
+- **The prefixes were shortened** from `MCP:Connection:` / `GUI:Connection:` (15 bytes) to
+  `MCP:CONN:` / `GUI:CONN:` (9) to leave the folder and URI more of the 256. There is NO
+  downgrade path, by decision: everyone is expected to run the latest shell, and an older
+  one simply sees no connections. `upgrade_connection_keys()` moves the legacy keys, once
+  per process, from the top of `_list_stored_connections` - the one place the store is
+  read, so every entry point triggers it, but only when the store is needed (not at plugin
+  load, which on macOS could mean a keychain prompt on every shell start). Per key: write
+  the new key, then delete the old; a new key already there (an interrupted run) is kept
+  and only the old one deleted. A key that fails is logged and left, and
+  `_connection_keys_upgraded` stays False so the next read tries again. Tests reset that
+  flag with the `legacy_keys` fixture in `test_config.py`.
+- **Connections**: shell secrets keyed `MCP:CONN:<uri>`. `db.connect` only allows
   configured URIs, but NOT by string equality: `config.resolve_connection_uri()` maps what
   the client sent to the spelling it is stored under, and everything from there on uses the
   configured one (the password key, `_Connection.uri`, the log line, the re-validation on

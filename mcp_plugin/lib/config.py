@@ -19,7 +19,7 @@ Two kinds of configuration are persisted:
 
 * **Connections**: the MariaDB connection URIs the MCP server is allowed to
   use, together with their passwords. These are stored as shell secrets, keyed
-  by ``MCP:Connection:<uri>``, so that passwords are kept in the operating
+  by ``MCP:CONN:<uri>``, so that passwords are kept in the operating
   system's secret store rather than in a plain file. A connection is looked up
   by its URI, and a client need not spell it exactly as it was configured (see
   :func:`normalize_connection_uri`). The URI carries its scheme - ``mariadb``
@@ -30,7 +30,7 @@ Two kinds of configuration are persisted:
 
   A connection may also sit in a *folder*, a path such as ``/Sandboxes`` or
   ``/Sandboxes/note_app``, which is written into the key in front of the URI:
-  ``MCP:Connection:/Sandboxes:<uri>``. A connection at the top level has no
+  ``MCP:CONN:/Sandboxes:<uri>``. A connection at the top level has no
   path in its key, which is how every connection stored before folders existed
   reads, so again nothing is migrated. The folder is presentation for the VS
   Code extension and nothing else: a connection is still identified by its URI
@@ -45,6 +45,13 @@ Two kinds of configuration are persisted:
   before the GUI list existed means. The GUI list is only reachable at all from
   a server started with ``--gui`` (see
   :func:`mcp_plugin.lib.general.set_gui_mode`).
+
+  The prefixes used to be spelled out, ``MCP:Connection:`` and
+  ``GUI:Connection:``. They were shortened because a key is limited to
+  :data:`MAX_CONNECTION_KEY_BYTES` and every byte of prefix is one the folder
+  and URI cannot have; connections stored under the old ones are moved to the
+  new ones the first time the store is read (see
+  :func:`upgrade_connection_keys`).
 * **Allowed paths**: the local directories the MCP server is allowed to
   access. These are stored in a ``settings.json`` file inside the plugin data
   directory (see :func:`mcp_plugin.lib.general.get_mcp_plugin_data_path`).
@@ -61,8 +68,9 @@ import mysqlsh
 
 from mcp_plugin.lib import general
 
-# Prefix used for the shell secrets that store MCP connection passwords.
-CONNECTION_SECRET_PREFIX = "MCP:Connection:"
+# Prefix used for the shell secrets that store MCP connection passwords. Short,
+# because it counts against MAX_CONNECTION_KEY_BYTES like the folder and URI do.
+CONNECTION_SECRET_PREFIX = "MCP:CONN:"
 
 # Prefix used for the shell secrets that store the connection passwords the
 # MariaDB VS Code extension manages. A separate prefix and not a flag inside the
@@ -72,7 +80,10 @@ CONNECTION_SECRET_PREFIX = "MCP:Connection:"
 # runs. Keeping them apart means a connection the user made for the editor is
 # not silently handed to whatever else drives this server, and neither list can
 # be emptied by an operation meant for the other.
-GUI_CONNECTION_SECRET_PREFIX = "GUI:Connection:"
+#
+# The same length as CONNECTION_SECRET_PREFIX, so that moving a connection
+# between the two lists never changes whether its key fits.
+GUI_CONNECTION_SECRET_PREFIX = "GUI:CONN:"
 
 # The two lists a connection can belong to, named for the callers that use them.
 CONNECTION_KIND_MCP = "mcp"
@@ -95,6 +106,18 @@ _CONNECTION_SECRET_PREFIXES = {
     CONNECTION_KIND_MCP: CONNECTION_SECRET_PREFIX,
     CONNECTION_KIND_GUI: GUI_CONNECTION_SECRET_PREFIX,
 }
+
+# The prefix each kind was stored under before the prefixes were shortened.
+# Read only by upgrade_connection_keys, which moves what it finds under them.
+_LEGACY_CONNECTION_SECRET_PREFIXES = {
+    CONNECTION_KIND_MCP: "MCP:Connection:",
+    CONNECTION_KIND_GUI: "GUI:Connection:",
+}
+
+# Whether this process has moved every connection off the legacy prefixes.
+# Once is enough: nothing writes under them any more. Left False after a
+# failure, so the connections that could not be moved are tried again.
+_connection_keys_upgraded = False
 
 # The scheme a connection URI without one means. Connections used to be stored
 # with the scheme stripped off, because the shell's own parser rejected
@@ -134,6 +157,15 @@ SANDBOX_CONNECTION_PATH = "/Sandboxes"
 # cannot also be part of one; ``:`` ends the path in a stored key, which is how
 # the path and the URI after it are told apart.
 _PATH_ELEMENT_FORBIDDEN = (":",)
+
+# The most bytes a stored key - prefix, folder and URI together - may take.
+# The shell's Windows credential helper stores the key as a CREDENTIAL_ATTRIBUTE
+# value, which Windows caps at CRED_MAX_VALUE_SIZE (256 bytes); a longer one
+# fails in CredWrite with nothing to say why. It is enforced on every platform
+# rather than only on Windows, so a connection that can be configured on one
+# machine can be configured on any, and the limit is in UTF-8 BYTES, so a
+# non-ASCII folder name uses it up faster than its length suggests.
+MAX_CONNECTION_KEY_BYTES = 256
 
 # Name of the settings file inside the plugin data directory.
 SETTINGS_FILE_NAME = "settings.json"
@@ -288,6 +320,109 @@ def _connection_key(uri, kind, path) -> str:
     return f"{prefix}{path}:{uri}" if path else f"{prefix}{uri}"
 
 
+def check_connection_key_length(uri, kind=None, path="") -> None:
+    """Refuses a connection whose stored key would be too long to store.
+
+    Called before anything is written, so a connection that cannot be stored
+    fails with a reason instead of somewhere inside the secret store - or, on
+    Windows, with the credential manager's own unexplained error.
+
+    Args:
+        uri (str): The connection URI, exactly as it is to be stored.
+        kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
+        path (str): The folder, normalized; ``""`` for the top level.
+
+    Returns:
+        None
+
+    Raises:
+        mysqlsh.Error: If the key would take more than
+            :data:`MAX_CONNECTION_KEY_BYTES`.
+    """
+    key_bytes = len(_connection_key(uri, kind, path).encode("utf-8"))
+    if key_bytes <= MAX_CONNECTION_KEY_BYTES:
+        return
+
+    budget = MAX_CONNECTION_KEY_BYTES - len(
+        connection_secret_prefix(kind).encode("utf-8")
+    )
+    excess = key_bytes - MAX_CONNECTION_KEY_BYTES
+    where = f"in the folder '{path}'" if path else "at the top level"
+    raise mysqlsh.Error(
+        f"The connection '{uri}' cannot be stored {where}: its folder and URI "
+        f"may take at most {budget} bytes together, and they take "
+        f"{budget + excess}. The secret store keys the password by both, and "
+        f"Windows allows no more than {MAX_CONNECTION_KEY_BYTES} bytes per key. "
+        "Use a shorter folder path or URI."
+    )
+
+
+def upgrade_connection_keys() -> int:
+    """Moves the connections stored under the legacy prefixes to the new ones.
+
+    Connections used to be stored under ``MCP:Connection:`` and
+    ``GUI:Connection:``; they are now under :data:`CONNECTION_SECRET_PREFIX`
+    and :data:`GUI_CONNECTION_SECRET_PREFIX`. Everything after the prefix -
+    the folder and the URI - is kept as it is.
+
+    Run once per process, from :func:`_list_stored_connections`, which every
+    read and write of a connection goes through - so it happens whichever
+    entry point is used first, and only once the store is actually needed,
+    rather than on every shell start.
+
+    Each key is written under the new prefix BEFORE the old one is deleted, so
+    an interruption leaves a connection under both rather than under neither;
+    the next run then finds the new key there and only deletes the old one. A
+    key that cannot be moved is logged and left where it is, and the upgrade is
+    tried again on the next read.
+
+    Returns:
+        The number of connections moved.
+    """
+    global _connection_keys_upgraded
+    if _connection_keys_upgraded:
+        return 0
+
+    shell = _shell()
+    keys = list(shell.list_secrets())
+    present = set(keys)
+    moved = 0
+    failed = False
+
+    for kind, legacy_prefix in _LEGACY_CONNECTION_SECRET_PREFIXES.items():
+        prefix = connection_secret_prefix(kind)
+        for key in keys:
+            if not key.startswith(legacy_prefix):
+                continue
+
+            new_key = prefix + key[len(legacy_prefix):]
+            try:
+                # Already there means an earlier run was interrupted after
+                # writing it; it was written from this one, so it is kept.
+                if new_key not in present:
+                    shell.store_secret(new_key, shell.read_secret(key))
+                    present.add(new_key)
+                shell.delete_secret(key)
+                moved += 1
+            except Exception as error:  # noqa: BLE001 - one key must not stop the rest
+                failed = True
+                general.log_event(
+                    f"config: could not move the connection '{key}' to the "
+                    f"'{prefix}' prefix: {error}"
+                )
+
+    if moved:
+        general.log_event(
+            f"config: moved {moved} connection(s) to the "
+            f"'{CONNECTION_SECRET_PREFIX}' and '{GUI_CONNECTION_SECRET_PREFIX}' "
+            "secret key prefixes"
+        )
+
+    _connection_keys_upgraded = not failed
+
+    return moved
+
+
 def _list_stored_connections(kind=None) -> list:
     """Returns every stored connection of one kind as ``(uri, path)`` pairs.
 
@@ -297,6 +432,7 @@ def _list_stored_connections(kind=None) -> list:
     Returns:
         The pairs, sorted by URI.
     """
+    upgrade_connection_keys()
     prefix = connection_secret_prefix(kind)
 
     return sorted(
@@ -733,6 +869,10 @@ def store_connection(uri: str, password: str, kind=None, path=None) -> None:
 
     Returns:
         None
+
+    Raises:
+        mysqlsh.Error: If the folder and URI make a key longer than
+            :data:`MAX_CONNECTION_KEY_BYTES`, before anything is written.
     """
     old_keys = _stored_keys_of(uri, kind)
     folder = (
@@ -740,6 +880,7 @@ def store_connection(uri: str, password: str, kind=None, path=None) -> None:
         if path is None
         else normalize_connection_path(path)
     )
+    check_connection_key_length(uri, kind, folder)
     key = _connection_key(uri, kind, folder)
 
     _shell().store_secret(key, password)

@@ -43,7 +43,7 @@ is no terminal — see [Non-interactive setup](#non-interactive-setup).
   give `mariadb+ssh://` to reach the server through an SSH tunnel. The
   password is prompted for and the connection is verified with `shell.open_session()`
   before the password is stored in the shell secret store under the key
-  `MCP:Connection:<uri>`, with the URI normalized first (see below), so that one
+  `MCP:CONN:<uri>`, with the URI normalized first (see below), so that one
   connection is configured under one spelling. The `db.*` tools only allow the
   connections configured here.
 - **Allowed paths**: choose the local directories the server may access (the current
@@ -59,7 +59,9 @@ is no terminal — see [Non-interactive setup](#non-interactive-setup).
 > have full access to all of the user's stored connections, which would pose a
 > security risk. To retrieve the password stored for an MCP connection, call the
 > `shell.list_secrets()` function to list all secrets. Then, look for the
-> `MCP:Connection:` prefix and call `shell.read_secret()` for the given entry.
+> `MCP:CONN:` prefix and call `shell.read_secret()` for the given entry. (Older
+> versions used `MCP:Connection:`; those entries are moved to the new prefix the
+> first time this version reads the secret store.)
 
 On the first run, `mcp.setup` walks through adding connections and then paths. On
 subsequent runs it presents a menu to add or delete connections and paths and to manage

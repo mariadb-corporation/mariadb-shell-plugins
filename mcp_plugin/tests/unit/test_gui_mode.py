@@ -405,6 +405,52 @@ def test_a_folder_name_with_a_colon_is_refused_before_anything_is_stored(
     assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
 
 
+def test_a_connection_key_too_long_is_refused_before_it_is_verified(
+    monkeypatch, gui_mode, clean_config
+):
+    """Adding checks the length first, so a doomed connection is not opened."""
+    _empty_both_connection_lists()
+    tools = _registered_tools(monkeypatch)
+    gui = config.CONNECTION_KIND_GUI
+
+    from mcp_plugin.lib import setup_cli
+
+    def must_not_verify(uri, password):
+        raise AssertionError("a connection too long to store was verified")
+
+    monkeypatch.setattr(setup_cli, "verify_connection", must_not_verify)
+
+    uri = "mariadb://long@127.0.0.1:3306/" + "s" * 150
+    with pytest.raises(ToolError, match="at most 247 bytes"):
+        tools["db.add_connection"](uri, "pw", gui, True, "/" + "f" * 80)
+    assert config.list_connection_uris(gui) == []
+
+
+def test_updating_into_a_key_too_long_leaves_the_connection_alone(
+    monkeypatch, gui_mode, clean_config
+):
+    """Neither a new folder nor a new URI too long moves anything."""
+    _empty_both_connection_lists()
+    gui = config.CONNECTION_KIND_GUI
+    uri = "mariadb://stays@127.0.0.1:3306"
+    config.store_connection(uri, "kept", gui, "/Here")
+    tools = _registered_tools(monkeypatch)
+
+    with pytest.raises(ToolError, match="at most 247 bytes"):
+        tools["db.update_connection"](
+            uri, None, gui, None, None, "/" + "x" * 230
+        )
+    with pytest.raises(ToolError, match="at most 247 bytes"):
+        tools["db.update_connection"](
+            uri, uri + "/" + "s" * 220, gui, config.CONNECTION_KIND_MCP,
+        )
+
+    assert tools["db.list_connections"]("all") == [
+        {"uri": uri, "path": "/Here", "kind": "gui"}
+    ]
+    assert config.get_connection_password(uri, gui) == "kept"
+
+
 def test_updating_moves_a_connection_to_another_folder(
     monkeypatch, gui_mode, clean_config
 ):

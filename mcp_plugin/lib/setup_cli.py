@@ -316,6 +316,10 @@ def _add_connection(options: dict) -> None:
     if uri is None:
         raise mysqlsh.Error(f"'{entered_uri}' is not a valid connection URI.")
 
+    # Before the password is asked for or the connection verified, both wasted
+    # on one the secret store cannot hold. It keeps its folder if it has one.
+    config.check_connection_key_length(uri, path=config.get_connection_path(uri))
+
     password = _resolve_password(uri, options)
 
     if options.get("no_verify"):

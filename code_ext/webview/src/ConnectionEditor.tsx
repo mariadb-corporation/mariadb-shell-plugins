@@ -35,6 +35,7 @@ import {
     type IUriProblem,
 } from "../../src/connections/connectionUri.js";
 import {
+    connectionKeyProblem,
     folderProblem,
 } from "../../src/connections/connectionFolders.js";
 import type {
@@ -372,6 +373,11 @@ export const ConnectionEditor = (): preact.JSX.Element => {
     const draftProblem = uriDraft === undefined
         ? undefined
         : checkConnectionUri(uriDraft).problem;
+    const pathProblem = folderProblem(folder);
+    // Folder and URI together, so it is only asked once each is sound.
+    const keyProblem = built.uri === undefined || pathProblem !== undefined
+        ? undefined
+        : connectionKeyProblem(built.uri, folder);
 
     useEffect(() => {
         const input = uriInput.current;
@@ -450,7 +456,13 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                     </button>
                 </div>
                 {draftProblem === undefined ? (
-                    built.error === undefined ? null : (
+                    built.error === undefined ? (
+                        keyProblem === undefined ? null : (
+                            <div class="uri-problem" role="alert">
+                                <p>{keyProblem}</p>
+                            </div>
+                        )
+                    ) : (
                         <p class="uri-note">{built.error}</p>
                     )
                 ) : (
@@ -513,7 +525,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                             </Field>
                             <Field
                                 caption="Folder"
-                                hint={folderProblem(folder)
+                                hint={pathProblem
                                     ?? "Where the Connections view files it. "
                                     + "'/' is the top level; "
                                     + "/Sandboxes/note_app is a folder "
@@ -521,7 +533,8 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                             >
                                 <input
                                     type="text"
-                                    class={folderProblem(folder) === undefined
+                                    class={pathProblem === undefined
+                                        && keyProblem === undefined
                                         ? undefined
                                         : "invalid"}
                                     list="connection-folders"
@@ -937,12 +950,20 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                     class="primary"
                     disabled={busy}
                     onClick={() => {
-                        if (uriIsSound()) {
-                            post<EditorWebviewMessage>({
-                                type: "save", fields, password, mcpAccess,
-                                path: folder,
-                            });
+                        if (!uriIsSound()) {
+                            return;
                         }
+                        if (keyProblem !== undefined) {
+                            // Shown already, under the URI; saying it again
+                            // by the button is what answers the click.
+                            setSaveError(keyProblem);
+
+                            return;
+                        }
+                        post<EditorWebviewMessage>({
+                            type: "save", fields, password, mcpAccess,
+                            path: folder,
+                        });
                     }}
                 >
                     {isNew ? "Create" : "Save"}

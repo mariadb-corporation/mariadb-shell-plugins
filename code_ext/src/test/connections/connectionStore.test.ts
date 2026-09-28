@@ -159,6 +159,29 @@ describe("folders", () => {
         expect(result.error).toContain("contains a ':'");
         expect(fake.added).toEqual([]);
     });
+
+    it("refuses a folder and URI too long to store, storing nothing",
+        async () => {
+            const fake = api();
+            const original = {
+                uri: "mariadb://dba@localhost:3306", kind: "gui", path: "/",
+            } as const;
+            const folder = `/${"f".repeat(220)}`;
+
+            const added = await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                path: folder,
+            });
+            const edited = await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                path: folder, original,
+            });
+
+            expect(added.error).toContain("at most 247 bytes");
+            expect(edited.error).toContain("at most 247 bytes");
+            expect(fake.added).toEqual([]);
+            expect(fake.updated).toEqual([]);
+        });
 });
 
 describe("saveConnection", () => {

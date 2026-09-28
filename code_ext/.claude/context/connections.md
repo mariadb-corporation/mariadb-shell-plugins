@@ -386,6 +386,26 @@ still goes by URI and kind.
   leaves the list empty. A `:` marks the field invalid at once, and
   `saveConnection` refuses it before anything is sent.
 
+- **The stored key is at most 256 bytes**, which the server enforces (its
+  Windows credential helper cannot store more; see mcp_plugin's
+  `context/connections.md`). Folder + `:` + URI get
+  `CONNECTION_KEY_BUDGET` (247, the prefixes being 9 bytes) in UTF-8 bytes. `connectionFolders.ts` mirrors
+  the check: `connectionKeyBytes`, `connectionKeyProblem`, `filingProblem` for
+  a batch, and `folderProblem` refuses a folder that alone leaves no room for
+  a URI. Where it is checked:
+  - the editor shows it live under the URI box, marks the Folder field
+    invalid and refuses Create/Save; `saveConnection` refuses it too. It
+    measures the URI as BUILT, and the server normalizes (adds `:3306` when
+    no port is given), so the server's refusal stays the last word;
+  - `fileConnections` checks EVERY filing before moving any, so a drop,
+    Rename Folder or New Folder with Selection is all or nothing ("Nothing
+    was moved. ...") rather than a folder split across two paths. The empty
+    folders `#refile` carries are moved after, so they stay put too;
+  - Rename Folder's `validateInput` is `tree.renameProblem`, async, which
+    re-files the subtree on paper (`#filingsOf`, shared with `#refile`) and
+    reports before the attempt; New Folder validates the whole
+    `<parent>/<name>` path, not just the name.
+
 ## Opening a connection
 
 Two modes, set by `mariadb.connections.connectMode`:
