@@ -23,8 +23,8 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **446 tests pass, 3 SKIPPED (~67s), 98% total coverage** (2231 statements,
-49 missed; re-measured at the third 2026-09-25 checkpoint on a run with `.coverage`
+Standard suite: **447 tests pass, 3 SKIPPED (~66s), 98% total coverage** (2235 statements,
+48 missed; re-measured at the 2026-09-28 checkpoint on a run with `.coverage`
 DELETED first - ~65s since the run keeps its secrets in a plaintext file instead of the
 macOS keychain, see the isolation gotcha in `context/testing.md` — see the coverage trap in [`context/testing.md`](context/testing.md)). Of the
 three skipped, two are the OPT-IN end-to-end tests (`test_migration_e2e`,
@@ -69,40 +69,34 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-25, third of the day):
+Checked at this checkpoint (2026-09-28):
 
 ```
 $ git -C mcp_plugin branch --show-current
 wip/result-set-fixes-and-expansion
 
-$ git -C mcp_plugin status --short   (mcp_plugin's own lines; the rest is code_ext)
- M .claude/context/db-tools.md
- M lib/db_functions.py
- M tests/unit/test_db_script.py
- M tests/unit/test_db_sql.py
-?? tests/unit/test_db_paging.py
+$ git -C mcp_plugin status --short
+(clean - everything is in ff78f3ee)
 ```
 
 - **The branch is `wip/result-set-fixes-and-expansion`**, shared with
   [`code_ext`](../../code_ext), stacked on `wip/ext-sandbox-support` (PR #29) <-
-  `wip/connection-folders` (PR #28). This session's work is committed as
-  `daafbaf1` (this plugin) and `b58f02de` (code_ext), with the context checkpoint
-  after them, and opened as a PR against `wip/ext-sandbox-support`. The status
-  above is from before those commits.
-- This session, both for the extension (see
+  `wip/connection-folders` (PR #28). It is **PR #30**, pushed. Commits on it:
+  `77a072a4` (test run kept off the secret store), `32f0c23f` (every result set
+  read), `daafbaf1` (paging, column types), `b58f02de` (code_ext), `fbf4f187`
+  (checkpoint), **`ff78f3ee`** (this session: the PR #30 review fixes).
+- This session: Rene's three review comments on PR #30 were fixed (see
   [`context/db-tools.md`](context/db-tools.md)):
-  - **paging**: `db.execute_sql_script(limit=)` and `db.execute_sql(limit=, offset=)`.
-    A SELECT that can take one gets `\nLIMIT limit+1 [OFFSET n]`; the extra row is
-    dropped and `has_more_pages` (true/false, present only when the limit was
-    applied) says whether it came back. A 1064 on the limited form re-runs it as
-    written. The SELECT forms it skips (own LIMIT/FETCH/OFFSET, INTO, PROCEDURE,
-    FOR UPDATE/SHARE, LOCK IN SHARE MODE) were verified against a real server;
-  - **`column_types`** on every result set (`_column_type`: the shell's `Type` name,
-    `BLOB` for `BYTES` + the BLOB flag). Measured: VECTOR is indistinguishable from
-    VARBINARY in the shell's metadata.
-- Earlier commits on this branch: `32f0c23f` (`additional_result_sets`),
-  `77a072a4` (the test run kept off the developer's secret store).
-- Suite at this checkpoint: **446 pass, 3 skipped, ~67s, 98% (2231 statements, 49
+  - **`result_sets`** - every statement result carries a list of
+    `{columns, rows, column_metadata?, has_more_pages?}`; the top-level
+    `columns`/`rows` and `additional_result_sets` are gone. `has_more_pages`
+    moved onto the set.
+  - **`column_metadata: bool = False`** on both execute tools - the shell's Column
+    getters verbatim (`type` = `get_type().data`, `flags` as a list).
+    `_column_type`, `column_types` and the made-up `BLOB` type are gone.
+  - The PR description was updated and each comment answered; the threads were
+    left for Rene to resolve.
+- Suite at this checkpoint: **447 pass, 3 skipped, ~66s, 98% (2235 statements, 48
   missed)**, `.coverage` deleted first. The third skip is still the environmental
   one: the migration tooling is not installed on this machine.
 - **Over the ~400-line split threshold and NOT split** (untouched this session, so

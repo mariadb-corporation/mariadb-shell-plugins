@@ -236,6 +236,14 @@ handling are in [connections.md](connections.md).
 
 ## Gotchas / things not to repeat
 
+- **A column's type name is `get_type().data`, never `str(get_type())`.** The
+  `str()` form prints `<Type.INTEGER>`, while `.data` (and `dir(mysql.Type)`) says
+  `INT` - parsing the string reported names the shell does not use, and was
+  flagged in the PR #30 review. To probe metadata by hand: `mysql` is the global
+  in `--py` (not `mysqlsh.Type`), and the local Homebrew server opens with a
+  dict, `shell.open_session({"scheme": "mariadb", "user": "mzinner", "socket":
+  "/tmp/mysql.sock", "password": ""})` - a socket URI was refused.
+
 - **`db.execute_sql_script` returning a failure instead of raising is a CONTRACT CHANGE,
   and a quiet one.** The tool result's `isError` is now `false` for a script that failed:
   the failure lives in an entry's `error` key. An LLM client that only looks at `isError`

@@ -119,54 +119,43 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-25, third of the day):
+Checked at this checkpoint (2026-09-28):
 
 ```
 $ git -C code_ext branch --show-current
 wip/result-set-fixes-and-expansion
 
 $ git -C code_ext status --short   (one repository: mcp_plugin's lines too)
- M  51 tracked files - package.json, src/, webview/, vite.webview.config.ts,
-    tests and these context files; mcp_plugin: lib/db_functions.py, two
-    test files, context/db-tools.md
- M  images/{light,dark}/connection{MariaDB,MariaDBSSH,MySQL,MySQLSSH}.svg,
-    schema.svg                      (the user's updated icons)
- D  images/{light,dark}/mariadbConnection.svg      (the user's deletion)
-?? src/webview/{maximizedResult,valueDocuments,valueFiles}.ts,
-   webview/src/ToolbarMenu.tsx, src/test/webview/value{Documents,Files}.test.ts,
-   ../mcp_plugin/tests/unit/test_db_paging.py
-?? ~140 icons under images/{light,dark}/   (see below)
+(clean - everything is in ff78f3ee)
 ```
 
 - **The branch is `wip/result-set-fixes-and-expansion`**, stacked on
   `wip/ext-sandbox-support` (PR #29) <- `wip/connection-folders` (PR #28)
-  <- `wip/connection-update`. This session's work is committed as
-  `daafbaf1` (mcp_plugin: paging, column types), `b58f02de` (code_ext) and
-  the context checkpoint after them, and opened as a PR against
-  `wip/ext-sandbox-support`. The status above is from before those commits.
-- This session (see result-set.md / result-grid.md for the detail): the
-  maximize/minimize tab; the MySQL Shell toolbar layout and icons; paging
-  (`mariadb.execute.pageSize`) with `limit`/`offset`/`has_more_pages` in
-  mcp_plugin; `column_types` from mcp_plugin and the data icons / hex
-  display; BLOB save/load and the cell menu; Open Value in Editor
-  (`mariadb-value` file system); Select Rows (`mariadb.selectRows`, inline
-  and context menu); freezing primary key columns
-  (`mariadb.resultSet.freezePrimaryKeyColumns`); Delete Row in the cell
-  menu (row header column removed); the default-connection icons;
-  auto-increment keys editable (split from `isGenerated`).
-- **Untracked icons**: the user added `maximize`, `minimize`,
-  `connection*Default`, `schemaCurrent`, `schemas`, `toolbar-add-row`,
-  `toolbar-kill_connection`; the session copied every MySQL Shell toolbar
-  icon (54, light + generated dark with `fill:white`) and five `data-*`
-  icons. The four MySQL names that exist here (`toolbar-execute*`,
-  `toolbar-stop_on_error-*`) were NOT overwritten.
-- Suite at this checkpoint: **1219 pass across 54 files**, `npm run
+  <- `wip/connection-update`. It is **PR #30**, pushed: `daafbaf1`
+  (mcp_plugin: paging), `b58f02de` (code_ext: maximize, paging, value
+  display and editing, icons), `fbf4f187` (checkpoint), **`ff78f3ee`**
+  (this session: the review fixes, both projects).
+- This session: PR #30's review (Rene, on mcp_plugin) asked for raw
+  metadata and an array of result sets. The extension followed:
+  - `IStatementResult.result_sets` replaces `columns`/`rows`/
+    `column_types`/`additional_result_sets`; `has_more_pages` is on the
+    set (`IResultSetData`). `normalizeStatementResult` in
+    `src/mcp/mariaDbApi.ts` turns an older shell's top-level
+    `columns`/`rows` into it - the only place that knows the old shape.
+  - `executeScript` / `executeSql` always send `column_metadata: true`;
+    `valueDisplayOf(metadata, columnType)` makes `BYTES` + the `BLOB` flag
+    a BLOB itself (result-grid.md).
+  - `executionService.ts`: no first-set special case any more - a
+    statement with no sets gets one row, one set a result tab, several a
+    tab and child row each.
+- Suite at this checkpoint: **1225 pass across 54 files**, `npm run
   pretest` (typecheck + eslint) and `npm run build` clean. mcp_plugin:
-  **446 pass, 3 skipped, 98%**.
-- NOT clicked through in a running VS Code: everything this session added.
-  `test.datatype_test` (50 rows, every supported type, PNG/SVG in BLOBs)
-  was created on the Homebrew MariaDB at 3310 (socket login as
-  `mzinner@localhost`) to try it on; its generator is not in the repo.
+  **447 pass, 3 skipped, 98%**.
+- NOT clicked through in a running VS Code: everything on this branch,
+  including this session's shape change. `test.datatype_test` (50 rows,
+  every supported type, PNG/SVG in BLOBs) is on the Homebrew MariaDB at
+  3310 (socket login as `mzinner@localhost`) to try it on; its generator
+  is not in the repo.
 
 ## Conventions
 
