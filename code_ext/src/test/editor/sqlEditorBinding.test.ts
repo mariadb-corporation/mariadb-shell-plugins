@@ -90,8 +90,10 @@ const createBinding = (defaultConnection?: string) => {
         defaultResults: [{
             affected_items_count: 0,
             warnings_count: 0,
-            columns: ["a"],
-            rows: [{ a: 1 }],
+            result_sets: [{
+                columns: ["a"],
+                rows: [{ a: 1 }],
+            }],
         }],
     });
     const connections = new ConnectionManager(

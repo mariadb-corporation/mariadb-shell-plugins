@@ -91,8 +91,10 @@ describe("describeResult", () => {
         expect(describeResult({
             affected_items_count: 0,
             warnings_count: 0,
-            columns: ["a"],
-            rows: [{ a: 1 }, { a: 2 }],
+            result_sets: [{
+                columns: ["a"],
+                rows: [{ a: 1 }, { a: 2 }],
+            }],
         })).toBe("2 rows in set");
     });
 
@@ -100,8 +102,10 @@ describe("describeResult", () => {
         expect(describeResult({
             affected_items_count: 0,
             warnings_count: 0,
-            columns: ["a"],
-            rows: [{ a: 1 }],
+            result_sets: [{
+                columns: ["a"],
+                rows: [{ a: 1 }],
+            }],
         })).toBe("1 row in set");
     });
 
@@ -120,8 +124,10 @@ describe("describeResult", () => {
         expect(describeResult({
             affected_items_count: 0,
             warnings_count: 2,
-            columns: [],
-            rows: [],
+            result_sets: [{
+                columns: [],
+                rows: [],
+            }],
         })).toBe("0 rows in set, 2 warnings");
     });
 });
@@ -284,15 +290,19 @@ describe("ExecutionService.execute", () => {
                 {
                     affected_items_count: 0,
                     warnings_count: 0,
-                    columns: ["a"],
-                    rows: [{ a: 1 }],
+                    result_sets: [{
+                        columns: ["a"],
+                        rows: [{ a: 1 }],
+                    }],
                 },
                 { affected_items_count: 0, warnings_count: 0 },
                 {
                     affected_items_count: 0,
                     warnings_count: 0,
-                    columns: ["b"],
-                    rows: [],
+                    result_sets: [{
+                        columns: ["b"],
+                        rows: [],
+                    }],
                 },
             ],
         });
@@ -333,8 +343,10 @@ describe("ExecutionService.execute", () => {
                     message:
                         "Truncated incorrect INTEGER value: 'not-a-number'",
                 }],
-                columns: ["n"],
-                rows: [{ n: 0 }],
+                result_sets: [{
+                    columns: ["n"],
+                    rows: [{ n: 0 }],
+                }],
             }, {
                 affected_items_count: 0,
                 warnings_count: 2,
@@ -427,8 +439,10 @@ describe("ExecutionService.execute", () => {
             defaultResults: [{
                 affected_items_count: 0,
                 warnings_count: 0,
-                columns: ["n"],
-                rows: [{ n: 4079 }],
+                result_sets: [{
+                    columns: ["n"],
+                    rows: [{ n: 4079 }],
+                }],
             }],
         });
 
@@ -450,8 +464,10 @@ describe("ExecutionService.execute", () => {
             defaultResults: [{
                 affected_items_count: 0,
                 warnings_count: 0,
-                columns: ["ID", "Name"],
-                rows: [{ ID: 1, Name: "Kabul" }],
+                result_sets: [{
+                    columns: ["ID", "Name"],
+                    rows: [{ ID: 1, Name: "Kabul" }],
+                }],
             }],
         });
 
@@ -477,15 +493,19 @@ describe("ExecutionService.execute", () => {
                     "SELECT DATABASE() AS `schema`;": [{
                         affected_items_count: 0,
                         warnings_count: 0,
-                        columns: ["schema"],
-                        rows: [{ schema: "world" }],
+                        result_sets: [{
+                            columns: ["schema"],
+                            rows: [{ schema: "world" }],
+                        }],
                     }],
                 },
                 defaultResults: [{
                     affected_items_count: 0,
                     warnings_count: 0,
-                    columns: ["ID"],
-                    rows: [{ ID: 1 }],
+                    result_sets: [{
+                        columns: ["ID"],
+                        rows: [{ ID: 1 }],
+                    }],
                 }],
             });
 
@@ -508,15 +528,19 @@ describe("ExecutionService.execute", () => {
                 "SELECT DATABASE() AS `schema`;": [{
                     affected_items_count: 0,
                     warnings_count: 0,
-                    columns: ["schema"],
-                    rows: [{ schema: null }],
+                    result_sets: [{
+                        columns: ["schema"],
+                        rows: [{ schema: null }],
+                    }],
                 }],
             },
             defaultResults: [{
                 affected_items_count: 0,
                 warnings_count: 0,
-                columns: ["ID"],
-                rows: [{ ID: 1 }],
+                result_sets: [{
+                    columns: ["ID"],
+                    rows: [{ ID: 1 }],
+                }],
             }],
         });
 
@@ -538,8 +562,10 @@ describe("ExecutionService.execute", () => {
             defaultResults: [{
                 affected_items_count: 0,
                 warnings_count: 0,
-                columns: ["a"],
-                rows: [{ a: 1 }],
+                result_sets: [{
+                    columns: ["a"],
+                    rows: [{ a: 1 }],
+                }],
             }],
         });
 
@@ -563,8 +589,10 @@ describe("ExecutionService.execute", () => {
             defaultResults: [{
                 affected_items_count: 0,
                 warnings_count: 0,
-                columns: ["Name"],
-                rows: [{ Name: "Kabul" }],
+                result_sets: [{
+                    columns: ["Name"],
+                    rows: [{ Name: "Kabul" }],
+                }],
             }],
         });
 
@@ -588,22 +616,28 @@ describe("ExecutionService.execute", () => {
                 "SELECT DATABASE() AS `schema`;": [{
                     affected_items_count: 0,
                     warnings_count: 0,
-                    columns: ["schema"],
-                    rows: [{ schema: "world" }],
+                    result_sets: [{
+                        columns: ["schema"],
+                        rows: [{ schema: "world" }],
+                    }],
                 }],
             },
             defaultResults: [
                 {
                     affected_items_count: 0,
                     warnings_count: 0,
-                    columns: ["ID"],
-                    rows: [],
+                    result_sets: [{
+                        columns: ["ID"],
+                        rows: [],
+                    }],
                 },
                 {
                     affected_items_count: 0,
                     warnings_count: 0,
-                    columns: ["ID"],
-                    rows: [],
+                    result_sets: [{
+                        columns: ["ID"],
+                        rows: [],
+                    }],
                 },
             ],
         });
@@ -980,8 +1014,10 @@ describe("ExecutionService with a comment among the statements", () => {
                     warnings_count: 0,
                     statement_index: 1,
                     execution_time: 0.001,
-                    columns: ["a"],
-                    rows: [{ a: 1 }],
+                    result_sets: [{
+                        columns: ["a"],
+                        rows: [{ a: 1 }],
+                    }],
                 },
             ],
         });
@@ -1010,8 +1046,10 @@ describe("ExecutionService with a comment among the statements", () => {
                         warnings_count: 0,
                         statement_index: 1,
                         execution_time: 0.001,
-                        columns: ["a"],
-                        rows: [{ a: 1 }],
+                        result_sets: [{
+                            columns: ["a"],
+                            rows: [{ a: 1 }],
+                        }],
                     },
                 ],
             });
@@ -1242,8 +1280,10 @@ describe("ExecutionService looking up where a SELECT read from", () => {
     const rows = {
         affected_items_count: 0,
         warnings_count: 0,
-        columns: ["Host", "User"],
-        rows: [{ Host: "localhost", User: "root" }],
+        result_sets: [{
+            columns: ["Host", "User"],
+            rows: [{ Host: "localhost", User: "root" }],
+        }],
     };
 
     const run = async (
@@ -1299,9 +1339,10 @@ describe("ExecutionService with a stored procedure", () => {
             affected_items_count: 0,
             warnings_count: 0,
             statement_index: 0,
-            columns: ["id"],
-            rows: [{ id: 1 }, { id: 2 }],
-            ...(extra.length > 0 ? { additional_result_sets: extra } : {}),
+            result_sets: [
+                { columns: ["id"], rows: [{ id: 1 }, { id: 2 }] },
+                ...extra,
+            ],
         }];
     };
 
@@ -1379,9 +1420,11 @@ describe("paging", () => {
     it("asks the server for one page of each SELECT", async () => {
         const api = createFakeApi({
             defaultResults: [{
-                columns: ["n"],
-                rows: ROWS.slice(0, 200),
-                has_more_pages: true,
+                result_sets: [{
+                    columns: ["n"],
+                    rows: ROWS.slice(0, 200),
+                    has_more_pages: true,
+                }],
             }],
         });
 
@@ -1408,7 +1451,9 @@ describe("paging", () => {
 
     it("leaves a result the server did not page as it is", async () => {
         const api = createFakeApi({
-            defaultResults: [{ columns: ["n"], rows: ROWS.slice(0, 3) }],
+            defaultResults: [{
+                result_sets: [{ columns: ["n"], rows: ROWS.slice(0, 3) }],
+            }],
         });
 
         const report = await new ExecutionService(api).execute({
@@ -1426,7 +1471,11 @@ describe("paging", () => {
     it("says nothing about pages when all the rows fit on one", async () => {
         const api = createFakeApi({
             defaultResults: [{
-                columns: ["n"], rows: ROWS.slice(0, 3), has_more_pages: false,
+                result_sets: [{
+                    columns: ["n"],
+                    rows: ROWS.slice(0, 3),
+                    has_more_pages: false,
+                }],
             }],
         });
 
@@ -1481,12 +1530,19 @@ describe("paging", () => {
 });
 
 describe("how a column's values are shown", () => {
-    it("takes the server's column types for any result", async () => {
+    it("takes the server's column metadata for any result", async () => {
         const api = createFakeApi({
             defaultResults: [{
-                columns: ["a", "b", "g", "j"],
-                column_types: ["BYTES", "BLOB", "GEOMETRY", "JSON"],
-                rows: [{ a: "00ff", b: "61", g: "0101", j: "{}" }],
+                result_sets: [{
+                    columns: ["a", "b", "g", "j"],
+                    column_metadata: [
+                        { type: "BYTES", flags: ["BINARY"] },
+                        { type: "BYTES", flags: ["BLOB", "BINARY"] },
+                        { type: "GEOMETRY", flags: ["BLOB", "BINARY"] },
+                        { type: "JSON", flags: ["BLOB", "BINARY"] },
+                    ],
+                    rows: [{ a: "00ff", b: "61", g: "0101", j: "{}" }],
+                }],
             }],
         });
 
@@ -1505,7 +1561,7 @@ describe("how a column's values are shown", () => {
     it("knows a vector from the table's columns", () => {
         const columns = mapColumns(["v"], [column({
             name: "v", datatype: "vector(2)",
-        })], ["BYTES"]);
+        })], [{ type: "BYTES", flags: ["BINARY"] }]);
 
         expect(columns[0].display).toBe("vector");
     });

@@ -1308,52 +1308,74 @@ def _unique_column_labels(columns) -> list:
     return labels
 
 
-def _column_type(column) -> Optional[str]:
-    """The type of a result column, as the shell reports it.
+# The column metadata reported with column_metadata=True: each getter of the
+# shell's Column object, keyed by its name without the get_ prefix.
+_COLUMN_METADATA_GETTERS = (
+    "column_label",
+    "column_name",
+    "type",
+    "flags",
+    "length",
+    "fractional_digits",
+    "collation_name",
+    "character_set_name",
+    "schema_name",
+    "table_name",
+    "table_label",
+)
 
-    The name of the column's ``mysqlsh`` Type - ``INTEGER``, ``STRING``,
-    ``BYTES``, ``JSON``, ``GEOMETRY`` and so on - with one refinement: the
-    shell reports BINARY, VARBINARY and every BLOB alike as ``BYTES``, and
-    only the column's BLOB flag tells them apart, so a BLOB is ``BLOB``.
-    (VECTOR is ``BYTES`` too, and nothing in the metadata tells it from a
-    VARBINARY - measured on this build.)
+
+def _column_metadata(column) -> dict:
+    """Reads a result column's metadata, as the shell reports it.
+
+    Nothing is worked out from it: the type is the name of the column's
+    ``mysql.Type`` constant (``INT``, ``STRING``, ``BYTES``, ``JSON``,
+    ``GEOMETRY``, ...) and the flags are the words ``get_flags()`` gives
+    (``NOT_NULL``, ``PRI_KEY``, ``BLOB``, ``BINARY``, ...), so what a client
+    makes of them - a BLOB is ``BYTES`` with the ``BLOB`` flag - is the
+    client's to decide.
 
     Args:
         column: One column's metadata, from ``result.get_columns()``.
 
     Returns:
-        The type name, or None where the column does not say.
+        A dict keyed by the getter names without their ``get_`` prefix. A
+        getter the column does not have, or that fails, is left out.
     """
-    get_type = getattr(column, "get_type", None)
-    if get_type is None:
-        return None
+    metadata = {}
+    for name in _COLUMN_METADATA_GETTERS:
+        getter = getattr(column, f"get_{name}", None)
+        if getter is None:
+            continue
+        try:
+            value = getter()
+        except Exception:  # noqa: BLE001
+            continue
+        if name == "type":
+            value = getattr(value, "data", None)
+        elif name == "flags":
+            value = str(value).split()
+        if value is not None:
+            metadata[name] = value
 
-    try:
-        # A Type prints as <Type.INTEGER>.
-        name = str(get_type()).strip("<>").rsplit(".", 1)[-1]
-        if name == "BYTES" and "BLOB" in str(column.get_flags()).split():
-            return "BLOB"
-    except Exception:  # noqa: BLE001
-        return None
-
-    return name or None
+    return metadata
 
 
-def _read_result_set(result) -> dict:
+def _read_result_set(result, column_metadata: bool = False) -> dict:
     """Reads the result set a result is on now: its columns and every row.
 
     Args:
         result: The result object returned by ``session.run_sql``, on a
             result set that has data.
+        column_metadata (bool): Whether to report each column's metadata too.
 
     Returns:
         A dict with the column labels (columns) and the rows (rows), each row
-        a dict keyed by those labels, and - where the shell reports them -
-        the type of each column in the same order (column_types).
+        a dict keyed by those labels, and - when asked for - each column's
+        metadata in the same order (column_metadata).
     """
     metadata = result.get_columns()
     columns = _unique_column_labels(metadata)
-    column_types = [_column_type(column) for column in metadata]
     rows = []
     for row in result.fetch_all():
         item = {}
@@ -1380,10 +1402,10 @@ def _read_result_set(result) -> dict:
         rows.append(item)
 
     output = {"columns": columns, "rows": rows}
-    # Left out where no column says, as a stub or an older shell's result
-    # would not: a client that finds it can trust every entry but a None.
-    if any(kind is not None for kind in column_types):
-        output["column_types"] = column_types
+    if column_metadata:
+        output["column_metadata"] = [
+            _column_metadata(column) for column in metadata
+        ]
 
     return output
 
@@ -1393,6 +1415,7 @@ def _serialize_result(
     session_restarted: bool = False,
     statement_index: Optional[int] = None,
     execution_time: Optional[float] = None,
+    column_metadata: bool = False,
 ) -> dict:
     """Serializes a shell SQL result into a JSON-friendly dict.
 
@@ -1405,12 +1428,12 @@ def _serialize_result(
             only the non-empty ones from 0. Left out for a single statement,
             where there is nothing to count.
         execution_time (float): How long this statement took, in seconds.
+        column_metadata (bool): Whether each result set reports its columns'
+            metadata too.
 
     Returns:
-        A dict with the result set (columns and rows) and execution metadata.
-        A statement that returned more than one result set - a CALL of a
-        procedure that runs several SELECTs - has its first as columns and
-        rows and the others, in order, as additional_result_sets.
+        A dict with the statement's result sets (result_sets, a list - empty
+        for a statement that returned none) and execution metadata.
     """
     output = {
         "affected_items_count": result.affected_items_count,
@@ -1431,25 +1454,16 @@ def _serialize_result(
 
     # A statement can return several result sets - a CALL returns one per
     # SELECT the procedure runs, then a status that carries none - and every
-    # one of them is read. The first stays where a single statement's has
-    # always been, so a client that knows nothing of the rest still reads it;
-    # the others follow in order. Reading only the first would drop the rest
+    # one of them is read. Reading only the first would drop the rest
     # without a word.
     result_sets = []
     while True:
         if result.has_data():
-            result_sets.append(_read_result_set(result))
+            result_sets.append(_read_result_set(result, column_metadata))
         next_result = getattr(result, "next_result", None)
         if next_result is None or not next_result():
             break
-
-    if result_sets:
-        output["columns"] = result_sets[0]["columns"]
-        output["rows"] = result_sets[0]["rows"]
-        if "column_types" in result_sets[0]:
-            output["column_types"] = result_sets[0]["column_types"]
-    if len(result_sets) > 1:
-        output["additional_result_sets"] = result_sets[1:]
+    output["result_sets"] = result_sets
 
     # Counted and read only NOW, after the rows above have been fetched. This
     # is mysql_warning_count, which for a statement that returns a result set
@@ -1727,20 +1741,26 @@ def _page_result(serialized: dict, limit: int) -> dict:
 
     It was fetched with one row more than the limit, and whether that row
     came back is what ``has_more_pages`` says; the row itself is dropped,
-    so a client sees exactly the rows it asked for.
+    so a client sees exactly the rows it asked for. Only a SELECT is
+    limited, and a SELECT returns one result set, so that is the one cut.
 
     Args:
         serialized (dict): The result, as ``_serialize_result`` made it.
         limit (int): The rows asked for.
 
     Returns:
-        The same dict, cut back and carrying ``has_more_pages``.
+        The same dict, its result set cut back and carrying
+        ``has_more_pages``.
     """
-    rows = serialized.get("rows")
-    has_more = rows is not None and len(rows) > limit
+    result_sets = serialized.get("result_sets")
+    if not result_sets:
+        return serialized
+
+    first = result_sets[0]
+    has_more = len(first["rows"]) > limit
     if has_more:
-        serialized["rows"] = rows[:limit]
-    serialized["has_more_pages"] = has_more
+        first["rows"] = first["rows"][:limit]
+    first["has_more_pages"] = has_more
 
     return serialized
 
@@ -1781,7 +1801,9 @@ def _query_rows(session, sql: str, params: Optional[list] = None) -> list:
     """
     result = session.run_sql(sql, params if params is not None else [])
 
-    return _serialize_result(result).get("rows", [])
+    result_sets = _serialize_result(result)["result_sets"]
+
+    return result_sets[0]["rows"] if result_sets else []
 
 
 def _normalize_object_type(object_type: str) -> str:
@@ -2589,6 +2611,7 @@ def register_db_tools(server, function_groups=()) -> None:
         params: Optional[list] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
+        column_metadata: bool = False,
     ) -> dict:
         """Executes a SQL statement on an open connection.
 
@@ -2604,20 +2627,29 @@ def register_db_tools(server, function_groups=()) -> None:
                 statement that is not a SELECT, runs as written.
             offset: How many rows to skip before the first one returned,
                 for the pages after the first. Needs a limit.
+            column_metadata: Whether each result set also reports its
+                columns' metadata. Off by default, as most callers only need
+                the rows.
 
         Returns:
-            A dict with the result set (columns and rows) and execution
-            metadata. Each row is keyed by the column labels listed in columns.
-            Where a query selects two columns with the same label - joining two
-            tables that both have an id, say - the later one is listed and keyed
-            as label_2 (then _3, and so on), so that no column is lost.
-            column_types gives each column's type in the same order: INTEGER,
-            UINTEGER, DECIMAL, DOUBLE, STRING, BYTES (BINARY/VARBINARY), BLOB,
-            JSON, GEOMETRY, DATE, DATETIME, TIME, ENUM, SET, BIT and so on.
-            Binary values (BYTES, BLOB, GEOMETRY) come as hex text.
-            A CALL of a procedure that returns several result sets has its
-            first as columns and rows and the others, in order, as
-            additional_result_sets - a list of dicts with columns and rows.
+            A dict with the statement's result sets and execution metadata.
+            result_sets is a list with one dict per result set the statement
+            returned, in order: none for a statement that returns no rows,
+            one for a SELECT, and one per SELECT a called procedure runs.
+            Each has columns (the column labels) and rows, each row keyed by
+            those labels. Where a query selects two columns with the same
+            label - joining two tables that both have an id, say - the later
+            one is listed and keyed as label_2 (then _3, and so on), so that
+            no column is lost. Binary values come as hex text.
+
+            With column_metadata true, each result set also has
+            column_metadata: one dict per column, in the order of columns,
+            with what the shell reports for it - column_label, column_name,
+            type (INT, BIGINT, DECIMAL, DOUBLE, STRING, BYTES, JSON,
+            GEOMETRY, DATE, DATETIME, TIME, ENUM, SET, BIT and so on), flags
+            (a list: NOT_NULL, PRI_KEY, UNSIGNED, AUTO_INCREMENT, BLOB,
+            BINARY, ...), length, fractional_digits, collation_name,
+            character_set_name, schema_name, table_name and table_label.
 
             warnings_count is how many warnings the statement produced, and
             warnings - present only when there were any - lists them, each
@@ -2633,11 +2665,11 @@ def register_db_tools(server, function_groups=()) -> None:
             nothing, and any statements of that transaction are gone. Start the
             work again on this connection.
 
-            has_more_pages is there when the limit (and offset) were added to
-            the statement: true when rows exist past the ones returned - ask
-            for the next page with offset + limit - and false on the last
-            page. It is absent where the statement ran as written, whose rows
-            are then all of them.
+            The result set carries has_more_pages when the limit (and
+            offset) were added to the statement: true when rows exist past
+            the ones returned - ask for the next page with offset + limit -
+            and false on the last page. It is absent where the statement ran
+            as written, whose rows are then all of them.
         """
         _check_paging(limit, offset)
 
@@ -2647,7 +2679,9 @@ def register_db_tools(server, function_groups=()) -> None:
             )
 
             serialized = _serialize_result(
-                result, _session_was_restarted(connection_id)
+                result,
+                _session_was_restarted(connection_id),
+                column_metadata=column_metadata,
             )
 
             return _page_result(serialized, limit) if limited else serialized
@@ -2660,6 +2694,7 @@ def register_db_tools(server, function_groups=()) -> None:
         file_path: Optional[str] = None,
         stop_on_error: bool = True,
         limit: Optional[int] = None,
+        column_metadata: bool = False,
     ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
@@ -2690,21 +2725,19 @@ def register_db_tools(server, function_groups=()) -> None:
                 PROCEDURE), and every other statement, runs as written. Use
                 db.execute_sql's limit and offset for the pages after the
                 first.
+            column_metadata: Whether each result set also reports its
+                columns' metadata, as for db.execute_sql. Off by default.
 
         Returns:
-            A list with one entry per statement that ran, each a dict with the
-            result set (columns and rows) and execution metadata: its position
-            in the script (statement_index, counting the non-empty statements
-            from 0) and how long it took (execution_time, in seconds). Two
-            columns sharing one label are keyed apart as label and label_2, as
-            for db.execute_sql. Each entry also carries warnings_count, and
-            warnings - the level, code and message of each - where the
-            statement produced any. A statement that returned several result
-            sets - a CALL of a procedure that runs more than one SELECT - has
-            the first as columns and rows and the others, in order, as
-            additional_result_sets (a list of dicts with columns and rows).
-            Every result set also carries column_types, each column's type in
-            the order of columns, as db.execute_sql describes them.
+            A list with one entry per statement that ran, each a dict with its
+            result sets and execution metadata: its position in the script
+            (statement_index, counting the non-empty statements from 0) and
+            how long it took (execution_time, in seconds). result_sets is a
+            list with one dict of columns and rows per result set the
+            statement returned - none, one, or one per SELECT of a called
+            procedure - as for db.execute_sql, and so is column_metadata.
+            Each entry also carries warnings_count, and warnings - the level,
+            code and message of each - where the statement produced any.
 
             A statement that is nothing but a -- or # line comment is NOT run
             and has no entry, since it carries no SQL. It still takes up a
@@ -2715,7 +2748,7 @@ def register_db_tools(server, function_groups=()) -> None:
 
             IMPORTANT - a failing statement does NOT raise. Its entry carries
             error (the message) and statement (the text that failed) INSTEAD
-            of a result set, so check every entry for an error key before
+            of result sets, so check every entry for an error key before
             treating the script as done. Nothing is rolled back either way: a
             script is not a transaction, and the statements that already ran
             have taken effect.
@@ -2736,10 +2769,11 @@ def register_db_tools(server, function_groups=()) -> None:
             the first entry only, as the session is opened once, before the
             script starts.
 
-            An entry carries has_more_pages where the limit was added to its
-            statement: true when rows exist past the ones returned - fetch the
-            next page with db.execute_sql and an offset - and false when these
-            are all of them. It is absent where the statement ran as written.
+            An entry's result set carries has_more_pages where the limit was
+            added to its statement: true when rows exist past the ones
+            returned - fetch the next page with db.execute_sql and an offset -
+            and false when these are all of them. It is absent where the
+            statement ran as written.
         """
         _check_paging(limit)
         if (sql_script is None) == (file_path is None):
@@ -2810,6 +2844,7 @@ def register_db_tools(server, function_groups=()) -> None:
                     session_restarted=restarted and not results,
                     statement_index=index,
                     execution_time=time.perf_counter() - started,
+                    column_metadata=column_metadata,
                 )
                 results.append(
                     _page_result(serialized, limit) if limited else serialized

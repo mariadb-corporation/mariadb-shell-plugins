@@ -496,7 +496,7 @@ async def _create_source_schema(call, instances) -> None:
             "sql": f"SELECT COUNT(*) AS orders FROM {MIGRATED_SCHEMA}.orders",
         },
     )
-    assert helpers.tool_payload(orders)["rows"] == [{"orders": 3}]
+    assert helpers.tool_rows(orders) == [{"orders": 3}]
 
     close_result = await call("db.close", {"connection_id": connection_id})
     assert close_result.is_error is False, helpers.tool_payload(close_result)
@@ -574,7 +574,7 @@ async def _verify_target(call, instances) -> None:
             "db.execute_sql", {"connection_id": connection_id, "sql": sql}
         )
         assert result.is_error is False, helpers.tool_payload(result)
-        assert helpers.tool_payload(result)["rows"] == expected, sql
+        assert helpers.tool_rows(result) == expected, sql
 
     close_result = await call("db.close", {"connection_id": connection_id})
     assert close_result.is_error is False, helpers.tool_payload(close_result)

@@ -40,12 +40,15 @@ variables, since Tabulator ships a light theme of its own.
 - BINARY / VARBINARY is `0x` and its hex, cut at 64 digits with an
   ellipsis (`BINARY_DIGITS_SHOWN`). The hex is the server's; editing takes
   it with or without the `0x`.
-- `display` comes from `valueDisplayOf(serverType, columnType)`
+- `display` comes from `valueDisplayOf(metadata, columnType)`
   (`dataTypes.ts`): the table's COLUMN_TYPE where it was looked up - the
   only way to tell a VECTOR, which the server reports as `BYTES` like a
-  VARBINARY - and otherwise the server's `column_types`, which every
-  result has. So a VECTOR shows as its icon only in an editable
-  single-table result; elsewhere it is hex.
+  VARBINARY - and otherwise the result column's `column_metadata`, which
+  every result has (the extension always asks for it). The server
+  reports raw metadata only, so the rule "`BYTES` + the `BLOB` flag is a
+  BLOB, `BYTES` without it BINARY/VARBINARY" lives HERE (TEXT, JSON and
+  GEOMETRY carry the flag too, but are not `BYTES`). So a VECTOR shows as
+  its icon only in an editable single-table result; elsewhere it is hex.
 - GEOMETRY and VECTOR cells get no text editor (`editableAsText`): their
   hex would be written back as a quoted string. BINARY and BLOB can, as
   hex (`literalKind` "binary").

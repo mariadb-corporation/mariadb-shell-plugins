@@ -68,7 +68,8 @@ falls back to 200 for anything that is not a whole number >= 1) is passed
 as `limit` to `db.execute_sql_script` on every run (`IExecutionOptions.
 pageSize`). The **server** does the rest: it adds `LIMIT size+1` to each
 SELECT that can take one, drops the extra row and reports
-`has_more_pages` (see `mcp_plugin`'s db-tools.md). So the extension never
+`has_more_pages` on the statement's result set (see `mcp_plugin`'s
+db-tools.md). So the extension never
 sees the extra row, and every count - the status, the actions' "N rows in
 set" - is the page's own.
 

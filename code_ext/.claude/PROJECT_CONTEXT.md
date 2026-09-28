@@ -100,8 +100,13 @@ change belongs to up to date, and this table with it.
   a `page`, and the Pages buttons stay off - it degrades to the old
   behaviour rather than breaking. Same decision as folders: raise
   `MINIMUM_SHELL_VERSION` once a release carries it.
-- **Column types need the unreleased shell too**: the data icons and hex
-  display go by `column_types`, which only this repo's `mcp_plugin` sends.
+- **Column metadata needs the unreleased shell too**: the data icons and
+  hex display go by `column_metadata`, which only this repo's `mcp_plugin`
+  sends (the extension always passes `column_metadata: true`; an older
+  plugin drops the argument). Such a shell also reports its result set as
+  top-level `columns`/`rows` rather than `result_sets`, which
+  `normalizeStatementResult` (`src/mcp/mariaDbApi.ts`) turns into the one
+  shape the rest of the extension reads.
   Without it, only an editable single-table result - whose columns are
   looked up - shows them; everything else is plain text, as before.
 - A VECTOR is recognised only from the table's own column type (the

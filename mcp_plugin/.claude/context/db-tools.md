@@ -9,26 +9,34 @@ handling are in [connections.md](connections.md).
 
 ## Architecture / key decisions
 
-- **Every result set of a statement is read** (`_serialize_result` loops
-  `result.next_result()`, `_read_result_set` reads one). A CALL returns one
-  set per SELECT the procedure runs, then a status with none. The FIRST
-  stays in `columns`/`rows`, so a client that knows nothing more still reads
-  it; the rest go, in order, in `additional_result_sets` (`[{columns,
-  rows}]`), present only when there is more than one. Before, only the first
-  was read and the rest silently dropped (the next statement still ran:
-  the shell drains them). `getattr` guards `next_result` for results that
-  have none. Verified live against a sandbox, through both tools.
-- **Column types** (2026-09-25, for the extension's value display): every
-  result set carries `column_types`, one per column in the order of
-  `columns` (first set at the top level, the rest inside
-  `additional_result_sets`). `_column_type` is the name of the shell's
-  `Type` (`<Type.INTEGER>` -> `INTEGER`) with one refinement, `BLOB`:
-  measured on 12.3, BINARY, VARBINARY, every BLOB AND VECTOR are all
-  `BYTES`; only the `BLOB` flag (`get_flags()`) sets the blobs apart, and
-  nothing tells a VECTOR from a VARBINARY. JSON and the spatial types have
-  their own (`JSON`, `GEOMETRY`). Left out when no column reports a type
-  (stub results, an older shell). Values are unchanged: binary still comes
-  as hex.
+- **Every result set of a statement is read, into `result_sets`** - a
+  list, ALWAYS present on a statement that ran (empty for one that returns
+  no rows), each `{columns, rows, column_metadata?, has_more_pages?}`.
+  `_serialize_result` loops `result.next_result()`, `_read_result_set`
+  reads one; a CALL returns one set per SELECT the procedure runs, then a
+  status with none. `getattr` guards `next_result` for results that have
+  none. Statement-level fields (`affected_items_count`, `warnings*`,
+  `statement_index`, `execution_time`, `session_restarted`) stay at the
+  top. **Decided in review of PR #30 (Rene):** this replaced top-level
+  `columns`/`rows` + `additional_result_sets` ("just return an array").
+  Released shells still send the old top-level `columns`/`rows`; the
+  extension normalizes both in `normalizeStatementResult`.
+- **Column metadata** (`column_metadata=True` on both tools, default
+  False so LLM callers stay lean; the extension always sets it). One dict
+  per column, in the order of `columns`, straight from the shell's Column
+  getters minus `get_` (`_COLUMN_METADATA_GETTERS`): `column_label`,
+  `column_name`, `type`, `flags`, `length`, `fractional_digits`,
+  `collation_name`, `character_set_name`, `schema_name`, `table_name`,
+  `table_label`. `type` is `get_type().data` - the `mysql.Type` name,
+  `INT`/`BIGINT`/`STRING`/`BYTES`/`JSON`/`GEOMETRY`/... (NOT the
+  `<Type.INTEGER>` its `str()` prints: that differs, and parsing it is
+  what the review objected to). `flags` is `get_flags()` split into a
+  list. A getter missing or raising is left out. **Decided in review:**
+  the MCP layer interprets nothing - no invented `BLOB` type. Measured on
+  12.3: BINARY, VARBINARY, every BLOB AND VECTOR are `BYTES`; the `BLOB`
+  flag marks the blobs but also TEXT (`STRING`), JSON and GEOMETRY, and
+  nothing tells a VECTOR from a VARBINARY. Values are unchanged: binary
+  still comes as hex.
 
 - **Paging** (2026-09-25, for the VS Code extension's result pages):
   `db.execute_sql_script(limit=)` and `db.execute_sql(limit=, offset=)`.
@@ -42,9 +50,10 @@ handling are in [connections.md](connections.md).
   LOCK, FOR UPDATE / FOR SHARE (LIMIT must come BEFORE those, so appending
   is a syntax error). `FOR SYSTEM_TIME` is not a locking FOR and is limited.
   - `_run_limited` sends `limit + 1` rows' worth; `_page_result` drops the
-    extra row and sets `has_more_pages` (true/false). The key is present
-    ONLY when the limit was applied - that is how a client knows it can
-    page. snake_case like every other key on this wire.
+    extra row and sets `has_more_pages` (true/false) on `result_sets[0]` -
+    a limited statement is a SELECT, which has exactly one set. The key is
+    present ONLY when the limit was applied - that is how a client knows
+    it can page. snake_case like every other key on this wire.
   - A limited statement refused with **1064** is re-run as written: a
     syntax error means nothing ran, so it cannot take effect twice. Any
     other error is NOT retried.
@@ -197,7 +206,8 @@ handling are in [connections.md](connections.md).
   under Architecture. db.* (**8**: `list_connections`, `connect`, `list_schemas`, `list_objects`,
   `get_object_details`, `execute_sql` (+ `limit`/`offset`), `execute_sql_script` — now
   with `stop_on_error`, `limit` and per-statement `statement_index`/`execution_time`/
-  `error`/`has_more_pages`; every result set carries `column_types` — `close`),
+  `error`, `result_sets` (each with `has_more_pages` when limited) and
+  opt-in `column_metadata` — `close`),
   msm.* (**12**, path-guarded, async — the 12th is `deploy_schema`, gated on the db group),
   sandbox.* (7, `sandbox_dir`-guarded, async, port required).
 

@@ -399,15 +399,19 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             api.statements.push({ sql, ...(page ? { page } : {}) });
             const all = options.pagedRows ?? [];
             if (!page) {
-                return Promise.resolve({ columns: ["n"], rows: all });
+                return Promise.resolve({
+                    result_sets: [{ columns: ["n"], rows: all }],
+                });
             }
 
             const offset = page.offset ?? 0;
 
             return Promise.resolve({
-                columns: Object.keys(all[0] ?? {}),
-                rows: all.slice(offset, offset + page.limit),
-                has_more_pages: all.length > offset + page.limit,
+                result_sets: [{
+                    columns: Object.keys(all[0] ?? {}),
+                    rows: all.slice(offset, offset + page.limit),
+                    has_more_pages: all.length > offset + page.limit,
+                }],
             });
         },
     };

@@ -1264,7 +1264,7 @@ def test_two_columns_with_one_label_both_survive():
     """
     result = _StubDataResult(["id", "id", "other"], [[1, 2, 3]])
 
-    output = db_functions._serialize_result(result)
+    [output] = db_functions._serialize_result(result)["result_sets"]
 
     # Every column is reported, and the keys are exactly what columns says.
     assert output["columns"] == ["id", "id_2", "other"]
@@ -1279,27 +1279,27 @@ def test_a_made_up_label_never_collides_with_a_real_one():
     have the invented key land on the real one - losing a column while fixing a
     column.
     """
-    result = db_functions._serialize_result(
+    [result] = db_functions._serialize_result(
         _StubDataResult(["id", "id", "id_2", "id"], [[1, 2, 3, 4]])
-    )
+    )["result_sets"]
 
     assert result["columns"] == ["id", "id_2", "id_2_2", "id_3"]
     assert result["rows"] == [{"id": 1, "id_2": 2, "id_2_2": 3, "id_3": 4}]
 
     # The other way round, the column that is really called id_2 comes first and
     # keeps its name; the duplicate takes the next free suffix.
-    result = db_functions._serialize_result(
+    [result] = db_functions._serialize_result(
         _StubDataResult(["id_2", "id", "id"], [[1, 2, 3]])
-    )
+    )["result_sets"]
 
     assert result["columns"] == ["id_2", "id", "id_3"]
 
 
 def test_distinct_labels_are_left_exactly_as_they_are():
     """The ordinary case is untouched: no renaming, no suffixes."""
-    result = db_functions._serialize_result(
+    [result] = db_functions._serialize_result(
         _StubDataResult(["id", "name", "comment"], [[1, "a", None], [2, "b", "x"]])
-    )
+    )["result_sets"]
 
     assert result["columns"] == ["id", "name", "comment"]
     assert result["rows"] == [

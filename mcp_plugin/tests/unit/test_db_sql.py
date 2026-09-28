@@ -55,7 +55,7 @@ async def _db_flow(uri, script_dir):
             {"connection_id": connection_id, "sql": "SELECT @@version"},
         )
         assert version_result.is_error is False
-        version_rows = helpers.tool_payload(version_result)["rows"]
+        version_rows = helpers.tool_rows(version_result)
         assert len(version_rows) == 1
         version_value = list(version_rows[0].values())[0]
         assert isinstance(version_value, str) and version_value != ""
@@ -74,7 +74,7 @@ async def _db_flow(uri, script_dir):
             },
         )
         assert typed_result.is_error is False
-        typed_row = helpers.tool_payload(typed_result)["rows"][0]
+        typed_row = helpers.tool_rows(typed_result)[0]
         assert typed_row["whole"] == "2.00"
         assert typed_row["fraction"] == "1.50"
         assert typed_row["moment"].startswith("2026-07-29")
@@ -90,7 +90,9 @@ async def _db_flow(uri, script_dir):
             },
         )
         assert duplicate_result.is_error is False
-        duplicate_payload = helpers.tool_payload(duplicate_result)
+        duplicate_payload = helpers.result_set(
+            helpers.tool_payload(duplicate_result)
+        )
         assert duplicate_payload["columns"] == ["id", "id_2", "other"]
         assert duplicate_payload["rows"] == [{"id": 1, "id_2": 2, "other": 3}]
 
@@ -121,8 +123,10 @@ async def _db_flow(uri, script_dir):
             assert isinstance(entry["execution_time"], float)
             assert entry["execution_time"] >= 0
 
-        # Every column says its type, a BLOB told from a VARBINARY by its flag.
-        typed_payload = helpers.tool_payload(
+        # Asked for, every column reports its metadata as the shell has it:
+        # the mysql.Type name, and the flags that tell a BLOB from a
+        # VARBINARY - both BYTES.
+        typed_payload = helpers.result_set(helpers.tool_payload(
             await call(
                 "db.execute_sql",
                 {
@@ -132,13 +136,24 @@ async def _db_flow(uri, script_dir):
                         "JSON_OBJECT('a', 1) AS j, "
                         "ST_GeomFromText('POINT(1 1)') AS g"
                     ),
+                    "column_metadata": True,
                 },
             )
-        )
-        assert typed_payload["column_types"] == [
-            "INTEGER", "STRING", "BYTES", "JSON", "GEOMETRY",
+        ))
+        assert [column["type"] for column in typed_payload["column_metadata"]] == [
+            "INT", "STRING", "BYTES", "JSON", "GEOMETRY",
         ]
+        assert [
+            column["column_label"] for column in typed_payload["column_metadata"]
+        ] == typed_payload["columns"]
         assert typed_payload["rows"][0]["h"] == "00ff"
+        # Not asked for, it is not there.
+        assert "column_metadata" not in helpers.result_set(helpers.tool_payload(
+            await call(
+                "db.execute_sql",
+                {"connection_id": connection_id, "sql": "SELECT 1 AS i"},
+            )
+        ))
         await call(
             "db.execute_sql_script",
             {
@@ -150,16 +165,20 @@ async def _db_flow(uri, script_dir):
                 ),
             },
         )
-        blob_payload = helpers.tool_payload(
+        blob_payload = helpers.result_set(helpers.tool_payload(
             await call(
-                "db.execute_sql",
+                "db.execute_sql_script",
                 {
                     "connection_id": connection_id,
-                    "sql": f"SELECT b, vb FROM `{schema}`.`blobs`",
+                    "sql_script": f"SELECT b, vb FROM `{schema}`.`blobs`",
+                    "column_metadata": True,
                 },
             )
-        )
-        assert blob_payload["column_types"] == ["BLOB", "BYTES"]
+        ))
+        blob, varbinary = blob_payload["column_metadata"]
+        assert (blob["type"], varbinary["type"]) == ("BYTES", "BYTES")
+        assert "BLOB" in blob["flags"] and "BLOB" not in varbinary["flags"]
+        assert (blob["schema_name"], blob["table_name"]) == (schema, "blobs")
         await call(
             "db.execute_sql",
             {
@@ -182,14 +201,17 @@ async def _db_flow(uri, script_dir):
                 "limit": 2,
             },
         )
-        paged = helpers.tool_payload(paged_result)
+        paged = [
+            helpers.result_set(entry)
+            for entry in helpers.tool_payload(paged_result)
+        ]
         assert [row["id"] for row in paged[0]["rows"]] == [1, 2]
         assert paged[0]["has_more_pages"] is True
         # A LIMIT of its own: run as written, nothing to page.
         assert len(paged[1]["rows"]) == 3
         assert "has_more_pages" not in paged[1]
 
-        last_page = helpers.tool_payload(
+        last_page = helpers.result_set(helpers.tool_payload(
             await call(
                 "db.execute_sql",
                 {
@@ -199,7 +221,7 @@ async def _db_flow(uri, script_dir):
                     "offset": 2,
                 },
             )
-        )
+        ))
         assert [row["id"] for row in last_page["rows"]] == [3]
         assert last_page["has_more_pages"] is False
 
@@ -235,7 +257,12 @@ async def _db_flow(uri, script_dir):
         assert [entry.get("error") for entry in form_entries] == [None] * len(
             forms
         )
-        assert [entry.get("has_more_pages") for entry in form_entries] == [
+        # SELECT ... INTO returns no result set, so has nothing to page.
+        assert [
+            entry["result_sets"][0].get("has_more_pages")
+            if entry["result_sets"] else None
+            for entry in form_entries
+        ] == [
             True, True, False, True, True, True, None, None, None, None,
         ]
 
@@ -260,7 +287,7 @@ async def _db_flow(uri, script_dir):
         # than as a list of one - the same as any single-statement script.
         commented = helpers.tool_payload(commented_result)
         assert commented["statement_index"] == 1
-        assert commented["rows"] == [{"cnt": 3}]
+        assert helpers.result_set(commented)["rows"] == [{"cnt": 3}]
 
         # Warnings, against a real server because both halves of this were
         # got wrong against a stub. A SELECT that warns only knows it has
@@ -317,7 +344,7 @@ async def _db_flow(uri, script_dir):
         assert failing[1]["statement_index"] == 1
         assert "Duplicate entry" in failing[1]["error"]
         assert "VALUES (90, 'y')" in failing[1]["statement"]
-        assert "rows" not in failing[1]
+        assert "result_sets" not in failing[1]
 
         # The first of the two inserts really did run and was not rolled
         # back, which is why the caller is told about it at all.
@@ -328,7 +355,7 @@ async def _db_flow(uri, script_dir):
                 "sql": f"SELECT name FROM `{schema}`.`items` WHERE id = 90",
             },
         )
-        assert helpers.tool_payload(survivor)["rows"] == [{"name": "x"}]
+        assert helpers.tool_rows(survivor) == [{"name": "x"}]
 
         # With stop_on_error false every statement is attempted, so the
         # third one runs even though the second failed, and there is one
@@ -359,7 +386,7 @@ async def _db_flow(uri, script_dir):
                 "sql": f"SELECT id FROM `{schema}`.`items` WHERE id = 91",
             },
         )
-        assert helpers.tool_payload(landed)["rows"] == [{"id": 91}]
+        assert helpers.tool_rows(landed) == [{"id": 91}]
 
         await call(
             "db.execute_sql",
@@ -734,7 +761,7 @@ async def _db_flow(uri, script_dir):
                 },
             )
             assert count_result.is_error is False
-            assert helpers.tool_payload(count_result)["rows"][0]["cnt"] == 5
+            assert helpers.tool_rows(count_result)[0]["cnt"] == 5
 
             # Ordered SELECT returns the rows in insertion order.
             rows_result = await call(
@@ -744,7 +771,7 @@ async def _db_flow(uri, script_dir):
                     "sql": f"SELECT id, name FROM `{schema}`.`items` ORDER BY id",
                 },
             )
-            rows = helpers.tool_payload(rows_result)["rows"]
+            rows = helpers.tool_rows(rows_result)
             assert [row["name"] for row in rows] == ["a", "b", "c", "d", "e"]
 
             # Parameterized SELECT binds the ? placeholder.
@@ -756,12 +783,11 @@ async def _db_flow(uri, script_dir):
                     "params": [2],
                 },
             )
-            one_rows = helpers.tool_payload(one_result)["rows"]
+            one_rows = helpers.tool_rows(one_result)
             assert len(one_rows) == 1 and one_rows[0]["name"] == "b"
 
             # A procedure that runs two SELECTs returns two result sets from
-            # one CALL. The first is where a single statement's has always
-            # been; the second follows it rather than being dropped.
+            # one CALL, in order, rather than the second being dropped.
             procedure_result = await call(
                 "db.execute_sql",
                 {
@@ -790,24 +816,22 @@ async def _db_flow(uri, script_dir):
                 assert call_result.is_error is False
                 payload = helpers.tool_payload(call_result)
                 entry = payload[0] if isinstance(payload, list) else payload
-                assert entry["columns"] == ["id"]
-                assert entry["rows"] == [{"id": 1}, {"id": 2}]
-                assert entry["additional_result_sets"] == [
+                assert entry["result_sets"] == [
+                    {"columns": ["id"], "rows": [{"id": 1}, {"id": 2}]},
                     {
                         "columns": ["letter", "answer"],
                         "rows": [{"letter": "x", "answer": 42}],
-                        "column_types": ["STRING", "INTEGER"],
-                    }
+                    },
                 ]
 
-            # A statement with one result set carries no empty extra list.
-            single = helpers.tool_payload(
+            # A statement that returns no rows has an empty list of sets.
+            empty = helpers.tool_payload(
                 await call(
                     "db.execute_sql",
-                    {"connection_id": connection_id, "sql": "SELECT 1 AS one"},
+                    {"connection_id": connection_id, "sql": "SET @x = 1"},
                 )
             )
-            assert "additional_result_sets" not in single
+            assert empty["result_sets"] == []
         finally:
             # Drop the test schema.
             drop_result = await call(

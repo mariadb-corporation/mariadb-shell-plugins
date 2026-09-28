@@ -36,9 +36,42 @@ import type {
     IObjectInfo,
     ISchemaInfo,
     IPageRequest,
+    IResultSetData,
     IStatementResult,
     ObjectType,
 } from "./types.js";
+
+/**
+ * A statement's result as the wire carries it: a shell that predates
+ * `result_sets` reports its one result set as `columns` and `rows`.
+ */
+interface IWireStatementResult extends IStatementResult {
+    columns?: string[];
+    rows?: Array<Record<string, unknown>>;
+}
+
+/**
+ * Brings a statement's result into the one shape the rest of the
+ * extension reads, whichever shell reported it.
+ *
+ * @param result The result as decoded.
+ *
+ * @returns The same result with its result sets in `result_sets`.
+ */
+export const normalizeStatementResult = (
+    result: IWireStatementResult,
+): IStatementResult => {
+    const { columns, rows, ...rest } = result;
+    if (rest.result_sets !== undefined || rest.error !== undefined) {
+        return rest;
+    }
+
+    const sets: IResultSetData[] = columns === undefined
+        ? []
+        : [{ columns, rows: rows ?? [] }];
+
+    return { ...rest, result_sets: sets };
+};
 
 /**
  * Calls one MCP tool. This is the whole of what the API needs from a
@@ -382,10 +415,11 @@ export class MariaDbApi implements IMariaDbApi {
      *                    Defaults to the server's own default, which is
      *                    to stop.
      * @param limit The most rows each SELECT returns; one without a LIMIT
-     *              of its own is given this one, and says in
-     *              `has_more_pages` whether there are more.
+     *              of its own is given this one, and its result set says
+     *              in `has_more_pages` whether there are more.
      *
-     * @returns One result per statement that ran, in order.
+     * @returns One result per statement that ran, in order, each set
+     *          carrying its columns' metadata.
      */
     public async executeScript(
         connectionId: string,
@@ -395,11 +429,12 @@ export class MariaDbApi implements IMariaDbApi {
     ): Promise<IStatementResult[]> {
         const name = "db.execute_sql_script";
 
-        return decodeList<IStatementResult>(
+        return decodeList<IWireStatementResult>(
             name,
             await this.caller.callTool(name, {
                 connection_id: connectionId,
                 sql_script: sqlScript,
+                column_metadata: true,
                 // Left out entirely when not set, so a shell that does
                 // not know the argument is not handed it.
                 ...(stopOnError === undefined
@@ -407,7 +442,7 @@ export class MariaDbApi implements IMariaDbApi {
                     : { stop_on_error: stopOnError }),
                 ...(limit === undefined ? {} : { limit }),
             }),
-        );
+        ).map(normalizeStatementResult);
     }
 
     /**
@@ -417,9 +452,10 @@ export class MariaDbApi implements IMariaDbApi {
      * @param sql The statement.
      * @param page Which of its rows to return. A SELECT without a LIMIT
      *             of its own is given this one; anything else runs as
-     *             written and has no `has_more_pages`.
+     *             written and its result set has no `has_more_pages`.
      *
-     * @returns What the statement produced.
+     * @returns What the statement produced, each set carrying its
+     *          columns' metadata.
      */
     public async executeSql(
         connectionId: string,
@@ -428,11 +464,12 @@ export class MariaDbApi implements IMariaDbApi {
     ): Promise<IStatementResult> {
         const name = "db.execute_sql";
 
-        return decodeObject<IStatementResult>(
+        return normalizeStatementResult(decodeObject<IWireStatementResult>(
             name,
             await this.caller.callTool(name, {
                 connection_id: connectionId,
                 sql,
+                column_metadata: true,
                 ...(page === undefined
                     ? {}
                     : {
@@ -440,7 +477,7 @@ export class MariaDbApi implements IMariaDbApi {
                         ...(page.offset ? { offset: page.offset } : {}),
                     }),
             }),
-        );
+        ));
     }
 }
 

@@ -289,7 +289,7 @@ class _MultiSetResult:
 
 
 def test_every_result_set_of_a_call_is_read():
-    """The first set stays in columns/rows; the rest follow, in order."""
+    """Every set is in result_sets, in order; the one without data is not."""
     result = _MultiSetResult([
         (["a"], [[1]]),
         (["b", "c"], [[2, 3], [4, 5]]),
@@ -298,15 +298,21 @@ def test_every_result_set_of_a_call_is_read():
 
     output = db_functions._serialize_result(result)
 
-    assert output["columns"] == ["a"]
-    assert output["rows"] == [{"a": 1}]
-    assert output["additional_result_sets"] == [
-        {"columns": ["b", "c"], "rows": [{"b": 2, "c": 3}, {"b": 4, "c": 5}]}
+    assert output["result_sets"] == [
+        {"columns": ["a"], "rows": [{"a": 1}]},
+        {"columns": ["b", "c"], "rows": [{"b": 2, "c": 3}, {"b": 4, "c": 5}]},
     ]
 
 
-class _TypedColumn:
-    """A column that reports a type, and flags, as the shell's do."""
+class _Type:
+    """A mysql.Type constant: its name is its data."""
+
+    def __init__(self, data):
+        self.data = data
+
+
+class _MetadataColumn:
+    """A column with every getter the shell's Column has."""
 
     def __init__(self, label, kind, flags=""):
         self.label = label
@@ -316,57 +322,119 @@ class _TypedColumn:
     def get_column_label(self):
         return self.label
 
+    def get_column_name(self):
+        return self.label
+
     def get_type(self):
-        return f"<Type.{self.kind}>"
+        return _Type(self.kind)
 
     def get_flags(self):
         return self.flags
 
+    def get_length(self):
+        return 16
 
-def test_each_column_says_its_type():
-    """BYTES with the BLOB flag is a BLOB; without it, BINARY or VARBINARY."""
-    result = _MultiSetResult([(["a"], [[1, b"\x00\xff", b"x", "{}", None]])])
+    def get_fractional_digits(self):
+        return 0
+
+    def get_collation_name(self):
+        return "binary"
+
+    def get_character_set_name(self):
+        return "binary"
+
+    def get_schema_name(self):
+        return "test"
+
+    def get_table_name(self):
+        return "t"
+
+    def get_table_label(self):
+        return "t_alias"
+
+
+def test_column_metadata_is_what_the_shell_reports():
+    """Nothing is worked out: a BLOB is BYTES with its flags alongside."""
+    result = _MultiSetResult([(["a"], [[1, b"\x00\xff", b"x"]])])
     result.get_columns = lambda: [
-        _TypedColumn("i", "INTEGER", "NOT_NULL NUM"),
-        _TypedColumn("vb", "BYTES", "BINARY "),
-        _TypedColumn("b", "BYTES", "BLOB BINARY "),
-        _TypedColumn("j", "JSON"),
-        _TypedColumn("g", "GEOMETRY", "BLOB BINARY "),
+        _MetadataColumn("i", "INT", "NOT_NULL NUM"),
+        _MetadataColumn("vb", "BYTES", "BINARY "),
+        _MetadataColumn("b", "BYTES", "BLOB BINARY "),
     ]
 
+    output = db_functions._serialize_result(result, column_metadata=True)
+
+    [result_set] = output["result_sets"]
+    assert result_set["column_metadata"][0] == {
+        "column_label": "i",
+        "column_name": "i",
+        "type": "INT",
+        "flags": ["NOT_NULL", "NUM"],
+        "length": 16,
+        "fractional_digits": 0,
+        "collation_name": "binary",
+        "character_set_name": "binary",
+        "schema_name": "test",
+        "table_name": "t",
+        "table_label": "t_alias",
+    }
+    assert [(column["type"], column["flags"])
+            for column in result_set["column_metadata"][1:]] == [
+        ("BYTES", ["BINARY"]),
+        ("BYTES", ["BLOB", "BINARY"]),
+    ]
+    # Binary values still come as hex text.
+    assert result_set["rows"][0]["vb"] == "00ff"
+
+
+def test_column_metadata_is_left_out_unless_asked_for():
+    result = _MultiSetResult([(["a"], [[1]])])
+    result.get_columns = lambda: [_MetadataColumn("a", "INT")]
+
     output = db_functions._serialize_result(result)
 
-    assert output["column_types"] == ["INTEGER", "BYTES", "BLOB", "JSON",
-                                      "GEOMETRY"]
-    # Binary values still come as hex text.
-    assert output["rows"][0]["vb"] == "00ff"
+    assert "column_metadata" not in output["result_sets"][0]
 
 
-def test_a_column_that_names_no_type_leaves_the_types_out():
-    """Where no column says - a stub, an older shell - there is no key."""
-    output = db_functions._serialize_result(_MultiSetResult([(["a"], [[1]])]))
+def test_a_getter_a_column_lacks_or_that_fails_is_left_out():
+    """A stub, or an older shell's column, reports what it has."""
 
-    assert "column_types" not in output
+    def fails():
+        raise RuntimeError("no")
+
+    column = SimpleNamespace(
+        get_column_label=lambda: "a",
+        get_length=fails,
+        get_type=lambda: object(),
+    )
+    result = _MultiSetResult([(["a"], [[1]])])
+    result.get_columns = lambda: [column]
+
+    output = db_functions._serialize_result(result, column_metadata=True)
+
+    assert output["result_sets"][0]["column_metadata"] == [
+        {"column_label": "a"}
+    ]
 
 
-def test_every_result_set_of_a_call_has_its_own_types():
+def test_every_result_set_of_a_call_has_its_own_metadata():
     result = _MultiSetResult([(["a"], [[1]]), (["b"], [[b"x"]]), None])
-    kinds = iter([[_TypedColumn("a", "INTEGER")],
-                  [_TypedColumn("b", "BYTES", "BLOB BINARY")]])
+    kinds = iter([[_MetadataColumn("a", "INT")],
+                  [_MetadataColumn("b", "BYTES", "BLOB BINARY")]])
     result.get_columns = lambda: next(kinds)
 
-    output = db_functions._serialize_result(result)
+    output = db_functions._serialize_result(result, column_metadata=True)
 
-    assert output["column_types"] == ["INTEGER"]
-    assert output["additional_result_sets"][0]["column_types"] == ["BLOB"]
+    assert [[column["type"] for column in result_set["column_metadata"]]
+            for result_set in output["result_sets"]] == [["INT"], ["BYTES"]]
 
 
 def test_a_result_with_no_data_has_no_result_sets():
-    """A statement with no result set reports none, and no empty extra list."""
+    """A statement with no result set reports an empty list of them."""
     output = db_functions._serialize_result(_MultiSetResult([None]))
 
+    assert output["result_sets"] == []
     assert "columns" not in output
-    assert "additional_result_sets" not in output
 
 
 def test_a_result_that_cannot_walk_on_reads_its_one_set():
@@ -383,5 +451,4 @@ def test_a_result_that_cannot_walk_on_reads_its_one_set():
 
     output = db_functions._serialize_result(del_next)
 
-    assert output["rows"] == [{"a": 1}]
-    assert "additional_result_sets" not in output
+    assert output["result_sets"] == [{"columns": ["a"], "rows": [{"a": 1}]}]

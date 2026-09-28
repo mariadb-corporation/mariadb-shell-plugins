@@ -17,6 +17,7 @@
 
 import type {
     IColumnDetails,
+    IColumnMetadata,
     IMariaDbApi,
     IResultSetData,
     IStatementResult,
@@ -51,13 +52,13 @@ export const describeResult = (result: IStatementResult): string => {
         : "";
 
     // Each set has a row of its own under this one saying what is in it.
-    const sets = 1 + (result.additional_result_sets?.length ?? 0);
-    if (result.rows && sets > 1) {
-        return `${sets} result sets${warnings}`;
+    const sets = result.result_sets ?? [];
+    if (sets.length > 1) {
+        return `${sets.length} result sets${warnings}`;
     }
 
-    if (result.rows) {
-        const count = result.rows.length;
+    if (sets.length === 1) {
+        const count = sets[0].rows.length;
 
         return `${count} row${count === 1 ? "" : "s"} in set${warnings}`;
     }
@@ -302,16 +303,16 @@ export const captionFor = (statement: string, limit = 40): string => {
  *
  * @param labels The result set's column labels, in order.
  * @param details The table's columns.
- * @param types Each column's type as the server reported it, in order,
- *              which is what decides how a value is shown where the
- *              table's columns are not known.
+ * @param metadata Each column's metadata as the server reported it, in
+ *                 order, which is what decides how a value is shown
+ *                 where the table's columns are not known.
  *
  * @returns The grid columns.
  */
 export const mapColumns = (
     labels: string[],
     details?: IColumnDetails[],
-    types?: Array<string | null>,
+    metadata?: IColumnMetadata[],
 ): IResultColumn[] => {
     const byName = new Map(details?.map((column) => {
         return [column.name, column];
@@ -319,7 +320,8 @@ export const mapColumns = (
 
     return labels.map((name, position) => {
         const column = byName.get(name);
-        const display = valueDisplayOf(types?.[position], column?.datatype);
+        const display = valueDisplayOf(
+            metadata?.[position], column?.datatype);
         const shown = display === undefined ? {} : { display };
         if (!column) {
             return { name, ...shown };
@@ -581,7 +583,8 @@ export class ExecutionService {
                 source,
             });
 
-            if (!result.columns) {
+            const sets = result.result_sets ?? [];
+            if (sets.length === 0) {
                 children.push({
                     id,
                     time: startedAt,
@@ -601,7 +604,7 @@ export class ExecutionService {
             const resultSet = await this.#buildResultSet(
                 connectionId,
                 statement,
-                result,
+                sets[0],
                 resultSets.length,
                 describeResult(result),
                 currentSchema,
@@ -614,13 +617,8 @@ export class ExecutionService {
             // under the statement's, beside its warnings, saying what is in
             // it and jumping to it. The first set gets one too, so every
             // set is a row away.
-            const extra = result.additional_result_sets ?? [];
             const setRows: IActionRow[] = [];
-            if (extra.length > 0) {
-                const sets: IResultSetData[] = [
-                    { columns: result.columns, rows: result.rows ?? [] },
-                    ...extra,
-                ];
+            if (sets.length > 1) {
                 for (const [position, set] of sets.entries()) {
                     const shown = position === 0
                         ? resultSet
@@ -753,11 +751,12 @@ export class ExecutionService {
             resultSet.statement,
             { limit: current.size, offset: page * current.size },
         );
-        const rows = result.rows ?? [];
+        const set = result.result_sets?.[0];
+        const rows = set?.rows ?? [];
         const next: IResultPage = {
             index: page,
             size: current.size,
-            hasMore: result.has_more_pages ?? false,
+            hasMore: set?.has_more_pages ?? false,
             loads: current.loads + 1,
         };
 
@@ -775,7 +774,7 @@ export class ExecutionService {
      *
      * @param connectionId The UUID to look the table up on.
      * @param statement The statement that produced the result.
-     * @param result The result itself.
+     * @param set Its first result set - the only one a SELECT has.
      * @param ordinal The index of this result set among the others.
      * @param status The status line for it.
      *
@@ -784,31 +783,31 @@ export class ExecutionService {
     async #buildResultSet(
         connectionId: string,
         statement: string,
-        result: IStatementResult,
+        set: IResultSetData,
         ordinal: number,
         status: string,
         currentSchema: () => Promise<string | undefined>,
         runId: string,
         pageSize?: number,
     ): Promise<IResultSet> {
-        const labels = result.columns ?? [];
-        const rows = result.rows ?? [];
+        const labels = set.columns;
+        const rows = set.rows;
         // Paged only where the server added the limit; anything else came
         // back whole.
         const page: IResultPage | undefined =
-            result.has_more_pages === undefined || pageSize === undefined
+            set.has_more_pages === undefined || pageSize === undefined
                 ? undefined
                 : {
                     index: 0,
                     size: pageSize,
-                    hasMore: result.has_more_pages,
+                    hasMore: set.has_more_pages,
                     loads: 1,
                 };
         const base: IResultSet = {
             id: `${runId}-result-${ordinal}`,
             caption: `Result #${ordinal + 1}`,
             statement,
-            columns: mapColumns(labels, undefined, result.column_types),
+            columns: mapColumns(labels, undefined, set.column_metadata),
             rows,
             editable: false,
             status: page === undefined ? status : pageStatus(rows.length, page),
@@ -870,7 +869,7 @@ export class ExecutionService {
         }
 
         const columns = mapColumns(
-            labels, details.columns, result.column_types);
+            labels, details.columns, set.column_metadata);
 
         const hasKey = columns.some((column) => {
             return column.isPrimary;
@@ -915,7 +914,7 @@ export class ExecutionService {
             id: `${runId}-result-${ordinal}`,
             caption: `Result #${ordinal + 1}`,
             statement,
-            columns: mapColumns(set.columns, undefined, set.column_types),
+            columns: mapColumns(set.columns, undefined, set.column_metadata),
             rows: set.rows,
             editable: false,
             status: rowsInSet(set.rows.length),
@@ -937,7 +936,7 @@ export class ExecutionService {
                 connectionId,
                 "SELECT DATABASE() AS `schema`;",
             );
-            const value = results[0]?.rows?.[0]?.schema;
+            const value = results[0]?.result_sets?.[0]?.rows[0]?.schema;
 
             return typeof value === "string" && value.length > 0
                 ? value

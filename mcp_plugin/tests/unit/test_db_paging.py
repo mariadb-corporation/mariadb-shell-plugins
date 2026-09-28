@@ -157,21 +157,23 @@ def test_a_whole_number_of_rows_is_fine():
 
 
 def test_the_extra_row_says_there_is_more_and_is_dropped():
-    output = db_functions._page_result({"rows": [1, 2, 3]}, 2)
+    output = db_functions._page_result({"result_sets": [{"rows": [1, 2, 3]}]}, 2)
 
-    assert output == {"rows": [1, 2], "has_more_pages": True}
+    assert output == {"result_sets": [{"rows": [1, 2], "has_more_pages": True}]}
 
 
 def test_no_extra_row_is_the_last_page():
-    output = db_functions._page_result({"rows": [1, 2]}, 2)
+    output = db_functions._page_result({"result_sets": [{"rows": [1, 2]}]}, 2)
 
-    assert output == {"rows": [1, 2], "has_more_pages": False}
+    assert output == {"result_sets": [{"rows": [1, 2], "has_more_pages": False}]}
 
 
-def test_a_result_without_rows_has_no_more_pages():
-    output = db_functions._page_result({"affected_items_count": 0}, 2)
+def test_a_result_without_result_sets_is_left_alone():
+    output = db_functions._page_result(
+        {"affected_items_count": 0, "result_sets": []}, 2
+    )
 
-    assert output["has_more_pages"] is False
+    assert output == {"affected_items_count": 0, "result_sets": []}
 
 
 class _SyntaxError(Exception):
@@ -324,8 +326,13 @@ def tools(monkeypatch):
         db_functions._sessions.clear()
 
 
+def _set(result):
+    [result_set] = result["result_sets"]
+    return result_set
+
+
 def _values(result):
-    return [row["n"] for row in result["rows"]]
+    return [row["n"] for row in _set(result)["rows"]]
 
 
 def test_a_script_returns_the_first_page_of_each_select(tools):
@@ -336,17 +343,17 @@ def test_a_script_returns_the_first_page_of_each_select(tools):
         "SELECT n FROM t LIMIT 3",
     ]
     assert _values(results[0]) == list(range(10))
-    assert results[0]["has_more_pages"] is True
+    assert _set(results[0])["has_more_pages"] is True
     # Its own LIMIT: run as written, all of its rows, nothing to page.
-    assert "has_more_pages" not in results[1]
+    assert "has_more_pages" not in _set(results[1])
 
 
 def test_a_script_without_a_limit_is_unchanged(tools):
     results = tools.script("SELECT n FROM t;")
 
     assert tools.opened[0].statements == ["SELECT n FROM t"]
-    assert len(results[0]["rows"]) == 25
-    assert "has_more_pages" not in results[0]
+    assert len(_set(results[0])["rows"]) == 25
+    assert "has_more_pages" not in _set(results[0])
 
 
 def test_a_statement_pages_on_with_an_offset(tools):
@@ -354,9 +361,9 @@ def test_a_statement_pages_on_with_an_offset(tools):
     last = tools.sql("SELECT n FROM t", limit=10, offset=20)
 
     assert _values(second) == list(range(10, 20))
-    assert second["has_more_pages"] is True
+    assert _set(second)["has_more_pages"] is True
     assert _values(last) == list(range(20, 25))
-    assert last["has_more_pages"] is False
+    assert _set(last)["has_more_pages"] is False
     assert tools.opened[0].statements[-1] == "SELECT n FROM t\nLIMIT 11 OFFSET 20"
 
 
@@ -365,14 +372,14 @@ def test_a_page_that_ends_exactly_on_the_limit_is_the_last(tools):
     page = tools.sql("SELECT n FROM t", limit=5, offset=20)
 
     assert _values(page) == [20, 21, 22, 23, 24]
-    assert page["has_more_pages"] is False
+    assert _set(page)["has_more_pages"] is False
 
 
 def test_a_statement_that_cannot_be_limited_runs_as_written(tools):
     result = tools.sql("SELECT n FROM t FOR UPDATE", limit=10, offset=10)
 
     assert tools.opened[0].statements == ["SELECT n FROM t FOR UPDATE"]
-    assert "has_more_pages" not in result
+    assert "has_more_pages" not in _set(result)
 
 
 def test_a_bad_limit_is_refused_before_anything_runs(tools):

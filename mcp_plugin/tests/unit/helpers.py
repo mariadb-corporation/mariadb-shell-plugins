@@ -477,6 +477,16 @@ def tool_payload(result):
     return values
 
 
+def result_set(entry, index=0):
+    """One result set of a statement's result: the first by default."""
+    return entry["result_sets"][index]
+
+
+def tool_rows(result):
+    """The rows of the first result set a db.execute_sql call returned."""
+    return result_set(tool_payload(result))["rows"]
+
+
 # --- the secret store around a test ------------------------------------------
 
 

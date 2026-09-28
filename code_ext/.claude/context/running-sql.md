@@ -187,8 +187,8 @@ way to address a row.
 
 **A stored procedure's result sets** (`isProcedureCall`, a leading `CALL`
 after comments) are all read only ("the result set of a stored procedure")
-and nothing is looked up for them. A CALL returning several - the server's
-`additional_result_sets` - gets a tab per set; its statement row says
+and nothing is looked up for them. A CALL returning several - more than one entry in the result's
+`result_sets` - gets a tab per set; its statement row says
 `N result sets`, points at the first, and has a child row per set
 (`Result #n`, `k rows in set`, each with its jump button), ahead of its
 warnings. A CALL with one set stays a single row.
