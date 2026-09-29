@@ -13,6 +13,9 @@
 // entries into the index. Nothing is fetched from a release page, so the
 // index can be made correct before one is published.
 //
+// tools/update_version does the same lookup as part of the version bump, for
+// the newest tag of every series at once, and is the normal path.
+//
 // The release tag baked into every package URL is derived the same way
 // publish-release.yml derives it for a real publish -- v<major>.<minor>.
 // <patch><extra> from MYSQL_VERSION -- except read straight from the

@@ -29,6 +29,12 @@
  * asked of it: `db.test_connection` for the connection editor, and the
  * per-statement results of `db.execute_sql_script` - `statement_index`,
  * `execution_time`, `error`, `warnings` and `stop_on_error`.
+ *
+ * Beyond that floor it tracks the shell release the plugins go out with:
+ * `tools/update_version` sets it to the version on the shell repo's
+ * `main` branch, where it is bumped for a release - which is also the shell
+ * the extension installs when there is none. Never set it below 26.9.4 by
+ * hand.
  */
 export const MINIMUM_SHELL_VERSION = "26.9.4";
 
