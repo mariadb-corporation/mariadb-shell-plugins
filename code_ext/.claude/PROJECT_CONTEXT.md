@@ -119,43 +119,39 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-28):
+Checked at this checkpoint (2026-09-29):
 
 ```
 $ git -C code_ext branch --show-current
-wip/result-set-fixes-and-expansion
+wip/result-grid-style
 
 $ git -C code_ext status --short   (one repository: mcp_plugin's lines too)
-(clean - everything is in ff78f3ee)
+(clean before this checkpoint's context edits - the code is in f51d1dcc)
 ```
 
-- **The branch is `wip/result-set-fixes-and-expansion`**, stacked on
-  `wip/ext-sandbox-support` (PR #29) <- `wip/connection-folders` (PR #28)
-  <- `wip/connection-update`. It is **PR #30**, pushed: `daafbaf1`
-  (mcp_plugin: paging), `b58f02de` (code_ext: maximize, paging, value
-  display and editing, icons), `fbf4f187` (checkpoint), **`ff78f3ee`**
-  (this session: the review fixes, both projects).
-- This session: PR #30's review (Rene, on mcp_plugin) asked for raw
-  metadata and an array of result sets. The extension followed:
-  - `IStatementResult.result_sets` replaces `columns`/`rows`/
-    `column_types`/`additional_result_sets`; `has_more_pages` is on the
-    set (`IResultSetData`). `normalizeStatementResult` in
-    `src/mcp/mariaDbApi.ts` turns an older shell's top-level
-    `columns`/`rows` into it - the only place that knows the old shape.
-  - `executeScript` / `executeSql` always send `column_metadata: true`;
-    `valueDisplayOf(metadata, columnType)` makes `BYTES` + the `BLOB` flag
-    a BLOB itself (result-grid.md).
-  - `executionService.ts`: no first-set special case any more - a
-    statement with no sets gets one row, one set a result tab, several a
-    tab and child row each.
-- Suite at this checkpoint: **1225 pass across 54 files**, `npm run
-  pretest` (typecheck + eslint) and `npm run build` clean. mcp_plugin:
-  **447 pass, 3 skipped, 98%**.
-- NOT clicked through in a running VS Code: everything on this branch,
-  including this session's shape change. `test.datatype_test` (50 rows,
-  every supported type, PNG/SVG in BLOBs) is on the Homebrew MariaDB at
-  3310 (socket login as `mzinner@localhost`) to try it on; its generator
-  is not in the repo.
+- **The branch is `wip/result-grid-style`**, off `main` (which now has
+  #28-#31 merged). It is **PR #32**, pushed: `f51d1dcc`, code_ext only.
+- This session: the result grid's styling and column types
+  ([`context/result-grid.md`](context/result-grid.md)):
+  - theme table colours scoped to `.resultGridHost` - grid lines, header
+    and key-cell tint, striped rows; frozen cells stack the tints over
+    `--grid-surface`. Cell padding went to `3px 8px`.
+  - a two-line header (`columnTitle`): name, then the type
+    (`IResultColumn.typeName`, from `mapColumns`) coloured by
+    `typeCategoryOf` (`dataTypes.ts`). Header text is 0.9em, the type
+    0.8em of that.
+  - setting `mariadb.resultSet.showColumnDataTypes` (applied live via
+    `ResultViewProvider.settingsChanged`) and the per-result-set action
+    menu item "Show Column Data Types".
+- Suite: **1256 pass across 55 files**, `npm run pretest` and
+  `npm run build` clean.
+- NOT looked at in a running VS Code: the whole restyle (Tabulator does
+  not render under jsdom). That is the next step - check both a dark and
+  a light theme, frozen key columns, and a join (metadata type names).
+- Test trap met: clicking a `ToolbarMenu` item inside an `act` that also
+  opened the menu (`act(async () => { (await openMenu())?.click(); })`)
+  left the next open failing once another message was sent; open the
+  menu first, then click the item in its own `act`.
 
 ## Conventions
 
