@@ -51,7 +51,9 @@ status text ...... View: [grid v] | Pages: [<][>] | Edit: [edit][add-row][sql_pr
 - **Add New Row** is a toolbar button after Start Editing
   (`toolbar-add-row.svg`, the user's own); the preview icon is
   `toolbar-sql_preview.svg`. Section labels are 0.8em.
-- The **action menu** holds Close Result Set
+- The **action menu** holds the checkable Freeze Primary Key Columns and
+  Show Column Data Types (both per result set, starting from their
+  settings - see [result-grid.md](result-grid.md)), then Close Result Set
   (`closeResult`: drops the panel tab, or closes the editor tab without
   putting it back). The MySQL Shell's disabled Export / Import items are
   left out.

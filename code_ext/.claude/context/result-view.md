@@ -223,8 +223,11 @@ they line up without leaving the UI font.
 The panel itself is drawn on `--vscode-panel-background`, so the bars
 around the content - the row of tabs, a result set's own bar - read as
 part of the panel. The **content** of the tab on show is the one thing
-set into it, on `--vscode-sideBar-background`, and every row of every
-grid shares that one surface; only borders separate them. What a row *means* is carried by a
+set into it, on `--vscode-sideBar-background`, and every row of the
+actions grid shares that one surface; only borders separate them. The
+result grid lays the theme's table tints over it - a header, a stripe
+on every other row, a tint on the key columns (see
+[result-grid.md](result-grid.md)). What a row *means* is carried by a
 marker icon instead, drawn with the codicon font in the Problems panel's
 own colours (`--vscode-problemsInfoIcon-foreground` and its siblings).
 A run's own row is set apart by its twistie and by the indent of the
