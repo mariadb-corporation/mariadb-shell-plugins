@@ -17,6 +17,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MINIMUM_SHELL_VERSION } from "../shell/constants.js";
 import type { FakeEnvironmentOptions } from "./helpers.js";
 import {
     commands as mockCommands,
@@ -246,7 +247,7 @@ describe("activate", () => {
     beforeEach(() => {
         resetVscodeMock();
         runtime.environmentOptions = {
-            versions: { "mariadb-shell": versionLine("26.9.4") },
+            versions: { "mariadb-shell": versionLine(MINIMUM_SHELL_VERSION) },
         };
         runtime.environmentAfterInstall = undefined;
         runtime.runnerOutput = [];
@@ -1061,12 +1062,12 @@ describe("activate", () => {
     it("installs the shell when there is none, then starts the server",
         async () => {
             const prefix = "/Users/mzinner/.local/share/mariadb-shell";
-            const binary = `${prefix}/26.9.4/bin/mariadb-shell`;
+            const binary = `${prefix}/${MINIMUM_SHELL_VERSION}/bin/mariadb-shell`;
             runtime.environmentOptions = {};
             runtime.environmentAfterInstall = {
-                directories: { [prefix]: ["26.9.4"] },
+                directories: { [prefix]: [MINIMUM_SHELL_VERSION] },
                 files: [binary],
-                versions: { [binary]: versionLine("26.9.4") },
+                versions: { [binary]: versionLine(MINIMUM_SHELL_VERSION) },
             };
             runtime.runnerOutput = ["==> Downloading", "==> Unpacking"];
 
@@ -1080,7 +1081,7 @@ describe("activate", () => {
                 return call.options.title !== undefined;
             });
             expect(install?.options.title)
-                .toBe("Installing MariaDB Shell 26.9.4");
+                .toBe(`Installing MariaDB Shell ${MINIMUM_SHELL_VERSION}`);
             expect(install?.reported).toContain("Downloading");
             // The view shows itself busy for the whole startup, and the
             // welcome content moves on from "installing" once it is done.
@@ -1089,7 +1090,7 @@ describe("activate", () => {
             expect(contextKeys.get("mariadb.connectionsView"))
                 .toBe("listed");
             expect(informationMessages)
-                .toEqual(["MariaDB Shell 26.9.4 was installed."]);
+                .toEqual([`MariaDB Shell ${MINIMUM_SHELL_VERSION} was installed.`]);
             expect(runtime.connector?.commands[0].command).toBe(binary);
         });
 
@@ -1111,7 +1112,7 @@ describe("activate", () => {
                 .toBe("failed");
             expect(outputChannels[0].lines.join("\n"))
                 .toContain("The MCP server could not be started: "
-                    + "MariaDB Shell 26.9.4 could not be installed");
+                    + `MariaDB Shell ${MINIMUM_SHELL_VERSION} could not be installed`);
         });
 
     it("copies a connection's whole URI, which the tree shortens",

@@ -24,6 +24,7 @@ import {
     type FakeEnvironmentOptions,
 } from "../helpers.js";
 import { ensureShell } from "../../shell/bootstrap.js";
+import { MINIMUM_SHELL_VERSION } from "../../shell/constants.js";
 import {
     buildInstallCommand,
     type ProgressHost,
@@ -302,6 +303,6 @@ describe("ensureShell", () => {
         })).rejects.toThrow();
 
         expect(runner.calls[0].args.at(-1))
-            .toContain("MARIADB_SHELL_TAG=v26.9.4");
+            .toContain(`MARIADB_SHELL_TAG=v${MINIMUM_SHELL_VERSION}`);
     });
 });
