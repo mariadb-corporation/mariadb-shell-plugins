@@ -143,9 +143,8 @@ async def _db_flow(uri, script_dir):
         assert [column["type"] for column in typed_payload["column_metadata"]] == [
             "INT", "STRING", "BYTES", "JSON", "GEOMETRY",
         ]
-        assert [
-            column["column_label"] for column in typed_payload["column_metadata"]
-        ] == typed_payload["columns"]
+        assert len(typed_payload["column_metadata"]) == len(
+            typed_payload["columns"])
         assert typed_payload["rows"][0]["h"] == "00ff"
         # Not asked for, it is not there.
         assert "column_metadata" not in helpers.result_set(helpers.tool_payload(
@@ -178,7 +177,7 @@ async def _db_flow(uri, script_dir):
         blob, varbinary = blob_payload["column_metadata"]
         assert (blob["type"], varbinary["type"]) == ("BYTES", "BYTES")
         assert "BLOB" in blob["flags"] and "BLOB" not in varbinary["flags"]
-        assert (blob["schema_name"], blob["table_name"]) == (schema, "blobs")
+        assert set(blob) == {"type", "flags"}
         await call(
             "db.execute_sql",
             {

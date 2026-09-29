@@ -23,15 +23,15 @@ handling are in [connections.md](connections.md).
   extension normalizes both in `normalizeStatementResult`.
 - **Column metadata** (`column_metadata=True` on both tools, default
   False so LLM callers stay lean; the extension always sets it). One dict
-  per column, in the order of `columns`, straight from the shell's Column
-  getters minus `get_` (`_COLUMN_METADATA_GETTERS`): `column_label`,
-  `column_name`, `type`, `flags`, `length`, `fractional_digits`,
-  `collation_name`, `character_set_name`, `schema_name`, `table_name`,
-  `table_label`. `type` is `get_type().data` - the `mysql.Type` name,
+  per column, in the order of `columns`, with just `type` and `flags`
+  (`_column_metadata`). **Trimmed in Rene's approving review:** it used to
+  carry every Column getter (`column_label`, `length`, `schema_name`, ...)
+  via a `_COLUMN_METADATA_GETTERS` table; nothing read them. `type` is
+  `get_type().data` - the `mysql.Type` name,
   `INT`/`BIGINT`/`STRING`/`BYTES`/`JSON`/`GEOMETRY`/... (NOT the
   `<Type.INTEGER>` its `str()` prints: that differs, and parsing it is
   what the review objected to). `flags` is `get_flags()` split into a
-  list. A getter missing or raising is left out. **Decided in review:**
+  list. **Decided in review:**
   the MCP layer interprets nothing - no invented `BLOB` type. Measured on
   12.3: BINARY, VARBINARY, every BLOB AND VECTOR are `BYTES`; the `BLOB`
   flag marks the blobs but also TEXT (`STRING`), JSON and GEOMETRY, and

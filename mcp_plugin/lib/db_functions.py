@@ -1308,27 +1308,10 @@ def _unique_column_labels(columns) -> list:
     return labels
 
 
-# The column metadata reported with column_metadata=True: each getter of the
-# shell's Column object, keyed by its name without the get_ prefix.
-_COLUMN_METADATA_GETTERS = (
-    "column_label",
-    "column_name",
-    "type",
-    "flags",
-    "length",
-    "fractional_digits",
-    "collation_name",
-    "character_set_name",
-    "schema_name",
-    "table_name",
-    "table_label",
-)
-
-
 def _column_metadata(column) -> dict:
-    """Reads a result column's metadata, as the shell reports it.
+    """Reads a result column's type and flags, as the shell reports them.
 
-    Nothing is worked out from it: the type is the name of the column's
+    Nothing is worked out from them: the type is the name of the column's
     ``mysql.Type`` constant (``INT``, ``STRING``, ``BYTES``, ``JSON``,
     ``GEOMETRY``, ...) and the flags are the words ``get_flags()`` gives
     (``NOT_NULL``, ``PRI_KEY``, ``BLOB``, ``BINARY``, ...), so what a client
@@ -1339,26 +1322,12 @@ def _column_metadata(column) -> dict:
         column: One column's metadata, from ``result.get_columns()``.
 
     Returns:
-        A dict keyed by the getter names without their ``get_`` prefix. A
-        getter the column does not have, or that fails, is left out.
+        A dict with the column's type and flags.
     """
-    metadata = {}
-    for name in _COLUMN_METADATA_GETTERS:
-        getter = getattr(column, f"get_{name}", None)
-        if getter is None:
-            continue
-        try:
-            value = getter()
-        except Exception:  # noqa: BLE001
-            continue
-        if name == "type":
-            value = getattr(value, "data", None)
-        elif name == "flags":
-            value = str(value).split()
-        if value is not None:
-            metadata[name] = value
-
-    return metadata
+    return {
+        "type": column.get_type().data,
+        "flags": column.get_flags().split(),
+    }
 
 
 def _read_result_set(result, column_metadata: bool = False) -> dict:
@@ -2644,12 +2613,10 @@ def register_db_tools(server, function_groups=()) -> None:
 
             With column_metadata true, each result set also has
             column_metadata: one dict per column, in the order of columns,
-            with what the shell reports for it - column_label, column_name,
-            type (INT, BIGINT, DECIMAL, DOUBLE, STRING, BYTES, JSON,
-            GEOMETRY, DATE, DATETIME, TIME, ENUM, SET, BIT and so on), flags
-            (a list: NOT_NULL, PRI_KEY, UNSIGNED, AUTO_INCREMENT, BLOB,
-            BINARY, ...), length, fractional_digits, collation_name,
-            character_set_name, schema_name, table_name and table_label.
+            with what the shell reports for it - type (INT, BIGINT, DECIMAL,
+            DOUBLE, STRING, BYTES, JSON, GEOMETRY, DATE, DATETIME, TIME,
+            ENUM, SET, BIT and so on) and flags (a list: NOT_NULL, PRI_KEY,
+            UNSIGNED, AUTO_INCREMENT, BLOB, BINARY, ...).
 
             warnings_count is how many warnings the statement produced, and
             warnings - present only when there were any - lists them, each

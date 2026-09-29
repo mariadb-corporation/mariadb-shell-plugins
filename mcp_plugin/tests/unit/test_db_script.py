@@ -312,7 +312,7 @@ class _Type:
 
 
 class _MetadataColumn:
-    """A column with every getter the shell's Column has."""
+    """A column with the shell's Column getters the metadata reads."""
 
     def __init__(self, label, kind, flags=""):
         self.label = label
@@ -322,35 +322,11 @@ class _MetadataColumn:
     def get_column_label(self):
         return self.label
 
-    def get_column_name(self):
-        return self.label
-
     def get_type(self):
         return _Type(self.kind)
 
     def get_flags(self):
         return self.flags
-
-    def get_length(self):
-        return 16
-
-    def get_fractional_digits(self):
-        return 0
-
-    def get_collation_name(self):
-        return "binary"
-
-    def get_character_set_name(self):
-        return "binary"
-
-    def get_schema_name(self):
-        return "test"
-
-    def get_table_name(self):
-        return "t"
-
-    def get_table_label(self):
-        return "t_alias"
 
 
 def test_column_metadata_is_what_the_shell_reports():
@@ -366,17 +342,8 @@ def test_column_metadata_is_what_the_shell_reports():
 
     [result_set] = output["result_sets"]
     assert result_set["column_metadata"][0] == {
-        "column_label": "i",
-        "column_name": "i",
         "type": "INT",
         "flags": ["NOT_NULL", "NUM"],
-        "length": 16,
-        "fractional_digits": 0,
-        "collation_name": "binary",
-        "character_set_name": "binary",
-        "schema_name": "test",
-        "table_name": "t",
-        "table_label": "t_alias",
     }
     assert [(column["type"], column["flags"])
             for column in result_set["column_metadata"][1:]] == [
@@ -394,27 +361,6 @@ def test_column_metadata_is_left_out_unless_asked_for():
     output = db_functions._serialize_result(result)
 
     assert "column_metadata" not in output["result_sets"][0]
-
-
-def test_a_getter_a_column_lacks_or_that_fails_is_left_out():
-    """A stub, or an older shell's column, reports what it has."""
-
-    def fails():
-        raise RuntimeError("no")
-
-    column = SimpleNamespace(
-        get_column_label=lambda: "a",
-        get_length=fails,
-        get_type=lambda: object(),
-    )
-    result = _MultiSetResult([(["a"], [[1]])])
-    result.get_columns = lambda: [column]
-
-    output = db_functions._serialize_result(result, column_metadata=True)
-
-    assert output["result_sets"][0]["column_metadata"] == [
-        {"column_label": "a"}
-    ]
 
 
 def test_every_result_set_of_a_call_has_its_own_metadata():

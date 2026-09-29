@@ -99,13 +99,10 @@ export interface IStatementWarning {
 }
 
 /**
- * One result column's metadata, as the shell reports it: each getter of
- * its Column object, keyed by the name without `get_`. A getter the
- * shell does not have is left out.
+ * One result column's metadata, as the shell reports it: its type and
+ * its flags.
  */
 export interface IColumnMetadata {
-    column_label?: string;
-    column_name?: string;
     /**
      * The `mysql.Type` name: `INT`, `STRING`, `BYTES` (BINARY, VARBINARY,
      * BLOB and VECTOR alike), `JSON`, `GEOMETRY`, `DATETIME`, ...
@@ -113,13 +110,6 @@ export interface IColumnMetadata {
     type?: string;
     /** `NOT_NULL`, `PRI_KEY`, `BLOB`, `BINARY`, `AUTO_INCREMENT`, ... */
     flags?: string[];
-    length?: number;
-    fractional_digits?: number;
-    collation_name?: string;
-    character_set_name?: string;
-    schema_name?: string;
-    table_name?: string;
-    table_label?: string;
 }
 
 /** One result set: its column labels and its rows, keyed by them. */
