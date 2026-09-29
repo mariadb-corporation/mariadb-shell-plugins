@@ -36,7 +36,7 @@
  * the extension installs when there is none. Never set it below 26.9.4 by
  * hand.
  */
-export const MINIMUM_SHELL_VERSION = "26.9.4";
+export const MINIMUM_SHELL_VERSION = "26.9.5";
 
 /** Name of the shell executable, without a platform specific extension. */
 export const SHELL_BINARY_NAME = "mariadb-shell";
