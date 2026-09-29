@@ -28,7 +28,7 @@ another panel tab is in front.
 
 Vertically, and deliberately in this order:
 
-```
+```text
 +-----------------------------------------------+
 | error message, when there is one              |  very top
 +-----------------------------------------------+

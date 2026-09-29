@@ -119,7 +119,7 @@ agent's `sandbox.deploy`) shows up at the next Refresh.
 Contributed into its own activity bar container, whose icon is the MariaDB
 seal (`images/mariadb-seal.svg`, kept as a vector). The tree is:
 
-```
+```text
 dba@localhost:3310/world      connection (icon by scheme; "default" if default)
 └── world                     schema
     ├── Tables                object group, one per supported type

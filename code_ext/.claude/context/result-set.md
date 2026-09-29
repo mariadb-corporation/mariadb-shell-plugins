@@ -14,7 +14,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Split out of
 mysql-shell-plugins) and its icons, copied to
 `images/light/toolbar-*.svg`:
 
-```
+```text
 status text ...... View: [grid v] | Pages: [<][>] | Edit: [edit][add-row][sql_preview][commit][rollback][refresh] | [maximize] | [menu]
 ```
 
