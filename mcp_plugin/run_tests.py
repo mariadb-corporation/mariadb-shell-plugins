@@ -52,7 +52,7 @@ def _resolve_shell(explicit):
     return str(shell)
 
 
-def _isolate_secret_store(user_home: Path) -> None:
+def _isolate_secret_store(user_home: Path, shell: str) -> None:
     """Keeps the run's secrets in its own config home.
 
     The shell's secret store is the OS one by default - the macOS keychain,
@@ -65,12 +65,27 @@ def _isolate_secret_store(user_home: Path) -> None:
     MCP servers the tests start - reads the same ones, and nothing outside
     the run sees them.
 
+    Not every build ships the plaintext helper - the CI shell does not - and
+    setting a helper the shell lacks fails every test that stores a
+    connection. Such a shell keeps its default store, which on a CI runner
+    holds nobody's connections.
+
     Args:
         user_home (Path): The run's shell user config home.
+        shell (str): The shell binary, whose directory holds the helpers.
 
     Returns:
         None
     """
+    helper = Path(shell).resolve().parent / (
+        "mariadb-secret-store-plaintext.exe" if os.name == "nt"
+        else "mariadb-secret-store-plaintext"
+    )
+    if not helper.exists():
+        print(f"No {helper.name} next to the shell: the run uses the shell's "
+              "default secret store.")
+        return
+
     options_path = user_home / "options.json"
     options = {}
     if options_path.exists():
@@ -144,7 +159,7 @@ def main() -> int:
     )
     plugins_dir = user_home / "plugins"
     plugins_dir.mkdir(parents=True, exist_ok=True)
-    _isolate_secret_store(user_home)
+    _isolate_secret_store(user_home, shell)
 
     # The server subprocess launched by the tests loads the plugins from the
     # user config home, so this plugin and the sibling plugins it relies on must
