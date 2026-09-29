@@ -121,7 +121,7 @@ change belongs to up to date, and this table with it.
 
 Checked at this checkpoint (2026-09-29):
 
-```
+```text
 $ git -C code_ext branch --show-current
 wip/result-grid-style
 
