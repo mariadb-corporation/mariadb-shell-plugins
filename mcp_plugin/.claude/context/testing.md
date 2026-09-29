@@ -127,7 +127,9 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - pytest-coverage.ini -> `addopts` plus the `markers` registration for `e2e`.
 
 - tests/unit/helpers.py -> `call_tool` (has `elicitation_callback`), `mcp_session`,
-  `list_tool_names` (what the server ADVERTISES, used for the group gate), `tool_payload`,
+  `list_tool_names` (what the server ADVERTISES, used for the group gate), `list_tools`
+  (the same, with each tool's `input_schema` and `description`, by name - how the
+  GUI-only `mcp_access` of `sandbox.deploy` is checked), `tool_payload`,
   `find_free_port`, `server_binary_available`, `shell_binary`, plus the streamable-http
   helpers: **`http_server` (subprocess + URL) and `http_client_session(url, headers=)` are
   now separate**, so one server can be driven by several clients and a client can send

@@ -6,7 +6,7 @@ decoded.
 
 Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The connection editor,
 which is what most of GUI mode exists for, is in
-[connections.md](connections.md).
+[connection-editor.md](connection-editor.md).
 
 ## `src/shell/`
 
@@ -28,10 +28,11 @@ which is what most of GUI mode exists for, is in
 | --- | --- |
 | `types.ts` | The `db.*` result shapes and the `IMariaDbApi` interface. |
 | `protocol.ts` | Decodes MCP tool results into the values the Python tools returned. |
-| `mariaDbApi.ts` | The `db.*` tools as typed calls. |
-| `session.ts` | `McpSession` — starts the server once and hands out the API. |
+| `mariaDbApi.ts` | The `db.*` tools as typed calls, and `IToolCaller`, whose `callTool` takes an optional `timeoutMs` for a tool that outlasts the SDK's 60 s default. |
+| `sandboxApi.ts` | The `sandbox.*` tools as typed calls (`ISandboxApi`), with their timeouts; see [sandboxes.md](sandboxes.md). |
+| `session.ts` | `McpSession` — starts the server once and hands out the API, and `sandboxApi` beside it on the same connection. |
 | `serverStarter.ts` | `ServerStarter` — the whole way up (locate, install, start) once however many callers ask, and the phase the Connections view follows. |
-| `sdkConnector.ts` | The real connector, on `@modelcontextprotocol/sdk`'s stdio transport. |
+| `sdkConnector.ts` | The real connector, on `@modelcontextprotocol/sdk`'s stdio transport. Passes `timeoutMs` as the request's `timeout`. |
 
 ## Startup behaviour
 
