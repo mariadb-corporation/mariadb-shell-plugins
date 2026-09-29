@@ -143,6 +143,11 @@
           "default": true,
           "markdownDescription": "Whether a result set's primary key columns are frozen: moved to the front of the grid and kept in place while the rest scrolls sideways. A result set can switch this for itself in its toolbar's action menu; each starts out doing what this says."
         },
+        "mariadb.resultSet.showColumnDataTypes": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Whether the result grid's header shows each column's data type in a smaller line under its name."
+        },
         "mariadb.keybindings.runScript": {
           "type": "string",
           "default": "cmdOrCtrl+enter",

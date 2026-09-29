@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 import {
     baseTypeName,
     literalKind,
+    typeCategoryOf,
     valueDisplayOf,
 } from "../../sql/dataTypes.js";
 
@@ -97,5 +98,29 @@ describe("valueDisplayOf", () => {
         expect(valueDisplayOf(undefined, "point")).toBe("geometry");
         expect(valueDisplayOf(undefined, "multipolygon")).toBe("geometry");
         expect(valueDisplayOf(undefined, "varchar(10)")).toBeUndefined();
+    });
+});
+
+describe("typeCategoryOf", () => {
+    it("reads a table's column type", () => {
+        expect(typeCategoryOf("int(11) unsigned")).toBe("number");
+        expect(typeCategoryOf("varchar(32)")).toBe("text");
+        expect(typeCategoryOf("enum('a','b')")).toBe("text");
+        expect(typeCategoryOf("timestamp(6)")).toBe("temporal");
+        expect(typeCategoryOf("longblob")).toBe("binary");
+        expect(typeCategoryOf("point")).toBe("binary");
+        expect(typeCategoryOf("vector(4)")).toBe("binary");
+        expect(typeCategoryOf("json")).toBe("json");
+    });
+
+    it("reads the type the server reports in the metadata", () => {
+        expect(typeCategoryOf("uinteger")).toBe("number");
+        expect(typeCategoryOf("STRING")).toBe("text");
+        expect(typeCategoryOf("datetime")).toBe("temporal");
+        expect(typeCategoryOf("bytes")).toBe("binary");
+    });
+
+    it("leaves a type it does not know as other", () => {
+        expect(typeCategoryOf("null")).toBe("other");
     });
 });

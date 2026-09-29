@@ -188,6 +188,11 @@ interface IEditingState {
      * when it was first shown, and then whatever its action menu says.
      */
     freezeKeys: boolean;
+    /**
+     * Whether the grid's header shows the column types, once its action
+     * menu has said so; until then it follows the extension's setting.
+     */
+    showTypes?: boolean;
 }
 
 /**
@@ -333,6 +338,7 @@ export const App = (): JSX.Element => {
                                                 ?? message.state
                                                     .freezeKeyColumns
                                                 ?? true,
+                                            showTypes: kept?.showTypes,
                                         }];
                             }));
                         });
@@ -542,6 +548,7 @@ export const App = (): JSX.Element => {
         return set.id === activeTab;
     });
     const editState = active ? editing[active.id] : undefined;
+    const showTypes = editState?.showTypes ?? state?.showColumnTypes ?? true;
 
     const availableResultIds = useMemo(() => {
         return new Set((state?.resultSets ?? []).map((set) => {
@@ -785,8 +792,15 @@ export const App = (): JSX.Element => {
                 });
                 break;
             }
+
+            case "showTypes": {
+                updateState((current) => {
+                    return { ...current, showTypes: !showTypes };
+                });
+                break;
+            }
         }
-    }, [active, updateState]);
+    }, [active, showTypes, updateState]);
 
     const togglePreview = useCallback((): void => {
         updateState((current) => {
@@ -995,6 +1009,7 @@ export const App = (): JSX.Element => {
                                             editState.selectedRowIndex}
                                         editRequest={editRequest}
                                         freezeKeys={editState.freezeKeys}
+                                        showTypes={showTypes}
                                         onCellEdited={onCellEdited}
                                         onSaveValue={onSaveValue}
                                         onLoadValue={onLoadValue}
@@ -1038,6 +1053,7 @@ export const App = (): JSX.Element => {
                                 onRefresh={refresh}
                                 maximized={state.maximized === true}
                                 freezeKeys={editState.freezeKeys}
+                                showTypes={showTypes}
                                 onToggleMaximized={toggleMaximized}
                             />
                         </>

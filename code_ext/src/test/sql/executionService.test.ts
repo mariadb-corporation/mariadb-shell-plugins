@@ -200,6 +200,7 @@ describe("mapColumns", () => {
             {
                 name: "Name",
                 datatype: "char(35)",
+                typeName: "char(35)",
                 isPrimary: false,
                 isGenerated: false,
                 isAutoIncrement: false,
@@ -208,6 +209,7 @@ describe("mapColumns", () => {
             {
                 name: "ID",
                 datatype: "int(11)",
+                typeName: "int(11)",
                 isPrimary: true,
                 isGenerated: false,
                 isAutoIncrement: true,
@@ -220,6 +222,17 @@ describe("mapColumns", () => {
         expect(mapColumns(["total"], CITY.columns))
             .toEqual([{ name: "total" }]);
     });
+
+    it("names a column's type from the metadata where it is not known",
+        () => {
+            expect(mapColumns(["total", "ID"], CITY.columns, [
+                { type: "DECIMAL" },
+                { type: "INTEGER" },
+            ])).toEqual([
+                { name: "total", typeName: "decimal" },
+                expect.objectContaining({ name: "ID", typeName: "int(11)" }),
+            ]);
+        });
 });
 
 describe("ExecutionService.execute", () => {

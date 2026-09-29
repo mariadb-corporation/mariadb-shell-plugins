@@ -160,3 +160,72 @@ export const valueDisplayOf = (
         }
     }
 };
+
+/**
+ * The family a column's type belongs to, which picks the colour its type
+ * name is shown in under the column's name.
+ */
+export type TypeCategory =
+    | "number"
+    | "text"
+    | "temporal"
+    | "binary"
+    | "json"
+    | "other";
+
+/** The server's `mysql.Type` names, by the family each belongs to. */
+const METADATA_CATEGORIES: Record<string, TypeCategory> = {
+    integer: "number",
+    uinteger: "number",
+    float: "number",
+    double: "number",
+    decimal: "number",
+    bit: "number",
+    string: "text",
+    enum: "text",
+    set: "text",
+    date: "temporal",
+    time: "temporal",
+    datetime: "temporal",
+    bytes: "binary",
+    geometry: "binary",
+    json: "json",
+};
+
+/** Text column types that `literalKind` lumps in with every string. */
+const TEXT = new Set([
+    "char", "varchar", "tinytext", "text", "mediumtext", "longtext",
+    "enum", "set", "uuid", "inet4", "inet6",
+]);
+
+/**
+ * Decides which family a type name belongs to. It takes either form a
+ * result column's type can come in: the table's COLUMN_TYPE, or the name
+ * the server reports in the result's metadata.
+ *
+ * @param typeName The type name, in either form and any case.
+ *
+ * @returns Its family; "other" for one that is none of them.
+ */
+export const typeCategoryOf = (typeName: string): TypeCategory => {
+    const base = baseTypeName(typeName);
+    const reported = METADATA_CATEGORIES[base];
+    if (reported !== undefined) {
+        return reported;
+    }
+
+    if (NUMERIC.has(base)) {
+        return "number";
+    }
+    if (TEXT.has(base)) {
+        return "text";
+    }
+    if (TEMPORAL.has(base)) {
+        return "temporal";
+    }
+    if (BINARY.has(base) || SPATIAL.has(base) || base === "vector") {
+        return "binary";
+    }
+
+    return "other";
+};
