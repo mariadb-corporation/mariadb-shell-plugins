@@ -210,16 +210,17 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   "async def functions are not natively supported". Wrap coroutines in `asyncio.run(...)`
   inside a SYNC test, which is what `test_msm.py` already does. This cost two failing tests.
 
-- **`ToolError` vs `mysqlsh.Error` depends on WHICH GROUP, and it changed for migrator.**
-  db/msm/sandbox wrap shell plugin functions: they raise `mysqlsh.Error`, and
-  `tool_registrar` re-raises it as `ToolError` (which is what keeps the message from
-  being stripped on SDK 2.1 - see the SDK-error gotcha)
-  — so assert `ToolError` for a call through the registered wrapper and `mysqlsh.Error`
-  for a direct call to the module-level function. That cost two failing tests when it
-  was first learned. **`migrator_functions` is now the exception and has no such split**:
-  it raises `ToolError` everywhere and registers without the wrapper (PR #19 review), so
-  assert `ToolError` either way — applying the old either/or rule there would cost
-  sixteen.
+- **`ToolError` vs `mysqlsh.Error` depends on WHO raises it.** Decided in Rene's PR #30
+  review: code that only serves MCP tools (`db_functions`, `sandbox_functions`,
+  `sandbox_servers`, `general.require_allowed_path`) raises `ToolError`, through
+  `tool_registrar.tool_error()` - a function, because those modules load when the
+  shell starts and a module-scope `ToolError` import pulls in the SDK (see
+  environment.md). Shell plugin code (`mcp.setup`/`setup*.py`, `mcp.startServer`/
+  `server.py`) and `config.py`, which `mcp.setup` shares with the tools, keep
+  `mysqlsh.Error`; so do the shell APIs (`open_session`, `run_sql`, the msm plugin).
+  Those reach a client through `tool_registrar`'s conversion, so assert `ToolError`
+  through the registered wrapper and `mysqlsh.Error` for a direct call. A tool's own
+  refusal carries no `"Shell Error: "` prefix any more; a converted one still does.
 
 - **`str(mysqlsh.Error)` carries a `"Shell Error: "` PREFIX.** Asserting
   `"Could not X: <message>"` as one contiguous string fails; assert the two halves

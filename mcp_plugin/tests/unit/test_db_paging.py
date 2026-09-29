@@ -37,6 +37,7 @@ import pytest
 # The Context annotation of the db tools comes from the MCP SDK.
 pytest.importorskip("mcp")
 
+from mcp.server.mcpserver.exceptions import ToolError
 import mysqlsh
 
 from mcp_plugin.lib import db_functions, general
@@ -143,7 +144,7 @@ def test_the_limit_is_not_swallowed_by_a_trailing_comment():
     [(-1, None), (1.5, None), ("10", None), (True, None), (10, -1), (None, 5)],
 )
 def test_a_limit_or_offset_that_is_no_row_count_is_refused(limit, offset):
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         db_functions._check_paging(limit, offset)
 
 

@@ -100,7 +100,7 @@ session machinery the db tools sit on is in
   MCP-elicits (`ctx.elicit`, schema=one-bool `ConfirmTrustPath`) asking the user to trust
   it; on accept+trust it `config.add_allowed_path()` (persists to settings.json,
   abspath+expanduser, dedup) and proceeds; on decline/cancel/elicit-failure it raises the
-  "not allowed" mysqlsh.Error. Because elicit is async, ALL msm (12) + sandbox (7) tools are
+  "not allowed" ToolError. Because elicit is async, ALL msm (12) + sandbox (7) tools are
   `async def` with a leading `ctx: Context` param (`from mcp.server.mcpserver import Context`,
   imported inside the registrar; the server strips it from the client-facing schema).
   db.* tools stay SYNC — none of them elicit (`db.execute_sql_script` checks
@@ -117,8 +117,10 @@ session machinery the db tools sit on is in
   `_transport_security_settings` + `_dialable_host_names` (the Host/Origin allow list);
   `_warn_if_reachable_from_the_network`; passes function_groups to the registrars.
 
-- lib/tool_registrar.py -> the `server.tool` replacement db/msm/sandbox register through,
-  converting a `mysqlsh.Error` into a `ToolError` so SDK 2.1 does not strip its message
+- lib/tool_registrar.py -> `tool_error(message)`, the lazily-importing `ToolError`
+  factory every MCP-only module raises its refusals with (see the testing.md gotcha);
+  and the `server.tool` replacement db/msm/sandbox register through,
+  converting a shell API's `mysqlsh.Error` into a `ToolError` so SDK 2.1 does not strip its message
   (see the SDK-error gotcha — this module was deleted once and had to come back).
   `ToolError`, `ResourceError` and `MCPError` pass through unconverted. Imports the SDK
   inside `decorator`, never at module scope. **100% covered.**

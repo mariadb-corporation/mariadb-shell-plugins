@@ -34,7 +34,7 @@ import asyncio
 
 import pytest
 
-from mcp_plugin.lib.tool_registrar import tool_registrar
+from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 
 class _FakeServer:
@@ -59,14 +59,30 @@ def _register(func, **kwargs):
     return wrapper, server
 
 
+# --- a tool's own refusal -------------------------------------------------
+
+
+def test_tool_error_is_a_tool_error_with_the_message_as_given():
+    """What the tools raise their own refusals with: no prefix is added."""
+    pytest.importorskip("mcp")
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    error = tool_error("'x' is not a supported object type.")
+
+    assert isinstance(error, ToolError)
+    assert str(error) == "'x' is not a supported object type."
+
+
 # --- what the three groups actually raise ---------------------------------
 
 
 def test_a_shell_error_becomes_a_tool_error_with_its_text_intact():
     """The conversion this module exists for.
 
-    `mysqlsh.Error` is the one type db, msm and sandbox raise, and on SDK 2.1 it
-    is also the one the SDK would treat as a crash and strip the message from.
+    `mysqlsh.Error` is what the shell APIs and plugin functions behind the db,
+    msm and sandbox tools raise, and on SDK 2.1 it is also the one the SDK would
+    treat as a crash and strip the message from.
     The text has to survive verbatim, `Shell Error: ` prefix included - that
     prefix is `str(mysqlsh.Error)`, not something added here.
     """

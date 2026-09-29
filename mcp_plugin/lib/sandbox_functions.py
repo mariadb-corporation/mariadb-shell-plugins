@@ -40,10 +40,8 @@ import os
 import socket
 from typing import Optional
 
-import mysqlsh
-
 from mcp_plugin.lib import config, general, sandbox_servers
-from mcp_plugin.lib.tool_registrar import tool_registrar
+from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 # How a resolved server's origin reads in the message sandbox.deploy answers
 # with. Worth saying: "downloaded now" is the difference between a deploy that
@@ -227,7 +225,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         # silently preferring one would deploy a version the client did not ask
         # for and has no way of noticing.
         if server_version is not None and mariadbd_path is not None:
-            raise mysqlsh.Error(
+            raise tool_error(
                 "server_version and mariadbd_path cannot be combined: both say "
                 "which server to run. Pass server_version to have the right "
                 "one found or downloaded, or mariadbd_path to use a specific "
