@@ -15,6 +15,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import type { IColumnMetadata } from "../mcp/types.js";
+
 /** How a value of a column has to be written into a SQL statement. */
 export type SqlLiteralKind =
     | "numeric"
@@ -81,4 +83,80 @@ export const literalKind = (columnType: string): SqlLiteralKind => {
     // Everything left - char, varchar, the text family, enum, set, json,
     // uuid, inet6 and the spatial types - is written as a quoted string.
     return "string";
+};
+
+/**
+ * How a column's values are shown in the grid, where that is not plain
+ * text: binary values as hex, and a BLOB, a spatial value or a vector as
+ * an icon standing for it, as the MySQL Shell's result view shows them.
+ * JSON is shown as text, as it is there, and is marked so that its value
+ * opens in an editor as JSON.
+ */
+export type ValueDisplay = "binary" | "blob" | "geometry" | "vector" | "json";
+
+/** Column types holding a spatial value. */
+const SPATIAL = new Set([
+    "geometry", "point", "linestring", "polygon", "multipoint",
+    "multilinestring", "multipolygon", "geometrycollection",
+]);
+
+/** The BLOB family, whose values are shown by an icon. */
+const BLOBS = new Set(["tinyblob", "blob", "mediumblob", "longblob"]);
+
+/**
+ * Decides how a column's values are shown.
+ *
+ * The table's own column type decides where it is known, since it is
+ * the only thing that tells a VECTOR from a VARBINARY: the server reports
+ * both alike. Otherwise it is the metadata the server reported for the
+ * result's column, which every result has - a join, a view, a CALL.
+ *
+ * @param metadata The result column's metadata, as the MCP server's
+ *                 `column_metadata` reports it.
+ * @param columnType The table's COLUMN_TYPE, where it was looked up.
+ *
+ * @returns How the values are shown, or undefined for plain text.
+ */
+export const valueDisplayOf = (
+    metadata?: IColumnMetadata,
+    columnType?: string,
+): ValueDisplay | undefined => {
+    if (columnType !== undefined) {
+        const base = baseTypeName(columnType);
+        if (base === "vector") {
+            return "vector";
+        }
+        if (BLOBS.has(base)) {
+            return "blob";
+        }
+        if (base === "binary" || base === "varbinary") {
+            return "binary";
+        }
+        if (SPATIAL.has(base)) {
+            return "geometry";
+        }
+        if (base === "json") {
+            return "json";
+        }
+    }
+
+    switch (metadata?.type) {
+        // BINARY, VARBINARY and every BLOB are all BYTES; only the BLOB
+        // flag tells them apart.
+        case "BYTES": {
+            return metadata.flags?.includes("BLOB") ? "blob" : "binary";
+        }
+
+        case "GEOMETRY": {
+            return "geometry";
+        }
+
+        case "JSON": {
+            return "json";
+        }
+
+        default: {
+            return undefined;
+        }
+    }
 };

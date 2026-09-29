@@ -28,6 +28,15 @@ export const DEFAULT_CONNECTION_SETTING = "defaultConnection";
 /** The setting deciding whether a failing statement ends a script. */
 export const STOP_ON_ERROR_SETTING = "execute.stopOnError";
 
+/** The setting deciding how many rows a result set shows at a time. */
+export const PAGE_SIZE_SETTING = "execute.pageSize";
+
+/** The setting deciding whether primary key columns are frozen. */
+export const FREEZE_KEYS_SETTING = "resultSet.freezePrimaryKeyColumns";
+
+/** The page size a setting that is missing or no count falls back to. */
+export const DEFAULT_PAGE_SIZE = 200;
+
 /** The setting deciding how a connection in the tree is opened. */
 export const CONNECT_MODE_SETTING = "connections.connectMode";
 
@@ -59,6 +68,34 @@ export const stopOnError = (): boolean => {
     return vscode.workspace
         .getConfiguration(CONFIG_SECTION)
         .get<boolean>(STOP_ON_ERROR_SETTING) ?? true;
+};
+
+/**
+ * How many rows of a result set are fetched and shown at a time.
+ *
+ * @returns The page size: a whole number of rows, at least one.
+ */
+export const pageSize = (): number => {
+    const value = vscode.workspace
+        .getConfiguration(CONFIG_SECTION)
+        .get<number>(PAGE_SIZE_SETTING);
+
+    // settings.json can hold anything; what is no count of rows is not
+    // worth a failed run over.
+    return typeof value === "number" && Number.isInteger(value) && value >= 1
+        ? value
+        : DEFAULT_PAGE_SIZE;
+};
+
+/**
+ * Whether a result set's primary key columns start out frozen.
+ *
+ * @returns True to freeze them, the default.
+ */
+export const freezePrimaryKeyColumns = (): boolean => {
+    return vscode.workspace
+        .getConfiguration(CONFIG_SECTION)
+        .get<boolean>(FREEZE_KEYS_SETTING) ?? true;
 };
 
 /**

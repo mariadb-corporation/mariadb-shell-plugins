@@ -81,15 +81,29 @@ const OBJECT_ICONS: Record<ObjectType, string | vscode.ThemeIcon> = {
 };
 
 /**
- * The icon shown for a connection, by the scheme of its URI. `mysqlx` has
- * no picture of its own; it is MySQL's protocol, so it borrows MySQL's.
+ * The icon shown for a connection, by the scheme of its URI, without its
+ * extension. `mysqlx` has no picture of its own; it is MySQL's protocol,
+ * so it borrows MySQL's.
  */
 const CONNECTION_ICONS: Record<string, string> = {
-    "mariadb": "connectionMariaDB.svg",
-    "mariadb+ssh": "connectionMariaDBSSH.svg",
-    "mysql": "connectionMySQL.svg",
-    "mysql+ssh": "connectionMySQLSSH.svg",
-    "mysqlx": "connectionMySQL.svg",
+    "mariadb": "connectionMariaDB",
+    "mariadb+ssh": "connectionMariaDBSSH",
+    "mysql": "connectionMySQL",
+    "mysql+ssh": "connectionMySQLSSH",
+    "mysqlx": "connectionMySQL",
+};
+
+/**
+ * @param uri The connection's URI.
+ * @param isDefault Whether it is the default connection.
+ *
+ * @returns Its icon file: the one for its scheme, in the variant marked
+ *          as the default where it is.
+ */
+export const connectionIconFor = (uri: string, isDefault: boolean): string => {
+    const base = CONNECTION_ICONS[schemeOf(uri)] ?? "connectionMariaDB";
+
+    return `${base}${isDefault ? "Default" : ""}.svg`;
 };
 
 /**
@@ -169,7 +183,7 @@ export class ConnectionTreeItem
         // replaces it, and it moves into the description instead.
         const address = connectionLabel(node.uri);
         super(node, node.caption ?? address,
-            CONNECTION_ICONS[schemeOf(node.uri)] ?? "connectionMariaDB.svg",
+            connectionIconFor(node.uri, node.isDefault),
             node.expandable, resolveIcon);
 
         // The color is drawn by `ConnectionColorDecorations`, which a row

@@ -87,7 +87,7 @@ def test_streamable_http_connect_execute_and_close(sandbox):
                     {"connection_id": connection_id, "sql": "SELECT 1 AS one"},
                 )
                 assert result.is_error is False, helpers.tool_payload(result)
-                assert helpers.tool_payload(result)["rows"] == [{"one": 1}]
+                assert helpers.tool_rows(result) == [{"one": 1}]
 
             close_result = await call("db.close", {"connection_id": connection_id})
             assert close_result.is_error is False
@@ -148,7 +148,7 @@ def test_streamable_http_ignores_a_forwarded_for_header(sandbox):
                     {"connection_id": connection_id, "sql": "SELECT 1 AS one"},
                 )
                 assert result.is_error is False, helpers.tool_payload(result)
-                assert helpers.tool_payload(result)["rows"] == [{"one": 1}]
+                assert helpers.tool_rows(result) == [{"one": 1}]
 
                 close_result = await call(
                     "db.close", {"connection_id": connection_id}
@@ -201,7 +201,7 @@ def test_streamable_http_binds_a_connection_to_its_mcp_session(sandbox):
                     {"connection_id": connection_id, "sql": "SELECT 1 AS one"},
                 )
                 assert result.is_error is False, helpers.tool_payload(result)
-                assert helpers.tool_payload(result)["rows"] == [{"one": 1}]
+                assert helpers.tool_rows(result) == [{"one": 1}]
 
                 await call("db.close", {"connection_id": connection_id})
 

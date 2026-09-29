@@ -90,16 +90,6 @@ export interface IObjectDetails {
     columns?: IColumnDetails[];
 }
 
-/**
- * One statement's result, as `db.execute_sql` and `db.execute_sql_script`
- * report it. `columns` and `rows` are absent for statements that return no
- * result set.
- *
- * The fields below `rows` were added to the MCP plugin for this extension
- * and are all optional, because a shell old enough to predate them still
- * satisfies the minimum version. Everything that reads them falls back to
- * what can be worked out without them.
- */
 /** One warning a statement produced, as `SHOW WARNINGS` reports it. */
 export interface IStatementWarning {
     /** `Warning`, `Note` or `Error`, in the server's own words. */
@@ -108,6 +98,48 @@ export interface IStatementWarning {
     message: string;
 }
 
+/**
+ * One result column's metadata, as the shell reports it: its type and
+ * its flags.
+ */
+export interface IColumnMetadata {
+    /**
+     * The `mysql.Type` name: `INT`, `STRING`, `BYTES` (BINARY, VARBINARY,
+     * BLOB and VECTOR alike), `JSON`, `GEOMETRY`, `DATETIME`, ...
+     */
+    type?: string;
+    /** `NOT_NULL`, `PRI_KEY`, `BLOB`, `BINARY`, `AUTO_INCREMENT`, ... */
+    flags?: string[];
+}
+
+/** One result set: its column labels and its rows, keyed by them. */
+export interface IResultSetData {
+    columns: string[];
+    rows: Array<Record<string, unknown>>;
+    /**
+     * Each column's metadata, in the order of `columns`. Absent on a shell
+     * that predates it.
+     */
+    column_metadata?: IColumnMetadata[];
+    /**
+     * Set where the call's limit was added to the statement: true when
+     * there are rows past the ones returned, false on the last page.
+     * Absent where the statement ran as written - it limits itself, or
+     * is no SELECT - and on a shell that predates paging, whose rows are
+     * then all of them.
+     */
+    has_more_pages?: boolean;
+}
+
+/**
+ * One statement's result, as `db.execute_sql` and `db.execute_sql_script`
+ * report it.
+ *
+ * The fields below `result_sets` were added to the MCP plugin for this
+ * extension and are all optional, because a shell old enough to predate
+ * them still satisfies the minimum version. Everything that reads them
+ * falls back to what can be worked out without them.
+ */
 export interface IStatementResult {
     affected_items_count?: number;
     warnings_count?: number;
@@ -118,8 +150,14 @@ export interface IStatementResult {
      */
     warnings?: IStatementWarning[];
     session_restarted?: boolean;
-    columns?: string[];
-    rows?: Array<Record<string, unknown>>;
+    /**
+     * Every result set the statement returned, in order: none for one
+     * that returns no rows, one per SELECT a called procedure runs. Absent
+     * on a failed statement. A shell that predates the list reports its
+     * one set as `columns` and `rows` instead, which `MariaDbApi` turns
+     * into this.
+     */
+    result_sets?: IResultSetData[];
 
     /** Its position among the script's non-empty statements, from 0. */
     statement_index?: number;
@@ -132,6 +170,14 @@ export interface IStatementResult {
     error?: string;
     /** The failing statement's text, abbreviated. */
     statement?: string;
+}
+
+/** Which rows of a statement's result to fetch. */
+export interface IPageRequest {
+    /** The most rows to return. */
+    limit: number;
+    /** How many rows to skip first. */
+    offset?: number;
 }
 
 /**
@@ -225,5 +271,11 @@ export interface IMariaDbApi {
         connectionId: string,
         sqlScript: string,
         stopOnError?: boolean,
+        limit?: number,
     ): Promise<IStatementResult[]>;
+    executeSql(
+        connectionId: string,
+        sql: string,
+        page?: IPageRequest,
+    ): Promise<IStatementResult>;
 }

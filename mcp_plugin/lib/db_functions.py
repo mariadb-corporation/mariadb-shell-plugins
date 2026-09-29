@@ -1308,11 +1308,83 @@ def _unique_column_labels(columns) -> list:
     return labels
 
 
+def _column_metadata(column) -> dict:
+    """Reads a result column's type and flags, as the shell reports them.
+
+    Nothing is worked out from them: the type is the name of the column's
+    ``mysql.Type`` constant (``INT``, ``STRING``, ``BYTES``, ``JSON``,
+    ``GEOMETRY``, ...) and the flags are the words ``get_flags()`` gives
+    (``NOT_NULL``, ``PRI_KEY``, ``BLOB``, ``BINARY``, ...), so what a client
+    makes of them - a BLOB is ``BYTES`` with the ``BLOB`` flag - is the
+    client's to decide.
+
+    Args:
+        column: One column's metadata, from ``result.get_columns()``.
+
+    Returns:
+        A dict with the column's type and flags.
+    """
+    return {
+        "type": column.get_type().data,
+        "flags": column.get_flags().split(),
+    }
+
+
+def _read_result_set(result, column_metadata: bool = False) -> dict:
+    """Reads the result set a result is on now: its columns and every row.
+
+    Args:
+        result: The result object returned by ``session.run_sql``, on a
+            result set that has data.
+        column_metadata (bool): Whether to report each column's metadata too.
+
+    Returns:
+        A dict with the column labels (columns) and the rows (rows), each row
+        a dict keyed by those labels, and - when asked for - each column's
+        metadata in the same order (column_metadata).
+    """
+    metadata = result.get_columns()
+    columns = _unique_column_labels(metadata)
+    rows = []
+    for row in result.fetch_all():
+        item = {}
+        # Read by POSITION, not by label. Asking for a field by name cannot
+        # reach the second of two columns that share one - it answers with
+        # the first every time - so a value would be lost before there was
+        # anything to key it on.
+        for index, column in enumerate(columns):
+            value = row[index]
+            # Values that are not natively JSON-serializable have to be
+            # converted, as the tool result is returned as JSON. The shell
+            # hands the types that have no JSON equivalent of their own -
+            # decimals, dates and times - back as text already, so only
+            # binary data needs converting; anything else the shell might
+            # return in a type of its own falls back to its text form
+            # rather than failing to serialize.
+            if isinstance(value, (bytes, bytearray)):
+                value = value.hex()
+            elif value is not None and not isinstance(
+                value, (bool, int, float, str)
+            ):
+                value = str(value)
+            item[column] = value
+        rows.append(item)
+
+    output = {"columns": columns, "rows": rows}
+    if column_metadata:
+        output["column_metadata"] = [
+            _column_metadata(column) for column in metadata
+        ]
+
+    return output
+
+
 def _serialize_result(
     result,
     session_restarted: bool = False,
     statement_index: Optional[int] = None,
     execution_time: Optional[float] = None,
+    column_metadata: bool = False,
 ) -> dict:
     """Serializes a shell SQL result into a JSON-friendly dict.
 
@@ -1325,9 +1397,12 @@ def _serialize_result(
             only the non-empty ones from 0. Left out for a single statement,
             where there is nothing to count.
         execution_time (float): How long this statement took, in seconds.
+        column_metadata (bool): Whether each result set reports its columns'
+            metadata too.
 
     Returns:
-        A dict with the result set (columns and rows) and execution metadata.
+        A dict with the statement's result sets (result_sets, a list - empty
+        for a statement that returned none) and execution metadata.
     """
     output = {
         "affected_items_count": result.affected_items_count,
@@ -1346,34 +1421,18 @@ def _serialize_result(
     if session_restarted:
         output["session_restarted"] = True
 
-    if result.has_data():
-        columns = _unique_column_labels(result.get_columns())
-        rows = []
-        for row in result.fetch_all():
-            item = {}
-            # Read by POSITION, not by label. Asking for a field by name cannot
-            # reach the second of two columns that share one - it answers with
-            # the first every time - so a value would be lost before there was
-            # anything to key it on.
-            for index, column in enumerate(columns):
-                value = row[index]
-                # Values that are not natively JSON-serializable have to be
-                # converted, as the tool result is returned as JSON. The shell
-                # hands the types that have no JSON equivalent of their own -
-                # decimals, dates and times - back as text already, so only
-                # binary data needs converting; anything else the shell might
-                # return in a type of its own falls back to its text form
-                # rather than failing to serialize.
-                if isinstance(value, (bytes, bytearray)):
-                    value = value.hex()
-                elif value is not None and not isinstance(
-                    value, (bool, int, float, str)
-                ):
-                    value = str(value)
-                item[column] = value
-            rows.append(item)
-        output["columns"] = columns
-        output["rows"] = rows
+    # A statement can return several result sets - a CALL returns one per
+    # SELECT the procedure runs, then a status that carries none - and every
+    # one of them is read. Reading only the first would drop the rest
+    # without a word.
+    result_sets = []
+    while True:
+        if result.has_data():
+            result_sets.append(_read_result_set(result, column_metadata))
+        next_result = getattr(result, "next_result", None)
+        if next_result is None or not next_result():
+            break
+    output["result_sets"] = result_sets
 
     # Counted and read only NOW, after the rows above have been fetched. This
     # is mysql_warning_count, which for a statement that returns a result set
@@ -1478,6 +1537,226 @@ def _is_comment_only(statement: str) -> bool:
     )
 
 
+def _top_level_words(statement: str) -> list:
+    """The keywords and names of a statement, each with its nesting depth.
+
+    Strings, quoted identifiers and comments are stepped over - a LIMIT in
+    a string or a comment is not the statement's - and a word inside
+    parentheses is reported at the depth it sits at, so a subquery's own
+    LIMIT can be told from the statement's. Executable ``/*!...*/`` and
+    ``/*+...*/`` comments are stepped over too: what they hold is for the
+    server to decide, and reading into them is not needed to find the
+    clauses that matter here.
+
+    Args:
+        statement (str): One SQL statement.
+
+    Returns:
+        A list of (WORD, depth) tuples in order, the words upper-cased.
+    """
+    words = []
+    depth = 0
+    index = 0
+    length = len(statement)
+    while index < length:
+        char = statement[index]
+        if char in "'\"`":
+            # A quote ends at its unescaped twin; a doubled quote is one
+            # quote inside the string, and a backslash escapes the next
+            # character except in an identifier.
+            index += 1
+            while index < length:
+                if char != "`" and statement[index] == "\\":
+                    index += 2
+                    continue
+                if statement[index] == char:
+                    if index + 1 < length and statement[index + 1] == char:
+                        index += 2
+                        continue
+                    break
+                index += 1
+            index += 1
+        elif char == "#" or (
+            statement.startswith("--", index)
+            and (index + 2 == length or statement[index + 2].isspace())
+        ):
+            end = statement.find("\n", index)
+            index = length if end == -1 else end + 1
+        elif statement.startswith("/*", index):
+            end = statement.find("*/", index + 2)
+            index = length if end == -1 else end + 2
+        elif char == "(":
+            depth += 1
+            index += 1
+        elif char == ")":
+            depth = max(0, depth - 1)
+            index += 1
+        elif char.isalpha() or char == "_":
+            start = index
+            while index < length and (
+                statement[index].isalnum() or statement[index] in "_$"
+            ):
+                index += 1
+            words.append((statement[start:index].upper(), depth))
+        else:
+            index += 1
+
+    return words
+
+
+# A SELECT with one of these at its top level either limits itself already
+# or cannot take a LIMIT at its end: LIMIT has to come before a locking
+# clause, a PROCEDURE clause or a trailing INTO, and appending one after
+# them is a syntax error. FETCH and OFFSET are the standard spelling of a
+# LIMIT the statement already has.
+_UNLIMITABLE_WORDS = {"LIMIT", "FETCH", "OFFSET", "INTO", "PROCEDURE", "LOCK"}
+
+# What makes a WITH statement something other than a query.
+_NOT_A_QUERY_WORDS = {"INSERT", "UPDATE", "DELETE", "REPLACE"}
+
+
+def _limit_statement(
+    statement: str, limit: Optional[int], offset: Optional[int] = None
+) -> Optional[str]:
+    """Adds a LIMIT to a SELECT that has none of its own.
+
+    Only a query that can take one at its end is changed: a SELECT, a
+    parenthesized one, or a WITH that ends in one. Left alone - so run as
+    written - are every other statement, a SELECT that already limits
+    itself (LIMIT, FETCH FIRST, OFFSET), and one whose top level has a
+    clause a LIMIT would have to come before: INTO (a SELECT that fills
+    variables or writes a file returns no rows to page through anyway),
+    PROCEDURE, and the locking clauses FOR UPDATE, FOR SHARE and LOCK IN
+    SHARE MODE. A FOR elsewhere - FOR SYSTEM_TIME on a system-versioned
+    table - does not count.
+
+    The LIMIT goes on a line of its own, so a trailing ``--`` comment
+    cannot swallow it.
+
+    Args:
+        statement (str): One SQL statement.
+        limit (int): The most rows to return, or None to leave it alone.
+        offset (int): How many rows to skip first, or None for none.
+
+    Returns:
+        The statement with its LIMIT, or None when it is left as it is.
+    """
+    if limit is None:
+        return None
+
+    words = _top_level_words(statement)
+    if not words or words[0][0] not in ("SELECT", "WITH"):
+        return None
+
+    top = [word for word, depth in words if depth == 0]
+    if _UNLIMITABLE_WORDS.intersection(top):
+        return None
+    for position, word in enumerate(top[:-1]):
+        if word == "FOR" and top[position + 1] in ("UPDATE", "SHARE"):
+            return None
+    if words[0][0] == "WITH" and (
+        "SELECT" not in top or _NOT_A_QUERY_WORDS.intersection(top)
+    ):
+        return None
+
+    clause = f"LIMIT {limit}"
+    if offset:
+        clause += f" OFFSET {offset}"
+
+    return f"{statement.rstrip()}\n{clause}"
+
+
+# The server's "syntax error": nothing ran, so a statement refused with it
+# can be sent again without its LIMIT and not take effect twice.
+_SYNTAX_ERROR = 1064
+
+
+def _run_limited(session, statement: str, params: list, limit, offset=None):
+    """Runs a statement with a LIMIT of one more row than asked for.
+
+    The extra row is how the result can say whether there is another page:
+    it is taken off again by :func:`_page_result`. A statement a LIMIT
+    cannot be added to runs as written. So does one the server refuses with
+    a syntax error once it has one - a form ``_limit_statement`` did not
+    know to leave alone - since that error means nothing was run.
+
+    Args:
+        session: The open session.
+        statement (str): The statement.
+        params (list): The values for its ? placeholders.
+        limit (int): The rows asked for, or None for no limit.
+        offset (int): The rows to skip first, or None.
+
+    Returns:
+        The shell's result, and whether the limit was applied.
+    """
+    limited = _limit_statement(
+        statement, None if limit is None else limit + 1, offset
+    )
+    if limited is None:
+        return session.run_sql(statement, params), False
+
+    try:
+        return session.run_sql(limited, params), True
+    except Exception as error:  # noqa: BLE001
+        if getattr(error, "code", None) != _SYNTAX_ERROR:
+            raise
+
+    return session.run_sql(statement, params), False
+
+
+def _page_result(serialized: dict, limit: int) -> dict:
+    """Cuts a limited result back to the rows asked for.
+
+    It was fetched with one row more than the limit, and whether that row
+    came back is what ``has_more_pages`` says; the row itself is dropped,
+    so a client sees exactly the rows it asked for. Only a SELECT is
+    limited, and a SELECT returns one result set, so that is the one cut.
+
+    Args:
+        serialized (dict): The result, as ``_serialize_result`` made it.
+        limit (int): The rows asked for.
+
+    Returns:
+        The same dict, its result set cut back and carrying
+        ``has_more_pages``.
+    """
+    result_sets = serialized.get("result_sets")
+    if not result_sets:
+        return serialized
+
+    first = result_sets[0]
+    has_more = len(first["rows"]) > limit
+    if has_more:
+        first["rows"] = first["rows"][:limit]
+    first["has_more_pages"] = has_more
+
+    return serialized
+
+
+def _check_paging(limit: Optional[int], offset: Optional[int] = None) -> None:
+    """Refuses a limit or offset that is not a whole number of rows.
+
+    Args:
+        limit (int): The limit asked for, or None.
+        offset (int): The offset asked for, or None.
+
+    Raises:
+        mysqlsh.Error: If either is not a non-negative integer, or there is
+            an offset without a limit.
+    """
+    for name, value in (("limit", limit), ("offset", offset)):
+        # bool is an int to Python and a JSON true is no row count.
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+        ):
+            raise mysqlsh.Error(
+                f"'{name}' must be a non-negative integer, not {value!r}."
+            )
+    if offset is not None and limit is None:
+        raise mysqlsh.Error("An 'offset' needs a 'limit' to go with it.")
+
+
 def _query_rows(session, sql: str, params: Optional[list] = None) -> list:
     """Runs a query and returns just its rows.
 
@@ -1491,7 +1770,9 @@ def _query_rows(session, sql: str, params: Optional[list] = None) -> list:
     """
     result = session.run_sql(sql, params if params is not None else [])
 
-    return _serialize_result(result).get("rows", [])
+    result_sets = _serialize_result(result)["result_sets"]
+
+    return result_sets[0]["rows"] if result_sets else []
 
 
 def _normalize_object_type(object_type: str) -> str:
@@ -2297,6 +2578,9 @@ def register_db_tools(server, function_groups=()) -> None:
         connection_id: str,
         sql: str,
         params: Optional[list] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        column_metadata: bool = False,
     ) -> dict:
         """Executes a SQL statement on an open connection.
 
@@ -2304,13 +2588,35 @@ def register_db_tools(server, function_groups=()) -> None:
             connection_id: The UUID returned by db.connect.
             sql: The SQL statement to run. May contain ? placeholders.
             params: The parameters to bind to the ? placeholders, in order.
+            limit: The most rows to return. When given, a SELECT with no
+                LIMIT of its own has one added, which is how a client pages
+                through a large result. A SELECT that limits itself, or has
+                a clause a LIMIT would have to come before (INTO, FOR
+                UPDATE, FOR SHARE, LOCK IN SHARE MODE, PROCEDURE), and any
+                statement that is not a SELECT, runs as written.
+            offset: How many rows to skip before the first one returned,
+                for the pages after the first. Needs a limit.
+            column_metadata: Whether each result set also reports its
+                columns' metadata. Off by default, as most callers only need
+                the rows.
 
         Returns:
-            A dict with the result set (columns and rows) and execution
-            metadata. Each row is keyed by the column labels listed in columns.
-            Where a query selects two columns with the same label - joining two
-            tables that both have an id, say - the later one is listed and keyed
-            as label_2 (then _3, and so on), so that no column is lost.
+            A dict with the statement's result sets and execution metadata.
+            result_sets is a list with one dict per result set the statement
+            returned, in order: none for a statement that returns no rows,
+            one for a SELECT, and one per SELECT a called procedure runs.
+            Each has columns (the column labels) and rows, each row keyed by
+            those labels. Where a query selects two columns with the same
+            label - joining two tables that both have an id, say - the later
+            one is listed and keyed as label_2 (then _3, and so on), so that
+            no column is lost. Binary values come as hex text.
+
+            With column_metadata true, each result set also has
+            column_metadata: one dict per column, in the order of columns,
+            with what the shell reports for it - type (INT, BIGINT, DECIMAL,
+            DOUBLE, STRING, BYTES, JSON, GEOMETRY, DATE, DATETIME, TIME,
+            ENUM, SET, BIT and so on) and flags (a list: NOT_NULL, PRI_KEY,
+            UNSIGNED, AUTO_INCREMENT, BLOB, BINARY, ...).
 
             warnings_count is how many warnings the statement produced, and
             warnings - present only when there were any - lists them, each
@@ -2325,13 +2631,27 @@ def register_db_tools(server, function_groups=()) -> None:
             reported as successful alongside this flag committed or rolled back
             nothing, and any statements of that transaction are gone. Start the
             work again on this connection.
-        """
-        with use_session(connection_id, general.get_client_identity(ctx)) as session:
-            result = session.run_sql(sql, params if params is not None else [])
 
-            return _serialize_result(
-                result, _session_was_restarted(connection_id)
+            The result set carries has_more_pages when the limit (and
+            offset) were added to the statement: true when rows exist past
+            the ones returned - ask for the next page with offset + limit -
+            and false on the last page. It is absent where the statement ran
+            as written, whose rows are then all of them.
+        """
+        _check_paging(limit, offset)
+
+        with use_session(connection_id, general.get_client_identity(ctx)) as session:
+            result, limited = _run_limited(
+                session, sql, params if params is not None else [], limit, offset
             )
+
+            serialized = _serialize_result(
+                result,
+                _session_was_restarted(connection_id),
+                column_metadata=column_metadata,
+            )
+
+            return _page_result(serialized, limit) if limited else serialized
 
     @tool(name="db.execute_sql_script")
     def execute_sql_script(
@@ -2340,6 +2660,8 @@ def register_db_tools(server, function_groups=()) -> None:
         sql_script: Optional[str] = None,
         file_path: Optional[str] = None,
         stop_on_error: bool = True,
+        limit: Optional[int] = None,
+        column_metadata: bool = False,
     ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
@@ -2363,16 +2685,26 @@ def register_db_tools(server, function_groups=()) -> None:
                 reports each failure, which suits a script of independent
                 statements - a batch of inserts, or a set of DROPs - where
                 one failure should not hold up the rest.
+            limit: The most rows any one SELECT returns. When given, every
+                SELECT with no LIMIT of its own has one added. A SELECT that
+                limits itself, or has a clause a LIMIT would have to come
+                before (INTO, FOR UPDATE, FOR SHARE, LOCK IN SHARE MODE,
+                PROCEDURE), and every other statement, runs as written. Use
+                db.execute_sql's limit and offset for the pages after the
+                first.
+            column_metadata: Whether each result set also reports its
+                columns' metadata, as for db.execute_sql. Off by default.
 
         Returns:
-            A list with one entry per statement that ran, each a dict with the
-            result set (columns and rows) and execution metadata: its position
-            in the script (statement_index, counting the non-empty statements
-            from 0) and how long it took (execution_time, in seconds). Two
-            columns sharing one label are keyed apart as label and label_2, as
-            for db.execute_sql. Each entry also carries warnings_count, and
-            warnings - the level, code and message of each - where the
-            statement produced any.
+            A list with one entry per statement that ran, each a dict with its
+            result sets and execution metadata: its position in the script
+            (statement_index, counting the non-empty statements from 0) and
+            how long it took (execution_time, in seconds). result_sets is a
+            list with one dict of columns and rows per result set the
+            statement returned - none, one, or one per SELECT of a called
+            procedure - as for db.execute_sql, and so is column_metadata.
+            Each entry also carries warnings_count, and warnings - the level,
+            code and message of each - where the statement produced any.
 
             A statement that is nothing but a -- or # line comment is NOT run
             and has no entry, since it carries no SQL. It still takes up a
@@ -2383,7 +2715,7 @@ def register_db_tools(server, function_groups=()) -> None:
 
             IMPORTANT - a failing statement does NOT raise. Its entry carries
             error (the message) and statement (the text that failed) INSTEAD
-            of a result set, so check every entry for an error key before
+            of result sets, so check every entry for an error key before
             treating the script as done. Nothing is rolled back either way: a
             script is not a transaction, and the statements that already ran
             have taken effect.
@@ -2403,7 +2735,14 @@ def register_db_tools(server, function_groups=()) -> None:
             in this script committed nothing that came before it. The flag is on
             the first entry only, as the session is opened once, before the
             script starts.
+
+            An entry's result set carries has_more_pages where the limit was
+            added to its statement: true when rows exist past the ones
+            returned - fetch the next page with db.execute_sql and an offset -
+            and false when these are all of them. It is absent where the
+            statement ran as written.
         """
+        _check_paging(limit)
         if (sql_script is None) == (file_path is None):
             raise mysqlsh.Error(
                 "Provide exactly one of 'sql_script' or 'file_path'."
@@ -2438,7 +2777,7 @@ def register_db_tools(server, function_groups=()) -> None:
 
                 started = time.perf_counter()
                 try:
-                    result = session.run_sql(statement, [])
+                    result, limited = _run_limited(session, statement, [], limit)
                 except Exception as error:  # noqa: BLE001
                     # Reported rather than raised, because what already ran
                     # matters: a script is not a transaction, and a caller
@@ -2465,15 +2804,17 @@ def register_db_tools(server, function_groups=()) -> None:
 
                     continue
 
+                serialized = _serialize_result(
+                    result,
+                    # On the first result only: one session was opened, once,
+                    # before any of these statements ran.
+                    session_restarted=restarted and not results,
+                    statement_index=index,
+                    execution_time=time.perf_counter() - started,
+                    column_metadata=column_metadata,
+                )
                 results.append(
-                    _serialize_result(
-                        result,
-                        # On the first result only: one session was opened, once,
-                        # before any of these statements ran.
-                        session_restarted=restarted and not results,
-                        statement_index=index,
-                        execution_time=time.perf_counter() - started,
-                    )
+                    _page_result(serialized, limit) if limited else serialized
                 )
 
             return results

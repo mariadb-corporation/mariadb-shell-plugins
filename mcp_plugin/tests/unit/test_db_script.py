@@ -252,3 +252,149 @@ def test_a_leading_comment_does_not_swallow_the_restart_flag(tools):
     results = tools.run(GENERATED_FILE)
 
     assert results[0]["session_restarted"] is True
+
+
+class _MultiSetResult:
+    """A result over several result sets, walked as the shell walks them.
+
+    Each entry of ``sets`` is ``(columns, rows)`` for a set with data, or
+    None for one without - the status a CALL ends on.
+    """
+
+    affected_items_count = 0
+    warnings_count = 0
+
+    def __init__(self, sets):
+        self._sets = sets
+        self._at = 0
+
+    def has_data(self):
+        return self._sets[self._at] is not None
+
+    def get_columns(self):
+        return [
+            SimpleNamespace(get_column_label=lambda label=label: label)
+            for label in self._sets[self._at][0]
+        ]
+
+    def fetch_all(self):
+        return self._sets[self._at][1]
+
+    def next_result(self):
+        self._at += 1
+        return self._at < len(self._sets)
+
+    def get_warnings(self):
+        return []
+
+
+def test_every_result_set_of_a_call_is_read():
+    """Every set is in result_sets, in order; the one without data is not."""
+    result = _MultiSetResult([
+        (["a"], [[1]]),
+        (["b", "c"], [[2, 3], [4, 5]]),
+        None,
+    ])
+
+    output = db_functions._serialize_result(result)
+
+    assert output["result_sets"] == [
+        {"columns": ["a"], "rows": [{"a": 1}]},
+        {"columns": ["b", "c"], "rows": [{"b": 2, "c": 3}, {"b": 4, "c": 5}]},
+    ]
+
+
+class _Type:
+    """A mysql.Type constant: its name is its data."""
+
+    def __init__(self, data):
+        self.data = data
+
+
+class _MetadataColumn:
+    """A column with the shell's Column getters the metadata reads."""
+
+    def __init__(self, label, kind, flags=""):
+        self.label = label
+        self.kind = kind
+        self.flags = flags
+
+    def get_column_label(self):
+        return self.label
+
+    def get_type(self):
+        return _Type(self.kind)
+
+    def get_flags(self):
+        return self.flags
+
+
+def test_column_metadata_is_what_the_shell_reports():
+    """Nothing is worked out: a BLOB is BYTES with its flags alongside."""
+    result = _MultiSetResult([(["a"], [[1, b"\x00\xff", b"x"]])])
+    result.get_columns = lambda: [
+        _MetadataColumn("i", "INT", "NOT_NULL NUM"),
+        _MetadataColumn("vb", "BYTES", "BINARY "),
+        _MetadataColumn("b", "BYTES", "BLOB BINARY "),
+    ]
+
+    output = db_functions._serialize_result(result, column_metadata=True)
+
+    [result_set] = output["result_sets"]
+    assert result_set["column_metadata"][0] == {
+        "type": "INT",
+        "flags": ["NOT_NULL", "NUM"],
+    }
+    assert [(column["type"], column["flags"])
+            for column in result_set["column_metadata"][1:]] == [
+        ("BYTES", ["BINARY"]),
+        ("BYTES", ["BLOB", "BINARY"]),
+    ]
+    # Binary values still come as hex text.
+    assert result_set["rows"][0]["vb"] == "00ff"
+
+
+def test_column_metadata_is_left_out_unless_asked_for():
+    result = _MultiSetResult([(["a"], [[1]])])
+    result.get_columns = lambda: [_MetadataColumn("a", "INT")]
+
+    output = db_functions._serialize_result(result)
+
+    assert "column_metadata" not in output["result_sets"][0]
+
+
+def test_every_result_set_of_a_call_has_its_own_metadata():
+    result = _MultiSetResult([(["a"], [[1]]), (["b"], [[b"x"]]), None])
+    kinds = iter([[_MetadataColumn("a", "INT")],
+                  [_MetadataColumn("b", "BYTES", "BLOB BINARY")]])
+    result.get_columns = lambda: next(kinds)
+
+    output = db_functions._serialize_result(result, column_metadata=True)
+
+    assert [[column["type"] for column in result_set["column_metadata"]]
+            for result_set in output["result_sets"]] == [["INT"], ["BYTES"]]
+
+
+def test_a_result_with_no_data_has_no_result_sets():
+    """A statement with no result set reports an empty list of them."""
+    output = db_functions._serialize_result(_MultiSetResult([None]))
+
+    assert output["result_sets"] == []
+    assert "columns" not in output
+
+
+def test_a_result_that_cannot_walk_on_reads_its_one_set():
+    """A result without next_result is read as the one set it has."""
+    result = _MultiSetResult([(["a"], [[1]])])
+    del_next = SimpleNamespace(
+        has_data=result.has_data,
+        get_columns=result.get_columns,
+        fetch_all=result.fetch_all,
+        affected_items_count=0,
+        warnings_count=0,
+        get_warnings=result.get_warnings,
+    )
+
+    output = db_functions._serialize_result(del_next)
+
+    assert output["result_sets"] == [{"columns": ["a"], "rows": [{"a": 1}]}]

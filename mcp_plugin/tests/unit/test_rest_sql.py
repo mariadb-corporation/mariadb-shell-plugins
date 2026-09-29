@@ -60,7 +60,7 @@ async def _rest_sql_flow(uri):
                 },
             )
             assert result.is_error is False
-            return helpers.tool_payload(result)["rows"]
+            return helpers.tool_rows(result)
 
         try:
             # The REST metadata schema does not exist on the fresh sandbox yet.

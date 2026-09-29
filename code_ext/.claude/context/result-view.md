@@ -44,12 +44,18 @@ The last row is the **contentSelectionBar**, and it holds only what
 picks what is on show: the tabs, and the two pickers at the far right.
 What a result set came to, and what can be done with it, is a
 **statusBar of its own along the bottom of that result set**
-(`ResultStatusBar`), inside the tab's content. Every button there -
-Preview SQL, + Row, Revert, Apply, Refresh - acts on one result set, so
+(`ResultStatusBar`), inside the tab's content. Every button there
+acts on one result set, so
 it belongs to the result set and not to the view; keeping them apart is
 also what leaves the row of tabs the room to be a row of tabs. The
 Actions tab has no such bar: there is no result set for one to be
 about.
+
+The error bar has a **copy** button (`errorBarCopy`, `codicon-copy`)
+just before its close button: it copies the error on show through
+`copyToClipboard` and turns into a check, "Copied", for `COPIED_FOR_MS`
+(1.2 s, shared with the overflow popup), resetting when another error is
+stepped to.
 
 The error bar leads, above what it is about: it is read before the eye
 has gone looking for what went wrong. It steps through every error of
@@ -233,38 +239,11 @@ its own filename while the stylesheet's is pinned to `main.css`, which
 the extension references from the HTML it builds.
 `src/test/webview/assets.test.ts` guards both.
 
-## The result grids
+## The result grid, toolbar, paging and maximizing
 
-[Tabulator](https://tabulator.info) 6.3, as in the MySQL Shell extension.
-Tabulator owns the DOM below its container, so `ResultGrid` holds it in a
-ref and feeds it data rather than re-rendering it through Preact.
-
-Two things about it are easy to break:
-
-- **Nothing may touch the table before `tableBuilt` fires.** Tabulator
-  builds itself asynchronously and every data call before that throws.
-  Rows that arrive early are parked in a ref and applied by the
-  `tableBuilt` handler.
-- `replaceData` is used rather than `setData`, because `setData` throws
-  away the scroll position and the column widths on every keystroke.
-
-Its stylesheet is `tabulator_simple`, imported at the top of
-`styles.css` and then overridden - surface by surface - with VS Code theme
-variables, since Tabulator ships a light theme of its own.
-
-**Every surface it paints has to be answered, not just the obvious
-ones.** A missed one is invisible in a light theme and glaring in a dark
-one, which is how each of these was found:
-
-- `.tabulator-tableholder .tabulator-table` is `#fff` with `#333` text
-  and sits *behind* the rows, so transparent rows still came out white.
-- `.tabulator-placeholder span` is `#000`, so the "nothing here yet"
-  text disappeared into a dark background.
-- The sortable header's hover is `#e6e6e6` and its sort arrows `#bbb`.
-
-The theme's only `!important` backgrounds are on calcs holders and the
-footer, neither of which this view renders, so nothing can defeat an
-override.
+Moved to files of their own: the grid, its value display and cell menu
+in [result-grid.md](result-grid.md); the toolbar, paging and
+maximizing in [result-set.md](result-set.md).
 
 ## SQL preview
 

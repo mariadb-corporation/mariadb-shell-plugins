@@ -19,6 +19,7 @@ import * as vscode from "vscode";
 
 import type { ConnectionManager } from "../connections/connectionManager.js";
 import {
+    pageSize,
     stopOnError,
     STOP_ON_ERROR_CONTEXT_KEY,
 } from "../connections/settings.js";
@@ -30,12 +31,17 @@ import {
     type IScriptSource,
     pendingRunRow,
 } from "../sql/executionService.js";
+import { quoteIdentifier } from "../sql/queryBuilder.js";
 import { statementAtOffset } from "../sql/statementAtOffset.js";
 import type {
     IResultSet,
     IStatementSource,
 } from "../webview/protocol.js";
-import type { ResultViewProvider } from "../webview/resultViewProvider.js";
+import type {
+    IRefreshTarget,
+    ResultViewProvider,
+    RunInto,
+} from "../webview/resultViewProvider.js";
 
 /** The language id VS Code gives .sql files. */
 export const SQL_LANGUAGE_ID = "sql";
@@ -438,6 +444,10 @@ export class SqlEditorBinding implements vscode.Disposable {
      * @param script The SQL to run.
      * @param label What to call the run in the actions.
      * @param source Where the script came from, for the jump links.
+     * @param stopAtFirstError Whether a failing statement ends the run.
+     * @param into The editor tab the result goes to, rather than the
+     *             panel's tabs: a maximized result set's key, or the
+     *             title of a new one.
      *
      * @returns Nothing.
      */
@@ -447,6 +457,7 @@ export class SqlEditorBinding implements vscode.Disposable {
         label?: string,
         source?: IScriptSource,
         stopAtFirstError: boolean = stopOnError(),
+        into?: RunInto,
     ): Promise<void> {
         // The run is put up before the connection is even opened, which
         // is what the shell may have to be started for, so the actions
@@ -463,7 +474,7 @@ export class SqlEditorBinding implements vscode.Disposable {
             connectionLabel,
             what,
         });
-        await this.resultView.startRun(uri, run);
+        await this.resultView.startRun(uri, run, into);
 
         try {
             const connectionId = await this.connections.connect(uri);
@@ -478,6 +489,7 @@ export class SqlEditorBinding implements vscode.Disposable {
                 source,
                 label,
                 stopOnError: stopAtFirstError,
+                pageSize: pageSize(),
             });
             await this.resultView.showResults(report, {
                 connectionUri: uri,
@@ -526,17 +538,49 @@ export class SqlEditorBinding implements vscode.Disposable {
      * produced by.
      *
      * @param resultSet The result set to reload.
+     * @param target The connection it was produced on, and the maximized
+     *               tab its new result goes to, if it is in one.
      *
      * @returns Nothing.
      */
-    public async refreshResultSet(resultSet: IResultSet): Promise<void> {
-        const uri = this.resultView.applyContext?.connectionUri;
+    public async refreshResultSet(
+        resultSet: IResultSet,
+        target: IRefreshTarget,
+    ): Promise<void> {
+        const uri = target.connectionUri;
         if (uri === undefined || resultSet.statement.trim().length === 0) {
             return;
         }
 
         await this.runScript(
-            uri, `${resultSet.statement};`, "1 statement");
+            uri, `${resultSet.statement};`, "1 statement", undefined,
+            stopOnError(), target.into);
+    }
+
+    /**
+     * Reads every row of a table or view, and shows them in an editor tab
+     * of their own titled after it.
+     *
+     * @param uri The connection it is on.
+     * @param schema The schema it is in.
+     * @param name The table or view.
+     *
+     * @returns Nothing.
+     */
+    public async selectRows(
+        uri: string,
+        schema: string,
+        name: string,
+    ): Promise<void> {
+        await this.runScript(
+            uri,
+            `SELECT * FROM ${quoteIdentifier(schema)}.`
+            + `${quoteIdentifier(name)};`,
+            "1 statement",
+            undefined,
+            stopOnError(),
+            { title: `${schema}.${name}` },
+        );
     }
 
     /**

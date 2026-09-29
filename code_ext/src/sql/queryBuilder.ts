@@ -55,8 +55,9 @@ export const escapeString = (value: string): string => {
  * result set back to its table.
  *
  * Modelled on the MySQL Shell's QueryBuilder: a row is addressed by its
- * primary key, auto-generated columns are left out of an INSERT, and each
- * value is rendered according to its column's type.
+ * primary key, generated columns - and auto-increment ones left empty -
+ * are left out of an INSERT, and each value is rendered according to its
+ * column's type.
  */
 export class QueryBuilder {
     readonly #columns = new Map<string, IColumnDetails>();
@@ -129,9 +130,12 @@ export class QueryBuilder {
 
             case "binary": {
                 // Binary values arrive hex encoded from the server, and go
-                // back the same way.
-                return /^[0-9a-f]*$/i.test(text)
-                    ? `0x${text.length === 0 ? "00" : text}`
+                // back the same way. The grid shows them with a 0x in front,
+                // so a value typed that way is taken as hex too.
+                const hex = text.replace(/^0x/i, "");
+
+                return /^[0-9a-f]*$/i.test(hex)
+                    ? `0x${hex.length === 0 ? "00" : hex}`
                     : `'${escapeString(text)}'`;
             }
 
@@ -204,9 +208,10 @@ export class QueryBuilder {
     /**
      * Builds the INSERT for a row that was added.
      *
-     * Columns the server fills in itself - auto-increment and generated
-     * ones - are left out, so the server assigns them rather than being
-     * handed the placeholder the grid showed.
+     * A generated column is always left out: the server computes it and
+     * refuses a value. An auto-increment column is left out while the row
+     * leaves it empty, so the server assigns the next value, and written
+     * when the user gave it one.
      *
      * @param values The new row's values, by column name.
      *
@@ -218,8 +223,10 @@ export class QueryBuilder {
 
         for (const [name, value] of Object.entries(values)) {
             const column = this.#columns.get(name);
-            if (column?.id_generation === "auto_inc"
-                || Boolean(column?.is_generated)) {
+            const empty = value === null || value === undefined
+                || value === "";
+            if (Boolean(column?.is_generated)
+                || (column?.id_generation === "auto_inc" && empty)) {
                 continue;
             }
 

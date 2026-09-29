@@ -35,7 +35,7 @@ const resultSet = (overrides: Partial<IResultSet> = {}): IResultSet => {
                 name: "ID",
                 datatype: "int(11)",
                 isPrimary: true,
-                isGenerated: true,
+                isAutoIncrement: true,
                 nullable: false,
             },
             {

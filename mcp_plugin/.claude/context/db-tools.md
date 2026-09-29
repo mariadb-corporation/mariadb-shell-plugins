@@ -9,6 +9,61 @@ handling are in [connections.md](connections.md).
 
 ## Architecture / key decisions
 
+- **Every result set of a statement is read, into `result_sets`** - a
+  list, ALWAYS present on a statement that ran (empty for one that returns
+  no rows), each `{columns, rows, column_metadata?, has_more_pages?}`.
+  `_serialize_result` loops `result.next_result()`, `_read_result_set`
+  reads one; a CALL returns one set per SELECT the procedure runs, then a
+  status with none. `getattr` guards `next_result` for results that have
+  none. Statement-level fields (`affected_items_count`, `warnings*`,
+  `statement_index`, `execution_time`, `session_restarted`) stay at the
+  top. **Decided in review of PR #30 (Rene):** this replaced top-level
+  `columns`/`rows` + `additional_result_sets` ("just return an array").
+  Released shells still send the old top-level `columns`/`rows`; the
+  extension normalizes both in `normalizeStatementResult`.
+- **Column metadata** (`column_metadata=True` on both tools, default
+  False so LLM callers stay lean; the extension always sets it). One dict
+  per column, in the order of `columns`, with just `type` and `flags`
+  (`_column_metadata`). **Trimmed in Rene's approving review:** it used to
+  carry every Column getter (`column_label`, `length`, `schema_name`, ...)
+  via a `_COLUMN_METADATA_GETTERS` table; nothing read them. `type` is
+  `get_type().data` - the `mysql.Type` name,
+  `INT`/`BIGINT`/`STRING`/`BYTES`/`JSON`/`GEOMETRY`/... (NOT the
+  `<Type.INTEGER>` its `str()` prints: that differs, and parsing it is
+  what the review objected to). `flags` is `get_flags()` split into a
+  list. **Decided in review:**
+  the MCP layer interprets nothing - no invented `BLOB` type. Measured on
+  12.3: BINARY, VARBINARY, every BLOB AND VECTOR are `BYTES`; the `BLOB`
+  flag marks the blobs but also TEXT (`STRING`), JSON and GEOMETRY, and
+  nothing tells a VECTOR from a VARBINARY. Values are unchanged: binary
+  still comes as hex.
+
+- **Paging** (2026-09-25, for the VS Code extension's result pages):
+  `db.execute_sql_script(limit=)` and `db.execute_sql(limit=, offset=)`.
+  `_limit_statement` appends `\nLIMIT n [OFFSET m]` (own line, so a
+  trailing `--` comment cannot swallow it) to a statement whose first word
+  is SELECT or WITH, judged on `_top_level_words` - a small scanner that
+  steps over strings, backtick identifiers and all comments and reports
+  each word with its paren depth. Left AS WRITTEN: anything else; a WITH
+  with a top-level INSERT/UPDATE/DELETE/REPLACE (or no SELECT); and any
+  top-level LIMIT, FETCH, OFFSET (limits itself already), INTO, PROCEDURE,
+  LOCK, FOR UPDATE / FOR SHARE (LIMIT must come BEFORE those, so appending
+  is a syntax error). `FOR SYSTEM_TIME` is not a locking FOR and is limited.
+  - `_run_limited` sends `limit + 1` rows' worth; `_page_result` drops the
+    extra row and sets `has_more_pages` (true/false) on `result_sets[0]` -
+    a limited statement is a SELECT, which has exactly one set. The key is
+    present ONLY when the limit was applied - that is how a client knows
+    it can page. snake_case like every other key on this wire.
+  - A limited statement refused with **1064** is re-run as written: a
+    syntax error means nothing ran, so it cannot take effect twice. Any
+    other error is NOT retried.
+  - `_check_paging`: non-negative ints only (a JSON `true` is refused), and
+    an offset needs a limit - refused before the session is touched.
+  - Tests: `test_db_paging.py` (the scanner and the rules, table-driven;
+    the tools over a stub session that honours LIMIT/OFFSET), plus a block
+    in `_db_flow` against the real server proving every limited form is
+    accepted WITH the LIMIT and the skipped ones still run.
+
 - **SQL exec**: `db.execute_sql` = single statement (+ optional `?` params, one result
   dict). `db.execute_sql_script` = multi-statement via `mysqlsh.mysql.split_script()`,
   returns a LIST; accepts `sql_script` XOR `file_path` (file must be an allowed path).
@@ -149,8 +204,10 @@ handling are in [connections.md](connections.md).
 - Tools: **31 total**, in 4 groups. migrator.* (**4**: `set_config`, `plan`, `run`,
   `resume`) — registered ONLY where the tooling is installed, see the migration bullet
   under Architecture. db.* (**8**: `list_connections`, `connect`, `list_schemas`, `list_objects`,
-  `get_object_details`, `execute_sql`, `execute_sql_script` — now with `stop_on_error`
-  and per-statement `statement_index`/`execution_time`/`error`, `close`),
+  `get_object_details`, `execute_sql` (+ `limit`/`offset`), `execute_sql_script` — now
+  with `stop_on_error`, `limit` and per-statement `statement_index`/`execution_time`/
+  `error`, `result_sets` (each with `has_more_pages` when limited) and
+  opt-in `column_metadata` — `close`),
   msm.* (**12**, path-guarded, async — the 12th is `deploy_schema`, gated on the db group),
   sandbox.* (7, `sandbox_dir`-guarded, async, port required).
 
@@ -178,6 +235,14 @@ handling are in [connections.md](connections.md).
   msm_functions also holds the db-group-gated `msm.deploy_schema`.
 
 ## Gotchas / things not to repeat
+
+- **A column's type name is `get_type().data`, never `str(get_type())`.** The
+  `str()` form prints `<Type.INTEGER>`, while `.data` (and `dir(mysql.Type)`) says
+  `INT` - parsing the string reported names the shell does not use, and was
+  flagged in the PR #30 review. To probe metadata by hand: `mysql` is the global
+  in `--py` (not `mysqlsh.Type`), and the local Homebrew server opens with a
+  dict, `shell.open_session({"scheme": "mariadb", "user": "mzinner", "socket":
+  "/tmp/mysql.sock", "password": ""})` - a socket URI was refused.
 
 - **`db.execute_sql_script` returning a failure instead of raising is a CONTRACT CHANGE,
   and a quiet one.** The tool result's `isError` is now `false` for a script that failed:

@@ -17,7 +17,11 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { MariaDbApi, type IToolCaller } from "../../mcp/mariaDbApi.js";
+import {
+    MariaDbApi,
+    normalizeStatementResult,
+    type IToolCaller,
+} from "../../mcp/mariaDbApi.js";
 import type { IToolResult } from "../../mcp/protocol.js";
 
 /** Records the calls made, and answers from a canned table. */
@@ -290,18 +294,51 @@ describe("MariaDbApi", () => {
     });
 
     it("runs a script and returns one result per statement", async () => {
+        // The fake answers as a shell that predates result_sets does.
         await expect(api.executeScript("uuid-1", "SELECT 1 AS a;"))
             .resolves.toEqual([{
                 affected_items_count: 0,
                 warnings_count: 0,
-                columns: ["a"],
-                rows: [{ a: 1 }],
+                result_sets: [{ columns: ["a"], rows: [{ a: 1 }] }],
             }]);
         expect(caller.calls[0].args).toEqual({
             connection_id: "uuid-1",
             sql_script: "SELECT 1 AS a;",
+            column_metadata: true,
         });
     });
+
+    it("asks for the column metadata of a single statement too",
+        async () => {
+            const single = createCaller({
+                "db.execute_sql": {
+                    content: [{
+                        type: "text",
+                        text: '{"affected_items_count":0,"warnings_count":0,'
+                            + '"result_sets":[{"columns":["a"],'
+                            + '"rows":[{"a":1}],"has_more_pages":false}]}',
+                    }],
+                },
+            });
+
+            await expect(new MariaDbApi(single).executeSql(
+                "uuid-1", "SELECT 1 AS a", { limit: 5 }))
+                .resolves.toEqual({
+                    affected_items_count: 0,
+                    warnings_count: 0,
+                    result_sets: [{
+                        columns: ["a"],
+                        rows: [{ a: 1 }],
+                        has_more_pages: false,
+                    }],
+                });
+            expect(single.calls[0].args).toEqual({
+                connection_id: "uuid-1",
+                sql: "SELECT 1 AS a",
+                column_metadata: true,
+                limit: 5,
+            });
+        });
 
     it("turns a reported tool error into a rejection", async () => {
         const failing = new MariaDbApi(createCaller({
@@ -316,5 +353,37 @@ describe("MariaDbApi", () => {
 
         await expect(failing.connect("nope"))
             .rejects.toThrow(/not a configured connection/);
+    });
+});
+
+describe("normalizeStatementResult", () => {
+    it("keeps a result that has its result sets as it is", () => {
+        const result = {
+            affected_items_count: 0,
+            result_sets: [{ columns: ["a"], rows: [] }],
+        };
+
+        expect(normalizeStatementResult(result)).toEqual(result);
+    });
+
+    it("turns an older shell's columns and rows into one result set", () => {
+        expect(normalizeStatementResult({
+            affected_items_count: 0,
+            columns: ["a"],
+            rows: [{ a: 1 }],
+        })).toEqual({
+            affected_items_count: 0,
+            result_sets: [{ columns: ["a"], rows: [{ a: 1 }] }],
+        });
+    });
+
+    it("gives an older shell's statement without rows no result sets", () => {
+        expect(normalizeStatementResult({ affected_items_count: 2 }))
+            .toEqual({ affected_items_count: 2, result_sets: [] });
+    });
+
+    it("leaves a failed statement without result sets", () => {
+        expect(normalizeStatementResult({ error: "nope", statement: "X" }))
+            .toEqual({ error: "nope", statement: "X" });
     });
 });

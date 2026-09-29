@@ -45,7 +45,7 @@ const OVERFLOW_SLACK = 1;
 const CLOSE_DELAY_MS = 150;
 
 /** How long the copy button says it has copied before going back. */
-const COPIED_FOR_MS = 1200;
+export const COPIED_FOR_MS = 1200;
 
 /** The gap between the cell and the popup pointing at it. */
 const ANCHOR_GAP = 4;

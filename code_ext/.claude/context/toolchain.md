@@ -30,6 +30,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   for the extension (Node) and `tsconfig.webview.json` for the frontend
   (DOM + Preact JSX).
 - **Lint**: ESLint with `typescript-eslint`, over `src` and `webview`.
+- **Webview assets are files, never inlined**: `vite.webview.config.ts`
+  has `assetsInlineLimit: 0`, and `assetFileNames` puts an icon from
+  `images/light/` or `images/dark/` under `dist/webview/icons/light|dark/`
+  (the two variants share a name; without the folder Rollup would append
+  a number to one). The stylesheet references them relatively, as it does
+  the codicon font; `src/test/webview/assets.test.ts` pins both rules.
+  Most toolbar and data icons are drawn as CSS masks from the LIGHT file.
 
 | Script | What it does |
 | --- | --- |

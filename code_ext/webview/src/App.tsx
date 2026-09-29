@@ -39,9 +39,14 @@ import type {
 } from "../../src/webview/protocol.js";
 import { createQueryBuilder } from "../../src/sql/resultSetQueryBuilder.js";
 import { ActionsGrid } from "./ActionsGrid.js";
-import { ResultGrid } from "./ResultGrid.js";
-import { ResultStatusBar } from "./ResultStatusBar.js";
+import { cellActionsOf, ResultGrid } from "./ResultGrid.js";
+import {
+    ResultStatusBar,
+    type ResultAction,
+    type ResultViewStyle,
+} from "./ResultStatusBar.js";
 import { SqlPreview } from "./SqlPreview.js";
+import { COPIED_FOR_MS } from "./overflowPopup.js";
 import { post } from "./vscodeApi.js";
 
 /** The id of the always-present Actions tab. */
@@ -176,7 +181,27 @@ interface IEditingState {
     errors: Record<number, string>;
     /** The row to scroll to, set when a preview line is clicked. */
     selectedRowIndex?: number;
+    /** The page the rows came from, so another page rebuilds them. */
+    pageKey: string;
+    /**
+     * Whether its primary key columns are frozen: the extension's setting
+     * when it was first shown, and then whatever its action menu says.
+     */
+    freezeKeys: boolean;
 }
+
+/**
+ * @param set A result set.
+ *
+ * @returns What tells one fetch of its rows from another: the page, and
+ *          how often it was fetched - the same page again, after an
+ *          apply, is new rows.
+ */
+const pageKeyOf = (set: IResultSet): string => {
+    return set.page === undefined
+        ? ""
+        : `${set.page.index}/${set.page.loads}`;
+};
 
 /**
  * The result view, docked in the bottom panel.
@@ -191,6 +216,8 @@ interface IEditingState {
  */
 export const App = (): JSX.Element => {
     const [state, setState] = useState<IViewState | undefined>();
+    /** The state last received, for the message handler to read. */
+    const latestState = useRef<IViewState | undefined>(undefined);
     const [activeTab, setActiveTab] = useState<string>(ACTIONS_TAB);
     const [notice, setNotice] = useState<string | undefined>();
     /** The failures of the last thing that ran, in the order it hit them. */
@@ -199,6 +226,21 @@ export const App = (): JSX.Element => {
     const [errorIndex, setErrorIndex] = useState(0);
     /** Set by the bar's close button, cleared by the next set of errors. */
     const [errorsHidden, setErrorsHidden] = useState(false);
+    /** Set by the bar's copy button for a moment, so it can say it did. */
+    const [errorCopied, setErrorCopied] = useState(false);
+    useEffect(() => {
+        if (!errorCopied) {
+            return undefined;
+        }
+        const timer = setTimeout(() => { setErrorCopied(false); },
+            COPIED_FOR_MS);
+
+        return () => { clearTimeout(timer); };
+    }, [errorCopied]);
+    // Another error on show has not been copied.
+    useEffect(() => {
+        setErrorCopied(false);
+    }, [errorIndex, errors]);
     /** The set the three above were last put in place for. */
     const shownErrors = useRef<string>("");
 
@@ -227,6 +269,9 @@ export const App = (): JSX.Element => {
         setErrorsHidden(false);
     }, []);
     const [editing, setEditing] = useState<Record<string, IEditingState>>({});
+    /** The editing state as last rendered, for the message handler. */
+    const latestEditing = useRef(editing);
+    latestEditing.current = editing;
     const [scrollToRowId, setScrollToRowId] = useState<string | undefined>();
     /** The strip of result tabs, measured for the paging buttons. */
     const resultTabs = useRef<HTMLDivElement>(null);
@@ -251,27 +296,64 @@ export const App = (): JSX.Element => {
             switch (message.type) {
                 case "state": {
                     setState(message.state);
-                    const ids = message.state.resultSets.map((set) => {
+                    latestState.current = message.state;
+                    const sets = message.state.resultSets;
+                    const ids = sets.map((set) => {
                         return set.id;
+                    });
+                    const previousIds = shownResults.current.split("\u0000")
+                        .map((key) => { return key.split("\u0001")[0]; });
+                    // A new page of a result set is new rows for its grid,
+                    // as much as a new result set is.
+                    const shownKey = sets.map((set) => {
+                        return `${set.id}\u0001${pageKeyOf(set)}`;
                     }).join("\u0000");
-                    if (ids !== shownResults.current) {
-                        shownResults.current = ids;
-                        setEditing(Object.fromEntries(
-                            message.state.resultSets.map((set) => {
-                                return [set.id, {
-                                    rows: initialRows(set),
-                                    previewActive: false,
-                                    errors: {},
-                                }];
-                            }),
-                        ));
+                    if (shownKey !== shownResults.current) {
+                        shownResults.current = shownKey;
+                        const seed = message.editing ?? {};
+                        // A tab that is still there keeps what it was
+                        // part way through: one leaving for an editor tab
+                        // is no reason to lose the others' edits.
+                        setEditing((previous) => {
+                            return Object.fromEntries(sets.map((set) => {
+                                const kept = previous[set.id];
+
+                                return [set.id,
+                                    kept && kept.pageKey === pageKeyOf(set)
+                                        ? kept
+                                        : {
+                                            rows: seed[set.id]
+                                                ?? initialRows(set),
+                                            previewActive: false,
+                                            errors: {},
+                                            pageKey: pageKeyOf(set),
+                                            // Another page of the same
+                                            // result set keeps its choice.
+                                            freezeKeys: kept?.freezeKeys
+                                                ?? message.state
+                                                    .freezeKeyColumns
+                                                ?? true,
+                                        }];
+                            }));
+                        });
                         setNotice(undefined);
-                        // A run that produced rows opens on them; one
-                        // that did not - or one that has only just
+                        // A run that produced rows opens on them, and a
+                        // result set back from an editor tab is shown.
+                        // One that produced none - or has only just
                         // started - stays on the actions, which is where
                         // its progress and its outcome are.
-                        setActiveTab(message.state.resultSets[0]?.id
-                            ?? ACTIONS_TAB);
+                        const arrived = ids.find((id) => {
+                            return !previousIds.includes(id);
+                        });
+                        setActiveTab((current) => {
+                            if (arrived !== undefined) {
+                                return arrived;
+                            }
+
+                            return ids.includes(current)
+                                ? current
+                                : ids[0] ?? ACTIONS_TAB;
+                        });
                     }
                     showErrors(errorsOf(message.state.actions));
                     break;
@@ -309,7 +391,74 @@ export const App = (): JSX.Element => {
                             `Applied ${message.statements.length} statement`
                             + `${message.statements.length === 1 ? "" : "s"}.`,
                         );
-                        post({ type: "refresh", resultId: message.resultId });
+                        // A paged result set reloads the page it is on,
+                        // rather than going back to the first.
+                        const applied = latestState.current?.resultSets
+                            .find((set) => {
+                                return set.id === message.resultId;
+                            });
+                        post(applied?.page === undefined
+                            ? { type: "refresh", resultId: message.resultId }
+                            : {
+                                type: "page",
+                                resultId: message.resultId,
+                                page: applied.page.index,
+                            });
+                    }
+                    break;
+                }
+
+                case "pageFailed": {
+                    showErrors([{ message: message.error }]);
+                    break;
+                }
+
+                case "valueEdited": {
+                    // A value saved in an editor goes back only to the row
+                    // it was opened from: the same result set, on the same
+                    // page, and not marked for deletion since.
+                    const current = latestEditing.current[message.resultId];
+                    const row = current?.rows[message.rowIndex];
+                    let error: string | undefined;
+                    if (!current || !row) {
+                        error = "The result set this value came from is no "
+                            + "longer on show.";
+                    } else if (current.pageKey !== message.pageKey) {
+                        error = "The page this value came from is no longer "
+                            + "on show.";
+                    } else if (row.deleted) {
+                        error = "The row this value came from is marked for "
+                            + "deletion.";
+                    }
+
+                    if (error === undefined && row) {
+                        const before = row.current[message.column];
+                        // Text that says what a number already said is no
+                        // edit, or saving an unchanged number would mark it.
+                        if (before === null || before === undefined
+                            || String(before) !== message.value) {
+                            setCell(message.resultId, message.rowIndex,
+                                message.column, message.value);
+                        }
+                    }
+                    post({
+                        type: "valueEditResult",
+                        requestId: message.requestId,
+                        ...(error === undefined ? {} : { error }),
+                    });
+                    break;
+                }
+
+                case "valueLoaded": {
+                    const target = pendingLoads.current.get(message.requestId);
+                    pendingLoads.current.delete(message.requestId);
+                    if (message.error !== undefined) {
+                        showErrors([{
+                            message: `Could not load the file: ${message.error}`,
+                        }]);
+                    } else if (target && message.value !== undefined) {
+                        setCell(target.resultId, target.rowIndex,
+                            target.column, message.value);
                     }
                     break;
                 }
@@ -435,26 +584,127 @@ export const App = (): JSX.Element => {
         });
     }, [activeTab]);
 
-    const onCellEdited = useCallback((
+    /**
+     * Sets one cell of a result set's rows, which is a pending edit like
+     * any typed in the grid.
+     *
+     * @param resultId The result set, which need not be the one on show:
+     *                 a file being loaded may arrive after a switch.
+     * @param rowIndex The row.
+     * @param column The column.
+     * @param value The new value.
+     *
+     * @returns Nothing.
+     */
+    const setCell = useCallback((
+        resultId: string,
         rowIndex: number,
         column: string,
         value: unknown,
     ): void => {
-        updateState((current) => {
-            const rows = [...current.rows];
-            const row = rows[rowIndex];
-            if (!row) {
-                return current;
+        setEditing((previous) => {
+            const current = previous[resultId];
+            const row = current?.rows[rowIndex];
+            if (!current || !row) {
+                return previous;
             }
 
+            const rows = [...current.rows];
             rows[rowIndex] = {
                 ...row,
                 current: { ...row.current, [column]: value },
             };
 
-            return { ...current, rows };
+            return { ...previous, [resultId]: { ...current, rows } };
         });
-    }, [updateState]);
+    }, []);
+
+    const onCellEdited = useCallback((
+        rowIndex: number,
+        column: string,
+        value: unknown,
+    ): void => {
+        setCell(activeTab, rowIndex, column, value);
+    }, [activeTab, setCell]);
+
+    /** Loads waiting for their file, by request, and where each goes. */
+    const pendingLoads = useRef(new Map<string, {
+        resultId: string;
+        rowIndex: number;
+        column: string;
+    }>());
+    const loadCount = useRef(0);
+
+    const onLoadValue = useCallback((
+        rowIndex: number,
+        column: string,
+    ): void => {
+        loadCount.current += 1;
+        const requestId = `load${loadCount.current}`;
+        pendingLoads.current.set(requestId, {
+            resultId: activeTab,
+            rowIndex,
+            column,
+        });
+        post({ type: "loadValue", requestId });
+    }, [activeTab]);
+
+    const onOpenValue = useCallback((
+        rowIndex: number,
+        column: string,
+    ): void => {
+        const row = active && editing[active.id]?.rows[rowIndex];
+        const described = active?.columns.find((candidate) => {
+            return candidate.name === column;
+        });
+        if (!active || !row || !described) {
+            return;
+        }
+
+        const display = described.display;
+        const value = row.current[column];
+        post({
+            type: "openValue",
+            resultId: active.id,
+            rowIndex,
+            column,
+            pageKey: pageKeyOf(active),
+            value: value === null || value === undefined
+                ? null
+                : typeof value === "object"
+                    ? JSON.stringify(value)
+                    : String(value),
+            kind: display === "json"
+                ? "json"
+                : display === undefined
+                    ? "text"
+                    : "binary",
+            name: `${active.target?.table ?? "value"}-${column}-`
+                + `${rowIndex + 1}`,
+            readOnly: cellActionsOf(active, described, value, row.deleted)
+                .openReadOnly,
+        });
+    }, [active, editing]);
+
+    const onSaveValue = useCallback((
+        rowIndex: number,
+        column: string,
+    ): void => {
+        const value = active && editing[active.id]?.rows[rowIndex]
+            ?.current[column];
+        if (!active || value === null || value === undefined) {
+            return;
+        }
+
+        post({
+            type: "saveValue",
+            value: String(value),
+            // Named after where it came from, so a few saved in a row are
+            // told apart; the extension is guessed from the content.
+            name: `${active.target?.table ?? "value"}-${column}-`
+                + `${rowIndex + 1}`,
+        });
+    }, [active, editing]);
 
     const onToggleDeleted = useCallback((rowIndex: number): void => {
         updateState((current) => {
@@ -509,6 +759,35 @@ export const App = (): JSX.Element => {
         });
     }, [active, editState]);
 
+    /** Counts the Start Editing presses, which the grid acts on. */
+    const [editRequest, setEditRequest] = useState(0);
+
+    const selectView = useCallback((style: ResultViewStyle): void => {
+        updateState((current) => {
+            return { ...current, previewActive: style === "preview" };
+        });
+    }, [updateState]);
+
+    const onAction = useCallback((action: ResultAction): void => {
+        if (!active) {
+            return;
+        }
+
+        switch (action) {
+            case "close": {
+                post({ type: "closeResult", resultId: active.id });
+                break;
+            }
+
+            case "freezeKeys": {
+                updateState((current) => {
+                    return { ...current, freezeKeys: !current.freezeKeys };
+                });
+                break;
+            }
+        }
+    }, [active, updateState]);
+
     const togglePreview = useCallback((): void => {
         updateState((current) => {
             return { ...current, previewActive: !current.previewActive };
@@ -522,6 +801,18 @@ export const App = (): JSX.Element => {
 
         post({ type: "refresh", resultId: active.id });
     }, [active]);
+
+    const toggleMaximized = useCallback((): void => {
+        if (!active || !editState) {
+            return;
+        }
+
+        post({
+            type: state?.maximized ? "minimize" : "maximize",
+            resultId: active.id,
+            rows: editState.rows,
+        });
+    }, [active, editState, state?.maximized]);
 
     const goToRow = useCallback((rowIndex: number): void => {
         updateState((current) => {
@@ -572,12 +863,13 @@ export const App = (): JSX.Element => {
         if (error.source) {
             post({ type: "revealStatement", source: error.source });
         }
-        if (error.rowId !== undefined) {
+        // A maximized result set has no actions to go to.
+        if (error.rowId !== undefined && !state?.maximized) {
             // The row is no use behind a result tab.
             setActiveTab(ACTIONS_TAB);
             setScrollToRowId(error.rowId);
         }
-    }, [errors]);
+    }, [errors, state?.maximized]);
 
     if (!state) {
         return (
@@ -638,6 +930,25 @@ export const App = (): JSX.Element => {
                             />
                         </div>
                     )}
+                    {/* Says it copied on itself, as the overflow popup's
+                        button does, rather than raising a notification. */}
+                    <button
+                        type="button"
+                        class={`errorBarCopy codicon ${errorCopied
+                            ? "codicon-check"
+                            : "codicon-copy"}`}
+                        title={errorCopied
+                            ? "Copied"
+                            : "Copy this error message to the clipboard"}
+                        aria-label="Copy this error message"
+                        onClick={() => {
+                            post({
+                                type: "copyToClipboard",
+                                text: errors[errorIndex]!.message,
+                            });
+                            setErrorCopied(true);
+                        }}
+                    />
                     <button
                         type="button"
                         class="errorBarClose codicon codicon-close"
@@ -682,7 +993,12 @@ export const App = (): JSX.Element => {
                                         rows={editState.rows}
                                         selectedRowIndex={
                                             editState.selectedRowIndex}
+                                        editRequest={editRequest}
+                                        freezeKeys={editState.freezeKeys}
                                         onCellEdited={onCellEdited}
+                                        onSaveValue={onSaveValue}
+                                        onLoadValue={onLoadValue}
+                                        onOpenValue={onOpenValue}
                                         onToggleDeleted={onToggleDeleted}
                                         onSelectionChanged={() => {
                                             // Selection is Tabulator's
@@ -694,20 +1010,42 @@ export const App = (): JSX.Element => {
 
                             <ResultStatusBar
                                 resultSet={active}
+                                rows={editState.rows}
                                 notice={notice}
                                 dirty={dirty}
                                 previewActive={editState.previewActive}
+                                onSelectView={selectView}
+                                onPage={(index) => {
+                                    post({
+                                        type: "page",
+                                        resultId: active.id,
+                                        page: index,
+                                    });
+                                }}
                                 onTogglePreview={togglePreview}
+                                onEdit={() => {
+                                    // The grid has to be on show to be
+                                    // edited in.
+                                    selectView("grid");
+                                    setEditRequest((count) => {
+                                        return count + 1;
+                                    });
+                                }}
+                                onAction={onAction}
                                 onAddRow={addRow}
                                 onRevert={revert}
                                 onApply={apply}
                                 onRefresh={refresh}
+                                maximized={state.maximized === true}
+                                freezeKeys={editState.freezeKeys}
+                                onToggleMaximized={toggleMaximized}
                             />
                         </>
                     )}
             </section>
 
-            <footer class="contentSelectionBar">
+            {/* An editor tab holds one result set, with nothing to pick. */}
+            {!state.maximized && <footer class="contentSelectionBar">
                 <nav class="tabs" role="tablist">
                     <button
                         type="button"
@@ -836,7 +1174,7 @@ export const App = (): JSX.Element => {
                         })}
                     </select>
                 )}
-            </footer>
+            </footer>}
         </div>
     );
 };
