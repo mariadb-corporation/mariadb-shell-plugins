@@ -60,16 +60,201 @@ describe("listConnections", () => {
         });
 
         await expect(listConnections(fake)).resolves.toEqual([
-            { uri: "shared@localhost:3306", kind: "mcp" },
-            { uri: "mine@localhost:3307", kind: "gui" },
+            { uri: "shared@localhost:3306", kind: "mcp", path: "/" },
+            { uri: "mine@localhost:3307", kind: "gui", path: "/" },
         ]);
     });
+
+    it("asks per list where the answer to 'all' does not name the lists",
+        async () => {
+            const fake = api({
+                connections: ["shared@localhost:3306"],
+                guiConnections: ["mine@localhost:3307"],
+            });
+            const kinds: Array<string | undefined> = [];
+            const list = fake.listConnectionEntries.bind(fake);
+            fake.listConnectionEntries = async (kind) => {
+                kinds.push(kind);
+                const entries = await list(kind);
+
+                // What a server that took "all" for a plain list would say.
+                return kind === "all"
+                    ? entries.map(({ uri, path }) => { return { uri, path }; })
+                    : entries;
+            };
+
+            await expect(listConnections(fake)).resolves.toEqual([
+                { uri: "shared@localhost:3306", kind: "mcp", path: "/" },
+                { uri: "mine@localhost:3307", kind: "gui", path: "/" },
+            ]);
+            expect(kinds).toEqual(["all", "mcp", "gui"]);
+        });
 
     it("copes with either list being empty", async () => {
         await expect(listConnections(api({}))).resolves.toEqual([]);
         await expect(listConnections(api({ guiConnections: ["a@b:1"] })))
-            .resolves.toEqual([{ uri: "a@b:1", kind: "gui" }]);
+            .resolves.toEqual([{ uri: "a@b:1", kind: "gui", path: "/" }]);
     });
+});
+
+describe("folders", () => {
+    it("reports the folder each connection is filed in", async () => {
+        const fake = api({
+            connections: ["a@b:1"],
+            guiConnections: ["c@d:2"],
+            paths: { "a@b:1": "/Sandboxes/note_app", "c@d:2": "Work/" },
+        });
+
+        await expect(listConnections(fake)).resolves.toEqual([
+            { uri: "a@b:1", kind: "mcp", path: "/Sandboxes/note_app" },
+            { uri: "c@d:2", kind: "gui", path: "/Work" },
+        ]);
+    });
+
+    it("files a new connection in a folder, and sends none for the top",
+        async () => {
+            const fake = api();
+
+            const result = await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                path: "Sandboxes / note_app/",
+            });
+            await saveConnection(fake, {
+                fields: fields({ user: "top" }), mcpAccess: false, path: "/",
+            });
+
+            expect(result.path).toBe("/Sandboxes/note_app");
+            expect(fake.added[0]!.path).toBe("/Sandboxes/note_app");
+            // Left out, so a server that predates folders still takes it.
+            expect(fake.added[1]).not.toHaveProperty("path");
+        });
+
+    it("moves an edited connection only when its folder changed",
+        async () => {
+            const fake = api();
+            const original = {
+                uri: "mariadb://dba@localhost:3306", kind: "gui", path: "/Old",
+            } as const;
+
+            await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                path: "/Old/", original,
+            });
+            await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                path: "", original,
+            });
+
+            expect(fake.updated[0]).not.toHaveProperty("newPath");
+            expect(fake.updated[1]!.newPath).toBe("/");
+        });
+
+    it("refuses a URI too long to store, storing nothing", async () => {
+        const fake = api();
+        const original = {
+            uri: "mariadb://dba@localhost:3306", kind: "gui", path: "/",
+        } as const;
+        const long = fields({ user: "dba", schema: "s".repeat(220) });
+
+        const added = await saveConnection(fake, {
+            fields: long, mcpAccess: false,
+        });
+        const edited = await saveConnection(fake, {
+            fields: long, mcpAccess: false, original,
+        });
+
+        expect(added.error).toContain("at most 247 bytes");
+        expect(edited.error).toContain("at most 247 bytes");
+        expect(fake.added).toEqual([]);
+        expect(fake.updated).toEqual([]);
+    });
+
+    it("lets a folder be as long as it likes", async () => {
+        const fake = api();
+        const folder = `/${"f".repeat(300)}`;
+
+        const result = await saveConnection(fake, {
+            fields: fields({ user: "dba" }), mcpAccess: false, path: folder,
+        });
+
+        expect(result.error).toBeUndefined();
+        expect(fake.added[0]!.path).toBe(folder);
+    });
+});
+
+describe("captions and colors", () => {
+    it("reports each connection's caption and color", async () => {
+        const fake = api({
+            connections: ["a@b:1", "c@d:2"],
+            looks: { "a@b:1": { caption: "Shop", color: "green" } },
+        });
+
+        await expect(listConnections(fake)).resolves.toEqual([
+            {
+                uri: "a@b:1", kind: "mcp", path: "/",
+                caption: "Shop", color: "green",
+            },
+            { uri: "c@d:2", kind: "mcp", path: "/" },
+        ]);
+    });
+
+    it("sends a new connection's caption and color, and none when empty",
+        async () => {
+            const fake = api();
+
+            const result = await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                caption: "  Shop ", color: "blue",
+            });
+            await saveConnection(fake, {
+                fields: fields({ user: "top" }), mcpAccess: false,
+                caption: " ", color: "",
+            });
+
+            expect(result).toMatchObject({ caption: "Shop", color: "blue" });
+            expect(fake.added[0]).toMatchObject({
+                caption: "Shop", color: "blue",
+            });
+            expect(fake.added[1]).not.toHaveProperty("caption");
+            expect(fake.added[1]).not.toHaveProperty("color");
+        });
+
+    it("sends an edited connection's caption and color only when changed",
+        async () => {
+            const fake = api();
+            const original = {
+                uri: "mariadb://dba@localhost:3306", kind: "gui",
+                caption: "Shop", color: "red",
+            } as const;
+
+            await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                caption: "Shop", color: "red", original,
+            });
+            await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                caption: "", color: "yellow", original,
+            });
+
+            expect(fake.updated[0]).not.toHaveProperty("newCaption");
+            expect(fake.updated[0]).not.toHaveProperty("newColor");
+            expect(fake.updated[1]).toMatchObject({
+                newCaption: "", newColor: "yellow",
+            });
+        });
+
+    it("refuses a caption of more than one line, storing nothing",
+        async () => {
+            const fake = api();
+
+            const result = await saveConnection(fake, {
+                fields: fields({ user: "dba" }), mcpAccess: false,
+                caption: "a\nb",
+            });
+
+            expect(result.error).toContain("single line");
+            expect(fake.added).toEqual([]);
+        });
 });
 
 describe("saveConnection", () => {
@@ -82,7 +267,9 @@ describe("saveConnection", () => {
             mcpAccess: false,
         });
 
-        expect(result).toEqual({ uri: "mariadb://dba@localhost:3306", kind: "gui" });
+        expect(result).toEqual({
+            uri: "mariadb://dba@localhost:3306", kind: "gui", path: "/",
+        });
         expect(fake.added).toEqual([{
             uri: "mariadb://dba@localhost:3306", password: "pw", kind: "gui",
         }]);
@@ -291,6 +478,9 @@ describe("fieldsOf", () => {
             kind: "mcp",
         })).toEqual({
             mcpAccess: true,
+            path: "/",
+            caption: "",
+            color: "",
             fields: fields({
                 user: "dba",
                 host: "db.example.com",

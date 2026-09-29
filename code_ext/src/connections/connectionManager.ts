@@ -41,6 +41,13 @@ export interface IConnectionSettings {
      * @returns Nothing.
      */
     setDefaultConnection(uri: string | undefined): Promise<void>;
+
+    /**
+     * @returns Whether the calls made on no open connection - listing and
+     *          changing the connections - are logged too, under General
+     *          Actions. Left out, they are not.
+     */
+    logAllCalls?(): boolean;
 }
 
 /**
@@ -89,6 +96,8 @@ export class ConnectionManager {
     readonly #listeners = new Set<ConnectionChangeListener>();
     /** The API last handed out, with the one built over it. */
     #logged?: { plain: IMariaDbApi; logging: IMariaDbApi };
+    /** The connection list, once read; see `listStoredConnections`. */
+    #stored?: Promise<IStoredConnection[]>;
 
     /**
      * @param apiProvider Starts the server if need be and hands out the API.
@@ -131,24 +140,66 @@ export class ConnectionManager {
      */
     public async api(): Promise<IMariaDbApi> {
         const plain = await this.apiProvider();
-        if (this.report === undefined) {
-            return plain;
-        }
 
         // The server can be restarted under us, which hands out a new API
         // to wrap; anything else would go on calling the dead one.
         if (this.#logged?.plain !== plain) {
-            this.#logged = {
-                plain,
-                logging: createLoggingApi(
+            const logging = this.report === undefined
+                ? plain
+                : createLoggingApi(
                     plain,
                     (connectionId) => { return this.#sessionOf(connectionId); },
                     (event) => { this.report?.(event); },
-                ),
-            };
+                    () => { return this.settings.logAllCalls?.() ?? false; },
+                );
+            this.#logged = { plain, logging: this.#invalidating(logging) };
         }
 
         return this.#logged.logging;
+    }
+
+    /**
+     * The same API, with every call that changes the connection list
+     * marking the cached list stale.
+     *
+     * Marked whether the call succeeded or not: an update that failed part
+     * way may still have changed something, and one reload too many costs
+     * less than a list that is wrong.
+     *
+     * @param api The API to wrap.
+     *
+     * @returns The wrapped API.
+     */
+    #invalidating(api: IMariaDbApi): IMariaDbApi {
+        const changing = <A extends unknown[], R>(
+            call: (...args: A) => Promise<R>,
+        ) => {
+            return async (...args: A): Promise<R> => {
+                try {
+                    return await call(...args);
+                } finally {
+                    this.invalidateStoredConnections();
+                }
+            };
+        };
+
+        // Looked up on every call rather than bound here, so the wrapped
+        // API is not pinned to whatever the method was when this ran.
+        return {
+            ...api,
+            addConnection: changing((...args: Parameters<
+                IMariaDbApi["addConnection"]>) => {
+                return api.addConnection(...args);
+            }),
+            updateConnection: changing((...args: Parameters<
+                IMariaDbApi["updateConnection"]>) => {
+                return api.updateConnection(...args);
+            }),
+            deleteConnection: changing((...args: Parameters<
+                IMariaDbApi["deleteConnection"]>) => {
+                return api.deleteConnection(...args);
+            }),
+        };
     }
 
     /**
@@ -158,10 +209,43 @@ export class ConnectionManager {
      * the editor as one of the extension's own - the checkbox says who ELSE
      * may open it, not whether this extension can.
      *
+     * **Read from the server once and cached.** The tree redraws on every
+     * connection opened or closed, the panel's picker and the editor's
+     * folder list want it too, and each read is two tool calls - which does
+     * not stay cheap with hundreds of connections. The list is read again
+     * only after {@link invalidateStoredConnections}: the view's Refresh
+     * button, and every add, update or delete made through {@link api}. A
+     * connection another client adds meanwhile - `mcp.setup`, an agent's
+     * `sandbox.deploy` - shows up at the next Refresh.
+     *
+     * A read that fails is not cached, so the next call tries again.
+     *
      * @returns One entry per configured connection, with the list it is in.
+     *          Shared with every other caller: read it, do not change it.
      */
     public async listStoredConnections(): Promise<IStoredConnection[]> {
-        return await listStored(await this.api());
+        if (this.#stored === undefined) {
+            const loading = (async () => {
+                return await listStored(await this.api());
+            })();
+            this.#stored = loading;
+            loading.catch(() => {
+                if (this.#stored === loading) {
+                    this.#stored = undefined;
+                }
+            });
+        }
+
+        return await this.#stored;
+    }
+
+    /**
+     * Forgets the cached connection list, so the next read asks the server.
+     *
+     * @returns Nothing.
+     */
+    public invalidateStoredConnections(): void {
+        this.#stored = undefined;
     }
 
     /**

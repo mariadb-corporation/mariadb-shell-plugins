@@ -197,9 +197,12 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         # Register the instance as a configured connection so it shows up in
         # db.list_connections and can be opened with db.connect. The root
         # password provided to deploy is stored (empty string when none was
-        # given).
+        # given). It is filed in the Sandboxes folder, which only the VS Code
+        # extension shows; to an agent the folder is invisible.
         config.store_connection(
-            _sandbox_connection_uri(port), password if password is not None else ""
+            _sandbox_connection_uri(port),
+            password if password is not None else "",
+            path=config.SANDBOX_CONNECTION_PATH,
         )
 
         if resolved is None:

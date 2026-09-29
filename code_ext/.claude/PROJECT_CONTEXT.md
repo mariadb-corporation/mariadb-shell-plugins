@@ -54,6 +54,15 @@ change belongs to up to date, and this table with it.
   installing it and diffing its plugin against this repo's. The readers
   of those fields still fall back when they are missing, but no shell
   the extension accepts lacks them any more.
+- **Connection folders, captions and colors need a shell that is not
+  released yet.** No shell the extension accepts bundles an `mcp_plugin`
+  with them, and an older plugin SILENTLY ignores `path` / `caption` /
+  `color` and their `new_` forms (the MCP SDK drops arguments a tool does
+  not declare) - such a change "saves" and does nothing. Decided: no runtime detection; raise `MINIMUM_SHELL_VERSION` to
+  the first release that includes it once that is out. To try folders
+  before then, the shell in use has to load this repo's plugin, not its
+  bundled one (the installed 26.9.4 loads
+  `lib/mariadb-shell/plugins/mcp_plugin`, not `~/.mariadb-shell/plugins`).
 - The installer is run with `MARIADB_SHELL_TAG` pinned, so a release
   marked **prerelease** on GitHub installs fine (every 26.9.x is one);
   only an unpinned `install.sh` would skip it.
@@ -82,30 +91,39 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-23):
+Checked at this checkpoint (2026-09-28):
 
 ```
-$ git -C code_ext branch --show-current
-wip/code-ext
-
-$ git -C code_ext status --short
-(no output — clean)
+$ git branch --show-current
+wip/connection-folders
 ```
 
-- **The branch is `wip/code-ext`**, shared with [`mcp_plugin`](../../mcp_plugin):
-  a change needing both lands as one commit across the two. Pushed to
-  `origin/wip/code-ext` and in sync.
-- **`bc6c6aad` is the most recent** — "Keep the connection URI's scheme, so a
-  tunnel can be asked for". It raised `MINIMUM_SHELL_VERSION` to 26.9.3, gave
-  the connection editor its SSH tab, and taught `connectionUri.ts` the five
-  schemes and the `ssh-*` options; the server side of it is the plugin now
-  storing a URI's scheme rather than stripping it. Everything about the editor
-  is in [`context/connections.md`](context/connections.md).
-- Before it: `4f6b10e7` (the result view's output), `11450e44` (the Connections
-  view's welcome content), `87d6679e` (per-statement warnings), `12bf566f`
-  (paging the result tabs), `c2aa2f03` (connection activity logging).
-- Suite at this checkpoint: **794 pass across 41 files**, `npm run pretest`
-  (typecheck + eslint) and `npm run build` clean.
+- **The branch is `wip/connection-folders`**, PR #28, shared with
+  [`mcp_plugin`](../../mcp_plugin): a change needing both lands as one commit
+  across the two. It targets PR #27's `wip/connection-update` and moves to
+  `main` once #27 is merged.
+- **`486f30ed`** added folders to the Connections view (drag and drop,
+  Rename / New / Remove Folder, New Folder with Selection, the editor's
+  Folder field), the cached connection list and General Actions logging.
+- **The commit after it answers the PR #28 review**: a stored key is at most
+  256 bytes, so folder + `:` + URI get 247 (the prefixes are now 9 bytes).
+  The editor flags it live and refuses to save; `fileConnections` checks a
+  whole drop / rename / New Folder with Selection before moving anything;
+  Rename Folder validates the subtree as the name is typed. See
+  [`context/connections.md`](context/connections.md), "The stored key is at
+  most 256 bytes".
+- **The commit after that** (2026-09-28) follows the plugin moving folder,
+  caption and color out of the key into `connections.json`: only the URI
+  counts against the 247 bytes now, so the drop / rename / New Folder
+  length checks and the `:` rule are gone (`filingProblem`, `folderProblem`,
+  `renameProblem` removed; `connectionKeyProblem(uri)` moved to
+  `connectionDetails.ts`). A connection has a **Caption** (the row's label)
+  and a **Color** (the row's label color and a `●` badge, via a file
+  decoration). `addConnection` / `updateConnection` take an
+  `IConnectionDetails` object instead of a trailing path.
+- Suite at this checkpoint: **961 pass across 45 files**, `npm run pretest`
+  (typecheck + eslint) and `npm run build` clean. NOT clicked through in a
+  running VS Code.
 
 ## Conventions
 

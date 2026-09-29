@@ -76,12 +76,22 @@ export interface Disposable {
     dispose(): unknown;
 }
 
-/** A stand-in for `vscode.Uri`, keeping only the path. */
+/** A stand-in for `vscode.Uri`, keeping only the path and the query. */
 export class Uri {
     private constructor(
         public readonly scheme: string,
         public readonly path: string,
+        public readonly query = "",
     ) { }
+
+    public static from(components: {
+        scheme: string;
+        path?: string;
+        query?: string;
+    }): Uri {
+        return new Uri(
+            components.scheme, components.path ?? "", components.query ?? "");
+    }
 
     public static file(path: string): Uri {
         return new Uri("file", path);
@@ -110,8 +120,32 @@ export class Uri {
     }
 }
 
+export class DataTransferItem {
+    public constructor(public readonly value: unknown) { }
+}
+
+export class DataTransfer {
+    readonly #items = new Map<string, DataTransferItem>();
+
+    public get(mimeType: string): DataTransferItem | undefined {
+        return this.#items.get(mimeType);
+    }
+
+    public set(mimeType: string, value: DataTransferItem): void {
+        this.#items.set(mimeType, value);
+    }
+}
+
 export class ThemeColor {
     public constructor(public readonly id: string) { }
+}
+
+export class FileDecoration {
+    public constructor(
+        public readonly badge?: string,
+        public readonly tooltip?: string,
+        public readonly color?: ThemeColor,
+    ) { }
 }
 
 export class ThemeIcon {
@@ -127,6 +161,7 @@ export class TreeItem {
     public description?: string | boolean;
     public tooltip?: string;
     public command?: unknown;
+    public resourceUri?: Uri;
 
     public constructor(
         public label: string,
@@ -192,6 +227,7 @@ export const treeViews: Array<{
     options: unknown;
     /** Fires the view's `onDidExpandElement`, as a user expanding a row. */
     expand: (element: unknown) => void;
+    collapse: (element: unknown) => void;
 }> = [];
 export const webviewPanels: MockWebviewPanel[] = [];
 export const webviewViewProviders = new Map<string, {
@@ -210,6 +246,9 @@ export const shownEditors: Array<{
 }> = [];
 /** The decoration types that were created. */
 export const decorationTypes: MockDecorationType[] = [];
+
+/** Every `registerFileDecorationProvider` call's provider, in order. */
+export const fileDecorationProviders: unknown[] = [];
 /** What `window.visibleTextEditors` reports. */
 export let visibleTextEditors: MockTextEditor[] = [];
 
@@ -239,6 +278,15 @@ export const statusBarMessages: string[] = [];
 export const quickPickAnswers: string[] = [];
 /** Every set of items `showQuickPick` was offered. */
 export const quickPickCalls: Array<Array<{ label: string }>> = [];
+
+/** What `showInputBox` answers with, in order; undefined is a cancel. */
+export const inputBoxAnswers: Array<string | undefined> = [];
+
+/** The options every `showInputBox` call was given. */
+export const inputBoxCalls: Array<{
+    prompt?: string;
+    validateInput?: (value: string) => string | undefined;
+}> = [];
 
 /** The configuration `workspace.getConfiguration` serves. */
 export const configuration = new Map<string, unknown>();
@@ -659,6 +707,12 @@ export const window = {
         };
     },
 
+    registerFileDecorationProvider: (provider: unknown): Disposable => {
+        fileDecorationProviders.push(provider);
+
+        return { dispose: () => { /* nothing to undo in a test */ } };
+    },
+
     createOutputChannel: (name: string): MockOutputChannel => {
         const channel = new MockOutputChannel(name);
         outputChannels.push(channel);
@@ -678,18 +732,24 @@ export const window = {
 
     createTreeView: (id: string, options: unknown) => {
         const expanded = new EventEmitter<{ element: unknown }>();
+        const collapsed = new EventEmitter<{ element: unknown }>();
         treeViews.push({
             id,
             options,
             expand: (element: unknown) => {
                 expanded.fire({ element });
             },
+            collapse: (element: unknown) => {
+                collapsed.fire({ element });
+            },
         });
 
         return {
             onDidExpandElement: expanded.event,
+            onDidCollapseElement: collapsed.event,
             dispose: () => {
                 expanded.dispose();
+                collapsed.dispose();
             },
         };
     },
@@ -759,6 +819,15 @@ export const window = {
         statusBarMessages.push(message);
 
         return { dispose: () => { /* nothing to undo */ } };
+    },
+
+    showInputBox: (options: {
+        prompt?: string;
+        validateInput?: (value: string) => string | undefined;
+    }): Promise<string | undefined> => {
+        inputBoxCalls.push(options);
+
+        return Promise.resolve(inputBoxAnswers.shift());
     },
 
     showQuickPick: <T extends { label: string }>(
@@ -1025,10 +1094,13 @@ export const resetVscodeMock = (): void => {
     shownDocuments.length = 0;
     shownEditors.length = 0;
     decorationTypes.length = 0;
+    fileDecorationProviders.length = 0;
     visibleEditorListeners.clear();
     changeDocumentListeners.clear();
     setVisibleTextEditors([]);
     quickPickAnswers.length = 0;
+    inputBoxAnswers.length = 0;
+    inputBoxCalls.length = 0;
     quickPickCalls.length = 0;
     configurationUpdates.length = 0;
     registeredCommands.clear();

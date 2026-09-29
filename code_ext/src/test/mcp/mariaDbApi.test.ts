@@ -118,6 +118,110 @@ describe("MariaDbApi", () => {
         });
     });
 
+    it("reads each connection's folder, and a bare URI as top level",
+        async () => {
+            const folders = createCaller({
+                "db.list_connections": {
+                    content: [
+                        {
+                            type: "text",
+                            text: '{"uri":"a@b:1","path":"/Sandboxes/x"}',
+                        },
+                        // What a server that predates folders answers with.
+                        { type: "text", text: "c@d:2" },
+                    ],
+                },
+            });
+            const withFolders = new MariaDbApi(folders);
+
+            await expect(withFolders.listConnectionEntries("gui"))
+                .resolves.toEqual([
+                    { uri: "a@b:1", path: "/Sandboxes/x" },
+                    { uri: "c@d:2", path: "/" },
+                ]);
+            await expect(withFolders.listConnections())
+                .resolves.toEqual(["a@b:1", "c@d:2"]);
+        });
+
+    it("reads both lists in one call, keeping each entry's list", async () => {
+        const both = new MariaDbApi(createCaller({
+            "db.list_connections": {
+                content: [
+                    { type: "text", text: '{"uri":"a@b:1","path":"/","kind":"mcp"}' },
+                    { type: "text", text: '{"uri":"c@d:2","path":"/X","kind":"gui"}' },
+                    { type: "text", text: '{"uri":"e@f:3","path":"/","kind":"odd"}' },
+                ],
+            },
+        }));
+
+        await expect(both.listConnectionEntries("all")).resolves.toEqual([
+            { uri: "a@b:1", path: "/", kind: "mcp" },
+            { uri: "c@d:2", path: "/X", kind: "gui" },
+            // A kind this does not know is no kind at all.
+            { uri: "e@f:3", path: "/" },
+        ]);
+    });
+
+    it("sends a folder, caption or color only when there is one to send",
+        async () => {
+            await api.addConnection("a@b:1", "pw", "gui", false, {
+                path: "/Sandboxes", caption: "Shop",
+            });
+            expect(caller.calls[0]!.args).toEqual({
+                uri: "a@b:1",
+                password: "pw",
+                kind: "gui",
+                verify: false,
+                path: "/Sandboxes",
+                caption: "Shop",
+            });
+
+            // Only what was sent matters; this fake has no answer to decode.
+            await api.updateConnection(
+                "a@b:1", undefined, "gui", undefined, undefined,
+                { path: "/", caption: "", color: "blue" },
+            ).catch(() => { /* nothing to decode */ });
+            expect(caller.calls[1]).toEqual({
+                name: "db.update_connection",
+                args: {
+                    uri: "a@b:1",
+                    kind: "gui",
+                    new_path: "/",
+                    new_caption: "",
+                    new_color: "blue",
+                },
+            });
+        });
+
+    it("reads each connection's caption and color, where it has them",
+        async () => {
+            const looks = new MariaDbApi(createCaller({
+                "db.list_connections": {
+                    content: [
+                        {
+                            type: "text",
+                            text: '{"uri":"a@b:1","path":"/","kind":"gui",'
+                                + '"caption":"Shop","color":"green"}',
+                        },
+                        {
+                            type: "text",
+                            text: '{"uri":"c@d:2","path":"/","kind":"gui",'
+                                + '"caption":"","color":"teal"}',
+                        },
+                    ],
+                },
+            }));
+
+            await expect(looks.listConnectionEntries("gui")).resolves.toEqual([
+                {
+                    uri: "a@b:1", path: "/", kind: "gui",
+                    caption: "Shop", color: "green",
+                },
+                // None, and a color this does not know is none either.
+                { uri: "c@d:2", path: "/", kind: "gui" },
+            ]);
+        });
+
     it("deletes a connection from the list it names", async () => {
         await expect(api.deleteConnection("dba@localhost:3310", "gui"))
             .resolves.toBe("dba@localhost:3310");

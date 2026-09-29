@@ -19,7 +19,9 @@ import type { IConnectionSettings } from "../connections/connectionManager.js";
 import type { IToolResult } from "../mcp/protocol.js";
 import type { IMcpConnection, IMcpConnector } from "../mcp/session.js";
 import type {
+    ConnectionColor,
     ConnectionKind,
+    IConnectionDetails,
     IMariaDbApi,
     IObjectDetails,
     IObjectInfo,
@@ -142,6 +144,12 @@ export interface FakeApiOptions {
     connections?: string[];
     /** The connections of the extension's own list, if it has any. */
     guiConnections?: string[];
+    /** Connection URI -> the folder it is filed in; `/` when not named. */
+    paths?: Record<string, string>;
+    /** Connection URI -> its caption and color, where it has them. */
+    looks?: Record<string, { caption?: string; color?: ConnectionColor }>;
+    /** Refuse `kind: "all"`, as a server that predates it does. */
+    noAllKind?: boolean;
     /** Makes `testConnection` reject with this message instead of passing. */
     testFailure?: string;
     /** Connection URI -> the UUID handing it out produces. */
@@ -163,7 +171,14 @@ export interface FakeApi extends IMariaDbApi {
     /** The connections that were closed, in order. */
     closed: string[];
     /** The connections that were added, in order. */
-    added: Array<{ uri: string; password: string; kind?: ConnectionKind }>;
+    added: Array<{
+        uri: string;
+        password: string;
+        kind?: ConnectionKind;
+        path?: string;
+        caption?: string;
+        color?: ConnectionColor | "";
+    }>;
     /** The connections that were deleted, in order. */
     deleted: Array<{ uri: string; kind?: ConnectionKind }>;
     /** The connections that were tested, in order. */
@@ -175,6 +190,9 @@ export interface FakeApi extends IMariaDbApi {
         kind?: ConnectionKind;
         newKind?: ConnectionKind;
         password?: string;
+        newPath?: string;
+        newCaption?: string;
+        newColor?: ConnectionColor | "";
     }>;
     /** What the last script was asked to do about a failing statement. */
     stopOnError?: boolean;
@@ -213,12 +231,41 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             );
         },
 
+        listConnectionEntries: (kind?: ConnectionKind | "all") => {
+            const entries = (list: string[] | undefined, of: ConnectionKind) => {
+                return (list ?? []).map((uri) => {
+                    return {
+                        uri,
+                        path: options.paths?.[uri] ?? "/",
+                        kind: of,
+                        ...options.looks?.[uri],
+                    };
+                });
+            };
+
+            if (kind === "all") {
+                return options.noAllKind
+                    ? Promise.reject(new Error("'all' is not a known "
+                        + "connection kind."))
+                    : Promise.resolve([
+                        ...entries(options.connections, "mcp"),
+                        ...entries(options.guiConnections, "gui"),
+                    ]);
+            }
+
+            return Promise.resolve(kind === "gui"
+                ? entries(options.guiConnections, "gui")
+                : entries(options.connections, "mcp"));
+        },
+
         addConnection: (
             uri: string,
             password: string,
             kind?: ConnectionKind,
+            _verify?: boolean,
+            details?: IConnectionDetails,
         ) => {
-            added.push({ uri, password, kind });
+            added.push({ uri, password, kind, ...details });
 
             return Promise.resolve(uri);
         },
@@ -235,8 +282,20 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             kind?: ConnectionKind,
             newKind?: ConnectionKind,
             password?: string,
+            newDetails?: IConnectionDetails,
         ) => {
-            updated.push({ uri, newUri, kind, newKind, password });
+            updated.push({
+                uri, newUri, kind, newKind, password,
+                ...(newDetails?.path === undefined
+                    ? {}
+                    : { newPath: newDetails.path }),
+                ...(newDetails?.caption === undefined
+                    ? {}
+                    : { newCaption: newDetails.caption }),
+                ...(newDetails?.color === undefined
+                    ? {}
+                    : { newColor: newDetails.color }),
+            });
 
             return Promise.resolve(newUri ?? uri);
         },

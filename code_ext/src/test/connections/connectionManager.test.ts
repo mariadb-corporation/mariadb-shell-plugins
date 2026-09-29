@@ -242,7 +242,136 @@ describe("ConnectionManager", () => {
         });
     });
 
+    describe("the cached connection list", () => {
+        /**
+         * @param api The fake behind the manager.
+         *
+         * @returns A counter of the list reads that reach the fake.
+         */
+        const countReads = (api: ReturnType<typeof createManager>["api"]) => {
+            const reads = { count: 0 };
+            const list = api.listConnectionEntries.bind(api);
+            api.listConnectionEntries = (kind) => {
+                reads.count += 1;
+
+                return list(kind);
+            };
+
+            return reads;
+        };
+
+        it("reads the list once, however often it is asked for", async () => {
+            const { api, manager } = createManager();
+            const reads = countReads(api);
+
+            await Promise.all([
+                manager.listStoredConnections(),
+                manager.listStoredConnections(),
+            ]);
+            await manager.listConnections();
+
+            // One call for both lists, and never again.
+            expect(reads.count).toBe(1);
+        });
+
+        it("reads it again after a change made through it, or when told",
+            async () => {
+                const { api, manager } = createManager();
+                const reads = countReads(api);
+                await manager.listStoredConnections();
+
+                await (await manager.api()).addConnection("a@b:1", "pw");
+                await manager.listStoredConnections();
+                expect(reads.count).toBe(2);
+
+                await (await manager.api()).updateConnection("a@b:1");
+                await (await manager.api()).deleteConnection("a@b:1");
+                await manager.listStoredConnections();
+                expect(reads.count).toBe(3);
+
+                // Testing changes nothing.
+                await (await manager.api()).testConnection("a@b:1", "pw");
+                await manager.listStoredConnections();
+                expect(reads.count).toBe(3);
+
+                manager.invalidateStoredConnections();
+                await manager.listStoredConnections();
+                expect(reads.count).toBe(4);
+            });
+
+        it("reads it again after a change that failed", async () => {
+            const { api, manager } = createManager();
+            const reads = countReads(api);
+            await manager.listStoredConnections();
+            api.deleteConnection = () => {
+                return Promise.reject(new Error("half done"));
+            };
+
+            await expect((await manager.api()).deleteConnection("a@b:1"))
+                .rejects.toThrow("half done");
+            await manager.listStoredConnections();
+
+            expect(reads.count).toBe(2);
+        });
+
+        it("asks twice, once per list, where the server refuses 'all'",
+            async () => {
+                const api = createFakeApi({
+                    connections: ["shared@localhost:1"],
+                    guiConnections: ["mine@localhost:2"],
+                    paths: { "mine@localhost:2": "/Mine" },
+                    noAllKind: true,
+                });
+                const manager = new ConnectionManager(
+                    () => { return Promise.resolve(api); },
+                    createFakeSettings(),
+                );
+
+                await expect(manager.listStoredConnections()).resolves.toEqual([
+                    { uri: "shared@localhost:1", kind: "mcp", path: "/" },
+                    { uri: "mine@localhost:2", kind: "gui", path: "/Mine" },
+                ]);
+            });
+
+        it("does not keep a read that failed", async () => {
+            const { api, manager } = createManager();
+            const list = api.listConnectionEntries.bind(api);
+            api.listConnectionEntries = () => {
+                return Promise.reject(new Error("not up yet"));
+            };
+
+            await expect(manager.listStoredConnections())
+                .rejects.toThrow("not up yet");
+
+            api.listConnectionEntries = list;
+            await expect(manager.listStoredConnections())
+                .resolves.toHaveLength(2);
+        });
+    });
+
     describe("what it reports", () => {
+        it("reports the connection list only where the setting says so",
+            async () => {
+                const { manager, settings, reported } = createManager();
+                let logAll = false;
+                Object.assign(settings, {
+                    logAllCalls: () => { return logAll; },
+                });
+
+                await manager.listStoredConnections();
+                expect(reported).toEqual([]);
+
+                // Read on every call: turning it on needs no restart.
+                logAll = true;
+                manager.invalidateStoredConnections();
+                await manager.listStoredConnections();
+                expect(reported.map((event) => {
+                    return [event.connection, event.call];
+                })).toEqual([
+                    ["General Actions", "db.list_connections(kind=all)"],
+                ]);
+            });
+
         it("reports a connection being opened", async () => {
             const { manager, reported } = createManager();
 

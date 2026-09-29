@@ -1601,20 +1601,24 @@ def _register_connection_management_tools(tool) -> None:
 
     @tool(name="db.list_connections")
     def list_connections(kind: str = config.DEFAULT_CONNECTION_KIND) -> list:
-        """Lists the configured database connection URIs of one kind.
+        """Lists the configured database connections of one kind.
 
         Args:
             kind: Which list of connections to return. "mcp" (the default) is
                 the shared list that mcp.setup curates and every MCP client can
                 open; "gui" is the list the MariaDB VS Code extension manages
-                for itself with db.add_connection and db.delete_connection.
-                Call this once per kind to see both.
+                for itself with db.add_connection and db.delete_connection;
+                "all" returns both in one call, the "mcp" list first.
 
         Returns:
-            The list of connection URIs of that kind. Any of these can be
-            passed to db.connect.
+            One entry per connection, each an object with the connection
+            "uri" - which can be passed to db.connect - the "path" of the
+            folder it is filed in ("/" for the top level, for example
+            "/Sandboxes/note_app" for a nested folder), the "kind" of the
+            list it is in, "mcp" or "gui", and the "caption" and "color" to
+            show it with, each "" for none.
         """
-        return config.list_connection_uris(kind)
+        return config.list_connections_with_details(kind)
 
     @tool(name="db.add_connection")
     def add_connection(
@@ -1622,6 +1626,9 @@ def _register_connection_management_tools(tool) -> None:
         password: str = "",
         kind: str = config.DEFAULT_CONNECTION_KIND,
         verify: bool = True,
+        path: str = None,
+        caption: str = None,
+        color: str = None,
     ) -> str:
         """Stores a database connection and its password.
 
@@ -1649,11 +1656,29 @@ def _register_connection_management_tools(tool) -> None:
             verify: Whether to open a session with the credentials first and
                 store them only if that works, which is the default. Pass false
                 to store a connection to a server that is not up yet.
+            path: The folder to file the connection in, such as "/Sandboxes"
+                or "/Sandboxes/note_app" for a folder inside another. "/" or
+                leaving it out means the top level, except that a connection
+                already stored keeps its folder when this is left out. A '/'
+                separates folders, so a folder name cannot contain one.
+            caption: A name to show for the connection instead of its URI, one
+                line of at most 100 characters. Left out, a connection already
+                stored keeps its caption; "" removes it.
+            color: The color to show the connection in: red, orange, yellow,
+                green, blue or purple. Left out, a connection already stored
+                keeps its color; "" removes it.
 
         Returns:
             The normalized connection URI the connection was stored under.
         """
         kind = config.normalize_connection_kind(kind)
+        # Checked before anything is verified or written, so a bad detail
+        # costs nothing.
+        folder = None if path is None else config.normalize_connection_path(path)
+        caption = (
+            None if caption is None else config.normalize_connection_caption(caption)
+        )
+        color = None if color is None else config.normalize_connection_color(color)
 
         # Refused rather than used or quietly dropped, as mcp.setup refuses it:
         # normalization strips a password out of the URI, so using it would
@@ -1668,6 +1693,11 @@ def _register_connection_management_tools(tool) -> None:
         normalized = config.normalize_connection_uri(uri)
         if normalized is None:
             raise mysqlsh.Error(f"'{uri}' is not a valid connection URI.")
+
+        # Checked before verifying, which would be wasted on a connection the
+        # secret store cannot hold. store_connection checks again; this only
+        # makes it fail first.
+        config.check_connection_key_length(normalized, kind)
 
         if verify:
             # The same check mcp.setup makes, through the same function: a
@@ -1688,7 +1718,7 @@ def _register_connection_management_tools(tool) -> None:
         # Asked before storing, since storing is what makes it true.
         replaced = normalized in config.list_stored_connection_uris(kind)
 
-        config.store_connection(normalized, password, kind)
+        config.store_connection(normalized, password, kind, folder, caption, color)
 
         # Any other spelling of the same connection goes, which is how a
         # connection configured before the scheme was kept moves onto its new
@@ -1720,6 +1750,9 @@ def _register_connection_management_tools(tool) -> None:
         kind: str = config.DEFAULT_CONNECTION_KIND,
         new_kind: str = None,
         password: str = None,
+        new_path: str = None,
+        new_caption: str = None,
+        new_color: str = None,
     ) -> str:
         """Re-keys a configured connection, keeping its password.
 
@@ -1745,6 +1778,13 @@ def _register_connection_management_tools(tool) -> None:
                 out, the list does not change.
             password: A new password. Left out, the stored one is kept - which
                 is the point of this tool.
+            new_path: The folder to move it to, such as "/Sandboxes"; "/" is
+                the top level. Left out, it stays in the folder it is in,
+                including when it moves to the other list.
+            new_caption: The caption to show it with; "" removes it. Left out,
+                it keeps its caption, as it keeps its folder.
+            new_color: The color to show it in (red, orange, yellow, green,
+                blue or purple); "" removes it. Left out, it keeps its color.
 
         Returns:
             The URI the connection is now configured under.
@@ -1753,6 +1793,16 @@ def _register_connection_management_tools(tool) -> None:
         target_kind = config.normalize_connection_kind(
             kind if new_kind is None else new_kind
         )
+        # Checked before anything is resolved or written.
+        changes = {
+            field: normalize(value)
+            for field, value, normalize in (
+                ("path", new_path, config.normalize_connection_path),
+                ("caption", new_caption, config.normalize_connection_caption),
+                ("color", new_color, config.normalize_connection_color),
+            )
+            if value is not None
+        }
 
         configured_uri = config.resolve_connection_uri(uri, kind)
         if configured_uri is None:
@@ -1779,16 +1829,36 @@ def _register_connection_management_tools(tool) -> None:
                     f"'{new_uri}' is not a valid connection URI."
                 )
 
+        current = config.get_connection_details(configured_uri, kind)
+        # What it keeps where nothing else was asked for - including across a
+        # move to the other list, which is a checkbox and not a re-filing.
+        target = {**current, **changes}
+
         if target_uri == configured_uri and target_kind == kind:
-            if password is None:
-                # Nothing to do, and saying so beats a delete-then-store that
-                # briefly leaves the connection not configured at all.
+            if password is None and target == current:
+                # Nothing to do, and saying so beats rewriting what is there.
                 return configured_uri
 
-            config.store_connection(configured_uri, password, kind)
+            if password is not None:
+                config.store_connection(configured_uri, password, kind)
+            if target != current:
+                # How it is shown is not in the secret store, so re-filing it
+                # leaves the password where it is.
+                config.set_connection_details(configured_uri, kind, **changes)
+
             general.log_event(
-                f"db.update_connection: replaced the password of "
-                f"'{configured_uri}' ({kind})"
+                "db.update_connection: "
+                + (
+                    "replaced the password of "
+                    if password is not None
+                    else "changed the details of "
+                )
+                + f"'{configured_uri}' ({kind})"
+                + (
+                    f" in '{target['path'] or config.ROOT_CONNECTION_PATH}'"
+                    if target["path"] != current["path"]
+                    else ""
+                )
             )
 
             return configured_uri
@@ -1807,7 +1877,7 @@ def _register_connection_management_tools(tool) -> None:
         # the same connection - a connection configured before the scheme was
         # kept and saved again under it is exactly that - and deleting a secret
         # that is not there raises, so it only goes if it survived.
-        config.store_connection(target_uri, moved_password, target_kind)
+        config.store_connection(target_uri, moved_password, target_kind, **target)
         superseded = config.drop_superseded_spellings(target_uri, target_kind)
         if target_kind != kind or configured_uri not in superseded:
             config.delete_connection(configured_uri, kind)

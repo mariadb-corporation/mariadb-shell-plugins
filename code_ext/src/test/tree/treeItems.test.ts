@@ -21,8 +21,17 @@ import type {
     IConnectionNode,
     IObjectNode,
 } from "../../tree/connectionsModel.js";
-import { createTreeItem, type IconResolver } from "../../tree/treeItems.js";
 import {
+    CONNECTION_COLOR_SCHEME,
+    ConnectionColorDecorations,
+} from "../../tree/connectionColors.js";
+import {
+    FolderTreeItem,
+    createTreeItem,
+    type IconResolver,
+} from "../../tree/treeItems.js";
+import {
+    FileDecoration,
     ThemeColor,
     ThemeIcon,
     TreeItemCollapsibleState,
@@ -180,6 +189,44 @@ describe("createTreeItem for a connection", () => {
     });
 });
 
+describe("a connection's caption and color", () => {
+    it("shows the caption as the label and the address beside it", () => {
+        const item = createTreeItem(connection({
+            uri: "mariadb://dba@localhost:3310?ssl-mode=REQUIRED",
+            caption: "Shop",
+            connectionKind: "mcp",
+            isDefault: true,
+        }), resolveIcon);
+
+        expect(item.label).toBe("Shop");
+        expect(item.description).toBe("dba@localhost:3310 · MCP, default");
+        expect(item.tooltip).toBe("Shop\nmariadb://dba@localhost:3310"
+            + "?ssl-mode=REQUIRED (MCP access allowed, default connection)");
+    });
+
+    it("carries its color to the decorations, and no color none", () => {
+        const plain = createTreeItem(connection(), resolveIcon);
+        const colored = createTreeItem(
+            connection({ color: "green" }), resolveIcon);
+
+        expect(plain.resourceUri).toBeUndefined();
+        const decoration = new ConnectionColorDecorations()
+            .provideFileDecoration(colored.resourceUri as never);
+        expect(decoration).toEqual(
+            new FileDecoration("●", undefined, new ThemeColor("charts.green")));
+    });
+
+    it("decorates nothing but a known color of its own scheme", () => {
+        const decorations = new ConnectionColorDecorations();
+
+        expect(decorations.provideFileDecoration(
+            Uri.file("/green/gui") as never)).toBeUndefined();
+        expect(decorations.provideFileDecoration(Uri.from({
+            scheme: CONNECTION_COLOR_SCHEME, path: "/teal/gui",
+        }) as never)).toBeUndefined();
+    });
+});
+
 describe("createTreeItem for a schema", () => {
     it("leaves a user schema undecorated, it being nearly every row", () => {
         const item = createTreeItem({
@@ -322,5 +369,40 @@ describe("createTreeItem for a connection's status", () => {
             new ThemeIcon("error", new ThemeColor("errorForeground")));
         // What puts the Retry button beside it.
         expect(item.contextValue).toBe("mariadbConnectionStatus.failed");
+    });
+});
+
+describe("createTreeItem for a folder", () => {
+    it("shows its name, open, with the folder icon", () => {
+        const item = createTreeItem({
+            kind: "folder", path: "/Sandboxes/note_app", name: "note_app",
+            empty: false,
+        }, resolveIcon);
+
+        expect(item.label).toBe("note_app");
+        expect(item.tooltip).toBe("/Sandboxes/note_app");
+        expect(item.iconPath).toEqual(new ThemeIcon("folder-opened"));
+        expect(item.collapsibleState).toBe(TreeItemCollapsibleState.Expanded);
+        expect(item.contextValue).toBe("mariadbFolder");
+        // Unique, so VS Code tells folders apart by it across refreshes.
+        expect(item.id).toBe("folder:/Sandboxes/note_app");
+    });
+
+    it("shows a closed folder closed", () => {
+        const item = new FolderTreeItem({
+            kind: "folder", path: "/Sandboxes", name: "Sandboxes", empty: false,
+        }, false);
+
+        expect(item.iconPath).toEqual(new ThemeIcon("folder"));
+        expect(item.collapsibleState)
+            .toBe(TreeItemCollapsibleState.Collapsed);
+    });
+
+    it("says it is empty, which is what offers Remove Folder", () => {
+        const item = createTreeItem({
+            kind: "folder", path: "/New", name: "New", empty: true,
+        }, resolveIcon);
+
+        expect(item.contextValue).toBe("mariadbFolder.empty");
     });
 });

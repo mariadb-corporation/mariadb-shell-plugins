@@ -73,7 +73,7 @@
       },
       {
         "view": "mariadb.connections",
-        "contents": "No MariaDB connections are configured yet.\nAdd one with the $(add) button in the toolbar of this view.",
+        "contents": "No MariaDB connections are configured yet.\n[New Connection…](command:mariadb.addConnection)\n[New Folder…](command:mariadb.newFolder)",
         "when": "mariadb.connectionsView == listed"
       }
     ],
@@ -84,6 +84,11 @@
           "type": "string",
           "default": "",
           "markdownDescription": "The connection URI new SQL editors run on, as listed by `db.list_connections`. Set it from the context menu of a connection in the **Connections** view."
+        },
+        "mariadb.actions.logAllCalls": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Also log the MCP calls that are made on no open connection in the MariaDB panel: listing the connections, and adding, editing, moving, deleting and testing them. They are shown under **General Actions** in the panel's connection picker. Calls made on an open connection are logged under that connection either way."
         },
         "mariadb.connections.connectMode": {
           "type": "string",
@@ -184,9 +189,33 @@
       },
       {
         "command": "mariadb.addConnection",
-        "title": "Add Connection",
+        "title": "New Connection…",
         "category": "MariaDB",
         "icon": "$(add)"
+      },
+      {
+        "command": "mariadb.newFolder",
+        "title": "New Folder…",
+        "category": "MariaDB",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "mariadb.newFolderWithSelection",
+        "title": "New Folder with Selection…",
+        "category": "MariaDB",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "mariadb.renameFolder",
+        "title": "Rename Folder…",
+        "category": "MariaDB",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "mariadb.removeFolder",
+        "title": "Remove Folder",
+        "category": "MariaDB",
+        "icon": "$(trash)"
       },
       {
         "command": "mariadb.connect",
@@ -285,6 +314,11 @@
           "group": "navigation@0"
         },
         {
+          "command": "mariadb.newFolder",
+          "when": "view == mariadb.connections",
+          "group": "navigation@1"
+        },
+        {
           "command": "mariadb.refreshConnections",
           "when": "view == mariadb.connections",
           "group": "navigation"
@@ -355,6 +389,36 @@
           "command": "mariadb.retryConnection",
           "when": "view == mariadb.connections && viewItem == mariadbConnectionStatus.failed",
           "group": "inline@1"
+        },
+        {
+          "command": "mariadb.addConnection",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbFolder/",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.addConnection",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbFolder/",
+          "group": "0_new@1"
+        },
+        {
+          "command": "mariadb.newFolder",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbFolder/",
+          "group": "0_new@2"
+        },
+        {
+          "command": "mariadb.renameFolder",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbFolder/",
+          "group": "1_folder@1"
+        },
+        {
+          "command": "mariadb.removeFolder",
+          "when": "view == mariadb.connections && viewItem == mariadbFolder.empty",
+          "group": "1_folder@2"
+        },
+        {
+          "command": "mariadb.newFolderWithSelection",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "9_folder@1"
         },
         {
           "command": "mariadb.retryConnection",
@@ -460,6 +524,18 @@
         },
         {
           "command": "mariadb.retryConnection",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.removeFolder",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.renameFolder",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.newFolderWithSelection",
           "when": "false"
         }
       ]

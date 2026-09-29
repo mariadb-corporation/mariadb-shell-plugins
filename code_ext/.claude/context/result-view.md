@@ -168,6 +168,12 @@ cannot be - checked against `@types/vscode` 1.138:
   but its items are commands declared in `package.json` with fixed
   titles, so it cannot list connections discovered at runtime.
 
+**General Actions** is listed FIRST in the connection picker, and only once
+something is filed under it (see `mariadb.actions.logAllCalls` in
+[connections.md](connections.md)). It is not a connection, so a general
+action never becomes what the view comes up on - `appendEvent` skips it
+for `#active ??=`.
+
 The second picker offers **All Sessions** first, which is what the view
 opens on and the only case in which the actions name a connection per
 row. It lists the connections open on the URI and any that only the

@@ -149,6 +149,449 @@ def test_the_two_connection_lists_are_kept_apart(clean_config):
     assert config.get_connection_password(uri) == "mcp-secret"
 
 
+def _entry(uri, kind="mcp", path="/", caption="", color=""):
+    """One db.list_connections entry, with the details defaulted to none."""
+    return {
+        "uri": uri,
+        "path": path,
+        "kind": kind,
+        "caption": caption,
+        "color": color,
+    }
+
+
+def _keys_of(prefix):
+    """The secret keys stored under one prefix."""
+    return [
+        key for key in mysqlsh.globals.shell.list_secrets()
+        if key.startswith(prefix)
+    ]
+
+
+def _connections_file():
+    """connections.json as it is on disk, or None if there is none."""
+    import json
+
+    path = config.get_connections_file_path()
+    if not os.path.exists(path):
+        return None
+
+    with open(path, "r", encoding="utf-8") as details_file:
+        return json.load(details_file)
+
+
+def test_a_connection_folder_is_normalized():
+    """One folder, one spelling: the top level, and the leading slash."""
+    for top in (None, "", "/", "//", " / "):
+        assert config.normalize_connection_path(top) == ""
+
+    assert config.normalize_connection_path("Sandboxes") == "/Sandboxes"
+    assert config.normalize_connection_path("/Sandboxes/") == "/Sandboxes"
+    assert (
+        config.normalize_connection_path(" /Sandboxes// note app /")
+        == "/Sandboxes/note app"
+    )
+    # Not in the key any more, so nothing ends a folder name early.
+    assert config.normalize_connection_path("/Sand:boxes") == "/Sand:boxes"
+
+    with pytest.raises(mysqlsh.Error, match="must be a string"):
+        config.normalize_connection_path(42)
+
+
+def test_a_caption_and_a_color_are_normalized_or_refused():
+    """Blanks go, a color is named in any case, and anything else is refused."""
+    assert config.normalize_connection_caption(None) == ""
+    assert config.normalize_connection_caption("  Notes DB ") == "Notes DB"
+    assert config.normalize_connection_color(None) == ""
+    assert config.normalize_connection_color(" Green ") == "green"
+    assert config.normalize_connection_color("") == ""
+
+    with pytest.raises(mysqlsh.Error, match="single line"):
+        config.normalize_connection_caption("two\nlines")
+    with pytest.raises(mysqlsh.Error, match="at most 100 characters"):
+        config.normalize_connection_caption("c" * 101)
+    with pytest.raises(mysqlsh.Error, match="must be a string"):
+        config.normalize_connection_caption(7)
+    with pytest.raises(mysqlsh.Error, match="not a connection color"):
+        config.normalize_connection_color("#ff0000")
+
+
+def test_the_details_are_kept_out_of_the_key(clean_config):
+    """The key is the prefix and the URI; folder, caption and color are not.
+
+    Everything that works by URI - reading the password, deleting, resolving -
+    finds the connection without knowing any of them, and the URI lists
+    report none of them, which is what keeps them invisible outside the
+    extension.
+    """
+    _empty_both_connection_lists()
+    uri = "mariadb://folder_pytest@127.0.0.1:3306"
+
+    config.store_connection(
+        uri, "pw", path="/Sandboxes/note_app", caption="Notes", color="Blue"
+    )
+
+    prefix = config.connection_secret_prefix()
+    assert _keys_of(prefix) == [f"{prefix}{uri}"]
+    assert _connections_file()["mcp"] == {
+        uri: {"path": "/Sandboxes/note_app", "caption": "Notes", "color": "blue"}
+    }
+
+    assert config.list_stored_connection_uris() == [uri]
+    assert config.list_connection_uris() == [uri]
+    assert config.get_connection_details(uri) == {
+        "path": "/Sandboxes/note_app",
+        "caption": "Notes",
+        "color": "blue",
+    }
+    assert config.list_connections_with_details() == [
+        _entry(uri, path="/Sandboxes/note_app", caption="Notes", color="blue")
+    ]
+    assert config.get_connection_password(uri) == "pw"
+    assert config.resolve_connection_uri("folder_pytest@127.0.0.1") == uri
+
+    config.delete_connection(uri)
+    assert config.list_connections_with_details() == []
+    assert _connections_file()["mcp"] == {}
+
+
+def test_storing_a_connection_again_keeps_or_changes_its_details(clean_config):
+    """Left out, a detail stays; given, it changes; "" clears it.
+
+    A password replaced must not move a connection back to the top level or
+    take its caption away.
+    """
+    _empty_both_connection_lists()
+    uri = "mariadb://move_pytest@127.0.0.1:3306"
+
+    config.store_connection(uri, "one", path="/Sandboxes", caption="Mine")
+    config.store_connection(uri, "two")
+    assert config.list_connections_with_details() == [
+        _entry(uri, path="/Sandboxes", caption="Mine")
+    ]
+    assert config.get_connection_password(uri) == "two"
+
+    config.store_connection(uri, "three", path="/Work", color="red")
+    assert config.list_connections_with_details() == [
+        _entry(uri, path="/Work", caption="Mine", color="red")
+    ]
+
+    config.store_connection(uri, "four", path="/", caption="", color="")
+    assert config.list_connections_with_details() == [_entry(uri)]
+    # Nothing left to say about it, so nothing is kept for it.
+    assert _connections_file()["mcp"] == {}
+    assert config.get_connection_password(uri) == "four"
+
+
+def test_details_can_change_without_touching_the_password(clean_config):
+    """Re-filing writes the file and nothing else."""
+    _empty_both_connection_lists()
+    uri = "mariadb://refile_pytest@127.0.0.1:3306"
+    config.store_connection(uri, "pw")
+
+    assert config.set_connection_details(uri, path="/A", color="green") == {
+        "path": "/A",
+        "caption": "",
+        "color": "green",
+    }
+    assert config.set_connection_details(uri, caption="Caption") == {
+        "path": "/A",
+        "caption": "Caption",
+        "color": "green",
+    }
+    assert config.get_connection_password(uri) == "pw"
+
+    with pytest.raises(mysqlsh.Error, match="not a connection color"):
+        config.set_connection_details(uri, color="pink")
+    assert config.get_connection_details(uri)["color"] == "green"
+
+
+def test_details_of_a_connection_not_stored_are_ignored(clean_config):
+    """The secret store says what exists; the file only says how it is shown.
+
+    Details left behind by a connection deleted some other way - by an older
+    shell, say - neither make it reappear nor survive the next write.
+    """
+    import json
+
+    _empty_both_connection_lists()
+    uri = "mariadb://kept_pytest@127.0.0.1:3306"
+    gone = "mariadb://gone_pytest@127.0.0.1:3306"
+    config.store_connection(uri, "pw")
+
+    with open(config.get_connections_file_path(), "w", encoding="utf-8") as f:
+        json.dump(
+            {"version": 1, "mcp": {gone: {"path": "/Ghosts", "junk": "x"}}}, f
+        )
+
+    assert config.list_connections_with_details() == [_entry(uri)]
+    assert config.get_connection_details(gone)["path"] == "/Ghosts"
+
+    config.set_connection_details(uri, path="/Real")
+    assert _connections_file() == {
+        "version": 1,
+        "mcp": {uri: {"path": "/Real"}},
+        "gui": {},
+    }
+
+
+def test_an_unreadable_connections_file_means_no_details(clean_config):
+    """A broken file costs how connections look, never the connections."""
+    _empty_both_connection_lists()
+    uri = "mariadb://broken_pytest@127.0.0.1:3306"
+    config.store_connection(uri, "pw")
+
+    for content in ("{not json", "[1, 2]", '{"mcp": []}'):
+        with open(config.get_connections_file_path(), "w", encoding="utf-8") as f:
+            f.write(content)
+        assert config.list_connections_with_details() == [_entry(uri)]
+
+    config.set_connection_details(uri, caption="Fixed")
+    assert config.list_connections_with_details() == [
+        _entry(uri, caption="Fixed")
+    ]
+
+
+def test_a_superseded_spelling_passes_its_details_on(clean_config):
+    """Configuring a scheme-less connection again keeps its folder."""
+    _empty_both_connection_lists()
+    old_key = "spelling_pytest@127.0.0.1:3306"
+    config.store_connection(old_key, "pw", path="/Old", caption="Old one")
+
+    canonical = config.normalize_connection_uri(old_key)
+    config.store_connection(canonical, "pw")
+    assert config.drop_superseded_spellings(canonical) == [old_key]
+
+    assert config.list_connections_with_details() == [
+        _entry(canonical, path="/Old", caption="Old one")
+    ]
+
+
+_LEGACY_MCP = "MCP:Connection:"
+_LEGACY_GUI = "GUI:Connection:"
+
+
+@pytest.fixture
+def legacy_keys(clean_config, monkeypatch):
+    """Lets a test plant keys in an earlier format and see them upgraded.
+
+    The upgrade runs once per process, and the suite has long since run it by
+    now, so it is marked as not done yet. Whatever old key a test leaves
+    behind is deleted, so a failing test cannot leave one in the secret store.
+    """
+    _empty_both_connection_lists()
+    monkeypatch.setattr(config, "_connection_keys_upgraded", False)
+    shell = mysqlsh.globals.shell
+    try:
+        yield shell
+    finally:
+        for key in shell.list_secrets():
+            if key.startswith((_LEGACY_MCP, _LEGACY_GUI)) or key.startswith(
+                (
+                    config.CONNECTION_SECRET_PREFIX + "/",
+                    config.GUI_CONNECTION_SECRET_PREFIX + "/",
+                )
+            ):
+                shell.delete_secret(key)
+
+
+def test_connections_under_the_legacy_prefixes_are_moved(legacy_keys):
+    """Both lists, top level and filed, each keeping its folder and password."""
+    top = "mariadb://legacy_top@127.0.0.1:3306"
+    filed = "mariadb://legacy_filed@127.0.0.1:3306"
+    mine = "mariadb://legacy_gui@127.0.0.1:3306"
+    legacy_keys.store_secret(_LEGACY_MCP + top, "top-pw")
+    legacy_keys.store_secret(f"{_LEGACY_MCP}/Sandboxes/note_app:{filed}", "f-pw")
+    legacy_keys.store_secret(f"{_LEGACY_GUI}/Mine:{mine}", "gui-pw")
+
+    # Any read is enough: this is the first one in the (pretended) process.
+    assert config.list_connections_with_details(config.CONNECTION_KIND_ALL) == [
+        _entry(filed, path="/Sandboxes/note_app"),
+        _entry(top),
+        _entry(mine, "gui", path="/Mine"),
+    ]
+
+    keys = legacy_keys.list_secrets()
+    assert not [k for k in keys if k.startswith((_LEGACY_MCP, _LEGACY_GUI))]
+    assert "MCP:CONN:" + top in keys
+    assert "MCP:CONN:" + filed in keys
+    assert "GUI:CONN:" + mine in keys
+    assert config.get_connection_password(top) == "top-pw"
+    assert config.get_connection_password(filed) == "f-pw"
+    assert config.get_connection_password(mine, config.CONNECTION_KIND_GUI) == (
+        "gui-pw"
+    )
+
+
+def test_a_folder_in_the_key_is_moved_into_the_file(legacy_keys):
+    """The key format folders were first stored in, under today's prefixes."""
+    uri = "mariadb://in_key@127.0.0.1:3306"
+    prefix = config.GUI_CONNECTION_SECRET_PREFIX
+    legacy_keys.store_secret(f"{prefix}/Sandboxes/note_app:{uri}", "pw")
+
+    assert config.list_connections_with_details(config.CONNECTION_KIND_GUI) == [
+        _entry(uri, "gui", path="/Sandboxes/note_app"),
+    ]
+    assert _keys_of(prefix) == [prefix + uri]
+    assert config.get_connection_password(uri, config.CONNECTION_KIND_GUI) == "pw"
+
+
+def test_a_folder_set_since_wins_over_the_one_in_an_old_key(legacy_keys):
+    """An interrupted upgrade leaves both keys; the newer details are kept."""
+    uri = "mariadb://both_keys@127.0.0.1:3306"
+    prefix = config.CONNECTION_SECRET_PREFIX
+    legacy_keys.store_secret(prefix + uri, "new")
+    config.set_connection_details(uri, path="/Newer")
+    legacy_keys.store_secret(f"{prefix}/Older:{uri}", "old")
+    config._connection_keys_upgraded = False
+
+    assert config.upgrade_connection_keys() == 1
+    assert config.list_connections_with_details() == [_entry(uri, path="/Newer")]
+    assert config.get_connection_password(uri) == "new"
+
+
+def test_an_interrupted_upgrade_only_deletes_the_old_key(legacy_keys):
+    """The new key was written from the old one, so it is the one kept."""
+    uri = "mariadb://legacy_half@127.0.0.1:3306"
+    legacy_keys.store_secret(_LEGACY_MCP + uri, "old")
+    legacy_keys.store_secret(config.CONNECTION_SECRET_PREFIX + uri, "new")
+
+    assert config.upgrade_connection_keys() == 1
+
+    assert config.list_stored_connection_uris() == [uri]
+    assert config.get_connection_password(uri) == "new"
+    assert _LEGACY_MCP + uri not in legacy_keys.list_secrets()
+
+
+def test_a_connection_that_cannot_be_moved_is_left_and_tried_again(
+    legacy_keys, monkeypatch
+):
+    """One failure moves the rest, and the upgrade runs again next time."""
+    stuck = "mariadb://legacy_stuck@127.0.0.1:3306"
+    fine = "mariadb://legacy_fine@127.0.0.1:3306"
+    legacy_keys.store_secret(_LEGACY_MCP + stuck, "pw")
+    legacy_keys.store_secret(_LEGACY_MCP + fine, "pw")
+
+    real = legacy_keys
+    logged = []
+
+    class _FailingShell:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def store_secret(self, key, secret):
+            if key.endswith(stuck):
+                raise RuntimeError("the secret store said no")
+            real.store_secret(key, secret)
+
+    monkeypatch.setattr(config, "_shell", lambda: _FailingShell())
+    monkeypatch.setattr(config.general, "log_event", logged.append)
+
+    assert config.upgrade_connection_keys() == 1
+    assert config.list_stored_connection_uris() == [fine]
+    assert _LEGACY_MCP + stuck in real.list_secrets()
+    assert any("the secret store said no" in line for line in logged)
+
+    monkeypatch.setattr(config, "_shell", lambda: real)
+    assert config.list_stored_connection_uris() == sorted([fine, stuck])
+    assert config.upgrade_connection_keys() == 0
+
+
+def test_an_old_key_that_cannot_be_deleted_is_tried_again(
+    legacy_keys, monkeypatch
+):
+    """Moved but not deleted: logged, and the next read deletes it."""
+    uri = "mariadb://legacy_sticky@127.0.0.1:3306"
+    legacy_keys.store_secret(_LEGACY_MCP + uri, "pw")
+
+    real = legacy_keys
+    logged = []
+
+    class _StickyShell:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def delete_secret(self, key):
+            raise RuntimeError("still here")
+
+    monkeypatch.setattr(config, "_shell", lambda: _StickyShell())
+    monkeypatch.setattr(config.general, "log_event", logged.append)
+    assert config.upgrade_connection_keys() == 0
+    assert any("still here" in line for line in logged)
+
+    monkeypatch.setattr(config, "_shell", lambda: real)
+    assert config.upgrade_connection_keys() == 1
+    assert _LEGACY_MCP + uri not in real.list_secrets()
+
+
+def test_the_upgrade_runs_once_per_process(legacy_keys):
+    """Nothing writes in the old formats, so it never has to run again."""
+    assert config.upgrade_connection_keys() == 0
+    uri = "mariadb://legacy_late@127.0.0.1:3306"
+    legacy_keys.store_secret(_LEGACY_MCP + uri, "pw")
+
+    assert config.upgrade_connection_keys() == 0
+    assert config.list_stored_connection_uris() == []
+
+
+def _uri_of_length(length):
+    """A normalized connection URI exactly ``length`` bytes long."""
+    base = "mariadb://key_pytest@127.0.0.1:3306/"
+    return base + "s" * (length - len(base))
+
+
+def test_a_connection_key_is_limited_to_what_windows_can_store(clean_config):
+    """Prefix and URI take at most 256 bytes, counted as UTF-8.
+
+    The shell's Windows credential helper stores the key as a credential
+    attribute, which Windows caps at 256 bytes. Refused on every platform, and
+    before anything is written. The details do not count: they are not in it.
+    """
+    _empty_both_connection_lists()
+    prefix_bytes = len(config.connection_secret_prefix().encode("utf-8"))
+    budget = config.MAX_CONNECTION_KEY_BYTES - prefix_bytes
+    assert budget == 247
+
+    fits = _uri_of_length(budget)
+    assert config.normalize_connection_uri(fits) == fits
+    config.store_connection(fits, "pw", path="/" + "f" * 200, caption="c" * 100)
+    assert config.list_stored_connection_uris() == [fits]
+
+    too_long = _uri_of_length(budget + 1)
+    with pytest.raises(mysqlsh.Error, match="at most 247 bytes") as error:
+        config.store_connection(too_long, "pw", config.CONNECTION_KIND_GUI)
+    assert "takes 248" in str(error.value)
+    assert config.list_stored_connection_uris(config.CONNECTION_KIND_GUI) == []
+
+    # Bytes, not characters: 'ä' is two of them in UTF-8.
+    with pytest.raises(mysqlsh.Error, match="takes 248"):
+        config.check_connection_key_length(_uri_of_length(budget - 1) + "ä")
+
+
+def test_details_are_kept_per_list(clean_config):
+    """The same URI in both lists can be filed and named differently in each."""
+    _empty_both_connection_lists()
+    uri = "mariadb://both_pytest@127.0.0.1:3306"
+
+    config.store_connection(uri, "mcp", path="/Shared", caption="Shared")
+    config.store_connection(uri, "gui", config.CONNECTION_KIND_GUI, "/Mine")
+
+    assert config.get_connection_details(uri) == {
+        "path": "/Shared",
+        "caption": "Shared",
+        "color": "",
+    }
+    assert config.get_connection_details(uri, config.CONNECTION_KIND_GUI) == {
+        "path": "/Mine",
+        "caption": "",
+        "color": "",
+    }
+
+    config.delete_connection(uri, config.CONNECTION_KIND_GUI)
+    assert config.get_connection_details(uri)["path"] == "/Shared"
+    assert config.list_connection_uris(config.CONNECTION_KIND_GUI) == []
+
+
 def test_an_unknown_connection_kind_is_refused():
     """A kind that names neither list is an error, never a silent default.
 
@@ -660,6 +1103,24 @@ def test_setup_stores_a_connection_under_one_spelling(clean_config, monkeypatch)
     assert (
         config.get_connection_password("mariadb://setup_c@127.0.0.1:3306") == "pw"
     )
+
+
+def test_setup_refuses_a_connection_too_long_to_store(clean_config, monkeypatch):
+    """Said before the password is asked for, and the menu carries on."""
+    _clear_config()
+    config.set_allowed_paths([])
+
+    answers = [
+        "1",                                                 # add a connection
+        "mariadb://setup_long@127.0.0.1:3306/" + "s" * 220,  # too long
+        "6",                                                 # finish
+    ]
+    fake_shell = _FakeShell(answers)
+    monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
+
+    setup.run_setup()
+
+    assert config.list_connection_uris() == []
 
 
 def test_setup_requires_interactive_shell(clean_config, monkeypatch):

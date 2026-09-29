@@ -836,6 +836,39 @@ describe("ResultViewProvider", () => {
             return created;
         };
 
+        it("offers General Actions first, without switching to it",
+            async () => {
+                const { provider, view } = createWithSessions();
+                provider.setConnectionLister(() => {
+                    return Promise.resolve(["dba@localhost:3310"]);
+                });
+
+                await provider.appendEvent(anEvent({
+                    connection: "General Actions",
+                    label: "",
+                    call: "db.list_connections(kind=gui)",
+                    message: "Listed 1 connection",
+                }));
+
+                // Not what the view comes up on: it is there to be looked
+                // up, not to take the view over.
+                expect(view.description ?? "").not.toBe("General Actions");
+
+                await provider.appendEvent(anEvent());
+                const state = lastState(view);
+                expect(state?.connections).toEqual([
+                    "General Actions", "dba@localhost:3310",
+                ]);
+                expect(state?.connection).toBe("dba@localhost:3310");
+
+                await provider.selectConnection("General Actions");
+                expect(lastState(view)?.actions).toMatchObject([{
+                    role: "event",
+                    statement: "db.list_connections(kind=gui)",
+                    message: "Listed 1 connection",
+                }]);
+            });
+
         it("gathers what happens outside a run", async () => {
             const { provider, view } = createWithSessions();
 

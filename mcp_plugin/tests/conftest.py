@@ -125,6 +125,33 @@ def _restore_connections(connections: dict) -> None:
             pass
 
 
+def _backup_connection_details():
+    """Returns connections.json as it is, or None if there is none.
+
+    Taken as the file's bytes rather than read through config: deleting a
+    connection drops its details, so a test clearing the lists would otherwise
+    lose the developer's folders, captions and colors for good.
+    """
+    path = config.get_connections_file_path()
+    if not os.path.exists(path):
+        return None
+
+    with open(path, "rb") as details_file:
+        return details_file.read()
+
+
+def _restore_connection_details(content) -> None:
+    """Puts back what :func:`_backup_connection_details` returned."""
+    path = config.get_connections_file_path()
+    if content is None:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+
+    with open(path, "wb") as details_file:
+        details_file.write(content)
+
+
 @pytest.fixture
 def gui_mode():
     """Serves the rest of the test as a server started with ``--gui``.
@@ -159,6 +186,7 @@ def stored_connections():
     # Back up the connections that existed prior to the test, then remove them
     # so the test starts from a clean, known set.
     original_connections = _backup_connections()
+    original_details = _backup_connection_details()
     _clear_connections()
 
     for uri in helpers.TEST_CONNECTION_URIS:
@@ -170,6 +198,7 @@ def stored_connections():
     # currently stored, then re-store the backed-up connections.
     _clear_connections()
     _restore_connections(original_connections)
+    _restore_connection_details(original_details)
 
 
 @pytest.fixture
@@ -201,13 +230,15 @@ def allowed_temp_dir():
 
 @pytest.fixture
 def clean_config():
-    """Isolates connection secrets and settings.json for a config/setup test.
+    """Isolates connection secrets, their details and settings.json for a test.
 
-    The current connections (URI + password) and allowed-paths settings are
+    The current connections (URI + password), their details and the
+    allowed-paths settings are
     backed up before the test and restored exactly afterwards, so a test may
     freely add, clear or delete connections and paths.
     """
     original_connections = _backup_connections()
+    original_details = _backup_connection_details()
     had_settings = config.settings_file_exists()
     original_paths = config.get_allowed_paths()
 
@@ -216,6 +247,7 @@ def clean_config():
     finally:
         _clear_connections()
         _restore_connections(original_connections)
+        _restore_connection_details(original_details)
         if had_settings:
             config.set_allowed_paths(original_paths)
         else:

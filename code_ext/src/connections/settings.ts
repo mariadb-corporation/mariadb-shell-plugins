@@ -31,6 +31,9 @@ export const STOP_ON_ERROR_SETTING = "execute.stopOnError";
 /** The setting deciding how a connection in the tree is opened. */
 export const CONNECT_MODE_SETTING = "connections.connectMode";
 
+/** The setting that logs every MCP call, under General Actions. */
+export const LOG_ALL_CALLS_SETTING = "actions.logAllCalls";
+
 /**
  * The context key saying that connecting is implicit.
  *
@@ -113,6 +116,12 @@ export const createWorkspaceSettings = (): IConnectionSettings => {
             await vscode.workspace
                 .getConfiguration(CONFIG_SECTION)
                 .update(DEFAULT_CONNECTION_SETTING, uri, target);
+        },
+
+        logAllCalls: (): boolean => {
+            return vscode.workspace
+                .getConfiguration(CONFIG_SECTION)
+                .get<boolean>(LOG_ALL_CALLS_SETTING, false);
         },
     };
 };

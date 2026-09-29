@@ -18,6 +18,7 @@
 import * as vscode from "vscode";
 
 import {
+    GENERAL_ACTIONS,
     activityRow,
     type IActivityEvent,
 } from "../connections/connectionActivity.js";
@@ -414,8 +415,11 @@ export class ResultViewProvider
 
         // The first thing to happen at all is what the view comes up on,
         // so a tree that was browsed before anything was run is not
-        // looking at an empty panel.
-        this.#active ??= event.connection;
+        // looking at an empty panel - unless it is a general action, which
+        // is there to be looked up rather than to take the view over.
+        if (event.connection !== GENERAL_ACTIONS) {
+            this.#active ??= event.connection;
+        }
 
         if (event.connection === this.#active) {
             await this.#sendState();
@@ -836,7 +840,11 @@ export class ResultViewProvider
             known.add(this.#active);
         }
 
-        return [...known].sort();
+        // Not a connection, so it goes first rather than among them - and
+        // only once something is filed under it.
+        const general = known.delete(GENERAL_ACTIONS);
+
+        return [...(general ? [GENERAL_ACTIONS] : []), ...[...known].sort()];
     }
 
     /**

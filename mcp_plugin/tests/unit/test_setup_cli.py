@@ -324,6 +324,21 @@ def test_a_connection_that_cannot_be_opened_is_not_stored(clean_config, monkeypa
     assert "mariadb://cli_i@127.0.0.1:3306" not in config.list_connection_uris()
 
 
+def test_a_connection_too_long_to_store_is_refused_first(clean_config, monkeypatch):
+    """Before the password is asked for or the connection verified."""
+    def must_not_ask(*args, **kwargs):
+        raise AssertionError("a connection too long to store got this far")
+
+    monkeypatch.setattr(setup_cli, "verify_connection", must_not_ask)
+    monkeypatch.setattr(prompts, "password", must_not_ask)
+
+    uri = "mariadb://cli_long@127.0.0.1:3306/" + "s" * 220
+    with pytest.raises(mysqlsh.Error, match="at most 247 bytes"):
+        setup_cli.apply({"add_connection": uri})
+
+    assert uri not in config.list_connection_uris()
+
+
 def test_no_verify_stores_without_opening_a_session(clean_config, monkeypatch):
     """For a server that is not up yet, which a provisioning script may hit."""
     def must_not_verify(uri, password):

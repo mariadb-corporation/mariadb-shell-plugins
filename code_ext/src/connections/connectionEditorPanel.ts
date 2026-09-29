@@ -18,9 +18,11 @@
 import * as vscode from "vscode";
 
 import type { IMariaDbApi } from "../mcp/types.js";
+import { ROOT_FOLDER, allFolders } from "./connectionFolders.js";
 import { emptyConnectionFields } from "./connectionUri.js";
 import {
     fieldsOf,
+    listConnections,
     saveConnection,
     testConnection,
     type IStoredConnection,
@@ -28,6 +30,7 @@ import {
 import type {
     EditorHostMessage,
     EditorWebviewMessage,
+    ISaveMessage,
 } from "./editorProtocol.js";
 
 /**
@@ -42,6 +45,12 @@ import type {
 export interface IConnectionEditorHost {
     /** The database API, starting the MCP server if it is not up yet. */
     api(): Promise<IMariaDbApi>;
+    /**
+     * The configured connections, as last read - the folders are offered
+     * from them. Left out, they are read from `api` each time the editor
+     * opens.
+     */
+    listStored?(): Promise<IStoredConnection[]>;
     /** Called after a connection was stored, so the tree can redraw. */
     onSaved(): void;
     log(message: string): void;
@@ -127,6 +136,8 @@ export class ConnectionEditorPanel {
 
     #panel: vscode.WebviewPanel;
     #connection: IStoredConnection | undefined;
+    /** The folder a new connection starts in. */
+    #newIn = ROOT_FOLDER;
     #disposables: vscode.Disposable[] = [];
 
     private constructor(
@@ -143,6 +154,8 @@ export class ConnectionEditorPanel {
      * @param extensionUri The root of the installed extension.
      * @param host What the panel needs from the extension.
      * @param connection The connection to edit, or undefined to add one.
+     * @param newIn The folder a new connection starts in, where it was asked
+     *              for from a folder in the tree. Ignored when editing.
      *
      * @returns Nothing.
      */
@@ -150,6 +163,7 @@ export class ConnectionEditorPanel {
         extensionUri: vscode.Uri,
         host: IConnectionEditorHost,
         connection?: IStoredConnection,
+        newIn: string = ROOT_FOLDER,
     ): void {
         const title = connection === undefined
             ? "New Database Connection"
@@ -158,6 +172,7 @@ export class ConnectionEditorPanel {
         if (ConnectionEditorPanel.#current) {
             const existing = ConnectionEditorPanel.#current;
             existing.#connection = connection;
+            existing.#newIn = newIn;
             existing.#panel.title = title;
             existing.#panel.reveal(vscode.ViewColumn.Active);
             // Reloading the HTML restarts the webview, which then asks for
@@ -183,6 +198,7 @@ export class ConnectionEditorPanel {
 
         const editor = new ConnectionEditorPanel(panel, extensionUri, host);
         editor.#connection = connection;
+        editor.#newIn = newIn;
         ConnectionEditorPanel.#current = editor;
 
         panel.onDidDispose(() => { editor.dispose(); }, undefined,
@@ -244,7 +260,13 @@ export class ConnectionEditorPanel {
         switch (message.type) {
             case "ready": {
                 const state = this.#connection === undefined
-                    ? { fields: emptyConnectionFields(), mcpAccess: false }
+                    ? {
+                        fields: emptyConnectionFields(),
+                        mcpAccess: false,
+                        path: this.#newIn,
+                        caption: "",
+                        color: "" as const,
+                    }
                     : fieldsOf(this.#connection);
 
                 this.#post({
@@ -256,6 +278,10 @@ export class ConnectionEditorPanel {
                     // even if it is the empty one. The editor only needs to
                     // know whether to offer "keep" or "set".
                     hasStoredPassword: this.#connection !== undefined,
+                    path: state.path,
+                    folders: await this.#folders(),
+                    caption: state.caption,
+                    color: state.color,
                 });
                 break;
             }
@@ -266,9 +292,7 @@ export class ConnectionEditorPanel {
             }
 
             case "save": {
-                await this.#save(
-                    message.fields, message.password, message.mcpAccess,
-                );
+                await this.#save(message);
                 break;
             }
 
@@ -283,6 +307,28 @@ export class ConnectionEditorPanel {
             default: {
                 this.#panel.dispose();
             }
+        }
+    }
+
+    /**
+     * The folders connections are filed in, to offer in the Folder field.
+     *
+     * A convenience, so it never stands in the dialog's way: where the list
+     * cannot be had, the field is simply typed into.
+     *
+     * @returns The folders, parents included, the top level left out.
+     */
+    async #folders(): Promise<string[]> {
+        try {
+            const stored = this.host.listStored === undefined
+                ? await listConnections(await this.host.api())
+                : await this.host.listStored();
+
+            return allFolders(stored.map((connection) => {
+                return connection.path ?? ROOT_FOLDER;
+            }));
+        } catch {
+            return [];
         }
     }
 
@@ -317,24 +363,24 @@ export class ConnectionEditorPanel {
     /**
      * Stores the connection and closes the editor.
      *
-     * @param fields The fields as they are on screen.
-     * @param password The password typed, or undefined to keep the stored one.
-     * @param mcpAccess Whether MCP clients may open it.
+     * @param message What the editor asked to be saved: the fields as they
+     *                are on screen, the password typed (undefined keeps the
+     *                stored one), whether MCP clients may open it, and its
+     *                folder, caption and color.
      *
      * @returns Nothing.
      */
-    async #save(
-        fields: Parameters<typeof testConnection>[1],
-        password: string | undefined,
-        mcpAccess: boolean,
-    ): Promise<void> {
+    async #save(message: ISaveMessage): Promise<void> {
         this.#post({ type: "busy", busy: true });
         try {
             const api = await this.host.api();
             const result = await saveConnection(api, {
-                fields,
-                password,
-                mcpAccess,
+                fields: message.fields,
+                password: message.password,
+                mcpAccess: message.mcpAccess,
+                path: message.path,
+                caption: message.caption,
+                color: message.color,
                 original: this.#connection,
             });
 

@@ -139,13 +139,63 @@ export interface IStatementResult {
  * behind an interface is what lets the tree, the editor toolbar and the
  * result panel be tested without a shell.
  */
+/**
+ * The colors a connection can be shown in, by the names the MCP server
+ * stores. The server refuses any other.
+ */
+export const CONNECTION_COLORS = [
+    "red", "orange", "yellow", "green", "blue", "purple",
+] as const;
+
+export type ConnectionColor = typeof CONNECTION_COLORS[number];
+
+/**
+ * How a connection is shown: the server keeps these next to the connection
+ * but outside the secret store, and reports them in GUI mode only. Each one
+ * left undefined is left as it is; `""` clears a caption or a color, and `/`
+ * is the top-level folder.
+ */
+export interface IConnectionDetails {
+    /** `/` for the top level, otherwise `/Folder/Subfolder`. */
+    path?: string;
+    /** What to show instead of the URI. */
+    caption?: string;
+    color?: ConnectionColor | "";
+}
+
+/**
+ * A configured connection and how it is shown, as `db.list_connections`
+ * reports it in GUI mode.
+ */
+export interface IConnectionEntry {
+    uri: string;
+    /** `/` for the top level, otherwise `/Folder/Subfolder`. */
+    path: string;
+    /**
+     * The list it is in, where the server said. It does in answer to
+     * `kind: "all"`; a server that predates that says nothing.
+     */
+    kind?: ConnectionKind;
+    /** The caption; undefined for none, or from a server without them. */
+    caption?: string;
+    /** The color; undefined for none, or one this extension does not know. */
+    color?: ConnectionColor;
+}
+
+/** What `db.list_connections` takes in GUI mode to report both lists. */
+export const ALL_CONNECTION_KINDS = "all";
+
 export interface IMariaDbApi {
     listConnections(kind?: ConnectionKind): Promise<string[]>;
+    listConnectionEntries(
+        kind?: ConnectionKind | typeof ALL_CONNECTION_KINDS,
+    ): Promise<IConnectionEntry[]>;
     addConnection(
         uri: string,
         password: string,
         kind?: ConnectionKind,
         verify?: boolean,
+        details?: IConnectionDetails,
     ): Promise<string>;
     deleteConnection(uri: string, kind?: ConnectionKind): Promise<string>;
     testConnection(uri: string, password?: string): Promise<string>;
@@ -155,6 +205,7 @@ export interface IMariaDbApi {
         kind?: ConnectionKind,
         newKind?: ConnectionKind,
         password?: string,
+        newDetails?: IConnectionDetails,
     ): Promise<string>;
     connect(uri: string): Promise<string>;
     close(connectionId: string): Promise<void>;

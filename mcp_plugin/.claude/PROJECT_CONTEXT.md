@@ -21,7 +21,7 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **353 tests pass, 2 SKIPPED (~100s), 98% total coverage** (2032 statements,
+Standard suite: **374 tests pass, 2 SKIPPED (~190s), 98% total coverage** (2132 statements,
 46 missed; measured on a run with `.coverage` DELETED first — see the coverage trap in
 [`context/testing.md`](context/testing.md)). These figures are from the session that
 last measured them, not from this checkpoint. The two skipped are the OPT-IN
@@ -63,43 +63,47 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-23):
+Checked at this checkpoint (2026-09-28):
 
 ```
-$ git -C mcp_plugin branch --show-current
-wip/code-ext
-
-$ git -C mcp_plugin status --short
-(no output — clean)
+$ git branch --show-current
+wip/connection-folders
 ```
 
-- **The branch is `wip/code-ext`**, and both this plugin and the extension in
-  [`code_ext`](../../code_ext) are worked on there: mcp_plugin changes land as
-  the server side of the extension's. Pushed to `origin/wip/code-ext` and in
-  sync.
-- **`bc6c6aad` is this session** — "Keep the connection URI's scheme, so a
-  tunnel can be asked for", one commit spanning both projects (31 files).
-  MariaDB Shell 26.9.3 accepts `mariadb://`, so the scheme is stored rather
-  than stripped, which is what makes `mariadb+ssh://` configurable. The whole
-  of it is in [`context/connections.md`](context/connections.md) under "The
-  scheme is part of the URI"; the test-harness traps it exposed are in
-  [`context/testing.md`](context/testing.md).
-- The commits before it that touch this plugin are `89ed07e7` (per-statement
-  script results), `14271700` (stop running a whole-line comment as a
-  statement), `5bf4f6d3` (`--gui`) and `de1ab7f1` (connection management from
-  the extension).
-- **`wip/sandbox-binaries` is MERGED** as PR #21 (`456dceaa` on `main`), so the
-  "PR open, review comments next" state the history records is over. `main` has
-  since moved to 26.9.2 (`c58f0156`), and `lib/general.py VERSION` says so —
-  note that is the PLUGIN's version and is NOT the 26.9.3 shell this now needs.
-  `b7bc741a` added `update-sandbox-server-index`, a script for regenerating
-  `lib/sandbox_server_versions.json` that no context file describes yet.
-- **What this checkpoint DID do**: re-run the suite, on shell 26.9.3 —
-  **353 pass, 2 skipped, ~100s, 98% (2032 statements, 46 missed)**, with
-  `.coverage` deleted first. [`context/testing.md`](context/testing.md)'s own
-  per-module figures are OLDER than that and were not re-measured; the four
-  uncovered lines left in `lib/config.py` are the unparse-failure branch and
-  the Windows-drive branch, both pre-existing.
+- **The branch is `wip/connection-folders`**, PR #28 ("Connection folders,
+  and reading the connection list once"). It builds on PR #27
+  (`wip/connection-update`) and targets that branch, so its diff shows only
+  the folder work; it moves to `main` once #27 is merged. Both this plugin
+  and [`code_ext`](../../code_ext) change on it, one commit across the two
+  per change. `wip/code-ext` is the older shared branch these grew out of.
+- **`486f30ed`** is the folder work itself: a folder is part of the secret
+  key (`MCP:CONN:/Sandboxes/note_app:<uri>`), GUI `db.list_connections`
+  returns `{uri, path, kind}`, `kind="all"`, `sandbox.deploy` files under
+  `/Sandboxes`. See [`context/connections.md`](context/connections.md).
+- **The commit after it answers the PR #28 review** (ReneRamirez: the
+  Windows credential manager caps a key at 256 bytes):
+  `check_connection_key_length` refuses a key over
+  `MAX_CONNECTION_KEY_BYTES` on every platform before anything is written,
+  and the prefixes were shortened to `MCP:CONN:` / `GUI:CONN:`, with
+  `upgrade_connection_keys()` moving legacy `MCP:Connection:` /
+  `GUI:Connection:` keys once per process. No downgrade path, by decision.
+  Both in [`context/connections.md`](context/connections.md). The reviewer
+  was asked to look again.
+- **The commit after that moves the details out of the key** (2026-09-28):
+  folder, caption and color live in `connections.json` next to
+  `settings.json`, keyed by list and stored URI; the key is `<prefix><uri>`
+  again, so only the URI counts against the 256 bytes, a `:` is allowed in a
+  folder name, and re-filing never touches the secret store. GUI
+  `db.list_connections` entries gained `caption` and `color`;
+  `db.add_connection` takes `caption`/`color`, `db.update_connection`
+  `new_caption`/`new_color`. Non-GUI listing is still bare URIs. Keys in the
+  folder-in-key format are migrated by `upgrade_connection_keys`. Suite:
+  **380 pass, 3 skipped, 98%**. See
+  [`context/connections.md`](context/connections.md).
+- **Suite at this checkpoint**, shell 26.9.3, `.coverage` deleted first:
+  **374 pass, 2 skipped, ~190s, 98% (2132 statements, 46 missed)**. The four
+  uncovered lines in `lib/config.py` are still the unparse-failure and
+  Windows-drive branches.
 - [`context/history.md`](context/history.md) is deliberately NOT updated. Its
   "Current state" is the `wip/sandbox-binaries` era and has been left as an
   archive by every session since; this section is the current record.

@@ -19,11 +19,13 @@ import * as vscode from "vscode";
 
 import { connectionLabel, schemeOf } from "../connections/connectionUri.js";
 import type { ObjectType } from "../mcp/types.js";
+import { colorUriOf } from "./connectionColors.js";
 import {
     OBJECT_GROUP_LABELS,
     type ConnectionsNode,
     type IConnectionNode,
     type IConnectionStatusNode,
+    type IFolderNode,
     type IObjectGroupNode,
     type IObjectNode,
     type ISchemaNode,
@@ -116,6 +118,39 @@ export class ConnectionBaseTreeItem<T extends ConnectionsNode>
 }
 
 /**
+ * A folder of connections.
+ *
+ * Drawn open by default: folders came to an existing tree - a sandbox now
+ * files its connection in `/Sandboxes` - and a connection that used to be in
+ * sight must not vanish into a closed folder.
+ *
+ * The icon follows the state, `folder-opened` or `folder`. VS Code does not
+ * swap it by itself, so the tree provider tracks which folders the user
+ * collapsed and redraws a folder when that changes.
+ */
+export class FolderTreeItem extends vscode.TreeItem {
+    /**
+     * @param node The folder.
+     * @param open Whether it is expanded.
+     */
+    public constructor(public readonly node: IFolderNode, open = true) {
+        super(node.name, open
+            ? vscode.TreeItemCollapsibleState.Expanded
+            : vscode.TreeItemCollapsibleState.Collapsed);
+
+        // `.empty` is what offers Remove Folder; the menus match the rest
+        // with a prefix, so both forms get New Connection and New Folder.
+        this.contextValue = node.empty ? "mariadbFolder.empty" : "mariadbFolder";
+        // Folder paths are unique, so VS Code can tell folders apart by it
+        // across refreshes rather than by label and position. Connection
+        // rows get none: two of them can read the same.
+        this.id = `folder:${node.path}`;
+        this.iconPath = new vscode.ThemeIcon(open ? "folder-opened" : "folder");
+        this.tooltip = node.path;
+    }
+}
+
+/**
  * A configured connection.
  *
  * Its context value carries both whether it is open and whether it is the
@@ -130,10 +165,19 @@ export class ConnectionTreeItem
 
     public constructor(node: IConnectionNode, resolveIcon: IconResolver) {
         // The label leaves out what the icon and the tooltip already say -
-        // the scheme and the options - so the row stays short.
-        super(node, connectionLabel(node.uri),
+        // the scheme and the options - so the row stays short. A caption
+        // replaces it, and it moves into the description instead.
+        const address = connectionLabel(node.uri);
+        super(node, node.caption ?? address,
             CONNECTION_ICONS[schemeOf(node.uri)] ?? "connectionMariaDB.svg",
             node.expandable, resolveIcon);
+
+        // The color is drawn by `ConnectionColorDecorations`, which a row
+        // reaches through its resource URI.
+        if (node.color !== undefined) {
+            this.resourceUri = colorUriOf(
+                node.color, node.connectionKind, node.uri);
+        }
 
         this.contextValue = [
             "mariadbConnection",
@@ -152,7 +196,11 @@ export class ConnectionTreeItem
             marks.push("default");
         }
 
-        this.description = marks.length > 0 ? marks.join(", ") : undefined;
+        const description = [
+            ...(node.caption === undefined ? [] : [address]),
+            ...(marks.length > 0 ? [marks.join(", ")] : []),
+        ].join(" · ");
+        this.description = description === "" ? undefined : description;
 
         const notes: string[] = [];
         if (node.connectionKind === "mcp") {
@@ -161,9 +209,12 @@ export class ConnectionTreeItem
         if (node.isDefault) {
             notes.push("default connection");
         }
-        this.tooltip = notes.length > 0
+        const where = notes.length > 0
             ? `${node.uri} (${notes.join(", ")})`
             : node.uri;
+        this.tooltip = node.caption === undefined
+            ? where
+            : `${node.caption}\n${where}`;
     }
 }
 
@@ -255,6 +306,10 @@ export const createTreeItem = (
     resolveIcon: IconResolver,
 ): vscode.TreeItem => {
     switch (node.kind) {
+        case "folder": {
+            return new FolderTreeItem(node);
+        }
+
         case "connection": {
             return new ConnectionTreeItem(node, resolveIcon);
         }

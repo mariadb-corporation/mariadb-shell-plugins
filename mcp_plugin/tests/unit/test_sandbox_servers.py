@@ -1305,7 +1305,7 @@ def _deploy_tool(monkeypatch, resolved):
     monkeypatch.setattr(
         sandbox_functions.config,
         "store_connection",
-        lambda uri, password, kind=None: None,
+        lambda uri, password, kind=None, path=None: None,
     )
 
     def resolve(version):

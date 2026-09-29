@@ -15,7 +15,20 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import type { ConnectionKind, IMariaDbApi } from "../mcp/types.js";
+import {
+    ALL_CONNECTION_KINDS,
+    type ConnectionColor,
+    type ConnectionKind,
+    type IConnectionDetails,
+    type IConnectionEntry,
+    type IMariaDbApi,
+} from "../mcp/types.js";
+import {
+    captionProblem,
+    connectionKeyProblem,
+    normalizeCaption,
+} from "./connectionDetails.js";
+import { ROOT_FOLDER, normalizeFolder } from "./connectionFolders.js";
 import {
     buildConnectionUri,
     parseConnectionUri,
@@ -38,6 +51,10 @@ import {
  *   the user is a re-key, not an update in place. `db.update_connection` does
  *   that server-side precisely so the password does not have to come back out
  *   to be re-stored - nothing can read a stored password, by design.
+ * * **The folder, caption and color are not part of the identity.** They
+ *   are how the connection is shown and nothing more, so changing one only
+ *   sends that one, and a connection that has none sends none - which keeps
+ *   a server that predates them working for everything else.
  * * **Saving does not verify.** The editor has a Test Connection button for
  *   that, as the MySQL Shell's editor does; a server that happens to be down
  *   must not stop its connection being configured.
@@ -47,10 +64,23 @@ import {
 export const MCP_KIND: ConnectionKind = "mcp";
 export const GUI_KIND: ConnectionKind = "gui";
 
-/** A connection as the extension knows it: its URI and which list it is in. */
+/**
+ * A connection as the extension knows it: its URI, which list it is in and
+ * how it is shown.
+ */
 export interface IStoredConnection {
     uri: string;
     kind: ConnectionKind;
+    /**
+     * `/` for the top level, otherwise `/Folder/Subfolder`. Optional where a
+     * connection is only being identified - editing and deleting go by URI and
+     * kind - and read as the top level when left out.
+     */
+    path?: string;
+    /** What to show instead of the URI; undefined for none. */
+    caption?: string;
+    /** The color to show it in; undefined for none. */
+    color?: ConnectionColor;
 }
 
 /** What the editor asks to be saved. */
@@ -63,6 +93,12 @@ export interface ISaveRequest {
     password?: string;
     /** Whether the connection goes in the shared MCP list. */
     mcpAccess: boolean;
+    /** The folder to file it in, as typed; empty or `/` is the top level. */
+    path?: string;
+    /** The caption, as typed; empty for none. */
+    caption?: string;
+    /** The color; undefined or empty for none. */
+    color?: ConnectionColor | "";
     /** The connection being edited, or undefined when adding a new one. */
     original?: IStoredConnection;
 }
@@ -72,6 +108,10 @@ export interface ISaveResult {
     /** The URI it is configured under, as the server normalized it. */
     uri?: string;
     kind?: ConnectionKind;
+    /** The folder it is filed in. */
+    path?: string;
+    caption?: string;
+    color?: ConnectionColor;
     /** Set instead when the save could not be made. */
     error?: string;
 }
@@ -90,31 +130,64 @@ export const kindFor = (mcpAccess: boolean): ConnectionKind => {
 /**
  * Lists every configured connection, from both lists.
  *
- * The two are asked for separately because `db.list_connections` reports one
- * kind per call, and the kind has to survive into the result: it is half of
- * what identifies a connection, and the tree, the editor and the delete all
- * need it.
+ * In one call, `kind: "all"`, whose entries each name the list they are in:
+ * the kind is half of what identifies a connection, and the tree, the editor
+ * and the delete all need it. A server that predates `"all"` refuses it -
+ * every shell released before it - and is asked twice instead, once per
+ * list, which is how it was always done.
  *
  * @param api The database API.
  *
- * @returns The connections, MCP ones first, each with the list it is in.
+ * @returns The connections, MCP ones first, each with the list it is in and
+ *          its folder.
  */
 export const listConnections = async (
     api: IMariaDbApi,
 ): Promise<IStoredConnection[]> => {
+    try {
+        const all = await api.listConnectionEntries(ALL_CONNECTION_KINDS);
+        // Every entry has to say which list it is in, or it cannot be
+        // edited or deleted - one that does not came from a server that
+        // did not understand the question.
+        if (all.every((entry) => { return entry.kind !== undefined; })) {
+            return all.map((entry) => { return storedOf(entry, entry.kind!); });
+        }
+    } catch {
+        // Refused as an unknown kind by a server that predates it; the two
+        // calls below are what such a server answers, and if they fail too,
+        // that is the error worth reporting.
+    }
+
     const [mcp, gui] = await Promise.all([
-        api.listConnections(MCP_KIND),
-        api.listConnections(GUI_KIND),
+        api.listConnectionEntries(MCP_KIND),
+        api.listConnectionEntries(GUI_KIND),
     ]);
 
     return [
-        ...mcp.map((uri): IStoredConnection => {
-            return { uri, kind: MCP_KIND };
-        }),
-        ...gui.map((uri): IStoredConnection => {
-            return { uri, kind: GUI_KIND };
-        }),
+        ...mcp.map((entry) => { return storedOf(entry, MCP_KIND); }),
+        ...gui.map((entry) => { return storedOf(entry, GUI_KIND); }),
     ];
+};
+
+/**
+ * A listed connection as the extension keeps it.
+ *
+ * @param entry What the server listed.
+ * @param kind The list it is in.
+ *
+ * @returns The connection, its details left out where it has none.
+ */
+const storedOf = (
+    entry: IConnectionEntry,
+    kind: ConnectionKind,
+): IStoredConnection => {
+    return {
+        uri: entry.uri,
+        kind,
+        path: normalizeFolder(entry.path),
+        ...(entry.caption ? { caption: entry.caption } : {}),
+        ...(entry.color === undefined ? {} : { color: entry.color }),
+    };
 };
 
 /**
@@ -160,8 +233,27 @@ export const saveConnection = async (
         return { error: built.error };
     }
 
+    const problem = captionProblem(request.caption ?? "");
+    if (problem !== undefined) {
+        return { error: problem };
+    }
+
     const uri = built.uri!;
     const kind = kindFor(request.mcpAccess);
+    const path = normalizeFolder(request.path ?? "");
+    const caption = normalizeCaption(request.caption ?? "");
+    const color = request.color ?? "";
+    const saved: ISaveResult = {
+        kind,
+        path,
+        ...(caption === "" ? {} : { caption }),
+        ...(color === "" ? {} : { color }),
+    };
+
+    const tooLong = connectionKeyProblem(uri);
+    if (tooLong !== undefined) {
+        return { error: tooLong };
+    }
 
     if (request.original === undefined) {
         // A new connection has no stored password to fall back on, so an
@@ -172,20 +264,101 @@ export const saveConnection = async (
         // own, and a server that is down must not block configuring it.
         const stored = await api.addConnection(
             uri, request.password ?? "", kind, false,
+            {
+                ...(path === ROOT_FOLDER ? {} : { path }),
+                ...(caption === "" ? {} : { caption }),
+                ...(color === "" ? {} : { color }),
+            },
         );
 
-        return { uri: stored, kind };
+        return { ...saved, uri: stored };
     }
 
+    // Only what changed, so the server keeps the rest as it has it.
+    const original = request.original;
+    const changes: IConnectionDetails = {
+        ...(path === normalizeFolder(original.path ?? ROOT_FOLDER)
+            ? {}
+            : { path }),
+        ...(caption === (original.caption ?? "") ? {} : { caption }),
+        ...(color === (original.color ?? "") ? {} : { color }),
+    };
+
     const stored = await api.updateConnection(
-        request.original.uri,
-        uri === request.original.uri ? undefined : uri,
-        request.original.kind,
-        kind === request.original.kind ? undefined : kind,
+        original.uri,
+        uri === original.uri ? undefined : uri,
+        original.kind,
+        kind === original.kind ? undefined : kind,
         request.password,
+        Object.keys(changes).length === 0 ? undefined : changes,
     );
 
-    return { uri: stored, kind };
+    return { ...saved, uri: stored };
+};
+
+/**
+ * Files connections in a folder, keeping everything else about them.
+ *
+ * What a drop in the Connections view does. Each is moved with its own
+ * `db.update_connection`, so a failure part way leaves the ones before it
+ * moved and the rest where they were - never a connection in neither place.
+ * One already in the folder is left alone.
+ *
+ * @param api The database API.
+ * @param connections The connections to move, with the list and folder
+ *                    each is in now.
+ * @param path The folder to file them in; `/` is the top level.
+ *
+ * @returns The connections that were moved.
+ */
+export const moveConnections = async (
+    api: IMariaDbApi,
+    connections: IStoredConnection[],
+    path: string,
+): Promise<IStoredConnection[]> => {
+    return await fileConnections(api, connections.map((connection) => {
+        return { connection, path };
+    }));
+};
+
+/** One connection and the folder it is to be filed in. */
+export interface IFiling {
+    connection: IStoredConnection;
+    /** The folder; `/` is the top level. */
+    path: string;
+}
+
+/**
+ * Files each connection in its own folder - what moving a folder does to
+ * the connections in and below it. Otherwise as `moveConnections`: one
+ * update each, those already in place left alone. A folder is not part of
+ * the stored key, so no move can make a connection too long to store.
+ *
+ * @param api The database API.
+ * @param filings Each connection with the folder it goes in.
+ *
+ * @returns The connections that were moved, each with its new folder.
+ */
+export const fileConnections = async (
+    api: IMariaDbApi,
+    filings: IFiling[],
+): Promise<IStoredConnection[]> => {
+    const moved: IStoredConnection[] = [];
+
+    for (const { connection, path } of filings) {
+        const folder = normalizeFolder(path);
+        if (normalizeFolder(connection.path ?? ROOT_FOLDER) === folder) {
+            continue;
+        }
+
+        await api.updateConnection(
+            connection.uri, undefined, connection.kind, undefined, undefined,
+            { path: folder },
+        );
+        moved.push({ ...connection, path: folder });
+    }
+
+    return moved;
 };
 
 /**
@@ -208,13 +381,23 @@ export const deleteConnection = async (
  *
  * @param connection The connection to edit.
  *
- * @returns Its fields and whether MCP clients may open it.
+ * @returns Its fields, whether MCP clients may open it, and its folder,
+ *          caption and color - `""` for none.
  */
 export const fieldsOf = (
     connection: IStoredConnection,
-): { fields: IConnectionFields; mcpAccess: boolean } => {
+): {
+    fields: IConnectionFields;
+    mcpAccess: boolean;
+    path: string;
+    caption: string;
+    color: ConnectionColor | "";
+} => {
     return {
         fields: parseConnectionUri(connection.uri),
         mcpAccess: connection.kind === MCP_KIND,
+        path: normalizeFolder(connection.path ?? ROOT_FOLDER),
+        caption: connection.caption ?? "",
+        color: connection.color ?? "",
     };
 };
