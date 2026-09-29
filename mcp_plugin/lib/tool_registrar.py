@@ -15,11 +15,13 @@
 
 """Tool registration that re-raises a shell API's exception as a ``ToolError``.
 
-Used by the ``db``, ``msm`` and ``sandbox`` groups, whose tools WRAP shell plugin
-functions and so raise ``mysqlsh.Error``. The ``migrator`` group does not use it:
-those tools drive a program of their own, are not wrappers around anything, and
-raise ``ToolError`` themselves (see
-:mod:`mcp_plugin.lib.migrator_functions`).
+Used by the ``db``, ``msm`` and ``sandbox`` groups, whose tools call shell APIs
+and shell plugin functions - ``shell.open_session``, a session's ``run_sql``,
+the ``msm`` plugin - which raise ``mysqlsh.Error`` and ``mysqlsh.DBError``. The
+tools' own refusals are raised as ``ToolError`` from the start, through
+:func:`tool_error`. The ``migrator`` group does not use the registrar: those
+tools drive a program of their own, are not wrappers around anything, and raise
+``ToolError`` themselves (see :mod:`mcp_plugin.lib.migrator_functions`).
 
 **This is LOAD-BEARING on MCP SDK 2.1 and later**, and the reason is worth
 knowing, because the SDK changed its mind and the module was briefly deleted on
@@ -64,6 +66,24 @@ imports this plugin package eagerly, and pulling in ``mcp`` that early binds
 import inspect
 from functools import wraps
 from typing import Any, Callable
+
+
+def tool_error(message: str) -> Exception:
+    """Returns a ``ToolError`` carrying ``message``, for a tool to raise.
+
+    A function rather than an import because the plugin's modules are imported
+    when the shell starts, and ``ToolError`` pulls in the MCP SDK (see the
+    module docstring); by the time a tool raises one, the server has loaded it.
+
+    Args:
+        message (str): What the client is told.
+
+    Returns:
+        The ``ToolError``.
+    """
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    return ToolError(message)
 
 
 def tool_registrar(server):

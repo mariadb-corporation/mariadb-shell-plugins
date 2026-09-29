@@ -93,7 +93,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `installed_versions`/`path_server_version`, `_download_package`/`_extract_package`/
   `clear_quarantine_flags`, `install`, `resolve`, `ResolvedServer` +
   `SOURCE_PATH`/`SOURCE_INSTALLED`/`SOURCE_DOWNLOADED`, `WORK_PREFIX`, `DOWNLOAD_TIMEOUT`.
-  Raises `mysqlsh.Error` (the sandbox group registers through `tool_registrar`).
+  Raises `ToolError` (through `tool_registrar.tool_error`, as every MCP-only module does).
   **100% covered — keep it that way.**
 
 - lib/sandbox_server_versions.json -> the published index: `sandboxServerIndexVersion` 1,

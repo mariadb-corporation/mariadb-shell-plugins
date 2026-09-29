@@ -290,11 +290,11 @@ def test_a_connection_is_bound_to_its_client_over_http(http_transport):
     # Another client is told the connection does not exist, exactly as it is
     # told for an id that was never handed out - so guessing a UUID reveals
     # nothing about whether it is a real one.
-    with pytest.raises(mysqlsh.Error) as taken_over:
+    with pytest.raises(ToolError) as taken_over:
         with db_functions.use_session(connection_id, _identity(OTHER_ADDRESS)):
             pass
 
-    with pytest.raises(mysqlsh.Error) as unknown:
+    with pytest.raises(ToolError) as unknown:
         with db_functions.use_session(
             "no-such-connection-id", _identity(CLIENT_ADDRESS)
         ):
@@ -306,7 +306,7 @@ def test_a_connection_is_bound_to_its_client_over_http(http_transport):
 
     # A request the server cannot attribute to any client is refused as well.
     for client in (STDIO_CLIENT, None):
-        with pytest.raises(mysqlsh.Error):
+        with pytest.raises(ToolError):
             with db_functions.use_session(connection_id, client):
                 pass
 
@@ -325,14 +325,14 @@ def test_a_connection_is_bound_to_its_mcp_session(http_transport):
     connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
 
     # Same address, another session: refused.
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         with db_functions.use_session(
             connection_id, _identity(CLIENT_ADDRESS, OTHER_SESSION_ID)
         ):
             pass
 
     # Same address, no session at all: refused.
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         with db_functions.use_session(
             connection_id, _identity(CLIENT_ADDRESS, None)
         ):
@@ -340,7 +340,7 @@ def test_a_connection_is_bound_to_its_mcp_session(http_transport):
 
     # The right session from the wrong address is refused too, so neither half
     # of the identity is sufficient on its own.
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         with db_functions.use_session(connection_id, _identity(OTHER_ADDRESS)):
             pass
 
@@ -370,7 +370,7 @@ def test_a_connection_is_usable_over_stdio(stdio_transport):
     # cannot reach it either. This cannot happen while serving over stdio (no
     # request has one there) and is asserted only to pin that the comparison is
     # an equality and not an "unless we are over HTTP".
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         with db_functions.use_session(connection_id, _identity(CLIENT_ADDRESS)):
             pass
 
@@ -404,7 +404,7 @@ def test_a_connection_stays_bound_without_an_active_transport():
             STDIO_CLIENT,
             None,
         ):
-            with pytest.raises(mysqlsh.Error):
+            with pytest.raises(ToolError):
                 with db_functions.use_session(connection_id, client):
                     pass
 
@@ -669,7 +669,7 @@ def test_a_refused_connection_use_is_logged(http_transport, capsys):
     connection_id, _ = _register_connection(_identity(CLIENT_ADDRESS))
     capsys.readouterr()
 
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         with db_functions.use_session(
             connection_id, _identity(OTHER_ADDRESS, OTHER_SESSION_ID)
         ):
@@ -688,7 +688,7 @@ def test_a_refused_connection_use_is_logged(http_transport, capsys):
     # An id that was never handed out is a stale connection id, not an attempt
     # to use one that exists - the client cannot tell the two answers apart, but
     # the log deliberately does.
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         with db_functions.use_session(
             "no-such-connection-id", _identity(CLIENT_ADDRESS)
         ):
@@ -823,13 +823,13 @@ def test_a_connection_does_not_live_for_ever(http_transport, capsys):
     # nevertheless over its lifetime.
     _age(connection, 1)
 
-    with pytest.raises(mysqlsh.Error) as expired:
+    with pytest.raises(ToolError) as expired:
         with db_functions.use_session(connection_id, client):
             pass
 
     # Reported exactly as an id that was never handed out, which is what it is
     # from now on - and the client's move is the same either way: db.connect.
-    with pytest.raises(mysqlsh.Error) as unknown:
+    with pytest.raises(ToolError) as unknown:
         with db_functions.use_session("no-such-connection-id", client):
             pass
 
@@ -863,7 +863,7 @@ def test_the_lifetime_holds_without_a_reaper(stdio_transport):
     connection_id, connection = _register_connection(STDIO_CLIENT, open_session)
     _age(connection, general.CONNECTION_MAX_LIFETIME)
 
-    with pytest.raises(mysqlsh.Error):
+    with pytest.raises(ToolError):
         with db_functions.use_session(connection_id, STDIO_CLIENT):
             pass
 
@@ -942,7 +942,7 @@ def test_removing_a_connection_revokes_it(http_transport, monkeypatch):
     # removed connection and a UUID that goes on working.
     configured.clear()
 
-    with pytest.raises(mysqlsh.Error) as revoked:
+    with pytest.raises(ToolError) as revoked:
         with db_functions.use_session(connection_id, client):
             pass
 
@@ -963,7 +963,7 @@ def test_a_first_open_is_validated_too(http_transport, monkeypatch):
         db_functions.config, "list_stored_connection_uris", lambda kind=None: []
     )
 
-    with pytest.raises(mysqlsh.Error) as refused:
+    with pytest.raises(ToolError) as refused:
         db_functions._open_session("root@192.0.2.99:3306")
 
     assert "no longer a configured connection" in str(refused.value)

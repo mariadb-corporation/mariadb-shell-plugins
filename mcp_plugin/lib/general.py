@@ -25,6 +25,8 @@ from typing import NamedTuple, Optional
 
 import mysqlsh
 
+from mcp_plugin.lib.tool_registrar import tool_error
+
 VERSION = "26.9.4"
 
 # Default MCP server bind settings
@@ -687,7 +689,7 @@ async def require_allowed_path(ctx, path) -> None:
     path is not yet allowed, the user is asked - via MCP elicitation - whether
     to trust it. On confirmation the path is added to the allowed paths on disk
     (see :func:`mcp_plugin.lib.config.add_allowed_path`) and the call returns
-    normally; otherwise a :class:`mysqlsh.Error` is raised.
+    normally; otherwise a ``ToolError`` is raised.
 
     In GUI mode every path is allowed, so this returns without eliciting
     anything and without writing the path to the allow-list - the check it
@@ -715,7 +717,7 @@ async def require_allowed_path(ctx, path) -> None:
         config.add_allowed_path(path)
         return
 
-    raise mysqlsh.Error(
+    raise tool_error(
         f"Access to path '{path}' is not allowed. Add it (or a parent "
         "directory) to the allowed paths with mcp.setup."
     )

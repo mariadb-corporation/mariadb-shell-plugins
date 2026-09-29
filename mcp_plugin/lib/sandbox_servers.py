@@ -64,9 +64,8 @@ import tempfile
 import urllib.request
 from typing import NamedTuple, Optional
 
-import mysqlsh
-
 from mcp_plugin.lib import general
+from mcp_plugin.lib.tool_registrar import tool_error
 
 # The published index of downloadable server packages, shipped beside this
 # module. See the module docstring for why it is a file and not a URL.
@@ -168,7 +167,7 @@ def load_index() -> dict:
         The parsed index.
 
     Raises:
-        mysqlsh.Error: The file is missing, is not valid JSON, or declares an
+        ToolError: The file is missing, is not valid JSON, or declares an
             index version this plugin does not understand.
     """
     path = index_path()
@@ -176,19 +175,19 @@ def load_index() -> dict:
         with open(path, "r", encoding="utf-8") as index_file:
             index = json.load(index_file)
     except OSError as exc:
-        raise mysqlsh.Error(
+        raise tool_error(
             f"The list of downloadable MariaDB server versions ({path}) could "
             f"not be read: {exc}"
         ) from exc
     except ValueError as exc:
-        raise mysqlsh.Error(
+        raise tool_error(
             f"The list of downloadable MariaDB server versions ({path}) is not "
             f"valid JSON: {exc}"
         ) from exc
 
     declared = index.get("sandboxServerIndexVersion")
     if declared != SUPPORTED_INDEX_VERSION:
-        raise mysqlsh.Error(
+        raise tool_error(
             f"The list of downloadable MariaDB server versions ({path}) is "
             f"version {declared!r}, which this plugin does not understand (it "
             f"reads version {SUPPORTED_INDEX_VERSION}). Update the plugin."
@@ -233,11 +232,11 @@ def require_platform_key() -> str:
         The platform key.
 
     Raises:
-        mysqlsh.Error: No server packages are published for this machine.
+        ToolError: No server packages are published for this machine.
     """
     key = platform_key()
     if key is None:
-        raise mysqlsh.Error(
+        raise tool_error(
             "No MariaDB server packages are published for this platform "
             f"({sys.platform}/{platform.machine()}). Install a server manually "
             "and leave the version unset to deploy with the one on the PATH."
@@ -296,7 +295,7 @@ def available_versions(series: str = None) -> list:
         The versions as ``major.minor.patch`` strings, sorted oldest first.
 
     Raises:
-        mysqlsh.Error: No packages are published for this machine, ``series`` is
+        ToolError: No packages are published for this machine, ``series`` is
             a full version rather than a series, or it names a series the index
             does not have.
     """
@@ -315,14 +314,14 @@ def available_versions(series: str = None) -> list:
 
     major, minor, patch = parse_version(series)
     if patch is not None:
-        raise mysqlsh.Error(
+        raise tool_error(
             f"'{series}' is a full version. To list the releases below one, "
             f"pass a series: '{major}.{minor}' or '{major}'."
         )
 
     entries = _matching_series(index, major, minor)
     if not entries:
-        raise mysqlsh.Error(
+        raise tool_error(
             f"MariaDB {_series_text(major, minor)} is not among the "
             "downloadable versions. Available: "
             f"{', '.join(available_versions()) or 'none'}."
@@ -389,7 +388,7 @@ def parse_version(version: str) -> tuple:
         None for each level that was left off.
 
     Raises:
-        mysqlsh.Error: The version is not one of those three shapes.
+        ToolError: The version is not one of those three shapes.
     """
     text = (version or "").strip()
     if text[:1] in ("v", "V"):
@@ -397,7 +396,7 @@ def parse_version(version: str) -> tuple:
 
     match = _VERSION_PATTERN.match(text)
     if match is None:
-        raise mysqlsh.Error(
+        raise tool_error(
             f"'{version}' is not a MariaDB server version. Give it as "
             "'major.minor.patch' (for example '11.8.9'), as 'major.minor' (for "
             "example '11.8', which takes the latest patch release of that "
@@ -552,7 +551,7 @@ def _download_package(url: str, archive_path: str, expected_sha256: str) -> None
         None
 
     Raises:
-        mysqlsh.Error: The digest of what arrived is not the pinned one.
+        ToolError: The digest of what arrived is not the pinned one.
     """
     digest = hashlib.sha256()
     with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:
@@ -570,7 +569,7 @@ def _download_package(url: str, archive_path: str, expected_sha256: str) -> None
             os.remove(archive_path)
         except OSError:
             pass
-        raise mysqlsh.Error(
+        raise tool_error(
             f"The MariaDB server package downloaded from {url} does not match "
             f"the checksum published for it (expected {expected_sha256}, got "
             f"{actual}). It was discarded and nothing was installed."
@@ -674,7 +673,7 @@ def install(version: str) -> str:
         The directory the version was installed in.
 
     Raises:
-        mysqlsh.Error: No package is published for this version and platform,
+        ToolError: No package is published for this version and platform,
             the download does not match its checksum, or what was extracted
             holds no server binary.
     """
@@ -682,7 +681,7 @@ def install(version: str) -> str:
     index = load_index()
     major, minor, patch = parse_version(version)
     if patch is None:
-        raise mysqlsh.Error(f"'{version}' is a series, not a version to install.")
+        raise tool_error(f"'{version}' is a series, not a version to install.")
 
     # Rebuilt from the parsed numbers rather than used as given: the version is
     # both the index key and the directory name, and 'v11.8.9' is neither.
@@ -692,7 +691,7 @@ def install(version: str) -> str:
     packages = _series_versions(entries[0]).get(version, []) if entries else []
     package = _package_of(packages, key)
     if package is None:
-        raise mysqlsh.Error(
+        raise tool_error(
             f"MariaDB {version} is not published for {key}. Available for this "
             f"platform: {', '.join(available_versions()) or 'none'}."
         )
@@ -728,7 +727,7 @@ def install(version: str) -> str:
             )
             extracted = _extract_package(archive_path, os.path.join(work_dir, "unpack"))
             if find_server_binary(extracted) is None:
-                raise mysqlsh.Error(
+                raise tool_error(
                     f"The MariaDB {version} package contains no server binary "
                     f"({' or '.join(_SERVER_BINARY_NAMES)}). Nothing was installed."
                 )
@@ -783,7 +782,7 @@ def resolve(version: str) -> ResolvedServer:
         with (None when it is the one on the PATH) and where it came from.
 
     Raises:
-        mysqlsh.Error: The version is malformed, or it is neither on this
+        ToolError: The version is malformed, or it is neither on this
             machine nor published for this platform.
     """
     major, minor, patch = parse_version(version)
@@ -813,7 +812,7 @@ def resolve(version: str) -> ResolvedServer:
     else:
         published = available_versions(_series_text(major, minor))
         if not published:
-            raise mysqlsh.Error(
+            raise tool_error(
                 f"MariaDB {_series_text(major, minor)} is not published for "
                 f"{require_platform_key()}."
             )
@@ -824,7 +823,7 @@ def resolve(version: str) -> ResolvedServer:
     if binary is None:
         # install() already checked this on the staging copy, so reaching here
         # means the installation was disturbed between the check and the swap.
-        raise mysqlsh.Error(
+        raise tool_error(
             f"The installed MariaDB {wanted} in {install_dir} holds no server "
             "binary."
         )

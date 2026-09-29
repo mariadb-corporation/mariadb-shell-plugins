@@ -132,7 +132,7 @@ from typing import Optional
 import mysqlsh
 
 from mcp_plugin.lib import config, general
-from mcp_plugin.lib.tool_registrar import tool_registrar
+from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
 # Maps a connection UUID to its _Connection.
 _sessions = {}
@@ -734,7 +734,7 @@ def _open_session(uri: str, kind=None):
     # stored spellings, because this URI is one: it came from find_connection,
     # and it is the key the password is about to be read under.
     if uri not in config.list_stored_connection_uris(kind):
-        raise mysqlsh.Error(
+        raise tool_error(
             f"'{uri}' is no longer a configured connection. Use "
             "db.list_connections to see the configured connections and "
             "db.connect to open one of them."
@@ -766,7 +766,7 @@ def _is_connection_lost(error) -> bool:
     return getattr(error, "code", None) in _CONNECTION_LOST_ERRORS
 
 
-def _no_such_connection(connection_id: str) -> mysqlsh.Error:
+def _no_such_connection(connection_id: str) -> Exception:
     """Returns the error a client gets for a connection it may not use.
 
     The same error for both cases - an id that was never handed out, and one
@@ -780,7 +780,7 @@ def _no_such_connection(connection_id: str) -> mysqlsh.Error:
     Returns:
         The error to raise.
     """
-    return mysqlsh.Error(
+    return tool_error(
         f"No open connection found for id '{connection_id}'. "
         "Open one first with db.connect."
     )
@@ -868,7 +868,7 @@ def _claim_connection_slot(connection_id: str, connection) -> None:
             f"already holds the maximum of {client_limit} open connections"
         )
 
-        raise mysqlsh.Error(
+        raise tool_error(
             f"There are already {for_client} open connections for this client, "
             f"which is the maximum of {client_limit}. Close the ones that are "
             "no longer needed with db.close before opening another."
@@ -880,7 +880,7 @@ def _claim_connection_slot(connection_id: str, connection) -> None:
         "for another)"
     )
 
-    raise mysqlsh.Error(
+    raise tool_error(
         f"The server already has {total} open database connections, which is "
         f"the maximum of {total_limit}. Close the ones that are no longer "
         "needed with db.close, or try again later."
@@ -1742,7 +1742,7 @@ def _check_paging(limit: Optional[int], offset: Optional[int] = None) -> None:
         offset (int): The offset asked for, or None.
 
     Raises:
-        mysqlsh.Error: If either is not a non-negative integer, or there is
+        ToolError: If either is not a non-negative integer, or there is
             an offset without a limit.
     """
     for name, value in (("limit", limit), ("offset", offset)):
@@ -1750,11 +1750,11 @@ def _check_paging(limit: Optional[int], offset: Optional[int] = None) -> None:
         if value is not None and (
             isinstance(value, bool) or not isinstance(value, int) or value < 0
         ):
-            raise mysqlsh.Error(
+            raise tool_error(
                 f"'{name}' must be a non-negative integer, not {value!r}."
             )
     if offset is not None and limit is None:
-        raise mysqlsh.Error("An 'offset' needs a 'limit' to go with it.")
+        raise tool_error("An 'offset' needs a 'limit' to go with it.")
 
 
 def _query_rows(session, sql: str, params: Optional[list] = None) -> list:
@@ -1786,7 +1786,7 @@ def _normalize_object_type(object_type: str) -> str:
     """
     normalized = object_type.strip().lower()
     if normalized not in _LIST_OBJECTS_SQL:
-        raise mysqlsh.Error(
+        raise tool_error(
             f"'{object_type}' is not a supported object type. Supported "
             f"types are: {', '.join(_LIST_OBJECTS_SQL)}."
         )
@@ -1966,14 +1966,14 @@ def _register_connection_management_tools(tool) -> None:
         # mean storing a connection with no password at all.
         parsed = config.parse_connection_uri(uri)
         if parsed is not None and parsed.get("password"):
-            raise mysqlsh.Error(
+            raise tool_error(
                 "The connection URI carries a password. Give the URI without "
                 "it and pass the password as the 'password' argument."
             )
 
         normalized = config.normalize_connection_uri(uri)
         if normalized is None:
-            raise mysqlsh.Error(f"'{uri}' is not a valid connection URI.")
+            raise tool_error(f"'{uri}' is not a valid connection URI.")
 
         # Checked before verifying, which would be wasted on a connection the
         # secret store cannot hold. store_connection checks again; this only
@@ -1990,7 +1990,7 @@ def _register_connection_management_tools(tool) -> None:
             try:
                 setup_cli.verify_connection(normalized, password)
             except Exception as error:  # noqa: BLE001 - surface the shell's text
-                raise mysqlsh.Error(
+                raise tool_error(
                     f"Could not connect to '{normalized}': {error}. The "
                     "connection was not stored. Pass verify false to store it "
                     "anyway."
@@ -2088,7 +2088,7 @@ def _register_connection_management_tools(tool) -> None:
         configured_uri = config.resolve_connection_uri(uri, kind)
         if configured_uri is None:
             configured = config.list_connection_uris(kind)
-            raise mysqlsh.Error(
+            raise tool_error(
                 f"'{uri}' is not a configured '{kind}' connection. Configured "
                 f"connections: {', '.join(configured) or 'none'}."
             )
@@ -2098,7 +2098,7 @@ def _register_connection_management_tools(tool) -> None:
         else:
             parsed = config.parse_connection_uri(new_uri)
             if parsed is not None and parsed.get("password"):
-                raise mysqlsh.Error(
+                raise tool_error(
                     "The connection URI carries a password. Give the URI "
                     "without it and pass the password as the 'password' "
                     "argument."
@@ -2106,7 +2106,7 @@ def _register_connection_management_tools(tool) -> None:
 
             target_uri = config.normalize_connection_uri(new_uri)
             if target_uri is None:
-                raise mysqlsh.Error(
+                raise tool_error(
                     f"'{new_uri}' is not a valid connection URI."
                 )
 
@@ -2206,21 +2206,21 @@ def _register_connection_management_tools(tool) -> None:
         """
         parsed = config.parse_connection_uri(uri)
         if parsed is not None and parsed.get("password"):
-            raise mysqlsh.Error(
+            raise tool_error(
                 "The connection URI carries a password. Give the URI without "
                 "it and pass the password as the 'password' argument."
             )
 
         normalized = config.normalize_connection_uri(uri)
         if normalized is None:
-            raise mysqlsh.Error(f"'{uri}' is not a valid connection URI.")
+            raise tool_error(f"'{uri}' is not a valid connection URI.")
 
         if password is None:
             # Read here and used here; like db.update_connection this is a
             # place the stored secret is touched without ever being returned.
             found = config.find_connection(normalized)
             if found is None:
-                raise mysqlsh.Error(
+                raise tool_error(
                     f"'{uri}' is not a configured connection, so there is no "
                     "stored password to test it with. Pass the password to "
                     "test a connection that does not exist yet."
@@ -2237,7 +2237,7 @@ def _register_connection_management_tools(tool) -> None:
         try:
             setup_cli.verify_connection(normalized, password)
         except Exception as error:  # noqa: BLE001 - surface the shell's text
-            raise mysqlsh.Error(
+            raise tool_error(
                 f"Could not connect to '{normalized}': {error}"
             ) from error
 
@@ -2272,7 +2272,7 @@ def _register_connection_management_tools(tool) -> None:
         configured_uri = config.resolve_connection_uri(uri, kind)
         if configured_uri is None:
             configured = config.list_connection_uris(kind)
-            raise mysqlsh.Error(
+            raise tool_error(
                 f"'{uri}' is not a configured '{kind}' connection. Configured "
                 f"connections: {', '.join(configured) or 'none'}."
             )
@@ -2367,7 +2367,7 @@ def register_db_tools(server, function_groups=()) -> None:
         # in GUI mode there are two, and the URI alone does not say which.
         found = config.find_connection(uri)
         if found is None:
-            raise mysqlsh.Error(
+            raise tool_error(
                 f"'{uri}' is not a configured connection. Use db.list_connections "
                 "to list the available connections, or configure it with mcp.setup."
             )
@@ -2386,7 +2386,7 @@ def register_db_tools(server, function_groups=()) -> None:
                 f"could not be fully identified ({general.describe_client(client)})"
             )
 
-            raise mysqlsh.Error(
+            raise tool_error(
                 "The client could not be identified, so the connection cannot "
                 "be bound to it. Over HTTP a connection can only be opened on "
                 "an established MCP session, by a client whose address the "
@@ -2509,7 +2509,7 @@ def register_db_tools(server, function_groups=()) -> None:
         with use_session(connection_id, general.get_client_identity(ctx)) as session:
             basic = _query_rows(session, _OBJECT_BASIC_SQL[normalized], object_id)
             if not basic:
-                raise mysqlsh.Error(
+                raise tool_error(
                     f"No {normalized} '{object_name}' found in schema "
                     f"'{schema_name}'. Use db.list_objects to list the "
                     f"{normalized}s of a schema."
@@ -2744,13 +2744,13 @@ def register_db_tools(server, function_groups=()) -> None:
         """
         _check_paging(limit)
         if (sql_script is None) == (file_path is None):
-            raise mysqlsh.Error(
+            raise tool_error(
                 "Provide exactly one of 'sql_script' or 'file_path'."
             )
 
         if file_path is not None:
             if not config.is_path_allowed(file_path):
-                raise mysqlsh.Error(
+                raise tool_error(
                     f"Access to path '{file_path}' is not allowed. Add it (or a "
                     "parent directory) to the allowed paths with mcp.setup."
                 )

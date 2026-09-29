@@ -42,6 +42,7 @@ import tarfile
 from types import SimpleNamespace
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
 import mysqlsh
 
@@ -268,7 +269,7 @@ def test_load_index_refuses_an_index_version_it_does_not_read(tmp_path, monkeypa
     index_file.write_text('{"sandboxServerIndexVersion": 99, "serverVersions": []}')
     monkeypatch.setattr(sandbox_servers, "index_path", lambda: str(index_file))
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.load_index()
 
     assert "does not understand" in str(failure.value)
@@ -280,7 +281,7 @@ def test_load_index_reports_a_missing_file(tmp_path, monkeypatch):
         sandbox_servers, "index_path", lambda: str(tmp_path / "gone.json")
     )
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.load_index()
 
     assert "could not be read" in str(failure.value)
@@ -292,7 +293,7 @@ def test_load_index_reports_invalid_json(tmp_path, monkeypatch):
     index_file.write_text("{not json")
     monkeypatch.setattr(sandbox_servers, "index_path", lambda: str(index_file))
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.load_index()
 
     assert "not valid JSON" in str(failure.value)
@@ -329,7 +330,7 @@ def test_require_platform_key_refuses_a_platform_with_no_packages(monkeypatch):
     """A machine nothing is published for is told so, and told what to do."""
     monkeypatch.setattr(sandbox_servers, "platform_key", lambda: None)
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.require_platform_key()
 
     assert "on the PATH" in str(failure.value)
@@ -398,7 +399,7 @@ def test_available_versions_refuses_an_unknown_major(monkeypatch, platform_key):
     """A major nothing is published under is refused, not answered emptily."""
     _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"new"})
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.available_versions("99")
 
     assert "MariaDB 99 is not among" in str(failure.value)
@@ -422,7 +423,7 @@ def test_available_versions_refuses_a_full_version_as_a_series(monkeypatch, plat
     """Asked to list the patches "of 10.6.1", it says what to pass instead."""
     _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"new"})
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.available_versions(FAKE_VERSION)
 
     assert f"'{FAKE_SERIES}'" in str(failure.value)
@@ -432,7 +433,7 @@ def test_available_versions_refuses_an_unknown_series(monkeypatch, platform_key)
     """An unknown series is refused with the list of the known ones."""
     _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"new"})
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.available_versions("99.9")
 
     assert FAKE_VERSION in str(failure.value)
@@ -464,7 +465,7 @@ def test_parse_version_accepts_all_three_shapes(text, expected):
 @pytest.mark.parametrize("text", ["", None, "abc", "11.8.9.1", "11.x", "-1.2", "11."])
 def test_parse_version_refuses_anything_else(text):
     """Anything that is not one of the three shapes is refused by name."""
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.parse_version(text)
 
     assert "major.minor" in str(failure.value)
@@ -681,7 +682,7 @@ def test_install_rejects_a_package_whose_checksum_does_not_match(
         {_url_of(FAKE_VERSION): _package_bytes(_PACKAGE_ENTRIES + (("extra", "x", 0o644),))},
     )
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.install(FAKE_VERSION)
 
     assert "checksum" in str(failure.value)
@@ -696,7 +697,7 @@ def test_install_rejects_a_package_with_no_server_in_it(
     _stub_index(monkeypatch, platform_key, {FAKE_VERSION: payload})
     _stub_download(monkeypatch, {_url_of(FAKE_VERSION): payload})
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.install(FAKE_VERSION)
 
     assert "no server binary" in str(failure.value)
@@ -750,7 +751,7 @@ def test_install_refuses_a_series(monkeypatch, platform_key, server_root):
     """``install`` takes a release, not a series - the caller resolves that."""
     _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"x"})
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.install(FAKE_SERIES)
 
     assert "series" in str(failure.value)
@@ -762,7 +763,7 @@ def test_install_refuses_a_version_that_is_not_published(
     """An unpublished version is refused with what IS available for the machine."""
     _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"x"})
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.install("9.9.9")
 
     assert FAKE_VERSION in str(failure.value)
@@ -804,7 +805,7 @@ def test_a_rejected_package_that_cannot_be_deleted_is_still_refused(
 
     monkeypatch.setattr(sandbox_servers.os, "remove", refuse)
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.install(FAKE_VERSION)
 
     assert "checksum" in str(failure.value)
@@ -1021,7 +1022,7 @@ def test_resolve_refuses_a_series_that_is_not_published(
     _stub_index(monkeypatch, platform_key, {FAKE_VERSION: b"x"})
     monkeypatch.setattr(sandbox_servers, "path_server_version", lambda: None)
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.resolve("99.9")
 
     assert "99.9" in str(failure.value)
@@ -1093,7 +1094,7 @@ def test_resolve_refuses_a_major_not_built_for_this_platform(
                 packages[0]["os"] = "solaris-sparc"
     monkeypatch.setattr(sandbox_servers, "path_server_version", lambda: None)
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.resolve("10")
 
     assert "MariaDB 10 is not published for" in str(failure.value)
@@ -1115,7 +1116,7 @@ def test_resolve_refuses_a_series_not_built_for_this_platform(
                 packages[0]["os"] = "solaris-sparc"
     monkeypatch.setattr(sandbox_servers, "path_server_version", lambda: None)
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.resolve(FAKE_SERIES)
 
     assert "not published for" in str(failure.value)
@@ -1138,7 +1139,7 @@ def test_resolve_reports_an_installation_that_lost_its_binary(
     emptied.mkdir()
     monkeypatch.setattr(sandbox_servers, "install", lambda version: str(emptied))
 
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.resolve(FAKE_VERSION)
 
     assert "holds no server binary" in str(failure.value)
@@ -1146,7 +1147,7 @@ def test_resolve_reports_an_installation_that_lost_its_binary(
 
 def test_resolve_refuses_a_malformed_version(server_root):
     """A typo is answered before anything is searched or fetched."""
-    with pytest.raises(mysqlsh.Error) as failure:
+    with pytest.raises(ToolError) as failure:
         sandbox_servers.resolve("latest")
 
     assert "major.minor" in str(failure.value)
@@ -1247,8 +1248,8 @@ def test_the_listing_tool_lists_one_series(levels):
 def test_the_listing_tool_reports_a_bad_series():
     """A malformed series comes back as a tool error that still has its message.
 
-    Which is the tool_registrar's doing - see its module docstring. Without it
-    SDK 2.1 answers a mysqlsh.Error with a bare "Error executing tool".
+    Because it is raised as a ToolError: SDK 2.1 answers anything else that
+    reaches it with a bare "Error executing tool".
     """
     result = helpers.call_tool(
         function_groups=["sandbox"],

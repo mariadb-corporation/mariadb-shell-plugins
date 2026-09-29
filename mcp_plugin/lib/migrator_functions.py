@@ -20,10 +20,10 @@ are registered only when the tooling is actually installed (see
 :func:`register_migrator_tools`), so a server on a machine that never ran the
 download step does not advertise tools that could not do anything.
 
-Unlike the other tool groups, these are NOT wrappers around shell plugin
+Unlike the other tool groups, these do not call shell APIs or shell plugin
 functions: they drive a program of their own. So they raise the SDK's
-``ToolError`` directly and register with plain ``server.tool``, rather than
-raising ``mysqlsh.Error`` and going through
+``ToolError`` like every tool does and register with plain ``server.tool``,
+rather than going through
 :func:`mcp_plugin.lib.tool_registrar.tool_registrar`, which exists to translate
 a shell API's exception into one whose text reaches the client. Nothing here
 imports ``mysqlsh`` at all. The consequence to keep in mind: an exception that

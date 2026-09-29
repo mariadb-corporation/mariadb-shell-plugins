@@ -8,6 +8,16 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Gotchas / things not to repeat
 
+- **Rene's PR #30 review: keep the MCP layer a thin interface to the database, and
+  don't over-build.** Three rounds of review corrected the same tendency: parsing
+  `str(get_type())` and making up a `BLOB` type (use `get_type().data`, and pass the
+  flags through for the client to interpret); a getter table reporting eleven Column
+  fields when the only consumer reads two (`_column_metadata` is now just `type` and
+  `flags`); separate `additional_result_sets` instead of one `result_sets` list. Before
+  adding a field, a table or a derived value, check what a consumer actually reads, and
+  pass shell data through rather than interpreting it. His other standing rule, on
+  exceptions (`ToolError` in tool code), is in server.md's Architecture section.
+
 - **`/checkpoint` needs its target folder** — invoked bare it must ask, but this session
   is non-interactive; target was inferred as `mcp_plugin` from the session's work.
 

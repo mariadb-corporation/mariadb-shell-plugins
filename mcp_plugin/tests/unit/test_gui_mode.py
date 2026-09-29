@@ -186,7 +186,7 @@ def test_a_path_is_not_elicited_in_gui_mode(gui_mode, clean_config):
     # Without GUI mode the same call is refused, which is what says the pass
     # above came from the mode and not from the path being allowed anyway.
     general.set_gui_mode(False)
-    with pytest.raises(mysqlsh.Error) as refused:
+    with pytest.raises(ToolError) as refused:
         asyncio.run(
             general.require_allowed_path(_RefusingContext(), "/anywhere/at/all")
         )
@@ -993,7 +993,7 @@ def test_a_session_is_reopened_against_its_own_list(gui_mode, clean_config):
     uri = "mariadb://gui_revoke@127.0.0.1:3306"
     config.store_connection(uri, "mcp-pw")
 
-    with pytest.raises(mysqlsh.Error) as refused:
+    with pytest.raises(ToolError) as refused:
         db_functions._open_session(uri, config.CONNECTION_KIND_GUI)
 
     assert "no longer a configured connection" in str(refused.value)

@@ -10,6 +10,31 @@ session machinery the db tools sit on is in
 
 ## Architecture / key decisions
 
+- **Which exception to raise: `ToolError` in MCP tool code, `mysqlsh.Error` only in
+  shell plugin code.** Decided in Rene's PR #30 review (general comment, fixed in PR #31,
+  `88c06aa4`) after new tool code kept raising `mysqlsh.Error`. The rule, by module:
+  - **`ToolError`, via `tool_registrar.tool_error("...")`** — everything that only serves
+    MCP tools: `db_functions.py`, `sandbox_functions.py`, `sandbox_servers.py`,
+    `msm_functions.py`'s own checks, `general.require_allowed_path`, and any NEW tool
+    module or helper. Write `raise tool_error(...)` (or `raise tool_error(...) from e`);
+    document it as `ToolError:` under Raises.
+  - **Never `from mcp.server.mcpserver.exceptions import ToolError` at module scope** in
+    these modules: all of `mcp_plugin.lib` is imported when the shell loads the plugin,
+    and that import pulls in ~110 SDK modules, `mcp.client.stdio` among them (see
+    environment.md). `tool_error()` imports it when called. `migrator_functions` is the
+    one module allowed a module-scope import, because `server._registrar` imports it
+    lazily; `test_loading_the_plugin_imports_no_mcp_sdk_module` catches a mistake here.
+  - **`mysqlsh.Error`** — shell plugin functions and what only they use: `server.py`
+    (`mcp.startServer`), `setup.py`/`setup_cli.py`/`setup_migrator.py`/`setup_prompts.py`
+    (`mcp.setup`), and `config.py`, which `mcp.setup` shares with the tools. If tool
+    code turns into a `@plugin_function`, it switches to `mysqlsh.Error`.
+  - **`tool_registrar` still converts** whatever else reaches a tool — `config.py`'s
+    checks, the shell APIs' `mysqlsh.Error`/`mysqlsh.DBError` (`open_session`, `run_sql`,
+    the msm plugin) — to `ToolError(str(e))`, so that SDK 2.1 does not strip the message.
+    It is the safety net, not the way to raise your own refusals.
+  - Visible difference: a converted `mysqlsh.Error` reads `Shell Error: ...`, and a
+    `tool_error` does not. Nothing may match on that prefix.
+
 - **GUI mode (`mcp start-server --gui`)** — the server is being driven by the MariaDB
   VS Code extension (`code_ext`) rather than by an autonomous agent. Set by
   `lib/server.start()` via `general.set_gui_mode()` **before the tools are built**,
@@ -100,7 +125,7 @@ session machinery the db tools sit on is in
   MCP-elicits (`ctx.elicit`, schema=one-bool `ConfirmTrustPath`) asking the user to trust
   it; on accept+trust it `config.add_allowed_path()` (persists to settings.json,
   abspath+expanduser, dedup) and proceeds; on decline/cancel/elicit-failure it raises the
-  "not allowed" mysqlsh.Error. Because elicit is async, ALL msm (12) + sandbox (7) tools are
+  "not allowed" ToolError. Because elicit is async, ALL msm (12) + sandbox (7) tools are
   `async def` with a leading `ctx: Context` param (`from mcp.server.mcpserver import Context`,
   imported inside the registrar; the server strips it from the client-facing schema).
   db.* tools stay SYNC — none of them elicit (`db.execute_sql_script` checks
@@ -117,8 +142,10 @@ session machinery the db tools sit on is in
   `_transport_security_settings` + `_dialable_host_names` (the Host/Origin allow list);
   `_warn_if_reachable_from_the_network`; passes function_groups to the registrars.
 
-- lib/tool_registrar.py -> the `server.tool` replacement db/msm/sandbox register through,
-  converting a `mysqlsh.Error` into a `ToolError` so SDK 2.1 does not strip its message
+- lib/tool_registrar.py -> `tool_error(message)`, the lazily-importing `ToolError`
+  factory every MCP-only module raises its refusals with (see the testing.md gotcha);
+  and the `server.tool` replacement db/msm/sandbox register through,
+  converting a shell API's `mysqlsh.Error` into a `ToolError` so SDK 2.1 does not strip its message
   (see the SDK-error gotcha — this module was deleted once and had to come back).
   `ToolError`, `ResourceError` and `MCPError` pass through unconverted. Imports the SDK
   inside `decorator`, never at module scope. **100% covered.**
