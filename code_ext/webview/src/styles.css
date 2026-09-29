@@ -1159,9 +1159,57 @@ button.toolbarMenuItem:hover:not(:disabled) {
     padding: 2px 6px;
 }
 
+/*
+ * A result column's header: its name, and its type in a smaller line
+ * under it, coloured by the type's family. Each line cuts itself short,
+ * since Tabulator's own ellipsis is on the title and not its children.
+ */
+.resultGridHost .tabulator-header .tabulator-col .tabulator-col-content {
+    padding: 3px 8px;
+}
+
+.resultGridHost .columnTitle {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9em;
+    line-height: 1.2;
+}
+
+.resultGridHost .columnName,
+.resultGridHost .columnType {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.resultGridHost .columnType {
+    font-size: 0.8em;
+    font-weight: normal;
+    color: var(--vscode-descriptionForeground);
+}
+
+.resultGridHost .columnType.numberType {
+    color: var(--vscode-charts-blue);
+}
+
+.resultGridHost .columnType.textType {
+    color: var(--vscode-charts-green);
+}
+
+.resultGridHost .columnType.temporalType {
+    color: var(--vscode-charts-yellow);
+}
+
+.resultGridHost .columnType.binaryType {
+    color: var(--vscode-charts-purple);
+}
+
+.resultGridHost .columnType.jsonType {
+    color: var(--vscode-charts-orange);
+}
+
 /* A primary key column: the codicon key after its name. */
-.tabulator .tabulator-header .tabulator-col.pkColumn
-.tabulator-col-title::after {
+.resultGridHost .columnName.keyColumn::after {
     content: "\eb11";
     margin-left: 4px;
     font-family: "codicon";
@@ -1189,6 +1237,57 @@ button.toolbarMenuItem:hover:not(:disabled) {
 .tabulator .tabulator-row,
 .tabulator .tabulator-row.tabulator-row-even {
     background: transparent;
+}
+
+/*
+ * The result grid's own surfaces, all from the theme's table colours:
+ * the grid lines, the header, every other row, and the primary key
+ * columns, which share the header's tint. The tints are see-through, so
+ * hover and selection still show under them.
+ */
+.resultGridHost {
+    --grid-line: var(--vscode-tree-tableColumnsBorder,
+            var(--vscode-panel-border));
+    --grid-header-tint: var(--vscode-keybindingTable-headerBackground,
+            color-mix(in srgb, var(--vscode-foreground) 4%, transparent));
+    --grid-stripe: var(--vscode-tree-tableOddRowsBackground,
+            color-mix(in srgb, var(--vscode-foreground) 4%, transparent));
+    --grid-key-tint: var(--grid-header-tint);
+}
+
+.resultGridHost .tabulator-header {
+    border-bottom-color: var(--grid-line);
+    background-color: var(--grid-surface);
+    background-image: linear-gradient(var(--grid-header-tint),
+            var(--grid-header-tint));
+}
+
+.resultGridHost .tabulator-header .tabulator-col {
+    border-right-color: var(--grid-line);
+}
+
+.resultGridHost .tabulator-row {
+    border-bottom-color: var(--grid-line);
+}
+
+.resultGridHost .tabulator-row .tabulator-cell {
+    border-right-color: var(--grid-line);
+    padding: 3px 8px;
+}
+
+.resultGridHost .tabulator-row .tabulator-cell.tabulator-editing {
+    padding: 2px 7px;
+}
+
+/* Later than the rule above, and less specific than hover or selection. */
+.resultGridHost .tabulator-row.tabulator-row-even {
+    --row-tint: var(--grid-stripe);
+    background: var(--grid-stripe);
+}
+
+.resultGridHost .tabulator-row .tabulator-cell.pkColumn {
+    --key-tint: var(--grid-key-tint);
+    background: var(--grid-key-tint);
 }
 
 .tabulator .tabulator-tableholder .tabulator-placeholder-contents,
@@ -1273,12 +1372,20 @@ button.toolbarMenuItem:hover:not(:disabled) {
 
 .resultGridHost .tabulator-header .tabulator-col.tabulator-frozen {
     background-color: var(--grid-surface);
+    background-image: linear-gradient(var(--grid-header-tint),
+            var(--grid-header-tint));
 }
 
+/* The row's state over its stripe and the key column's tint. */
 .resultGridHost .tabulator-row .tabulator-cell.tabulator-frozen {
     background-color: var(--grid-surface);
-    background-image: linear-gradient(var(--frozen-tint, transparent),
-            var(--frozen-tint, transparent));
+    background-image:
+        linear-gradient(var(--frozen-tint, transparent),
+            var(--frozen-tint, transparent)),
+        linear-gradient(var(--key-tint, transparent),
+            var(--key-tint, transparent)),
+        linear-gradient(var(--row-tint, transparent),
+            var(--row-tint, transparent));
 }
 
 .resultGridHost .tabulator-row.tabulator-selectable:hover
@@ -1317,13 +1424,13 @@ button.toolbarMenuItem:hover:not(:disabled) {
 .resultGridHost .tabulator-header .tabulator-frozen.tabulator-frozen-left,
 .resultGridHost .tabulator-row
 .tabulator-cell.tabulator-frozen.tabulator-frozen-left {
-    border-right: 2px solid var(--vscode-panel-border);
+    border-right: 2px solid var(--grid-line);
 }
 
 .resultGridHost .tabulator-header .tabulator-frozen.tabulator-frozen-right,
 .resultGridHost .tabulator-row
 .tabulator-cell.tabulator-frozen.tabulator-frozen-right {
-    border-left: 2px solid var(--vscode-panel-border);
+    border-left: 2px solid var(--grid-line);
 }
 
 .tabulator .tabulator-col-resize-handle {

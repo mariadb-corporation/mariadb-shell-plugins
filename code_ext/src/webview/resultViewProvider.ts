@@ -22,7 +22,10 @@ import {
     activityRow,
     type IActivityEvent,
 } from "../connections/connectionActivity.js";
-import { freezePrimaryKeyColumns } from "../connections/settings.js";
+import {
+    freezePrimaryKeyColumns,
+    showColumnDataTypes,
+} from "../connections/settings.js";
 import type { ExecutionService } from "../sql/executionService.js";
 import type { IEditableRow } from "./changes.js";
 import { loadValueFromFile, saveValueToFile } from "./valueFiles.js";
@@ -649,6 +652,19 @@ export class ResultViewProvider
     }
 
     /**
+     * Sends the view and every maximized tab their state again, for a
+     * change of the settings that decide how they show a result set.
+     *
+     * @returns Nothing.
+     */
+    public async settingsChanged(): Promise<void> {
+        for (const maximized of this.#maximized.values()) {
+            this.#sendMaximized(maximized);
+        }
+        await this.#sendState();
+    }
+
+    /**
      * Drops the view's state.
      *
      * @returns Nothing.
@@ -1246,6 +1262,7 @@ export class ResultViewProvider
                 resultSets: [maximized.resultSet],
                 maximized: true,
                 freezeKeyColumns: freezePrimaryKeyColumns(),
+                showColumnTypes: showColumnDataTypes(),
             },
             editing,
         });
@@ -1411,6 +1428,7 @@ export class ResultViewProvider
                 }),
             resultSets: this.#sessionResults(connection)?.resultSets ?? [],
             freezeKeyColumns: freezePrimaryKeyColumns(),
+            showColumnTypes: showColumnDataTypes(),
         };
 
         // Held until there is a view to take them: one that is still

@@ -25,7 +25,7 @@ import { ToolbarMenu } from "./ToolbarMenu.js";
 export type ResultViewStyle = "grid" | "preview";
 
 /** What the action menu can be asked to do. */
-export type ResultAction = "close" | "freezeKeys";
+export type ResultAction = "close" | "freezeKeys" | "showTypes";
 
 interface IResultStatusBarProperties {
     /** The result set the bar belongs to. */
@@ -42,6 +42,8 @@ interface IResultStatusBarProperties {
     maximized: boolean;
     /** Whether its primary key columns are frozen. */
     freezeKeys: boolean;
+    /** Whether the grid's header shows the column types. */
+    showTypes: boolean;
     onSelectView(style: ResultViewStyle): void;
     /** Fetches another page of the rows, from 0. */
     onPage(index: number): void;
@@ -279,6 +281,11 @@ export const ResultStatusBar = (
                             disabled: !resultSet.columns.some((column) => {
                                 return column.isPrimary;
                             }),
+                        },
+                        {
+                            id: "showTypes",
+                            caption: "Show Column Data Types",
+                            checked: props.showTypes,
                         },
                         { id: "separator" },
                         { id: "close", caption: "Close Result Set" },

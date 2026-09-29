@@ -24,6 +24,7 @@ import {
     blobCell,
     buildColumns,
     cellActionsOf,
+    columnTitle,
     editableAsText,
     formatCell,
     formatValue,
@@ -414,6 +415,33 @@ describe("toTableData", () => {
         row.current.Name = "Edited";
 
         expect(toTableData([row])[0].Name).toBe("Edited");
+    });
+});
+
+describe("columnTitle", () => {
+    it("shows the type under the name, coloured by its family", () => {
+        const title = columnTitle(
+            { name: "id", typeName: "int(11)", isPrimary: true }, true);
+
+        expect(title.querySelector(".columnName")?.textContent).toBe("id");
+        expect(title.querySelector(".columnName")?.classList
+            .contains("keyColumn")).toBe(true);
+        const type = title.querySelector(".columnType");
+        expect(type?.textContent).toBe("int(11)");
+        expect(type?.classList.contains("numberType")).toBe(true);
+    });
+
+    it("leaves the type out when it is not wanted", () => {
+        const title = columnTitle({ name: "a", typeName: "string" }, false);
+
+        expect(title.querySelector(".columnType")).toBeNull();
+        expect(title.querySelector(".columnName")?.classList
+            .contains("keyColumn")).toBe(false);
+    });
+
+    it("leaves the type out when it is not known", () => {
+        expect(columnTitle({ name: "a" }, true)
+            .querySelector(".columnType")).toBeNull();
     });
 });
 

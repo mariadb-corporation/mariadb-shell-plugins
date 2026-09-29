@@ -362,6 +362,11 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 editors.updateStatusBar();
             }
 
+            if (event.affectsConfiguration(
+                "mariadb.resultSet.showColumnDataTypes")) {
+                void resultView.settingsChanged();
+            }
+
             if (event.affectsConfiguration("mariadb.keybindings")) {
                 void applyKeybindings();
             }

@@ -34,6 +34,9 @@ export const PAGE_SIZE_SETTING = "execute.pageSize";
 /** The setting deciding whether primary key columns are frozen. */
 export const FREEZE_KEYS_SETTING = "resultSet.freezePrimaryKeyColumns";
 
+/** The setting deciding whether the grid's header shows column types. */
+export const SHOW_COLUMN_TYPES_SETTING = "resultSet.showColumnDataTypes";
+
 /** The page size a setting that is missing or no count falls back to. */
 export const DEFAULT_PAGE_SIZE = 200;
 
@@ -96,6 +99,18 @@ export const freezePrimaryKeyColumns = (): boolean => {
     return vscode.workspace
         .getConfiguration(CONFIG_SECTION)
         .get<boolean>(FREEZE_KEYS_SETTING) ?? true;
+};
+
+/**
+ * Whether the result grid's header shows each column's data type under
+ * its name.
+ *
+ * @returns True to show them, the default.
+ */
+export const showColumnDataTypes = (): boolean => {
+    return vscode.workspace
+        .getConfiguration(CONFIG_SECTION)
+        .get<boolean>(SHOW_COLUMN_TYPES_SETTING) ?? true;
 };
 
 /**

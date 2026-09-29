@@ -1197,6 +1197,64 @@ describe("App", () => {
         });
     });
 
+    describe("showing the column data types", () => {
+        /**
+         * @returns The action menu's Show Types item, the menu opened.
+         */
+        const typesItem = async (): Promise<HTMLButtonElement | undefined> => {
+            await clickIcon("Show Action Menu");
+
+            return [...host.querySelectorAll<HTMLButtonElement>(
+                ".toolbarMenuItem")].find((item) => {
+                return item.textContent === "Show Column Data Types";
+            });
+        };
+
+        it("starts from the extension's setting", async () => {
+            await mount();
+            await send({
+                type: "state",
+                state: { ...report(), showColumnTypes: false },
+            });
+
+            const item = await typesItem();
+
+            expect(item?.getAttribute("role")).toBe("menuitemcheckbox");
+            expect(item?.getAttribute("aria-checked")).toBe("false");
+        });
+
+        it("is switched for the result set from its menu", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+            expect((await typesItem())?.getAttribute("aria-checked"))
+                .toBe("true");
+
+            await act(async () => {
+                (await typesItem())?.click();
+            });
+
+            expect((await typesItem())?.getAttribute("aria-checked"))
+                .toBe("false");
+        });
+
+        it("keeps its choice when the setting changes", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+            const item = await typesItem();
+            await act(async () => {
+                item?.click();
+                await Promise.resolve();
+            });
+            await send({
+                type: "state",
+                state: { ...report(), showColumnTypes: true },
+            });
+
+            expect((await typesItem())?.getAttribute("aria-checked"))
+                .toBe("false");
+        });
+    });
+
     it("leaves the icon slot of an item without one blank", async () => {
         await mount();
         await send({ type: "state", state: report() });

@@ -33,6 +33,12 @@ export interface IResultColumn {
     /** The MariaDB column type, where it is known. */
     datatype?: string;
     /**
+     * The type shown under the column's name: `datatype` where the table
+     * was looked up, otherwise the type the server reported in the
+     * result's metadata, lower-cased (`string`, `integer`, ...).
+     */
+    typeName?: string;
+    /**
      * How its values are shown where that is not as text: hex, or an
      * icon standing for a BLOB, a spatial value or a vector.
      */
@@ -268,6 +274,11 @@ export interface IViewState {
      * extension's setting. Each result set can switch it for itself.
      */
     freezeKeyColumns?: boolean;
+    /**
+     * Whether the grid's header shows each column's type under its name -
+     * the extension's setting.
+     */
+    showColumnTypes?: boolean;
 }
 
 /**

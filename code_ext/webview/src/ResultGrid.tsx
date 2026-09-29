@@ -25,7 +25,10 @@ import {
 } from "tabulator-tables";
 
 import type { IEditableRow } from "../../src/webview/changes.js";
-import type { ValueDisplay } from "../../src/sql/dataTypes.js";
+import {
+    typeCategoryOf,
+    type ValueDisplay,
+} from "../../src/sql/dataTypes.js";
 import type {
     IResultColumn,
     IResultSet,
@@ -247,6 +250,8 @@ interface IResultGridProperties extends IGridCallbacks {
     editRequest?: number;
     /** Whether the primary key columns are frozen at the left. */
     freezeKeys?: boolean;
+    /** Whether the header shows each column's type under its name. */
+    showTypes?: boolean;
 }
 
 /** How many hex digits of a binary value are shown before it is cut. */
@@ -344,13 +349,38 @@ export const editableAsText = (display?: ValueDisplay): boolean => {
 };
 
 /**
- * Builds the Tabulator column definitions for a result set.
+ * Renders a column's header: its name, a key after it for a primary key
+ * column, and - where it is known and wanted - its type in a smaller
+ * line below, coloured by the family the type belongs to.
  *
- * @param resultSet The result set to show.
- * @param callbacks What the grid reports back.
+ * @param column The column.
+ * @param showType Whether its type is shown.
  *
- * @returns The column definitions, including the row header.
+ * @returns The header's content.
  */
+export const columnTitle = (
+    column: IResultColumn,
+    showType: boolean,
+): HTMLElement => {
+    const title = document.createElement("span");
+    title.className = "columnTitle";
+
+    const name = document.createElement("span");
+    name.className = column.isPrimary ? "columnName keyColumn" : "columnName";
+    name.textContent = column.name;
+    title.append(name);
+
+    if (showType && column.typeName !== undefined) {
+        const type = document.createElement("span");
+        type.className =
+            `columnType ${typeCategoryOf(column.typeName)}Type`;
+        type.textContent = column.typeName;
+        title.append(type);
+    }
+
+    return title;
+};
+
 /**
  * The columns in the order the grid shows them: as the result set has
  * them, or - with its primary key frozen - the key columns first. The
@@ -379,18 +409,32 @@ export const orderColumns = (
     ];
 };
 
+/**
+ * Builds the Tabulator column definitions for a result set.
+ *
+ * @param resultSet The result set to show.
+ * @param callbacks What the grid reports back.
+ * @param freezeKeys Whether its primary key columns are frozen.
+ * @param showTypes Whether the header shows each column's type.
+ *
+ * @returns The column definitions.
+ */
 export const buildColumns = (
     resultSet: IResultSet,
     callbacks: IGridCallbacks,
     freezeKeys = false,
+    showTypes = false,
 ): ColumnDefinition[] => {
     const columns: ColumnDefinition[] = [];
 
     for (const { column, frozen } of orderColumns(resultSet, freezeKeys)) {
         columns.push({
             title: column.name,
+            titleFormatter: () => {
+                return columnTitle(column, showTypes);
+            },
             field: column.name,
-            headerTooltip: column.datatype ?? column.name,
+            headerTooltip: column.typeName ?? column.datatype ?? column.name,
             cssClass: column.isPrimary ? "pkColumn" : undefined,
             frozen,
             formatter: (cell: CellComponent) => {
@@ -532,6 +576,7 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
         selectedRowIndex,
         editRequest,
         freezeKeys = false,
+        showTypes = true,
     } = props;
     const host = useRef<HTMLDivElement>(null);
     const table = useRef<Tabulator | undefined>(undefined);
@@ -570,7 +615,7 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                 onSelectionChanged: (index) => {
                     callbacks.current.onSelectionChanged(index);
                 },
-            }, freezeKeys),
+            }, freezeKeys, showTypes),
             index: ROW_INDEX_FIELD,
             layout: "fitDataStretch",
             height: "100%",
@@ -627,10 +672,11 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                 // rather than being a no-op.
             }
         };
-        // Rebuilt only when the result set itself changes, or which of its
-        // columns are frozen; the rows are pushed in by the effect below.
+        // Rebuilt only when the result set itself changes, which of its
+        // columns are frozen, or whether the header shows their types; the
+        // rows are pushed in by the effect below.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [resultSet, freezeKeys]);
+    }, [resultSet, freezeKeys, showTypes]);
 
     useEffect(() => {
         const instance = table.current;

@@ -142,8 +142,34 @@ plain textareas, and disabled.
   Re-opening a cell replaces its document and reloads an open editor.
   An edit made in the grid after opening does not reach the editor.
 
+**The header shows each column's type under its name**
+(`columnTitle`, a Tabulator `titleFormatter`), in a smaller line coloured
+by the type's family (`typeCategoryOf` in `dataTypes.ts`: number, text,
+temporal, binary, json, other -> `--vscode-charts-*`). The type is
+`IResultColumn.typeName`, set by `mapColumns`: the table's COLUMN_TYPE
+where it was looked up, otherwise the metadata's `mysql.Type` name
+lower-cased (`string`, `integer`, `bytes`...), so a join or a CALL shows
+the coarser name. `mariadb.resultSet.showColumnDataTypes` (default true,
+`IViewState.showColumnTypes`) turns it off, and each result set can
+switch it for itself with the action menu's checkable "Show Column Data
+Types" (`IEditingState.showTypes`, undefined until picked, so an untouched
+result set keeps following the setting). Unlike the freeze setting it
+applies at once - `extension.ts` calls `ResultViewProvider.settingsChanged`,
+which resends the view's and every maximized tab's state (same page keys,
+so pending edits stay), and `showTypes` is a dependency of the build
+effect. The primary key's codicon key is `.columnName.keyColumn::after`
+now, since a title formatter replaces the title's text.
+
 The rest of the grid's styling is ours; the MySQL Shell's was tried and
-reverted.
+reverted. Its colours are the theme's table tokens, scoped to
+`.resultGridHost` so the actions grid is untouched: grid lines
+`--vscode-tree-tableColumnsBorder`, the header and the primary key
+cells `--vscode-keybindingTable-headerBackground`, every other row
+(`tabulator-row-even`, which Tabulator sets itself) the
+`--vscode-tree-tableOddRowsBackground` stripe. All three are see-through,
+so a frozen cell stacks them as gradient layers over `--grid-surface`
+(`--frozen-tint` over `--key-tint` over `--row-tint`). Not yet looked at
+in a running VS Code.
 
 **Every surface it paints has to be answered, not just the obvious
 ones.** A missed one is invisible in a light theme and glaring in a dark

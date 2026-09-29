@@ -322,7 +322,12 @@ export const mapColumns = (
         const column = byName.get(name);
         const display = valueDisplayOf(
             metadata?.[position], column?.datatype);
-        const shown = display === undefined ? {} : { display };
+        const typeName = column?.datatype
+            ?? metadata?.[position]?.type?.toLowerCase();
+        const shown = {
+            ...display === undefined ? {} : { display },
+            ...typeName === undefined ? {} : { typeName },
+        };
         if (!column) {
             return { name, ...shown };
         }
