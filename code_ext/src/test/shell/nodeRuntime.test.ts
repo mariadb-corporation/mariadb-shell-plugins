@@ -19,7 +19,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
     createNodeProcessRunner,
@@ -68,6 +68,34 @@ describe("createNodeShellEnvironment", () => {
             ),
         ).resolves.toBeUndefined();
     });
+
+    it("logs why a binary could not be probed", async () => {
+        const lines: string[] = [];
+        const environment = createNodeShellEnvironment((line) => {
+            lines.push(line);
+        });
+        const missing = path.join(sandbox, "no-such-mariadb-shell");
+
+        await environment.probeVersion(missing);
+
+        expect(lines).toEqual([`"${missing} --version": not found.`]);
+    });
+
+    it.skipIf(process.platform === "win32")(
+        "logs a binary that is not executable", async () => {
+            const lines: string[] = [];
+            const environment = createNodeShellEnvironment((line) => {
+                lines.push(line);
+            });
+            const plain = path.join(sandbox, "plain-file");
+            await fs.writeFile(plain, "");
+            await fs.chmod(plain, 0o644);
+
+            await environment.probeVersion(plain);
+
+            expect(lines).toEqual(
+                [`"${plain} --version": not executable (EACCES).`]);
+        });
 
     it("tells existing paths from missing ones", async () => {
         const environment = createNodeShellEnvironment();
@@ -160,4 +188,27 @@ describe("createNodeProcessRunner", () => {
             // No output expected.
         })).rejects.toThrow();
     });
+
+    it.skipIf(process.platform === "win32")(
+        "ends the command and what it started when aborted", async () => {
+            const runner = createNodeProcessRunner();
+            const controller = new AbortController();
+            let grandchild: number | undefined;
+
+            // What the installer looks like from here: a shell whose own
+            // children - curl, bash - do the work.
+            await expect(runner.run({
+                command: "/bin/sh",
+                args: ["-c", "sleep 30 & echo $!; wait"],
+            }, (line) => {
+                grandchild = Number(line);
+                controller.abort();
+            }, controller.signal)).rejects.toThrow("Cancelled.");
+
+            expect(grandchild).toBeGreaterThan(0);
+            await vi.waitFor(() => {
+                expect(() => { process.kill(grandchild ?? 0, 0); })
+                    .toThrow();
+            });
+        }, 10_000);
 });

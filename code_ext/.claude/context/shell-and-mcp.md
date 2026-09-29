@@ -30,6 +30,7 @@ which is what most of GUI mode exists for, is in
 | `protocol.ts` | Decodes MCP tool results into the values the Python tools returned. |
 | `mariaDbApi.ts` | The `db.*` tools as typed calls. |
 | `session.ts` | `McpSession` — starts the server once and hands out the API. |
+| `serverStarter.ts` | `ServerStarter` — the whole way up (locate, install, start) once however many callers ask, and the phase the Connections view follows. |
 | `sdkConnector.ts` | The real connector, on `@modelcontextprotocol/sdk`'s stdio transport. |
 
 ## Startup behaviour
@@ -43,10 +44,12 @@ drives the shell lookup:
 
 1. **PATH** — run `mariadb-shell --version` (`mariadb-shell.exe` on
    Windows) and accept it if it reports at least `MINIMUM_SHELL_VERSION`
-   (currently **26.9.3**, and a HARD floor rather than a preference since
-   that release: it is the first shell whose parser accepts `mariadb://`,
-   and the MCP plugin stores connection URIs WITH their scheme from there
-   on, so an older shell cannot parse what it is handed).
+   (currently **26.9.4**, and a HARD floor rather than a preference:
+   26.9.3 is the first shell whose parser accepts `mariadb://`, which the
+   MCP plugin stores connection URIs WITH, and 26.9.4 the first whose
+   plugin serves `db.test_connection` and per-statement script results).
+   A development build on the PATH that reports an older version is
+   skipped, not used.
 2. **Local installation** — look under the prefix the installer uses,
    `~/.local/share/mariadb-shell/<version>` on macOS and Linux and
    `%LOCALAPPDATA%\Programs\mariadb-shell\<version>` on Windows, honouring
@@ -59,14 +62,49 @@ drives the shell lookup:
    `vscode.window.withProgress()` at `ProgressLocation.Notification`; both
    installer scripts prefix their progress with `==> `, so `Downloading`,
    `Verifying checksum` and `Unpacking into ...` become the notification's
-   message as they arrive.
+   message as they arrive. The notification is **cancellable**: the runner
+   spawns the installer in its own process group (POSIX) and kills the
+   group, so curl and bash go too. The POSIX command fetches the script
+   into a variable first (`script=$(curl ...) || exit $?`) instead of
+   piping curl into bash - a pipe's status is bash's, so a failed
+   download used to exit 0 and surface as "no shell found afterwards".
 
 `McpSession` then starts
 `<shell> -- mcp start-server --transport=stdio --gui` through the MCP SDK's
 stdio transport, which owns the process. Its stdin and stdout carry the
-protocol; stderr goes to the **MariaDB** output channel. Concurrent callers
-share one start, so the tree, the toolbar and the panel cannot each spawn a
-server.
+protocol; stderr goes to the **MariaDB** output channel, read from the
+SDK's PassThrough **before** `connect()` so a server that dies on the way
+up still says why - its last lines are quoted in the error. An exit
+nobody asked for is logged with a pointer to Restart MCP Server.
+
+`ServerStarter` serializes the whole way up, not just the server start:
+without it the tree, the toolbar and the panel each ran `ensureShell`
+when the window opened and, finding no shell, each ran the installer into
+the same directory. Its phases (`stopped`, `locating`, `installing`,
+`starting`, `ready`, `failed`) drive the Connections view's welcome
+content - see [connections.md](connections.md).
+
+## What the MariaDB output channel says
+
+Every line is timestamped. It is meant to be enough on its own to say why
+something failed:
+
+- On activation: extension version, VS Code version, platform, arch,
+  Node, and the shell version needed.
+- The lookup: the PATH searched (an editor started from the dock has a
+  different PATH from a terminal), what `mariadb-shell` there reported
+  and why it was not used, the local installations found and why each
+  was skipped. `createNodeShellEnvironment(log)` adds why a probe could
+  not run: not found, not executable (EACCES), timed out, or the error.
+- The install: the full command, every installer line (curl's
+  carriage-return progress bar filtered out), exit code and duration.
+  The thrown error quotes the installer's own `install.sh:` /
+  `install.ps1:` message and curl's error (`summarizeInstallerFailure`).
+- The server: the start command, all of its stderr, a failed start, an
+  unexpected exit.
+
+Every error notification carries a **Show Log** button
+(`src/errorMessages.ts`).
 
 ## GUI mode (`--gui`)
 

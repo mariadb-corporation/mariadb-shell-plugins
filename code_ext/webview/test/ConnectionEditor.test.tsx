@@ -210,7 +210,10 @@ describe("ConnectionEditor", () => {
                 hasStoredPassword: true },
         );
 
-        expect(host.textContent).toContain("Editing dba@db.example.com:3307");
+        // The URI box says which connection this is; no subtitle repeats it.
+        expect((host.querySelector("#connection-uri") as HTMLInputElement)
+            .value).toBe("mariadb://dba@db.example.com:3307");
+        expect(host.textContent).not.toContain("Editing");
         expect((host.querySelector("input[type=checkbox]") as HTMLInputElement)
             .checked).toBe(true);
         // A stored password is kept unless the user says otherwise.
@@ -395,5 +398,286 @@ describe("ConnectionEditor", () => {
 
         expect(lastPosted<ISaveMessage>("save")!.fields.compressionAlgorithms)
             .toEqual(["zstd"]);
+    });
+
+    describe("the connection URI", () => {
+        const uriBox = (): HTMLInputElement => {
+            return host.querySelector("#connection-uri") as HTMLInputElement;
+        };
+
+        const typeUri = async (value: string): Promise<void> => {
+            await act(async () => {
+                uriBox().value = value;
+                uriBox().dispatchEvent(new Event("input", { bubbles: true }));
+                await Promise.resolve();
+            });
+        };
+
+        const fieldValue = (caption: string): string => {
+            const field = [...host.querySelectorAll("label.field")]
+                .find((node) => {
+                    return node.querySelector(".field-caption")?.textContent
+                        === caption;
+                });
+
+            return (field?.querySelector("input, select") as
+                HTMLInputElement).value;
+        };
+
+        it("shows what the fields spell, and follows them", async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            expect(uriBox().value).toBe("mariadb://dba@localhost:3306");
+
+            await type("Default Schema", "world");
+            await type("Protocol", "mysql");
+
+            expect(uriBox().value).toBe("mysql://dba@localhost:3306/world");
+        });
+
+        it("says what is missing while the fields are incomplete",
+            async () => {
+                await mount();
+                await load();
+
+                expect(uriBox().value).toBe("mariadb://@localhost:3306");
+                expect(host.querySelector(".uri-note")?.textContent)
+                    .toBe("A user name is required.");
+            });
+
+        it("fills the fields in from a URI typed into it", async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            await typeUri("mysql://app@db:3310/shop?ssl-mode=REQUIRED");
+
+            expect(fieldValue("User Name")).toBe("app");
+            expect(fieldValue("Host Name or IP Address")).toBe("db");
+            expect(fieldValue("Port")).toBe("3310");
+            expect(fieldValue("Default Schema")).toBe("shop");
+            expect(fieldValue("Protocol")).toBe("mysql");
+
+            await click("Create");
+
+            expect(lastPosted<ISaveMessage>("save")?.fields).toMatchObject({
+                scheme: "mysql", user: "app", host: "db", sslMode: "REQUIRED",
+            });
+        });
+
+        it("points at the problem and will not save it", async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            await typeUri("mariadb://dba@db:33x6/world");
+
+            expect(uriBox().value).toBe("mariadb://dba@db:33x6/world");
+            expect(uriBox().getAttribute("aria-invalid")).toBe("true");
+            expect(host.querySelector(".uri-problem p")?.textContent)
+                .toContain("'33x6' is not a port number");
+            expect(host.querySelector(".uri-problem mark")?.textContent)
+                .toBe("33x6");
+            // The fields keep what they had last.
+            expect(fieldValue("Host Name or IP Address")).toBe("localhost");
+
+            await click("Create");
+            await click("Test Connection");
+
+            expect(lastPosted("save")).toBeUndefined();
+            expect(lastPosted("test")).toBeUndefined();
+            expect(document.activeElement).toBe(uriBox());
+            expect(uriBox().selectionStart).toBe(17);
+            expect(uriBox().selectionEnd).toBe(21);
+        });
+
+        it("drops a broken URI once a field is edited", async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            await typeUri("mariadb://dba@db:33x6");
+            await type("Port", "3307");
+
+            expect(host.querySelector(".uri-problem")).toBeNull();
+            expect(uriBox().value).toBe("mariadb://dba@localhost:3307");
+        });
+
+        it("asks the host for the clipboard and takes a sound URI",
+            async () => {
+                await mount();
+                await load({ user: "dba" });
+
+                const paste = host.querySelector(
+                    "button[aria-label='Paste URI']") as HTMLButtonElement;
+                expect(paste.querySelector(".codicon-copy")).not.toBeNull();
+                await act(async () => {
+                    paste.click();
+                    await Promise.resolve();
+                });
+                expect(lastPosted("paste")).toEqual({ type: "paste" });
+
+                await send({
+                    type: "clipboard",
+                    text: "  mariadb+ssh://app@db/shop?ssh-host=bastion\n",
+                });
+
+                expect(uriBox().value)
+                    .toBe("mariadb+ssh://app@db/shop?ssh-host=bastion");
+                expect(fieldValue("User Name")).toBe("app");
+                expect(host.querySelector(".uri-problem")).toBeNull();
+            });
+
+        it("keeps a pasted URI that is wrong, and selects what is",
+            async () => {
+                await mount();
+                await load({ user: "dba" });
+
+                await send({
+                    type: "clipboard", text: "postgres://dba@db",
+                });
+
+                expect(uriBox().value).toBe("postgres://dba@db");
+                expect(host.querySelector(".uri-problem p")?.textContent)
+                    .toContain("not a protocol");
+                expect(document.activeElement).toBe(uriBox());
+                expect(uriBox().value.slice(uriBox().selectionStart!,
+                    uriBox().selectionEnd!)).toBe("postgres");
+            });
+
+        it("moves a pasted URI's password into the Password field",
+            async () => {
+                await mount();
+                await load({ user: "dba" }, { hasStoredPassword: true });
+
+                await send({
+                    type: "clipboard", text: "mariadb://app:s3cret@db:3310",
+                });
+
+                // Out of the box, so it is not left on screen in the clear.
+                expect(uriBox().value).toBe("mariadb://app@db:3310");
+                expect(host.querySelector(".uri-problem")).toBeNull();
+                expect((host.querySelector("input[type=password]") as
+                    HTMLInputElement).value).toBe("s3cret");
+
+                await click("Create");
+
+                expect(lastPosted<ISaveMessage>("save")).toMatchObject({
+                    password: "s3cret",
+                    fields: { user: "app", host: "db", port: "3310" },
+                });
+            });
+
+        it("moves one typed into the box too", async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            await typeUri("mariadb://app:pw@db");
+
+            expect(uriBox().value).toBe("mariadb://app@db");
+            expect((host.querySelector("input[type=password]") as
+                HTMLInputElement).value).toBe("pw");
+        });
+    });
+
+    it("fades whichever edge of the tab has fields scrolled past it",
+        async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            const body = host.querySelector(".tab-body") as HTMLDivElement;
+            const shown = (edge: string): boolean => {
+                return host.querySelector(`.scroll-fade.${edge}`)!
+                    .classList.contains("shown");
+            };
+            const scrollTo = async (top: number): Promise<void> => {
+                await act(async () => {
+                    body.scrollTop = top;
+                    body.dispatchEvent(new Event("scroll"));
+                    await Promise.resolve();
+                });
+            };
+
+            // jsdom lays nothing out, so the sizes are the test's to say.
+            Object.defineProperty(body, "clientHeight", { value: 200 });
+            Object.defineProperty(body, "scrollHeight", { value: 500 });
+
+            await scrollTo(0);
+            expect(shown("bottom")).toBe(true);
+            expect(shown("top")).toBe(false);
+
+            await scrollTo(150);
+            expect(shown("bottom")).toBe(true);
+            expect(shown("top")).toBe(true);
+
+            await scrollTo(300);
+            expect(shown("bottom")).toBe(false);
+            expect(shown("top")).toBe(true);
+        });
+
+    it("notices the layout changing after the dialog is up", async () => {
+        // What a webview does on its first opening: it is sized and styled
+        // after the first render, so nothing re-renders to re-measure.
+        await mount();
+        await load({ user: "dba" });
+
+        const body = host.querySelector(".tab-body") as HTMLDivElement;
+        const bottom = host.querySelector(".scroll-fade.bottom")!;
+        expect(bottom.classList.contains("shown")).toBe(false);
+
+        Object.defineProperty(body, "clientHeight",
+            { value: 200, configurable: true });
+        Object.defineProperty(body, "scrollHeight",
+            { value: 500, configurable: true });
+        await act(async () => {
+            window.dispatchEvent(new Event("resize"));
+            await Promise.resolve();
+        });
+        expect(bottom.classList.contains("shown")).toBe(true);
+
+        Object.defineProperty(body, "scrollHeight",
+            { value: 200, configurable: true });
+        await act(async () => {
+            body.dispatchEvent(new Event("pointerenter"));
+            await Promise.resolve();
+        });
+        expect(bottom.classList.contains("shown")).toBe(false);
+    });
+
+    it("stops the fades at a scrollbar that takes room, and only then",
+        async () => {
+            await mount();
+            await load({ user: "dba" });
+
+            const body = host.querySelector(".tab-body") as HTMLDivElement;
+            const fades = (): string[] => {
+                return [...host.querySelectorAll<HTMLElement>(".scroll-fade")]
+                    .map((fade) => { return fade.style.right; });
+            };
+            const resize = async (): Promise<void> => {
+                await act(async () => {
+                    window.dispatchEvent(new Event("resize"));
+                    await Promise.resolve();
+                });
+            };
+
+            // An overlay scrollbar, as macOS draws it: no room taken.
+            Object.defineProperty(body, "offsetWidth",
+                { value: 600, configurable: true });
+            Object.defineProperty(body, "clientWidth",
+                { value: 600, configurable: true });
+            await resize();
+            expect(fades()).toEqual(["0px", "0px"]);
+
+            // A classic one, 14 pixels wide.
+            Object.defineProperty(body, "clientWidth",
+                { value: 586, configurable: true });
+            await resize();
+            expect(fades()).toEqual(["14px", "14px"]);
+        });
+
+    it("shows no fade when everything fits", async () => {
+        await mount();
+        await load({ user: "dba" });
+
+        expect(host.querySelectorAll(".scroll-fade.shown")).toHaveLength(0);
     });
 });

@@ -17,9 +17,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { createFakeRunner } from "../helpers.js";
+import { createFakeRunner, createRecordingLog } from "../helpers.js";
 import {
     buildInstallCommand,
+    cleanInstallerLine,
+    summarizeInstallerFailure,
     installerProgressMessage,
     installShell,
     type ProgressHost,
@@ -42,13 +44,16 @@ const createRecordingProgress = (): ProgressHost & {
         messages,
         withProgress: async <T>(
             title: string,
-            task: (report: (message: string) => void) => Promise<T>,
+            task: (
+                report: (message: string) => void,
+                signal: AbortSignal,
+            ) => Promise<T>,
         ) => {
             titles.push(title);
 
             return await task((message) => {
                 messages.push(message);
-            });
+            }, new AbortController().signal);
         },
     };
 };
@@ -60,9 +65,9 @@ describe("buildInstallCommand", () => {
         expect(command.command).toBe("/bin/sh");
         expect(command.args[0]).toBe("-c");
         expect(command.args[1]).toBe(
-            "curl -fsSL https://github.com/mariadb-corporation/"
-            + "mariadb-shell/raw/main/install.sh "
-            + "| MARIADB_SHELL_TAG=v26.9.2 bash",
+            "script=$(curl -fsSL https://github.com/mariadb-corporation/"
+            + "mariadb-shell/raw/main/install.sh) || exit $?; "
+            + "printf '%s\\n' \"$script\" | MARIADB_SHELL_TAG=v26.9.2 bash",
         );
     });
 
@@ -163,6 +168,160 @@ describe("installShell", () => {
         await expect(installShell(
             { platform: "darwin", runner, progress },
             "26.9.2",
-        )).rejects.toThrow("The MariaDB Shell installer exited with code 1.");
+        )).rejects.toThrow(
+            "MariaDB Shell 26.9.2 could not be installed: required command "
+            + "not found: curl (the installer exited with code 1).",
+        );
+    });
+
+    it("says only the exit code when the installer gave no reason",
+        async () => {
+            await expect(installShell(
+                {
+                    platform: "darwin",
+                    runner: createFakeRunner(["==> Downloading"], 2),
+                    progress: createRecordingProgress(),
+                },
+                "26.9.2",
+            )).rejects.toThrow("MariaDB Shell 26.9.2 could not be installed: "
+                + "the installer exited with code 2.");
+        });
+
+    it("logs the command, everything it printed and how it ended",
+        async () => {
+            const log = createRecordingLog();
+
+            await installShell(
+                {
+                    platform: "darwin",
+                    runner: createFakeRunner([
+                        "==> Downloading",
+                        "\r###      12.0%\r##########  100.0%",
+                        "some noise",
+                    ]),
+                    progress: createRecordingProgress(),
+                    log,
+                },
+                "26.9.2",
+            );
+
+            expect(log.lines[0]).toMatch(
+                /^Installing MariaDB Shell 26\.9\.2: \/bin\/sh -c "script=/);
+            // The progress bar is not worth a log line of its own.
+            expect(log.lines.slice(1, -1)).toEqual([
+                "  installer: ==> Downloading",
+                "  installer: some noise",
+            ]);
+            expect(log.lines.at(-1))
+                .toMatch(/^The installer exited with code 0 after \d/);
+        });
+
+    it("says the installer could not be run", async () => {
+        const runner = {
+            run: () => {
+                return Promise.reject(new Error("spawn /bin/sh ENOENT"));
+            },
+        };
+
+        await expect(installShell(
+            {
+                platform: "darwin",
+                runner,
+                progress: createRecordingProgress(),
+            },
+            "26.9.2",
+        )).rejects.toThrow("The MariaDB Shell installer could not be run "
+            + "(/bin/sh): spawn /bin/sh ENOENT");
+    });
+
+    it("says it was cancelled when the user cancelled it", async () => {
+        const controller = new AbortController();
+        const progress: ProgressHost = {
+            withProgress: async (_title, task) => {
+                return await task(() => { /* not recorded */ },
+                    controller.signal);
+            },
+        };
+        const runner = {
+            run: (
+                _command: unknown,
+                _onOutput: unknown,
+                signal?: AbortSignal,
+            ) => {
+                return new Promise<number>((_resolve, reject) => {
+                    signal?.addEventListener("abort", () => {
+                        reject(new Error("Cancelled."));
+                    });
+                    controller.abort();
+                });
+            },
+        };
+
+        await expect(installShell(
+            { platform: "darwin", runner, progress },
+            "26.9.2",
+        )).rejects.toThrow("Installing MariaDB Shell 26.9.2 was cancelled.");
+    });
+});
+
+describe("cleanInstallerLine", () => {
+    it("keeps what a terminal would show last", () => {
+        expect(cleanInstallerLine("\r##  10.0%\rcurl: (6) no host"))
+            .toBe("curl: (6) no host");
+    });
+
+    it("drops a bare progress bar", () => {
+        expect(cleanInstallerLine("\r######  45.2%")).toBeUndefined();
+        expect(cleanInstallerLine("#=#=#")).toBeUndefined();
+        expect(cleanInstallerLine("   ")).toBeUndefined();
+    });
+
+    it("leaves an ordinary line alone", () => {
+        expect(cleanInstallerLine("==> Downloading")).toBe("==> Downloading");
+    });
+});
+
+describe("summarizeInstallerFailure", () => {
+    it("takes the installer's own message, joined across its lines", () => {
+        expect(summarizeInstallerFailure([
+            "==> Fetching package list",
+            "install.sh: could not download SHA256SUMS from the v26.9.9 "
+                + "release",
+            "  of mariadb-corporation/mariadb-shell.",
+            "  The repository may be private, or that release may not exist.",
+        ])).toBe("could not download SHA256SUMS from the v26.9.9 release "
+            + "of mariadb-corporation/mariadb-shell.");
+    });
+
+    it("adds what curl said", () => {
+        expect(summarizeInstallerFailure([
+            "  curl: (22) The requested URL returned error: 404",
+            "install.sh: could not download SHA256SUMS.",
+        ])).toBe("could not download SHA256SUMS. "
+            + "(curl: (22) The requested URL returned error: 404)");
+    });
+
+    it("reads the Windows installer's message too", () => {
+        expect(summarizeInstallerFailure([
+            "install.ps1: no compatible package for windows / arm-64bit.",
+        ])).toBe("no compatible package for windows / arm-64bit.");
+    });
+
+    it("falls back to curl when the script itself could not be fetched",
+        () => {
+            expect(summarizeInstallerFailure([
+                "curl: (6) Could not resolve host: github.com",
+            ])).toBe("curl: (6) Could not resolve host: github.com");
+        });
+
+    it("falls back to a line that reads like an error", () => {
+        expect(summarizeInstallerFailure([
+            "irm : The remote name could not be resolved: 'github.com'",
+            "At line:1 char:40",
+        ])).toBe("irm : The remote name could not be resolved: 'github.com'");
+    });
+
+    it("finds nothing in output that gives no reason", () => {
+        expect(summarizeInstallerFailure(["some noise"])).toBeUndefined();
     });
 });

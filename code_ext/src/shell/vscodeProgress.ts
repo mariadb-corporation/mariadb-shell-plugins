@@ -28,18 +28,31 @@ export const createNotificationProgressHost = (): ProgressHost => {
     return {
         withProgress: <T>(
             title: string,
-            task: (report: (message: string) => void) => Promise<T>,
+            task: (
+                report: (message: string) => void,
+                signal: AbortSignal,
+            ) => Promise<T>,
         ): Promise<T> => {
             return Promise.resolve(vscode.window.withProgress(
                 {
                     location: vscode.ProgressLocation.Notification,
                     title,
-                    cancellable: false,
+                    // A download can stall for as long as the network lets
+                    // it, and a notification that cannot be dismissed
+                    // would then sit there with no way out.
+                    cancellable: true,
                 },
-                async (progress) => {
-                    return await task((message) => {
-                        progress.report({ message });
-                    });
+                async (progress, token) => {
+                    const controller = new AbortController();
+                    const subscription = token.onCancellationRequested(
+                        () => { controller.abort(); });
+                    try {
+                        return await task((message) => {
+                            progress.report({ message });
+                        }, controller.signal);
+                    } finally {
+                        subscription.dispose();
+                    }
                 },
             ));
         },

@@ -272,6 +272,14 @@ export class ConnectionEditorPanel {
                 break;
             }
 
+            case "paste": {
+                this.#post({
+                    type: "clipboard",
+                    text: await vscode.env.clipboard.readText(),
+                });
+                break;
+            }
+
             default: {
                 this.#panel.dispose();
             }

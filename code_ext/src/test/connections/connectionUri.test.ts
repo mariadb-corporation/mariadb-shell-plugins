@@ -19,8 +19,12 @@ import { describe, expect, it } from "vitest";
 
 import {
     buildConnectionUri,
+    checkConnectionUri,
+    connectionLabel,
     emptyConnectionFields,
     parseConnectionUri,
+    previewConnectionUri,
+    schemeOf,
     URI_OPTIONS,
     type IConnectionFields,
 } from "../../connections/connectionUri.js";
@@ -350,5 +354,170 @@ describe("build and parse together", () => {
 
         expect(parseConnectionUri(buildConnectionUri(original).uri!))
             .toEqual(original);
+    });
+});
+
+describe("schemeOf", () => {
+    it("reads the scheme, lowercased", () => {
+        expect(schemeOf("MySQL+SSH://dba@db")).toBe("mysql+ssh");
+        expect(schemeOf("mariadb://dba@db")).toBe("mariadb");
+    });
+
+    it("answers the default for a URI without one", () => {
+        expect(schemeOf("dba@db:3306")).toBe("mariadb");
+    });
+});
+
+describe("connectionLabel", () => {
+    it("drops the scheme and the options, keeping port and schema", () => {
+        expect(connectionLabel(
+            "mariadb+ssh://dba@db:3310/world?ssh-host=bastion&ssl-mode=REQUIRED",
+        )).toBe("dba@db:3310/world");
+        expect(connectionLabel("dba@db")).toBe("dba@db");
+    });
+
+    it("decodes a socket path, and survives one that does not decode", () => {
+        expect(connectionLabel("mariadb://dba@%2Ftmp%2Fmysql.sock"))
+            .toBe("dba@/tmp/mysql.sock");
+        expect(connectionLabel("mariadb://dba@db%zz")).toBe("dba@db%zz");
+    });
+});
+
+describe("previewConnectionUri", () => {
+    it("spells out fields that do not name a connection yet", () => {
+        // A new connection has no user; the preview shows the gap.
+        expect(previewConnectionUri(fields())).toBe("mariadb://@localhost:3306");
+    });
+
+    it("agrees with buildConnectionUri where the fields are sound", () => {
+        const sound = fields({ user: "dba", schema: "world", sslMode: "REQUIRED" });
+
+        expect(previewConnectionUri(sound))
+            .toBe(buildConnectionUri(sound).uri);
+    });
+});
+
+describe("checkConnectionUri", () => {
+    /** The problem with a URI, and the text it points at. */
+    const problemOf = (uri: string): { message: string; marked: string } => {
+        const { problem } = checkConnectionUri(uri);
+        expect(problem).toBeDefined();
+
+        return {
+            message: problem!.message,
+            marked: uri.slice(problem!.start, problem!.end),
+        };
+    };
+
+    it("takes a sound URI apart", () => {
+        const check = checkConnectionUri(
+            "  mysql+ssh://dba@db:3310/world?ssh-host=bastion&ssl-mode=REQUIRED ");
+
+        expect(check.problem).toBeUndefined();
+        expect(check.fields).toMatchObject({
+            scheme: "mysql+ssh",
+            user: "dba",
+            host: "db",
+            port: "3310",
+            schema: "world",
+            sshHost: "bastion",
+            sslMode: "REQUIRED",
+        });
+    });
+
+    it("accepts one without a scheme, a socket or an IPv6 host", () => {
+        for (const uri of [
+            "dba@db",
+            "mariadb://dba@%2Ftmp%2Fmysql.sock",
+            "mariadb://dba@/tmp/mysql.sock",
+            "mariadb://dba@[::1]:3306/world",
+        ]) {
+            expect(checkConnectionUri(uri).problem, uri).toBeUndefined();
+        }
+    });
+
+    it("points at an unknown protocol", () => {
+        expect(problemOf("postgres://dba@db")).toMatchObject({
+            marked: "postgres",
+        });
+    });
+
+    it("points at a missing user", () => {
+        expect(problemOf("mariadb://db:3306").message)
+            .toContain("user name is required");
+        expect(problemOf("mariadb://@db").message).toContain("empty");
+        expect(problemOf("mariadb://:secret@db").message)
+            .toContain("before the password is empty");
+    });
+
+    it("takes a password out, decoded, and leaves it out of the fields",
+        () => {
+            const check = checkConnectionUri("mariadb://dba:p%40ss:w@db/world");
+
+            expect(check.problem).toBeUndefined();
+            expect(check.password).toBe("p@ss:w");
+            expect(check.fields).toMatchObject({
+                user: "dba", host: "db", schema: "world",
+            });
+            expect(buildConnectionUri(check.fields!).uri)
+                .toBe("mariadb://dba@db/world");
+        });
+
+    it("keeps an empty password, which is a password", () => {
+        expect(checkConnectionUri("mariadb://dba:@db").password).toBe("");
+        expect(checkConnectionUri("mariadb://dba@db")).not
+            .toHaveProperty("password");
+    });
+
+    it("points at a password that does not decode", () => {
+        expect(problemOf("mariadb://dba:se%zz@db").marked).toBe("se%zz");
+    });
+
+    it("points at a missing host and a bad port", () => {
+        expect(problemOf("mariadb://dba@").message).toContain("host name");
+        expect(problemOf("mariadb://dba@db:33x6/world").marked).toBe("33x6");
+        expect(problemOf("mariadb://dba@db:70000").marked).toBe("70000");
+        expect(problemOf("mariadb://dba@db:").marked).toBe("");
+        expect(problemOf("mariadb://dba@:3306").message)
+            .toContain("host name");
+    });
+
+    it("points at a broken IPv6 address", () => {
+        expect(problemOf("mariadb://dba@[::1:3306").message)
+            .toContain("closing");
+        expect(problemOf("mariadb://dba@[::1]x").marked).toBe("x");
+    });
+
+    it("points at bad percent-encoding", () => {
+        expect(problemOf("mariadb://d%zzba@db").marked).toBe("d%zzba");
+        expect(problemOf("mariadb://dba@db/wor%zzld").marked).toBe("wor%zzld");
+        expect(problemOf("mariadb://dba@db?ssl-mode=%zz").marked)
+            .toBe("ssl-mode=%zz");
+    });
+
+    it("points at an option a URI cannot carry", () => {
+        expect(problemOf("mariadb://dba@db?ssl-mode=REQUIRED&sql-mode=x"))
+            .toMatchObject({ marked: "sql-mode" });
+        expect(problemOf("mariadb://dba@db?ssl-mode=a&ssl-mode=b").message)
+            .toContain("more than once");
+    });
+
+    it("points at an ssh option on a URI that does not tunnel", () => {
+        expect(problemOf("mariadb://dba@db?ssh-host=bastion")).toEqual({
+            message: expect.stringContaining("SSH tunnel") as string,
+            marked: "ssh-host",
+        });
+        expect(problemOf("mariadb+ssh://dba@db?ssh-port=0").marked).toBe("0");
+    });
+
+    it("offsets the mark past leading blanks", () => {
+        const { problem } = checkConnectionUri("  postgres://dba@db");
+
+        expect(problem).toMatchObject({ start: 2, end: 10 });
+    });
+
+    it("refuses an empty URI", () => {
+        expect(checkConnectionUri("   ").problem?.message)
+            .toContain("Type or paste");
     });
 });

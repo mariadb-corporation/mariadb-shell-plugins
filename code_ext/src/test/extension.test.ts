@@ -41,6 +41,7 @@ import {
     setWorkspaceFolders,
     statusBarItems,
     statusBarMessages,
+    env,
     treeViews,
     Uri,
     withProgressCalls,
@@ -192,7 +193,7 @@ describe("activate", () => {
     beforeEach(() => {
         resetVscodeMock();
         runtime.environmentOptions = {
-            versions: { "mariadb-shell": versionLine("26.9.3") },
+            versions: { "mariadb-shell": versionLine("26.9.4") },
         };
         runtime.environmentAfterInstall = undefined;
         runtime.runnerOutput = [];
@@ -216,12 +217,14 @@ describe("activate", () => {
             "mariadb.clearDefaultConnection",
             "mariadb.clearResultView",
             "mariadb.connect",
+            "mariadb.copyConnectionUri",
             "mariadb.deleteConnection",
             "mariadb.disconnect",
             "mariadb.editConnection",
             "mariadb.newSqlEditor",
             "mariadb.refreshConnections",
             "mariadb.restartMcpServer",
+            "mariadb.retryConnection",
             "mariadb.runSqlFile",
             "mariadb.runSqlStatement",
             "mariadb.selectEditorConnection",
@@ -401,8 +404,8 @@ describe("activate", () => {
 
         // An editor that never touches MariaDB must not pay for a shell.
         expect(runtime.connector?.commands ?? []).toEqual([]);
-        expect(outputChannels[0].lines)
-            .toContain("MariaDB extension activated.");
+        expect(outputChannels[0].lines.at(-1))
+            .toMatch(/^\[[^\]]+\] MariaDB extension activated\.$/);
     });
 
     it("starts the server the first time the tree is read", async () => {
@@ -429,12 +432,12 @@ describe("activate", () => {
     it("installs the shell when there is none, then starts the server",
         async () => {
             const prefix = "/Users/mzinner/.local/share/mariadb-shell";
-            const binary = `${prefix}/26.9.3/bin/mariadb-shell`;
+            const binary = `${prefix}/26.9.4/bin/mariadb-shell`;
             runtime.environmentOptions = {};
             runtime.environmentAfterInstall = {
-                directories: { [prefix]: ["26.9.3"] },
+                directories: { [prefix]: ["26.9.4"] },
                 files: [binary],
-                versions: { [binary]: versionLine("26.9.3") },
+                versions: { [binary]: versionLine("26.9.4") },
             };
             runtime.runnerOutput = ["==> Downloading", "==> Unpacking"];
 
@@ -444,11 +447,20 @@ describe("activate", () => {
             }).treeDataProvider;
             await provider.getChildren();
 
-            expect(withProgressCalls[0].options.title)
-                .toBe("Installing MariaDB Shell 26.9.3");
-            expect(withProgressCalls[0].reported).toContain("Downloading");
+            const install = withProgressCalls.find((call) => {
+                return call.options.title !== undefined;
+            });
+            expect(install?.options.title)
+                .toBe("Installing MariaDB Shell 26.9.4");
+            expect(install?.reported).toContain("Downloading");
+            // The view shows itself busy for the whole startup, and the
+            // welcome content moves on from "installing" once it is done.
+            expect(withProgressCalls[0].options.location)
+                .toEqual({ viewId: "mariadb.connections" });
+            expect(contextKeys.get("mariadb.connectionsView"))
+                .toBe("listed");
             expect(informationMessages)
-                .toEqual(["MariaDB Shell 26.9.3 was installed."]);
+                .toEqual(["MariaDB Shell 26.9.4 was installed."]);
             expect(runtime.connector?.commands[0].command).toBe(binary);
         });
 
@@ -464,6 +476,27 @@ describe("activate", () => {
 
             await expect(provider.getChildren()).resolves.toEqual([]);
             expect(errorMessages[0]).toContain("exited with code 1");
+            // The view says it failed and offers the log and a retry,
+            // rather than claiming no connections are configured.
+            expect(contextKeys.get("mariadb.connectionsView"))
+                .toBe("failed");
+            expect(outputChannels[0].lines.join("\n"))
+                .toContain("The MCP server could not be started: "
+                    + "MariaDB Shell 26.9.4 could not be installed");
+        });
+
+    it("copies a connection's whole URI, which the tree shortens",
+        async () => {
+            activate(createContext() as never);
+
+            await mockCommands.executeCommand("mariadb.copyConnectionUri", {
+                kind: "connection",
+                uri: "mariadb+ssh://dba@db:3310/world?ssh-host=bastion",
+            });
+
+            expect(env.clipboard.text)
+                .toBe("mariadb+ssh://dba@db:3310/world?ssh-host=bastion");
+            expect(statusBarMessages.at(-1)).toContain("Copied");
         });
 
     it("stores the default connection in the settings", async () => {

@@ -17,11 +17,13 @@
 
 import * as vscode from "vscode";
 
+import { connectionLabel, schemeOf } from "../connections/connectionUri.js";
 import type { ObjectType } from "../mcp/types.js";
 import {
     OBJECT_GROUP_LABELS,
     type ConnectionsNode,
     type IConnectionNode,
+    type IConnectionStatusNode,
     type IObjectGroupNode,
     type IObjectNode,
     type ISchemaNode,
@@ -77,6 +79,18 @@ const OBJECT_ICONS: Record<ObjectType, string | vscode.ThemeIcon> = {
 };
 
 /**
+ * The icon shown for a connection, by the scheme of its URI. `mysqlx` has
+ * no picture of its own; it is MySQL's protocol, so it borrows MySQL's.
+ */
+const CONNECTION_ICONS: Record<string, string> = {
+    "mariadb": "connectionMariaDB.svg",
+    "mariadb+ssh": "connectionMariaDBSSH.svg",
+    "mysql": "connectionMySQL.svg",
+    "mysql+ssh": "connectionMySQLSSH.svg",
+    "mysqlx": "connectionMySQL.svg",
+};
+
+/**
  * The base of every item in the Connections tree, holding the node it
  * stands for and the icon lookup they all share.
  */
@@ -115,8 +129,11 @@ export class ConnectionTreeItem
     extends ConnectionBaseTreeItem<IConnectionNode> {
 
     public constructor(node: IConnectionNode, resolveIcon: IconResolver) {
-        super(node, node.uri, "mariadbConnection.svg", node.expandable,
-            resolveIcon);
+        // The label leaves out what the icon and the tooltip already say -
+        // the scheme and the options - so the row stays short.
+        super(node, connectionLabel(node.uri),
+            CONNECTION_ICONS[schemeOf(node.uri)] ?? "connectionMariaDB.svg",
+            node.expandable, resolveIcon);
 
         this.contextValue = [
             "mariadbConnection",
@@ -147,6 +164,36 @@ export class ConnectionTreeItem
         this.tooltip = notes.length > 0
             ? `${node.uri} (${notes.join(", ")})`
             : node.uri;
+    }
+}
+
+/**
+ * The row under a connection that is being opened, or failed to open.
+ *
+ * Connecting shows the spinning codicon VS Code's own views use, so an
+ * expand that takes a while visibly does something. A failure shows the
+ * reason's first line with the error icon - the whole of it is in the
+ * tooltip - and its context value puts a Retry button beside it.
+ */
+export class ConnectionStatusTreeItem
+    extends vscode.TreeItem {
+
+    public constructor(public readonly node: IConnectionStatusNode) {
+        const failed = node.state === "failed";
+        const message = node.message ?? "The connection could not be opened.";
+        super(
+            failed ? message.split("\n")[0]!.trim() : "Connecting...",
+            vscode.TreeItemCollapsibleState.None,
+        );
+
+        this.iconPath = failed
+            ? new vscode.ThemeIcon("error",
+                new vscode.ThemeColor("errorForeground"))
+            : new vscode.ThemeIcon("loading~spin");
+        this.contextValue = failed
+            ? "mariadbConnectionStatus.failed"
+            : "mariadbConnectionStatus.connecting";
+        this.tooltip = failed ? message : `Opening ${node.uri}`;
     }
 }
 
@@ -210,6 +257,10 @@ export const createTreeItem = (
     switch (node.kind) {
         case "connection": {
             return new ConnectionTreeItem(node, resolveIcon);
+        }
+
+        case "connectionStatus": {
+            return new ConnectionStatusTreeItem(node);
         }
 
         case "schema": {

@@ -21,9 +21,14 @@ import {
     UI_BACKEND_SESSION,
     type ConnectionManager,
 } from "../connections/connectionManager.js";
+import { showErrorWithLog } from "../errorMessages.js";
+import type { IServerStatus } from "../mcp/serverStarter.js";
 import {
     ConnectionsModel,
     type ConnectionsNode,
+    type IConnectionNode,
+    type IConnectionStatusNode,
+    type IOpenAttempt,
 } from "./connectionsModel.js";
 import { createTreeItem, type IconResolver } from "./treeItems.js";
 
@@ -31,17 +36,32 @@ import { createTreeItem, type IconResolver } from "./treeItems.js";
 export const CONNECTIONS_VIEW_ID = "mariadb.connections";
 
 /**
- * The context key saying the configured connections have been listed.
+ * The context key saying what the Connections view is waiting for, which
+ * is what picks its welcome content.
  *
- * The view's welcome content is two messages and this is what picks
- * between them. The list comes from the MCP server, which has to be
- * found and started first, so an empty tree means "not asked yet" for
- * as long as that takes - and telling the user in that window that
- * nothing is configured would be telling them something untrue. It
- * lives here rather than with the settings keys because nothing
- * configures it: the tree is what knows.
+ * The list comes from the MCP server, which has to be found - or
+ * downloaded - and started first, so an empty tree means "not asked yet"
+ * for as long as that takes, and telling the user in that window that
+ * nothing is configured would be telling them something untrue. It lives
+ * here rather than with the settings keys because nothing configures it:
+ * the tree is what knows.
  */
-export const CONNECTIONS_LISTED_CONTEXT_KEY = "mariadb.connectionsListed";
+export const CONNECTIONS_VIEW_STATE_CONTEXT_KEY = "mariadb.connectionsView";
+
+/**
+ * What the Connections view is showing when it has no rows.
+ *
+ * - `looking`: the server is being found or started.
+ * - `installing`: the MariaDB Shell is being downloaded and installed.
+ * - `failed`: the last attempt to list the connections failed.
+ * - `listed`: the connections were listed - an empty tree now means there
+ *   are none.
+ */
+export type ConnectionsViewState =
+    | "looking"
+    | "installing"
+    | "failed"
+    | "listed";
 
 /**
  * Feeds the Connections view in the primary sidebar.
@@ -56,8 +76,16 @@ export class ConnectionsTreeProvider
     readonly #onDidChangeTreeData =
         new vscode.EventEmitter<ConnectionsNode | undefined>();
     readonly #unsubscribe: () => void;
-    /** Whether the roots have been asked for and answered, once. */
-    #listed = false;
+    readonly #unsubscribeStatus: () => void;
+    /** How the last attempt at listing the roots went, if there was one. */
+    #listing: "unasked" | "listed" | "failed" = "unasked";
+    /** The state last handed to the context key. */
+    #shownState?: ConnectionsViewState;
+    /**
+     * The tree's attempts at opening a connection, by URI, while they are
+     * under way and after they failed. Cleared once one succeeds.
+     */
+    readonly #attempts = new Map<string, IOpenAttempt>();
 
     public readonly onDidChangeTreeData = this.#onDidChangeTreeData.event;
 
@@ -66,17 +94,30 @@ export class ConnectionsTreeProvider
      * @param resolveIcon The icon lookup the items share.
      * @param log Where to write a failure the tree cannot show.
      * @param connectOnOpen Whether expanding a closed connection opens it.
+     * @param status How the server's startup is going, which is what the
+     *               view says while it has nothing to list yet.
      */
     public constructor(
         private readonly connections: ConnectionManager,
         private readonly resolveIcon: IconResolver,
         private readonly log: (message: string) => void,
         private readonly connectOnOpen: () => boolean,
+        private readonly status?: IServerStatus,
     ) {
-        this.#model = new ConnectionsModel(connections, connectOnOpen);
+        this.#model = new ConnectionsModel(connections, connectOnOpen,
+            (uri) => { return this.#attempts.get(uri); });
         this.#unsubscribe = connections.onDidChange(() => {
             this.refresh();
         });
+        this.#unsubscribeStatus = status?.onDidChangePhase((phase) => {
+            // A new attempt is under way, so the last one's failure is no
+            // longer what the view should be saying.
+            if (phase === "locating" && this.#listing === "failed") {
+                this.#listing = "unasked";
+            }
+            this.#showState();
+        }) ?? (() => { /* nothing to stop */ });
+        this.#showState();
     }
 
     /**
@@ -113,35 +154,55 @@ export class ConnectionsTreeProvider
             }
 
             const roots = await this.#model.getRoots();
-            this.#markListed();
+            this.#listing = "listed";
+            this.#showState();
 
             return roots;
         } catch (error) {
-            this.#report("populate the Connections view", error);
-            // The attempt is over, however it went. A view left saying
-            // it is still looking would be as wrong as one saying
-            // nothing is configured, and the failure has been reported.
-            this.#markListed();
+            this.#report("list the connections", error);
+            // The attempt is over. A view left saying it is still looking
+            // would be as wrong as one saying nothing is configured.
+            this.#listing = "failed";
+            this.#showState();
 
             return [];
         }
     }
 
     /**
-     * Says, once, that the configured connections have been listed.
+     * @returns What the view should say while it has no rows.
+     */
+    public get state(): ConnectionsViewState {
+        if (this.status?.phase === "installing") {
+            return "installing";
+        }
+
+        // A server that did not start is a failure whoever asked for it;
+        // rows listed earlier still hide the welcome content, so this only
+        // shows where there is nothing else to show.
+        if (this.#listing === "failed" || this.status?.phase === "failed") {
+            return "failed";
+        }
+
+        return this.#listing === "listed" ? "listed" : "looking";
+    }
+
+    /**
+     * Hands the view's state to its welcome content, when it changed.
      *
      * @returns Nothing.
      */
-    #markListed(): void {
-        if (this.#listed) {
+    #showState(): void {
+        const state = this.state;
+        if (state === this.#shownState) {
             return;
         }
 
-        this.#listed = true;
+        this.#shownState = state;
         void vscode.commands.executeCommand(
             "setContext",
-            CONNECTIONS_LISTED_CONTEXT_KEY,
-            true,
+            CONNECTIONS_VIEW_STATE_CONTEXT_KEY,
+            state,
         );
     }
 
@@ -174,14 +235,49 @@ export class ConnectionsTreeProvider
             return;
         }
 
-        if (this.connections.isConnected(node.uri, UI_BACKEND_SESSION)) {
+        await this.#open(node);
+    }
+
+    /**
+     * Tries again to open the connection a failed status row stands under.
+     *
+     * @param node The failed status row.
+     *
+     * @returns Nothing.
+     */
+    public async retry(node: IConnectionStatusNode): Promise<void> {
+        await this.#open(node.parent);
+    }
+
+    /**
+     * Opens the tree's own connection on a connection row, showing how it
+     * goes under the row: a spinner while it is under way, the reason if it
+     * fails. The failure is shown there rather than in a notification - the
+     * user is looking at the row, and it has a Retry button beside it.
+     *
+     * @param node The connection row, as the tree holds it.
+     *
+     * @returns Nothing.
+     */
+    async #open(node: IConnectionNode): Promise<void> {
+        if (this.connections.isConnected(node.uri, UI_BACKEND_SESSION)
+            || this.#attempts.get(node.uri)?.state === "connecting") {
             return;
         }
 
+        this.#attempts.set(node.uri, { state: "connecting" });
+        this.refresh(node);
         try {
             await this.connections.connect(node.uri, UI_BACKEND_SESSION);
+            // Opening fired the refresh that lists the schemas already.
+            this.#attempts.delete(node.uri);
         } catch (error) {
-            this.#report(`open '${node.uri}'`, error);
+            const message = error instanceof Error
+                ? error.message
+                : String(error);
+            this.log(`Failed to open '${node.uri}': ${message}`);
+            this.#attempts.set(node.uri, { state: "failed", message });
+            this.refresh(node);
         }
     }
 
@@ -201,7 +297,7 @@ export class ConnectionsTreeProvider
             ? error.message
             : String(error);
         this.log(`Failed to ${what}: ${message}`);
-        void vscode.window.showErrorMessage(`MariaDB: ${message}`);
+        void showErrorWithLog(message);
     }
 
     /**
@@ -211,6 +307,7 @@ export class ConnectionsTreeProvider
      */
     public dispose(): void {
         this.#unsubscribe();
+        this.#unsubscribeStatus();
         this.#onDidChangeTreeData.dispose();
     }
 }

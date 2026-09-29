@@ -112,6 +112,49 @@ describe("createSdkConnector", () => {
             () => {
                 // Nothing will be logged.
             },
-        )).rejects.toThrow();
+        )).rejects.toThrow("The MCP server did not start "
+            + "(/nonexistent/mariadb-shell)");
+    }, 30_000);
+
+    it("says what a server that died on the way up printed", async () => {
+        const lines: string[] = [];
+
+        await expect(createSdkConnector().open(
+            {
+                command: process.execPath,
+                args: [
+                    "-e",
+                    "process.stderr.write('No module named mcp\\n');"
+                    + "process.exit(3);",
+                ],
+            },
+            (line) => { lines.push(line); },
+        )).rejects.toThrow(/Its last output: No module named mcp/);
+        expect(lines).toEqual(["No module named mcp"]);
+    }, 30_000);
+
+    it("logs a server that exits without being asked to", async () => {
+        const lines: string[] = [];
+        const connection = await createSdkConnector()
+            .open(command, (line) => { lines.push(line); });
+
+        await connection.callTool("test.exit", {}).catch(() => {
+            // The call dies with the server; that is the point.
+        });
+
+        await vi.waitFor(() => {
+            expect(lines).toContain("The MCP server exited unexpectedly. "
+                + "Run 'MariaDB: Restart MCP Server' to start it again.");
+        });
+    }, 30_000);
+
+    it("does not call a close it asked for unexpected", async () => {
+        const lines: string[] = [];
+        const connection = await createSdkConnector()
+            .open(command, (line) => { lines.push(line); });
+
+        await connection.close();
+
+        expect(lines.join("\n")).not.toContain("unexpectedly");
     }, 30_000);
 });

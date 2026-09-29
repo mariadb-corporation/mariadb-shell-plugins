@@ -23,10 +23,14 @@ import {
 } from "../../connections/connectionManager.js";
 import {
     ConnectionsTreeProvider,
-    CONNECTIONS_LISTED_CONTEXT_KEY,
+    CONNECTIONS_VIEW_STATE_CONTEXT_KEY,
     CONNECTIONS_VIEW_ID,
 } from "../../tree/connectionsTreeProvider.js";
 import type { IconResolver } from "../../tree/treeItems.js";
+import type {
+    IServerStatus,
+    ServerPhase,
+} from "../../mcp/serverStarter.js";
 import {
     createFakeApi,
     createFakeSettings,
@@ -36,6 +40,7 @@ import {
     contextKeys,
     errorMessages,
     resetVscodeMock,
+    ThemeIcon,
     Uri,
 } from "../mocks/vscode.js";
 
@@ -47,11 +52,37 @@ const resolveIcon: IconResolver = (name: string) => {
 };
 
 /**
+ * @returns A server status whose phase a test moves by hand.
+ */
+const createStatus = (): IServerStatus & {
+    set(phase: ServerPhase): void;
+} => {
+    const listeners = new Set<(phase: ServerPhase) => void>();
+    const status = {
+        phase: "stopped" as ServerPhase,
+        onDidChangePhase: (listener: (phase: ServerPhase) => void) => {
+            listeners.add(listener);
+
+            return () => { listeners.delete(listener); };
+        },
+        set: (phase: ServerPhase) => {
+            status.phase = phase;
+            for (const listener of listeners) {
+                listener(phase);
+            }
+        },
+    };
+
+    return status;
+};
+
+/**
  * @param connectOnOpen Whether expanding a closed connection opens it.
+ * @param status The server startup the view follows, if any.
  *
  * @returns A provider over a fake server with one connection.
  */
-const createProvider = (connectOnOpen = false) => {
+const createProvider = (connectOnOpen = false, status?: IServerStatus) => {
     const api = createFakeApi({
         connections: ["dba@localhost:3310"],
         connectionIds: { "dba@localhost:3310": "uuid-dba" },
@@ -69,7 +100,8 @@ const createProvider = (connectOnOpen = false) => {
     );
     const log = createRecordingLog();
     const provider = new ConnectionsTreeProvider(
-        connections, resolveIcon, log, () => { return connectOnOpen; });
+        connections, resolveIcon, log, () => { return connectOnOpen; },
+        status);
 
     return { api, connections, provider, log };
 };
@@ -181,28 +213,79 @@ describe("ConnectionsTreeProvider", () => {
         // an empty tree means "not asked yet" until this comes back -
         // and the welcome content says so rather than claiming there is
         // nothing configured.
-        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY))
-            .toBeUndefined();
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("looking");
 
         answer();
         await expect(roots).resolves.toEqual([]);
 
-        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY)).toBe(true);
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("listed");
 
         provider.dispose();
     });
 
-    it("says it has asked even where the asking failed", async () => {
-        const { api, provider } = createProvider();
+    it("says the listing failed rather than that nothing is there",
+        async () => {
+            const { api, provider } = createProvider();
+            api.listConnections = () => {
+                return Promise.reject(new Error("the shell is not running"));
+            };
+
+            await provider.getChildren();
+
+            // A view left looking for ever would be as wrong as one
+            // saying nothing is there.
+            expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+                .toBe("failed");
+
+            provider.dispose();
+        });
+
+    it("says the shell is being installed while it is", () => {
+        const status = createStatus();
+        const { provider } = createProvider(false, status);
+
+        status.set("locating");
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("looking");
+
+        status.set("installing");
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("installing");
+
+        status.set("starting");
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("looking");
+
+        provider.dispose();
+    });
+
+    it("says a server that did not start failed", () => {
+        const status = createStatus();
+        const { provider } = createProvider(false, status);
+
+        status.set("locating");
+        status.set("failed");
+
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("failed");
+
+        provider.dispose();
+    });
+
+    it("goes back to looking when a failed start is retried", async () => {
+        const status = createStatus();
+        const { api, provider } = createProvider(false, status);
         api.listConnections = () => {
             return Promise.reject(new Error("the shell is not running"));
         };
-
         await provider.getChildren();
 
-        // A view left looking for ever would be as wrong as one saying
-        // nothing is there; the failure itself is reported separately.
-        expect(contextKeys.get(CONNECTIONS_LISTED_CONTEXT_KEY)).toBe(true);
+        status.set("locating");
+
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .toBe("looking");
 
         provider.dispose();
     });
@@ -220,7 +303,7 @@ describe("ConnectionsTreeProvider", () => {
             expect(errorMessages)
                 .toEqual(["MariaDB: the shell is not running"]);
             expect(log.lines.join("\n"))
-                .toContain("Failed to populate the Connections view");
+                .toContain("Failed to list the connections");
 
             provider.dispose();
         });
@@ -270,23 +353,94 @@ describe("ConnectionsTreeProvider", () => {
             provider.dispose();
         });
 
-    it("says why a connection the user expanded would not open",
+    it("says under the row why a connection would not open", async () => {
+        const { api, connections, provider, log } = createProvider(true);
+        const [root] = await provider.getChildren();
+        api.connect = () => {
+            return Promise.reject(new Error("access denied\nmore detail"));
+        };
+
+        await provider.expanded(root);
+
+        expect(connections.isConnected("dba@localhost:3310")).toBe(false);
+        const [status] = await provider.getChildren(root);
+        expect(status).toMatchObject({
+            kind: "connectionStatus",
+            state: "failed",
+            message: "access denied\nmore detail",
+        });
+        const item = provider.getTreeItem(status!);
+        expect(item.label).toBe("access denied");
+        expect(item.tooltip).toBe("access denied\nmore detail");
+        expect(item.contextValue).toBe("mariadbConnectionStatus.failed");
+        // Under the row the user is looking at, not in a notification too.
+        expect(errorMessages).toEqual([]);
+        expect(log.lines.join("\n"))
+            .toContain("Failed to open 'dba@localhost:3310': access denied");
+
+        provider.dispose();
+    });
+
+    it("shows a spinner under the row while the connection opens",
         async () => {
-            const { api, connections, provider, log } = createProvider(true);
+            const { api, provider } = createProvider(true);
             const [root] = await provider.getChildren();
-            api.connect = () => {
-                return Promise.reject(new Error("access denied"));
+            const connect = api.connect.bind(api);
+            let release = (): void => { /* set below */ };
+            api.connect = (...args: Parameters<typeof connect>) => {
+                return new Promise((resolve, reject) => {
+                    release = () => { connect(...args).then(resolve, reject); };
+                });
             };
+            const redrawn: unknown[] = [];
+            provider.onDidChangeTreeData((node) => { redrawn.push(node); });
 
-            await provider.expanded(root);
+            const opening = provider.expanded(root!);
 
-            expect(connections.isConnected("dba@localhost:3310")).toBe(false);
-            expect(errorMessages).toEqual(["MariaDB: access denied"]);
-            expect(log.lines.join("\n"))
-                .toContain("Failed to open 'dba@localhost:3310'");
+            // Redrawn at once, not when the server answers.
+            expect(redrawn).toEqual([root]);
+            const [status] = await provider.getChildren(root);
+            expect(status).toMatchObject({
+                kind: "connectionStatus", state: "connecting",
+            });
+            const item = provider.getTreeItem(status!);
+            expect(item.label).toBe("Connecting...");
+            expect(item.iconPath).toEqual(new ThemeIcon("loading~spin"));
+
+            // A second expand while it is under way does not open another.
+            await provider.expanded(root!);
+
+            release();
+            await opening;
+
+            const children = await provider.getChildren(root);
+            expect(children).toHaveLength(1);
+            expect(children[0]).toMatchObject({ kind: "schema" });
 
             provider.dispose();
         });
+
+    it("opens the connection on a retry of a failed attempt", async () => {
+        const { api, connections, provider } = createProvider(true);
+        const [root] = await provider.getChildren();
+        const connect = api.connect.bind(api);
+        api.connect = () => {
+            return Promise.reject(new Error("the server is down"));
+        };
+        await provider.expanded(root!);
+        const [status] = await provider.getChildren(root);
+
+        api.connect = connect;
+        await provider.retry(status as never);
+
+        expect(connections.isConnected(
+            "dba@localhost:3310", UI_BACKEND_SESSION)).toBe(true);
+        expect(await provider.getChildren(root)).toMatchObject([
+            { kind: "schema", schema: "world" },
+        ]);
+
+        provider.dispose();
+    });
 
     it("ignores the expansion of anything but a connection", async () => {
         const { connections, provider } = createProvider(true);
