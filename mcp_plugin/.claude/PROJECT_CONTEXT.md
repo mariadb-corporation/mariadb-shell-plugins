@@ -23,8 +23,9 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **447 tests pass, 3 SKIPPED (~66s), 98% total coverage** (2235 statements,
-48 missed; re-measured at the 2026-09-28 checkpoint on a run with `.coverage`
+Standard suite: **464 tests pass, 3 SKIPPED (~65s), 98% total coverage** (2381 statements,
+51 missed, on `wip/mysqlsh-error-usage-fix` at the 2026-09-29 checkpoint; 447 / 2235 / 48
+at the 2026-09-28 one before the rebase; re-measured then on a run with `.coverage`
 DELETED first - ~65s since the run keeps its secrets in a plaintext file instead of the
 macOS keychain, see the isolation gotcha in `context/testing.md` — see the coverage trap in [`context/testing.md`](context/testing.md)). Of the
 three skipped, two are the OPT-IN end-to-end tests (`test_migration_e2e`,
@@ -42,6 +43,11 @@ on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
 - Repo's existing `*_plugin` layout (NOT create-shell-plugin's `python/plugins/`).
   `@plugin` / `@plugin_function` decorators. FQNs camelCase (`mcp.startServer`) ->
   snake_case in Python, kebab-case in CLI. MCP tool names use dots per user request.
+- **Exceptions: tool code raises `ToolError` through `tool_registrar.tool_error()`, never
+  `mysqlsh.Error`, and never imports `ToolError` at module scope.** `mysqlsh.Error` is
+  for shell plugin code only (`server.py`, `setup*.py`, and `config.py`, which
+  `mcp.setup` shares). The full rule and the reasons are in
+  [`context/server.md`](context/server.md) (Architecture); reviewers have flagged it.
 
 ## Context files
 
@@ -69,38 +75,33 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-28):
+Checked at this checkpoint (2026-09-29):
 
 ```
 $ git -C mcp_plugin branch --show-current
-wip/result-set-fixes-and-expansion
+wip/mysqlsh-error-usage-fix
 
 $ git -C mcp_plugin status --short
-(clean - everything is in ff78f3ee)
+(clean before this checkpoint's context edits - the code is in 88c06aa4)
 ```
 
-- **The branch is `wip/result-set-fixes-and-expansion`**, shared with
-  [`code_ext`](../../code_ext), stacked on `wip/ext-sandbox-support` (PR #29) <-
-  `wip/connection-folders` (PR #28). It is **PR #30**, pushed. Commits on it:
-  `77a072a4` (test run kept off the secret store), `32f0c23f` (every result set
-  read), `daafbaf1` (paging, column types), `b58f02de` (code_ext), `fbf4f187`
-  (checkpoint), **`ff78f3ee`** (this session: the PR #30 review fixes).
-- This session: Rene's three review comments on PR #30 were fixed (see
-  [`context/db-tools.md`](context/db-tools.md)):
-  - **`result_sets`** - every statement result carries a list of
-    `{columns, rows, column_metadata?, has_more_pages?}`; the top-level
-    `columns`/`rows` and `additional_result_sets` are gone. `has_more_pages`
-    moved onto the set.
-  - **`column_metadata: bool = False`** on both execute tools - the shell's Column
-    getters verbatim (`type` = `get_type().data`, `flags` as a list).
-    `_column_type`, `column_types` and the made-up `BLOB` type are gone.
-  - The PR description was updated and each comment answered; the threads were
-    left for Rene to resolve.
-- Suite at this checkpoint: **447 pass, 3 skipped, ~66s, 98% (2235 statements, 48
-  missed)**, `.coverage` deleted first. The third skip is still the environmental
-  one: the migration tooling is not installed on this machine.
-- **Over the ~400-line split threshold and NOT split** (untouched this session, so
-  not read for a seam): `context/connections.md` (458), `context/history.md` (466,
-  an archive), `context/security-review.md` (402), `context/migrator.md` (401).
+- **Two stacked PRs, both pushed**, shared with [`code_ext`](../../code_ext):
+  - **PR #30** `wip/result-set-fixes-and-expansion` (on `wip/ext-sandbox-support` #29 <-
+    `wip/connection-folders` #28). **Approved by Rene.** Its tip is now **`9426cdb6`**
+    (this session): `_column_metadata` reports only `type` and `flags`, following his
+    approving comment; `_COLUMN_METADATA_GETTERS` is gone, and so is `code_ext`'s
+    `IColumnMetadata` beyond those two fields. The PR description was updated, his comment
+    answered, and a PR comment points to #31.
+  - **PR #31** `wip/mysqlsh-error-usage-fix`, based on #30's branch, commit **`88c06aa4`**:
+    his general comment. MCP-only code raises `ToolError` through the new
+    `tool_registrar.tool_error()`; the rule is in [`context/server.md`](context/server.md).
+    41 tests switched to expect `ToolError`, plus a new `tool_error` test. It retargets
+    once #30 merges.
+- Suite: **464 pass, 3 skipped, 98%** on #31 (463 on #30). code_ext on #30: **1246 pass
+  across 55 files**, pretest clean.
+- **Over the ~400-line split threshold and NOT split** (untouched this session, so not
+  read for a seam): `context/connections.md` (**499**, grew in the rebase),
+  `context/history.md` (466, an archive), `context/security-review.md` (402),
+  `context/migrator.md` (401).
 - [`context/history.md`](context/history.md) is deliberately NOT updated, as by
   every session since `wip/sandbox-binaries`; this section is the current record.
