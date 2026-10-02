@@ -582,3 +582,77 @@ def test_deployment(sandbox_session, project_path):
     #         "SELECT CONCAT(major, '.', minor, '.', patch) AS version "
     #         f"FROM {lib.core.quote_ident(SCHEMA_NAME)}.`msm_schema_version`")
     #         .exec(sandbox_session).first["version"]) == version_str
+
+
+def test_deployment_backup_restores_failed_update(
+    sandbox_session, project_path, temp_dir
+):
+    def deployed_version():
+        return (
+            lib.core.MsmDbExec(
+                "SELECT CONCAT(major, '.', minor, '.', patch) AS version "
+                f"FROM {lib.core.quote_ident(SCHEMA_NAME)}.`msm_schema_version`"
+            )
+            .exec(sandbox_session)
+            .first["version"]
+        )
+
+    lib.core.MsmDbExec(
+        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(SCHEMA_NAME)}"
+    ).exec(sandbox_session)
+
+    released_versions = get_released_versions(schema_project_path=project_path)
+    assert len(released_versions) > 1
+    version_str = "%d.%d.%d" % tuple(released_versions[0])
+    version_str_next = "%d.%d.%d" % tuple(released_versions[1])
+
+    deploy_schema(schema_project_path=project_path, version=version_str)
+    lib.core.MsmDbExec(
+        f"INSERT INTO {lib.core.quote_ident(SCHEMA_NAME)}.`my_1st_table` "
+        "(`name1`) VALUES ('kept')"
+    ).exec(sandbox_session)
+
+    # Break the update in a copy of the project, so the update to the next
+    # version fails after it has already changed the schema
+    broken_project_path = os.path.join(temp_dir, "broken_project")
+    shutil.copytree(project_path, broken_project_path)
+    with open(
+        os.path.join(
+            broken_project_path,
+            "releases",
+            "deployment",
+            f"{SCHEMA_NAME}_deployment_{version_str_next}.sql",
+        ),
+        "a",
+    ) as f:
+        f.write("\nSELECT * FROM `no_such_schema`.`no_such_table`;\n")
+
+    backup_directory = os.path.join(temp_dir, "backup")
+    with pytest.raises(Exception) as exc_info:
+        deploy_schema(
+            schema_project_path=broken_project_path,
+            version=version_str_next,
+            backup_directory=backup_directory,
+            backup=True,
+        )
+
+    assert "The schema has been restored" in str(exc_info.value)
+    assert deployed_version() == version_str
+    assert (
+        lib.core.MsmDbExec(
+            f"SELECT `name1` FROM {lib.core.quote_ident(SCHEMA_NAME)}.`my_1st_table`"
+        )
+        .exec(sandbox_session)
+        .first["name1"]
+    ) == "kept"
+    assert not os.path.exists(backup_directory)
+
+    # A working update with a backup removes the dump once it is done
+    deploy_schema(
+        schema_project_path=project_path,
+        version=version_str_next,
+        backup_directory=backup_directory,
+        backup=True,
+    )
+    assert deployed_version() == version_str_next
+    assert not os.path.exists(backup_directory)
