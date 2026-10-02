@@ -49,6 +49,8 @@ export interface ILoadMessage {
     caption: string;
     /** The color to show it in; `""` for none. */
     color: ConnectionColor | "";
+    /** Whether VS Code runs on Windows, where a socket is a named pipe. */
+    windows: boolean;
 }
 
 /** The answer to a Test Connection. */
@@ -120,6 +122,15 @@ export interface IPasteMessage {
     type: "paste";
 }
 
+/**
+ * Put the URI on the clipboard. The webview may not write it there itself
+ * any more than read it, so the host does.
+ */
+export interface ICopyMessage {
+    type: "copy";
+    text: string;
+}
+
 /** Close without saving. */
 export interface ICancelMessage {
     type: "cancel";
@@ -130,4 +141,5 @@ export type EditorWebviewMessage =
     | ITestMessage
     | ISaveMessage
     | IPasteMessage
+    | ICopyMessage
     | ICancelMessage;

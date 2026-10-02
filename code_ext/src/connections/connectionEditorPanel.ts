@@ -304,6 +304,7 @@ export class ConnectionEditorPanel {
                     folders: await this.#folders(),
                     caption: state.caption,
                     color: state.color,
+                    windows: process.platform === "win32",
                 });
                 break;
             }
@@ -323,6 +324,11 @@ export class ConnectionEditorPanel {
                     type: "clipboard",
                     text: await vscode.env.clipboard.readText(),
                 });
+                break;
+            }
+
+            case "copy": {
+                await vscode.env.clipboard.writeText(message.text);
                 break;
             }
 

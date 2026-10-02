@@ -16,7 +16,12 @@
  */
 
 import type { RefObject } from "preact";
-import { useEffect, useLayoutEffect, useState } from "preact/hooks";
+import {
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from "preact/hooks";
 
 /**
  * What the two dialogs - the connection editor and New Sandbox - are both
@@ -151,4 +156,139 @@ export const useScrollFades = (
     }, []);
 
     return fades;
+};
+
+/** How long the pointer rests on an element before its tooltip shows. */
+export const TOOLTIP_DELAY_MS = 350;
+
+/** The gap between an element and its tooltip, and the window's edge. */
+const TOOLTIP_GAP_PX = 4;
+
+/**
+ * The tooltips of every element carrying `data-tooltip`, drawn by the page.
+ * A `title`'s tooltip is the browser's: it waits about a second, and inside
+ * a VS Code webview it often does not show at all.
+ *
+ * One tooltip for the whole page, fixed rather than hung from its element,
+ * so a scrolling area cannot clip it and the window's edges can be kept
+ * clear: it goes under its element, or over it where there is no room
+ * below, and moves in from either side. It shows after
+ * {@link TOOLTIP_DELAY_MS} on hover, at once on keyboard focus, and goes
+ * on a click, a scroll or the pointer leaving - and stays gone after a
+ * click until the pointer comes back.
+ *
+ * @returns The tooltip, while one is shown.
+ */
+export const Tooltips = (): preact.JSX.Element | null => {
+    const [shown, setShown] = useState<{
+        text: string;
+        anchor: DOMRect;
+    } | undefined>(undefined);
+    const tooltip = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        let target: HTMLElement | undefined;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+
+        const show = (element: HTMLElement): void => {
+            const text = element.dataset.tooltip ?? "";
+            if (text !== "") {
+                setShown({ text, anchor: element.getBoundingClientRect() });
+            }
+        };
+
+        // Hidden, but the element is still the one under the pointer: the
+        // tooltip does not come back until another one is.
+        const dismiss = (): void => {
+            clearTimeout(timer);
+            setShown(undefined);
+        };
+
+        const leave = (): void => {
+            dismiss();
+            target = undefined;
+        };
+
+        const onOver = (event: Event): void => {
+            const element = (event.target as Element | null)
+                ?.closest<HTMLElement>("[data-tooltip]") ?? undefined;
+            if (element === target) {
+                return;
+            }
+            leave();
+            if (element !== undefined) {
+                target = element;
+                timer = setTimeout(() => { show(element); },
+                    TOOLTIP_DELAY_MS);
+            }
+        };
+
+        const onOut = (event: MouseEvent): void => {
+            // Out of the window altogether: nothing is under the pointer.
+            if (event.relatedTarget === null) {
+                leave();
+            }
+        };
+
+        const onFocus = (event: Event): void => {
+            const element = event.target as HTMLElement;
+            if (element.matches("[data-tooltip]:focus-visible")) {
+                clearTimeout(timer);
+                target = element;
+                show(element);
+            }
+        };
+
+        document.addEventListener("mouseover", onOver);
+        document.addEventListener("mouseout", onOut);
+        document.addEventListener("mousedown", dismiss);
+        document.addEventListener("keydown", dismiss);
+        document.addEventListener("focusin", onFocus);
+        document.addEventListener("focusout", leave);
+        // Capturing, to hear a scrolling area as well as the page.
+        document.addEventListener("scroll", leave, true);
+
+        return () => {
+            clearTimeout(timer);
+            document.removeEventListener("mouseover", onOver);
+            document.removeEventListener("mouseout", onOut);
+            document.removeEventListener("mousedown", dismiss);
+            document.removeEventListener("keydown", dismiss);
+            document.removeEventListener("focusin", onFocus);
+            document.removeEventListener("focusout", leave);
+            document.removeEventListener("scroll", leave, true);
+        };
+    }, []);
+
+    // Placed once it is drawn, since where it fits depends on its size.
+    useLayoutEffect(() => {
+        const element = tooltip.current;
+        if (shown === undefined || element === null) {
+            return;
+        }
+
+        const { anchor } = shown;
+        const { width, height } = element.getBoundingClientRect();
+        const left = Math.max(TOOLTIP_GAP_PX, Math.min(anchor.left,
+            window.innerWidth - width - TOOLTIP_GAP_PX));
+        const below = anchor.bottom + TOOLTIP_GAP_PX;
+        const top = below + height <= window.innerHeight - TOOLTIP_GAP_PX
+            ? below
+            : Math.max(TOOLTIP_GAP_PX, anchor.top - height - TOOLTIP_GAP_PX);
+        element.style.left = `${left}px`;
+        element.style.top = `${top}px`;
+        element.style.visibility = "visible";
+    }, [shown]);
+
+    return shown === undefined ? null : (
+        <div
+            ref={tooltip}
+            class="tooltip"
+            role="tooltip"
+            // Hidden until placed, so it never shows where it does not fit.
+            style={{ visibility: "hidden" }}
+        >
+            {shown.text}
+        </div>
+    );
 };
