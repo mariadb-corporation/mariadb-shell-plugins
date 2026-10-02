@@ -286,9 +286,8 @@ export const SandboxEditor = (): preact.JSX.Element => {
                             </Field>
                             <p class="note password-note">
                                 Stored with the connection, so it is not
-                                asked for again. Left empty, root has no
-                                password - which suits a server only this
-                                machine can reach.
+                                asked for again. Left empty, a random
+                                12 character password is generated.
                             </p>
                         </section>
                     ) : null}
