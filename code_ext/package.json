@@ -234,7 +234,7 @@
         "icon": "$(add)"
       },
       {
-        "command": "mariadb.addRootConnection",
+        "command": "mariadb.toolbarAddConnection",
         "title": "New Connection…",
         "category": "MariaDB",
         "icon": "$(add)"
@@ -246,7 +246,7 @@
         "icon": "$(new-folder)"
       },
       {
-        "command": "mariadb.newRootFolder",
+        "command": "mariadb.toolbarNewFolder",
         "title": "New Folder…",
         "category": "MariaDB",
         "icon": "$(new-folder)"
@@ -403,12 +403,12 @@
     "menus": {
       "view/title": [
         {
-          "command": "mariadb.addRootConnection",
+          "command": "mariadb.toolbarAddConnection",
           "when": "view == mariadb.connections",
           "group": "navigation@0"
         },
         {
-          "command": "mariadb.newRootFolder",
+          "command": "mariadb.toolbarNewFolder",
           "when": "view == mariadb.connections",
           "group": "navigation@1"
         },
@@ -687,11 +687,11 @@
           "when": "false"
         },
         {
-          "command": "mariadb.addRootConnection",
+          "command": "mariadb.toolbarAddConnection",
           "when": "false"
         },
         {
-          "command": "mariadb.newRootFolder",
+          "command": "mariadb.toolbarNewFolder",
           "when": "false"
         },
         {

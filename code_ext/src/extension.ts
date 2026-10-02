@@ -394,6 +394,37 @@ export const activate = (context: vscode.ExtensionContext): void => {
     void publishConnectMode();
 
     /**
+     * The folder the Connections view's selection is in: a folder row is
+     * its own, any other row its connection's, and several rows share the
+     * deepest folder they are all in.
+     *
+     * @returns The folder, or undefined when nothing is selected.
+     */
+    const selectedFolder = async (): Promise<string | undefined> => {
+        const rows = connectionsView.selection;
+        if (rows.length === 0) {
+            return undefined;
+        }
+
+        const folders: string[] = [];
+        for (const row of rows) {
+            if (row.kind === "folder" || row.kind === "connection") {
+                folders.push(folderOf(row) ?? ROOT_FOLDER);
+                continue;
+            }
+
+            // A schema or object under a connection: that connection's. The
+            // list is cached, and was read to draw the row at all.
+            const stored = await connections.listStoredConnections();
+            folders.push(stored.find((connection) => {
+                return connection.uri === row.uri;
+            })?.path ?? ROOT_FOLDER);
+        }
+
+        return commonFolder(folders);
+    };
+
+    /**
      * Opens the editor on a new connection.
      *
      * @param folder The folder it starts in; undefined for the top level.
@@ -453,10 +484,10 @@ export const activate = (context: vscode.ExtensionContext): void => {
         // The view's toolbar runs its commands on the tree's FOCUSED row,
         // which stays focused after its selection is cleared, so a toolbar
         // button sharing the row's command would act in a folder the user
-        // no longer has selected. Its own command ignores the row.
+        // no longer has selected. Its own command goes by the selection.
         vscode.commands.registerCommand(
-            "mariadb.addRootConnection",
-            () => { addConnectionIn(undefined); },
+            "mariadb.toolbarAddConnection",
+            async () => { addConnectionIn(await selectedFolder()); },
         ),
 
         vscode.commands.registerCommand(
@@ -477,10 +508,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
             },
         ),
 
-        // The toolbar's, for the reason given at addRootConnection.
+        // The toolbar's, for the reason given at toolbarAddConnection.
         vscode.commands.registerCommand(
-            "mariadb.newRootFolder",
-            async () => { await newFolderIn(ROOT_FOLDER); },
+            "mariadb.toolbarNewFolder",
+            async () => {
+                await newFolderIn(await selectedFolder() ?? ROOT_FOLDER);
+            },
         ),
 
         vscode.commands.registerCommand(
