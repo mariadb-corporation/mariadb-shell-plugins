@@ -19,13 +19,32 @@ import { render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { posted } from "./setup.js";
+import { installLayoutStubs, posted } from "./setup.js";
 import { App, errorsOf, pagingOf } from "../src/App.js";
 import type {
     HostMessage,
     IActionRow,
     IViewState,
 } from "../../src/webview/protocol.js";
+
+// Tabulator never builds under jsdom, so the header it would draw cannot be
+// looked at; what the page asks the grid for is recorded instead.
+const grid = vi.hoisted(() => {
+    return { last: undefined as { showTypes?: boolean } | undefined };
+});
+
+vi.mock("../src/ResultGrid.js", async (original) => {
+    const actual = await original<typeof import("../src/ResultGrid.js")>();
+
+    return {
+        ...actual,
+        ResultGrid: (props: Parameters<typeof actual.ResultGrid>[0]) => {
+            grid.last = props;
+
+            return actual.ResultGrid(props);
+        },
+    };
+});
 
 let host: HTMLDivElement;
 
@@ -1235,6 +1254,147 @@ describe("App", () => {
 
             expect((await typesItem())?.getAttribute("aria-checked"))
                 .toBe("false");
+        });
+
+        describe("in a short result set", () => {
+            /** What each observer created since the test began watches. */
+            let observed: { callback: ResizeObserverCallback;
+                target?: Element; }[] = [];
+
+            beforeEach(() => {
+                observed = [];
+                vi.stubGlobal("ResizeObserver", class {
+                    readonly #entry: { callback: ResizeObserverCallback;
+                        target?: Element; };
+
+                    public constructor(callback: ResizeObserverCallback) {
+                        this.#entry = { callback };
+                        observed.push(this.#entry);
+                    }
+
+                    public observe(target: Element): void {
+                        this.#entry.target = target;
+                    }
+
+                    public unobserve(): void { /* nothing to stop */ }
+
+                    public disconnect(): void { /* nothing to stop */ }
+                });
+            });
+
+            afterEach(() => {
+                vi.unstubAllGlobals();
+                installLayoutStubs();
+            });
+
+            /**
+             * Reports a new height for the result set's area.
+             *
+             * @param height Its height in pixels.
+             *
+             * @returns Nothing.
+             */
+            const resize = async (height: number): Promise<void> => {
+                await act(async () => {
+                    for (const { callback, target } of observed) {
+                        if (target?.classList.contains("content")) {
+                            callback([{ target, contentRect: { height } }
+                            ] as unknown as ResizeObserverEntry[],
+                            {} as ResizeObserver);
+                        }
+                    }
+                    await Promise.resolve();
+                });
+            };
+
+            /** @returns Whether the grid was asked to show the types. */
+            const typesShown = (): boolean => {
+                return grid.last?.showTypes === true;
+            };
+
+            /**
+             * Reads the menu item, closing the menu again so the next
+             * look opens it rather than closing it.
+             *
+             * @returns Its aria-checked.
+             */
+            const ticked = async (): Promise<string | null | undefined> => {
+                const checked = (await typesItem())
+                    ?.getAttribute("aria-checked");
+                await clickIcon("Show Action Menu");
+
+                return checked;
+            };
+
+            /**
+             * Clicks the menu item.
+             *
+             * @returns Nothing.
+             */
+            const toggle = async (): Promise<void> => {
+                const item = await typesItem();
+                await act(async () => {
+                    item?.click();
+                    await Promise.resolve();
+                });
+            };
+
+            it("hides the types below 250px, unticked, and shows them again",
+                async () => {
+                    await mount();
+                    await send({ type: "state", state: report() });
+                    expect(typesShown()).toBe(true);
+
+                    await resize(249);
+                    expect(typesShown()).toBe(false);
+                    expect(await ticked()).toBe("false");
+
+                    await resize(250);
+                    expect(typesShown()).toBe(true);
+                    expect(await ticked()).toBe("true");
+                });
+
+            it("keeps types ticked on while short, however short it gets",
+                async () => {
+                    await mount();
+                    await send({ type: "state", state: report() });
+                    await resize(150);
+
+                    await toggle();
+                    expect(typesShown()).toBe(true);
+                    expect(await ticked()).toBe("true");
+
+                    await resize(400);
+                    await resize(100);
+                    expect(typesShown()).toBe(true);
+                    expect(await ticked()).toBe("true");
+                });
+
+            it("does not show types turned off in the menu when it grows",
+                async () => {
+                    await mount();
+                    await send({ type: "state", state: report() });
+                    await toggle();
+
+                    await resize(150);
+                    await resize(400);
+
+                    expect(typesShown()).toBe(false);
+                    expect(await ticked()).toBe("false");
+                });
+
+            it("does not show types the setting turns off when it grows",
+                async () => {
+                    await mount();
+                    await send({
+                        type: "state",
+                        state: { ...report(), showColumnTypes: false },
+                    });
+                    await resize(150);
+                    await resize(400);
+
+                    expect(typesShown()).toBe(false);
+                });
         });
 
         it("keeps its choice when the setting changes", async () => {

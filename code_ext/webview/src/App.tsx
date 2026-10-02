@@ -142,6 +142,14 @@ const ALL_SESSIONS = "";
 /** How much of the strip a page of result tabs moves by. */
 const PAGE_FRACTION = 0.8;
 
+/**
+ * Below this height, in pixels, the result set's area leaves the grid too
+ * few rows to spend a second header line on the column types, so they are
+ * hidden until it grows again - unless the user ticked them on for that
+ * result set.
+ */
+export const MIN_HEIGHT_FOR_TYPES = 250;
+
 /** What the strip of result tabs can be paged to. */
 export interface ITabPaging {
     /** True when they do not all fit, which is what the buttons are for. */
@@ -190,7 +198,9 @@ interface IEditingState {
     freezeKeys: boolean;
     /**
      * Whether the grid's header shows the column types, once its action
-     * menu has said so; until then it follows the extension's setting.
+     * menu has said so - for good, however short the result set gets;
+     * until then it follows the extension's setting, and hides them when
+     * the result set is too short.
      */
     showTypes?: boolean;
 }
@@ -287,6 +297,9 @@ export const App = (): JSX.Element => {
         atStart: true,
         atEnd: true,
     });
+    /** The result set's area, measured to hide the types when short. */
+    const content = useRef<HTMLElement>(null);
+    const [tooShortForTypes, setTooShortForTypes] = useState(false);
     /**
      * The tabs the editing state below was built for. State arrives
      * whenever anything at all happens on the connection - a schema
@@ -514,6 +527,31 @@ export const App = (): JSX.Element => {
         };
     }, [measureTabs, state?.resultSets]);
 
+    // The area is only rendered once there is state to show.
+    const shown = state !== undefined;
+
+    // Only the observer's reports count, not a measure taken here: it
+    // reports the size once on observing anyway, and a layout that has
+    // not happened yet would read as zero high.
+    useEffect(() => {
+        const area = content.current;
+        if (!area) {
+            return;
+        }
+
+        const observer = new ResizeObserver((entries) => {
+            const height = entries[entries.length - 1]?.contentRect.height;
+            if (height !== undefined) {
+                setTooShortForTypes(height < MIN_HEIGHT_FOR_TYPES);
+            }
+        });
+        observer.observe(area);
+
+        return () => {
+            observer.disconnect();
+        };
+    }, [shown]);
+
     // A tab the host has just switched to may be off the end of the
     // strip, so it is brought in - but only when it changes. Doing it
     // on every render would undo a page the moment the tab it started
@@ -548,7 +586,12 @@ export const App = (): JSX.Element => {
         return set.id === activeTab;
     });
     const editState = active ? editing[active.id] : undefined;
-    const showTypes = editState?.showTypes ?? state?.showColumnTypes ?? true;
+    // This result set's menu decides once used, ticked or not; until then
+    // the setting does, and the types only show while there is room. The
+    // menu shows what the grid does, so ticking it on a short result set
+    // is what keeps the types there.
+    const showTypes = editState?.showTypes
+        ?? ((state?.showColumnTypes ?? true) && !tooShortForTypes);
 
     const availableResultIds = useMemo(() => {
         return new Set((state?.resultSets ?? []).map((set) => {
@@ -975,7 +1018,7 @@ export const App = (): JSX.Element => {
                 </div>
             )}
 
-            <section class="content">
+            <section class="content" ref={content}>
                 {activeTab === ACTIONS_TAB
                     ? (
                         <ActionsGrid

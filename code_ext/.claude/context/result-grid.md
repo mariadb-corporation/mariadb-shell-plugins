@@ -159,6 +159,19 @@ which resends the view's and every maximized tab's state (same page keys,
 so pending edits stay), and `showTypes` is a dependency of the build
 effect. The primary key's codicon key is `.columnName.keyColumn::after`
 now, since a title formatter replaces the title's text.
+**A short result set hides them for the time being**: `App.tsx` watches
+`section.content` (grid plus status bar) with a `ResizeObserver`, and
+below `MIN_HEIGHT_FOR_TYPES` (250px) hides them (`tooShortForTypes`) -
+but only while the result set's menu has not been used
+(`IEditingState.showTypes` undefined): `showTypes` is the menu's choice
+if made, else the setting AND enough room. The menu item shows that same
+value, so it is unticked while auto-hidden, and ticking it then stores
+`true` - manual, never auto-hidden again for that result set. Unticking
+stores `false`, so growing back does not show them. Only the observer's reports
+count, never a measure taken in the effect: jsdom reads every height as
+0, which would hide them in every test. The tests stub the observer and
+record the grid's props through a `vi.mock` of `ResultGrid.js`, since
+Tabulator never draws its header under jsdom.
 
 The rest of the grid's styling is ours; the MySQL Shell's was tried and
 reverted. Its colours are the theme's table tokens, scoped to
