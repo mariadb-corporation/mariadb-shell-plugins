@@ -47,11 +47,16 @@ def save_server_state(session):
 
     def restore():
         users = session.run_sql(
-            "select concat(user, '@', quote(host)) from mysql.user"
+            "select concat(user, '@', quote(host)), quote(user), is_role from mysql.user"
         ).fetch_all()
-        for (user,) in users:
+        for user, role, is_role in users:
             if user not in orig_users:
-                session.run_sql(f"drop user {user}")
+                # MariaDB roles are listed with an empty host and are dropped
+                # by name alone
+                if is_role == "Y":
+                    session.run_sql(f"drop role {role}")
+                else:
+                    session.run_sql(f"drop user {user}")
 
         schemas = session.run_sql("show schemas").fetch_all()
         for (schema,) in schemas:
@@ -88,7 +93,7 @@ def module_fixture(phone_book):
 
 def snapshot_server(session, orig_users, orig_schemas):
     def fetch_accounts():
-        def fetch_grants(user):
+        def fetch_grants(grantee):
             # filter out grant on schema_version, which was missed during 3.x to 4.0
             # upgrade but can't be easily revoked in a backwards compatible way
             def ignore(grant):
@@ -104,20 +109,23 @@ def snapshot_server(session, orig_users, orig_schemas):
             grants = sorted(
                 [
                     r[0]
-                    for r in session.run_sql(f"show grants for {user}").fetch_all()
+                    for r in session.run_sql(f"show grants for {grantee}").fetch_all()
                     if not ignore(r[0])
                 ]
             )
             return grants
 
+        # A MariaDB role has an empty host, and SHOW GRANTS names it alone
         users = session.run_sql(
-            "select concat(user, '@', quote(host)) u from mysql.user order by u"
+            "select concat(user, '@', quote(host)) u, "
+            "if(is_role = 'Y', quote(user), concat(user, '@', quote(host))) "
+            "from mysql.user order by u"
         ).fetch_all()
         accounts = []
-        for (user,) in users:
+        for user, grantee in users:
             if user in orig_users:
                 continue
-            accounts.append({"account": user, "grants": fetch_grants(user)})
+            accounts.append({"account": user, "grants": fetch_grants(grantee)})
         return accounts
 
     def fetch_schemas():

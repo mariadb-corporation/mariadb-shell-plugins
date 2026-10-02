@@ -233,6 +233,7 @@ def configure(
                         "db_schema", "mysql_rest_service_metadata.msm.project"
                     ),
                     version=version,
+                    backup=True,
                 )
 
                 schema_changed = not ("No changes" in info_msg)

@@ -643,16 +643,6 @@ def test_sql_service_add_authapp(phone_book):
     session.run_sql("drop rest service /myTestSvc")
 
 
-# MARIADB PORT: this test dumps and reloads schemas as part of a project, which
-# relies on the `util.dump_schemas()` and `util.load_dump()` shell utilities.
-# Neither has been ported to the MariaDB Shell yet, so `dump_service_as_project()`
-# and `load_project()` cannot complete here.
-# RE-ENABLE POINT: remove the skip below once the dump/load utilities are
-# available in the MariaDB port. See the matching skip on `test_service_as_project`
-# in mrs_plugin/tests/unit/lib/test_services.py.
-@pytest.mark.skip(
-    reason="MariaDB port: util.dump_schemas()/util.load_dump() are not available yet"
-)
 def test_service_as_project(phone_book, table_contents):
     session = phone_book["session"]
 

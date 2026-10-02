@@ -29,6 +29,7 @@ import zipfile
 import filecmp
 import datetime
 import difflib
+import io
 import pytest
 
 from mrs_plugin import lib
@@ -212,21 +213,41 @@ def test_change_service(phone_book, table_contents):
     assert auth_app_table.same_as_snapshot
 
 
-# MARIADB PORT: this test dumps and reloads schemas as part of a project, which
-# relies on the `util.dump_schemas()` and `util.load_dump()` shell utilities.
-# Neither has been ported to the MariaDB Shell yet, so `lib.services.store_project()`
-# and `lib.services.load_project()` cannot complete here.
-# RE-ENABLE POINT: remove the skip below once the dump/load utilities are
-# available in the MariaDB port. See the matching skip on `test_service_as_project`
-# in mrs_plugin/tests/unit/test_services.py.
-@pytest.mark.skip(
-    reason="MariaDB port: util.dump_schemas()/util.load_dump() are not available yet"
-)
+def mock_github_archive(mocker, project_dir):
+    """Serves project_dir as GitHub's branch archive for every download.
+
+    GitHub wraps the files of a branch archive in a single `<repo>-<branch>/`
+    folder, which load_project() descends into. Returns the list of requested
+    URLs.
+    """
+    requested_urls = []
+
+    def urlopen(url, *args, **kwargs):
+        requested_urls.append(url)
+        repo, branch = url.split("/")[-5], url.split("/")[-1].removesuffix(".zip")
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zip_file:
+            for root, _, files in os.walk(project_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    zip_file.write(
+                        file_path,
+                        os.path.join(
+                            f"{repo}-{branch}", os.path.relpath(file_path, project_dir)
+                        ),
+                    )
+        archive.seek(0)
+        return archive
+
+    mocker.patch("urllib.request.urlopen", side_effect=urlopen)
+    return requested_urls
+
+
 @pytest.mark.skipif(
     os.getcwd() == "/environment/shell-plugins/mrs_plugin",
     reason="Test skipped when running on jenkins",
 )
-def test_service_as_project(phone_book, table_contents):
+def test_service_as_project(phone_book, table_contents, mocker):
     session = phone_book["session"]
 
     create_test_db(session, "MyTestDb1")
@@ -492,8 +513,10 @@ def test_service_as_project(phone_book, table_contents):
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
         lib.services.delete_service(session, service["id"])
 
-    # test loading from GitHub
-    lib.services.load_project(session, "github.com/migueltadeu/tests-mrs-project|main")
+    # test loading from GitHub, served from the project stored above
+    requested_urls = mock_github_archive(mocker, directory_1)
+
+    lib.services.load_project(session, "github.com/mrs-tests/mrs-project|dev")
 
     with tempfile.TemporaryDirectory(delete=False) as directory_3:
         lib.services.store_project(
@@ -544,8 +567,13 @@ def test_service_as_project(phone_book, table_contents):
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
         lib.services.delete_service(session, service["id"])
 
-    # test loading from GitHub
-    lib.services.load_project(session, "github/migueltadeu/tests-mrs-project")
+    # test loading from GitHub using the short form, which defaults to main
+    lib.services.load_project(session, "github/mrs-tests/mrs-project")
+
+    assert requested_urls == [
+        "https://github.com/mrs-tests/mrs-project/archive/refs/heads/dev.zip",
+        "https://github.com/mrs-tests/mrs-project/archive/refs/heads/main.zip",
+    ]
 
     with tempfile.TemporaryDirectory(delete=False) as directory_3:
         lib.services.store_project(
