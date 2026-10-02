@@ -15,6 +15,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { readFileSync } from "node:fs";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MINIMUM_SHELL_VERSION } from "../shell/constants.js";
@@ -277,6 +279,7 @@ describe("activate", () => {
         expect(fileDecorationProviders).toHaveLength(1);
         expect([...registeredCommands.keys()].sort()).toEqual([
             "mariadb.addConnection",
+            "mariadb.addRootConnection",
             "mariadb.addSandbox",
             "mariadb.clearDefaultConnection",
             "mariadb.clearResultView",
@@ -288,6 +291,7 @@ describe("activate", () => {
             "mariadb.editConnection",
             "mariadb.newFolder",
             "mariadb.newFolderWithSelection",
+            "mariadb.newRootFolder",
             "mariadb.newSqlEditor",
             "mariadb.refreshConnections",
             "mariadb.refreshSandboxes",
@@ -527,6 +531,69 @@ describe("activate", () => {
         });
         const [inner] = await treeProvider().getChildren(roots[0]);
         expect(inner).toMatchObject({ path: "/Sandboxes/note app" });
+    });
+
+    it("makes the toolbar's folder at the top level, whatever has focus",
+        async () => {
+            activate(createContext() as never);
+            inputBoxAnswers.push("First");
+            await mockCommands.executeCommand("mariadb.newRootFolder");
+            const [first] = await treeProvider().getChildren();
+            inputBoxAnswers.push("Inner");
+            await mockCommands.executeCommand("mariadb.newFolder", first);
+
+            // VS Code hands a toolbar command the tree's FOCUSED row, which
+            // stays focused once its selection is cleared.
+            inputBoxAnswers.push("Second");
+            await mockCommands.executeCommand("mariadb.newRootFolder", first);
+
+            expect((await treeProvider().getChildren()).filter((node) => {
+                return node.kind === "folder";
+            }).map((node) => { return node.path; }))
+                .toEqual(["/First", "/Second"]);
+            expect((await treeProvider().getChildren(first)).map((node) => {
+                return node.path;
+            })).toEqual(["/First/Inner"]);
+        });
+
+    it("starts the toolbar's new connection at the top level, whatever has "
+        + "focus", async () => {
+        activate(createContext() as never);
+
+        await mockCommands.executeCommand("mariadb.addRootConnection", {
+            kind: "folder", path: "/Sandboxes", name: "Sandboxes", empty: true,
+        });
+        webviewPanels[0]!.webview.receive({ type: "ready" });
+
+        await vi.waitFor(() => {
+            expect(webviewPanels[0]!.webview.posted[0])
+                .toMatchObject({ type: "load", path: "/" });
+        });
+    });
+
+    it("gives the toolbar the commands that ignore the focused row, and "
+        + "the rows the ones that use it", () => {
+        const manifest = JSON.parse(readFileSync(
+            new URL("../../package.json", import.meta.url), "utf8")) as {
+            contributes: { menus: Record<string, Array<{
+                command: string;
+                when?: string;
+            }>>; };
+        };
+        const { menus } = manifest.contributes;
+        const toolbar = menus["view/title"]!.filter((entry) => {
+            return entry.when === "view == mariadb.connections";
+        }).map((entry) => { return entry.command; });
+
+        expect(toolbar).toContain("mariadb.addRootConnection");
+        expect(toolbar).toContain("mariadb.newRootFolder");
+        expect(toolbar).not.toContain("mariadb.addConnection");
+        expect(toolbar).not.toContain("mariadb.newFolder");
+        expect(menus["view/item/context"]!.map((entry) => {
+            return entry.command;
+        })).toEqual(expect.arrayContaining([
+            "mariadb.addConnection", "mariadb.newFolder",
+        ]));
     });
 
     it("refuses an empty name, and makes nothing on cancel",

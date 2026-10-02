@@ -7,11 +7,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | Command | Title | Where |
 | --- | --- | --- |
 | `mariadb.refreshConnections` | Refresh | Connections view title |
-| `mariadb.addConnection` | New Connection… | Connections view title (`+`) |
+| `mariadb.addRootConnection` | New Connection… | Connections view title (`+`). Always at the top level; hidden from the palette |
 | `mariadb.editConnection` | Edit Connection | Connection context menu |
 | `mariadb.deleteConnection` | Delete Connection | Connection context menu |
 | `mariadb.addConnection` (on a folder) | New Connection… | Inline on, and context menu of, a folder: the new connection starts in it |
-| `mariadb.newFolder` | New Folder… | View toolbar; context menu of folders. Prompts for a name, relative to that folder |
+| `mariadb.newFolder` | New Folder… | Context menu of folders; the palette and the empty view's welcome link (top level). Prompts for a name, relative to that folder |
+| `mariadb.newRootFolder` | New Folder… | View toolbar. Always at the top level; hidden from the palette |
 | `mariadb.newFolderWithSelection` | New Folder with Selection… | Context menu of connections. Prompts for a name and files the selected connections in the new folder, inside the folder they share |
 | `mariadb.renameFolder` | Rename Folder… | Context menu of every folder. Re-files everything in and below it |
 | `mariadb.removeFolder` | Remove Folder | Context menu of an EMPTY folder only |
@@ -35,3 +36,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.stopOnError.disable` / `.enable` | Stop on Error (on/off) | SQL editor toolbar, one shown at a time |
 | `mariadb.restartMcpServer` | Restart MCP Server | Command palette |
 | `mariadb.showMcpServerLog` | Show MCP Server Log | Command palette |
+
+**The Connections view's toolbar has commands of its own.** VS Code runs a
+tree view's toolbar commands with the tree's FOCUSED row as their argument
+(`getActionsContext` returns `$focusedTreeItem: true`; the extension host
+turns it into `focusedElement`), and a row stays focused after its
+selection is cleared. Sharing `addConnection` / `newFolder` with the row
+menus therefore created in whatever folder last had focus - a new folder
+landed inside the first one. `addRootConnection` and `newRootFolder`
+ignore their argument; a test pins the toolbar to them.

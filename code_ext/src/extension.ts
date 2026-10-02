@@ -393,6 +393,47 @@ export const activate = (context: vscode.ExtensionContext): void => {
     void applyKeybindings();
     void publishConnectMode();
 
+    /**
+     * Opens the editor on a new connection.
+     *
+     * @param folder The folder it starts in; undefined for the top level.
+     *
+     * @returns Nothing.
+     */
+    const addConnectionIn = (folder: string | undefined): void => {
+        ConnectionEditorPanel.show(
+            context.extensionUri,
+            {
+                api: () => { return connections.api(); },
+                listStored: () => {
+                    return connections.listStoredConnections();
+                },
+                onSaved: () => { tree.refresh(); },
+                log,
+            },
+            undefined,
+            folder,
+        );
+    };
+
+    /**
+     * Asks for a new folder's name and makes it.
+     *
+     * @param parent The folder it goes in; `/` for the top level.
+     *
+     * @returns Nothing.
+     */
+    const newFolderIn = async (parent: string): Promise<void> => {
+        const path = await askForNewFolder("New Folder", parent);
+        if (path === undefined) {
+            return;
+        }
+
+        await customFolders.add(path);
+        log(`Created the folder '${path}'.`);
+        tree.refresh();
+    };
+
     context.subscriptions.push(
         vscode.commands.registerCommand("mariadb.refreshConnections", () => {
             // The one thing that reads the list again on its own account:
@@ -405,20 +446,17 @@ export const activate = (context: vscode.ExtensionContext): void => {
             "mariadb.addConnection",
             (node?: IFolderNode | IConnectionNode) => {
                 // From a row, the new connection starts in that row's folder.
-                ConnectionEditorPanel.show(
-                    context.extensionUri,
-                    {
-                        api: () => { return connections.api(); },
-                        listStored: () => {
-                            return connections.listStoredConnections();
-                        },
-                        onSaved: () => { tree.refresh(); },
-                        log,
-                    },
-                    undefined,
-                    folderOf(node),
-                );
+                addConnectionIn(folderOf(node));
             },
+        ),
+
+        // The view's toolbar runs its commands on the tree's FOCUSED row,
+        // which stays focused after its selection is cleared, so a toolbar
+        // button sharing the row's command would act in a folder the user
+        // no longer has selected. Its own command ignores the row.
+        vscode.commands.registerCommand(
+            "mariadb.addRootConnection",
+            () => { addConnectionIn(undefined); },
         ),
 
         vscode.commands.registerCommand(
@@ -435,16 +473,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
         vscode.commands.registerCommand(
             "mariadb.newFolder",
             async (node?: IFolderNode | IConnectionNode) => {
-                const path = await askForNewFolder(
-                    "New Folder", folderOf(node) ?? ROOT_FOLDER);
-                if (path === undefined) {
-                    return;
-                }
-
-                await customFolders.add(path);
-                log(`Created the folder '${path}'.`);
-                tree.refresh();
+                await newFolderIn(folderOf(node) ?? ROOT_FOLDER);
             },
+        ),
+
+        // The toolbar's, for the reason given at addRootConnection.
+        vscode.commands.registerCommand(
+            "mariadb.newRootFolder",
+            async () => { await newFolderIn(ROOT_FOLDER); },
         ),
 
         vscode.commands.registerCommand(
