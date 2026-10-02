@@ -119,39 +119,46 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-29):
+Checked at this checkpoint (2026-10-02):
 
 ```text
 $ git -C code_ext branch --show-current
-wip/result-grid-style
+main
 
 $ git -C code_ext status --short   (one repository: mcp_plugin's lines too)
-(clean before this checkpoint's context edits - the code is in f51d1dcc)
+(clean before this checkpoint's context edits)
 ```
 
-- **The branch is `wip/result-grid-style`**, off `main` (which now has
-  #28-#31 merged). It is **PR #32**, pushed: `f51d1dcc`, code_ext only.
-- This session: the result grid's styling and column types
-  ([`context/result-grid.md`](context/result-grid.md)):
-  - theme table colours scoped to `.resultGridHost` - grid lines, header
-    and key-cell tint, striped rows; frozen cells stack the tints over
-    `--grid-surface`. Cell padding went to `3px 8px`.
-  - a two-line header (`columnTitle`): name, then the type
-    (`IResultColumn.typeName`, from `mapColumns`) coloured by
-    `typeCategoryOf` (`dataTypes.ts`). Header text is 0.9em, the type
-    0.8em of that.
-  - setting `mariadb.resultSet.showColumnDataTypes` (applied live via
-    `ResultViewProvider.settingsChanged`) and the per-result-set action
-    menu item "Show Column Data Types".
-- Suite: **1256 pass across 55 files**, `npm run pretest` and
+- **On `main`, nothing open.** PR #34 (`wip/ext-ui-improvements`) was
+  squash-merged as `b3ecaac4`; the branch is deleted locally and on
+  GitHub. PR #32 (result grid styling) was merged before it.
+- This session (PR #34), each in the context file named:
+  - New Sandbox: an empty root password becomes a generated 12-character
+    one ([`context/sandboxes.md`](context/sandboxes.md)).
+  - Result set: the column types hide under 250px high, unticked in the
+    menu; ticking makes it manual
+    ([`context/result-grid.md`](context/result-grid.md)).
+  - SQL editor connection picker: folder paths, in the tree's order
+    (`inTreeOrder`) ([`context/running-sql.md`](context/running-sql.md)).
+  - Connection editor: Basic tab re-laid out, caption and color loaded on
+    edit (they were dropped), host / socket radio buttons, Copy URI,
+    focus, and page-drawn tooltips on every button (`Tooltips` in
+    `dialogParts.tsx`, 350ms)
+    ([`context/connection-editor.md`](context/connection-editor.md)).
+  - Connections view toolbar: New Folder / New Connection go by the
+    view's selection, not the focused row VS Code hands them
+    ([`context/commands.md`](context/commands.md)).
+- Suite: **1296 pass across 56 files**, `npm run pretest` and
   `npm run build` clean.
-- NOT looked at in a running VS Code: the whole restyle (Tabulator does
-  not render under jsdom). That is the next step - check both a dark and
-  a light theme, frozen key columns, and a join (metadata type names).
-- Test trap met: clicking a `ToolbarMenu` item inside an `act` that also
-  opened the menu (`act(async () => { (await openMenu())?.click(); })`)
-  left the next open failing once another message was sent; open the
-  menu first, then click the item in its own `act`.
+- NOT looked at in a running VS Code - the next step: the connection
+  editor (layout, radio buttons, tooltip placement), the result set's
+  auto-hide, the toolbar's folder behaviour, and still PR #32's grid
+  restyle (dark and light theme, frozen keys, a join).
+- Test traps met: opening the `ToolbarMenu` twice in a row closes it
+  (read it, then click its button again to close, before the next look);
+  a `ToolbarMenu` item clicked inside the `act` that opened it fails the
+  next open; Tabulator never draws its header under jsdom, so `App` tests
+  record `ResultGrid`'s props through a `vi.mock` instead.
 
 ## Conventions
 

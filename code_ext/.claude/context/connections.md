@@ -90,8 +90,8 @@ the wrapper that produces them:
 ## The connection list is read once
 
 `ConnectionManager.listStoredConnections()` caches the list (`#stored`, the
-in-flight promise, so concurrent callers share one read) and asks the server
-- ONE `db.list_connections(kind="all")`, whose entries carry their `kind`;
+in-flight promise, so concurrent callers share one read) and asks the server -
+ONE `db.list_connections(kind="all")`, whose entries carry their `kind`;
 a released shell refuses `"all"`, and `connectionStore.listConnections` then
 falls back to one call per list (also when an answer's entries name no
 kind - without the fallback the view would break on every shell out
@@ -272,8 +272,10 @@ everything still goes by URI and kind.
   a folder with connections in it is where they are filed, not a thing of
   its own. The menus match folders with `/^mariadbFolder/` for that reason.
   New Folder asks for a name with `showInputBox`, relative to the row's
-  folder (a connection's, or the folder itself; the toolbar means the top);
-  a `/` in the name nests.
+  folder (a connection's, or the folder itself); the toolbar's New Folder
+  and New Connection go by the view's SELECTION instead, the top level when
+  nothing is selected - VS Code hands a toolbar command only the focused
+  row (see `commands.md`). A `/` in the name nests.
 - **Multi-select and drag and drop.** The view is created with
   `canSelectMany` and the provider as its `dragAndDropController`, on a MIME
   of its own (`CONNECTIONS_DRAG_MIME`, `application/vnd.mariadb.connections`)
