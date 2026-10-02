@@ -152,6 +152,14 @@ body {
     gap: 0.75rem 1rem;
 }
 
+/* Two fields sharing one cell of the grid, in halves. */
+.field-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 1rem;
+    min-width: 0;
+}
+
 .field {
     display: flex;
     flex-direction: column;
@@ -193,6 +201,11 @@ button:disabled {
     opacity: 0.6;
 }
 
+/* Its button keeps its own width rather than filling the cell. */
+.password-field > button {
+    align-self: flex-start;
+}
+
 /* A group spans both columns: it holds its own rows. */
 .group {
     grid-column: 1 / -1;
@@ -223,6 +236,9 @@ button:disabled {
 
 .colors {
     gap: 0.35rem;
+    /* The selected swatch's outline reaches 4px past it, and the tab
+       body's scrolling clips anything left of its edge. */
+    padding-left: 0.3rem;
 }
 
 .swatch {

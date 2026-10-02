@@ -156,6 +156,40 @@ describe("ConnectionEditor", () => {
         })).toEqual(["Basic", "SSL", "SSH", "Advanced"]);
     });
 
+    it("puts the folder beside the caption, the port and protocol side "
+        + "by side beside the host, and the password beside the user",
+    async () => {
+        await mount();
+        await load();
+
+        const captions = [...host.querySelectorAll(
+            ".tab-body .field-caption")].map((node) => {
+            return node.textContent;
+        });
+
+        expect(captions.slice(0, 9)).toEqual([
+            "Caption",
+            "Folder",
+            "Host Name or IP Address",
+            "Port",
+            "Protocol",
+            "User Name",
+            "Password",
+            "Default Schema",
+            "Socket or Named Pipe",
+        ]);
+        // The button first, its description under it.
+        const password = host.querySelector(".password-field");
+        expect([...password?.children ?? []].map((node) => {
+            return node.tagName;
+        })).toEqual(["SPAN", "BUTTON", "SPAN"]);
+        // One cell of the grid, split between the two.
+        const pair = host.querySelector(".field-pair");
+        expect([...pair?.querySelectorAll(".field-caption") ?? []]
+            .map((node) => { return node.textContent; }))
+            .toEqual(["Port", "Protocol"]);
+    });
+
     it("offers no OCI or MDS tab", async () => {
         // They are in the original, and deliberately not here: a connection
         // is stored as a URI, and neither can be written into one.

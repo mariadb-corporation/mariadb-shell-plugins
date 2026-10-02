@@ -389,38 +389,6 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                     }}
                                 />
                             </Field>
-                            <Field caption="Host Name or IP Address">
-                                {text("host", "localhost")}
-                            </Field>
-                            <Field caption="Protocol">
-                                <select
-                                    value={fields.scheme}
-                                    disabled={busy}
-                                    onChange={(event) => {
-                                        update("scheme",
-                                            (event.target as HTMLSelectElement).value);
-                                    }}
-                                >
-                                    {CONNECTION_SCHEMES.map((scheme) => {
-                                        return (
-                                            <option key={scheme} value={scheme}>
-                                                {scheme}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                            </Field>
-                            <Field caption="Port">{text("port", "3306")}</Field>
-                            <Field caption="User Name">{text("user")}</Field>
-                            <Field caption="Default Schema">
-                                {text("schema")}
-                            </Field>
-                            <Field
-                                caption="Socket or Named Pipe"
-                                hint="Used instead of the host and port."
-                            >
-                                {text("socket")}
-                            </Field>
                             <Field
                                 caption="Folder"
                                 hint={"Where the Connections view files it. "
@@ -446,6 +414,91 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                         return <option key={path} value={path} />;
                                     })}
                                 </datalist>
+                            </Field>
+                            <Field caption="Host Name or IP Address">
+                                {text("host", "localhost")}
+                            </Field>
+                            {/* Port and Protocol share one cell: neither needs a whole
+                                column. */}
+                            <div class="field-pair">
+                                <Field caption="Port">{text("port", "3306")}</Field>
+                                <Field caption="Protocol">
+                                    <select
+                                        value={fields.scheme}
+                                        disabled={busy}
+                                        onChange={(event) => {
+                                            update("scheme",
+                                                (event.target as HTMLSelectElement).value);
+                                        }}
+                                    >
+                                        {CONNECTION_SCHEMES.map((scheme) => {
+                                            return (
+                                                <option key={scheme} value={scheme}>
+                                                    {scheme}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                </Field>
+                            </div>
+                            <Field caption="User Name">{text("user")}</Field>
+                            {/* Not a Field: a <label> hands a click anywhere in it to its
+                                first button. */}
+                            <div class="field password-field">
+                                <span class="field-caption">Password</span>
+                                {password === undefined ? (
+                                    <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => { setPassword(""); }}
+                                    >
+                                        {hasStoredPassword
+                                            ? "Set New Password"
+                                            : "Set Password"}
+                                    </button>
+                                ) : (
+                                    <div class="row">
+                                        <input
+                                            type="password"
+                                            value={password}
+                                            placeholder="New password"
+                                            aria-label="Password"
+                                            disabled={busy}
+                                            onInput={(event) => {
+                                                setPassword((event.target as
+                                                    HTMLInputElement).value);
+                                            }}
+                                        />
+                                        {hasStoredPassword ? (
+                                            <button
+                                                type="button"
+                                                disabled={busy}
+                                                onClick={() => {
+                                                    setPassword(undefined);
+                                                }}
+                                            >
+                                                Keep Stored Password
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                )}
+                                <span class="field-hint">
+                                    {password !== undefined
+                                        ? "Saved with the connection."
+                                        : hasStoredPassword
+                                            ? "A password is stored for this connection and "
+                                            + "will be kept."
+                                            : "No password has been set."}
+                                </span>
+                            </div>
+                            <Field caption="Default Schema">
+                                {text("schema")}
+                            </Field>
+                            <Field
+                                caption="Socket or Named Pipe"
+                                hint="Used instead of the host and port."
+                            >
+                                {text("socket")}
                             </Field>
                             {/* Not a Field: a <label> hands a click anywhere
                                 in it to its first button. */}
@@ -503,53 +556,6 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                 <span class="field-hint">
                                     The color the Connections view draws it in.
                                 </span>
-                            </div>
-
-                            <div class="group">
-                                <h2>Password</h2>
-                                {password === undefined ? (
-                                    <div class="row">
-                                        <span class="note">
-                                            {hasStoredPassword
-                                                ? "A password is stored for this "
-                                                + "connection and will be kept."
-                                                : "No password has been set."}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            disabled={busy}
-                                            onClick={() => { setPassword(""); }}
-                                        >
-                                            {hasStoredPassword
-                                                ? "Set New Password"
-                                                : "Set Password"}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div class="row">
-                                        <input
-                                            type="password"
-                                            value={password}
-                                            placeholder="New password"
-                                            disabled={busy}
-                                            onInput={(event) => {
-                                                setPassword((event.target as
-                                                    HTMLInputElement).value);
-                                            }}
-                                        />
-                                        {hasStoredPassword ? (
-                                            <button
-                                                type="button"
-                                                disabled={busy}
-                                                onClick={() => {
-                                                    setPassword(undefined);
-                                                }}
-                                            >
-                                                Keep Stored Password
-                                            </button>
-                                        ) : null}
-                                    </div>
-                                )}
                             </div>
 
                             <div class="group">

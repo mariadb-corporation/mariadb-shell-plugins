@@ -549,10 +549,18 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         onSaved: () => { tree.refresh(); },
                         log,
                     },
+                    // The caption and color too: the dialog starts from what
+                    // it is given, and would otherwise show neither.
                     {
                         uri: node.uri,
                         kind: node.connectionKind,
                         path: node.path,
+                        ...(node.caption === undefined
+                            ? {}
+                            : { caption: node.caption }),
+                        ...(node.color === undefined
+                            ? {}
+                            : { color: node.color }),
                     },
                 );
             },

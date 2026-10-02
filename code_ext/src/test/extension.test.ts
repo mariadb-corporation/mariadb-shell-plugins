@@ -418,6 +418,30 @@ describe("activate", () => {
         });
     });
 
+    it("opens the editor on the connection's caption and color", async () => {
+        activate(createContext() as never);
+
+        await mockCommands.executeCommand("mariadb.editConnection", {
+            kind: "connection",
+            uri: "dba@localhost:3310",
+            path: "/Work",
+            caption: "Billing",
+            color: "red",
+            connected: false,
+            isDefault: false,
+            connectionKind: "mcp",
+        });
+
+        webviewPanels[0].webview.receive({ type: "ready" });
+        await vi.waitFor(() => {
+            expect(webviewPanels[0].webview.posted[0]).toMatchObject({
+                path: "/Work",
+                caption: "Billing",
+                color: "red",
+            });
+        });
+    });
+
     it("reads the connection list again only when Refresh is pressed",
         async () => {
             activate(createContext() as never);

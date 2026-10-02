@@ -7,7 +7,6 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Split out of
 [connections.md](connections.md), which has the connections it edits - the
 several open on one URI, the Connections view, folders and the default.
 
-
 `src/connections/` holds it, split so that only the panel needs VS Code:
 
 | File | Purpose |
@@ -28,6 +27,17 @@ cannot be written into one cannot be offered. That rules out the OCI/MDS tabs,
 `URI_OPTIONS` is `uri_connection_attributes` plus `ssh_uri_query_attributes`
 from the shell's `mysqlshdk/libs/db/utils_connection.h`, and is what tells a
 typo in the "Other Connection Options" table from a real option.
+
+The Basic tab's two-column grid starts Caption | Folder, then Host |
+Port + Protocol - those two share one cell as a `.field-pair`, in halves -
+then User Name | Password (`.password-field`: caption, the Set / Set New
+Password button or the box with Keep Stored Password, the state as its
+hint), Default Schema | Socket, Color.
+Color's swatches sit 0.3rem in (`.colors` padding): the selected one's
+outline reaches 4px past it, and the scrolling tab body clips it. The
+dialog starts from what `mariadb.editConnection` gives it - the tree
+node's uri, kind, path, caption AND color; leaving one out shows it as
+empty (it did, for caption and color, until a test pinned them).
 
 Five things about it are load bearing:
 
