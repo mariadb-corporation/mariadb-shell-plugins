@@ -346,18 +346,83 @@ export const mariadbdOptionLines = (text: string): string[] => {
         .filter((line) => { return line !== ""; });
 };
 
+/** How long a generated root password is. */
+export const GENERATED_PASSWORD_LENGTH = 12;
+
+/**
+ * The characters a generated root password is made of, one string per
+ * kind. Each kind appears at least once.
+ */
+export const GENERATED_PASSWORD_ALPHABETS: readonly string[] = [
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "abcdefghijklmnopqrstuvwxyz",
+    "0123456789",
+    "!$#^()",
+];
+
+/**
+ * A uniformly random index below `bound`, from the platform's CSPRNG
+ * (`globalThis.crypto`, there in Node and in the webview alike). Values
+ * that would bias the modulo are drawn again.
+ *
+ * @param bound The number of choices, at most 2^32.
+ *
+ * @returns An index from 0 to `bound - 1`.
+ */
+const randomIndex = (bound: number): number => {
+    const range = 2 ** 32;
+    const limit = range - (range % bound);
+    const value = new Uint32Array(1);
+    do {
+        globalThis.crypto.getRandomValues(value);
+    } while (value[0]! >= limit);
+
+    return value[0]! % bound;
+};
+
+/**
+ * A random root password for a sandbox the user gave none: upper and lower
+ * case letters, digits and `!$#^()`, with at least one of each.
+ *
+ * @param pick Picks an index below the given bound; random unless a test
+ *     says otherwise.
+ *
+ * @returns The password, `GENERATED_PASSWORD_LENGTH` characters long.
+ */
+export const generateSandboxPassword = (
+    pick: (bound: number) => number = randomIndex,
+): string => {
+    const all = GENERATED_PASSWORD_ALPHABETS.join("");
+    const chars = GENERATED_PASSWORD_ALPHABETS.map((alphabet) => {
+        return alphabet[pick(alphabet.length)]!;
+    });
+    while (chars.length < GENERATED_PASSWORD_LENGTH) {
+        chars.push(all[pick(all.length)]!);
+    }
+
+    // Fisher-Yates, so the guaranteed kinds are not always up front.
+    for (let i = chars.length - 1; i > 0; i--) {
+        const j = pick(i + 1);
+        [chars[i], chars[j]] = [chars[j]!, chars[i]!];
+    }
+
+    return chars.join("");
+};
+
 /**
  * Turns the fields into what `sandbox.deploy` is asked for. Anything left
  * at its default is left out, so the server's own default applies.
  *
  * @param fields The fields as typed.
  * @param taken The ports of the sandboxes deployed already.
+ * @param generatePassword Makes the root password when none was typed.
  *
  * @returns The options, or the problem that stops them being built.
  */
 export const sandboxDeployOptions = (
     fields: ISandboxFields,
     taken: readonly number[] = [],
+    generatePassword: () => string = generateSandboxPassword,
 ): { options: ISandboxDeployOptions } | { problem: ISandboxFieldProblem } => {
     const problem = sandboxFieldProblem(fields, taken);
     if (problem !== undefined) {
@@ -374,10 +439,12 @@ export const sandboxDeployOptions = (
     return {
         options: {
             port: Number(fields.port.trim()),
-            // Sent even when empty: the shell refuses a deploy without one,
-            // and an empty root password is a real choice for a local
-            // sandbox.
-            password: fields.password,
+            // Never empty: root always gets a password, generated when none
+            // was typed. The deploy stores it with the connection, so it
+            // is not asked for again.
+            password: fields.password === ""
+                ? generatePassword()
+                : fields.password,
             ...(serverVersion === "" ? {} : { serverVersion }),
             // Always sent: the dialog's default is not the shell's (`%`).
             allowRootFrom: fields.allowRootFrom.trim(),

@@ -20,6 +20,9 @@ import { describe, expect, it } from "vitest";
 import {
     emptySandboxFields,
     defaultServerVersion,
+    generateSandboxPassword,
+    GENERATED_PASSWORD_ALPHABETS,
+    GENERATED_PASSWORD_LENGTH,
     isServerOnPath,
     localConnectionPorts,
     mariadbdOptionLines,
@@ -201,9 +204,11 @@ describe("sandboxDeployOptions", () => {
     it("sends only the port, password, root host and MCP access when "
         + "nothing else changed", () => {
         // The root host always: the dialog's 127.0.0.1 is not the shell's %.
-        expect(sandboxDeployOptions(fields())).toEqual({
+        const generate = (): string => { return "gen"; };
+
+        expect(sandboxDeployOptions(fields(), [], generate)).toEqual({
             options: {
-                port: 3310, password: "", allowRootFrom: "127.0.0.1",
+                port: 3310, password: "gen", allowRootFrom: "127.0.0.1",
                 mcpAccess: true,
             },
         });
@@ -224,9 +229,9 @@ describe("sandboxDeployOptions", () => {
     it("sends no version for the server on the PATH, in any case", () => {
         expect(sandboxDeployOptions(fields({
             serverVersion: "server on the path",
-        }))).toEqual({
+        }), [], () => { return "gen"; })).toEqual({
             options: {
-                port: 3310, password: "", allowRootFrom: "127.0.0.1",
+                port: 3310, password: "gen", allowRootFrom: "127.0.0.1",
                 mcpAccess: true,
             },
         });
@@ -268,6 +273,15 @@ describe("sandboxDeployOptions", () => {
         expect("options" in built && built.options.password).toBe(" a b ");
     });
 
+    it("generates a password when none was typed", () => {
+        const built = sandboxDeployOptions(fields());
+        const password = "options" in built ? built.options.password : "";
+
+        expect(password).toHaveLength(GENERATED_PASSWORD_LENGTH);
+        expect(sandboxDeployOptions(fields(), [], () => { return "gen"; }))
+            .toMatchObject({ options: { password: "gen" } });
+    });
+
     it("builds nothing from fields with a problem", () => {
         expect(sandboxDeployOptions(fields(), [3310])).toEqual({
             problem: {
@@ -290,5 +304,43 @@ describe("sandboxConnectionUri", () => {
         expect(sandboxConnectionUri("3310"))
             .toBe("mariadb://root@127.0.0.1:3310");
         expect(sandboxConnectionUri(" ")).toBe("mariadb://root@127.0.0.1:<port>");
+    });
+});
+
+describe("generateSandboxPassword", () => {
+    it("is 12 characters, drawn from the four kinds, each at least once",
+        () => {
+            const all = GENERATED_PASSWORD_ALPHABETS.join("");
+            for (let run = 0; run < 200; run++) {
+                const password = generateSandboxPassword();
+
+                expect(password).toHaveLength(12);
+                expect([...password].every((c) => { return all.includes(c); }))
+                    .toBe(true);
+                for (const alphabet of GENERATED_PASSWORD_ALPHABETS) {
+                    expect([...password].some((c) => {
+                        return alphabet.includes(c);
+                    })).toBe(true);
+                }
+            }
+        });
+
+    it("uses only upper, lower, digits and !$#^()", () => {
+        expect(GENERATED_PASSWORD_ALPHABETS.join("")).toMatch(
+            /^[A-Za-z0-9!$#^()]+$/);
+    });
+
+    it("keeps each kind even when the picks are all the same", () => {
+        // Picking 0 every time still has to yield one of each kind.
+        const password = generateSandboxPassword(() => { return 0; });
+
+        expect(password).toHaveLength(12);
+        for (const alphabet of GENERATED_PASSWORD_ALPHABETS) {
+            expect(password).toContain(alphabet[0]);
+        }
+    });
+
+    it("differs from one call to the next", () => {
+        expect(generateSandboxPassword()).not.toBe(generateSandboxPassword());
     });
 });

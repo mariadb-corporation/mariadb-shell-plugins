@@ -17,10 +17,11 @@
 
 import { render } from "preact";
 import { act } from "preact/test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { posted } from "./setup.js";
 import { ConnectionEditor } from "../src/ConnectionEditor.js";
+import { COPIED_FOR_MS } from "../src/overflowPopup.js";
 import {
     emptyConnectionFields,
     type IConnectionFields,
@@ -62,6 +63,7 @@ const load = async (
         folders: [],
         caption: "",
         color: "",
+        windows: false,
         ...rest,
     } as EditorHostMessage);
 };
@@ -104,13 +106,27 @@ const toggle = async (label: string): Promise<void> => {
     });
 };
 
-/** Types into the input under the given caption. */
-const type = async (caption: string, value: string): Promise<void> => {
+/**
+ * The input under the given caption, or one labelled with it - the host
+ * and socket inputs share a caption of radio buttons.
+ *
+ * @param caption The caption.
+ *
+ * @returns The input, if there is one.
+ */
+const inputFor = (caption: string): HTMLInputElement | null => {
     const field = [...host.querySelectorAll("label.field")].find((node) => {
         return node.querySelector(".field-caption")?.textContent === caption;
     });
-    const input = field?.querySelector("input, select") as
+
+    return (field?.querySelector("input, select")
+        ?? host.querySelector(`input[aria-label="${caption}"]`)) as
         HTMLInputElement | null;
+};
+
+/** Types into the input under the given caption. */
+const type = async (caption: string, value: string): Promise<void> => {
+    const input = inputFor(caption);
     if (!input) {
         throw new Error(`No field '${caption}'.`);
     }
@@ -154,6 +170,183 @@ describe("ConnectionEditor", () => {
         expect([...host.querySelectorAll(".tab")].map((node) => {
             return node.textContent;
         })).toEqual(["Basic", "SSL", "SSH", "Advanced"]);
+    });
+
+    it("puts the folder beside the caption, the port and protocol side "
+        + "by side beside the host, and the password beside the user",
+    async () => {
+        await mount();
+        await load();
+
+        const captions = [...host.querySelectorAll(
+            ".tab-body .field-caption")].map((node) => {
+            return node.textContent;
+        });
+
+        expect(captions.slice(0, 9)).toEqual([
+            "Caption",
+            "Folder",
+            // The host's caption is its two radio buttons' labels.
+            "Host Name/IPSocket",
+            "Port",
+            "Protocol",
+            "User Name",
+            "Password",
+            "Default Schema",
+            "Color",
+        ]);
+        // The button, and its description beside it in the same row.
+        const row = host.querySelector(".password-field .password-row");
+        expect([...row?.children ?? []].map((node) => {
+            return node.className || node.tagName;
+        })).toEqual(["BUTTON", "field-hint password-state"]);
+        expect(row?.textContent).toBe("Set Password"
+            + "Stores the password for this connection.");
+        // One cell of the grid, split between the two.
+        const pair = host.querySelector(".field-pair");
+        expect([...pair?.querySelectorAll(".field-caption") ?? []]
+            .map((node) => { return node.textContent; }))
+            .toEqual(["Port", "Protocol"]);
+    });
+
+    it("focuses the caption when there is none yet", async () => {
+        await mount();
+        await load();
+
+        expect(document.activeElement).toBe(inputFor("Caption"));
+    });
+
+    it("leaves the focus alone when there is a caption", async () => {
+        await mount();
+        await load({}, { caption: "Billing" });
+
+        expect(document.activeElement).not.toBe(inputFor("Caption"));
+    });
+
+    describe("the host or the socket", () => {
+        /**
+         * @param label The radio button's label.
+         *
+         * @returns The radio button.
+         */
+        const radio = (label: string): HTMLInputElement | undefined => {
+            return [...host.querySelectorAll<HTMLLabelElement>(
+                ".endpoint-choice")].find((node) => {
+                return node.textContent === label;
+            })?.querySelector("input") ?? undefined;
+        };
+
+        /**
+         * Picks one of the two radio buttons.
+         *
+         * @param label Its label.
+         *
+         * @returns Nothing.
+         */
+        const choose = async (label: string): Promise<void> => {
+            await act(async () => {
+                const input = radio(label)!;
+                input.checked = true;
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+                await Promise.resolve();
+            });
+        };
+
+        /** @returns The Protocol select. */
+        const protocol = (): HTMLSelectElement => {
+            return inputFor("Protocol") as unknown as HTMLSelectElement;
+        };
+
+        it("starts on the host, with the port and every protocol on offer",
+            async () => {
+                await mount();
+                await load({ host: "db", port: "3307" });
+
+                expect(radio("Host Name/IP")?.checked).toBe(true);
+                expect(inputFor("Host Name/IP")?.value).toBe("db");
+                expect(inputFor("Port")?.disabled).toBe(false);
+                expect([...protocol().options].every((option) => {
+                    return !option.disabled;
+                })).toBe(true);
+            });
+
+        it("starts on the socket for a connection that has one", async () => {
+            await mount();
+            await load({ socket: "/tmp/mysql.sock" });
+
+            expect(radio("Socket")?.checked).toBe(true);
+            expect(inputFor("Socket")?.value).toBe("/tmp/mysql.sock");
+        });
+
+        it("calls it a named pipe on Windows", async () => {
+            await mount();
+            await load({}, { windows: true });
+
+            expect(radio("Named Pipe")).toBeDefined();
+            expect(radio("Socket")).toBeUndefined();
+        });
+
+        it("disables the port and the tunnelling protocols for a socket",
+            async () => {
+                await mount();
+                await load({ user: "dba", host: "db", port: "3307" });
+
+                await choose("Socket");
+
+                expect(inputFor("Port")?.disabled).toBe(true);
+                expect(protocol().disabled).toBe(false);
+                expect([...protocol().options].filter((option) => {
+                    return option.disabled;
+                }).map((option) => { return option.value; }))
+                    .toEqual(["mariadb+ssh", "mysql+ssh"]);
+            });
+
+        it("moves the focus to the box below a radio button picked",
+            async () => {
+                await mount();
+                await load({ user: "dba", host: "db" });
+
+                await choose("Socket");
+                expect(document.activeElement).toBe(inputFor("Socket"));
+
+                await choose("Host Name/IP");
+                expect(document.activeElement).toBe(inputFor("Host Name/IP"));
+            });
+
+        it("drops the tunnel from the protocol on switching to a socket",
+            async () => {
+                await mount();
+                await load({ user: "dba", host: "db", scheme: "mysql+ssh" });
+
+                await choose("Socket");
+
+                expect(protocol().value).toBe("mysql");
+            });
+
+        it("saves only the endpoint chosen, and keeps the other to go back to",
+            async () => {
+                await mount();
+                await load({ user: "dba", host: "db", port: "3307" });
+
+                await choose("Socket");
+                await type("Socket", "/tmp/mysql.sock");
+                await click("Create");
+
+                expect(lastPosted<{ fields: IConnectionFields }>("save")
+                    ?.fields).toMatchObject({
+                    host: "", port: "", socket: "/tmp/mysql.sock",
+                });
+
+                await choose("Host Name/IP");
+                expect(inputFor("Host Name/IP")?.value).toBe("db");
+                expect(inputFor("Port")?.value).toBe("3307");
+                await click("Create");
+
+                expect(lastPosted<{ fields: IConnectionFields }>("save")
+                    ?.fields).toMatchObject({
+                    host: "db", port: "3307", socket: "",
+                });
+            });
     });
 
     it("offers no OCI or MDS tab", async () => {
@@ -221,7 +414,8 @@ describe("ConnectionEditor", () => {
         expect((host.querySelector("input[type=checkbox]") as HTMLInputElement)
             .checked).toBe(true);
         // A stored password is kept unless the user says otherwise.
-        expect(host.textContent).toContain("will be kept");
+        expect(host.textContent)
+            .toContain("A password for this connection has been stored.");
         expect(buttons().map((node) => { return node.textContent; }))
             .toContain("Set New Password");
     });
@@ -231,7 +425,7 @@ describe("ConnectionEditor", () => {
         await load();
 
         await type("User Name", "dba");
-        await type("Host Name or IP Address", "localhost");
+        await type("Host Name/IP", "localhost");
         await click("Create");
 
         const save = lastPosted<ISaveMessage>("save")!;
@@ -363,6 +557,35 @@ describe("ConnectionEditor", () => {
         expect(lastPosted("save")).toBeUndefined();
     });
 
+    it("gives every button on every tab a tooltip, and none a title",
+        async () => {
+            await mount();
+            await load({ user: "dba" }, { hasStoredPassword: true });
+
+            /** @returns The buttons on show now without a tooltip. */
+            const bare = (): string[] => {
+                return buttons().filter((button) => {
+                    return !button.hasAttribute("data-tooltip")
+                        || button.hasAttribute("title");
+                }).map((button) => {
+                    return button.getAttribute("aria-label")
+                        ?? button.textContent ?? "";
+                });
+            };
+
+            expect(bare()).toEqual([]);
+            // The password box has its own button.
+            await click("Set New Password");
+            expect(bare()).toEqual([]);
+            for (const tab of ["SSL", "SSH", "Advanced"]) {
+                await click(tab);
+                expect(bare()).toEqual([]);
+            }
+            // An option's row has its own button too.
+            await click("Add Option");
+            expect(bare()).toEqual([]);
+        });
+
     it("edits the SSL and Advanced settings a URI can carry", async () => {
         await mount();
         await load({ user: "dba" });
@@ -418,14 +641,7 @@ describe("ConnectionEditor", () => {
         };
 
         const fieldValue = (caption: string): string => {
-            const field = [...host.querySelectorAll("label.field")]
-                .find((node) => {
-                    return node.querySelector(".field-caption")?.textContent
-                        === caption;
-                });
-
-            return (field?.querySelector("input, select") as
-                HTMLInputElement).value;
+            return inputFor(caption)!.value;
         };
 
         it("shows what the fields spell, and follows them", async () => {
@@ -457,7 +673,7 @@ describe("ConnectionEditor", () => {
             await typeUri("mysql://app@db:3310/shop?ssl-mode=REQUIRED");
 
             expect(fieldValue("User Name")).toBe("app");
-            expect(fieldValue("Host Name or IP Address")).toBe("db");
+            expect(fieldValue("Host Name/IP")).toBe("db");
             expect(fieldValue("Port")).toBe("3310");
             expect(fieldValue("Default Schema")).toBe("shop");
             expect(fieldValue("Protocol")).toBe("mysql");
@@ -482,7 +698,7 @@ describe("ConnectionEditor", () => {
             expect(host.querySelector(".uri-problem mark")?.textContent)
                 .toBe("33x6");
             // The fields keep what they had last.
-            expect(fieldValue("Host Name or IP Address")).toBe("localhost");
+            expect(fieldValue("Host Name/IP")).toBe("localhost");
 
             await click("Create");
             await click("Test Connection");
@@ -512,7 +728,7 @@ describe("ConnectionEditor", () => {
 
                 const paste = host.querySelector(
                     "button[aria-label='Paste URI']") as HTMLButtonElement;
-                expect(paste.querySelector(".codicon-copy")).not.toBeNull();
+                expect(paste.querySelector(".codicon-clippy")).not.toBeNull();
                 await act(async () => {
                     paste.click();
                     await Promise.resolve();
@@ -804,4 +1020,52 @@ describe("ConnectionEditor", () => {
             expect(lastPosted("save")).toBeUndefined();
         });
     });
-});
+});            it("copies the URI with the button before Paste, and says so",
+                async () => {
+                    vi.useFakeTimers();
+                    try {
+                        await mount();
+                        await load({ user: "dba", host: "db", port: "3310" });
+
+                        const buttons = [...host.querySelectorAll(
+                            ".uri .icon-button")];
+                        expect(buttons.map((button) => {
+                            return button.getAttribute("aria-label");
+                        })).toEqual(["Copy URI", "Paste URI"]);
+                        // The page's own tooltip, not the browser's slow one.
+                        for (const button of buttons) {
+                            expect(button.getAttribute("data-tooltip"))
+                                .toMatch(/^(Copy|Paste) URI: /);
+                            expect(button.hasAttribute("title")).toBe(false);
+                        }
+                        const copy = buttons[0] as HTMLButtonElement;
+                        expect(copy.querySelector(".codicon-copy"))
+                            .not.toBeNull();
+
+                        await act(async () => {
+                            copy.click();
+                            await Promise.resolve();
+                        });
+
+                        expect(lastPosted("copy")).toEqual({
+                            type: "copy",
+                            text: (host.querySelector("#connection-uri") as
+                                HTMLInputElement).value,
+                        });
+                        expect(lastPosted<{ text: string }>("copy")?.text)
+                            .toContain("dba@db:3310");
+                        expect(copy.querySelector(".codicon-check"))
+                            .not.toBeNull();
+
+                        await act(async () => {
+                            vi.advanceTimersByTime(COPIED_FOR_MS);
+                            await Promise.resolve();
+                        });
+                        expect(copy.querySelector(".codicon-copy"))
+                            .not.toBeNull();
+                    } finally {
+                        vi.useRealTimers();
+                    }
+                });
+
+

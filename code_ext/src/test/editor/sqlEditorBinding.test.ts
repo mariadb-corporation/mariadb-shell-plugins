@@ -206,6 +206,55 @@ describe("SqlEditorBinding", () => {
             binding.dispose();
         });
 
+    it("lists the connections with their folders, in the view's order",
+        async () => {
+            const api = createFakeApi({
+                connections: [
+                    "top@localhost:3306",
+                    "eu@prod:3306",
+                    "dev@localhost:3307",
+                ],
+                paths: {
+                    "eu@prod:3306": "/Prod/EU",
+                    "dev@localhost:3307": "/Dev",
+                },
+            });
+            const connections = new ConnectionManager(
+                () => {
+                    return Promise.resolve(api);
+                },
+                createFakeSettings("eu@prod:3306"),
+            );
+            const log = createRecordingLog();
+            const binding = new SqlEditorBinding(
+                connections,
+                new ResultViewProvider(Uri.file("/ext") as never, log),
+                log);
+
+            await binding.selectConnection(
+                createEditor("SELECT 1;").document as never);
+
+            expect(quickPickCalls[0]).toEqual([
+                {
+                    label: "dev@localhost:3307",
+                    description: "/Dev",
+                    picked: false,
+                },
+                {
+                    label: "eu@prod:3306",
+                    description: "/Prod/EU · default",
+                    picked: true,
+                },
+                {
+                    label: "top@localhost:3306",
+                    description: undefined,
+                    picked: false,
+                },
+            ]);
+
+            binding.dispose();
+        });
+
     it("keeps the current choice when the picker is cancelled", async () => {
         const { binding } = createBinding("dba@localhost:3310");
         const editor = createEditor("SELECT 1;");

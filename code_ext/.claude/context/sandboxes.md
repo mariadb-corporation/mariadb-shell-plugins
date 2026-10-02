@@ -131,8 +131,13 @@ MCP plugin's own `context/sandbox.md`.
 - **The dialog is not reloaded when asked for again**, unlike the
   connection editor: a deploy may be running in it. A deploy that fails
   after the dialog was closed is notified instead.
-- **The password is always sent**, empty included: the shell refuses a
-  deploy without one. **Confirm Root Password** sits beside it
+- **The password is always sent, and never empty**: the shell refuses a
+  deploy without one, and a password left empty is replaced on the host by
+  `generateSandboxPassword` (`sandboxDeployOptions`): 12 characters from
+  upper and lower case, digits and `!$#^()`, at least one of each, drawn
+  from `globalThis.crypto` without modulo bias and shuffled. The plugin
+  stores it with the registered connection, so the user never needs to
+  see it. **Confirm Root Password** sits beside it
   (`passwordConfirmation`, the grid's second column, the note spanning
   both under them); a mismatch - compared as typed, spaces included - is a
   `sandboxFieldProblem` on the confirmation, shown like the other fields

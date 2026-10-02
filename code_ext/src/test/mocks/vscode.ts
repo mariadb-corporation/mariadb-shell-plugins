@@ -270,6 +270,8 @@ export const treeViews: Array<{
     /** Fires the view's `onDidExpandElement`, as a user expanding a row. */
     expand: (element: unknown) => void;
     collapse: (element: unknown) => void;
+    /** Sets the view's `selection`, as a user selecting rows. */
+    select: (rows: unknown[]) => void;
 }> = [];
 export const webviewPanels: MockWebviewPanel[] = [];
 export const webviewViewProviders = new Map<string, {
@@ -798,6 +800,16 @@ export const window = {
     createTreeView: (id: string, options: unknown) => {
         const expanded = new EventEmitter<{ element: unknown }>();
         const collapsed = new EventEmitter<{ element: unknown }>();
+        const view = {
+            // What the user has selected; set through `select` below.
+            selection: [] as unknown[],
+            onDidExpandElement: expanded.event,
+            onDidCollapseElement: collapsed.event,
+            dispose: () => {
+                expanded.dispose();
+                collapsed.dispose();
+            },
+        };
         treeViews.push({
             id,
             options,
@@ -807,16 +819,12 @@ export const window = {
             collapse: (element: unknown) => {
                 collapsed.fire({ element });
             },
+            select: (rows: unknown[]) => {
+                view.selection = rows;
+            },
         });
 
-        return {
-            onDidExpandElement: expanded.event,
-            onDidCollapseElement: collapsed.event,
-            dispose: () => {
-                expanded.dispose();
-                collapsed.dispose();
-            },
-        };
+        return view;
     },
 
     registerWebviewViewProvider: (

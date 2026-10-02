@@ -44,7 +44,8 @@ import {
     CONNECTION_COLORS,
     type ConnectionColor,
 } from "../../src/mcp/types.js";
-import { Field, useScrollFades } from "./dialogParts.js";
+import { Field, Tooltips, useScrollFades } from "./dialogParts.js";
+import { COPIED_FOR_MS } from "./overflowPopup.js";
 import { post } from "./vscodeApi.js";
 
 /**
@@ -64,6 +65,16 @@ import { post } from "./vscodeApi.js";
 const TABS = ["Basic", "SSL", "SSH", "Advanced"] as const;
 
 type Tab = (typeof TABS)[number];
+
+/** What each tab's tooltip says it holds. */
+const TAB_TOOLTIPS: Record<Tab, string> = {
+    Basic: "Where the server is, who connects, and how the connection is "
+        + "shown in the Connections view",
+    SSL: "How the connection is encrypted",
+    SSH: "Reaching the server through an SSH tunnel",
+    Advanced: "Compression, and any other option a connection URI can "
+        + "carry",
+};
 
 /** How the Test Connection result is showing. */
 interface ITestState {
@@ -95,6 +106,25 @@ const UriProblem = (props: {
     );
 };
 
+/**
+ * The fields as the chosen endpoint has them: a socket drops the host and
+ * port, a host drops the socket. Both are kept in the dialog, so switching
+ * back finds what was typed; only the chosen one is built, tested or saved.
+ *
+ * @param fields The fields as typed.
+ * @param useSocket Whether the socket (or named pipe) is the one chosen.
+ *
+ * @returns The fields to build the URI from.
+ */
+export const endpointFields = (
+    fields: IConnectionFields,
+    useSocket: boolean,
+): IConnectionFields => {
+    return useSocket
+        ? { ...fields, host: "", port: "" }
+        : { ...fields, socket: "" };
+};
+
 export const ConnectionEditor = (): preact.JSX.Element => {
     const [fields, setFields] =
         useState<IConnectionFields>(emptyConnectionFields());
@@ -105,6 +135,10 @@ export const ConnectionEditor = (): preact.JSX.Element => {
     const [folders, setFolders] = useState<string[]>([]);
     const [caption, setCaption] = useState("");
     const [color, setColor] = useState<ConnectionColor | "">("");
+    // Which endpoint the connection goes to: a host and port, or a local
+    // socket - a named pipe on Windows.
+    const [useSocket, setUseSocket] = useState(false);
+    const [windows, setWindows] = useState(false);
     const [uri, setUri] = useState<string | undefined>(undefined);
     const [hasStoredPassword, setHasStoredPassword] = useState(false);
     // undefined means "keep the stored password", which is not the same as
@@ -113,6 +147,8 @@ export const ConnectionEditor = (): preact.JSX.Element => {
     const [test, setTest] = useState<ITestState | undefined>(undefined);
     const [saveError, setSaveError] = useState<string | undefined>(undefined);
     const [busy, setBusy] = useState(false);
+    // The Copy button shows a check for a moment after copying.
+    const [copied, setCopied] = useState(false);
     // The URI as the user typed or pasted it, kept while it is being edited
     // so that the box is not rewritten under the cursor. Undefined shows what
     // the fields spell instead.
@@ -121,6 +157,12 @@ export const ConnectionEditor = (): preact.JSX.Element => {
     // shows it, which it only does after the next render.
     const [pointAt, setPointAt] = useState(0);
     const uriInput = useRef<HTMLInputElement>(null);
+    const captionInput = useRef<HTMLInputElement>(null);
+    // The host or socket box, whichever is shown.
+    const endpointInput = useRef<HTMLInputElement>(null);
+    // What to focus once the next render has put it on screen.
+    const [focusNext, setFocusNext] =
+        useState<"caption" | "endpoint" | undefined>(undefined);
     const tabBody = useRef<HTMLDivElement>(null);
     const fades = useScrollFades(tabBody);
 
@@ -150,6 +192,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
         }
 
         setFields(check.fields);
+        setUseSocket(check.fields.socket.trim() !== "");
         if (check.password === undefined) {
             setUriDraft(settle ? undefined : text);
         } else {
@@ -168,10 +211,16 @@ export const ConnectionEditor = (): preact.JSX.Element => {
             switch (message.type) {
                 case "load": {
                     setFields(message.fields);
+                    setUseSocket(message.fields.socket.trim() !== "");
+                    setWindows(message.windows);
                     setMcpAccess(message.mcpAccess);
                     setFolder(message.path);
                     setFolders(message.folders);
                     setCaption(message.caption);
+                    if (message.caption === "") {
+                        // Naming it is the first thing to do.
+                        setFocusNext("caption");
+                    }
                     setColor(message.color);
                     setUri(message.uri);
                     setHasStoredPassword(message.hasStoredPassword);
@@ -227,6 +276,27 @@ export const ConnectionEditor = (): preact.JSX.Element => {
         setSaveError(undefined);
     };
 
+    /**
+     * Switches between the host and the socket. A socket is on this
+     * machine, so a protocol that tunnels gives up its tunnel.
+     *
+     * @param socket Whether the socket (or named pipe) is chosen.
+     *
+     * @returns Nothing.
+     */
+    const chooseEndpoint = (socket: boolean): void => {
+        setUseSocket(socket);
+        // Picking one is about to type into it.
+        setFocusNext("endpoint");
+        if (socket && usesSshTunnel(fields.scheme)) {
+            update("scheme", withSshTunnel(fields.scheme, false));
+        } else {
+            setUriDraft(undefined);
+            setTest(undefined);
+            setSaveError(undefined);
+        }
+    };
+
     const text = (
         key: keyof IConnectionFields,
         placeholder = "",
@@ -246,7 +316,9 @@ export const ConnectionEditor = (): preact.JSX.Element => {
 
     const isNew = uri === undefined;
 
-    const built = buildConnectionUri(fields);
+    const endpoint = endpointFields(fields, useSocket);
+    const socketName = windows ? "Named Pipe" : "Socket";
+    const built = buildConnectionUri(endpoint);
     const draftProblem = uriDraft === undefined
         ? undefined
         : checkConnectionUri(uriDraft).problem;
@@ -254,6 +326,24 @@ export const ConnectionEditor = (): preact.JSX.Element => {
         ? undefined
         : connectionKeyProblem(built.uri);
     const nameProblem = captionProblem(caption);
+
+    useEffect(() => {
+        if (!copied) {
+            return undefined;
+        }
+        const timer = setTimeout(() => { setCopied(false); }, COPIED_FOR_MS);
+
+        return () => { clearTimeout(timer); };
+    }, [copied]);
+
+    useEffect(() => {
+        if (focusNext === undefined) {
+            return;
+        }
+        (focusNext === "caption" ? captionInput : endpointInput)
+            .current?.focus();
+        setFocusNext(undefined);
+    }, [focusNext]);
 
     useEffect(() => {
         const input = uriInput.current;
@@ -284,6 +374,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
 
     return (
         <div class="editor">
+            <Tooltips />
             <header class="editor-header">
                 <h1>Database Connection Configuration</h1>
             </header>
@@ -302,7 +393,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                             : "uri-input invalid"}
                         spellcheck={false}
                         aria-invalid={draftProblem !== undefined}
-                        value={uriDraft ?? previewConnectionUri(fields)}
+                        value={uriDraft ?? previewConnectionUri(endpoint)}
                         disabled={busy}
                         onInput={(event) => {
                             takeUri((event.target as HTMLInputElement).value,
@@ -321,14 +412,38 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                         type="button"
                         class="icon-button"
                         disabled={busy}
+                        aria-label="Copy URI"
+                        // Not a title, here or on any button: the webview
+                        // shows those late, and often not at all.
+                        data-tooltip="Copy URI: put the URI on the clipboard"
+                        onClick={() => {
+                            post<EditorWebviewMessage>({
+                                type: "copy",
+                                text: uriDraft
+                                    ?? previewConnectionUri(endpoint),
+                            });
+                            setCopied(true);
+                        }}
+                    >
+                        <span
+                            class={copied
+                                ? "codicon codicon-check"
+                                : "codicon codicon-copy"}
+                            aria-hidden="true"
+                        />
+                    </button>
+                    <button
+                        type="button"
+                        class="icon-button"
+                        disabled={busy}
                         aria-label="Paste URI"
-                        title={"Paste URI: replace the fields with the URI "
-                            + "on the clipboard"}
+                        data-tooltip={"Paste URI: replace the fields with "
+                            + "the URI on the clipboard"}
                         onClick={() => {
                             post<EditorWebviewMessage>({ type: "paste" });
                         }}
                     >
-                        <span class="codicon codicon-copy" aria-hidden="true" />
+                        <span class="codicon codicon-clippy" aria-hidden="true" />
                     </button>
                 </div>
                 {draftProblem === undefined ? (
@@ -355,6 +470,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                             role="tab"
                             aria-selected={tab === name}
                             class={tab === name ? "tab selected" : "tab"}
+                            data-tooltip={TAB_TOOLTIPS[name]}
                             onClick={() => { setTab(name); }}
                         >
                             {name}
@@ -375,6 +491,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                     + "shows the URI."}
                             >
                                 <input
+                                    ref={captionInput}
                                     type="text"
                                     class={nameProblem === undefined
                                         ? undefined
@@ -388,38 +505,6 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                         setSaveError(undefined);
                                     }}
                                 />
-                            </Field>
-                            <Field caption="Host Name or IP Address">
-                                {text("host", "localhost")}
-                            </Field>
-                            <Field caption="Protocol">
-                                <select
-                                    value={fields.scheme}
-                                    disabled={busy}
-                                    onChange={(event) => {
-                                        update("scheme",
-                                            (event.target as HTMLSelectElement).value);
-                                    }}
-                                >
-                                    {CONNECTION_SCHEMES.map((scheme) => {
-                                        return (
-                                            <option key={scheme} value={scheme}>
-                                                {scheme}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                            </Field>
-                            <Field caption="Port">{text("port", "3306")}</Field>
-                            <Field caption="User Name">{text("user")}</Field>
-                            <Field caption="Default Schema">
-                                {text("schema")}
-                            </Field>
-                            <Field
-                                caption="Socket or Named Pipe"
-                                hint="Used instead of the host and port."
-                            >
-                                {text("socket")}
                             </Field>
                             <Field
                                 caption="Folder"
@@ -447,6 +532,173 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                     })}
                                 </datalist>
                             </Field>
+                            {/* Not a Field: a <label> would hand a click anywhere in it
+                                to its first radio button. */}
+                            <div class="field">
+                                <div class="field-caption endpoint-caption" role="radiogroup"
+                                    aria-label="Connect to"
+                                >
+                                    <label class="endpoint-choice">
+                                        <input
+                                            type="radio"
+                                            name="endpoint"
+                                            checked={!useSocket}
+                                            disabled={busy}
+                                            onChange={() => { chooseEndpoint(false); }}
+                                        />
+                                        <span>Host Name/IP</span>
+                                    </label>
+                                    <label class="endpoint-choice">
+                                        <input
+                                            type="radio"
+                                            name="endpoint"
+                                            checked={useSocket}
+                                            disabled={busy}
+                                            onChange={() => { chooseEndpoint(true); }}
+                                        />
+                                        <span>{socketName}</span>
+                                    </label>
+                                </div>
+                                {useSocket
+                                    ? (
+                                        <input
+                                            ref={endpointInput}
+                                            type="text"
+                                            aria-label={socketName}
+                                            value={fields.socket}
+                                            disabled={busy}
+                                            onInput={(event) => {
+                                                update("socket",
+                                                    (event.target as HTMLInputElement).value);
+                                            }}
+                                        />
+                                    )
+                                    : (
+                                        <input
+                                            ref={endpointInput}
+                                            type="text"
+                                            aria-label="Host Name/IP"
+                                            value={fields.host}
+                                            placeholder="localhost"
+                                            disabled={busy}
+                                            onInput={(event) => {
+                                                update("host",
+                                                    (event.target as HTMLInputElement).value);
+                                            }}
+                                        />
+                                    )}
+                            </div>
+                            {/* Port and Protocol share one cell: neither needs a whole
+                                column. */}
+                            <div class="field-pair">
+                                <Field caption="Port">
+                                    <input
+                                        type="text"
+                                        value={useSocket ? "" : fields.port}
+                                        placeholder={useSocket ? "" : "3306"}
+                                        disabled={busy || useSocket}
+                                        onInput={(event) => {
+                                            update("port", (event.target as
+                                                HTMLInputElement).value);
+                                        }}
+                                    />
+                                </Field>
+                                <Field caption="Protocol">
+                                    <select
+                                        value={fields.scheme}
+                                        disabled={busy}
+                                        onChange={(event) => {
+                                            update("scheme",
+                                                (event.target as HTMLSelectElement).value);
+                                        }}
+                                    >
+                                        {CONNECTION_SCHEMES.map((scheme) => {
+                                            return (
+                                                <option
+                                                key={scheme}
+                                                value={scheme}
+                                                // A tunnel reaches a host;
+                                                // a socket is on this one.
+                                                disabled={useSocket
+                                                    && usesSshTunnel(scheme)}
+                                            >
+                                                    {scheme}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                </Field>
+                            </div>
+                            <Field caption="User Name">{text("user")}</Field>
+                            {/* Not a Field: a <label> hands a click anywhere in it to its
+                                first button. */}
+                            <div class="field password-field">
+                                <span class="field-caption">Password</span>
+                                {password === undefined ? (
+                                    // Beside the button, where there is room;
+                                    // it wraps rather than pushing it out.
+                                    <div class="row password-row">
+                                        <button
+                                            type="button"
+                                            disabled={busy}
+                                            data-tooltip={hasStoredPassword
+                                                ? "Type a password to replace "
+                                                + "the stored one"
+                                                : "Type a password to store "
+                                                + "with the connection"}
+                                            onClick={() => { setPassword(""); }}
+                                        >
+                                            {hasStoredPassword
+                                                ? "Set New Password"
+                                                : "Set Password"}
+                                        </button>
+                                        <span class="field-hint password-state">
+                                            {hasStoredPassword
+                                                ? "A password for this connection "
+                                                + "has been stored."
+                                                : "Stores the password for this "
+                                                + "connection."}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div class="row">
+                                            <input
+                                                type="password"
+                                                value={password}
+                                                placeholder="New password"
+                                                aria-label="Password"
+                                                disabled={busy}
+                                                onInput={(event) => {
+                                                    setPassword((event.target as
+                                                        HTMLInputElement).value);
+                                                }}
+                                            />
+                                            {hasStoredPassword ? (
+                                                <button
+                                                    type="button"
+                                                    disabled={busy}
+                                                    data-tooltip={"Keep the "
+                                                        + "stored password, "
+                                                        + "dropping the one "
+                                                        + "typed here"}
+                                                    onClick={() => {
+                                                        setPassword(undefined);
+                                                    }}
+                                                >
+                                                    Keep Stored Password
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                        <span class="field-hint">
+                                            Saved with the connection.
+                                        </span>
+                                    </>
+                                )}
+                            </div>
+                            <Field caption="Default Schema">
+                                {text("schema")}
+                            </Field>
                             {/* Not a Field: a <label> hands a click anywhere
                                 in it to its first button. */}
                             <div class="field">
@@ -472,7 +724,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                                     role="radio"
                                                     aria-checked={color === choice}
                                                     aria-label={name}
-                                                    title={name}
+                                                    data-tooltip={name}
                                                     class={color === choice
                                                         ? "swatch selected"
                                                         : "swatch"}
@@ -503,53 +755,6 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                 <span class="field-hint">
                                     The color the Connections view draws it in.
                                 </span>
-                            </div>
-
-                            <div class="group">
-                                <h2>Password</h2>
-                                {password === undefined ? (
-                                    <div class="row">
-                                        <span class="note">
-                                            {hasStoredPassword
-                                                ? "A password is stored for this "
-                                                + "connection and will be kept."
-                                                : "No password has been set."}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            disabled={busy}
-                                            onClick={() => { setPassword(""); }}
-                                        >
-                                            {hasStoredPassword
-                                                ? "Set New Password"
-                                                : "Set Password"}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div class="row">
-                                        <input
-                                            type="password"
-                                            value={password}
-                                            placeholder="New password"
-                                            disabled={busy}
-                                            onInput={(event) => {
-                                                setPassword((event.target as
-                                                    HTMLInputElement).value);
-                                            }}
-                                        />
-                                        {hasStoredPassword ? (
-                                            <button
-                                                type="button"
-                                                disabled={busy}
-                                                onClick={() => {
-                                                    setPassword(undefined);
-                                                }}
-                                            >
-                                                Keep Stored Password
-                                            </button>
-                                        ) : null}
-                                    </div>
-                                )}
                             </div>
 
                             <div class="group">
@@ -623,7 +828,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                     <input
                                         type="checkbox"
                                         checked={usesSshTunnel(fields.scheme)}
-                                        disabled={busy}
+                                        disabled={busy || useSocket}
                                         onChange={(event) => {
                                             update("scheme", withSshTunnel(
                                                 fields.scheme,
@@ -814,7 +1019,8 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                                         <button
                                                             type="button"
                                                             disabled={busy}
-                                                            title="Remove"
+                                                            data-tooltip={"Remove "
+                                                                + "this option"}
                                                             onClick={() => {
                                                                 update("extraOptions",
                                                                     fields.extraOptions
@@ -835,6 +1041,8 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                                 <button
                                     type="button"
                                     disabled={busy}
+                                    data-tooltip={"Add a connection option "
+                                        + "the other tabs do not offer"}
                                     onClick={() => {
                                         update("extraOptions", [
                                             ...fields.extraOptions,
@@ -875,10 +1083,12 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                 <button
                     type="button"
                     disabled={busy}
+                    data-tooltip={"Try connecting with these settings, "
+                        + "without saving them"}
                     onClick={() => {
                         if (uriIsSound()) {
                             post<EditorWebviewMessage>({
-                                type: "test", fields, password,
+                                type: "test", fields: endpoint, password,
                             });
                         }
                     }}
@@ -889,6 +1099,7 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                 <button
                     type="button"
                     disabled={busy}
+                    data-tooltip="Close without saving"
                     onClick={() => {
                         post<EditorWebviewMessage>({ type: "cancel" });
                     }}
@@ -899,6 +1110,9 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                     type="button"
                     class="primary"
                     disabled={busy}
+                    data-tooltip={isNew
+                        ? "Add the connection to the Connections view"
+                        : "Save the changes to this connection"}
                     onClick={() => {
                         if (!uriIsSound()) {
                             return;
@@ -912,7 +1126,8 @@ export const ConnectionEditor = (): preact.JSX.Element => {
                             return;
                         }
                         post<EditorWebviewMessage>({
-                            type: "save", fields, password, mcpAccess,
+                            type: "save", fields: endpoint, password,
+                            mcpAccess,
                             path: folder, caption, color,
                         });
                     }}

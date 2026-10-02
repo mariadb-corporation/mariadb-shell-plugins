@@ -347,6 +347,18 @@ describe("ConnectionEditorPanel", () => {
         expect(currentPanel().disposed).toBe(false);
     });
 
+    it("puts the URI on the clipboard when asked to copy, and stays open",
+        async () => {
+            const { host } = createHost();
+
+            ConnectionEditorPanel.show(extensionUri as never, host);
+            await receive({ type: "ready" });
+            await receive({ type: "copy", text: "mariadb://dba@db:3310" });
+
+            expect(env.clipboard.text).toBe("mariadb://dba@db:3310");
+            expect(currentPanel().disposed).toBe(false);
+        });
+
     it("offers the folders in use, and starts in the one it was asked from",
         async () => {
             const { host } = createHost({

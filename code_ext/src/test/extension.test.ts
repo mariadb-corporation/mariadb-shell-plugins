@@ -15,6 +15,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { readFileSync } from "node:fs";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MINIMUM_SHELL_VERSION } from "../shell/constants.js";
@@ -78,6 +80,8 @@ const runtime = vi.hoisted(() => {
          */
         connections: [] as string[],
         guiConnections: [] as string[],
+        /** The folder each connection is filed in; `/` when left out. */
+        paths: {} as Record<string, string>,
         /** What `sandbox.list_instances` answers with. */
         sandboxes: [] as Array<{
             port: number;
@@ -141,7 +145,11 @@ vi.mock("../mcp/sdkConnector.js", async () => {
                         return {
                             content: [
                                 ...runtime.connections.map((uri) => {
-                                    return { uri, path: "/", kind: "mcp" };
+                                    return {
+                                        uri,
+                                        path: runtime.paths[uri] ?? "/",
+                                        kind: "mcp",
+                                    };
                                 }),
                                 ...runtime.guiConnections.map((uri) => {
                                     return { uri, path: "/", kind: "gui" };
@@ -256,6 +264,7 @@ describe("activate", () => {
         runtime.connector = undefined;
         runtime.connections = ["dba@localhost:3310"];
         runtime.guiConnections = [];
+        runtime.paths = {};
         runtime.sandboxes = [];
     });
 
@@ -305,6 +314,8 @@ describe("activate", () => {
             "mariadb.stopOnError.disable",
             "mariadb.stopOnError.enable",
             "mariadb.stopSandbox",
+            "mariadb.toolbarAddConnection",
+            "mariadb.toolbarNewFolder",
         ]);
     });
 
@@ -418,6 +429,30 @@ describe("activate", () => {
         });
     });
 
+    it("opens the editor on the connection's caption and color", async () => {
+        activate(createContext() as never);
+
+        await mockCommands.executeCommand("mariadb.editConnection", {
+            kind: "connection",
+            uri: "dba@localhost:3310",
+            path: "/Work",
+            caption: "Billing",
+            color: "red",
+            connected: false,
+            isDefault: false,
+            connectionKind: "mcp",
+        });
+
+        webviewPanels[0].webview.receive({ type: "ready" });
+        await vi.waitFor(() => {
+            expect(webviewPanels[0].webview.posted[0]).toMatchObject({
+                path: "/Work",
+                caption: "Billing",
+                color: "red",
+            });
+        });
+    });
+
     it("reads the connection list again only when Refresh is pressed",
         async () => {
             activate(createContext() as never);
@@ -503,6 +538,159 @@ describe("activate", () => {
         });
         const [inner] = await treeProvider().getChildren(roots[0]);
         expect(inner).toMatchObject({ path: "/Sandboxes/note app" });
+    });
+
+    describe("from the toolbar", () => {
+        /**
+         * Selects rows in the Connections view, as the user would.
+         *
+         * @param rows The rows; none clears the selection.
+         *
+         * @returns Nothing.
+         */
+        const select = (...rows: unknown[]): void => {
+            treeViews[0]!.select(rows);
+        };
+
+        /** @returns The folders at the top level of the view. */
+        const rootFolders = async (): Promise<string[]> => {
+            return (await treeProvider().getChildren()).filter((node) => {
+                return node.kind === "folder";
+            }).map((node) => { return node.path!; });
+        };
+
+        /**
+         * Makes a folder with the toolbar's New Folder.
+         *
+         * @param name The name typed.
+         * @param focused The row VS Code hands the toolbar: the FOCUSED
+         *     one, whether or not it is still selected.
+         *
+         * @returns Nothing.
+         */
+        const newFolder = async (
+            name: string,
+            focused?: unknown,
+        ): Promise<void> => {
+            inputBoxAnswers.push(name);
+            await mockCommands.executeCommand("mariadb.toolbarNewFolder",
+                focused);
+        };
+
+        it("makes a folder inside the selected one, and at the top level "
+            + "once nothing is selected, wherever the focus is", async () => {
+            activate(createContext() as never);
+            await newFolder("First");
+            const [first] = await treeProvider().getChildren();
+
+            select(first);
+            await newFolder("Inner", first);
+            expect((await treeProvider().getChildren(first)).map((node) => {
+                return node.path;
+            })).toEqual(["/First/Inner"]);
+
+            // Deselected, but still focused - which is what VS Code hands it.
+            select();
+            await newFolder("Second", first);
+            expect(await rootFolders()).toEqual(["/First", "/Second"]);
+        });
+
+        it("makes a folder in a selected connection's folder", async () => {
+            runtime.paths = { "dba@localhost:3310": "/Work" };
+            activate(createContext() as never);
+            const [work] = await treeProvider().getChildren();
+            const [connection] = await treeProvider().getChildren(work);
+
+            select(connection);
+            await newFolder("Archive");
+
+            expect((await treeProvider().getChildren(work)).map((node) => {
+                return node.path;
+            })).toContain("/Work/Archive");
+        });
+
+        it("makes a folder in a selected schema's connection's folder",
+            async () => {
+                runtime.paths = { "dba@localhost:3310": "/Work" };
+                activate(createContext() as never);
+
+                select({ kind: "schema", uri: "dba@localhost:3310",
+                    schema: "world" });
+                await newFolder("Archive");
+
+                const [work] = await treeProvider().getChildren();
+                expect((await treeProvider().getChildren(work)).map((node) => {
+                    return node.path;
+                })).toContain("/Work/Archive");
+            });
+
+        it("makes a folder in the deepest one several rows share",
+            async () => {
+                activate(createContext() as never);
+
+                select(
+                    { kind: "folder", path: "/A/x", name: "x", empty: true },
+                    { kind: "folder", path: "/A/y", name: "y", empty: true },
+                );
+                await newFolder("Shared");
+
+                expect(inputBoxCalls[0]!.prompt).toContain("in /A.");
+            });
+
+        it("starts a new connection in the selected folder, and at the top "
+            + "level once nothing is selected", async () => {
+            activate(createContext() as never);
+            const sandboxes = {
+                kind: "folder", path: "/Sandboxes", name: "Sandboxes",
+                empty: true,
+            };
+
+            select(sandboxes);
+            await mockCommands.executeCommand("mariadb.toolbarAddConnection",
+                sandboxes);
+            webviewPanels[0]!.webview.receive({ type: "ready" });
+            await vi.waitFor(() => {
+                expect(webviewPanels[0]!.webview.posted[0])
+                    .toMatchObject({ type: "load", path: "/Sandboxes" });
+            });
+
+            // The editor is one panel: closed, so the next one is new.
+            webviewPanels[0]!.dispose();
+            select();
+            await mockCommands.executeCommand("mariadb.toolbarAddConnection",
+                sandboxes);
+            const panel = webviewPanels.at(-1)!;
+            panel.webview.receive({ type: "ready" });
+            await vi.waitFor(() => {
+                expect(panel.webview.posted[0])
+                    .toMatchObject({ type: "load", path: "/" });
+            });
+        });
+    });
+
+    it("gives the toolbar the commands that go by the selection, and the "
+        + "rows the ones that go by the row", () => {
+        const manifest = JSON.parse(readFileSync(
+            new URL("../../package.json", import.meta.url), "utf8")) as {
+            contributes: { menus: Record<string, Array<{
+                command: string;
+                when?: string;
+            }>>; };
+        };
+        const { menus } = manifest.contributes;
+        const toolbar = menus["view/title"]!.filter((entry) => {
+            return entry.when === "view == mariadb.connections";
+        }).map((entry) => { return entry.command; });
+
+        expect(toolbar).toContain("mariadb.toolbarAddConnection");
+        expect(toolbar).toContain("mariadb.toolbarNewFolder");
+        expect(toolbar).not.toContain("mariadb.addConnection");
+        expect(toolbar).not.toContain("mariadb.newFolder");
+        expect(menus["view/item/context"]!.map((entry) => {
+            return entry.command;
+        })).toEqual(expect.arrayContaining([
+            "mariadb.addConnection", "mariadb.newFolder",
+        ]));
     });
 
     it("refuses an empty name, and makes nothing on cancel",

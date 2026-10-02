@@ -152,6 +152,35 @@ body {
     gap: 0.75rem 1rem;
 }
 
+/* The host field's caption: one small radio button each for the host
+   and the socket, the socket's pushed to the right. */
+.endpoint-caption {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.endpoint-choice {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+}
+
+.endpoint-choice input {
+    width: 0.75em;
+    height: 0.75em;
+    margin: 0;
+}
+
+/* Two fields sharing one cell of the grid, in halves. */
+.field-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 1rem;
+    min-width: 0;
+}
+
 .field {
     display: flex;
     flex-direction: column;
@@ -193,6 +222,23 @@ button:disabled {
     opacity: 0.6;
 }
 
+/* The button keeps its own width; the description beside it takes what
+   is left and wraps within it. */
+.password-row {
+    align-items: center;
+}
+
+.password-row > button {
+    flex: none;
+}
+
+.password-state {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: break-word;
+}
+
 /* A group spans both columns: it holds its own rows. */
 .group {
     grid-column: 1 / -1;
@@ -223,6 +269,9 @@ button:disabled {
 
 .colors {
     gap: 0.35rem;
+    /* The selected swatch's outline reaches 4px past it, and the tab
+       body's scrolling clips anything left of its edge. */
+    padding-left: 0.3rem;
 }
 
 .swatch {
@@ -286,6 +335,25 @@ button:disabled {
     line-height: 1;
 }
 
+/* The page's own tooltip; see `Tooltips` in dialogParts.tsx. */
+.tooltip {
+    position: fixed;
+    z-index: 100;
+    max-width: min(20rem, calc(100vw - 8px));
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--vscode-editorHoverWidget-border,
+            var(--vscode-widget-border, transparent));
+    border-radius: 3px;
+    background: var(--vscode-editorHoverWidget-background);
+    color: var(--vscode-editorHoverWidget-foreground);
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+    font-size: 0.9em;
+    line-height: 1.4;
+    white-space: normal;
+    overflow-wrap: break-word;
+    pointer-events: none;
+}
+
 input.invalid,
 .uri-input.invalid {
     border-color: var(--vscode-inputValidation-errorBorder, #f14c4c);
@@ -310,7 +378,7 @@ input.invalid,
 
 .uri-problem code {
     display: block;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     color: var(--vscode-foreground);
     font-family: var(--vscode-editor-font-family, monospace);
 }

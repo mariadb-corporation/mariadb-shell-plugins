@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 import {
     allFolders,
     commonFolder,
+    inTreeOrder,
     normalizeFolder,
 } from "../../connections/connectionFolders.js";
 
@@ -45,5 +46,44 @@ describe("connection folders", () => {
         expect(commonFolder(["/A", "/B"])).toBe("/");
         expect(commonFolder(["/A", "/"])).toBe("/");
         expect(commonFolder([])).toBe("/");
+    });
+});
+
+describe("inTreeOrder", () => {
+    it("puts subfolders, sorted and expanded, before a folder's own "
+        + "connections, which keep their order", () => {
+        const order = inTreeOrder([
+            { uri: "top-b" },
+            { uri: "prod-eu", path: "/Prod/EU" },
+            { uri: "top-a", path: "/" },
+            { uri: "dev", path: "/Dev" },
+            { uri: "prod", path: "/Prod" },
+            { uri: "prod-asia", path: "/Prod/Asia" },
+            { uri: "prod-eu-2", path: "/Prod/EU" },
+        ]).map(({ uri }) => { return uri; });
+
+        expect(order).toEqual([
+            "dev",
+            "prod-asia",
+            "prod-eu",
+            "prod-eu-2",
+            "prod",
+            "top-b",
+            "top-a",
+        ]);
+    });
+
+    it("does not mistake a folder for another one its name starts with",
+        () => {
+            expect(inTreeOrder([
+                { uri: "abc", path: "/Ab/C" },
+                { uri: "abx", path: "/AbX" },
+                { uri: "ab", path: "/Ab" },
+            ]).map(({ uri }) => { return uri; }))
+                .toEqual(["abc", "ab", "abx"]);
+        });
+
+    it("leaves an empty list empty", () => {
+        expect(inTreeOrder([])).toEqual([]);
     });
 });

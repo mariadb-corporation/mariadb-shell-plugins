@@ -7,7 +7,6 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Split out of
 [connections.md](connections.md), which has the connections it edits - the
 several open on one URI, the Connections view, folders and the default.
 
-
 `src/connections/` holds it, split so that only the panel needs VS Code:
 
 | File | Purpose |
@@ -28,6 +27,52 @@ cannot be written into one cannot be offered. That rules out the OCI/MDS tabs,
 `URI_OPTIONS` is `uri_connection_attributes` plus `ssh_uri_query_attributes`
 from the shell's `mysqlshdk/libs/db/utils_connection.h`, and is what tells a
 typo in the "Other Connection Options" table from a real option.
+
+The Basic tab's two-column grid starts Caption | Folder, then Host |
+Port + Protocol - those two share one cell as a `.field-pair`, in halves -
+then User Name | Password (`.password-field`: caption, then a
+`.password-row` of the Set / Set New Password button and the state beside
+it - `.password-state` takes the rest of the row and wraps; or the box
+with Keep Stored Password and "Saved with the connection." under it),
+Default Schema | Color.
+**Host or socket** is one field: its caption is two small radio buttons,
+Host Name/IP left and Socket right (Named Pipe when the host says
+`windows`, from `process.platform` in the load message), and its one box
+edits `host` or `socket`. Both values are kept, so switching back finds
+what was typed; `endpointFields` drops the unchosen one (host and port,
+or socket) from what is built, previewed, tested and saved. On the socket
+Port is disabled and shown empty; Protocol stays (mariadb:// vs mysql://
+still matters), only its `+ssh` options and the SSH tab's tunnel checkbox
+are disabled, and switching to the socket drops `+ssh` from the scheme.
+A loaded or pasted URI picks the radio button by whether it has a socket.
+**Copy URI** sits before Paste (`codicon-copy`; Paste moved to
+`codicon-clippy`, the codicons having no paste icon): it posts `copy` with
+the box's text - the draft if one is being typed, else the preview, never
+a password - and the host writes `vscode.env.clipboard`. The panel's
+message switch DISPOSES the panel on an unknown type, so a new message
+needs its own case. The icon shows `codicon-check` for `COPIED_FOR_MS`.
+**Every button has a `data-tooltip`, none a `title`** (a test walks every
+tab and both password states): a title's tooltip is the browser's, about
+a second late and inside a webview often never shown (Paste's seldom
+was). `Tooltips` (`dialogParts.tsx`, mounted once at the dialog's root)
+draws them: ONE `position: fixed` `.tooltip` for the page, placed from the
+element's bounding rect under it - over it where there is no room below,
+clamped to the window's sides - so the scrolling tab body cannot clip it
+(a CSS `::after` hung from the button was tried first and would have
+been). It shows after `TOOLTIP_DELAY_MS` (350) on hover, at once on
+focus-visible, and goes on mousedown / keydown (staying gone until the
+pointer reaches another element), on scroll (capturing) and when the
+pointer leaves the window. Tests: `webview/test/dialogParts.test.tsx`.
+New Sandbox does not mount it yet.
+**Focus** goes through `focusNext`, applied by an effect after the render
+that shows its target: a radio button picked focuses the box below it
+(`endpointInput`, on whichever of the two inputs is shown), and a load
+with no caption focuses Caption.
+Color's swatches sit 0.3rem in (`.colors` padding): the selected one's
+outline reaches 4px past it, and the scrolling tab body clips it. The
+dialog starts from what `mariadb.editConnection` gives it - the tree
+node's uri, kind, path, caption AND color; leaving one out shows it as
+empty (it did, for caption and color, until a test pinned them).
 
 Five things about it are load bearing:
 
@@ -72,8 +117,8 @@ Five things about it are load bearing:
   `previewConnectionUri(fields)` - the fields written out UNVALIDATED, so a
   new connection reads `mariadb://@localhost:3306` rather than nothing -
   with `buildConnectionUri`'s complaint as a muted note beneath. Typing into
-  it, or Paste URI (the host reads `vscode.env.clipboard`: a webview cannot
-  read it on a button press), goes through `checkConnectionUri`, the STRICT
+  it, or Paste URI (`codicon-clippy`; the host reads `vscode.env.clipboard`:
+  a webview cannot read it on a button press), goes through `checkConnectionUri`, the STRICT
   counterpart of `parseConnectionUri`: a sound URI replaces the fields, an
   unsound one is kept as a draft with the fields left as they were, and the
   problem carries a `start`/`end` so the editor marks the offending part and
