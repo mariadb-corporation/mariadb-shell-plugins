@@ -12,6 +12,15 @@ button — plus a status bar entry showing the connection it will run on
 (`Ctrl`/`Cmd`+`Enter` runs it). The selection runs if there is one, else
 the whole file.
 
+The picker (both the toolbar button and the status bar entry open
+`SqlEditorBinding.selectConnection`) lists the connections in the
+Connections view's order, every folder expanded - `inTreeOrder` in
+`connectionFolders.ts`, which a `connectionsModel` test checks against a
+walk of the real tree. Each item's description is its folder path (none
+at the top level) then `default` / `connected`, joined with ` · `, and
+`matchOnDescription` lets the path be typed to filter. The label is the
+URI, not the caption.
+
 ## The two run commands
 
 | Command | Default | What runs |

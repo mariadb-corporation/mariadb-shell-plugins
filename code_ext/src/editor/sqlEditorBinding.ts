@@ -17,6 +17,10 @@
 
 import * as vscode from "vscode";
 
+import {
+    inTreeOrder,
+    ROOT_FOLDER,
+} from "../connections/connectionFolders.js";
 import type { ConnectionManager } from "../connections/connectionManager.js";
 import {
     pageSize,
@@ -277,8 +281,8 @@ export class SqlEditorBinding implements vscode.Disposable {
     public async selectConnection(
         document: vscode.TextDocument,
     ): Promise<string | undefined> {
-        const uris = await this.connections.listConnections();
-        if (uris.length === 0) {
+        const stored = await this.connections.listStoredConnections();
+        if (stored.length === 0) {
             // A notification draws no codicon, so the button is named
             // rather than shown; the view it sits in is what is being
             // pointed at.
@@ -293,20 +297,29 @@ export class SqlEditorBinding implements vscode.Disposable {
         const current = this.connectionFor(document);
         const defaultUri = this.connections.defaultConnection;
 
+        // In the Connections view's order, each with its folder, so a
+        // connection is found where the view has it.
         const picked = await vscode.window.showQuickPick(
-            uris.map((uri) => {
+            inTreeOrder(stored).map(({ uri, path }) => {
                 const tags = [
                     uri === defaultUri ? "default" : "",
                     this.connections.isConnected(uri) ? "connected" : "",
                 ].filter(Boolean);
+                const folder = path === undefined || path === ROOT_FOLDER
+                    ? ""
+                    : path;
 
                 return {
                     label: uri,
-                    description: tags.join(", ") || undefined,
+                    description: [folder, tags.join(", ")].filter(Boolean)
+                        .join(" · ") || undefined,
                     picked: uri === current,
                 };
             }),
-            { title: "Select the MariaDB connection for this SQL file" },
+            {
+                title: "Select the MariaDB connection for this SQL file",
+                matchOnDescription: true,
+            },
         );
 
         if (!picked) {

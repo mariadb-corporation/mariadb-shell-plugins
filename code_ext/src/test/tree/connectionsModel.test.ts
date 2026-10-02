@@ -21,6 +21,7 @@ import {
     ConnectionManager,
     UI_BACKEND_SESSION,
 } from "../../connections/connectionManager.js";
+import { inTreeOrder } from "../../connections/connectionFolders.js";
 import {
     ConnectionsModel,
     OBJECT_GROUP_LABELS,
@@ -133,6 +134,41 @@ describe("ConnectionsModel folders", () => {
                 : `connection ${node.uri}`;
         });
     };
+
+    it("lists the connections in the order inTreeOrder gives", async () => {
+        // The SQL editor's connection picker orders by inTreeOrder; the two
+        // must not drift apart.
+        const { api, model } = createFiled();
+
+        /**
+         * @param nodes The rows to walk, every folder expanded.
+         *
+         * @returns The connections among them, top to bottom.
+         */
+        const walk = async (nodes: ConnectionsNode[]): Promise<string[]> => {
+            const uris: string[] = [];
+            for (const node of nodes) {
+                if (node.kind === "folder") {
+                    uris.push(...await walk(await model.getChildren(node)));
+                } else if (node.kind === "connection") {
+                    uris.push(node.uri);
+                }
+            }
+
+            return uris;
+        };
+
+        const shown = await walk(await model.getRoots());
+        const listed = await new ConnectionManager(
+            () => { return Promise.resolve(api); },
+            createFakeSettings(),
+        ).listStoredConnections();
+
+        expect(shown).toEqual(inTreeOrder(listed).map(({ uri }) => {
+            return uri;
+        }));
+        expect(shown).toHaveLength(5);
+    });
 
     it("puts the top-level folders first, then the top-level connections",
         async () => {

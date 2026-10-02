@@ -83,6 +83,45 @@ export const allFolders = (paths: Iterable<string>): string[] => {
 };
 
 /**
+ * Connections in the order the Connections view shows them, folders
+ * expanded: in each folder, its subfolders first, sorted by name, each
+ * with everything in it, then the connections filed directly in it, in
+ * the order they were given.
+ *
+ * @param connections The connections, each with its folder; none means
+ *     the top level.
+ *
+ * @returns The same connections, reordered.
+ */
+export const inTreeOrder = <T extends { path?: string }>(
+    connections: readonly T[],
+): T[] => {
+    const folderOf = (connection: T): string => {
+        return connection.path ?? ROOT_FOLDER;
+    };
+    const folders = allFolders(connections.map(folderOf));
+
+    // The same subfolder test the view's model applies, so the two agree.
+    const contentsOf = (folder: string, depth: number): T[] => {
+        const subfolders = folders.filter((path) => {
+            return folderNames(path).length === depth + 1
+                && (depth === 0 || path.startsWith(`${folder}/`));
+        });
+
+        return [
+            ...subfolders.flatMap((path) => {
+                return contentsOf(path, depth + 1);
+            }),
+            ...connections.filter((connection) => {
+                return folderOf(connection) === folder;
+            }),
+        ];
+    };
+
+    return contentsOf(ROOT_FOLDER, 0);
+};
+
+/**
  * The deepest folder every one of the given folders is in or is.
  *
  * @param paths The folders; none means the top level.
