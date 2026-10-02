@@ -76,24 +76,27 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Next steps
 
-2. **`mysqlsh.globals.util.dump_schemas` / `load_dump` do NOT exist in this mariadb-shell
-   build**, so `msm.deploy_schema` / `msm_plugin` `deploy_schema` with `backup=True` raise
-   `AttributeError: unknown attribute: dump_schemas`. The backup feature is unusable (and
-   untested) until the dump/restore is reimplemented — e.g. `mariadb-dump` as a subprocess.
-   `backup=False` is the default precisely because of this. STILL REPRODUCING: it is one of
-   the 20 remaining mrs_plugin failures (`lib/test_services.py::test_service_as_project`).
+2. **Dump & Load is ported to the shell** (shell `5ca02fc70`, 2026-10-01), so
+   `util.dump_schemas` / `load_dump` exist in builds from then on. NOTE: the
+   `~/.local/bin/mariadb-shell` install (Sep 29) predates it and still lacks them; use
+   `~/dev/shell/bld/bin/mariadb-shell` (`MARIADB_SHELL=...`) until it is reinstalled.
+   - msm `deploy_schema(backup=True)` works: `test_deployment_backup_restores_failed_update`
+     breaks an update and checks the dump is loaded back. `backup` still defaults to False.
+   - `mrs_plugin/lib/general.py` passes `backup=True` for the MRS metadata deploy again
+     (the `mysql_tasks` deploy is skipped on MariaDB). Not exercisable yet: every metadata
+     version before 4.1.6 is MySQL DDL (`VISIBLE`/`INVISIBLE` indexes) that MariaDB
+     rejects, so no upgrade can run until a 4.1.7 exists. `test_md_upgrade` (`--mdupgrade`)
+     fails installing 4.1.5 for that reason; its MariaDB role handling is fixed.
+   - The two `test_service_as_project` skips are removed and both pass. They needed the
+     shell fix `4aaf294c6` (routines/events of mixed-case schemas were silently left out
+     of dumps on lctn=2 MariaDB, i.e. macOS). The `lib/` variant's GitHub steps no longer
+     download `migueltadeu/tests-mrs-project` (a former Oracle employee's repo holding a
+     MySQL dump, which the shell refuses to load into MariaDB): `mock_github_archive`
+     patches `urllib.request.urlopen` to serve the just-stored project as a GitHub branch
+     archive and checks the resolved archive URLs.
 
-3. **`mrs_plugin`'s 20 remaining failures**, all pre-existing and independent of this
-   session's work. Grouped: 3x `REGEXP_LIKE does not exist` (see Gotchas — a genuine
-   MariaDB portability bug in `mysql_tasks`' SQL); 5x `test_downstream_converter` in
-   `sdk/python/tests/test_mrs_base_classes.py` returning strings instead of
-   `int`/`datetime`/`date`/`timedelta`; 2x `request_path is already used` (test isolation);
-   1x `dump_schemas` (item 1); several `CREATE OR REPLACE REST ...` statement-text
-   mismatches; a few object-count assertions (`assert 2 == 1`, `assert 2 == 4`).
-
-4. **`mrs_plugin/lib/general.py:221` and `:231` call `deploy_schema`** and silently lost
-   their rollback dump when `backup` defaulted to False. Add `backup=True` there if that
-   behaviour should be preserved (sibling plugin, deliberately untouched).
+3. **`mrs_plugin` suite (2026-10-02, bld shell with `4aaf294c6`): 247 pass, 0 fail, 2
+   skipped** (`--mdupgrade` and a content-set test that needs a built project). msm: 14 pass.
 
 9. (Optional) `gui/extension/package.json:1192` still labels the plugin "MySQL Schema
    Management" in the VS Code UI — outside msm_plugin, so left inconsistent by the rebrand.
