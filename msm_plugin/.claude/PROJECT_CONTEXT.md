@@ -62,7 +62,7 @@
 4. Replace `utf8mb4_0900_ai_ci` with a collation every supported MariaDB has (e.g. `utf8mb4_uca1400_ai_ci` from 10.10, or none), or document the floor.
 5. Issue 14 is fixed for new projects; consider adding `NO_AUTO_CREATE_USER` to the mrs metadata project's dev script at its next release.
 6. Clean up 10, 11, 13.
-7. Fix the ai-plugins schema-management skills: 250 is not deployed; 270 only for REVOKE/DROP ROLE.
+7. DONE in ai-plugins PR #41 (`wip/skill-fixes`): the schema-management skills now say 250 is not deployed and 270 is only for REVOKE/DROP ROLE.
 
 ## Gotchas / things not to repeat
 
