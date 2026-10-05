@@ -656,3 +656,170 @@ def test_deployment_backup_restores_failed_update(
     )
     assert deployed_version() == version_str_next
     assert not os.path.exists(backup_directory)
+
+
+def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
+    # Section 180 holds the REST Service definition. Once a project has more
+    # than one release, the deployment script is built from the deployment
+    # template, which has to carry the target version's section 180 so that
+    # it is run on a fresh deployment as well as on an update. A plain table
+    # stands in for the REST statements, so the test does not depend on the
+    # REST metadata schema being configured.
+    schema_name = "msm_rest_section"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+
+    def marker_tables():
+        return [
+            row["TABLE_NAME"]
+            for row in lib.core.MsmDbExec(
+                "SELECT TABLE_NAME FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'rest_marker_%' "
+                "ORDER BY TABLE_NAME"
+            )
+            .exec(sandbox_session, [schema_name])
+            .items
+        ]
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content=f"CREATE TABLE `{schema_name}`.`t`(`id` INT PRIMARY KEY);",
+    )
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="180",
+        sql_content=f"CREATE TABLE IF NOT EXISTS `{schema_name}`.`rest_marker_1`(`id` INT);",
+    )
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.1.0")
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="180",
+        sql_content=(
+            f"CREATE TABLE IF NOT EXISTS `{schema_name}`.`rest_marker_1`(`id` INT);\n"
+            f"CREATE TABLE IF NOT EXISTS `{schema_name}`.`rest_marker_2`(`id` INT);"
+        ),
+    )
+    prepare_release(schema_project_path=project, version="1.1.0", next_version="1.2.0")
+
+    # Generated after 1.1.0 exists, so both come from the deployment template
+    for version in ("1.0.0", "1.1.0"):
+        generate_deployment_script(schema_project_path=project, version=version)
+
+    quoted_schema = lib.core.quote_ident(schema_name)
+    lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(sandbox_session)
+    try:
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        assert marker_tables() == ["rest_marker_1"]
+
+        deploy_schema(schema_project_path=project, version="1.1.0")
+        assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
+
+        lib.core.MsmDbExec(f"DROP SCHEMA {quoted_schema}").exec(sandbox_session)
+        deploy_schema(schema_project_path=project, version="1.1.0")
+        assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
+    finally:
+        lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
+            sandbox_session
+        )
+
+
+def test_grant_to_missing_role_creates_no_user(sandbox_session, temp_dir):
+    # The scripts set their own sql_mode in section 010. Without
+    # NO_AUTO_CREATE_USER, MariaDB answers a GRANT to an account that does not
+    # exist by creating a user of that name without a password, instead of
+    # failing. Both a first release (a copy of the version file) and an
+    # upgrade (where section 270 runs before section 170 has created the
+    # role) must fail instead, and leave no such user behind.
+    schema_name = "msm_grant_check"
+    role = "msm_grant_check_role"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+    quoted_schema = lib.core.quote_ident(schema_name)
+
+    def accounts_named_role():
+        return (
+            lib.core.MsmDbExec(
+                "SELECT COUNT(*) AS n FROM mysql.user WHERE user = ? AND is_role = 'N'"
+            )
+            .exec(sandbox_session, [role])
+            .first["n"]
+        )
+
+    def cleanup():
+        lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
+            sandbox_session
+        )
+        lib.core.MsmDbExec(f"DROP ROLE IF EXISTS `{role}`").exec(sandbox_session)
+        lib.core.MsmDbExec(f"DROP USER IF EXISTS `{role}`@`%`").exec(sandbox_session)
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content=f"CREATE TABLE `{schema_name}`.`t`(`id` INT PRIMARY KEY);",
+    )
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="170",
+        sql_content=f"GRANT SELECT ON `{schema_name}`.* TO `{role}`;",
+    )
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.1.0")
+    generate_deployment_script(schema_project_path=project, version="1.0.0")
+
+    cleanup()
+    try:
+        # First release: the GRANT names a role that nothing creates
+        with pytest.raises(Exception):
+            deploy_schema(schema_project_path=project, version="1.0.0")
+        assert accounts_named_role() == 0
+
+        # Upgrade: 1.0.0 without the role, 1.1.0 creates it in section 170,
+        # and the update script wrongly grants to it in section 270
+        set_section_sql_content(file_path=dev_file, section_id="170", sql_content="")
+        set_development_version(schema_project_path=project, version="1.0.0")
+        prepare_release(
+            schema_project_path=project,
+            version="1.0.0",
+            next_version="1.1.0",
+            overwrite_existing=True,
+            allow_to_stay_on_same_version=True,
+        )
+        generate_deployment_script(
+            schema_project_path=project, version="1.0.0", overwrite_existing=True
+        )
+        set_section_sql_content(
+            file_path=dev_file,
+            section_id="170",
+            sql_content=(
+                f"CREATE ROLE IF NOT EXISTS `{role}`;\n"
+                f"GRANT SELECT ON `{schema_name}`.* TO `{role}`;"
+            ),
+        )
+        files = prepare_release(
+            schema_project_path=project, version="1.1.0", next_version="1.2.0"
+        )
+        update_file = [f for f in files if "_to_" in f][0]
+        set_section_sql_content(
+            file_path=update_file,
+            section_id="270",
+            sql_content=f"GRANT SHOW VIEW ON `{schema_name}`.* TO `{role}`;",
+        )
+        generate_deployment_script(schema_project_path=project, version="1.1.0")
+
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        with pytest.raises(Exception):
+            deploy_schema(schema_project_path=project, version="1.1.0")
+        assert accounts_named_role() == 0
+    finally:
+        cleanup()

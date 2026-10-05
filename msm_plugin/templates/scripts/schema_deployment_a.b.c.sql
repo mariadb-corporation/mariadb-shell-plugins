@@ -19,7 +19,7 @@ SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
     'NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,'
-    'NO_ENGINE_SUBSTITUTION';
+    'NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
 
 
 -- #############################################################################
@@ -319,6 +319,18 @@ ${section_260_removal_of_update_helpers}
 USE `${schema_name}`;
 DROP PROCEDURE `msm_auth_${version_target}`;
 DROP PROCEDURE `msm_auth`;
+
+
+-- #############################################################################
+-- MSM Section 180: REST Service Definition
+-- -----------------------------------------------------------------------------
+-- This optional section creates the MariaDB REST Service endpoints of the
+-- target version. Like the idempotent schema objects, it is run in full on
+-- every deployment, whether the schema is created or updated, so the
+-- statements must replace existing definitions, e.g. CREATE OR REPLACE.
+-- #############################################################################
+
+${section_180_rest_service_definition}
 
 
 -- #############################################################################

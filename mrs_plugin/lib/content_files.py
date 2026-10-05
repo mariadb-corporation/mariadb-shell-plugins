@@ -91,7 +91,7 @@ def get_content_file(
             cs.request_path AS content_set_request_path,
             CONCAT(h.name, se.url_context_root) AS host_ctx,
             f.options,
-            MAX(al.changed_at) as changed_at{", f.content" if include_file_content else ""}
+            al.changed_at{", f.content" if include_file_content else ""}
         FROM mysql_rest_service_metadata.content_file f
             LEFT OUTER JOIN mysql_rest_service_metadata.content_set cs
                 ON cs.id = f.content_set_id
@@ -119,7 +119,6 @@ def get_content_file(
         params.append(request_path)
 
     sql += core._generate_where(wheres)
-    sql += " GROUP BY f.id"
 
     result = core.MrsDbExec(sql, params).exec(session).items
 
@@ -152,7 +151,7 @@ def get_content_files(
             cs.request_path AS content_set_request_path,
             CONCAT(h.name, se.url_context_root) AS host_ctx,
             f.options,
-            MAX(al.changed_at) as changed_at{", f.content" if include_file_content else ""}
+            al.changed_at{", f.content" if include_file_content else ""}
         FROM mysql_rest_service_metadata.content_file f
             LEFT OUTER JOIN mysql_rest_service_metadata.content_set cs
                 ON cs.id = f.content_set_id
@@ -172,7 +171,6 @@ def get_content_files(
     if include_enable_state is not None:
         sql += "AND f.enabled = " f"{'TRUE' if include_enable_state else 'FALSE'} "
 
-    sql += "GROUP BY f.id"
 
     return core.MrsDbExec(sql, [content_set_id]).exec(session).items
 

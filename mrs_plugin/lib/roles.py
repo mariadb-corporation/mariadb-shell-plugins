@@ -113,7 +113,13 @@ def get_granted_roles(
     if where:
         sql += " WHERE " + " AND ".join(where)
     if include_users:
-        sql += " GROUP BY r.id"
+        # Every selected column is listed: MariaDB does not derive columns
+        # that depend on r.id, so ONLY_FULL_GROUP_BY refuses a shorter list.
+        sql += (
+            " GROUP BY r.id, r.derived_from_role_id, pr.caption,"
+            " r.specific_to_service_id, h.name, s.url_context_root,"
+            " r.caption, r.description, r.options"
+        )
     return core.MrsDbExec(sql, params).exec(session).items
 
 
