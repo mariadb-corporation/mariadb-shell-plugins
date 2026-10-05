@@ -322,6 +322,18 @@ DROP PROCEDURE `msm_auth`;
 
 
 -- #############################################################################
+-- MSM Section 180: REST Service Definition
+-- -----------------------------------------------------------------------------
+-- This optional section creates the MariaDB REST Service endpoints of the
+-- target version. Like the idempotent schema objects, it is run in full on
+-- every deployment, whether the schema is created or updated, so the
+-- statements must replace existing definitions, e.g. CREATE OR REPLACE.
+-- #############################################################################
+
+${section_180_rest_service_definition}
+
+
+-- #############################################################################
 -- MSM Section 390: Removal of Helpers
 -- -----------------------------------------------------------------------------
 -- Removal of optional helper PROCEDUREs and FUNCTIONs that are called during

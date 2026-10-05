@@ -656,3 +656,75 @@ def test_deployment_backup_restores_failed_update(
     )
     assert deployed_version() == version_str_next
     assert not os.path.exists(backup_directory)
+
+
+def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
+    # Section 180 holds the REST Service definition. Once a project has more
+    # than one release, the deployment script is built from the deployment
+    # template, which has to carry the target version's section 180 so that
+    # it is run on a fresh deployment as well as on an update. A plain table
+    # stands in for the REST statements, so the test does not depend on the
+    # REST metadata schema being configured.
+    schema_name = "msm_rest_section"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+
+    def marker_tables():
+        return [
+            row["TABLE_NAME"]
+            for row in lib.core.MsmDbExec(
+                "SELECT TABLE_NAME FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'rest_marker_%' "
+                "ORDER BY TABLE_NAME"
+            )
+            .exec(sandbox_session, [schema_name])
+            .items
+        ]
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content=f"CREATE TABLE `{schema_name}`.`t`(`id` INT PRIMARY KEY);",
+    )
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="180",
+        sql_content=f"CREATE TABLE IF NOT EXISTS `{schema_name}`.`rest_marker_1`(`id` INT);",
+    )
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.1.0")
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="180",
+        sql_content=(
+            f"CREATE TABLE IF NOT EXISTS `{schema_name}`.`rest_marker_1`(`id` INT);\n"
+            f"CREATE TABLE IF NOT EXISTS `{schema_name}`.`rest_marker_2`(`id` INT);"
+        ),
+    )
+    prepare_release(schema_project_path=project, version="1.1.0", next_version="1.2.0")
+
+    # Generated after 1.1.0 exists, so both come from the deployment template
+    for version in ("1.0.0", "1.1.0"):
+        generate_deployment_script(schema_project_path=project, version=version)
+
+    quoted_schema = lib.core.quote_ident(schema_name)
+    lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(sandbox_session)
+    try:
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        assert marker_tables() == ["rest_marker_1"]
+
+        deploy_schema(schema_project_path=project, version="1.1.0")
+        assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
+
+        lib.core.MsmDbExec(f"DROP SCHEMA {quoted_schema}").exec(sandbox_session)
+        deploy_schema(schema_project_path=project, version="1.1.0")
+        assert marker_tables() == ["rest_marker_1", "rest_marker_2"]
+    finally:
+        lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
+            sandbox_session
+        )

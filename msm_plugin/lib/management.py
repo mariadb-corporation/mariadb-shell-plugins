@@ -1468,6 +1468,11 @@ def generate_deployment_script(
                 .strip("\n"),
                 "    ",
             ),
+            "section_180_rest_service_definition": target_version_sections.get(
+                "180", {}
+            )
+            .get("sql_content", "")
+            .strip("\n"),
             "section_190_removal_of_helpers": target_version_sections.get("190", {})
             .get("sql_content", "")
             .strip("\n"),
