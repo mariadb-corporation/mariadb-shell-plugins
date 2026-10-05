@@ -728,3 +728,98 @@ def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
         lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
             sandbox_session
         )
+
+
+def test_grant_to_missing_role_creates_no_user(sandbox_session, temp_dir):
+    # The scripts set their own sql_mode in section 010. Without
+    # NO_AUTO_CREATE_USER, MariaDB answers a GRANT to an account that does not
+    # exist by creating a user of that name without a password, instead of
+    # failing. Both a first release (a copy of the version file) and an
+    # upgrade (where section 270 runs before section 170 has created the
+    # role) must fail instead, and leave no such user behind.
+    schema_name = "msm_grant_check"
+    role = "msm_grant_check_role"
+    project = create_new_project_folder(
+        schema_name=schema_name,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+    dev_file = os.path.join(project, "development", f"{schema_name}_next.sql")
+    quoted_schema = lib.core.quote_ident(schema_name)
+
+    def accounts_named_role():
+        return (
+            lib.core.MsmDbExec(
+                "SELECT COUNT(*) AS n FROM mysql.user WHERE user = ? AND is_role = 'N'"
+            )
+            .exec(sandbox_session, [role])
+            .first["n"]
+        )
+
+    def cleanup():
+        lib.core.MsmDbExec(f"DROP SCHEMA IF EXISTS {quoted_schema}").exec(
+            sandbox_session
+        )
+        lib.core.MsmDbExec(f"DROP ROLE IF EXISTS `{role}`").exec(sandbox_session)
+        lib.core.MsmDbExec(f"DROP USER IF EXISTS `{role}`@`%`").exec(sandbox_session)
+
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content=f"CREATE TABLE `{schema_name}`.`t`(`id` INT PRIMARY KEY);",
+    )
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="170",
+        sql_content=f"GRANT SELECT ON `{schema_name}`.* TO `{role}`;",
+    )
+    prepare_release(schema_project_path=project, version="1.0.0", next_version="1.1.0")
+    generate_deployment_script(schema_project_path=project, version="1.0.0")
+
+    cleanup()
+    try:
+        # First release: the GRANT names a role that nothing creates
+        with pytest.raises(Exception):
+            deploy_schema(schema_project_path=project, version="1.0.0")
+        assert accounts_named_role() == 0
+
+        # Upgrade: 1.0.0 without the role, 1.1.0 creates it in section 170,
+        # and the update script wrongly grants to it in section 270
+        set_section_sql_content(file_path=dev_file, section_id="170", sql_content="")
+        set_development_version(schema_project_path=project, version="1.0.0")
+        prepare_release(
+            schema_project_path=project,
+            version="1.0.0",
+            next_version="1.1.0",
+            overwrite_existing=True,
+            allow_to_stay_on_same_version=True,
+        )
+        generate_deployment_script(
+            schema_project_path=project, version="1.0.0", overwrite_existing=True
+        )
+        set_section_sql_content(
+            file_path=dev_file,
+            section_id="170",
+            sql_content=(
+                f"CREATE ROLE IF NOT EXISTS `{role}`;\n"
+                f"GRANT SELECT ON `{schema_name}`.* TO `{role}`;"
+            ),
+        )
+        files = prepare_release(
+            schema_project_path=project, version="1.1.0", next_version="1.2.0"
+        )
+        update_file = [f for f in files if "_to_" in f][0]
+        set_section_sql_content(
+            file_path=update_file,
+            section_id="270",
+            sql_content=f"GRANT SHOW VIEW ON `{schema_name}`.* TO `{role}`;",
+        )
+        generate_deployment_script(schema_project_path=project, version="1.1.0")
+
+        deploy_schema(schema_project_path=project, version="1.0.0")
+        with pytest.raises(Exception):
+            deploy_schema(schema_project_path=project, version="1.1.0")
+        assert accounts_named_role() == 0
+    finally:
+        cleanup()
