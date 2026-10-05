@@ -24,6 +24,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   - `run_tests.py` prefers `mariadb-shell` over `mysqlsh`.
   - `lib/management.py deploy_schema` gained `backup: bool = False` (see Gotchas).
 
+- **`mrs_plugin` queries made valid under MariaDB's `ONLY_FULL_GROUP_BY` (2026-10-05, from the msm_plugin session, `d1c82c8c` on `wip/msm_mrs_fixes`):** `lib/content_files.py` and `lib/db_objects.py` dropped a redundant outer `GROUP BY <pk>` (selecting `al.changed_at` instead of `MAX(...)`), `lib/roles.py` lists every selected column in its `GROUP BY`. MySQL 8 accepts columns that depend on a grouped primary key; MariaDB does not, so `CREATE REST VIEW` failed (1055) inside MSM deployment scripts, which set that mode. `tests/conftest.py` now uses `sql_mode='ONLY_FULL_GROUP_BY'` instead of `''`: 247 pass, 2 skipped. Details in `msm_plugin/.claude/PROJECT_CONTEXT.md` (issue 12).
+
 - **Sibling plugins touched again THIS session** (rebranding cherry-pick from
   `mariadb/rennox/rebranding` — 759c375d/7f119fd6/f11a3897 — plus follow-up fixes):
   - **`msm_plugin`: 9 pass.** `run_tests.py` fully de-`MYSQLSH`'d, `dot_mariadb_shell`,
