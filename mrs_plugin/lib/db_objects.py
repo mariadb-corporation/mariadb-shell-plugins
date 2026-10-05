@@ -170,7 +170,7 @@ def query_db_objects(
                 o.crud_operations, o.format as crud_operation_format,
                 o.media_type, o.auto_detect_media_type,
                 o.auth_stored_procedure, o.options,
-                MAX(al.changed_at) as changed_at,
+                al.changed_at,
                 CONCAT(sc.name, '.', o.name) AS qualified_name,
                 se.id AS service_id, sc.name AS schema_name
             FROM mysql_rest_service_metadata.db_object o
@@ -198,7 +198,7 @@ def query_db_objects(
                 o.media_type, o.auto_detect_media_type,
                 o.auth_stored_procedure, o.options,
                 o.metadata, o.internal,
-                MAX(al.changed_at) as changed_at,
+                al.changed_at,
                 CONCAT(sc.name, '.', o.name) AS qualified_name,
                 se.id AS service_id, sc.name AS schema_name
             FROM mysql_rest_service_metadata.db_object o
@@ -246,7 +246,7 @@ def query_db_objects(
         params.append("1" if include_enable_state else "0")
 
     sql += core._generate_where(wheres)
-    sql += " GROUP BY o.id ORDER BY o.request_path"
+    sql += " ORDER BY o.request_path"
 
     return core.MrsDbExec(sql, params).exec(session).items
 

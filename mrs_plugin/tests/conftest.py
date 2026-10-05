@@ -59,7 +59,10 @@ def start_mysql_session(connection_id=0):
 
     phone_book_dbs = ["PhoneBook", "MobilePhoneBook", "AnalogPhoneBook"]
 
-    session.run_sql("set sql_mode=''")
+    # ONLY_FULL_GROUP_BY keeps the plugin's queries valid on MariaDB, which
+    # unlike MySQL 8 does not accept columns that merely depend on a GROUP BY
+    # key; MSM deployment scripts run the REST DDL with this mode set.
+    session.run_sql("set sql_mode='ONLY_FULL_GROUP_BY'")
 
     helpers.create_test_db(session, "EmptyPhoneBook")
     for db in phone_book_dbs:
@@ -131,7 +134,10 @@ def init_mrs():
 
     phone_book_dbs = ["PhoneBook", "MobilePhoneBook", "AnalogPhoneBook"]
 
-    session.run_sql("set sql_mode=''")
+    # ONLY_FULL_GROUP_BY keeps the plugin's queries valid on MariaDB, which
+    # unlike MySQL 8 does not accept columns that merely depend on a GROUP BY
+    # key; MSM deployment scripts run the REST DDL with this mode set.
+    session.run_sql("set sql_mode='ONLY_FULL_GROUP_BY'")
 
     helpers.create_test_db(session, "EmptyPhoneBook")
     for db in phone_book_dbs:
