@@ -13,7 +13,9 @@ and the SDK's auth hooks - are in [multi-tenant-inputs.md](multi-tenant-inputs.m
 
 **BUILT on 2026-10-06** (2a, 2b, 2c and 2d), on branch `wip/mcp-multi-tenant` after
 phase 1, in **PR #37**. Suite at the end of the session: **577 passed, 3 skipped (all
-opt-in), 93%**; **585 passed, 3 skipped** after the Arcade round below.
+opt-in), 93%**; **585 passed, 3 skipped** after the Arcade round below; **584 passed,
+4 skipped** after the simplification pass (`176aee35`, see
+[multi-tenant.md](multi-tenant.md) "Next steps").
 
 **Evening round (2026-10-06), after the PR was opened:**
 - **CI fix:** the code and two test modules imported `httpx`, which the shell no longer

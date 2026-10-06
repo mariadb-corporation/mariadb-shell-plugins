@@ -150,7 +150,9 @@ the session runs as that account, under its default role.
   - **The `/login` POST:**
     1. CSRF token bound to the pending request.
     2. Rate limits per peer and per `(server, username)`, with exponential
-       backoff and a generic failure message. **The form is a password oracle
+       backoff and a generic failure message. (As built: a fixed 15-minute
+       window, 5 failures per account and 30 per address, counted by the same
+       `auth.FailureCounter` the bearer-token throttle uses, since `176aee35`.) **The form is a password oracle
        against the database, so this is not optional.** Per-peer limits are
        right HERE because `/login` is the user's own browser. On `/token` and
        `/mcp` they are not (see 2d).

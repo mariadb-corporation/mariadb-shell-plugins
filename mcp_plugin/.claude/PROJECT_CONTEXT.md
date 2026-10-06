@@ -23,8 +23,9 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **585 tests pass, 3 SKIPPED (~78s)** on `wip/mcp-multi-tenant` at the
-2026-10-06 evening checkpoint (577 and 93% coverage, 5200 statements, at the one before),
+Standard suite: **584 tests pass, 4 SKIPPED (~90s)** on `wip/mcp-multi-tenant` at the
+2026-10-06 late-evening checkpoint, after the simplification pass (585 / 3 at the evening
+one, 577 and 93% coverage, 5200 statements, at the one before),
 on MCP SDK **2.3.0** with **httpx2 2.13.1** (the local build's site-packages were cleaned
 to match `build/bundled-python-deps`; see working-practices.md) (465 / 98% on `main` before multi-tenant mode; see the coverage trap in
 [`context/testing.md`](context/testing.md)). The three skipped are OPT-IN: the
@@ -79,19 +80,22 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-06, evening):
+Checked at this checkpoint (2026-10-06, late evening):
 
 ```text
 $ git -C mcp_plugin branch --show-current
 wip/mcp-multi-tenant
 
 $ git -C mcp_plugin status --short
-(clean before this checkpoint's context edits; code_ext's and msm_plugin's
- PROJECT_CONTEXT.md got only their Git state refreshed)
+(clean before this checkpoint's context edits; only mcp_plugin's context was
+ touched this time)
 ```
 
 - **Branch `wip/mcp-multi-tenant`** off `main` (`67253bae`), pushed, **PR #37** to
-  `main`, not yet reviewed, CI green at `850626ee`. Commits:
+  `main`, not yet reviewed, CI green at `850626ee` (the run for `176aee35` was
+  pending at this checkpoint). The PR description now ends with a "Simplification
+  pass over the new code" section listing what `176aee35` changed and skipped.
+  Commits:
   - `d1bf2a31` phase 1
   - `f388ea7b` phase 2
   - `512029e8` the live Keycloak test
@@ -103,13 +107,22 @@ $ git -C mcp_plugin status --short
   - `0ec99ee9`, `8f38d498` the sign-in page in the MRS style, with the MariaDB seal
   - `046d9321` the previous checkpoint
   - `72a64f89` Arcade: `--toolNameSeparator`, connections bound to user + grant (M23)
+  - `abc58808` the evening checkpoint
+  - `176aee35` the simplification pass (15 lib files, 510+/507-; see
+    [`context/multi-tenant.md`](context/multi-tenant.md) "Next steps" for the renamed
+    helpers)
+- **The local shell was rebuilt this session** (`build/bin`, Oct 3 -> Oct 6, with secret
+  groups; the user then refreshed its bundled Python deps to PyJWT 2.15.1). See the two
+  new gotchas in [`context/working-practices.md`](context/working-practices.md).
 - **Docs:** the MCP reference docs in `../mariadb-shell/docs-ref/` are committed and
   pushed on `wip/docs-ref` (`5ae870fa5`, `42ea44ca4`), mariadb-shell PR #59.
 - **Left on the machine:** `cloudflared` (Homebrew). The test homes and the tunnel are
   gone. The user's Arcade dashboard still lists a `mariadb` server with a dead URL.
 - What is open is in the Next steps of
   [`context/multi-tenant.md`](context/multi-tenant.md).
-- **Over the ~400-line split threshold and NOT split:** `context/connections.md` (507,
+- **Over the ~400-line split threshold and NOT split:** `context/multi-tenant.md` (411
+  after this checkpoint's simplification notes; the seam, if it keeps growing, is the
+  phase 1 plan 1a-1e versus the status and next steps), `context/connections.md` (507,
   touched only to add the M23 binding note, so not re-read for a seam),
   `context/history.md` (466, an archive), `context/security-review.md` (402),
   `context/migrator.md` (401).

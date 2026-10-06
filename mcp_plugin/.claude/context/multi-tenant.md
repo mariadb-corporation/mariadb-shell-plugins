@@ -349,7 +349,42 @@ phase 2 decisions the user made on 2026-10-06.
 "Status" sections here and in [oauth.md](oauth.md), and the security review is
 [security-review-multi-tenant.md](security-review-multi-tenant.md) (M1..M23).
 Later commits: `850626ee` (httpx2), `0ec99ee9` and `8f38d498` (sign-in page),
-`046d9321` (context), `72a64f89` (Arcade: tool names, binding).
+`046d9321` (context), `72a64f89` (Arcade: tool names, binding), `176aee35` (the
+simplification pass).
+
+**Simplification pass (2026-10-06, late evening, `176aee35`):** a `/simplify` review
+(reuse, simplification, efficiency, altitude) of the new Python, applied in one commit;
+the full list of what was fixed and what was deliberately skipped is in PR #37's
+description ("Simplification pass over the new code"). The names that changed, for
+reading the code and the context files above:
+
+- `config.write_json_file` (the one atomic tmp+`os.replace` writer),
+  `general.utc_timestamp()` (the one "now"; `oauth_config.now()` and both `_now()` are
+  gone), `general.principal_from_request()` (the `_RequestContext` adapter is gone).
+- `auth.FailureCounter` is the sliding-window counter behind `AuthFailureThrottle` AND
+  the sign-in page's limiter (`_LoginLimiter` is gone; the provider has
+  `_login_failures` and `_sign_in_blocked`). It sweeps stale keys past 1024 entries.
+- `tenants.scopes_of(record)` is the one reading of a user's scopes;
+  `tenants.find_user_by_identity` / `users_with_email` take an optional `users` dict
+  (the Keycloak verifier passes the directory's cache).
+- `config.get_allowed_paths(mcp_user_id=None)` / `set_allowed_paths(paths,
+  mcp_user_id=None)` delegate to `tenants` for a user; `setup_cli._allowed_paths` /
+  `_set_allowed_paths` are gone. `config._connection_store(mcp_user_id)` is the
+  upgrade-then-`secret_options` step every connection function uses.
+- `oauth_builtin.login_connection_uri()` (URI from the cached grant, no keychain read)
+  next to `login_credentials()`; `BuiltinAuthProvider.live_grant_uri`;
+  `_end_stored_grants(matches)` behind `end_grants_of_client/user`.
+- `setup_cli._reject_unknown(options, known_options)` and
+  `_actions(options, action_options, presence_options)` serve all three setup
+  commands; `setup_prompts.select_action()` is the menu step; `setup_oauth._section`
+  is gone.
+- `_serve_streamable_http` has no `throttle_auth_failures` flag (`auth is not None`
+  decides); `_Connection.mcp_user_id` is a property over `client.user`;
+  `AuthBundle.mode` and `build_auth(verifier=)` are gone.
+- Skipped on purpose (behaviour risk): an mtime cache for `read_clients()` /
+  `get_default_role` / `get_allowed_paths`; `check_issuer` via `_same_url` (would be
+  case-insensitive); `_is_loopback_redirect` via `is_loopback_host` (wider set);
+  `KeycloakAdmin` on httpx2; splitting `GrantStore`.
 
 **Decided by the user** (2026-10-06):
 - multi-instance support (M20) is skipped for now

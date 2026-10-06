@@ -117,6 +117,32 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 - **Import `httpx2`, never `httpx`.** MCP SDK 2.3 depends on `httpx2`; the shell ships no `httpx`. A local build that still had `httpx` 0.28.1 (left over from an older SDK, and pulled in by manually installed `anthropic`/`openai`) hid this, and PR #37 failed CI on collection. The local build's `site-packages` was cleaned on 2026-10-06 to match `build/bundled-python-deps` exactly; after a `--pym pip install`, run `msh --pym pip check` and check for duplicate `*.dist-info` folders.
 
+- **The local shell build goes stale behind the source.** 111 tenant tests erroring at
+  fixture setup with `ValueError: Invalid number of arguments, expected 0 but got 1`
+  (from `list_secrets({"allGroups": True})`) means `build/bin/mariadb-shell` predates
+  secret groups (`f988b48d3`, in `main` since 2026-10-06), not a plugin bug. An
+  incremental `ninja -C build mariadb-shell mariadb-secret-store-plaintext` in
+  `../mariadb-shell` fixes it in a minute. The release shell in `~/.local/bin` is no
+  substitute for the suite: it loads ITS bundled `plugins/mcp_plugin`, which shadows the
+  repo's symlink (`ImportError: cannot import name 'auth'`).
+
+- **`test_a_rotated_realm_key_is_followed` needs PyJWT >= 2.15.** It ages
+  `PyJWKClient._last_successful_fetch`, the refetch cooldown 2.13 does not have; with
+  2.13.0 in the build's `site-packages` the unknown-kid token is accepted and the test
+  fails with the suite otherwise green. The release deps are 2.15.1; the user's rebuild
+  on 2026-10-06 brought `build/bundled-python-deps` and `site-packages` up to it, leaving
+  a stale `pyjwt-2.13.0.dist-info` next to the new one (see the `pip check` note above).
+
+- **`config._shell` is a test seam: do not rename it.** Six tests monkeypatch
+  `config._shell` (and one did `tenants._shell`, now `config._shell` too) to stand in a
+  failing or old shell. Renaming it to a public `shell()` broke them and collided with a
+  local `shell = _shell()` in `upgrade_connection_keys`. The other modules call
+  `config._shell()` rather than keeping copies.
+
+- **macOS `grep` does not honour `\b` reliably either**: a grep for `\._shell\b` over the
+  tests found nothing although six files matched. Grep the literal (`'"_shell"'`) or use
+  `perl -ne`.
+
 - **Testing with a real gateway (Arcade), as done on 2026-10-06:**
   - `brew install cloudflared`; `cloudflared tunnel --url http://127.0.0.1:<port>` gives
     a temporary public https URL with no account. Set it as `--publicUrl` BEFORE starting
