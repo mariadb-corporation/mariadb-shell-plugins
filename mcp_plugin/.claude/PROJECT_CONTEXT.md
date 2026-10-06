@@ -75,33 +75,26 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-09-29):
+Checked at this checkpoint (2026-10-06):
 
 ```
 $ git -C mcp_plugin branch --show-current
-wip/mysqlsh-error-usage-fix
+main
 
 $ git -C mcp_plugin status --short
-(clean before this checkpoint's context edits - the code is in 88c06aa4)
+(clean)
 ```
 
-- **Two stacked PRs, both pushed**, shared with [`code_ext`](../../code_ext):
-  - **PR #30** `wip/result-set-fixes-and-expansion` (on `wip/ext-sandbox-support` #29 <-
-    `wip/connection-folders` #28). **Approved by Rene.** Its tip is now **`9426cdb6`**
-    (this session): `_column_metadata` reports only `type` and `flags`, following his
-    approving comment; `_COLUMN_METADATA_GETTERS` is gone, and so is `code_ext`'s
-    `IColumnMetadata` beyond those two fields. The PR description was updated, his comment
-    answered, and a PR comment points to #31.
-  - **PR #31** `wip/mysqlsh-error-usage-fix`, based on #30's branch, commit **`88c06aa4`**:
-    his general comment. MCP-only code raises `ToolError` through the new
-    `tool_registrar.tool_error()`; the rule is in [`context/server.md`](context/server.md).
-    41 tests switched to expect `ToolError`, plus a new `tool_error` test. It retargets
-    once #30 merges.
-- Suite: **464 pass, 3 skipped, 98%** on #31 (463 on #30). code_ext on #30: **1246 pass
-  across 55 files**, pretest clean.
-- **Over the ~400-line split threshold and NOT split** (untouched this session, so not
-  read for a seam): `context/connections.md` (**499**, grew in the rebase),
-  `context/history.md` (466, an archive), `context/security-review.md` (402),
-  `context/migrator.md` (401).
+- **On `main`, nothing open for mcp_plugin.** PRs #28, #29, #30 (`8f392c81`) and
+  #31 (`4dd56d3b`, the `ToolError` rule) are all merged. Since then `main` gained
+  `caef7471` (update_version derives the release versions and sandbox index),
+  `f35a21be` (version 26.9.5), `e891a44d` (MRS/MSM use the shell's dump and load
+  utilities) and #36 (`4bdf0ece`, MSM/MRS fixes), all of which touch mcp_plugin
+  files. Their effect on mcp_plugin was NOT checked in the 2026-10-06 session, and
+  the suite has not been re-run since the 2026-09-29 figure above (464 pass /
+  3 skipped / 98%, measured on #31).
+- **Over the ~400-line split threshold and NOT split** (untouched, so not read for
+  a seam): `context/connections.md` (499), `context/history.md` (466, an archive),
+  `context/security-review.md` (402), `context/migrator.md` (401).
 - [`context/history.md`](context/history.md) is deliberately NOT updated, as by
   every session since `wip/sandbox-binaries`; this section is the current record.

@@ -119,7 +119,9 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-02):
+Checked at this checkpoint (2026-10-06; unchanged since 2026-10-02 - the
+2026-10-06 session did no code_ext work, and the bullets below are still
+the 2026-10-02 record):
 
 ```text
 $ git -C code_ext branch --show-current

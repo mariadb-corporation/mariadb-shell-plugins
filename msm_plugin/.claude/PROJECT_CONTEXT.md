@@ -75,14 +75,14 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-05), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-06), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
 $ git -C msm_plugin branch --show-current
-wip/msm_mrs_fixes
+main
 
 $ git -C msm_plugin status --short
 (clean)
 ```
 
-Branch `wip/msm_mrs_fixes` = `main` (`e891a44d`) + `33ca5919` (MSM section 180), `d1c82c8c` (MRS GROUP BY queries), `e6aabd66` (this context), `948ef4eb` (NO_AUTO_CREATE_USER, issue 14), and a context update; pushed, PR #36 to `main`.
+On `main`, nothing open. PR #36 (`wip/msm_mrs_fixes`: MSM section 180, MRS GROUP BY queries, NO_AUTO_CREATE_USER / issue 14) is merged as `4bdf0ece`.
