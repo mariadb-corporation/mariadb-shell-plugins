@@ -116,3 +116,24 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   person at the browser.
 
 - **Import `httpx2`, never `httpx`.** MCP SDK 2.3 depends on `httpx2`; the shell ships no `httpx`. A local build that still had `httpx` 0.28.1 (left over from an older SDK, and pulled in by manually installed `anthropic`/`openai`) hid this, and PR #37 failed CI on collection. The local build's `site-packages` was cleaned on 2026-10-06 to match `build/bundled-python-deps` exactly; after a `--pym pip install`, run `msh --pym pip check` and check for duplicate `*.dist-info` folders.
+
+- **Testing with a real gateway (Arcade), as done on 2026-10-06:**
+  - `brew install cloudflared`; `cloudflared tunnel --url http://127.0.0.1:<port>` gives
+    a temporary public https URL with no account. Set it as `--publicUrl` BEFORE starting
+    the server (its host is then allowed automatically).
+  - Throwaway `mariadbd` as above, a fresh `MARIADB_SHELL_USER_CONFIG_HOME`, a placeholder
+    `--addUser` (a multi-tenant server refuses to start with no user).
+  - Arcade's server setup is dashboard-only; its API key only executes tools:
+    `POST https://api.arcade.dev/v1/tools/execute {tool_name: "<server id>.<tool>", input,
+    user_id}`. Use curl: Python's urllib gets a 403 from it. `user_id` must be the user's
+    Arcade account (`ARCADE_USER_ID` in `/Users/mzinner/Documents/test/.env`, with
+    `ARCADE_API_KEY`; never print the key).
+  - Stop the tunnel, server and mariadbd afterwards and delete the test home (it holds
+    the client secret and the test password).
+- **Rendering a page to check it:** headless Chrome
+  (`--headless=new --screenshot=… --window-size=…`, `--force-device-scale-factor=3` to
+  zoom, crop with `sips -c H W --cropOffset Y X`). Headless Firefox needs
+  `--no-remote --profile <empty dir>` while the user's Firefox runs, or it writes no file.
+  A user's Firefox can look different from both (extensions restyle pages), so draw
+  shapes with inline SVG rather than CSS borders.
+- **macOS `sed` has no `\b`** (the edit silently changes nothing); use `perl -pi -e`.

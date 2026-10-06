@@ -147,7 +147,16 @@ session machinery the db tools sit on is in
   and the `server.tool` replacement db/msm/sandbox register through,
   converting a shell API's `mysqlsh.Error` into a `ToolError` so SDK 2.1 does not strip its message
   (see the SDK-error gotcha — this module was deleted once and had to come back).
-  `ToolError`, `ResourceError` and `MCPError` pass through unconverted. Imports the SDK
+  `ToolError`, `ResourceError` and `MCPError` pass through unconverted. Also the published
+  tool names (2026-10-06): `use_tool_name_separator` (before the registrars) replaces
+  `server.tool` so `db.connect` registers as `db_connect` when `mcp setup
+  --toolNameSeparator=_` (settings.json `toolNameSeparator`, `config.get_tool_name_separator`)
+  and wraps each tool so its ToolError text is rewritten; `finish_tool_names` (after)
+  rewrites descriptions and parameter schemas through the SDK's PRIVATE `_tool_manager`.
+  Only dotted words that are registered tool names are rewritten. `tool_group()` reads the
+  group from either form (scopes, `auth.filtered_tools`). Arcade and OpenAI refuse dots;
+  SEP-986 allows them, so `.` stays the default. Tests: `test_tool_names.py` (resets the
+  module's `_separator` after each test). Imports the SDK
   inside `decorator`, never at module scope. **100% covered.**
 
 - tests/unit/test_tool_registrar.py -> the 6 wrapper tests. `_FakeServer.tool` returns the

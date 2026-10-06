@@ -190,6 +190,14 @@ produced most of this is in [security-review.md](security-review.md).
     knowledge of the transport. A mismatch raises the BYTE-IDENTICAL error an unknown UUID
     raises, so probing cannot tell a real UUID from a guessed one — keep those two
     messages the same. In HTTP mode `db.connect` FAILS CLOSED when EITHER part is missing.
+  - **Multi-tenant servers bind differently (M23, 2026-10-06, user's decision).** For an
+    authenticated request `get_client_identity` returns `(None,
+    Principal.authorization(), user)`: `grant:<id>` for a built-in-server token, else
+    `client:<client id>` (Keycloak `azp`, `mcp-api-key` for API keys). No address, no MCP
+    session: Arcade opens a new session per tool call from changing addresses. `db.connect`
+    accepts an authenticated user without address or session. Single-tenant unchanged.
+    Test: `test_a_gateway_keeps_a_connection_across_sessions_and_addresses`. Details in
+    [security-review-multi-tenant.md](security-review-multi-tenant.md).
     One `general.get_client_identity(ctx)` feeds all 9 call sites (8 db tools +
     `msm.deploy_schema`); a single value rather than two parallel args precisely so a
     caller cannot pass one and forget the other.

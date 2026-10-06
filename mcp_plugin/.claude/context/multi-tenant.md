@@ -347,22 +347,25 @@ phase 2 decisions the user made on 2026-10-06.
 **Status on 2026-10-06: phases 1 and 2 are built and in PR #37**
 (`wip/mcp-multi-tenant` → `main`, not yet reviewed). The as-built notes are in the
 "Status" sections here and in [oauth.md](oauth.md), and the security review is
-[security-review-multi-tenant.md](security-review-multi-tenant.md) (M1..M22).
+[security-review-multi-tenant.md](security-review-multi-tenant.md) (M1..M23).
+Later commits: `850626ee` (httpx2), `0ec99ee9` and `8f38d498` (sign-in page),
+`046d9321` (context), `72a64f89` (Arcade: tool names, binding).
 
 **Decided by the user** (2026-10-06):
 - multi-instance support (M20) is skipped for now
 - a single-tenant server keeps refusing sessionless (MCP 2026-07-28) clients over
   HTTP, and recommends multi-tenant mode (M22)
 - signing-key overlap (M19) is built
+- tool names: an opt-in `mcp setup --toolNameSeparator=_`, dots stay the default
+- multi-tenant connections are bound to the user + grant (or client), not the session
+  or address (M23)
 
 **Open, in this order:**
 
 1. Rene's review of PR #37.
-2. Commit the reference docs in `../mariadb-shell` (`docs-ref/content/mariadb-shell/mcp-server/`):
-   2 new pages and 6 updated, plus SUMMARY.md. They are left uncommitted on that repo's
-   `wip/docs-ref`, since the user did not ask for a commit.
-3. Verification still missing:
-   - a real Arcade project, which needs a public https deployment
+2. The reference docs in `../mariadb-shell` (`wip/docs-ref`) are committed and pushed;
+   they ride on mariadb-shell PR #59 ("Add MariaDB Shell reference docs …", open).
+3. Verification still missing (a real Arcade project was DONE on 2026-10-06):
    - VS Code: the user has no Copilot access
    - `mcp setup-keycloak-realm` against a real Keycloak, which needs admin credentials;
      it is tested against a stand-in for the admin REST API

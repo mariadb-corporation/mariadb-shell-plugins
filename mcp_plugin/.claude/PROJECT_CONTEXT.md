@@ -23,9 +23,10 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **577 tests pass, 3 SKIPPED (~78s), 93% total coverage** (5200
-statements, 348 missed) on `wip/mcp-multi-tenant` at the 2026-10-06 checkpoint, on MCP
-SDK **2.3.0** (465 / 98% on `main` before multi-tenant mode; see the coverage trap in
+Standard suite: **585 tests pass, 3 SKIPPED (~78s)** on `wip/mcp-multi-tenant` at the
+2026-10-06 evening checkpoint (577 and 93% coverage, 5200 statements, at the one before),
+on MCP SDK **2.3.0** with **httpx2 2.13.1** (the local build's site-packages were cleaned
+to match `build/bundled-python-deps`; see working-practices.md) (465 / 98% on `main` before multi-tenant mode; see the coverage trap in
 [`context/testing.md`](context/testing.md)). The three skipped are OPT-IN: the
 end-to-end tests (`--e2e`: `test_migration_e2e`,
 `test_a_sandbox_really_runs_a_downloaded_server`) and the live Keycloak test
@@ -38,7 +39,9 @@ on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
 
 - Repo's existing `*_plugin` layout (NOT create-shell-plugin's `python/plugins/`).
   `@plugin` / `@plugin_function` decorators. FQNs camelCase (`mcp.startServer`) ->
-  snake_case in Python, kebab-case in CLI. MCP tool names use dots per user request.
+  snake_case in Python, kebab-case in CLI. MCP tool names use dots per user request;
+  `mcp setup --toolNameSeparator=_` publishes them with `_` for gateways that refuse dots
+  (Arcade), see [`context/server.md`](context/server.md).
 - **Exceptions: tool code raises `ToolError` through `tool_registrar.tool_error()`, never
   `mysqlsh.Error`, and never imports `ToolError` at module scope.** `mysqlsh.Error` is
   for shell plugin code only (`server.py`, `setup*.py`, and `config.py`, which
@@ -76,18 +79,19 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-06):
+Checked at this checkpoint (2026-10-06, evening):
 
 ```text
 $ git -C mcp_plugin branch --show-current
 wip/mcp-multi-tenant
 
 $ git -C mcp_plugin status --short
-(clean before this checkpoint's context edits)
+(clean before this checkpoint's context edits; code_ext's and msm_plugin's
+ PROJECT_CONTEXT.md got only their Git state refreshed)
 ```
 
 - **Branch `wip/mcp-multi-tenant`** off `main` (`67253bae`), pushed, **PR #37** to
-  `main`, not yet reviewed. Commits:
+  `main`, not yet reviewed, CI green at `850626ee`. Commits:
   - `d1bf2a31` phase 1
   - `f388ea7b` phase 2
   - `512029e8` the live Keycloak test
@@ -95,13 +99,19 @@ $ git -C mcp_plugin status --short
   - `b79866d1` the sessionless binding
   - `1bf93817` signing-key overlap, the sessionless refusal, the checkboxes
   - `c81bbd98` the HTTPS option names
-- **Uncommitted elsewhere:** the MCP reference docs in
-  `../mariadb-shell/docs-ref/content/mariadb-shell/mcp-server/` (repo `mariadb-shell`,
-  branch `wip/docs-ref`). The user has not asked for a commit.
+  - `850626ee` `httpx2` instead of `httpx` (the CI failure)
+  - `0ec99ee9`, `8f38d498` the sign-in page in the MRS style, with the MariaDB seal
+  - `046d9321` the previous checkpoint
+  - `72a64f89` Arcade: `--toolNameSeparator`, connections bound to user + grant (M23)
+- **Docs:** the MCP reference docs in `../mariadb-shell/docs-ref/` are committed and
+  pushed on `wip/docs-ref` (`5ae870fa5`, `42ea44ca4`), mariadb-shell PR #59.
+- **Left on the machine:** `cloudflared` (Homebrew). The test homes and the tunnel are
+  gone. The user's Arcade dashboard still lists a `mariadb` server with a dead URL.
 - What is open is in the Next steps of
   [`context/multi-tenant.md`](context/multi-tenant.md).
-- **Over the ~400-line split threshold and NOT split** (untouched, so not read for a
-  seam): `context/connections.md` (499), `context/history.md` (466, an archive),
-  `context/security-review.md` (402), `context/migrator.md` (401).
+- **Over the ~400-line split threshold and NOT split:** `context/connections.md` (507,
+  touched only to add the M23 binding note, so not re-read for a seam),
+  `context/history.md` (466, an archive), `context/security-review.md` (402),
+  `context/migrator.md` (401).
 - [`context/history.md`](context/history.md) is deliberately NOT updated, as by
   every session since `wip/sandbox-binaries`; this section is the current record.

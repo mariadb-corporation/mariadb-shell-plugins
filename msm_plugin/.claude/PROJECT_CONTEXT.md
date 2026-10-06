@@ -79,10 +79,10 @@ Checked at this checkpoint (2026-10-06), repo `mariadb-shell-plugins` (msm_plugi
 
 ```text
 $ git -C msm_plugin branch --show-current
-main
+wip/mcp-multi-tenant   (the checkout is mcp_plugin's PR #37 branch; no msm_plugin work this session)
 
 $ git -C msm_plugin status --short
 (clean)
 ```
 
-On `main`, nothing open. PR #36 (`wip/msm_mrs_fixes`: MSM section 180, MRS GROUP BY queries, NO_AUTO_CREATE_USER / issue 14) is merged as `4bdf0ece`.
+msm_plugin itself: nothing open on `main`. PR #36 (`wip/msm_mrs_fixes`: MSM section 180, MRS GROUP BY queries, NO_AUTO_CREATE_USER / issue 14) is merged as `4bdf0ece`.

@@ -13,7 +13,22 @@ and the SDK's auth hooks - are in [multi-tenant-inputs.md](multi-tenant-inputs.m
 
 **BUILT on 2026-10-06** (2a, 2b, 2c and 2d), on branch `wip/mcp-multi-tenant` after
 phase 1, in **PR #37**. Suite at the end of the session: **577 passed, 3 skipped (all
-opt-in), 93%**.
+opt-in), 93%**; **585 passed, 3 skipped** after the Arcade round below.
+
+**Evening round (2026-10-06), after the PR was opened:**
+- **CI fix:** the code and two test modules imported `httpx`, which the shell no longer
+  ships (SDK 2.3 uses `httpx2`); now `httpx2` everywhere (`850626ee`). See
+  working-practices.md.
+- **Sign-in page restyled** after mrs_plugin's
+  `default_static_content/index.html` (colours, welcome header, joined fields, round next
+  button, error bubble, separator, footer), without its script (the CSP allows none).
+  The MariaDB seal is `lib/assets/mariadb-seal.svg`, inlined with its `style`
+  attributes stripped (CSP: nonce'd `<style>` only). The button's chevron is an inline
+  SVG (a CSS-border chevron became a diamond in a restyled Firefox), the button has
+  `appearance:none` (Safari), and the inputs `flex:1 1 250px` so the button sits at the
+  field's end. Commits `0ec99ee9`, `8f38d498`. The user's screenshot is in the docs.
+- **Arcade, tested for real** (see oauth-builtin.md 2d): dotless tool names
+  (`--toolNameSeparator`) and the user + grant binding (M23), `72a64f89`.
 
 **Last round of the session (after the PR was opened):**
 - **Signing-key overlap (M19).** `rotate_signing_key` keeps `previous`
@@ -38,7 +53,8 @@ opt-in), 93%**.
   - updates to README, starting-the-mcp-server, configuring-access, automated-setup,
     security-and-session-handling, connecting-mcp-clients and SUMMARY.md
 
-  Uncommitted, on that repo's `wip/docs-ref`.
+  Committed and pushed on that repo's `wip/docs-ref` (the user's `5ae870fa5`, then
+  `42ea44ca4` for tool names, binding and Arcade).
 
 - New modules: `lib/oauth_config.py` (settings, public URL, clients, keys),
   `lib/oauth_keycloak.py` (`KeycloakVerifier`), `lib/oauth_builtin.py` (the provider,

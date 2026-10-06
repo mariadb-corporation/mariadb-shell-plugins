@@ -314,3 +314,26 @@ separately. It discovers the endpoints through PRM, and **calls `/token` and
     endpoint authentication method it uses, and which scopes it requests. 2c
     tolerates every answer, but the README should state what was observed.
   - It needs a publicly reachable https test deployment.
+  - **DONE 2026-10-06** with the user's Arcade project, through a `cloudflared` quick
+    tunnel (`https://….trycloudflare.com`), a throwaway `mariadbd` (account `ada`, role
+    `mcp_access`, read-only `demo`), and Arcade's `/v1/tools/execute` with the user's
+    API key. Observed:
+    - Arcade sends `resource` (the public URL), PKCE S256, `scope=mcp:db mcp:msm`, and
+      uses the pre-registered confidential client; its token call succeeded (method not
+      recorded). The redirect URI is per server:
+      `https://cloud.arcade.dev/api/v1/oauth/<id>/callback`, shown only once the server is
+      added, so the first authorize fails until `--setClientRedirectUris` is run.
+    - **Arcade refuses dotted tool names** ("only ASCII letters, numbers, dash and
+      underscore"; it validates `Mariadb.db.list_connections@0.0.0`). Fixed by
+      `mcp setup --toolNameSeparator=_`; tools are then called as
+      `mariadb.db_list_connections` (`<server id>.<tool>`). 20 tools (db + msm).
+    - **Arcade opens a new MCP session for every tool call** (initialize, call, DELETE),
+      so session-bound connections broke after `db_connect` (M23). Fixed by binding to
+      user + grant.
+    - **Arcade's user verification** (on by default): a flow for a `user_id` that is not
+      the signed-in Arcade account fails after our redirect, with no `/token` call. Use the
+      account email (`ARCADE_USER_ID` in the user's env file). The dashboard's admin
+      sign-in already authorized that user, so tools ran without a second sign-in.
+    - Result: connect, list schemas, `SELECT … CURRENT_USER(), CURRENT_ROLE()` →
+      `ada@%`/`mcp_access`, `DELETE` refused by MariaDB (1142), close.
+    - The README and the docs-ref Arcade section record all of this.
