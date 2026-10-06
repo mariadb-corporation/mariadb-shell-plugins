@@ -47,11 +47,11 @@ Shell plugin code: errors are raised as ``mysqlsh.Error``.
 # cSpell:ignore mysqlsh MariaDB fcntl msvcrt urlsafe
 
 import contextlib
-import datetime
 import json
 import os
 import re
 import secrets
+import time
 import uuid
 from typing import Optional
 
@@ -95,10 +95,6 @@ IDENTITY_TYPES = (IDENTITY_EMAIL, IDENTITY_USER_ID, IDENTITY_OAUTH, IDENTITY_MAR
 # (server|account) identity when it is written as one string.
 _IDENTITY_PART_SEPARATOR = "|"
 
-# The scope prefix every tool scope has; a scope that does not have it is not
-# one this server defines.
-_TOOL_SCOPE_PREFIX = "mcp:"
-
 # An API key: the prefix, the user's UUID without dashes, and the random part.
 _API_KEY_PATTERN = re.compile(
     rf"^{re.escape(API_KEY_PREFIX)}([0-9a-f]{{32}})_([A-Za-z0-9_-]{{43}})$"
@@ -106,21 +102,6 @@ _API_KEY_PATTERN = re.compile(
 
 # How many random bytes the secret part of an API key holds.
 _API_KEY_RANDOM_BYTES = 32
-
-
-def _shell():
-    """Returns the shell global object."""
-    return mysqlsh.globals.shell
-
-
-def _now() -> str:
-    """Returns the current time as an ISO 8601 UTC timestamp."""
-    return (
-        datetime.datetime.now(datetime.timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
 
 
 # --- The mode ---------------------------------------------------------------
@@ -175,7 +156,7 @@ def secret_groups_supported() -> bool:
         True if the shell's secret functions take a ``group``.
     """
     try:
-        _shell().list_secrets({"group": str(uuid.UUID(int=0))})
+        config._shell().list_secrets({"group": str(uuid.UUID(int=0))})
     except Exception:  # noqa: BLE001 - any refusal means no groups
         return False
 
@@ -276,15 +257,10 @@ def _write_users(users: dict) -> None:
     Returns:
         None
     """
-    path = get_users_file_path()
-    temporary = f"{path}.tmp"
-    with open(temporary, "w", encoding="utf-8") as users_file:
-        json.dump(
-            {"version": _USERS_FILE_VERSION, "users": dict(sorted(users.items()))},
-            users_file,
-            indent=4,
-        )
-    os.replace(temporary, path)
+    config.write_json_file(
+        get_users_file_path(),
+        {"version": _USERS_FILE_VERSION, "users": dict(sorted(users.items()))},
+    )
 
 
 @contextlib.contextmanager
@@ -556,7 +532,7 @@ def add_user(identities, name=None, scopes=None) -> str:
             "allowedPaths": [],
             "tokenEpoch": 0,
             "disabled": False,
-            "created": _now(),
+            "created": general.utc_timestamp(),
         }
         if name:
             record["name"] = str(name).strip()
@@ -578,7 +554,7 @@ def remove_user(mcp_user_id) -> None:
     Returns:
         None
     """
-    _shell().delete_all_secrets(*config.secret_options(mcp_user_id))
+    config._shell().delete_all_secrets(*config.secret_options(mcp_user_id))
 
     with _changing_users() as users:
         users.pop(mcp_user_id, None)
@@ -688,17 +664,25 @@ def set_scopes(mcp_user_id, scopes) -> None:
     _change_user(mcp_user_id, change)
 
 
-def get_scopes(mcp_user_id) -> list:
-    """Returns the scopes a user may be granted; none for an unknown user."""
-    record = get_user(mcp_user_id)
-    if record is None:
-        return []
+def scopes_of(record: dict) -> list:
+    """Returns the scopes a user's record lets them be granted.
 
+    The one reading of the ``scopes`` field, which every verifier applies: a
+    record without a list of them gets :data:`DEFAULT_SCOPES`, and only
+    :data:`SUPPORTED_SCOPES` count, in that order.
+    """
     scopes = record.get("scopes")
     if not isinstance(scopes, list):
         return list(DEFAULT_SCOPES)
 
     return [scope for scope in SUPPORTED_SCOPES if scope in scopes]
+
+
+def get_scopes(mcp_user_id) -> list:
+    """Returns the scopes a user may be granted; none for an unknown user."""
+    record = get_user(mcp_user_id)
+
+    return [] if record is None else scopes_of(record)
 
 
 def set_default_role(mcp_user_id, role) -> None:
@@ -735,16 +719,11 @@ def revoke_tokens(mcp_user_id) -> int:
     Returns:
         The new epoch.
     """
-    epoch = {}
-
     def change(users, record):
         record["tokenEpoch"] = int(record.get("tokenEpoch", 0)) + 1
-        record["tokensRevokedAt"] = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-        epoch["value"] = record["tokenEpoch"]
+        record["tokensRevokedAt"] = int(time.time())
 
-    _change_user(mcp_user_id, change)
-
-    return epoch["value"]
+    return _change_user(mcp_user_id, change)["tokenEpoch"]
 
 
 def link_identity(mcp_user_id, identity: dict) -> bool:
@@ -760,12 +739,13 @@ def link_identity(mcp_user_id, identity: dict) -> bool:
     Raises:
         mysqlsh.Error: If the identity belongs to another user.
     """
-    added = {}
+    added = False
 
     def change(users, record):
+        nonlocal added
+
         owner = _owner_of(users, identity)
         if owner == mcp_user_id:
-            added["value"] = False
             return
         if owner is not None:
             raise mysqlsh.Error(
@@ -773,22 +753,34 @@ def link_identity(mcp_user_id, identity: dict) -> bool:
                 f"to {describe_user(owner, users[owner])}."
             )
         record.setdefault("identities", []).append(dict(identity))
-        added["value"] = True
+        added = True
 
     _change_user(mcp_user_id, change)
 
-    return added["value"]
+    return added
 
 
-def find_user_by_identity(identity: dict) -> Optional[str]:
-    """Returns the user who has an identity, or None."""
-    return _owner_of(read_users(), identity)
+def find_user_by_identity(identity: dict, users=None) -> Optional[str]:
+    """Returns the user who has an identity, or None.
+
+    Args:
+        identity (dict): The identity.
+        users (dict): The users to look among, or None to read them - a server
+            passes the ones it has cached.
+    """
+    return _owner_of(read_users() if users is None else users, identity)
 
 
-def users_with_email(email) -> list:
-    """Returns the users with an email identity matching one address."""
+def users_with_email(email, users=None) -> list:
+    """Returns the users with an email identity matching one address.
+
+    Args:
+        email (str): The address.
+        users (dict): The users to look among, or None to read them.
+    """
     wanted = identity_key({"type": IDENTITY_EMAIL, "value": email})
-    users = read_users()
+    if users is None:
+        users = read_users()
 
     return sorted(
         user_id
@@ -844,12 +836,12 @@ def issue_api_key(mcp_user_id) -> str:
         raise mysqlsh.Error(f"There is no user '{mcp_user_id}'.")
 
     key = _new_api_key(mcp_user_id)
-    _shell().store_secret(API_KEY_SECRET, key, *config.secret_options(mcp_user_id))
+    config._shell().store_secret(API_KEY_SECRET, key, *config.secret_options(mcp_user_id))
 
     # Written after the key, so the server's cache - flushed whenever this file
     # changes - cannot have re-read the old key in between.
     def change(users, record):
-        record["apiKeyCreated"] = _now()
+        record["apiKeyCreated"] = general.utc_timestamp()
 
     _change_user(mcp_user_id, change)
 
@@ -859,7 +851,7 @@ def issue_api_key(mcp_user_id) -> str:
 def get_api_key(mcp_user_id) -> Optional[str]:
     """Returns a user's API key, or None if they have none."""
     try:
-        return _shell().read_secret(
+        return config._shell().read_secret(
             API_KEY_SECRET, *config.secret_options(mcp_user_id)
         )
     except Exception:  # noqa: BLE001 - no key is the shell's missing-secret error
@@ -902,7 +894,7 @@ def list_groups() -> dict:
         group is left out.
     """
     groups = {}
-    for entry in _shell().list_secrets({"allGroups": True}):
+    for entry in config._shell().list_secrets({"allGroups": True}):
         group = str(entry["group"])
         if group == "generic":
             continue
@@ -929,4 +921,4 @@ def orphan_groups() -> list:
 
 def purge_group(group) -> None:
     """Deletes every secret in one group."""
-    _shell().delete_all_secrets({"group": group})
+    config._shell().delete_all_secrets({"group": group})

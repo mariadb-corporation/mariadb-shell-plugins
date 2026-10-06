@@ -208,17 +208,17 @@ def _tool_scope(tool_name) -> str:
     return f"mcp:{tool_group(tool_name)}"
 
 
-def _context_argument(func, call_args, call_kwargs):
+def _context_argument(signature, call_args, call_kwargs):
     """Returns the ``ctx`` a tool was called with, or None if it takes none."""
     try:
-        bound = inspect.signature(func).bind_partial(*call_args, **call_kwargs)
+        bound = signature.bind_partial(*call_args, **call_kwargs)
     except TypeError:
         return None
 
     return bound.arguments.get("ctx")
 
 
-def _check_caller(tool_name, func, call_args, call_kwargs) -> None:
+def _check_caller(tool_name, signature, call_args, call_kwargs) -> None:
     """Refuses a tool call a multi-tenant server must not run.
 
     Every call has to come from an authenticated user - which the SDK's bearer
@@ -228,7 +228,7 @@ def _check_caller(tool_name, func, call_args, call_kwargs) -> None:
 
     Args:
         tool_name (str): The name the tool is registered under.
-        func: The tool function.
+        signature: The tool function's ``inspect.Signature``.
         call_args: The positional arguments it was called with.
         call_kwargs: The keyword arguments it was called with.
 
@@ -241,7 +241,7 @@ def _check_caller(tool_name, func, call_args, call_kwargs) -> None:
     if not general.is_multi_tenant():
         return
 
-    principal = general.get_principal(_context_argument(func, call_args, call_kwargs))
+    principal = general.get_principal(_context_argument(signature, call_args, call_kwargs))
     if principal is None:
         raise tool_error(
             "This server serves authenticated users only, and the request was "
@@ -285,11 +285,13 @@ def tool_registrar(server):
             # them does not tie the plugin to 2.1.
             reported_as_is = (ToolError, ResourceError, MCPError)
             tool_name = kwargs.get("name") or func.__name__
+            # Once, here, not on every call: it is what finds the ctx argument.
+            signature = inspect.signature(func)
 
             @wraps(func)
             async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
-                    _check_caller(tool_name, func, call_args, call_kwargs)
+                    _check_caller(tool_name, signature, call_args, call_kwargs)
                     return await func(*call_args, **call_kwargs)
                 except reported_as_is:
                     raise
@@ -299,7 +301,7 @@ def tool_registrar(server):
             @wraps(func)
             def sync_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
-                    _check_caller(tool_name, func, call_args, call_kwargs)
+                    _check_caller(tool_name, signature, call_args, call_kwargs)
                     return func(*call_args, **call_kwargs)
                 except reported_as_is:
                     raise

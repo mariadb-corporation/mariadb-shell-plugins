@@ -271,7 +271,10 @@ class KeycloakVerifier:
             "issuer": self.issuer,
             "subject": str(claims.get("sub", "")),
         }
-        mcp_user_id = tenants.find_user_by_identity(identity)
+        # The directory's copy, re-read only when users.json changed, rather
+        # than the file on every token.
+        users = self.directory.users()
+        mcp_user_id = tenants.find_user_by_identity(identity, users)
         if mcp_user_id is not None:
             return mcp_user_id
 
@@ -279,7 +282,7 @@ class KeycloakVerifier:
         verified = bool(email) and claims.get("email_verified") is True
 
         if verified and self.settings.get("linkByVerifiedEmail", True):
-            owners = tenants.users_with_email(email)
+            owners = tenants.users_with_email(email, users)
             if len(owners) == 1:
                 tenants.link_identity(owners[0], identity)
                 general.log_event(
@@ -299,7 +302,7 @@ class KeycloakVerifier:
         roles = ((claims.get("realm_access") or {}).get("roles")) or []
         if provision.get("enabled") and (not required or required in roles):
             identities = [identity]
-            if verified and not tenants.users_with_email(email):
+            if verified and not tenants.users_with_email(email, users):
                 identities.append({"type": tenants.IDENTITY_EMAIL, "value": email})
             mcp_user_id = tenants.add_user(
                 identities,
@@ -346,11 +349,8 @@ class KeycloakVerifier:
         if revoked_at and int(claims.get("iat", 0)) <= revoked_at:
             return None
 
-        allowed = record.get("scopes")
-        if not isinstance(allowed, list):
-            allowed = list(tenants.DEFAULT_SCOPES)
         requested = str(claims.get("scope", "")).split()
-        scopes = [scope for scope in tenants.SUPPORTED_SCOPES if scope in requested and scope in allowed]
+        scopes = [scope for scope in tenants.scopes_of(record) if scope in requested]
 
         return AccessToken(
             token=token,

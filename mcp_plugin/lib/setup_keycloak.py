@@ -55,6 +55,7 @@ import mysqlsh
 
 from mcp_plugin.lib import oauth_config, tenants
 from mcp_plugin.lib import setup_prompts as prompts
+from mcp_plugin.lib.setup_cli import _as_bool, _as_list, _cli_name, _reject_unknown
 
 KNOWN_OPTIONS = (
     "server",
@@ -225,8 +226,6 @@ def _ask(options, name, message, secret=False):
         return str(options[name])
 
     if options.get("non_interactive") or not prompts.shell().options.useWizards:
-        from mcp_plugin.lib.setup_cli import _cli_name
-
         raise mysqlsh.Error(f"{_cli_name(name)} is needed, and this run cannot ask for it.")
 
     value = prompts.password(message) if secret else prompts.ask(message)
@@ -254,14 +253,7 @@ def run_setup_keycloak_realm(**options) -> None:
         mysqlsh.Error: If an option is unknown, something needed is missing and
             cannot be asked for, or Keycloak refuses a step.
     """
-    from mcp_plugin.lib.setup_cli import _as_bool, _as_list, _cli_name
-
-    unknown = sorted(name for name in options if name not in KNOWN_OPTIONS)
-    if unknown:
-        raise mysqlsh.Error(
-            f"Unknown option(s): {', '.join(unknown)}. Supported options are: "
-            f"{', '.join(sorted(_cli_name(name) for name in KNOWN_OPTIONS))}."
-        )
+    _reject_unknown(options, KNOWN_OPTIONS)
 
     server = _ask(options, "server", "Keycloak URL (e.g. https://kc.example.com): ").rstrip("/")
     realm = _ask(options, "realm", "Realm: ")

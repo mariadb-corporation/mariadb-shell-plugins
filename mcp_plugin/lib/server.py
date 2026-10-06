@@ -314,7 +314,6 @@ def start(
                 allowed_hosts,
                 ssl_certfile=ssl_certfile,
                 ssl_keyfile=ssl_keyfile,
-                throttle_auth_failures=multi_tenant,
                 auth=auth,
             )
         finally:
@@ -499,7 +498,6 @@ def _serve_streamable_http(
     allowed_hosts=(),
     ssl_certfile=None,
     ssl_keyfile=None,
-    throttle_auth_failures: bool = False,
     auth=None,
 ) -> None:
     """Serves the MCP server over streamable-http on our own uvicorn server.
@@ -532,12 +530,11 @@ def _serve_streamable_http(
             reachable under a name this cannot derive from the bind address.
         ssl_certfile (str): The certificate to serve HTTPS with, or None.
         ssl_keyfile (str): Its private key, or None.
-        throttle_auth_failures (bool): Whether to slow down clients whose
-            bearer tokens keep being refused (see
-            :class:`mcp_plugin.lib.auth.AuthFailureThrottle`).
         auth: The :class:`mcp_plugin.lib.auth.AuthBundle` the server
             authenticates with, whose routes and middleware are added (see
-            :func:`mcp_plugin.lib.auth.customize_app`), or None.
+            :func:`mcp_plugin.lib.auth.customize_app`) and whose refused
+            tokens are throttled (see
+            :class:`mcp_plugin.lib.auth.AuthFailureThrottle`), or None.
 
     Returns:
         None
@@ -552,13 +549,9 @@ def _serve_streamable_http(
 
     app = starlette_app
     if auth is not None:
-        from mcp_plugin.lib.auth import customize_app
+        from mcp_plugin.lib.auth import AuthFailureThrottle, customize_app
 
-        app = customize_app(starlette_app, auth)
-    if throttle_auth_failures:
-        from mcp_plugin.lib.auth import AuthFailureThrottle
-
-        app = AuthFailureThrottle(app)
+        app = AuthFailureThrottle(customize_app(starlette_app, auth))
 
     config = uvicorn.Config(
         app,

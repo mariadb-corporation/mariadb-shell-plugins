@@ -60,6 +60,7 @@ is protected against cross-site requests and framing.
 
 # cSpell:ignore mysqlsh MariaDB anyio starlette cimd urlsafe nosniff jwks httpx
 
+import functools
 import hashlib
 import hmac
 import html
@@ -73,9 +74,7 @@ import uuid
 from typing import Optional
 from urllib.parse import urlsplit
 
-import mysqlsh
-
-from mcp_plugin.lib import config, general, oauth_config, tenants
+from mcp_plugin.lib import auth, config, general, oauth_config, tenants
 
 # How a user authenticated, as general.Principal.auth_method reports it.
 AUTH_METHOD_BUILTIN = "mariadb"
@@ -126,11 +125,6 @@ _provider = None
 _provider_lock = threading.Lock()
 
 
-def _shell():
-    """Returns the shell global object."""
-    return mysqlsh.globals.shell
-
-
 def _digest(token: str) -> str:
     """Returns the SHA-256 hex digest a token is stored as."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -168,7 +162,7 @@ class GrantStore:
             return
 
         options = config.secret_options(user)
-        _shell().store_secret(
+        config._shell().store_secret(
             LOGIN_CONNECTION_SECRET_PREFIX + grant_id,
             json.dumps({"uri": uri, "password": password}),
             *options,
@@ -182,7 +176,7 @@ class GrantStore:
                 self._grants[record["id"]] = dict(record)
             return
 
-        _shell().store_secret(
+        config._shell().store_secret(
             GRANT_SECRET_PREFIX + record["id"],
             json.dumps(record),
             *config.secret_options(record["user"]),
@@ -204,7 +198,7 @@ class GrantStore:
         else:
             try:
                 record = json.loads(
-                    _shell().read_secret(
+                    config._shell().read_secret(
                         GRANT_SECRET_PREFIX + grant_id, *config.secret_options(user)
                     )
                 )
@@ -235,7 +229,7 @@ class GrantStore:
             return None
         try:
             value = json.loads(
-                _shell().read_secret(
+                config._shell().read_secret(
                     LOGIN_CONNECTION_SECRET_PREFIX + grant_id,
                     *config.secret_options(user),
                 )
@@ -270,7 +264,7 @@ def delete_grant_secrets(user: str, grant_id: str) -> None:
     """Deletes the secrets of one grant from a user's group, as far as they exist."""
     for prefix in (GRANT_SECRET_PREFIX, LOGIN_CONNECTION_SECRET_PREFIX):
         try:
-            _shell().delete_secret(prefix + grant_id, *config.secret_options(user))
+            config._shell().delete_secret(prefix + grant_id, *config.secret_options(user))
         except Exception:  # noqa: BLE001 - already gone
             pass
 
@@ -287,7 +281,9 @@ def stored_grants() -> list:
             if not key.startswith(GRANT_SECRET_PREFIX):
                 continue
             try:
-                record = json.loads(_shell().read_secret(key, {"group": group}))
+                record = json.loads(
+                    config._shell().read_secret(key, *config.secret_options(group))
+                )
             except Exception:  # noqa: BLE001 - unreadable: skip it
                 continue
             found.append((group, record))
@@ -295,26 +291,49 @@ def stored_grants() -> list:
     return found
 
 
-def end_grants_of_client(client_id: str) -> int:
-    """Ends every stored grant of a client; for ``mcp setup`` removing it."""
+def _end_stored_grants(matches) -> int:
+    """Ends every stored grant ``matches(user, record)`` picks; returns how many."""
     ended = 0
     for user, record in stored_grants():
-        if record.get("client") == client_id:
+        if matches(user, record):
             delete_grant_secrets(user, record["id"])
             ended += 1
 
     return ended
+
+
+def end_grants_of_client(client_id: str) -> int:
+    """Ends every stored grant of a client; for ``mcp setup`` removing it."""
+    return _end_stored_grants(lambda user, record: record.get("client") == client_id)
 
 
 def end_grants_of_user(user: str) -> int:
     """Ends every stored grant of a user; for ``mcp setup --revokeTokens``."""
-    ended = 0
-    for owner, record in stored_grants():
-        if owner == user:
-            delete_grant_secrets(user, record["id"])
-            ended += 1
+    return _end_stored_grants(lambda owner, record: owner == user)
 
-    return ended
+
+def _active_provider():
+    """Returns the provider of the server being served, or None."""
+    with _provider_lock:
+        return _provider
+
+
+def login_connection_uri(mcp_user_id, grant_id) -> Optional[str]:
+    """Returns the URI of the login connection of a live grant.
+
+    What :mod:`mcp_plugin.lib.db_functions` lists and resolves against. Read
+    from the grant record, which is cached, where :func:`login_credentials`
+    also reads the password from the secret store.
+
+    Returns:
+        The URI, or None when there is no such live grant or no built-in
+        authorization server is being served.
+    """
+    provider = _active_provider()
+    if provider is None or not grant_id:
+        return None
+
+    return provider.live_grant_uri(mcp_user_id, grant_id)
 
 
 def login_credentials(mcp_user_id, grant_id) -> Optional[tuple]:
@@ -327,8 +346,7 @@ def login_credentials(mcp_user_id, grant_id) -> Optional[tuple]:
         The URI and password, or None when there is no such live grant or no
         built-in authorization server is being served.
     """
-    with _provider_lock:
-        provider = _provider
+    provider = _active_provider()
     if provider is None or not grant_id:
         return None
 
@@ -345,12 +363,15 @@ def _is_loopback_redirect(url: str) -> bool:
     return parts.scheme == "http" and parts.hostname in ("127.0.0.1", "localhost", "::1")
 
 
+@functools.lru_cache(maxsize=None)
 def _client_class():
-    """Returns the SDK client information model, with this server's leniency."""
-    from mcp.shared.auth import (
-        InvalidRedirectUriError,
-        OAuthClientInformationFull,
-    )
+    """Returns the SDK client information model, with this server's leniency.
+
+    Built once: the SDK is imported lazily (see
+    :mod:`mcp_plugin.lib.tool_registrar`), and defining a pydantic model is not
+    free, so it is not done on every request to the token endpoint.
+    """
+    from mcp.shared.auth import OAuthClientInformationFull
 
     class Client(OAuthClientInformationFull):
         """A client as the SDK's handlers see it.
@@ -373,10 +394,8 @@ def _client_class():
                         and have.path == wanted.path
                     ):
                         return redirect_uri
-            try:
-                return super().validate_redirect_uri(redirect_uri)
-            except InvalidRedirectUriError:
-                raise
+
+            return super().validate_redirect_uri(redirect_uri)
 
         def validate_scope(self, requested_scope):
             if requested_scope is None:
@@ -487,37 +506,6 @@ def _bounded_get(url: str, max_bytes: int, timeout: float) -> tuple:
 # --- The provider -------------------------------------------------------------------
 
 
-class _LoginLimiter:
-    """Counts failed sign-ins per account and per address."""
-
-    def __init__(self):
-        self._failures = {}
-        self._lock = threading.Lock()
-
-    def _recent(self, key, now):
-        times = [t for t in self._failures.get(key, []) if now - t < _LOGIN_WINDOW]
-        if times:
-            self._failures[key] = times
-        else:
-            self._failures.pop(key, None)
-
-        return times
-
-    def blocked(self, address, account) -> bool:
-        now = time.monotonic()
-        with self._lock:
-            return (
-                len(self._recent(("account", account), now)) >= _LOGIN_MAX_FAILURES_PER_ACCOUNT
-                or len(self._recent(("address", address), now)) >= _LOGIN_MAX_FAILURES_PER_ADDRESS
-            )
-
-    def failed(self, address, account) -> None:
-        now = time.monotonic()
-        with self._lock:
-            self._failures.setdefault(("account", account), []).append(now)
-            self._failures.setdefault(("address", address), []).append(now)
-
-
 class SignInError(Exception):
     """A sign-in that is refused, with what the user is told."""
 
@@ -543,7 +531,7 @@ class BuiltinAuthProvider:
         self.api_keys = api_keys
         self.directory = api_keys.directory
         self.store = GrantStore(settings["loginConnectionStore"])
-        self._open_session = open_session or (lambda data: _shell().open_session(data))
+        self._open_session = open_session or (lambda data: config._shell().open_session(data))
         self._cimd_fetch = cimd_fetch or fetch_client_metadata
         self._lock = threading.RLock()
         self._pending = {}
@@ -551,7 +539,8 @@ class BuiltinAuthProvider:
         self._recent_refreshes = {}
         self._cimd_cache = {}
         self._client_uses = {}
-        self._limiter = _LoginLimiter()
+        # Failed sign-ins, counted per account and per address.
+        self._login_failures = auth.FailureCounter(_LOGIN_WINDOW)
         self._sweeper = None
         self._sweeper_stop = threading.Event()
         self._keys_loaded_at = 0.0
@@ -657,12 +646,19 @@ class BuiltinAuthProvider:
                 if reason:
                     self.end_grant(record["user"], record["id"], reason)
                     ended += 1
+            # Collected under the lock, ended outside it: ending a grant
+            # deletes secrets and closes sessions, and every token check waits
+            # on this lock meanwhile.
             with self._lock:
-                for code, entry in list(self._codes.items()):
-                    if entry["expires_at"] < time.time():
-                        del self._codes[code]
-                        self.end_grant(entry["user"], entry["grant"], "its code was never redeemed")
-                        ended += 1
+                wall = time.time()
+                never_redeemed = [
+                    entry for entry in self._codes.values() if entry["expires_at"] < wall
+                ]
+                self._codes = {
+                    code: entry
+                    for code, entry in self._codes.items()
+                    if entry["expires_at"] >= wall
+                }
                 for request_id, entry in list(self._pending.items()):
                     if entry["created"] + PENDING_LIFETIME < time.time():
                         del self._pending[request_id]
@@ -670,8 +666,10 @@ class BuiltinAuthProvider:
                 for digest, (_, issued) in list(self._recent_refreshes.items()):
                     if time.monotonic() - issued > grace:
                         del self._recent_refreshes[digest]
-            with self._lock:
                 used, self._client_uses = self._client_uses, {}
+            for entry in never_redeemed:
+                self.end_grant(entry["user"], entry["grant"], "its code was never redeemed")
+                ended += 1
             oauth_config.record_client_use(used)
             oauth_config.expire_unused_dynamic_clients(_DYNAMIC_CLIENT_MAX_IDLE)
         except Exception as error:  # noqa: BLE001 - the sweeper must not die
@@ -722,6 +720,12 @@ class BuiltinAuthProvider:
             return None
 
         return record
+
+    def live_grant_uri(self, user, grant_id) -> Optional[str]:
+        """Returns the URI of a live grant's login connection, or None."""
+        record = self.live_grant(user, grant_id)
+
+        return None if record is None else record.get("uri")
 
     def live_credentials(self, user, grant_id) -> Optional[tuple]:
         """Returns a live grant's login connection, or None."""
@@ -812,6 +816,13 @@ class BuiltinAuthProvider:
         return client
 
     async def register_client(self, client_info) -> None:
+        import anyio
+
+        # File and secret-store writes: off the event loop, like every other
+        # provider method's work.
+        await anyio.to_thread.run_sync(self._register_client_sync, client_info)
+
+    def _register_client_sync(self, client_info) -> None:
         from mcp.server.auth.provider import RegistrationError
 
         if len([
@@ -975,7 +986,7 @@ this server on your behalf, and will be sent back to
         if server not in servers:
             raise SignInError("Choose one of the listed servers.")
         account_key = f"{server}|{username}"
-        if not username or self._limiter.blocked(address, account_key):
+        if not username or self._sign_in_blocked(address, account_key):
             general.log_event(
                 f"oauth: REFUSED a sign-in for '{username}' from address={address or '-'}"
                 " - too many failed attempts"
@@ -987,7 +998,7 @@ this server on your behalf, and will be sent back to
         try:
             account, roles, default_role, uri = self._check_account(server, username, password)
         except Exception as error:  # noqa: BLE001 - every failure reads the same
-            self._limiter.failed(address, account_key)
+            self._login_failures.record(("account", account_key), ("address", address))
             general.log_event(
                 f"oauth: REFUSED a sign-in for '{username}' on {server} from "
                 f"address={address or '-'}: {type(error).__name__}"
@@ -1059,6 +1070,15 @@ this server on your behalf, and will be sent back to
             pending["redirect_uri"], code=code, state=pending["state"], iss=self.issuer
         )
 
+    def _sign_in_blocked(self, address, account_key) -> bool:
+        """Returns whether an account or an address has failed too often."""
+        return (
+            self._login_failures.count(("account", account_key))
+            >= _LOGIN_MAX_FAILURES_PER_ACCOUNT
+            or self._login_failures.count(("address", address))
+            >= _LOGIN_MAX_FAILURES_PER_ADDRESS
+        )
+
     def _check_account(self, server, username, password) -> tuple:
         """Opens a session as the user, reads who they are, and closes it again.
 
@@ -1069,7 +1089,7 @@ this server on your behalf, and will be sent back to
             the ones granted to the account itself, which are all ``SET ROLE``
             can activate.
         """
-        connection_data = dict(_shell().parse_uri(server))
+        connection_data = dict(config._shell().parse_uri(server))
         connection_data["user"] = username
         host = connection_data.get("host", "")
         if (
@@ -1080,7 +1100,7 @@ this server on your behalf, and will be sent back to
         ):
             # The password crosses the network: never in clear.
             connection_data["ssl-mode"] = "REQUIRED"
-        uri = config.normalize_connection_uri(_shell().unparse_uri(connection_data))
+        uri = config.normalize_connection_uri(config._shell().unparse_uri(connection_data))
 
         connection_data["password"] = password
         session = self._open_session(connection_data)
@@ -1205,7 +1225,7 @@ this server on your behalf, and will be sent back to
         record["lastRefreshed"] = now
         self.store.update(record)
         with self._lock:
-            self._client_uses[record["client"]] = oauth_config.now()
+            self._client_uses[record["client"]] = general.utc_timestamp()
 
         grant_end = record["created"] + int(self.settings["grantMaxLifetime"])
         lifetime = max(1, min(int(self.settings["accessTokenLifetime"]), grant_end - now))
@@ -1471,29 +1491,23 @@ rgba(200,200,200,0));width:400px;max-width:100%;height:1px;margin-top:20px}
 """
 
 
+@functools.lru_cache(maxsize=None)
 def _seal_svg() -> str:
     """Returns the MariaDB seal as inline SVG, coloured by the page's CSS.
 
     Inline because the page's CSP loads nothing; its style attributes are
-    removed because the CSP allows only the nonce'd style element.
+    removed because the CSP allows only the nonce'd style element. Read once.
     """
-    global _SEAL_SVG
+    import os
+    import re
 
-    if _SEAL_SVG is None:
-        import os
-        import re
+    path = os.path.join(os.path.dirname(__file__), "assets", "mariadb-seal.svg")
+    with open(path, encoding="utf-8") as file:
+        svg = file.read()
+    svg = svg[svg.index("<svg"):]
+    svg = re.sub(r'\s(style|width|height|xml:space|xmlns:\w+|serif:\w+)="[^"]*"', "", svg)
 
-        path = os.path.join(os.path.dirname(__file__), "assets", "mariadb-seal.svg")
-        with open(path, encoding="utf-8") as file:
-            svg = file.read()
-        svg = svg[svg.index("<svg"):]
-        svg = re.sub(r'\s(style|width|height|xml:space|xmlns:\w+|serif:\w+)="[^"]*"', "", svg)
-        _SEAL_SVG = svg.replace("<svg", '<svg role="img" aria-label="MariaDB"', 1)
-
-    return _SEAL_SVG
-
-
-_SEAL_SVG: Optional[str] = None
+    return svg.replace("<svg", '<svg role="img" aria-label="MariaDB"', 1)
 
 
 def _page(response_class, body: str, status: int = 200, raw: bool = False,

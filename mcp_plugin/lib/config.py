@@ -216,6 +216,26 @@ def _shell():
     return mysqlsh.globals.shell
 
 
+def write_json_file(path: str, content) -> None:
+    """Writes a JSON file, replacing it whole and atomically.
+
+    Written to ``<path>.tmp`` and renamed over the file, so a reader never sees
+    half of it: every file this plugin keeps is read by a running server while
+    ``mcp setup`` writes it.
+
+    Args:
+        path (str): The file to write.
+        content: What ``json.dump`` takes.
+
+    Returns:
+        None
+    """
+    temporary = f"{path}.tmp"
+    with open(temporary, "w", encoding="utf-8") as json_file:
+        json.dump(content, json_file, indent=4)
+    os.replace(temporary, path)
+
+
 @contextlib.contextmanager
 def file_lock(path: str):
     """Holds an exclusive lock for a read-modify-write of one file.
@@ -584,11 +604,7 @@ def _write_connections_file(details: dict) -> None:
             if entry and uri in stored[kind]
         }
 
-    path = get_connections_file_path()
-    temporary = f"{path}.tmp"
-    with open(temporary, "w", encoding="utf-8") as connections_file:
-        json.dump(content, connections_file, indent=4)
-    os.replace(temporary, path)
+    write_json_file(get_connections_file_path(), content)
 
 
 def get_connection_details(uri, kind=None) -> dict:
@@ -822,17 +838,32 @@ def _list_stored_connections(kind=None, mcp_user_id=None) -> list:
     Returns:
         The URIs, sorted.
     """
-    if mcp_user_id is None:
-        # Only the generic group can hold keys in an earlier format: groups
-        # came after both of them.
-        upgrade_connection_keys()
     prefix = connection_secret_prefix(kind)
 
     return sorted(
         key[len(prefix):]
-        for key in _shell().list_secrets(*secret_options(mcp_user_id))
+        for key in _shell().list_secrets(*_connection_store(mcp_user_id))
         if key.startswith(prefix)
     )
+
+
+def _connection_store(mcp_user_id) -> tuple:
+    """Returns the secret options the connections of a user are stored under.
+
+    What every connection function reaches the store with: for the ``generic``
+    group it first brings the keys up to the current format, which only that
+    group can hold in an earlier one - groups came after both formats.
+
+    Args:
+        mcp_user_id: The user, or None for the ``generic`` group.
+
+    Returns:
+        What :func:`secret_options` returns.
+    """
+    if mcp_user_id is None:
+        upgrade_connection_keys()
+
+    return secret_options(mcp_user_id)
 
 
 def list_connections_with_details(kind=None) -> list:
@@ -1216,12 +1247,9 @@ def get_connection_password(uri: str, kind=None, mcp_user_id=None) -> str:
     Returns:
         The stored password.
     """
-    if mcp_user_id is None:
-        upgrade_connection_keys()
-
     # A URI not stored fails with the shell's own error for a missing secret.
     return _shell().read_secret(
-        _connection_key(uri, kind), *secret_options(mcp_user_id)
+        _connection_key(uri, kind), *_connection_store(mcp_user_id)
     )
 
 
@@ -1276,11 +1304,9 @@ def store_connection(
             "for the VS Code extension, which multi-tenant mode does not serve."
         )
     check_connection_key_length(uri, kind)
-    if mcp_user_id is None:
-        upgrade_connection_keys()
 
     _shell().store_secret(
-        _connection_key(uri, kind), password, *secret_options(mcp_user_id)
+        _connection_key(uri, kind), password, *_connection_store(mcp_user_id)
     )
 
     if changes:
@@ -1329,30 +1355,25 @@ def drop_superseded_spellings(uri, kind=None, mcp_user_id=None) -> list:
         and normalize_connection_uri(configured_uri) == normalized
     ]
 
-    if mcp_user_id is not None:
-        # A user's connections have no details to pass on.
-        for old_uri in superseded:
-            delete_connection(old_uri, kind, mcp_user_id)
-
-        return superseded
-
     # The connection kept is the one being configured, so how it was shown
-    # goes with it - unless it has details of its own already.
-    inherited = next(
-        (
-            details
-            for details in (
-                get_connection_details(old_uri, kind) for old_uri in superseded
-            )
-            if any(details.values())
-        ),
-        None,
-    )
-    if inherited and not any(get_connection_details(uri, kind).values()):
-        set_connection_details(uri, kind, **inherited)
+    # goes with it - unless it has details of its own already. A user's
+    # connections have no details to pass on.
+    if mcp_user_id is None:
+        inherited = next(
+            (
+                details
+                for details in (
+                    get_connection_details(old_uri, kind) for old_uri in superseded
+                )
+                if any(details.values())
+            ),
+            None,
+        )
+        if inherited and not any(get_connection_details(uri, kind).values()):
+            set_connection_details(uri, kind, **inherited)
 
     for old_uri in superseded:
-        delete_connection(old_uri, kind)
+        delete_connection(old_uri, kind, mcp_user_id)
 
     return superseded
 
@@ -1371,12 +1392,10 @@ def delete_connection(uri: str, kind=None, mcp_user_id=None) -> None:
         None
     """
     kind = normalize_connection_kind(kind)
-    if mcp_user_id is None:
-        upgrade_connection_keys()
 
     # A URI not stored raises the shell's own error for a missing secret -
     # callers rely on that. The details go only once the secret has.
-    _shell().delete_secret(_connection_key(uri, kind), *secret_options(mcp_user_id))
+    _shell().delete_secret(_connection_key(uri, kind), *_connection_store(mcp_user_id))
     if mcp_user_id is None:
         _drop_connection_details(uri, kind)
 
@@ -1449,27 +1468,45 @@ def save_settings(settings: dict) -> None:
     Returns:
         None
     """
-    path = get_settings_file_path()
-    temporary = f"{path}.tmp"
-    with open(temporary, "w", encoding="utf-8") as settings_file:
-        json.dump(settings, settings_file, indent=4)
-    os.replace(temporary, path)
+    write_json_file(get_settings_file_path(), settings)
 
 
-def get_allowed_paths() -> list:
-    """Returns the list of directories the MCP server is allowed to access."""
+def get_allowed_paths(mcp_user_id=None) -> list:
+    """Returns the directories the MCP server may access.
+
+    Args:
+        mcp_user_id: The user whose list it is, in multi-tenant mode, or None
+            for the server-wide list in settings.json.
+
+    Returns:
+        The allowed directories; none for an unknown user.
+    """
+    if mcp_user_id is not None:
+        # Imported here: tenants imports this module.
+        from mcp_plugin.lib import tenants
+
+        return tenants.get_allowed_paths(mcp_user_id)
+
     return list(get_settings().get(_ALLOWED_PATHS_KEY, []))
 
 
-def set_allowed_paths(paths: list) -> None:
-    """Persists the list of allowed directories.
+def set_allowed_paths(paths: list, mcp_user_id=None) -> None:
+    """Persists the allowed directories.
 
     Args:
         paths (list): The allowed directories.
+        mcp_user_id: The user whose list it is, in multi-tenant mode, or None
+            for the server-wide list in settings.json.
 
     Returns:
         None
     """
+    if mcp_user_id is not None:
+        from mcp_plugin.lib import tenants
+
+        tenants.set_allowed_paths(mcp_user_id, paths)
+        return
+
     settings = get_settings()
     settings[_ALLOWED_PATHS_KEY] = list(paths)
     save_settings(settings)
@@ -1526,17 +1563,10 @@ def is_path_allowed(path: str, mcp_user_id=None) -> bool:
     if general.is_gui_mode():
         return True
 
-    if general.is_multi_tenant():
-        if mcp_user_id is None:
-            return False
+    if general.is_multi_tenant() and mcp_user_id is None:
+        return False
 
-        # Imported here: tenants imports this module.
-        from mcp_plugin.lib import tenants
-
-        allowed_paths = tenants.get_allowed_paths(mcp_user_id)
-    else:
-        allowed_paths = get_allowed_paths()
-
+    allowed_paths = get_allowed_paths(mcp_user_id)
     if not allowed_paths:
         return False
 

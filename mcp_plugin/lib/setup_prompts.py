@@ -108,6 +108,27 @@ def select(message: str, choices: list, default: int = None) -> int:
     return list(choices).index(shell().prompt(message, options))
 
 
+def select_action(message: str, entries: list, finish_label: str):
+    """Prompts the user to pick one of a menu's actions, or to finish.
+
+    The shape every setup menu has: ``(label, action)`` pairs, with the finish
+    entry last and the default, which is what makes an empty reply end the
+    menu.
+
+    Args:
+        message (str): The prompt message.
+        entries (list): The ``(label, action)`` pairs to offer, in order.
+        finish_label (str): The label of the entry that ends the menu.
+
+    Returns:
+        The chosen action, or None when the user chose to finish.
+    """
+    labels = [label for label, _ in entries] + [finish_label]
+    choice = select(message, labels, default=len(entries))
+
+    return None if choice == len(entries) else entries[choice][1]
+
+
 def select_or_cancel(message: str, choices: list) -> int:
     """Prompts the user to pick one of the given choices, or to back out.
 

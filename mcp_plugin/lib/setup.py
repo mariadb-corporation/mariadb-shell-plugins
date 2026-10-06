@@ -151,7 +151,7 @@ def _delete_connection(mcp_user_id=None) -> None:
 
 def _print_paths(mcp_user_id=None) -> list:
     """Prints the configured allowed paths and returns them."""
-    paths = setup_cli._allowed_paths(mcp_user_id)
+    paths = config.get_allowed_paths(mcp_user_id)
     if paths:
         print("\nAllowed paths:")
         for index, path in enumerate(paths, start=1):
@@ -173,13 +173,13 @@ def _add_path(mcp_user_id=None) -> None:
         print(f"'{path}' is not an existing directory. It was not added.")
         return
 
-    paths = setup_cli._allowed_paths(mcp_user_id)
+    paths = config.get_allowed_paths(mcp_user_id)
     if path in paths:
         print(f"'{path}' is already allowed.")
         return
 
     paths.append(path)
-    setup_cli._set_allowed_paths(mcp_user_id, paths)
+    config.set_allowed_paths(paths, mcp_user_id)
     print(f"Allowed path '{path}' added{setup_cli._for_user(mcp_user_id)}.")
 
 
@@ -189,7 +189,7 @@ def _delete_path(mcp_user_id=None) -> None:
     The list is NOT printed first: the select prompt below renders its own
     numbered list, so printing one here would show it twice.
     """
-    paths = setup_cli._allowed_paths(mcp_user_id)
+    paths = config.get_allowed_paths(mcp_user_id)
     if not paths:
         print("\nNo allowed paths configured yet.")
         return
@@ -199,7 +199,7 @@ def _delete_path(mcp_user_id=None) -> None:
         return
 
     path = paths.pop(index)
-    setup_cli._set_allowed_paths(mcp_user_id, paths)
+    config.set_allowed_paths(paths, mcp_user_id)
     print(f"Allowed path '{path}' deleted{setup_cli._for_user(mcp_user_id)}.")
 
 
@@ -325,12 +325,11 @@ def _manage_user_resources() -> None:
         _print_connections(mcp_user_id)
         _print_paths(mcp_user_id)
 
-        labels = [label for label, _ in entries] + ["Back"]
-        choice = prompts.select("\nWhat would you like to do?", labels, default=len(entries))
-        if choice == len(entries):
+        action = prompts.select_action("\nWhat would you like to do?", entries, "Back")
+        if action is None:
             return
 
-        entries[choice][1](mcp_user_id)
+        action(mcp_user_id)
 
 
 def _tenant_menu_entries() -> list:
@@ -351,15 +350,13 @@ def _tenant_menu() -> None:
     while True:
         _print_users()
 
-        entries = _tenant_menu_entries()
-        labels = [label for label, _ in entries] + [MENU_FINISH_LABEL]
-        choice = prompts.select(
-            "\nWhat would you like to do?", labels, default=len(entries)
+        action = prompts.select_action(
+            "\nWhat would you like to do?", _tenant_menu_entries(), MENU_FINISH_LABEL
         )
-        if choice == len(entries):
+        if action is None:
             break
 
-        entries[choice][1]()
+        action()
 
 
 # --- Entry points ----------------------------------------------------------
@@ -424,16 +421,13 @@ def _menu() -> None:
 
         # Rebuilt every round: the migration entry's label follows what is
         # installed, which the previous round may have just changed.
-        entries = _menu_entries()
-        labels = [label for label, _ in entries] + [MENU_FINISH_LABEL]
-
-        choice = prompts.select(
-            "\nWhat would you like to do?", labels, default=len(entries)
+        action = prompts.select_action(
+            "\nWhat would you like to do?", _menu_entries(), MENU_FINISH_LABEL
         )
-        if choice == len(entries):
+        if action is None:
             break
 
-        entries[choice][1]()
+        action()
 
 
 def run_setup(**options) -> None:

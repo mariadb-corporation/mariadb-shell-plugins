@@ -879,7 +879,7 @@ def test_a_shell_without_groups_cannot_go_multi_tenant(tenant_config, monkeypatc
                 raise TypeError("too many arguments")
             return []
 
-    monkeypatch.setattr(tenants, "_shell", lambda: _OldShell())
+    monkeypatch.setattr(config, "_shell", lambda: _OldShell())
 
     assert tenants.secret_groups_supported() is False
     with pytest.raises(mysqlsh.Error, match="keeps secrets in groups"):

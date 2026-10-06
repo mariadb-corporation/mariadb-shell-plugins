@@ -50,6 +50,7 @@ import ipaddress
 import json
 import os
 import secrets
+import time
 import uuid
 from typing import Optional
 from urllib.parse import urlsplit
@@ -131,21 +132,6 @@ INTROSPECTION_SECRET = "MCP:OAUTH:INTROSPECTION_SECRET"
 # How a client came to be registered.
 CLIENT_REGISTERED_BY_ADMIN = "admin"
 CLIENT_REGISTERED_DYNAMICALLY = "dynamic"
-
-
-def _shell():
-    """Returns the shell global object."""
-    return mysqlsh.globals.shell
-
-
-def _now() -> str:
-    """Returns the current time as an ISO 8601 UTC timestamp."""
-    return (
-        datetime.datetime.now(datetime.timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
 
 
 # --- The public URL ---------------------------------------------------------------
@@ -362,12 +348,25 @@ def address_allowed(address, networks) -> bool:
         except ValueError:
             return False
 
-    for network in networks:
-        parsed = ipaddress.ip_network(network, strict=False)
+    for parsed in parse_networks(networks):
         if any(candidate in parsed for candidate in candidates if candidate.version == parsed.version):
             return True
 
     return False
+
+
+def parse_networks(networks) -> list:
+    """Returns networks as ``ipaddress`` objects; ones parsed already are kept.
+
+    So a caller checking every request can parse its allow list once (see
+    :class:`mcp_plugin.lib.auth.ClientNetworkMiddleware`).
+    """
+    return [
+        network
+        if isinstance(network, (ipaddress.IPv4Network, ipaddress.IPv6Network))
+        else ipaddress.ip_network(network, strict=False)
+        for network in networks
+    ]
 
 
 def normalize_login_server(uri) -> str:
@@ -427,15 +426,10 @@ def read_clients() -> dict:
 
 def _write_clients(clients: dict) -> None:
     """Persists every client, replacing the file whole and atomically."""
-    path = get_clients_file_path()
-    temporary = f"{path}.tmp"
-    with open(temporary, "w", encoding="utf-8") as clients_file:
-        json.dump(
-            {"version": _CLIENTS_FILE_VERSION, "clients": dict(sorted(clients.items()))},
-            clients_file,
-            indent=4,
-        )
-    os.replace(temporary, path)
+    config.write_json_file(
+        get_clients_file_path(),
+        {"version": _CLIENTS_FILE_VERSION, "clients": dict(sorted(clients.items()))},
+    )
 
 
 def _change_clients(change):
@@ -513,7 +507,7 @@ def add_client(
     secret = None
     if confidential:
         secret = client_secret or secrets.token_urlsafe(32)
-        _shell().store_secret(client_secret_key(client_id), secret)
+        config._shell().store_secret(client_secret_key(client_id), secret)
 
     def change(clients):
         if client_id in clients:
@@ -524,7 +518,7 @@ def add_client(
             "redirectUris": uris,
             "allowedRoles": [],
             "registered": registered,
-            "created": _now(),
+            "created": general.utc_timestamp(),
         }
         if metadata:
             record["metadata"] = metadata
@@ -608,7 +602,7 @@ def set_allowed_roles(client_id, roles) -> list:
 def get_client_secret(client_id) -> Optional[str]:
     """Returns a confidential client's secret, or None."""
     try:
-        return _shell().read_secret(client_secret_key(client_id))
+        return config._shell().read_secret(client_secret_key(client_id))
     except Exception:  # noqa: BLE001 - no secret is the shell's missing-secret error
         return None
 
@@ -626,7 +620,7 @@ def rotate_client_secret(client_id) -> str:
         raise mysqlsh.Error(f"The OAuth client '{client_id}' is public and has no secret.")
 
     secret = secrets.token_urlsafe(32)
-    _shell().store_secret(client_secret_key(client_id), secret)
+    config._shell().store_secret(client_secret_key(client_id), secret)
 
     return secret
 
@@ -645,7 +639,7 @@ def remove_client(client_id) -> None:
 
     _change_clients(change)
     try:
-        _shell().delete_secret(client_secret_key(client_id))
+        config._shell().delete_secret(client_secret_key(client_id))
     except Exception:  # noqa: BLE001 - a public client has none
         pass
 
@@ -673,11 +667,6 @@ def record_client_use(used: dict) -> None:
         _change_clients(change)
     except Exception as error:  # noqa: BLE001 - bookkeeping must not fail a sweep
         general.log_event(f"oauth: could not record the use of clients: {error}")
-
-
-def now() -> str:
-    """Returns the current time as it is recorded in the files."""
-    return _now()
 
 
 def expire_unused_dynamic_clients(max_age_seconds: float) -> list:
@@ -734,10 +723,10 @@ def get_signing_key() -> dict:
         A dict with ``kid`` and the private key as ``pem``.
     """
     try:
-        return json.loads(_shell().read_secret(SIGNING_KEY_SECRET))
+        return json.loads(config._shell().read_secret(SIGNING_KEY_SECRET))
     except Exception:  # noqa: BLE001 - none yet, or unreadable: make one
         key = _generate_signing_key()
-        _shell().store_secret(SIGNING_KEY_SECRET, json.dumps(key))
+        config._shell().store_secret(SIGNING_KEY_SECRET, json.dumps(key))
 
         return key
 
@@ -773,10 +762,9 @@ def rotate_signing_key(keep_previous_for=None) -> str:
         key["previous"] = {
             "kid": current["kid"],
             "pem": current["pem"],
-            "validUntil": int(datetime.datetime.now(datetime.timezone.utc).timestamp())
-            + int(keep_previous_for),
+            "validUntil": int(time.time()) + int(keep_previous_for),
         }
-    _shell().store_secret(SIGNING_KEY_SECRET, json.dumps(key))
+    config._shell().store_secret(SIGNING_KEY_SECRET, json.dumps(key))
 
     return key["kid"]
 
@@ -795,19 +783,19 @@ def drop_previous_signing_key() -> bool:
         return False
 
     del key["previous"]
-    _shell().store_secret(SIGNING_KEY_SECRET, json.dumps(key))
+    config._shell().store_secret(SIGNING_KEY_SECRET, json.dumps(key))
 
     return True
 
 
 def set_introspection_secret(secret) -> None:
     """Stores the secret of the client Keycloak introspection authenticates as."""
-    _shell().store_secret(INTROSPECTION_SECRET, str(secret))
+    config._shell().store_secret(INTROSPECTION_SECRET, str(secret))
 
 
 def get_introspection_secret() -> Optional[str]:
     """Returns the introspection client's secret, or None."""
     try:
-        return _shell().read_secret(INTROSPECTION_SECRET)
+        return config._shell().read_secret(INTROSPECTION_SECRET)
     except Exception:  # noqa: BLE001 - not configured
         return None

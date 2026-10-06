@@ -16,6 +16,7 @@
 # cSpell:ignore mysqlsh MariaDB pydantic elicit uvicorn
 
 # Define plugin version
+import datetime
 import ipaddress
 import os
 import pathlib
@@ -124,6 +125,16 @@ DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 # write to the server's disk - resources one user would take from all the
 # others - so they are not offered to tenants at all.
 MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB, FUNCTION_GROUP_MSM)
+
+def utc_timestamp() -> str:
+    """Returns the current time as the files record it: ISO 8601, UTC, seconds."""
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
 
 def get_plugin_data_path() -> str:
     # Get msm plugin data folder, create if it does not exist yet
@@ -595,6 +606,18 @@ def get_principal(ctx) -> Optional[Principal]:
     except Exception:  # noqa: BLE001 - no request context outside a request
         return None
 
+    return principal_from_request(request)
+
+
+def principal_from_request(request) -> Optional[Principal]:
+    """Returns the authenticated user an HTTP request was made by.
+
+    Args:
+        request: The transport's request object, or None.
+
+    Returns:
+        The :class:`Principal`, or None when the request was not authenticated.
+    """
     scope = getattr(request, "scope", None)
     if not isinstance(scope, dict):
         return None
@@ -907,11 +930,8 @@ async def require_allowed_path(ctx, path) -> None:
     from mcp_plugin.lib import config
 
     if is_multi_tenant():
-        principal = get_principal(ctx)
         checked = os.getcwd() if path is None else path
-        if config.is_path_allowed(
-            checked, principal.mcp_user_id if principal else None
-        ):
+        if config.is_path_allowed(checked, get_client_identity(ctx).user):
             return
 
         raise tool_error(

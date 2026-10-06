@@ -48,7 +48,7 @@ import sys
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_migrator, tenants
+from mcp_plugin.lib import config, general, oauth_config, setup_migrator, tenants
 from mcp_plugin.lib import setup_prompts as prompts
 
 # Options that change something. Their presence is what switches mcp.setup from
@@ -187,15 +187,16 @@ def _as_list(value) -> list:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
-def _reject_unknown(options: dict) -> None:
+def _reject_unknown(options: dict, known_options=KNOWN_OPTIONS) -> None:
     """Refuses an option that is not one of ours.
 
     A misspelled option in a provisioning script would otherwise be ignored in
     silence, and the run would report success having done less than it was
-    asked to.
+    asked to. The other setup commands check theirs the same way.
 
     Args:
-        options (dict): The options mcp.setup was called with.
+        options (dict): The options the command was called with.
+        known_options: The options the command takes.
 
     Returns:
         None
@@ -203,11 +204,11 @@ def _reject_unknown(options: dict) -> None:
     Raises:
         mysqlsh.Error: If any option is not recognized.
     """
-    unknown = sorted(name for name in options if name not in KNOWN_OPTIONS)
+    unknown = sorted(name for name in options if name not in known_options)
     if unknown:
         raise mysqlsh.Error(
             f"Unknown option(s): {', '.join(unknown)}. Supported options are: "
-            f"{', '.join(sorted(_cli_name(name) for name in KNOWN_OPTIONS))}."
+            f"{', '.join(sorted(_cli_name(name) for name in known_options))}."
         )
 
 
@@ -232,16 +233,23 @@ def _as_bool(value) -> bool:
     raise mysqlsh.Error(f"'{value}' is not true or false.")
 
 
-def _actions(options: dict) -> list:
+def _actions(
+    options: dict, action_options=ACTION_OPTIONS, presence_options=PRESENCE_OPTIONS
+) -> list:
     """Returns the action options that were given.
 
     ``--multiTenant=false`` is an action even though its value is false, and
-    so are the others in :data:`PRESENCE_OPTIONS`.
+    so are the others in ``presence_options``.
+
+    Args:
+        options (dict): The options the command was called with.
+        action_options: The options that are actions.
+        presence_options: Those among them that count whatever their value.
     """
     return [
         name
-        for name in ACTION_OPTIONS
-        if options.get(name) or (name in PRESENCE_OPTIONS and name in options)
+        for name in action_options
+        if options.get(name) or (name in presence_options and name in options)
     ]
 
 
@@ -297,11 +305,7 @@ def _check_combination(options: dict) -> None:
                 f"{_cli_name(name)} only applies to {_cli_name('add_user')}."
             )
 
-    targeted = [
-        name
-        for name in USER_TARGETED_OPTIONS
-        if options.get(name) or (name in PRESENCE_OPTIONS and name in options)
-    ]
+    targeted = _actions(options, USER_TARGETED_OPTIONS)
     if targeted and not options.get("user"):
         raise mysqlsh.Error(
             f"{', '.join(_cli_name(n) for n in targeted)} needs "
@@ -531,22 +535,6 @@ def _delete_connections(options: dict, mcp_user_id=None) -> None:
         print(f"Connection '{uri}' deleted{_for_user(mcp_user_id)}.")
 
 
-def _allowed_paths(mcp_user_id) -> list:
-    """Returns the allowed paths: one user's, or the server-wide list."""
-    if mcp_user_id is None:
-        return config.get_allowed_paths()
-
-    return tenants.get_allowed_paths(mcp_user_id)
-
-
-def _set_allowed_paths(mcp_user_id, paths: list) -> None:
-    """Persists the allowed paths: one user's, or the server-wide list."""
-    if mcp_user_id is None:
-        config.set_allowed_paths(paths)
-    else:
-        tenants.set_allowed_paths(mcp_user_id, paths)
-
-
 def _add_paths(options: dict, mcp_user_id=None) -> None:
     """Adds the directories named by --add-paths."""
     for entered in _as_list(options["add_paths"]):
@@ -554,12 +542,12 @@ def _add_paths(options: dict, mcp_user_id=None) -> None:
         if not os.path.isdir(path):
             raise mysqlsh.Error(f"'{path}' is not an existing directory.")
 
-        paths = _allowed_paths(mcp_user_id)
+        paths = config.get_allowed_paths(mcp_user_id)
         if path in paths:
             print(f"Allowed path '{path}' was already allowed{_for_user(mcp_user_id)}.")
             continue
 
-        _set_allowed_paths(mcp_user_id, paths + [path])
+        config.set_allowed_paths(paths + [path], mcp_user_id)
         print(f"Allowed path '{path}' added{_for_user(mcp_user_id)}.")
 
 
@@ -567,7 +555,7 @@ def _delete_paths(options: dict, mcp_user_id=None) -> None:
     """Removes the directories named by --delete-paths."""
     for entered in _as_list(options["delete_paths"]):
         path = os.path.abspath(os.path.expanduser(entered))
-        paths = _allowed_paths(mcp_user_id)
+        paths = config.get_allowed_paths(mcp_user_id)
         if path not in paths:
             raise mysqlsh.Error(
                 f"'{path}' is not an allowed path{_for_user(mcp_user_id)}. "
@@ -575,7 +563,7 @@ def _delete_paths(options: dict, mcp_user_id=None) -> None:
             )
 
         paths.remove(path)
-        _set_allowed_paths(mcp_user_id, paths)
+        config.set_allowed_paths(paths, mcp_user_id)
         print(f"Allowed path '{path}' deleted{_for_user(mcp_user_id)}.")
 
 
@@ -795,8 +783,6 @@ def configuration(all_users: bool = False, mcp_user_id=None) -> dict:
             "wrapper_path": setup_migrator.wrapper_path(),
         },
     }
-    from mcp_plugin.lib import oauth_config
-
     current["public_url"] = oauth_config.get_public_url()
     current["oauth_mode"] = oauth_config.get_mode()
 

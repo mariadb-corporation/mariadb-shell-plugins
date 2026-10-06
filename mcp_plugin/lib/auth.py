@@ -253,14 +253,10 @@ class ApiKeyVerifier:
         if record is None or not self.directory.api_key_matches(mcp_user_id, token):
             return None
 
-        scopes = record.get("scopes")
-        if not isinstance(scopes, list):
-            scopes = list(tenants.DEFAULT_SCOPES)
-
         return AccessToken(
             token=token,
             client_id=API_KEY_CLIENT_ID,
-            scopes=[scope for scope in tenants.SUPPORTED_SCOPES if scope in scopes],
+            scopes=tenants.scopes_of(record),
             resource=self.resource,
             subject=mcp_user_id,
             claims={
@@ -298,16 +294,13 @@ class AuthBundle:
         settings: The SDK's ``AuthSettings``.
         token_verifier: The verifier, or None where a provider checks tokens.
         provider: The built-in authorization server's provider, or None.
-        mode (str): The OAuth mode.
         public_url (str): The server's public URL, or ``""``.
     """
 
-    def __init__(self, settings, token_verifier=None, provider=None, mode="none",
-                 public_url=""):
+    def __init__(self, settings, token_verifier=None, provider=None, public_url=""):
         self.settings = settings
         self.token_verifier = token_verifier
         self.provider = provider
-        self.mode = mode
         self.public_url = public_url
 
     def server_kwargs(self) -> dict:
@@ -321,12 +314,10 @@ class AuthBundle:
         return kwargs
 
 
-def build_auth(verifier=None, mode=None, public_url=None):
+def build_auth(mode=None, public_url=None):
     """Returns what ``MCPServer`` needs to authenticate requests.
 
     Args:
-        verifier: The API key verifier, or None for a new
-            :class:`ApiKeyVerifier`.
         mode (str): The OAuth mode, or None for the configured one.
         public_url (str): The server's public URL, or None for the configured
             one.
@@ -353,12 +344,10 @@ def build_auth(verifier=None, mode=None, public_url=None):
             required_scopes=None,
         )
 
-        return AuthBundle(
-            settings, token_verifier=verifier or ApiKeyVerifier(), mode=mode
-        )
+        return AuthBundle(settings, token_verifier=ApiKeyVerifier())
 
     oauth_config.check_ready(mode)
-    api_keys = verifier or ApiKeyVerifier(resource=public_url)
+    api_keys = ApiKeyVerifier(resource=public_url)
     oauth = oauth_config.get_oauth_settings()
 
     if mode == oauth_config.OAUTH_MODE_KEYCLOAK:
@@ -377,7 +366,6 @@ def build_auth(verifier=None, mode=None, public_url=None):
         return AuthBundle(
             settings,
             token_verifier=CompositeVerifier([api_keys, keycloak]),
-            mode=mode,
             public_url=public_url,
         )
 
@@ -397,7 +385,7 @@ def build_auth(verifier=None, mode=None, public_url=None):
         revocation_options=RevocationOptions(enabled=True),
     )
 
-    return AuthBundle(settings, provider=provider, mode=mode, public_url=public_url)
+    return AuthBundle(settings, provider=provider, public_url=public_url)
 
 
 def filtered_tools(tools, principal):
@@ -437,18 +425,11 @@ def scoped_server_class():
     class ScopedMCPServer(MCPServer):
         async def _handle_list_tools(self, ctx, params):
             listed = await super()._handle_list_tools(ctx, params)
-            principal = general.get_principal(_RequestContext(ctx))
+            principal = general.principal_from_request(ctx.request)
 
             return ListToolsResult(tools=filtered_tools(listed.tools, principal))
 
     return ScopedMCPServer
-
-
-class _RequestContext:
-    """Presents an SDK request context the way the tools' ``ctx`` presents one."""
-
-    def __init__(self, request_context):
-        self.request_context = request_context
 
 
 class InsufficientScopeMiddleware:
@@ -496,8 +477,11 @@ class ClientNetworkMiddleware:
     _PROTECTED_PATHS = ("/token", "/register", "/revoke")
 
     def __init__(self, app, networks, mcp_path="/mcp"):
+        from mcp_plugin.lib import oauth_config
+
         self.app = app
-        self.networks = list(networks)
+        # Parsed once here rather than on every request.
+        self.networks = oauth_config.parse_networks(networks)
         self.paths = self._PROTECTED_PATHS + (mcp_path,)
 
     async def __call__(self, scope, receive, send):
@@ -664,6 +648,55 @@ async def _send_json(send, status: int, payload: dict, headers=()) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
+class FailureCounter:
+    """Counts failures per key over a sliding window. Thread-safe.
+
+    What a rate limit is made of: the bearer-token throttle below and the
+    built-in server's sign-in page (see :mod:`mcp_plugin.lib.oauth_builtin`)
+    each count under keys of their own and compare against their own limits.
+    """
+
+    # Keys nobody asks about again would never be pruned - a probe from many
+    # addresses, or naming many users, would leave one list per key - so the
+    # whole table is swept when it has grown this far.
+    _SWEEP_AT = 1024
+
+    def __init__(self, window: float):
+        """Creates a counter.
+
+        Args:
+            window (float): How long a failure counts for, in seconds.
+        """
+        self.window = window
+        self._failures = {}
+        self._lock = threading.Lock()
+
+    def _recent(self, key, now) -> list:
+        """Returns the failure times of one key within the window, pruned."""
+        times = [t for t in self._failures.get(key, []) if now - t < self.window]
+        if times:
+            self._failures[key] = times
+        else:
+            self._failures.pop(key, None)
+
+        return times
+
+    def count(self, key) -> int:
+        """Returns how many failures one key has within the window."""
+        with self._lock:
+            return len(self._recent(key, time.monotonic()))
+
+    def record(self, *keys) -> None:
+        """Counts one failure under each of the given keys."""
+        now = time.monotonic()
+        with self._lock:
+            for key in keys:
+                self._failures.setdefault(key, []).append(now)
+            if len(self._failures) >= self._SWEEP_AT:
+                for key in list(self._failures):
+                    self._recent(key, now)
+
+
 class AuthFailureThrottle:
     """ASGI middleware answering repeated authentication failures with a 429.
 
@@ -697,35 +730,18 @@ class AuthFailureThrottle:
         self.window = window
         self.max_failures = max_failures
         self.max_failures_per_address = max_failures_per_address
-        self._failures = {}
-        self._lock = threading.Lock()
-
-    def _recent(self, key, now) -> list:
-        """Returns the failure times of one key within the window, pruned."""
-        times = [t for t in self._failures.get(key, []) if now - t < self.window]
-        if times:
-            self._failures[key] = times
-        else:
-            self._failures.pop(key, None)
-
-        return times
+        self._failures = FailureCounter(window)
 
     def is_throttled(self, address, user) -> bool:
         """Returns whether requests from an address for a user are throttled."""
-        now = time.monotonic()
-        with self._lock:
-            return (
-                len(self._recent((address, user), now)) >= self.max_failures
-                or len(self._recent((address, None), now))
-                >= self.max_failures_per_address
-            )
+        return (
+            self._failures.count((address, user)) >= self.max_failures
+            or self._failures.count((address, None)) >= self.max_failures_per_address
+        )
 
     def record_failure(self, address, user) -> None:
         """Counts one failure from an address for a user."""
-        now = time.monotonic()
-        with self._lock:
-            self._failures.setdefault((address, user), []).append(now)
-            self._failures.setdefault((address, None), []).append(now)
+        self._failures.record((address, user), (address, None))
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http":
@@ -741,7 +757,12 @@ class AuthFailureThrottle:
         user = tenants.user_of_api_key(token) or "-"
 
         if self.is_throttled(address, user):
-            await _send_too_many_requests(send, self.window)
+            await _send_json(
+                send,
+                429,
+                {"error": "too_many_requests"},
+                [(b"retry-after", str(int(self.window)).encode("ascii"))],
+            )
             return
 
         status = {}
@@ -772,20 +793,3 @@ def _bearer_token(scope) -> Optional[str]:
             return text[7:].strip()
 
     return None
-
-
-async def _send_too_many_requests(send, retry_after: float) -> None:
-    """Answers a request with a 429 and nothing else."""
-    body = b'{"error": "too_many_requests"}'
-    await send(
-        {
-            "type": "http.response.start",
-            "status": 429,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"retry-after", str(int(retry_after)).encode("ascii")),
-                (b"content-length", str(len(body)).encode("ascii")),
-            ],
-        }
-    )
-    await send({"type": "http.response.body", "body": body})

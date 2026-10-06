@@ -531,11 +531,6 @@ class _Connection:
         # Normalized on the way in, so the stored identity and the one a later
         # request is compared against are always in the same form.
         self.client = general.normalize_client_identity(client)
-        # The user whose secret group the URI was resolved in, or None for the
-        # generic group: the password is read there, and so is the
-        # re-validation every reopened session does. Taken from the identity,
-        # which is what the connection is bound to anyway.
-        self.mcp_user_id = self.client.user
         # The grant a login connection belongs to (see open_session), or None
         # for a connection configured with mcp.setup.
         self.grant_id = None
@@ -558,6 +553,17 @@ class _Connection:
         # restart of its own that never happened.
         self.session_restarted = False
         self.lock = threading.RLock()
+
+    @property
+    def mcp_user_id(self):
+        """The user whose secret group the URI was resolved in, or None.
+
+        None for the generic group. The password is read there, and so is the
+        re-validation every reopened session does. It is the identity's user,
+        which is what the connection is bound to anyway - one value, read under
+        the name each caller means.
+        """
+        return self.client.user
 
     def is_accessible_from(self, client) -> bool:
         """Returns whether the given client may use this connection.
@@ -767,18 +773,22 @@ def _open_session(uri: str, kind=None, mcp_user_id=None):
             "db.connect to open one of them."
         )
 
-    # Read the stored password back and open the session with it. The session
-    # is independent of the shell's global session.
-    connection_data = mysqlsh.globals.shell.parse_uri(uri)
-    connection_data["password"] = config.get_connection_password(
-        uri, kind, mcp_user_id
+    # Read the stored password back and open the session with it.
+    session = _open_shell_session(
+        uri, config.get_connection_password(uri, kind, mcp_user_id)
     )
-
-    session = mysqlsh.globals.shell.open_session(connection_data)
     if mcp_user_id is not None:
         _apply_default_role(session, mcp_user_id)
 
     return session
+
+
+def _open_shell_session(uri: str, password: str):
+    """Opens a session on a URI with a password; independent of the shell's own."""
+    connection_data = mysqlsh.globals.shell.parse_uri(uri)
+    connection_data["password"] = password
+
+    return mysqlsh.globals.shell.open_session(connection_data)
 
 
 def _open_login_session(uri: str, mcp_user_id: str, grant_id: str):
@@ -807,10 +817,7 @@ def _open_login_session(uri: str, mcp_user_id: str, grant_id: str):
             "Sign in again."
         )
 
-    connection_data = mysqlsh.globals.shell.parse_uri(uri)
-    connection_data["password"] = credentials[1]
-
-    session = mysqlsh.globals.shell.open_session(connection_data)
+    session = _open_shell_session(uri, credentials[1])
     _apply_default_role(session, mcp_user_id)
 
     return session
@@ -2059,11 +2066,9 @@ def _login_connection(principal):
 
     from mcp_plugin.lib import oauth_builtin
 
-    credentials = oauth_builtin.login_credentials(
-        principal.mcp_user_id, principal.grant_id
-    )
-
-    return credentials[0] if credentials else None
+    # The URI alone, from the cached grant: the password is read from the
+    # secret store only when the session is opened.
+    return oauth_builtin.login_connection_uri(principal.mcp_user_id, principal.grant_id)
 
 
 def _register_connection_management_tools(tool) -> None:
@@ -2644,13 +2649,14 @@ def register_db_tools(server, function_groups=()) -> None:
 
         # The connection the client signed in with comes first: it is the
         # user's own account, where a configured one may be another.
-        login_uri = _login_connection(general.get_principal(ctx))
+        principal = general.get_principal(ctx)
+        login_uri = _login_connection(principal)
         normalized = config.normalize_connection_uri(uri)
         if login_uri is not None and normalized is not None and (
             normalized == config.normalize_connection_uri(login_uri)
         ):
             connection = _Connection(login_uri, client)
-            connection.grant_id = general.get_principal(ctx).grant_id
+            connection.grant_id = principal.grant_id
             configured_uri, kind = login_uri, "login"
         else:
             found = config.find_connection(uri, mcp_user_id=client.user)

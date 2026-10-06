@@ -37,6 +37,13 @@ import mysqlsh
 
 from mcp_plugin.lib import oauth_config, tenants
 from mcp_plugin.lib import setup_prompts as prompts
+from mcp_plugin.lib.setup_cli import (
+    _actions,
+    _as_bool,
+    _as_list,
+    _cli_name,
+    _reject_unknown,
+)
 
 # Options that change something, in the order they are carried out.
 ACTION_OPTIONS = (
@@ -109,24 +116,6 @@ _SECONDS_OPTIONS = (
 )
 
 
-def _cli_name(option):
-    from mcp_plugin.lib.setup_cli import _cli_name as name
-
-    return name(option)
-
-
-def _as_bool(value):
-    from mcp_plugin.lib.setup_cli import _as_bool as as_bool
-
-    return as_bool(value)
-
-
-def _as_list(value):
-    from mcp_plugin.lib.setup_cli import _as_list as as_list
-
-    return as_list(value)
-
-
 def _seconds(option, value, allow_zero=False) -> int:
     """Returns an option's value as a number of seconds."""
     try:
@@ -139,29 +128,15 @@ def _seconds(option, value, allow_zero=False) -> int:
     return seconds
 
 
-def _actions(options: dict) -> list:
-    """Returns the action options that were given."""
-    return [
-        name
-        for name in ACTION_OPTIONS
-        if options.get(name) or (name in PRESENCE_OPTIONS and name in options)
-    ]
-
-
 def check_combination(options: dict) -> None:
     """Refuses options that are unknown or do not go together.
 
     Raises:
         mysqlsh.Error: If the options cannot all be honoured.
     """
-    unknown = sorted(name for name in options if name not in KNOWN_OPTIONS)
-    if unknown:
-        raise mysqlsh.Error(
-            f"Unknown option(s): {', '.join(unknown)}. Supported options are: "
-            f"{', '.join(sorted(_cli_name(name) for name in KNOWN_OPTIONS))}."
-        )
+    _reject_unknown(options, KNOWN_OPTIONS)
 
-    actions = _actions(options)
+    actions = _actions(options, ACTION_OPTIONS, PRESENCE_OPTIONS)
     if options.get("show"):
         if actions:
             raise mysqlsh.Error(
@@ -208,17 +183,6 @@ def check_combination(options: dict) -> None:
             "Auto-provisioning belongs to an OAuth mode: give --mode=keycloak or "
             "--mode=builtin first."
         )
-
-
-def _section(mode):
-    """Returns the settings section a mode keeps its settings in."""
-    if mode == oauth_config.OAUTH_MODE_NONE:
-        raise mysqlsh.Error(
-            "That setting belongs to an OAuth mode: give --mode=keycloak or "
-            "--mode=builtin first."
-        )
-
-    return mode
 
 
 def _set(path, value) -> None:
@@ -471,14 +435,15 @@ def apply(options: dict) -> None:
     if "cimd" in options:
         set_flag(["builtin", "cimd"], _as_bool(options["cimd"]), "Client ID Metadata Documents")
 
-    # Auto-provisioning, in whichever mode is now configured.
+    # Auto-provisioning, in whichever mode is now configured - which
+    # check_combination made sure is one (its settings live under the mode).
     mode = oauth_config.get_mode()
     if "auto_provision" in options:
-        set_flag([_section(mode), "autoProvision", "enabled"], _as_bool(options["auto_provision"]),
+        set_flag([mode, "autoProvision", "enabled"], _as_bool(options["auto_provision"]),
                  "Creating users at their first sign-in")
     if options.get("default_scopes"):
         scopes = tenants.normalize_scopes(options["default_scopes"])
-        _set([_section(mode), "autoProvision", "defaultScopes"], scopes)
+        _set([mode, "autoProvision", "defaultScopes"], scopes)
         print(f"Users created at sign-in may be granted: {', '.join(scopes)}.")
 
     _apply_clients(options, report)
@@ -810,13 +775,13 @@ def menu() -> None:
     while True:
         print()
         _print_status(configuration())
-        entries = _menu_entries()
-        labels = [label for label, _ in entries] + [MENU_FINISH_LABEL]
-        choice = prompts.select("\nWhat would you like to do?", labels, default=len(entries))
-        if choice == len(entries):
+        action = prompts.select_action(
+            "\nWhat would you like to do?", _menu_entries(), MENU_FINISH_LABEL
+        )
+        if action is None:
             break
         try:
-            entries[choice][1]()
+            action()
         except mysqlsh.Error as error:
             print(error)
 
