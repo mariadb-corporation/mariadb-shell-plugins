@@ -1616,3 +1616,20 @@ def test_the_sign_in_checkboxes_are_ordinary_checkboxes(tenant_config):
     assert "input[name]" not in page
     assert "input[type=checkbox]{margin:0}" in page
     assert page.count('type="checkbox"') == 2
+
+
+def test_the_sign_in_page_shows_the_seal_inline(tenant_config):
+    """The seal is inline SVG, and carries no style attribute the CSP would block."""
+    from starlette.responses import HTMLResponse
+
+    provider = _provider()
+    pending = {"scopes": ["mcp:db"], "redirect_uri": "http://127.0.0.1:1/cb",
+               "client_name": "Test", "csrf": "x"}
+    response = provider._form(HTMLResponse, "req", pending, error="No.")
+    page = response.body.decode()
+
+    assert '<svg role="img" aria-label="MariaDB"' in page
+    assert "<?xml" not in page and "<!DOCTYPE svg" not in page
+    assert " style=" not in page
+    assert "img-src" not in response.headers["Content-Security-Policy"]
+    assert '<div class="mrsLoginError" role="alert"><p>No.</p></div>' in page

@@ -916,9 +916,9 @@ class BuiltinAuthProvider:
         server_field = (
             f'<input type="hidden" name="server" value="{html.escape(servers[0])}">'
             if len(servers) == 1
-            else '<label>Server <select name="server">'
+            else '<div class="mrsLoginField"><select name="server" aria-label="Server">'
             + "".join(f'<option>{html.escape(s)}</option>' for s in servers)
-            + "</select></label>"
+            + "</select></div>"
         )
         scopes = "".join(
             f'<label><input type="checkbox" name="scope" value="{html.escape(scope)}" checked> '
@@ -926,19 +926,31 @@ class BuiltinAuthProvider:
             for scope in pending["scopes"]
         )
         redirect_host = urlsplit(pending["redirect_uri"]).netloc
+        error_box = (
+            f'<div class="mrsLoginError" role="alert"><p>{html.escape(error)}</p></div>'
+            if error else ""
+        )
         body = f"""
-<h1>Sign in to MariaDB</h1>
-<p><strong>{html.escape(pending['client_name'])}</strong> wants to use this MariaDB MCP
-server on your behalf, and will be sent back to <strong>{html.escape(redirect_host)}</strong>.</p>
-{f'<p class="error">{html.escape(error)}</p>' if error else ''}
-<form method="post" action="/login?req={html.escape(request_id)}">
+<div class="mrsLogin">
+<p>Sign in to MariaDB</p>
+<div class="mrsLoginIntro"><strong>{html.escape(pending['client_name'])}</strong> wants to use
+this server on your behalf, and will be sent back to
+<strong>{html.escape(redirect_host)}</strong>.</div>
+<form class="mrsLoginFields" method="post" action="/login?req={html.escape(request_id)}">
 <input type="hidden" name="csrf" value="{html.escape(pending['csrf'])}">
+<fieldset class="mrsLoginScopes"><legend>Allow it to</legend>{scopes}</fieldset>
 {server_field}
-<label>User name <input name="username" autocomplete="username" value="{html.escape(username)}" required></label>
-<label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-<fieldset><legend>Allow it to</legend>{scopes}</fieldset>
-<button type="submit">Sign in and allow</button>
-</form>"""
+<div class="mrsLoginField"><input type="text" name="username" placeholder="User Name"
+ aria-label="User name" autocomplete="username" value="{html.escape(username)}" required
+ {'' if username else 'autofocus'}></div>
+<div class="mrsLoginField"><input type="password" name="password" placeholder="Password"
+ aria-label="Password" autocomplete="current-password" required {'autofocus' if username else ''}>
+<button type="submit" class="mrsLoginBtnNext" aria-label="Sign in and allow"
+ title="Sign in and allow"></button></div>
+</form>
+{error_box}
+<div class="mrsLoginSeparator"></div>
+</div>"""
 
         # The browser is sent on to the client after the form is posted, and
         # browsers apply form-action to that redirect too.
@@ -1383,15 +1395,103 @@ _SCOPE_DESCRIPTIONS = {
     tenants.SCOPE_MSM: "manage schema projects (MariaDB Schema Management)",
 }
 
-_PAGE_STYLE = (
-    "body{font-family:system-ui,sans-serif;max-width:28rem;margin:3rem auto;padding:0 1rem;"
-    "line-height:1.4}label{display:block;margin:.6rem 0}"
-    # The text fields only: a checkbox given the full width is drawn huge.
-    "input:not([type]),input[type=password],select{display:block;width:100%;"
-    "padding:.4rem;box-sizing:border-box}fieldset{margin:1rem 0}fieldset label"
-    "{display:flex;align-items:center;gap:.5rem}input[type=checkbox]{margin:0}"
-    "button{padding:.5rem 1rem}.error{color:#b00020}"
-)
+# The page follows the MySQL REST Service's sign-in page (mrs_plugin's
+# default_static_content/index.html), without its script: same colours, same
+# welcome header, same joined fields with the round "next" button.
+_PAGE_STYLE = """
+:root{--body-background:hsl(240,5%,91%);--body-text-color:hsl(240,5%,12%);
+--icon-color:hsl(200,65%,40%);--textLink-foreground:hsl(200,65%,34%);
+--primary-text-color:#333;--secondary-text-color:#adadad;--focus-color:hsl(200,65%,70%);
+--error-color:hsl(0,100%,70%);--error-text-color:#500}
+@media (prefers-color-scheme:dark){:root{--body-background:hsl(0,0%,17%);
+--body-text-color:hsl(0,0%,75%);--textLink-foreground:hsl(200,65%,54%);
+--primary-text-color:#c4c4c4;--secondary-text-color:#595959;--focus-color:hsl(200,65%,30%);
+--error-color:hsl(0,100%,20%);--error-text-color:#e00}}
+body,html{width:100%;min-height:100%;height:100%}
+*{margin:0;padding:0}
+body{background-color:var(--body-background);
+font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:12px;
+color:var(--body-text-color)}
+h2{margin:20px 0;font-weight:100;font-size:33px}
+p{line-height:19px;font-weight:200;font-size:15px}
+#root{display:flex;box-sizing:border-box;min-height:100%;padding:0 16px 40px;
+flex-direction:column;align-items:center;justify-content:center;position:relative}
+.welcomeLogo{margin-top:20px;width:160px;height:104px;min-height:104px}
+.welcomeLogo svg{width:100%;height:100%}
+.welcomeLogo path{fill:var(--icon-color)}
+.welcomeText{display:flex;flex-direction:column;align-items:center;justify-content:center}
+.welcomeText p{text-align:center;max-width:400px}
+.welcomeSpacer{height:80px}
+.footer{position:absolute;bottom:0;line-height:12pt;font-weight:200;font-size:10px;margin:5px 0}
+.mrsLogin{display:flex;flex-direction:column;padding-top:20px;padding-bottom:20px;gap:12px;
+align-items:center}
+.mrsLogin>p{font-size:20px;font-weight:400;margin-top:38px}
+.mrsLoginIntro{max-width:300px;text-align:center;line-height:19px;font-weight:200;
+font-size:15px}
+.mrsLoginIntro strong{font-weight:500}
+.mrsLoginFields{display:flex;flex-direction:column}
+.mrsLoginScopes{border:none;margin:0 0 16px;font-size:14px;font-weight:200}
+.mrsLoginScopes legend{font-weight:400;margin-bottom:6px}
+.mrsLoginScopes label{display:flex;align-items:center;gap:8px;margin:4px 0}
+input[type=checkbox]{margin:0}
+.mrsLoginFields input[type=password],.mrsLoginFields input[type=text],.mrsLoginFields select
+{border:none;outline:0;background-color:transparent;color:var(--primary-text-color);
+font-size:17px;font-weight:300;width:250px;font-family:inherit}
+.mrsLoginField{display:flex;flex-direction:row;border:1px solid var(--secondary-text-color);
+padding:8px 8px 8px 16px}
+.mrsLoginField:first-of-type{border-top-left-radius:5px;border-top-right-radius:5px}
+.mrsLoginField:last-of-type:not(:only-of-type){border-top:0}
+.mrsLoginField:last-of-type{border-bottom-left-radius:5px;border-bottom-right-radius:5px;
+margin-bottom:16px}
+.mrsLoginField input,.mrsLoginField select{height:26px}
+.mrsLoginField:focus-within{border-color:var(--focus-color)}
+.mrsLoginBtnNext{border:1px solid var(--secondary-text-color);border-radius:50%;width:24px;
+height:24px;min-width:24px;margin-left:12px;padding:0;background:transparent;
+cursor:pointer;display:block;line-height:0;text-align:left;align-self:center;box-sizing:content-box}
+.mrsLoginBtnNext::after{content:"";position:relative;border:solid var(--secondary-text-color);
+border-width:0 3px 3px 0;display:inline-block;padding:3px;transform:rotate(-45deg);
+margin-left:6px;margin-top:7px;vertical-align:top}
+.mrsLoginField:has(input:not(:placeholder-shown)) .mrsLoginBtnNext{
+border:1px solid var(--primary-text-color)}
+.mrsLoginField:has(input:not(:placeholder-shown)) .mrsLoginBtnNext::after{
+border-color:var(--primary-text-color)}
+.mrsLoginBtnNext:focus-visible{outline:2px solid var(--focus-color);outline-offset:2px}
+.mrsLoginError{background-color:var(--error-color);box-shadow:rgb(0 0 0 / 10%) 0 5px 10px 2px;
+width:220px;padding:8px 20px;border:1px solid var(--error-text-color);border-radius:6px;
+overflow-wrap:break-word;position:relative}
+.mrsLoginError p{color:var(--error-text-color);font-size:14px;text-align:center}
+.mrsLoginError:before{width:15px;height:15px;background-color:var(--error-color);content:"";
+position:absolute;left:50%;top:0;margin-top:-9px;margin-left:-8px;
+transform:rotate(135deg) skewX(5deg) skewY(5deg);border-left:1px solid var(--error-text-color);
+border-bottom:1px solid var(--error-text-color)}
+.mrsLoginSeparator{background:linear-gradient(to right,rgba(200,200,200,0),#c8c8c8,#c8c8c8,
+rgba(200,200,200,0));width:400px;max-width:100%;height:1px;margin-top:20px}
+"""
+
+
+def _seal_svg() -> str:
+    """Returns the MariaDB seal as inline SVG, coloured by the page's CSS.
+
+    Inline because the page's CSP loads nothing; its style attributes are
+    removed because the CSP allows only the nonce'd style element.
+    """
+    global _SEAL_SVG
+
+    if _SEAL_SVG is None:
+        import os
+        import re
+
+        path = os.path.join(os.path.dirname(__file__), "assets", "mariadb-seal.svg")
+        with open(path, encoding="utf-8") as file:
+            svg = file.read()
+        svg = svg[svg.index("<svg"):]
+        svg = re.sub(r'\s(style|width|height|xml:space|xmlns:\w+|serif:\w+)="[^"]*"', "", svg)
+        _SEAL_SVG = svg.replace("<svg", '<svg role="img" aria-label="MariaDB"', 1)
+
+    return _SEAL_SVG
+
+
+_SEAL_SVG: Optional[str] = None
 
 
 def _page(response_class, body: str, status: int = 200, raw: bool = False,
@@ -1407,12 +1507,18 @@ def _page(response_class, body: str, status: int = 200, raw: bool = False,
             redirect - which browsers check form-action against after a POST.
     """
     nonce = secrets.token_urlsafe(16)
-    content = body if raw else f"<p>{html.escape(body)}</p>"
+    content = body if raw else f'<div class="welcomeText"><p>{html.escape(body)}</p></div>'
     document = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<title>MariaDB MCP server</title><style nonce="{nonce}">{_PAGE_STYLE}</style>'
-        f"</head><body>{content}</body></html>"
+        f'<title>MariaDB MCP Server</title><style nonce="{nonce}">{_PAGE_STYLE}</style>'
+        f'</head><body><div id="root"><div class="welcomeLogo">{_seal_svg()}</div>'
+        '<div class="welcomeText"><h2>MariaDB MCP Server</h2>'
+        "<p>Welcome to the MariaDB MCP Server.</p></div>"
+        f"{content}"
+        '<div class="welcomeSpacer"></div>'
+        '<div class="footer">Copyright (c) 2026, MariaDB plc.</div>'
+        "</div></body></html>"
     )
 
     return response_class(
