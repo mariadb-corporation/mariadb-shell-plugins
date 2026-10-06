@@ -102,6 +102,10 @@ _LOGIN_WINDOW = 900
 _LOGIN_MAX_FAILURES_PER_ACCOUNT = 5
 _LOGIN_MAX_FAILURES_PER_ADDRESS = 30
 
+# The least time between two reloads of the signing keys for a token naming an
+# unknown key id, in seconds.
+_KEY_RELOAD_MIN_INTERVAL = 10
+
 # How often the sweeper ends expired grants and forgets unused clients.
 _SWEEP_INTERVAL = 60
 
@@ -550,10 +554,52 @@ class BuiltinAuthProvider:
         self._limiter = _LoginLimiter()
         self._sweeper = None
         self._sweeper_stop = threading.Event()
+        self._keys_loaded_at = 0.0
+        self._load_signing_keys()
+
+    # --- signing keys ---------------------------------------------------------------
+
+    def _load_signing_keys(self) -> None:
+        """Reads the signing key, and the previous one while it is still valid.
+
+        Tokens are signed with the current key; both verify. Read again by every
+        sweep and when a token names a key id not known here, so a rotation
+        with ``mcp setup-oauth`` in another process reaches a running server.
+        """
         key = oauth_config.get_signing_key()
-        self._kid = key["kid"]
-        self._private_key = key["pem"]
-        self._public_key = _public_key_of(key["pem"])
+        verifying = {key["kid"]: (_public_key_of(key["pem"]), None)}
+        previous = key.get("previous")
+        if previous and int(previous.get("validUntil", 0)) > time.time():
+            verifying[previous["kid"]] = (
+                _public_key_of(previous["pem"]),
+                int(previous["validUntil"]),
+            )
+
+        with self._lock:
+            self._kid = key["kid"]
+            self._private_key = key["pem"]
+            self._verifying_keys = verifying
+            self._keys_loaded_at = time.monotonic()
+
+    def _verifying_key(self, kid):
+        """Returns the public key a token's key id names, if it may still verify."""
+        with self._lock:
+            entry = self._verifying_keys.get(kid)
+            stale = time.monotonic() - self._keys_loaded_at > _KEY_RELOAD_MIN_INTERVAL
+        if entry is None and stale:
+            # A key rotated in another process: reload, but not for every
+            # token with a made-up kid.
+            self._load_signing_keys()
+            with self._lock:
+                entry = self._verifying_keys.get(kid)
+        if entry is None:
+            return None
+
+        public_key, valid_until = entry
+        if valid_until is not None and valid_until <= time.time():
+            return None
+
+        return public_key
 
     # --- lifecycle ------------------------------------------------------------------
 
@@ -603,6 +649,7 @@ class BuiltinAuthProvider:
         """
         ended = 0
         try:
+            self._load_signing_keys()
             now = int(time.time())
             clients = oauth_config.read_clients()
             for record in self.store.all():
@@ -1179,9 +1226,11 @@ server on your behalf, and will be sent back to <strong>{html.escape(redirect_ho
             "grant": record["id"],
         }
 
+        with self._lock:
+            kid, private_key = self._kid, self._private_key
+
         return jwt.encode(
-            claims, self._private_key, algorithm="ES256",
-            headers={"kid": self._kid, "typ": "at+jwt"},
+            claims, private_key, algorithm="ES256", headers={"kid": kid, "typ": "at+jwt"}
         )
 
     # --- refresh --------------------------------------------------------------------
@@ -1277,9 +1326,12 @@ server on your behalf, and will be sent back to <strong>{html.escape(redirect_ho
         from mcp.server.auth.provider import AccessToken
 
         try:
+            public_key = self._verifying_key(jwt.get_unverified_header(token).get("kid"))
+            if public_key is None:
+                return None
             claims = jwt.decode(
                 token,
-                self._public_key,
+                public_key,
                 algorithms=["ES256"],
                 audience=self.public_url,
                 issuer=self.issuer,
@@ -1333,9 +1385,12 @@ _SCOPE_DESCRIPTIONS = {
 
 _PAGE_STYLE = (
     "body{font-family:system-ui,sans-serif;max-width:28rem;margin:3rem auto;padding:0 1rem;"
-    "line-height:1.4}label{display:block;margin:.6rem 0}input[name],select{display:block;"
-    "width:100%;padding:.4rem;box-sizing:border-box}fieldset{margin:1rem 0}fieldset label"
-    "{display:flex;gap:.5rem}button{padding:.5rem 1rem}.error{color:#b00020}"
+    "line-height:1.4}label{display:block;margin:.6rem 0}"
+    # The text fields only: a checkbox given the full width is drawn huge.
+    "input:not([type]),input[type=password],select{display:block;width:100%;"
+    "padding:.4rem;box-sizing:border-box}fieldset{margin:1rem 0}fieldset label"
+    "{display:flex;align-items:center;gap:.5rem}input[type=checkbox]{margin:0}"
+    "button{padding:.5rem 1rem}.error{color:#b00020}"
 )
 
 

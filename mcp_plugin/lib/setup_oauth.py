@@ -70,6 +70,7 @@ ACTION_OPTIONS = (
     "show_client_secret",
     "list_clients",
     "rotate_signing_key",
+    "drop_previous_signing_key",
     "revoke_tokens",
 )
 
@@ -379,7 +380,18 @@ def revoke_tokens(identifier) -> None:
 
 def rotate_signing_key() -> None:
     kid = oauth_config.rotate_signing_key()
-    print(f"New token signing key {kid}: every access token issued so far stops working.")
+    lifetime = oauth_config.get_oauth_settings()["builtin"]["accessTokenLifetime"]
+    print(
+        f"New token signing key {kid}. Tokens signed with the previous key stay valid "
+        f"until they expire, at most {lifetime}s; --dropPreviousSigningKey ends that now."
+    )
+
+
+def drop_previous_signing_key() -> None:
+    if oauth_config.drop_previous_signing_key():
+        print("The previous signing key was dropped: tokens it signed are refused from now on.")
+    else:
+        print("There is no previous signing key.")
 
 
 # --- Options -------------------------------------------------------------------------
@@ -473,6 +485,8 @@ def apply(options: dict) -> None:
 
     if options.get("rotate_signing_key"):
         rotate_signing_key()
+    if options.get("drop_previous_signing_key"):
+        drop_previous_signing_key()
     for identifier in _as_list(options.get("revoke_tokens")):
         revoke_tokens(identifier)
 
@@ -753,9 +767,14 @@ def _menu_revoke() -> None:
 
 
 def _menu_rotate_key() -> None:
-    if prompts.yes_no("Every access token issued so far stops working. Rotate the signing key?",
-                      default=False):
+    if prompts.yes_no("Rotate the token signing key?", default=False):
         rotate_signing_key()
+        if prompts.yes_no(
+            "Should the tokens signed with the previous key stop working at once "
+            "(for a key that may have leaked)?",
+            default=False,
+        ):
+            drop_previous_signing_key()
 
 
 def _menu_entries() -> list:

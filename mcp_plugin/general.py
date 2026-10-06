@@ -245,7 +245,11 @@ def setup_oauth(**options) -> None:
             through it.
         list_clients (bool): Print the registered clients.
         rotate_signing_key (bool): Replace the key the built-in server signs
-            access tokens with. Every access token issued so far stops working.
+            access tokens with. Tokens signed with the previous key stay valid
+            until they expire, at most one access token lifetime.
+        drop_previous_signing_key (bool): Stop accepting the tokens the
+            previous signing key signed, at once - for a key that may have
+            leaked.
         revoke_tokens (str): Comma-separated users whose OAuth tokens to
             revoke, ending their sign-ins to the built-in server.
         show (bool): Print the OAuth configuration and do nothing else.

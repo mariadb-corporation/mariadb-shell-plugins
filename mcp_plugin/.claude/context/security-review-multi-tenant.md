@@ -182,9 +182,14 @@ run the tests named, see them fail, restore. Each entry names its probe.
   - **Open:** `/register` itself has no per-address rate limit.
 - **M19 - The signing key.**
   - Stored in the generic group (readable by the OS user, like M5).
-  - `--rotateSigningKey` replaces it, which immediately invalidates every access token:
-    there is no overlap.
-  - **Open:** keep the previous key for one access-token lifetime.
+  - `--rotateSigningKey` keeps the previous key for VERIFYING only, for one
+    access-token lifetime, so issued tokens stay valid until they expire. For a key
+    that may have leaked, `--dropPreviousSigningKey` ends that at once.
+  - A running server reloads the keys every sweep (60s), and on a token naming an
+    unknown key id (at most every 10s). Before this, a rotation by `mcp setup-oauth`
+    only reached the server at its next restart.
+  - **Tests:** `test_a_rotated_signing_key_keeps_issued_tokens_valid`,
+    `test_dropping_the_previous_signing_key_refuses_its_tokens`.
 - **M20 - Single instance.** Sign-in rate limits, the failure throttle, pending sign-ins,
   codes and the refresh grace cache are per process. Behind a load balancer each instance
   has its own limits, and codes and grace answers do not cross instances. Documented as a
@@ -215,12 +220,12 @@ run the tests named, see them fail, restore. Each entry names its probe.
   - **Test:** `test_a_sessionless_request_binds_to_its_user`.
   - **Verified by hand:** after the fix, Claude Code listed, connected and ran
     `SELECT CURRENT_USER(), CURRENT_ROLE(), …`: `ada@%, mcp_access, 24.99`.
-  - **OPEN, a decision for the user:** an UNAUTHENTICATED (single-tenant) server still
-    refuses modern clients over HTTP, because there the session id was the only thing
-    separating local clients (S3). Choices:
-    - keep refusing (stdio still works)
-    - bind to the address alone, leaving the UUID as the only capability
-    - recommend multi-tenant mode for HTTP
+  - **DECIDED by the user (2026-10-06): keep refusing, and recommend multi-tenant
+    mode for HTTP.** An unauthenticated server refuses a sessionless client
+    `db.connect` over HTTP, with an error that says so and names stdio and
+    `mcp setup --multiTenant=true`. Binding to the address alone was rejected: every
+    local process shares the loopback address (S3). The README has a section on it.
+    - **Test:** `test_a_sessionless_client_of_an_unauthenticated_server_is_told_why`.
   - **Also affected:** the path-trust ELICITATION of a single-tenant server. In
     2026-07-28 servers do not send requests, so a modern client is never asked and the
     path is refused, which fails closed.
@@ -228,4 +233,5 @@ run the tests named, see them fail, restore. Each entry names its probe.
 ## Next steps
 
 1. Close the open points named above: DNS-rebinding-proof CIMD fetch (M17), a rate limit
-   on `/register` (M18), signing-key overlap (M19), per-tool step-up (M9).
+   on `/register` (M18), per-tool step-up (M9). M20 (several instances) was decided
+   against for now (2026-10-06).

@@ -2617,6 +2617,20 @@ def register_db_tools(server, function_groups=()) -> None:
                 f"could not be fully identified ({general.describe_client(client)})"
             )
 
+            if client.address is not None and not general.is_multi_tenant():
+                # Deliberately refused rather than bound to the address alone
+                # (the user's decision): on a server that does not authenticate,
+                # the session id was what told local clients apart, and MCP
+                # 2026-07-28 has none.
+                raise tool_error(
+                    "This client uses MCP without sessions (protocol revision "
+                    "2026-07-28), and this server does not authenticate its "
+                    "clients, so a connection opened over HTTP could not be "
+                    "bound to this client. Connect over stdio, or have the "
+                    "server run in multi-tenant mode (mcp setup "
+                    "--multiTenant=true), where every client signs in."
+                )
+
             raise tool_error(
                 "The client could not be identified, so the connection cannot "
                 "be bound to it. Over HTTP a connection can only be opened by a "

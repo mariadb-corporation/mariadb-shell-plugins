@@ -944,3 +944,16 @@ def test_a_sessionless_request_binds_to_its_user(multi_tenant, monkeypatch):
     with pytest.raises(ToolError, match="No open connection"):
         tools["db.close"](_context(bob, session_id=None), connection_id)
     tools["db.close"](_context(ada, session_id=None), connection_id)
+
+
+def test_a_sessionless_client_of_an_unauthenticated_server_is_told_why(tenant_config,
+                                                                      monkeypatch):
+    """Refused over HTTP (the user's decision), saying stdio or multi-tenant mode."""
+    general.set_multi_tenant(False)
+    general.set_active_transport(general.TRANSPORT_STREAMABLE_HTTP)
+    try:
+        tools = _db_tools(monkeypatch)
+        with pytest.raises(ToolError, match="--multiTenant=true"):
+            tools["db.connect"](_context(None, session_id=None), URI)
+    finally:
+        general.set_active_transport(None)

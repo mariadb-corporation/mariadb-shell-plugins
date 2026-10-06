@@ -620,6 +620,17 @@ Note also that the sandbox tools can start database servers and the `msm` tools
 can read and write files within the allowed paths, so the same reachability
 applies to those.
 
+### Clients without MCP sessions need multi-tenant mode over HTTP
+
+MCP protocol revision 2026-07-28 has no sessions, and clients that speak it -
+Claude Code among them - never send an MCP session id. A server that does not
+authenticate binds each database connection to the client's address AND its
+session id (see below), so over HTTP it refuses such a client a connection:
+bound to the address alone, it would be usable by every process on the same
+machine that learned its id. Use these clients over stdio, or run the server in
+[multi-tenant mode](#multi-tenant-mode), where every client signs in and the
+user takes the place of the session id.
+
 ### Requests from a browser are refused
 
 Because there is no authentication, a page open in a browser that can reach the

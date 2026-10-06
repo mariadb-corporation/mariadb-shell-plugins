@@ -1539,3 +1539,80 @@ def test_a_client_change_waits_for_the_lock(tenant_config):
 
     assert finished.is_set()
     assert next(iter(oauth_config.read_clients().values()))["lastUsed"] == "x"
+
+
+# --- signing key rotation ------------------------------------------------------------------
+
+
+def _issued_token(provider):
+    client_id = _client()
+    tokens = _redeem(provider, client_id, _sign_in(provider, client_id))
+    return tokens.access_token
+
+
+def test_a_rotated_signing_key_keeps_issued_tokens_valid(tenant_config):
+    """Issued tokens live out their lifetime; new ones carry the new key."""
+    provider = _provider()
+    old = _issued_token(provider)
+    old_kid = jwt.get_unverified_header(old)["kid"]
+
+    new_kid = oauth_config.rotate_signing_key()
+    # A token naming the new kid makes the server reload the keys at once.
+    provider._keys_loaded_at = 0
+    provider._load_signing_keys()
+
+    assert provider.verify_access_token(old) is not None
+    fresh = _issued_token(provider)
+    assert jwt.get_unverified_header(fresh)["kid"] == new_kid != old_kid
+    assert provider.verify_access_token(fresh) is not None
+
+    # Once the previous key's window has passed, its tokens are refused.
+    key = oauth_config.get_signing_key()
+    key["previous"]["validUntil"] = int(time.time()) - 1
+    mysqlsh.globals.shell.store_secret(oauth_config.SIGNING_KEY_SECRET, json.dumps(key))
+    provider._load_signing_keys()
+    assert provider.verify_access_token(old) is None
+    assert provider.verify_access_token(fresh) is not None
+
+
+def test_dropping_the_previous_signing_key_refuses_its_tokens(tenant_config, capsys):
+    """For a key that may have leaked: rotate, then drop the previous one."""
+    provider = _provider()
+    old = _issued_token(provider)
+
+    setup_oauth.apply({"rotate_signing_key": True})
+    provider._load_signing_keys()
+    assert provider.verify_access_token(old) is not None
+
+    setup_oauth.apply({"drop_previous_signing_key": True})
+    provider._load_signing_keys()
+    assert provider.verify_access_token(old) is None
+    assert "dropped" in capsys.readouterr().out
+    setup_oauth.apply({"drop_previous_signing_key": True})
+    assert "no previous" in capsys.readouterr().out
+
+
+def test_a_server_notices_a_rotation_made_elsewhere(tenant_config):
+    """A token with an unknown kid reloads the keys, at most every 10 seconds."""
+    provider = _provider()
+    oauth_config.rotate_signing_key()
+    provider._keys_loaded_at = 0
+
+    fresh_provider = _provider()
+    token = _issued_token(fresh_provider)
+
+    assert provider.verify_access_token(token) is not None
+
+
+def test_the_sign_in_checkboxes_are_ordinary_checkboxes(tenant_config):
+    """Only the text fields take the full width; a checkbox stays its own size."""
+    from starlette.responses import HTMLResponse
+
+    provider = _provider()
+    pending = {"scopes": ["mcp:db", "mcp:msm"], "redirect_uri": "http://127.0.0.1:1/cb",
+               "client_name": "Test", "csrf": "x"}
+    page = provider._form(HTMLResponse, "req", pending).body.decode()
+
+    assert "input[name]" not in page
+    assert "input[type=checkbox]{margin:0}" in page
+    assert page.count('type="checkbox"') == 2

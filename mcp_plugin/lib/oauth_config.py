@@ -742,16 +742,62 @@ def get_signing_key() -> dict:
         return key
 
 
-def rotate_signing_key() -> str:
-    """Replaces the signing key; every access token issued so far stops working.
+def rotate_signing_key(keep_previous_for=None) -> str:
+    """Replaces the signing key, keeping the previous one to verify with for a while.
+
+    New access tokens are signed with the new key at once. The previous key is
+    kept beside it, for VERIFYING only, for ``keep_previous_for`` seconds -
+    by default one access token lifetime - so the tokens issued just before the
+    rotation stay valid until they expire instead of every client being sent
+    back to sign in. A key that was ever kept that way and is older is dropped.
+    For a key that may have leaked, follow with
+    :func:`drop_previous_signing_key`, which ends the overlap at once.
+
+    A running server notices the rotation within a minute (its sweeper reloads
+    the keys), or at once when it is shown a token signed with a key it does not
+    know.
+
+    Args:
+        keep_previous_for (int): Seconds the previous key stays valid for
+            verification, or None for the configured access token lifetime.
 
     Returns:
         The new key id.
     """
+    if keep_previous_for is None:
+        keep_previous_for = int(get_oauth_settings()["builtin"]["accessTokenLifetime"])
+
+    current = get_signing_key()
     key = _generate_signing_key()
+    if keep_previous_for > 0:
+        key["previous"] = {
+            "kid": current["kid"],
+            "pem": current["pem"],
+            "validUntil": int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+            + int(keep_previous_for),
+        }
     _shell().store_secret(SIGNING_KEY_SECRET, json.dumps(key))
 
     return key["kid"]
+
+
+def drop_previous_signing_key() -> bool:
+    """Stops accepting tokens signed with the key before the current one.
+
+    For a signing key that may have leaked: rotate, then drop the previous key,
+    and every token it signed is refused from the next check on.
+
+    Returns:
+        True if there was a previous key to drop.
+    """
+    key = get_signing_key()
+    if "previous" not in key:
+        return False
+
+    del key["previous"]
+    _shell().store_secret(SIGNING_KEY_SECRET, json.dumps(key))
+
+    return True
 
 
 def set_introspection_secret(secret) -> None:
