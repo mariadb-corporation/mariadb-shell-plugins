@@ -50,6 +50,21 @@ oauth-builtin.md were corrected to match.
   - anonymous DCR is refused by the "Trusted Hosts" policy
 
   So the live token test needs the realm prepared with the script by an admin.
+  **Update, same day:** the user configured the realm by hand: client `mariadb-mcp`
+  with direct access grants, client scopes `mcp:db`/`mcp:msm` with Audience
+  `http://127.0.0.1:8080/mcp`, and `dba@zinner.org` (email verified, NO `mcp-user`
+  role). Results:
+  - `run_tests.py --keycloak` (KEYCLOAK_ISSUER=…/realms/keycloak,
+    CLIENT_ID=mariadb-mcp) **passes**. The test now pre-adds a user by email when the
+    account lacks `mcp-user`, so it checks linking.
+  - **Verified end to end through a real server** in Keycloak mode on
+    127.0.0.1:8080:
+    - PRM names the realm, and no token gets 401
+    - the sign-in was linked to `--addUser=dba@zinner.org` by its verified email
+    - `db.connect` + `SELECT CURRENT_USER()` gave `dba@%` on a throwaway mariadbd
+
+    The Keycloak server is remote while the audience is `127.0.0.1`: that is fine,
+    since Keycloak never calls the MCP server.
   Nothing was created on that server. PyJWT's `PyJWKClient` refetches for an unknown
   `kid` at most every **30s** (a cooldown); the test ages
   `_last_successful_fetch` rather than disabling it.

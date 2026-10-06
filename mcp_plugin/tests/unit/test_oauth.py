@@ -1250,6 +1250,17 @@ def test_a_real_keycloak_token_is_accepted(tenant_config):
     assert answer.status_code == 200, answer.text
     token = answer.json()["access_token"]
 
+    # A user is created at first sign-in when the account has the realm role
+    # mcp-user; without it, the sign-in is linked by verified email to a user
+    # an administrator added - which this test then adds first.
+    claims = jwt.decode(token, options={"verify_signature": False})
+    linked = None
+    if "mcp-user" not in (claims.get("realm_access") or {}).get("roles", []):
+        assert claims.get("email_verified") is True, (
+            "the account needs the realm role mcp-user or a verified email"
+        )
+        linked = tenants.add_user([tenants.parse_identity(claims["email"])])
+
     settings = oauth_config.get_oauth_settings()["keycloak"]
     settings["issuer"] = issuer
     verifier = oauth_keycloak.KeycloakVerifier(settings, mcp_url, auth.UserDirectory())
@@ -1258,6 +1269,8 @@ def test_a_real_keycloak_token_is_accepted(tenant_config):
     assert access is not None, "see the REFUSED line on stderr for why"
     assert access.scopes == ["mcp:db", "mcp:msm"]
     assert tenants.get_user(access.claims[general.MCP_USER_ID_CLAIM]) is not None
+    if linked is not None:
+        assert access.claims[general.MCP_USER_ID_CLAIM] == linked
 
     other = oauth_keycloak.KeycloakVerifier(settings, "https://not-this-server/mcp",
                                             auth.UserDirectory())
