@@ -196,6 +196,35 @@ run the tests named, see them fail, restore. Each entry names its probe.
   - **Behind a reverse proxy** the peer is the proxy, so the list has to name it. Same
     reason as S1: `proxy_headers` stays off.
 
+## Found with a real client
+
+- **M22 - MCP 2026-07-28 has no sessions, so the S3 binding refused every modern
+  client.** Found on 2026-10-06 by driving the server from **Claude Code 2.1.287**
+  (`claude -p` with `--mcp-config` and the user's API key in a header).
+  - **What happened:** Claude Code speaks protocol revision 2026-07-28. SDK 2.3.0 routes
+    that to its "modern" handler (`streamable_http_manager._handle_request`: any
+    `MCP-Protocol-Version` outside `HANDSHAKE_PROTOCOL_VERSIONS`), which has no
+    `Mcp-Session-Id` at all. The S3 fail-closed rule (address AND session id over HTTP)
+    therefore refused `db.connect` for EVERY such client. That holds on `main` too, for a
+    single-tenant server.
+  - **Built:** over HTTP, `db.connect` now needs the address and either the session id or
+    an authenticated user. In multi-tenant mode the verified user is part of the
+    binding, so a connection opened without a session is still bound to that user: a
+    second user is refused it on the same address. The connection UUID (122 random
+    bits) remains the handle.
+  - **Test:** `test_a_sessionless_request_binds_to_its_user`.
+  - **Verified by hand:** after the fix, Claude Code listed, connected and ran
+    `SELECT CURRENT_USER(), CURRENT_ROLE(), …`: `ada@%, mcp_access, 24.99`.
+  - **OPEN, a decision for the user:** an UNAUTHENTICATED (single-tenant) server still
+    refuses modern clients over HTTP, because there the session id was the only thing
+    separating local clients (S3). Choices:
+    - keep refusing (stdio still works)
+    - bind to the address alone, leaving the UUID as the only capability
+    - recommend multi-tenant mode for HTTP
+  - **Also affected:** the path-trust ELICITATION of a single-tenant server. In
+    2026-07-28 servers do not send requests, so a modern client is never asked and the
+    path is refused, which fails closed.
+
 ## Next steps
 
 1. Close the open points named above: DNS-rebinding-proof CIMD fetch (M17), a rate limit

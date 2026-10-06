@@ -98,7 +98,7 @@ def _context(user=None, scopes=tenants.SUPPORTED_SCOPES, address=CLIENT_ADDRESS,
 
     request = SimpleNamespace(
         client=SimpleNamespace(host=address, port=54321),
-        headers={general.MCP_SESSION_ID_HEADER: session_id},
+        headers={general.MCP_SESSION_ID_HEADER: session_id} if session_id else {},
         scope=scope,
     )
 
@@ -925,3 +925,22 @@ def test_the_throttle_answers_with_a_429(tenant_config):
 
     asyncio.run(scenario())
     assert calls == ["/mcp"] * 4 + ["-"]
+
+
+def test_a_sessionless_request_binds_to_its_user(multi_tenant, monkeypatch):
+    """MCP 2026-07-28 has no sessions: an authenticated user is the binding.
+
+    Claude Code speaks that revision and never sends an MCP session id; without
+    this, db.connect refused every one of its calls. The connection is still
+    bound: another user is refused it on the very same address.
+    """
+    ada = _add("ada")
+    bob = _add("bob")
+    config.store_connection(URI, PASSWORD, mcp_user_id=ada)
+    tools = _db_tools(monkeypatch)
+
+    connection_id = tools["db.connect"](_context(ada, session_id=None), URI)
+
+    with pytest.raises(ToolError, match="No open connection"):
+        tools["db.close"](_context(bob, session_id=None), connection_id)
+    tools["db.close"](_context(ada, session_id=None), connection_id)

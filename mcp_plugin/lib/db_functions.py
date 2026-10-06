@@ -2592,15 +2592,25 @@ def register_db_tools(server, function_groups=()) -> None:
         # the configuration on every open, and it is what the log says. The list
         # it was found in comes back with it and is kept for the same reason -
         # in GUI mode there are two, and the URI alone does not say which.
-        # The connection belongs to the client that opens it. Without both the
-        # peer address and the MCP session id to bind it to there is no way to
-        # keep another client from using it, so serving over HTTP requires both
-        # - and in multi-tenant mode the user as well, whose connections are
-        # the only ones it may look among.
+        # The connection belongs to the client that opens it. Without the peer
+        # address and something that tells clients sharing an address apart to
+        # bind it to, there is no way to keep another client from using it, so
+        # serving over HTTP requires the address and either the MCP session id
+        # or an authenticated user - and in multi-tenant mode always the user,
+        # whose connections are the only ones it may look among.
+        #
+        # The user is enough on its own because MCP 2026-07-28 has no sessions:
+        # a client on that revision never sends a session id, and on a
+        # multi-tenant server it is the verified user that separates clients
+        # anyway (the session id only ever separated one user's own clients).
+        # On a server that does not authenticate, the session id stays required.
         client = general.get_client_identity(ctx)
         if (
             general.is_http_transport()
-            and (client.address is None or client.session_id is None)
+            and (
+                client.address is None
+                or (client.session_id is None and client.user is None)
+            )
         ) or (general.is_multi_tenant() and client.user is None):
             general.log_event(
                 "db.connect: REFUSED to open a connection for a request that "
@@ -2609,9 +2619,10 @@ def register_db_tools(server, function_groups=()) -> None:
 
             raise tool_error(
                 "The client could not be identified, so the connection cannot "
-                "be bound to it. Over HTTP a connection can only be opened on "
-                "an established MCP session, by a client whose address the "
-                "server can determine."
+                "be bound to it. Over HTTP a connection can only be opened by a "
+                "client whose address the server can determine, on an MCP "
+                "session (protocol revisions before 2026-07-28) or as an "
+                "authenticated user of a multi-tenant server."
             )
 
         # The connection the client signed in with comes first: it is the
