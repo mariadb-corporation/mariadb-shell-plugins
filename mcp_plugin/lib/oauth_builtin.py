@@ -946,7 +946,8 @@ this server on your behalf, and will be sent back to
 <div class="mrsLoginField"><input type="password" name="password" placeholder="Password"
  aria-label="Password" autocomplete="current-password" required {'autofocus' if username else ''}>
 <button type="submit" class="mrsLoginBtnNext" aria-label="Sign in and allow"
- title="Sign in and allow"></button></div>
+ title="Sign in and allow"><svg viewBox="0 0 24 24" aria-hidden="true">
+<path d="M9 7.5l4.5 4.5L9 16.5"/></svg></button></div>
 </form>
 {error_box}
 <div class="mrsLoginSeparator"></div>
@@ -1436,7 +1437,8 @@ font-size:15px}
 input[type=checkbox]{margin:0}
 .mrsLoginFields input[type=password],.mrsLoginFields input[type=text],.mrsLoginFields select
 {border:none;outline:0;background-color:transparent;color:var(--primary-text-color);
-font-size:17px;font-weight:300;width:250px;font-family:inherit}
+font-size:17px;font-weight:300;width:250px;flex:1 1 250px;min-width:0;
+font-family:inherit}
 .mrsLoginField{display:flex;flex-direction:row;border:1px solid var(--secondary-text-color);
 padding:8px 8px 8px 16px}
 .mrsLoginField:first-of-type{border-top-left-radius:5px;border-top-right-radius:5px}
@@ -1447,14 +1449,14 @@ margin-bottom:16px}
 .mrsLoginField:focus-within{border-color:var(--focus-color)}
 .mrsLoginBtnNext{border:1px solid var(--secondary-text-color);border-radius:50%;width:24px;
 height:24px;min-width:24px;margin-left:12px;padding:0;background:transparent;
-cursor:pointer;display:block;line-height:0;text-align:left;align-self:center;box-sizing:content-box}
-.mrsLoginBtnNext::after{content:"";position:relative;border:solid var(--secondary-text-color);
-border-width:0 3px 3px 0;display:inline-block;padding:3px;transform:rotate(-45deg);
-margin-left:6px;margin-top:7px;vertical-align:top}
+cursor:pointer;display:block;line-height:0;text-align:left;align-self:center;box-sizing:content-box;
+-webkit-appearance:none;appearance:none;font:inherit;color:inherit;box-shadow:none}
+.mrsLoginBtnNext svg{display:block;width:24px;height:24px;fill:none;
+stroke:var(--secondary-text-color);stroke-width:3;stroke-linejoin:miter}
 .mrsLoginField:has(input:not(:placeholder-shown)) .mrsLoginBtnNext{
 border:1px solid var(--primary-text-color)}
-.mrsLoginField:has(input:not(:placeholder-shown)) .mrsLoginBtnNext::after{
-border-color:var(--primary-text-color)}
+.mrsLoginField:has(input:not(:placeholder-shown)) .mrsLoginBtnNext svg{
+stroke:var(--primary-text-color)}
 .mrsLoginBtnNext:focus-visible{outline:2px solid var(--focus-color);outline-offset:2px}
 .mrsLoginError{background-color:var(--error-color);box-shadow:rgb(0 0 0 / 10%) 0 5px 10px 2px;
 width:220px;padding:8px 20px;border:1px solid var(--error-text-color);border-radius:6px;
