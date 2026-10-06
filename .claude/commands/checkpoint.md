@@ -6,9 +6,7 @@ description: Save a compressed summary of this session so a future session can r
 
 Target directory for this checkpoint: $1
 
-If $1 is empty, ask which project subfolder this checkpoint is for before doing anything else — do not guess, since this workspace contains multiple projects.
-
-Otherwise, confirm that $1 exists as a directory. If it doesn't, stop and report that instead of creating it blindly. Then work out which of the three layouts $1 is in, and follow that section.
+If $1 is empty, each project subfolder that contains a `.claude/PROJECT_CONTEXT.md` needs to be processed. This is important since this workspace contains multiple projects.
 
 **A checkpoint is an update, not a regeneration.** Where a context file already exists, edit the parts this session changed and leave the rest alone: its structure, its section order and its wording are the record of earlier sessions, and rewriting them from the template below loses what those sessions knew. Only a project with no context file at all gets the template.
 
