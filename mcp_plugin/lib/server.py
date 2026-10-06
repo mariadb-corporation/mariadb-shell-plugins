@@ -226,10 +226,10 @@ def start(
 
     if bool(ssl_certfile) != bool(ssl_keyfile):
         raise mysqlsh.Error(
-            "Give both ssl_certfile and ssl_keyfile to serve HTTPS, or neither."
+            "Give both --sslCertfile and --sslKeyfile to serve HTTPS, or neither."
         )
     if ssl_certfile and transport != general.TRANSPORT_STREAMABLE_HTTP:
-        raise mysqlsh.Error("ssl_certfile and ssl_keyfile only apply to HTTP.")
+        raise mysqlsh.Error("--sslCertfile and --sslKeyfile only apply to --transport=streamable-http.")
 
     if max_connections is not None:
         max_connections = int(max_connections)
@@ -390,7 +390,7 @@ def _warn_if_tokens_travel_in_clear(host: str, port: int, tls: bool) -> None:
         f"{host}:{port} over plain HTTP.\n"
         "         Every request carries a user's API key or access token, which "
         "anyone on the network\n"
-        "         path can read. Serve HTTPS with ssl_certfile and ssl_keyfile, "
+        "         path can read. Serve HTTPS with --sslCertfile and --sslKeyfile, "
         "or put a TLS-terminating\n"
         "         reverse proxy in front of the server.\n",
         file=sys.stderr,
