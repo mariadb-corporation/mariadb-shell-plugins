@@ -72,3 +72,47 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   before diagnosing. Confirm the server itself is healthy by piping
   `initialize`/`initialized`/`tools/list` JSON-RPC straight into
   `mariadb-shell -- mcp start-server --transport=stdio`.
+
+- **A `@plugin_function` docstring line that ENDS IN A COLON breaks the whole plugin.**
+  The shell's docstring parser takes it for a section header ("ERROR: Invalid format:
+  section without content: …"), the plugin does not load, and EVERY test then errors
+  with `ModuleNotFoundError: No module named 'mcp_plugin'`. Hit on 2026-10-06 with "…by
+  any of their identities:". Reword the sentence; never end a description line with `:`.
+
+- **The shell's camelCase capitalizes every word**, so `add_oauth_client` is
+  `--addOauthClient`, never `--addOAuthClient`. The shell refuses the latter as an
+  invalid option. Check `mariadb-shell -- mcp <command> --help` before documenting an
+  option name.
+
+- **`run_tests.py -k` pastes the pattern UNQUOTED into a shell command**, so
+  `-k "a or b"` silently runs nothing ("file or directory not found: and"). Run one
+  single-word pattern per call. `-k` runs also skip `test_sandbox_deploy`, so every
+  sandbox-dependent test fails or errors there (`MySQL Error (2002)`); only a full run
+  judges those.
+
+- **The test runner isolates the secret store, a manual smoke test does not.**
+  `run_tests.py` uses a temp `MARIADB_SHELL_USER_CONFIG_HOME` and the plaintext
+  helper, so tests never touch the developer's keychain or users. For a manual run
+  through the real shell, do the same:
+  - a scratchpad home, with `mcp_plugin` AND `msm_plugin` symlinked into its
+    `plugins/` (the default groups need msm: without it the server dies with
+    `No module named 'msm_plugin'` and curl waits for ever)
+  - `shell.options.set_persist('credentialStore.helper','plaintext')`
+
+  Remove the home by its LITERAL path: `rm -rf $(…)` is blocked by a safety check.
+
+- **A throwaway `mariadbd` for OAuth sign-in tests:**
+  - `mariadb-install-db --auth-root-authentication-method=normal`
+  - start it FROM its datadir with a relative `--socket=s.sock`, since the scratchpad
+    path exceeds the Unix socket path limit
+  - DROP the anonymous `''@'localhost'` / `''@'<hostname>'` accounts, or `'ada'@'%'`
+    logins fail with 1045, because the anonymous account matches first
+
+- **Test with a real MCP client before calling a transport feature done.** Claude Code
+  speaks MCP 2026-07-28, which has NO sessions; no test client did, so the S3
+  session-id rule refused every Claude Code `db.connect` (M22) while 560 tests passed.
+  `claude -p "…" --mcp-config mcp.json --strict-mcp-config --allowedTools mcp__<name>`
+  (with a `headers` entry for an API key) drives it headless. Its OAuth sign-in needs a
+  person at the browser.
+
+- **Import `httpx2`, never `httpx`.** MCP SDK 2.3 depends on `httpx2`; the shell ships no `httpx`. A local build that still had `httpx` 0.28.1 (left over from an older SDK, and pulled in by manually installed `anthropic`/`openai`) hid this, and PR #37 failed CI on collection. The local build's `site-packages` was cleaned on 2026-10-06 to match `build/bundled-python-deps` exactly; after a `--pym pip install`, run `msh --pym pip check` and check for duplicate `*.dist-info` folders.

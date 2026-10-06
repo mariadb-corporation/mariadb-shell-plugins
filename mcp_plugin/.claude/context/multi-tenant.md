@@ -4,8 +4,8 @@ The plan for serving several users from one MCP server: users managed by
 `mcp.setup`, an API key per user, every user's secrets in a shell **secret
 group** of their own (phase 1), then OAuth2 through Keycloak or through a built-in
 authorization server that logs users in against MariaDB (phase 2).
-**Nothing here is built yet.** Branch `wip/mcp-multi-tenant`, plan only, reviewed
-with the user on 2026-10-06. Decisions marked **(user)** were the user's call.
+Planned with the user and **built** on 2026-10-06, on branch `wip/mcp-multi-tenant`
+(PR #37); see "Next steps" for where it stands. Decisions marked **(user)** were the user's call.
 
 Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Builds on the connection
 machinery in [connections.md](connections.md) and the server in
@@ -14,83 +14,9 @@ machinery in [connections.md](connections.md) and the server in
 
 ## Inputs
 
-- **Shell secret groups**: one group per user, named by the user's UUID. See
-  environment.md for the API and its limits. The limit that shapes the design:
-  **groups partition, they do not protect**, so every tenant's isolation is
-  enforced by the plugin, and the server should run under an OS account of its own.
-- **Customer input on OAuth2:** Snowflake is the reference. The database is the
-  OAuth authorization server, scopes mirror database roles, tools follow from the
-  user's grants, there are no shared secrets, and connections are bound to the
-  user. Details from Arcade's Snowflake page:
-  - Clients request `session:role:all`.
-  - The session runs as the user's `DEFAULT_ROLE`, capped by `ALLOWED_ROLES_LIST`.
-  - There is no dynamic client registration.
-  - Clients discover the authorization server through RFC 9728 Protected Resource
-    Metadata.
-  - "Access to the MCP server doesn't imply access to what it exposes."
-- **MariaDB Server will NOT get an OAuth/JWT authentication plugin (user).** No
-  token can log in to MariaDB, so the "pass the token through to the database"
-  option is out. The MCP spec forbids passing tokens through anyway (below).
-  Phase 2 considers **A (Keycloak)** and **C (built-in authorization server)**
-  only **(user)**.
-- **MCP authorization spec, revision 2026-07-28** (read 2026-10-06):
-  - The server is an OAuth 2.1 resource server and **MUST** serve RFC 9728 PRM.
-  - It **MUST** validate that a token was issued for it (audience, RFC 8707) and
-    answer an invalid or expired token with 401.
-  - It **MUST NOT accept or pass on any other token.**
-  - It SHOULD put `scope` in the `WWW-Authenticate` challenge, and SHOULD answer a
-    token with too few scopes with 403 `insufficient_scope` and the full set of
-    scopes needed.
-  - Client registration, in order of preference: **Client ID Metadata Documents
-    (CIMD, SHOULD)**, pre-registration, then Dynamic Client Registration
-    (**deprecated**, kept for compatibility).
-  - Authorization servers SHOULD send `iss` in the authorization response
-    (RFC 9207) and advertise `authorization_response_iss_parameter_supported`.
-  - PKCE is required.
-  - stdio "SHOULD NOT" use this flow, which fits stdio being refused in
-    multi-tenant mode.
-- **Keycloak** ([MCP guide](https://www.keycloak.org/securing-apps/mcp-authz-server),
-  documented against nightly 26.8):
-  - MCP 2025-03-26 is supported; later revisions are experimental.
-  - RFC 8707 resource indicators are experimental (`--features=resource-indicators`).
-    Without them, the audience comes from an **`Audience` mapper ("Included Custom
-    Audience" = the MCP server URL) on Optional client scopes**.
-  - Dynamic client registration is supported through anonymous-registration
-    policies.
-  - CIMD is experimental (`--features=cimd`), and ChatGPT's CIMD is NOT supported.
-  - PKCE is required for public clients (VS Code, Claude Code, Claude Desktop).
-  - Issuer `https://<host>/realms/<realm>`. Access tokens are RS256 JWTs with a
-    5-minute lifespan by default.
-- **Bundled Python** (checked 2026-10-06): PyJWT 2.15 (`PyJWKClient` for JWKS),
-  cryptography 50, python-multipart, starlette and httpx are all present as MCP
-  SDK dependencies. **No new dependency is needed**, but `requirements.txt` should
-  name `pyjwt[crypto]` explicitly once the plugin imports it. The shell reports
-  **mcp 2.2.0**, with 2.0.0, 2.1.1 and 2.2.0 `dist-info` directories side by side;
-  environment.md still says 2.1.1, so re-check that before trusting either.
-- **MCP SDK auth hooks**: read in the bundled tree on 2026-10-06, before the user
-  moved the shell to the latest `mcp` release. **Re-check every point below
-  against the new SDK** (phase 0):
-  - `MCPServer(auth=AuthSettings(...), token_verifier=... | auth_server_provider=...)`.
-    `streamable_http_app()`, which `_serve_streamable_http` already calls, then
-    installs `BearerAuthBackend` + `AuthContextMiddleware`, wraps `/mcp` in
-    `RequireAuthMiddleware` (401 with `WWW-Authenticate`, or 403 when
-    `required_scopes` are missing), and serves PRM when `resource_server_url` is
-    set.
-  - `TokenVerifier.verify_token(token) -> AccessToken(client_id, scopes,
-    expires_at, resource, subject, claims)`.
-  - With an authenticated user, the **session-owner check** in
-    `streamable_http_manager` becomes active. It is inert today (see
-    connections.md) and binds an MCP session id to `(client_id, iss, sub)`.
-  - The authorization-server side ships `/authorize`, `/token`, optional
-    `/register` and `/revoke`, AS metadata, and the PKCE S256 check.
-    `OAuthMetadata` has `client_id_metadata_document_supported` and
-    `authorization_response_iss_parameter_supported` fields, but **`build_metadata`
-    sets neither**, so they need our own metadata route. **Custom routes are added
-    AFTER the SDK's**, so the override has to be inserted ahead of them.
-  - `AuthSettings.issuer_url` is REQUIRED and must be https unless it is loopback.
-  - `tools/list` is `MCPServer._handle_list_tools(ctx, params)`. Filtering it per
-    caller means overriding that private method in a subclass, which needs a test
-    pinning it against SDK upgrades.
+The external facts this plan rests on - secret groups, the customer's input, the MCP
+authorization spec, Keycloak, the bundled Python and the SDK's auth hooks - are in
+[multi-tenant-inputs.md](multi-tenant-inputs.md).
 
 ## Decisions
 
@@ -418,13 +344,30 @@ phase 2 decisions the user made on 2026-10-06.
 
 ## Next steps
 
-1. Phase 0 spikes, with results recorded here. The first one is re-reading the
-   SDK after the user's update.
-2. Phase 1 (1a+1b, then 1c+1e as two stacked PRs), including the parts of 2a ([oauth.md](oauth.md))
-   that phase 1 already needs:
-   - the `Principal`
-   - tool-scope gating
-   - the verifier chain
-   - the `users.json` fields
-   - `defaultRole` applied on session open
-3. 2a → 2b → 2c, a PR each.
+**Status on 2026-10-06: phases 1 and 2 are built and in PR #37**
+(`wip/mcp-multi-tenant` → `main`, not yet reviewed). The as-built notes are in the
+"Status" sections here and in [oauth.md](oauth.md), and the security review is
+[security-review-multi-tenant.md](security-review-multi-tenant.md) (M1..M22).
+
+**Decided by the user** (2026-10-06):
+- multi-instance support (M20) is skipped for now
+- a single-tenant server keeps refusing sessionless (MCP 2026-07-28) clients over
+  HTTP, and recommends multi-tenant mode (M22)
+- signing-key overlap (M19) is built
+
+**Open, in this order:**
+
+1. Rene's review of PR #37.
+2. Commit the reference docs in `../mariadb-shell` (`docs-ref/content/mariadb-shell/mcp-server/`):
+   2 new pages and 6 updated, plus SUMMARY.md. They are left uncommitted on that repo's
+   `wip/docs-ref`, since the user did not ask for a commit.
+3. Verification still missing:
+   - a real Arcade project, which needs a public https deployment
+   - VS Code: the user has no Copilot access
+   - `mcp setup-keycloak-realm` against a real Keycloak, which needs admin credentials;
+     it is tested against a stand-in for the admin REST API
+   - the Linux secret helpers, and Windows
+4. Open M items:
+   - a DNS-rebinding-proof CIMD fetch (M17)
+   - a rate limit on `/register` (M18)
+   - per-tool step-up at the HTTP layer (M9)

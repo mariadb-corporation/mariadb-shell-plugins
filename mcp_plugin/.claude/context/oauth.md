@@ -2,17 +2,43 @@
 
 Phase 2 of the multi-tenant plan: OAuth2 through Keycloak (option A), then a
 built-in authorization server that logs users in against MariaDB (option C).
-**Nothing here is built yet.** Planned with the user on 2026-10-06.
+Planned with the user and **built** on 2026-10-06 (see Status).
 
 Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Builds on phase 1 in
-[multi-tenant.md](multi-tenant.md), whose Inputs section holds the facts this plan
-rests on: the customer's Snowflake reference, the MCP authorization spec
-2026-07-28, Keycloak's MCP support, and the SDK's auth hooks.
+[multi-tenant.md](multi-tenant.md). The facts this plan rests on - the customer's
+Snowflake reference, the MCP authorization spec 2026-07-28, Keycloak's MCP support,
+and the SDK's auth hooks - are in [multi-tenant-inputs.md](multi-tenant-inputs.md).
 
 ## Status
 
 **BUILT on 2026-10-06** (2a, 2b, 2c and 2d), on branch `wip/mcp-multi-tenant` after
-phase 1. Suite **559 passed, 2 skipped (+1 opt-in), 93%**.
+phase 1, in **PR #37**. Suite at the end of the session: **577 passed, 3 skipped (all
+opt-in), 93%**.
+
+**Last round of the session (after the PR was opened):**
+- **Signing-key overlap (M19).** `rotate_signing_key` keeps `previous`
+  (`{kid, pem, validUntil}`) for one access-token lifetime, and
+  `--dropPreviousSigningKey` ends it. The provider verifies by the token's `kid`
+  (`_verifying_key`) and reloads the keys every sweep and on an unknown kid (at most
+  every 10s, `_KEY_RELOAD_MIN_INTERVAL`). Before this, a rotation by `mcp setup-oauth`
+  only reached a running server at restart.
+- **The sign-in page's checkboxes were huge:** `input[name]{width:100%}` caught them.
+  Only `input:not([type])`, `input[type=password]` and `select` are full width now.
+- **HTTPS messages** say `--sslCertfile`/`--sslKeyfile`, not the Python names.
+- **Real clients:**
+  - Claude Code 2.1.287 with an API key header (`claude -p --mcp-config`) worked after
+    the M22 fix: `ada@%, mcp_access, 24.99`.
+  - The user's interactive Claude Code OAuth sign-in to the built-in server worked.
+    Claude Code identifies by **CIMD** (`client_id=https://claude.ai/oauth/claude-code-client-metadata`)
+    with a `localhost:<port>/callback` redirect.
+  - VS Code was not tested (no Copilot).
+- **Reference docs** for all of this were written in
+  `../mariadb-shell/docs-ref/content/mariadb-shell/mcp-server/`:
+  - new pages `multi-tenant-mode.md` and `oauth-authentication.md`
+  - updates to README, starting-the-mcp-server, configuring-access, automated-setup,
+    security-and-session-handling, connecting-mcp-clients and SUMMARY.md
+
+  Uncommitted, on that repo's `wip/docs-ref`.
 
 - New modules: `lib/oauth_config.py` (settings, public URL, clients, keys),
   `lib/oauth_keycloak.py` (`KeycloakVerifier`), `lib/oauth_builtin.py` (the provider,

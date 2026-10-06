@@ -23,8 +23,8 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **561 tests pass, 3 SKIPPED (~75s), 94% total coverage** (4804
-statements, 288 missed) on `wip/mcp-multi-tenant` at the 2026-10-06 checkpoint, on MCP
+Standard suite: **577 tests pass, 3 SKIPPED (~78s), 93% total coverage** (5200
+statements, 348 missed) on `wip/mcp-multi-tenant` at the 2026-10-06 checkpoint, on MCP
 SDK **2.3.0** (465 / 98% on `main` before multi-tenant mode; see the coverage trap in
 [`context/testing.md`](context/testing.md)). The three skipped are OPT-IN: the
 end-to-end tests (`--e2e`: `test_migration_e2e`,
@@ -67,10 +67,11 @@ this table with it.
 | [`context/testing.md`](context/testing.md) | The suite's contents, how to run it, what the coverage number means, and the fixture and harness traps. |
 | [`context/siblings.md`](context/siblings.md) | `msm_plugin` and `mrs_plugin`: what was changed there, how to run their suites, and their own failures. |
 | [`context/working-practices.md`](context/working-practices.md) | Keeping this context current, what auto mode may not do, and the Windows VM / codex quirks that look like plugin bugs. |
-| [`context/multi-tenant.md`](context/multi-tenant.md) | The plan (not built yet) for multi-tenant mode: its inputs and decisions, users in `users.json` keyed by UUID, one shell secret group per user, plain-text API keys, tenant isolation (phases 0 and 1). |
-| [`context/oauth.md`](context/oauth.md) | Phase 2 of that plan (not built yet): the decisions, the shared OAuth groundwork (public URL, scopes, default role, verifier chain) and the Keycloak option. |
-| [`context/oauth-builtin.md`](context/oauth-builtin.md) | Phase 2c/2d (not built yet): the built-in authorization server that logs users in against MariaDB, grants (90 days by default) and their login connections, and the Snowflake-style setup through Arcade. |
-| [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md) | The M review of multi-tenant mode and OAuth2: M1..M21, the threat, what is built, the test and its revert probe, and what is left open. |
+| [`context/multi-tenant.md`](context/multi-tenant.md) | Multi-tenant mode (BUILT, PR #37): the decisions, users in `users.json` keyed by UUID, one shell secret group per user, plain-text API keys, tenant isolation (phases 0 and 1, as built), and the open next steps. |
+| [`context/multi-tenant-inputs.md`](context/multi-tenant-inputs.md) | The external facts the multi-tenant and OAuth2 plans rest on: secret groups, the customer's Snowflake input, the MCP authorization spec 2026-07-28, Keycloak, the bundled Python, the SDK's auth hooks. Split out of multi-tenant.md on 2026-10-06. |
+| [`context/oauth.md`](context/oauth.md) | Phase 2 (BUILT): the decisions, the shared OAuth groundwork (public URL, scopes, default role, verifier chain), the Keycloak option, `mcp setup-oauth` / `mcp setup-keycloak-realm`, and the as-built status including real-client tests. |
+| [`context/oauth-builtin.md`](context/oauth-builtin.md) | Phase 2c/2d (BUILT): the built-in authorization server that logs users in against MariaDB, grants (90 days by default) and their login connections, and the Snowflake-style setup through Arcade. |
+| [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md) | The M review of multi-tenant mode and OAuth2: M1..M22 (M22: MCP 2026-07-28 has no sessions), the threat, what is built, the test and its revert probe, and what is left open. |
 | [`context/history.md`](context/history.md) | The session-by-session record and the branch and commit history. Background, not current truth. |
 
 ## Git state
@@ -82,21 +83,23 @@ $ git -C mcp_plugin branch --show-current
 wip/mcp-multi-tenant
 
 $ git -C mcp_plugin status --short
-(phases 1 and 2 of multi-tenant mode, committed and pushed on this branch)
+(clean before this checkpoint's context edits)
 ```
 
-- **Branch `wip/mcp-multi-tenant`** off `main` (`67253bae`), pushed:
-  - phase 1 (API keys, users, secret groups, tenant isolation) is `d1bf2a31`
-  - phase 2 (OAuth2: groundwork, Keycloak, the built-in authorization server, the
-    Arcade setup) is the commit after it
-
-  No PR yet. Open: the live Keycloak token test needs the realm prepared by an
-  admin (`scripts/keycloak_realm_setup.py`) and a user with no pending required
-  actions; the manual Arcade end-to-end needs a public https deployment. The plan and its status are in [`context/multi-tenant.md`](context/multi-tenant.md),
-  [`context/oauth.md`](context/oauth.md) and
-  [`context/oauth-builtin.md`](context/oauth-builtin.md).
-- Rene's secret-groups design note was read and deleted (never committed). Its content
-  is in [`context/environment.md`](context/environment.md) ("Shell secret groups").
+- **Branch `wip/mcp-multi-tenant`** off `main` (`67253bae`), pushed, **PR #37** to
+  `main`, not yet reviewed. Commits:
+  - `d1bf2a31` phase 1
+  - `f388ea7b` phase 2
+  - `512029e8` the live Keycloak test
+  - `5d137af0` `setup-oauth`, `setup-keycloak-realm`, the clients lock, the M review
+  - `b79866d1` the sessionless binding
+  - `1bf93817` signing-key overlap, the sessionless refusal, the checkboxes
+  - `c81bbd98` the HTTPS option names
+- **Uncommitted elsewhere:** the MCP reference docs in
+  `../mariadb-shell/docs-ref/content/mariadb-shell/mcp-server/` (repo `mariadb-shell`,
+  branch `wip/docs-ref`). The user has not asked for a commit.
+- What is open is in the Next steps of
+  [`context/multi-tenant.md`](context/multi-tenant.md).
 - **Over the ~400-line split threshold and NOT split** (untouched, so not read for a
   seam): `context/connections.md` (499), `context/history.md` (466, an archive),
   `context/security-review.md` (402), `context/migrator.md` (401).

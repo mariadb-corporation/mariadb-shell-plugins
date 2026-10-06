@@ -2,8 +2,8 @@
 
 Option C of phase 2: the MCP server as its own OAuth authorization server, logging
 users in against MariaDB (2c), and the Snowflake-style setup through Arcade that
-it must support (2d). **Nothing here is built yet.** Planned with the user on
-2026-10-06.
+it must support (2d). Planned with the user and **built** on 2026-10-06 (see
+Status).
 
 Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The phase 2 decisions it
 refers to by number, the shared groundwork ("2a") and the Keycloak option ("2b")
