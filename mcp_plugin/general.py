@@ -150,6 +150,9 @@ def setup(**options) -> None:
             user, as an interrupted remove_user leaves behind.
         set_default_role (str): The MariaDB role the sessions of user run
             under. Empty uses the account's own default role.
+        tool_name_separator (str): What separates a tool's group from its name
+            in the published tool names, one of . _ - (default .). Use _ for
+            gateways that refuse dots, such as Arcade: db_list_connections.
 
     Returns:
         None

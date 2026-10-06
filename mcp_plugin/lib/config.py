@@ -192,6 +192,10 @@ MAX_CONNECTION_CAPTION_LENGTH = 100
 # Name of the settings file inside the plugin data directory.
 SETTINGS_FILE_NAME = "settings.json"
 
+# What may separate a tool's group from its name (see get_tool_name_separator).
+TOOL_NAME_SEPARATORS = (".", "_", "-")
+_TOOL_NAME_SEPARATOR_SETTING = "toolNameSeparator"
+
 # Name of the file inside the plugin data directory that holds the details of
 # the stored connections (see get_connection_details).
 CONNECTIONS_FILE_NAME = "connections.json"
@@ -1398,6 +1402,38 @@ def get_settings() -> dict:
 
     with open(path, "r", encoding="utf-8") as settings_file:
         return json.load(settings_file)
+
+
+def get_tool_name_separator() -> str:
+    """Returns what separates a tool's group from its name: ``.`` by default.
+
+    ``mcp setup --toolNameSeparator=_`` publishes ``db_list_connections``
+    instead of ``db.list_connections``, for gateways that refuse dots in a tool
+    name although the MCP specification allows them (Arcade, OpenAI's function
+    names). A server reads it once, when it starts.
+    """
+    separator = get_settings().get(_TOOL_NAME_SEPARATOR_SETTING, ".")
+
+    return separator if separator in TOOL_NAME_SEPARATORS else "."
+
+
+def set_tool_name_separator(separator: str) -> None:
+    """Persists what separates a tool's group from its name.
+
+    Raises:
+        mysqlsh.Error: If the separator is not one of TOOL_NAME_SEPARATORS.
+    """
+    if separator not in TOOL_NAME_SEPARATORS:
+        raise mysqlsh.Error(
+            f"The tool name separator must be one of: {' '.join(TOOL_NAME_SEPARATORS)}."
+        )
+
+    settings = get_settings()
+    if separator == ".":
+        settings.pop(_TOOL_NAME_SEPARATOR_SETTING, None)
+    else:
+        settings[_TOOL_NAME_SEPARATOR_SETTING] = separator
+    save_settings(settings)
 
 
 def save_settings(settings: dict) -> None:

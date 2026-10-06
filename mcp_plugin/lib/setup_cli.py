@@ -72,6 +72,7 @@ ACTION_OPTIONS = (
     "show_api_key",
     "purge_orphan_groups",
     "set_default_role",
+    "tool_name_separator",
 )
 
 # Where the password for --add-connection may come from. Exactly one.
@@ -581,6 +582,16 @@ def _delete_paths(options: dict, mcp_user_id=None) -> None:
 # --- Users (multi-tenant mode) --------------------------------------------------
 
 
+def _set_tool_name_separator(options: dict) -> None:
+    """Sets what separates a tool's group from its name, as --toolNameSeparator says."""
+    separator = str(options["tool_name_separator"])
+    config.set_tool_name_separator(separator)
+    print(
+        f"Tools are published as db{separator}list_connections. A running server "
+        "keeps its names until it is restarted."
+    )
+
+
 def _set_multi_tenant(options: dict) -> None:
     """Turns multi-tenant mode on or off, as --multiTenant says."""
     enabled = _as_bool(options["multi_tenant"])
@@ -773,6 +784,7 @@ def configuration(all_users: bool = False, mcp_user_id=None) -> dict:
     current = {
         "config_path": general.get_plugin_data_path(),
         "multi_tenant": tenants.is_multi_tenant(),
+        "tool_name_separator": config.get_tool_name_separator(),
         "connections": config.list_connection_uris(),
         "allowed_paths": config.get_allowed_paths(),
         "migrator": {
@@ -823,6 +835,7 @@ def _show(options: dict) -> None:
     print("=== MariaDB MCP Server configuration ===")
     print(f"Configuration is stored in: {current['config_path']}")
     print(f"Multi-tenant mode: {'on' if current['multi_tenant'] else 'off'}")
+    print(f"Tool names:        db{current['tool_name_separator']}list_connections")
     if current["multi_tenant"]:
         print(f"Public URL:        {current['public_url'] or '(none)'}")
         print(f"OAuth mode:        {current['oauth_mode']} (mcp setup-oauth --show)")
@@ -908,6 +921,8 @@ def apply(options: dict) -> None:
 
     if "multi_tenant" in options:
         _set_multi_tenant(options)
+    if options.get("tool_name_separator"):
+        _set_tool_name_separator(options)
     if options.get("remove_user"):
         _remove_users(options)
     if options.get("add_user"):

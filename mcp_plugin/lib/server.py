@@ -80,7 +80,7 @@ import mysqlsh
 # same way, lazily. It costs nothing: `mcp_plugin.lib` imports it eagerly
 # anyway, and unlike `migrator_functions` it pulls in no MCP SDK module at
 # import time.
-from mcp_plugin.lib import db_functions, general, tenants
+from mcp_plugin.lib import config, db_functions, general, tenants
 
 
 # Maps a function group name to the (module, function) naming the callback that
@@ -117,7 +117,7 @@ def _registrar(group):
     return getattr(module, function_name)
 
 
-def build_mcp_server(function_groups, auth=None):
+def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
     """Builds and configures the MariaDB MCP server.
 
     The host and port are not part of the server itself; they are transport
@@ -130,6 +130,9 @@ def build_mcp_server(function_groups, auth=None):
             request with (see :func:`mcp_plugin.lib.auth.build_auth`), or None
             for a server that does not authenticate. An authenticating server
             also lists each caller only the tools their token grants.
+        tool_name_separator (str): What separates a tool's group from its name
+            in the names the tools are published under (see
+            :func:`mcp_plugin.lib.config.get_tool_name_separator`).
 
     Returns:
         The configured MCPServer instance.
@@ -146,8 +149,12 @@ def build_mcp_server(function_groups, auth=None):
         server = scoped_server_class()("MariaDB MCP Server", **auth.server_kwargs())
     # The full list of enabled groups is handed to every registrar, so a group
     # can leave out the tools that depend on another group not being served.
+    from mcp_plugin.lib import tool_registrar
+
+    tool_registrar.use_tool_name_separator(server, tool_name_separator)
     for group in function_groups:
         _registrar(group)(server, function_groups)
+    tool_registrar.finish_tool_names(server)
 
     return server
 
@@ -272,7 +279,11 @@ def start(
                 oauth_config.public_url_host(auth.public_url)
             ]
 
-    mcp_server = build_mcp_server(function_groups=function_groups, auth=auth)
+    mcp_server = build_mcp_server(
+        function_groups=function_groups,
+        auth=auth,
+        tool_name_separator=config.get_tool_name_separator(),
+    )
 
     if transport == general.TRANSPORT_STDIO:
         _serve_stdio(mcp_server)

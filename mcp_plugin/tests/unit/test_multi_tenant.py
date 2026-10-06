@@ -79,7 +79,7 @@ class _StubSession:
 
 
 def _context(user=None, scopes=tenants.SUPPORTED_SCOPES, address=CLIENT_ADDRESS,
-             session_id=SESSION_ID):
+             session_id=SESSION_ID, grant="", client_id=auth.API_KEY_CLIENT_ID):
     """Builds a request context as the HTTP transport does, with a user.
 
     The SDK's bearer authentication puts an ``AuthenticatedUser`` into the
@@ -89,9 +89,11 @@ def _context(user=None, scopes=tenants.SUPPORTED_SCOPES, address=CLIENT_ADDRESS,
     if user is not None:
         token = SimpleNamespace(
             scopes=list(scopes),
+            client_id=client_id,
             claims={
                 general.MCP_USER_ID_CLAIM: user,
                 general.AUTH_METHOD_CLAIM: auth.AUTH_METHOD_API_KEY,
+                general.GRANT_CLAIM: grant,
             },
         )
         scope["user"] = SimpleNamespace(access_token=token)
@@ -318,7 +320,9 @@ def test_an_api_key_authenticates_its_user(tenant_config):
     assert token.client_id == auth.API_KEY_CLIENT_ID
     assert token.scopes == ["mcp:db"]
     principal = general.principal_from_access_token(token)
-    assert principal == general.Principal(ada, ("mcp:db",), auth.AUTH_METHOD_API_KEY)
+    assert principal == general.Principal(
+        ada, ("mcp:db",), auth.AUTH_METHOD_API_KEY, client_id=auth.API_KEY_CLIENT_ID
+    )
 
 
 def test_a_wrong_key_authenticates_nobody(tenant_config):
@@ -944,6 +948,31 @@ def test_a_sessionless_request_binds_to_its_user(multi_tenant, monkeypatch):
     with pytest.raises(ToolError, match="No open connection"):
         tools["db.close"](_context(bob, session_id=None), connection_id)
     tools["db.close"](_context(ada, session_id=None), connection_id)
+
+
+def test_a_gateway_keeps_a_connection_across_sessions_and_addresses(multi_tenant,
+                                                                    monkeypatch):
+    """Bound to the user and their authorization, not the session or address.
+
+    Arcade opens a new MCP session for every tool call, from whichever of its
+    addresses: bound to the session, the connection db.connect opened was gone
+    by the next call. The same user's other clients still cannot use it.
+    """
+    ada = _add("ada")
+    config.store_connection(URI, PASSWORD, mcp_user_id=ada)
+    tools = _db_tools(monkeypatch)
+
+    connection_id = tools["db.connect"](
+        _context(ada, session_id="s1", address="203.0.113.7", grant="g1"), URI
+    )
+
+    with pytest.raises(ToolError, match="No open connection"):
+        tools["db.close"](_context(ada, session_id="s2", grant="g2"), connection_id)
+    with pytest.raises(ToolError, match="No open connection"):
+        tools["db.close"](_context(ada, session_id="s2", client_id="other"), connection_id)
+    tools["db.close"](
+        _context(ada, session_id="s2", address="203.0.113.8", grant="g1"), connection_id
+    )
 
 
 def test_a_sessionless_client_of_an_unauthenticated_server_is_told_why(tenant_config,

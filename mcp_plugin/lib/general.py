@@ -480,7 +480,9 @@ class ClientIdentity(NamedTuple):
         address: The normalized peer address the request came from, or None
             when the transport has none (stdio).
         session_id: The MCP session id the request was made on, or None when
-            the transport has no sessions (stdio).
+            the transport has no sessions (stdio). For an authenticated user of
+            a multi-tenant server it is the authorization instead (see
+            :meth:`Principal.authorization`), and the address is None.
         user: The ``mcp_user_id`` of the authenticated user who made the
             request, or None where the server does not authenticate. Part of
             the same equality, so a connection one user opened is unusable by
@@ -508,12 +510,29 @@ class Principal(NamedTuple):
         grant_id: The grant of this server's own authorization server the
             token was issued under, or ``""``. Its login connection is the
             principal's (see :mod:`mcp_plugin.lib.oauth_builtin`).
+        client_id: The OAuth client the token was issued to, or ``""``.
     """
 
     mcp_user_id: str
     scopes: tuple = ()
     auth_method: str = ""
     grant_id: str = ""
+    client_id: str = ""
+
+    def authorization(self) -> str:
+        """Returns what a connection this principal opens is bound to.
+
+        The grant the token was issued under - one user's authorization of one
+        client - or, for a token without one (Keycloak, an API key), the client
+        it was issued to. Not the MCP session, nor the address: a gateway such
+        as Arcade opens a new session for every tool call, from whichever of its
+        addresses, so a connection bound to either would be lost after the call
+        that opened it. The user's other clients still cannot use it.
+        """
+        if self.grant_id:
+            return f"grant:{self.grant_id}"
+
+        return f"client:{self.client_id}"
 
 
 # The claim of an access token that carries the mcp_user_id. Set by every token
@@ -547,6 +566,7 @@ def principal_from_access_token(token) -> Optional[Principal]:
         tuple(getattr(token, "scopes", None) or ()),
         str(claims.get(AUTH_METHOD_CLAIM, "")),
         str(claims.get(GRANT_CLAIM, "") or ""),
+        str(getattr(token, "client_id", "") or ""),
     )
 
 
@@ -652,6 +672,10 @@ def get_client_identity(ctx) -> ClientIdentity:
         wherever the request was not authenticated.
     """
     principal = get_principal(ctx)
+    if principal is not None and is_multi_tenant():
+        return normalize_client_identity(
+            ClientIdentity(None, principal.authorization(), principal.mcp_user_id)
+        )
 
     return normalize_client_identity(
         ClientIdentity(

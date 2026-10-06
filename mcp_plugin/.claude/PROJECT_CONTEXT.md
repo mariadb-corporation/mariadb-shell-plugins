@@ -71,7 +71,7 @@ this table with it.
 | [`context/multi-tenant-inputs.md`](context/multi-tenant-inputs.md) | The external facts the multi-tenant and OAuth2 plans rest on: secret groups, the customer's Snowflake input, the MCP authorization spec 2026-07-28, Keycloak, the bundled Python, the SDK's auth hooks. Split out of multi-tenant.md on 2026-10-06. |
 | [`context/oauth.md`](context/oauth.md) | Phase 2 (BUILT): the decisions, the shared OAuth groundwork (public URL, scopes, default role, verifier chain), the Keycloak option, `mcp setup-oauth` / `mcp setup-keycloak-realm`, and the as-built status including real-client tests. |
 | [`context/oauth-builtin.md`](context/oauth-builtin.md) | Phase 2c/2d (BUILT): the built-in authorization server that logs users in against MariaDB, grants (90 days by default) and their login connections, and the Snowflake-style setup through Arcade. |
-| [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md) | The M review of multi-tenant mode and OAuth2: M1..M22 (M22: MCP 2026-07-28 has no sessions), the threat, what is built, the test and its revert probe, and what is left open. |
+| [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md) | The M review of multi-tenant mode and OAuth2: M1..M23 (M22: MCP 2026-07-28 has no sessions; M23: Arcade opens a session per call), the threat, what is built, the test and its revert probe, and what is left open. |
 | [`context/history.md`](context/history.md) | The session-by-session record and the branch and commit history. Background, not current truth. |
 
 ## Git state

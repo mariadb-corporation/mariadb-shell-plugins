@@ -227,6 +227,20 @@ defaults to all):
 mariadb-shell -- mcp start-server --function-groups=db
 ```
 
+Tools are named `<group>.<tool>`, such as `db.list_connections`, as the MCP
+specification allows. Some gateways and model APIs accept only letters, digits,
+`-` and `_` in a tool name, Arcade and OpenAI's function names among them. For
+those, publish the names with another separator:
+
+```bash
+mariadb-shell -- mcp setup --toolNameSeparator=_   # db_list_connections, msm_create_project, ...
+mariadb-shell -- mcp setup --toolNameSeparator=.   # back to the default
+```
+
+The tools' descriptions and error messages name the other tools by the same
+names. A running server keeps its names until it is restarted, and
+`mcp setup --show` reports the setting.
+
 ### Database connection tools (`db`)
 
 Tools for working with the connections configured via `mcp.setup`. Sessions opened
@@ -435,6 +449,10 @@ with an API key of their own, sent as a bearer token
 (`Authorization: Bearer mdbmcp_...`), and has connections and allowed paths of
 their own: a user lists and opens only their own connections, and a connection
 one user opened cannot be used by anyone else, on any address or MCP session.
+A connection is bound to the user and the authorization it was opened under
+rather than to an MCP session (see
+[Connection handling over HTTP](#connection-handling-over-http)), so a gateway
+that opens a new session for every tool call keeps using it.
 
 ```bash
 # Turn the mode on, add a user (the API key is printed once - and can be shown again)
@@ -583,11 +601,20 @@ The setup Arcade documents for Snowflake works the same way here:
 | `DEFAULT_ROLE` | `SET DEFAULT ROLE mcp_access FOR …` |
 | Network policy | `--allowedClientNetworks=<Arcade's egress networks>` |
 
+Arcade refuses a tool name that contains a dot, so a server for Arcade needs
+`mcp setup --toolNameSeparator=_` (see [Exposed MCP tools](#exposed-mcp-tools)).
+Without it, adding the server fails with *tool name must only contain ASCII
+letters, numbers, and the dash and underscore characters*.
+
 Arcade calls the server from its own addresses for all of its users: raise
-`--max-connections` for many users. Arcade discovers the tools once, with the
-administrator's sign-in, so grant that sign-in both scopes. A client may
-authenticate to the token endpoint with Basic or with the form, as OAuth 2.1
-allows.
+`--max-connections` for many users. It also opens a new MCP session for every
+tool call, which is why a multi-tenant server binds a connection to the user
+and their grant instead of the session. Arcade discovers the tools once, with
+the administrator's sign-in, so grant that sign-in both scopes. Each Arcade
+user then signs in on their own the first time they call a tool; with Arcade's
+default user verification, that sign-in completes only for the Arcade account
+the `user_id` names. A client may authenticate to the token endpoint with Basic
+or with the form, as OAuth 2.1 allows.
 
 ## Database connection behavior
 
@@ -629,7 +656,7 @@ session id (see below), so over HTTP it refuses such a client a connection:
 bound to the address alone, it would be usable by every process on the same
 machine that learned its id. Use these clients over stdio, or run the server in
 [multi-tenant mode](#multi-tenant-mode), where every client signs in and the
-user takes the place of the session id.
+user and their authorization take the place of the address and session id.
 
 ### Requests from a browser are refused
 
@@ -698,6 +725,15 @@ substitute for the authentication described above.
   Over stdio a request has neither a peer address nor a session id, so the
   connection is bound to "no client" and the single client keeps matching it; the
   comparison itself is always made, and never conditional on the transport.
+
+  In [multi-tenant mode](#multi-tenant-mode) every request is authenticated, and
+  a connection is bound to the user and the authorization it was opened under
+  instead: the OAuth grant of the built-in authorization server (one user's
+  authorization of one client), or, for a Keycloak token or an API key, the
+  client the token was issued to. Neither the session nor the address is part of
+  it, because a gateway such as Arcade opens a new MCP session for every tool
+  call, from whichever of its addresses. Another user, or another client of the
+  same user, is answered as if the UUID had never been handed out.
 - **An unused connection is closed after 30 minutes.** A background reaper closes
   the database session of every connection that has been unused for that long,
   releasing the connection on the server. The connection UUID stays valid: the

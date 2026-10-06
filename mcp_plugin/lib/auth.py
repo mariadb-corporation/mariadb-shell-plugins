@@ -414,10 +414,12 @@ def filtered_tools(tools, principal):
     if principal is None:
         return []
 
+    from mcp_plugin.lib import tool_registrar
+
     return [
         tool
         for tool in tools
-        if f"mcp:{tool.name.split('.', 1)[0]}" in principal.scopes
+        if f"mcp:{tool_registrar.tool_group(tool.name)}" in principal.scopes
     ]
 
 

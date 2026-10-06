@@ -2604,13 +2604,16 @@ def register_db_tools(server, function_groups=()) -> None:
         # multi-tenant server it is the verified user that separates clients
         # anyway (the session id only ever separated one user's own clients).
         # On a server that does not authenticate, the session id stays required.
+        #
+        # An authenticated user's connection is bound to the user and their
+        # authorization, not to the address or session at all (see
+        # general.Principal.authorization): a gateway opens a new session per
+        # tool call.
         client = general.get_client_identity(ctx)
         if (
             general.is_http_transport()
-            and (
-                client.address is None
-                or (client.session_id is None and client.user is None)
-            )
+            and client.user is None
+            and (client.address is None or client.session_id is None)
         ) or (general.is_multi_tenant() and client.user is None):
             general.log_event(
                 "db.connect: REFUSED to open a connection for a request that "

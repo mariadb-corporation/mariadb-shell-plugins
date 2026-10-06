@@ -1,7 +1,7 @@
 # The M security review: multi-tenant mode and OAuth2
 
 The attack surface multi-tenant mode and OAuth2 added (branch `wip/mcp-multi-tenant`),
-numbered M1..M21 in the style of the S and T review in
+numbered M1..M23 in the style of the S and T review in
 [security-review.md](security-review.md). Each entry gives the threat, what is built
 against it, the test that pins it, whether a REVERT PROBE has proved that test
 discriminates, and what is left open. Written on 2026-10-06 from the code as built. Unlike
@@ -229,6 +229,40 @@ run the tests named, see them fail, restore. Each entry names its probe.
   - **Also affected:** the path-trust ELICITATION of a single-tenant server. In
     2026-07-28 servers do not send requests, so a modern client is never asked and the
     path is refused, which fails closed.
+
+- **M23 - Arcade opens a new MCP session for every tool call, so a session-bound
+  connection was lost after the call that opened it.** Found on 2026-10-06 with a
+  real Arcade project (built-in mode, confidential client, cloudflared quick tunnel,
+  driven through Arcade's `/v1/tools/execute` with the user's API key).
+  - **What happened:** `db_connect` succeeded, and the next call (`db_list_schemas`)
+    was refused as `REFUSED use of connection … bound to … session=470658bd… by a
+    request from … session=15479f46…`: every Arcade call is its own MCP session
+    (initialize, call, DELETE). Arcade's egress addresses can change between calls too.
+  - **DECIDED by the user (2026-10-06): bind to the user and their authorization.**
+    In multi-tenant mode `get_client_identity` returns `(address=None,
+    session_id=Principal.authorization(), user)`. The authorization is
+    `grant:<grant id>` for a token of the built-in server (one user's
+    authorization of one client), else `client:<client id>`: Keycloak's
+    `azp`, or `mcp-api-key` for every API key of the user. Rejected alternatives:
+    the user alone (any client of the user with the UUID), and stateless SQL tools
+    without a connection id (a bigger change).
+  - **What it costs:** two MCP sessions of the same client and user now share
+    connections, and so do all of one user's API-key clients. The UUID (122 random
+    bits) remains the handle; another user, or another grant or client of the same
+    user, is still refused. Single-tenant servers are unchanged.
+  - **Test:** `test_a_gateway_keeps_a_connection_across_sessions_and_addresses`.
+  - **Verified with Arcade:** connect, list schemas, `SELECT … CURRENT_USER(),
+    CURRENT_ROLE()` (`ada@%`, `mcp_access`), a refused `DELETE` (1142), and close,
+    each call in its own session.
+- **Arcade refuses dotted tool names** (not a security finding, recorded with M23):
+  *"tool name must only contain ASCII letters, numbers, and the dash and underscore
+  characters"*, although SEP-986 allows the dot. Fixed by `mcp setup
+  --toolNameSeparator=_` (`test_tool_names.py`). The rewriting of tool mentions in
+  ToolError messages only touches dotted words that are registered tool names.
+- **Arcade's user verification** (on by default): an authorization started for a
+  `user_id` completes only for the Arcade account it names. Arcade drops the flow
+  before calling `/token`, so the server logs a grant whose "code was never redeemed".
+  Not a server bug.
 
 ## Next steps
 

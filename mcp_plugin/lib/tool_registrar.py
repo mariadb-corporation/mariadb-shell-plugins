@@ -69,6 +69,7 @@ imports this plugin package eagerly, and pulling in ``mcp`` that early binds
 """
 
 import inspect
+import re
 from functools import wraps
 from typing import Any, Callable
 
@@ -91,9 +92,120 @@ def tool_error(message: str) -> Exception:
     return ToolError(message)
 
 
+# --- Published tool names ----------------------------------------------------
+#
+# The tools are registered as ``<group>.<name>``. A server whose
+# ``mcp setup --toolNameSeparator`` is not ``.`` publishes them with that
+# separator instead, for gateways that refuse a dot in a tool name although the
+# MCP specification (SEP-986) allows it - Arcade, and OpenAI's function names.
+# The tools also name each other, in their descriptions ("the UUID returned by
+# db.connect") and in their errors, so those are rewritten to match: a model
+# told to call a tool that does not exist would be worse than no hint at all.
+
+_separator = "."
+
+# The tools registered under a dotted name, which is what gets rewritten; a
+# dotted word that is not one of them (a table, a schema) never is.
+_registered = set()
+
+_TOOL_REFERENCE = re.compile(r"\b[a-z]+\.[a-z_]+\b")
+
+
+def tool_group(tool_name) -> str:
+    """Returns the group of a tool, whichever separator its name uses."""
+    return re.split(r"[._-]", str(tool_name), maxsplit=1)[0]
+
+
+def published_name(tool_name) -> str:
+    """Returns the name a tool is published under."""
+    return str(tool_name).replace(".", _separator, 1)
+
+
+def translate_tool_names(text):
+    """Rewrites the tools a text names to the names they are published under."""
+    if _separator == "." or not text:
+        return text
+
+    return _TOOL_REFERENCE.sub(
+        lambda match: published_name(match.group(0)) if match.group(0) in _registered
+        else match.group(0),
+        text,
+    )
+
+
+def _translating_errors(func):
+    """Wraps a tool so that the tools its errors name are published names."""
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    @wraps(func)
+    async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
+        try:
+            return await func(*call_args, **call_kwargs)
+        except ToolError as error:
+            raise ToolError(translate_tool_names(str(error))) from error
+
+    @wraps(func)
+    def sync_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
+        try:
+            return func(*call_args, **call_kwargs)
+        except ToolError as error:
+            raise ToolError(translate_tool_names(str(error))) from error
+
+    return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
+
+
+def use_tool_name_separator(server, separator: str) -> None:
+    """Makes every tool registered on server from now on use the separator.
+
+    Called before the groups register their tools; :func:`finish_tool_names`
+    after them. With ``.`` nothing is changed.
+
+    Args:
+        server: The MCPServer.
+        separator (str): What separates a tool's group from its name.
+    """
+    global _separator
+
+    _separator = separator
+    _registered.clear()
+    if separator == ".":
+        return
+
+    register = server.tool
+
+    def tool(*args: Any, **kwargs: Any):
+        name = kwargs.get("name")
+        if name:
+            _registered.add(name)
+            kwargs = {**kwargs, "name": published_name(name)}
+        decorate = register(*args, **kwargs)
+
+        return lambda func: decorate(_translating_errors(func))
+
+    server.tool = tool
+
+
+def finish_tool_names(server) -> None:
+    """Rewrites the tools the registered tools' descriptions name.
+
+    Afterwards, because a description can name a tool registered after its
+    own. Reaches into the SDK's private tool manager, as the descriptions are
+    only settled once a tool is registered; test_tool_names_with_a_separator
+    pins it.
+    """
+    if _separator == ".":
+        return
+
+    import json
+
+    for tool in server._tool_manager.list_tools():
+        tool.description = translate_tool_names(tool.description)
+        tool.parameters = json.loads(translate_tool_names(json.dumps(tool.parameters)))
+
+
 def _tool_scope(tool_name) -> str:
     """Returns the scope a tool needs: ``mcp:`` and the tool's group."""
-    return f"mcp:{str(tool_name).split('.', 1)[0]}"
+    return f"mcp:{tool_group(tool_name)}"
 
 
 def _context_argument(func, call_args, call_kwargs):
@@ -139,12 +251,12 @@ def _check_caller(tool_name, func, call_args, call_kwargs) -> None:
     scope = _tool_scope(tool_name)
     if scope not in principal.scopes:
         general.log_event(
-            f"auth: REFUSED {tool_name} to user="
+            f"auth: REFUSED {published_name(tool_name)} to user="
             f"{general.log_id_prefix(principal.mcp_user_id)}, whose token lacks "
             f"the scope {scope}"
         )
         raise tool_error(
-            f"The tool {tool_name} needs the scope '{scope}', which your "
+            f"The tool {published_name(tool_name)} needs the scope '{scope}', which your "
             "access was not granted."
         )
 
