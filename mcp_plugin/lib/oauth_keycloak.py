@@ -375,9 +375,9 @@ class KeycloakVerifier:
 
 def _http_get_json(url: str) -> dict:
     """Fetches a JSON document."""
-    import httpx
+    import httpx2
 
-    response = httpx.get(url, timeout=_HTTP_TIMEOUT, follow_redirects=False)
+    response = httpx2.get(url, timeout=_HTTP_TIMEOUT, follow_redirects=False)
     response.raise_for_status()
 
     return response.json()
@@ -385,9 +385,9 @@ def _http_get_json(url: str) -> dict:
 
 def _http_post_json(url: str, data: dict, auth) -> dict:
     """Posts a form with Basic client authentication and returns the JSON answer."""
-    import httpx
+    import httpx2
 
-    response = httpx.post(url, data=data, auth=auth, timeout=_HTTP_TIMEOUT,
+    response = httpx2.post(url, data=data, auth=auth, timeout=_HTTP_TIMEOUT,
                           follow_redirects=False)
     response.raise_for_status()
 

@@ -58,7 +58,7 @@ limited per address and per account, answers every failure the same way, and
 is protected against cross-site requests and framing.
 """
 
-# cSpell:ignore mysqlsh MariaDB anyio starlette cimd urlsafe nosniff jwks
+# cSpell:ignore mysqlsh MariaDB anyio starlette cimd urlsafe nosniff jwks httpx
 
 import hashlib
 import hmac
@@ -472,9 +472,9 @@ def _resolve(host: str) -> list:
 
 def _bounded_get(url: str, max_bytes: int, timeout: float) -> tuple:
     """GETs a URL without following redirects, reading at most max_bytes + 1."""
-    import httpx
+    import httpx2
 
-    with httpx.stream("GET", url, timeout=timeout, follow_redirects=False) as response:
+    with httpx2.stream("GET", url, timeout=timeout, follow_redirects=False) as response:
         body = b""
         for chunk in response.iter_bytes():
             body += chunk

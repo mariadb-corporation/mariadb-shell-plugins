@@ -28,7 +28,7 @@
   MCP SDK's own OAuth client.
 """
 
-# cSpell:ignore mysqlsh MariaDB Keycloak jwks kid cimd urlsafe
+# cSpell:ignore mysqlsh MariaDB Keycloak jwks kid cimd urlsafe httpx
 
 import asyncio
 import base64
@@ -44,7 +44,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 
-import httpx
+import httpx2
 import jwt
 import mysqlsh
 import pytest
@@ -1038,7 +1038,7 @@ def test_an_arcade_style_gateway_signs_users_in(tenant_config, mariadb_accounts,
 
     proc = _start_server(port)
     try:
-        with httpx.Client(follow_redirects=False, timeout=30) as client:
+        with httpx2.Client(follow_redirects=False, timeout=30) as client:
             unauthorized = client.post(base + "/mcp", json={},
                                        headers={"Accept": "application/json, text/event-stream"})
             assert unauthorized.status_code == 401
@@ -1126,7 +1126,7 @@ def test_the_sdks_own_oauth_client_completes_the_flow(tenant_config, mariadb_acc
 
     async def redirect_handler(url):
         def browse():
-            with httpx.Client(follow_redirects=False, timeout=30) as browser:
+            with httpx2.Client(follow_redirects=False, timeout=30) as browser:
                 login = browser.get(url).headers["location"]
                 page = browser.get(login)
                 csrf = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
@@ -1247,7 +1247,7 @@ def test_a_real_keycloak_token_is_accepted(tenant_config):
     issuer = os.environ["KEYCLOAK_ISSUER"].rstrip("/")
     mcp_url = os.environ["KEYCLOAK_MCP_URL"]
     discovery = oauth_keycloak.check_issuer(issuer)
-    answer = httpx.post(discovery["token_endpoint"], data={
+    answer = httpx2.post(discovery["token_endpoint"], data={
         "grant_type": "password", "client_id": os.environ["KEYCLOAK_CLIENT_ID"],
         "username": os.environ["KEYCLOAK_USERNAME"],
         "password": os.environ["KEYCLOAK_PASSWORD"], "scope": "openid mcp:db mcp:msm",

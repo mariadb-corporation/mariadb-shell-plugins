@@ -22,7 +22,7 @@ stubs. The last tests start a real server over HTTP and talk to it with real
 API keys, which is the only way to see the SDK's own authentication answer.
 """
 
-# cSpell:ignore mysqlsh MariaDB mcpserver
+# cSpell:ignore mysqlsh MariaDB mcpserver httpx
 
 import asyncio
 import json
@@ -30,7 +30,7 @@ import os
 import uuid
 from types import SimpleNamespace
 
-import httpx
+import httpx2
 import mysqlsh
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
@@ -717,7 +717,7 @@ def test_a_real_server_serves_each_user_their_own(tenant_config, sandbox):
 
     async def scenario():
         async with helpers.http_server(["db", "msm"]) as url:
-            async with httpx.AsyncClient() as raw:
+            async with httpx2.AsyncClient() as raw:
                 for headers in ({}, _bearer("mdbmcp_nope"), _bearer(ada_key + "x")):
                     response = await raw.post(
                         url,
