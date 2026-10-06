@@ -16,6 +16,8 @@
 from mcp_plugin.lib import (
     general,
     config,
+    tenants,
+    auth,
     db_functions,
     tool_registrar,
     msm_functions,

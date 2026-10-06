@@ -189,6 +189,63 @@ def clean_config():
                 os.remove(settings_path)
 
 
+def _read_bytes(path):
+    """Returns a file's bytes, or None if it does not exist."""
+    if not os.path.exists(path):
+        return None
+
+    with open(path, "rb") as content:
+        return content.read()
+
+
+def _restore_bytes(path, data) -> None:
+    """Puts a file back as _read_bytes found it, removing it if it was absent."""
+    if data is None:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+
+    with open(path, "wb") as content:
+        content.write(data)
+
+
+@pytest.fixture
+def tenant_config():
+    """Isolates the multi-tenant configuration for a test.
+
+    settings.json (which says whether the server is multi-tenant) and
+    users.json are backed up as BYTES and put back exactly, and every secret
+    group the test created - a user's API key and connections - is deleted
+    afterwards, so a test may add and remove users freely without touching the
+    developer's own. Groups that existed before the test are left alone. The
+    process-wide multi-tenant flag a server would set is turned off again.
+
+    Yields:
+        None
+    """
+    from mcp_plugin.lib import general as lib_general
+    from mcp_plugin.lib import tenants
+
+    settings_path = config.get_settings_file_path()
+    users_path = tenants.get_users_file_path()
+    settings = _read_bytes(settings_path)
+    users = _read_bytes(users_path)
+    groups_before = set(tenants.list_groups())
+
+    try:
+        yield
+    finally:
+        lib_general.set_multi_tenant(False)
+        for group in set(tenants.list_groups()) - groups_before:
+            try:
+                tenants.purge_group(group)
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
+
+        _restore_bytes(settings_path, settings)
+        _restore_bytes(users_path, users)
+
+
 @pytest.fixture(scope="session")
 def sandbox():
     """Provides a shared sandbox context for the whole test session.

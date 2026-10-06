@@ -103,6 +103,17 @@ longer in the cache, and leave a server-side connection nothing can ever close
 again. Tool calls do run concurrently: the SDK runs the sync db tools in worker
 threads, and ``msm.deploy_schema`` awaits before working with its session.
 
+In multi-tenant mode every request is made by an authenticated user (see
+:mod:`mcp_plugin.lib.tenants`), and the user is part of what a connection is
+bound to. A user lists and opens only their own connections - the ones kept in
+their secret group - so a connection URI one user has configured names nothing
+for another, and a connection one user opened is reported as not existing to
+everyone else, on any address and any MCP session. A user also has a limit of
+their own, :data:`mcp_plugin.lib.general.MAX_CONNECTIONS_PER_USER`, since they
+can open as many MCP sessions as they like. A user who is removed or disabled
+loses their open connections as soon as the server notices (see
+:class:`mcp_plugin.lib.auth.UserDirectory`).
+
 Removing a connection with ``mcp.setup``, or deleting the sandbox that
 registered one with ``sandbox.delete``, therefore does revoke it: the URI is
 checked again every time a session is opened - a first open and a reopen alike -
@@ -517,14 +528,19 @@ class _Connection:
 
     def __init__(self, uri: str, client, kind=None):
         self.uri = uri
+        # Normalized on the way in, so the stored identity and the one a later
+        # request is compared against are always in the same form.
+        self.client = general.normalize_client_identity(client)
+        # The user whose secret group the URI was resolved in, or None for the
+        # generic group: the password is read there, and so is the
+        # re-validation every reopened session does. Taken from the identity,
+        # which is what the connection is bound to anyway.
+        self.mcp_user_id = self.client.user
         # Which of the two connection lists the URI was resolved in (see
         # mcp_plugin.lib.config). Kept for the life of the connection because
         # the URI alone no longer identifies one: the password is read under
         # this kind, and so is the re-validation every reopened session does.
         self.kind = config.normalize_connection_kind(kind)
-        # Normalized on the way in, so the stored identity and the one a later
-        # request is compared against are always in the same form.
-        self.client = general.normalize_client_identity(client)
         self.session = None
         self.opened_at = time.monotonic()
         self.last_used = self.opened_at
@@ -622,7 +638,7 @@ class _Connection:
                 raise _ConnectionClosed()
 
             if self.session is None:
-                self.session = _open_session(self.uri, self.kind)
+                self.session = _open_session(self.uri, self.kind, self.mcp_user_id)
 
             return self.session
 
@@ -700,7 +716,7 @@ class _Connection:
             self.lock.release()
 
 
-def _open_session(uri: str, kind=None):
+def _open_session(uri: str, kind=None, mcp_user_id=None):
     """Opens a shell session for one of the configured connection URIs.
 
     The URI is checked against the configured connections here, on every open
@@ -723,6 +739,9 @@ def _open_session(uri: str, kind=None):
             ``db.add_connection``.
         kind: The connection list it belongs to, or None for the MCP list (see
             :mod:`mcp_plugin.lib.config`).
+        mcp_user_id: The user whose connection it is, in multi-tenant mode, or
+            None for the generic group. A user removed with ``mcp.setup`` has
+            no group any more, so this is also what refuses their reopen.
 
     Returns:
         The open shell session.
@@ -733,7 +752,7 @@ def _open_session(uri: str, kind=None):
     # is configured now rather than what was configured when db.connect ran. The
     # stored spellings, because this URI is one: it came from find_connection,
     # and it is the key the password is about to be read under.
-    if uri not in config.list_stored_connection_uris(kind):
+    if uri not in config.list_stored_connection_uris(kind, mcp_user_id):
         raise tool_error(
             f"'{uri}' is no longer a configured connection. Use "
             "db.list_connections to see the configured connections and "
@@ -743,7 +762,9 @@ def _open_session(uri: str, kind=None):
     # Read the stored password back and open the session with it. The session
     # is independent of the shell's global session.
     connection_data = mysqlsh.globals.shell.parse_uri(uri)
-    connection_data["password"] = config.get_connection_password(uri, kind)
+    connection_data["password"] = config.get_connection_password(
+        uri, kind, mcp_user_id
+    )
 
     return mysqlsh.globals.shell.open_session(connection_data)
 
@@ -843,11 +864,14 @@ def _claim_connection_slot(connection_id: str, connection) -> None:
     """
     total_limit = general.MAX_CONNECTIONS_TOTAL
     client_limit = general.MAX_CONNECTIONS_PER_CLIENT
+    user_limit = general.MAX_CONNECTIONS_PER_USER
     lifetime = general.CONNECTION_MAX_LIFETIME
+    user = connection.client.user
 
     with _sessions_lock:
         total = 0
         for_client = 0
+        for_user = 0
         for existing in _sessions.values():
             if existing.has_expired(lifetime):
                 continue
@@ -855,8 +879,14 @@ def _claim_connection_slot(connection_id: str, connection) -> None:
             total += 1
             if existing.client == connection.client:
                 for_client += 1
+            if user is not None and existing.client.user == user:
+                for_user += 1
 
-        if for_client < client_limit and total < total_limit:
+        if (
+            for_client < client_limit
+            and total < total_limit
+            and (user is None or for_user < user_limit)
+        ):
             _sessions[connection_id] = connection
 
             return
@@ -872,6 +902,19 @@ def _claim_connection_slot(connection_id: str, connection) -> None:
             f"There are already {for_client} open connections for this client, "
             f"which is the maximum of {client_limit}. Close the ones that are "
             "no longer needed with db.close before opening another."
+        )
+
+    if user is not None and for_user >= user_limit:
+        general.log_event(
+            f"db.connect: REFUSED - {general.describe_client(connection.client)} "
+            f"is a user who already holds the maximum of {user_limit} open "
+            "connections"
+        )
+
+        raise tool_error(
+            f"You already have {for_user} open connections, which is the "
+            f"maximum of {user_limit}. Close the ones that are no longer needed "
+            "with db.close before opening another."
         )
 
     general.log_event(
@@ -1819,7 +1862,7 @@ def _parse_json_fields(rows: list, field: str) -> list:
     return rows
 
 
-def _drop_connections_on(uri: str, kind: str) -> int:
+def _drop_connections_on(uri: str, kind: str, mcp_user_id=None) -> int:
     """Ends every open connection that was opened on one configured connection.
 
     Called when that connection is deleted, so that deleting it takes effect at
@@ -1831,6 +1874,8 @@ def _drop_connections_on(uri: str, kind: str) -> int:
     Args:
         uri (str): The configured connection URI, as it is stored.
         kind (str): The connection list it was stored in.
+        mcp_user_id: The user it was stored for, or None for the generic
+            group: the same URI in another user's group is another connection.
 
     Returns:
         How many open connections were dropped.
@@ -1839,13 +1884,46 @@ def _drop_connections_on(uri: str, kind: str) -> int:
         connection_ids = [
             connection_id
             for connection_id, connection in _sessions.items()
-            if connection.uri == uri and connection.kind == kind
+            if connection.uri == uri
+            and connection.kind == kind
+            and connection.mcp_user_id == mcp_user_id
         ]
 
     for connection_id in connection_ids:
         _drop_connection(
             connection_id, f"its connection '{uri}' ({kind}) was deleted"
         )
+
+    return len(connection_ids)
+
+
+def drop_connections_of_inactive_users(active_user_ids) -> int:
+    """Ends every open connection of a user who is no longer active.
+
+    Called by the server whenever it notices that the users changed (see
+    :class:`mcp_plugin.lib.auth.UserDirectory`): a user removed or disabled
+    with ``mcp.setup`` is refused from their next request on, and this is what
+    also releases the database connections they still held, rather than leaving
+    them to the idle timeout. Connections that belong to no user - a
+    single-tenant server's - are never touched.
+
+    Args:
+        active_user_ids: The ids of the users who exist and are not disabled.
+
+    Returns:
+        How many open connections were dropped.
+    """
+    active = set(active_user_ids)
+    with _sessions_lock:
+        connection_ids = [
+            connection_id
+            for connection_id, connection in _sessions.items()
+            if connection.mcp_user_id is not None
+            and connection.mcp_user_id not in active
+        ]
+
+    for connection_id in connection_ids:
+        _drop_connection(connection_id, "its user was removed or disabled")
 
     return len(connection_ids)
 
@@ -2314,14 +2392,18 @@ def register_db_tools(server, function_groups=()) -> None:
         _register_connection_management_tools(tool)
     else:
         @tool(name="db.list_connections")
-        def list_connections() -> list:
+        def list_connections(ctx: Context) -> list:
             """Lists the configured database connection URIs.
 
             Returns:
                 The list of connection URIs configured via mcp.setup. Any of
                 these can be passed to db.connect.
             """
-            return config.list_connection_uris()
+            # In multi-tenant mode the calling user's own; otherwise the user
+            # is None and this is the one list there is.
+            return config.list_connection_uris(
+                mcp_user_id=general.get_client_identity(ctx).user
+            )
 
     @tool(name="db.connect")
     def connect(ctx: Context, uri: str) -> str:
@@ -2365,22 +2447,16 @@ def register_db_tools(server, function_groups=()) -> None:
         # the configuration on every open, and it is what the log says. The list
         # it was found in comes back with it and is kept for the same reason -
         # in GUI mode there are two, and the URI alone does not say which.
-        found = config.find_connection(uri)
-        if found is None:
-            raise tool_error(
-                f"'{uri}' is not a configured connection. Use db.list_connections "
-                "to list the available connections, or configure it with mcp.setup."
-            )
-
-        configured_uri, kind = found
-
         # The connection belongs to the client that opens it. Without both the
         # peer address and the MCP session id to bind it to there is no way to
-        # keep another client from using it, so serving over HTTP requires both.
+        # keep another client from using it, so serving over HTTP requires both
+        # - and in multi-tenant mode the user as well, whose connections are
+        # the only ones it may look among.
         client = general.get_client_identity(ctx)
-        if general.is_http_transport() and (
-            client.address is None or client.session_id is None
-        ):
+        if (
+            general.is_http_transport()
+            and (client.address is None or client.session_id is None)
+        ) or (general.is_multi_tenant() and client.user is None):
             general.log_event(
                 "db.connect: REFUSED to open a connection for a request that "
                 f"could not be fully identified ({general.describe_client(client)})"
@@ -2392,6 +2468,15 @@ def register_db_tools(server, function_groups=()) -> None:
                 "an established MCP session, by a client whose address the "
                 "server can determine."
             )
+
+        found = config.find_connection(uri, mcp_user_id=client.user)
+        if found is None:
+            raise tool_error(
+                f"'{uri}' is not a configured connection. Use db.list_connections "
+                "to list the available connections, or configure it with mcp.setup."
+            )
+
+        configured_uri, kind = found
 
         connection = _Connection(configured_uri, client, kind)
         connection_id = str(uuid.uuid4())
@@ -2748,8 +2833,9 @@ def register_db_tools(server, function_groups=()) -> None:
                 "Provide exactly one of 'sql_script' or 'file_path'."
             )
 
+        client = general.get_client_identity(ctx)
         if file_path is not None:
-            if not config.is_path_allowed(file_path):
+            if not config.is_path_allowed(file_path, client.user):
                 raise tool_error(
                     f"Access to path '{file_path}' is not allowed. Add it (or a "
                     "parent directory) to the allowed paths with mcp.setup."
@@ -2757,7 +2843,7 @@ def register_db_tools(server, function_groups=()) -> None:
             with open(file_path, "r", encoding="utf-8") as script_file:
                 sql_script = script_file.read()
 
-        with use_session(connection_id, general.get_client_identity(ctx)) as session:
+        with use_session(connection_id, client) as session:
             restarted = _session_was_restarted(connection_id)
             statements = [
                 statement

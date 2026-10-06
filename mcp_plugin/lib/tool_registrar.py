@@ -57,6 +57,11 @@ their own message, and ``MCPError``, which MEANS "answer with a protocol error"
 - the SDK re-raises it ahead of its own generic handler for that reason, and
 converting it here would quietly downgrade it to a tool failure.
 
+The wrapper is also where a multi-tenant server checks who is calling, because
+it is the one place every tool of every group passes through (see
+:func:`_check_caller`): a tool that forgot the check would otherwise be a tool
+anyone can call.
+
 Nothing in this module imports the MCP SDK at module import time: the shell
 imports this plugin package eagerly, and pulling in ``mcp`` that early binds
 ``mcp.client.stdio.stdio_client``'s ``errlog=sys.stderr`` default to the shell's
@@ -86,6 +91,64 @@ def tool_error(message: str) -> Exception:
     return ToolError(message)
 
 
+def _tool_scope(tool_name) -> str:
+    """Returns the scope a tool needs: ``mcp:`` and the tool's group."""
+    return f"mcp:{str(tool_name).split('.', 1)[0]}"
+
+
+def _context_argument(func, call_args, call_kwargs):
+    """Returns the ``ctx`` a tool was called with, or None if it takes none."""
+    try:
+        bound = inspect.signature(func).bind_partial(*call_args, **call_kwargs)
+    except TypeError:
+        return None
+
+    return bound.arguments.get("ctx")
+
+
+def _check_caller(tool_name, func, call_args, call_kwargs) -> None:
+    """Refuses a tool call a multi-tenant server must not run.
+
+    Every call has to come from an authenticated user - which the SDK's bearer
+    authentication already demands of every HTTP request, so this is the
+    second, independent check - and the user's token has to grant the scope of
+    the tool's group. A server that is not multi-tenant checks nothing here.
+
+    Args:
+        tool_name (str): The name the tool is registered under.
+        func: The tool function.
+        call_args: The positional arguments it was called with.
+        call_kwargs: The keyword arguments it was called with.
+
+    Raises:
+        ToolError: If the call is refused.
+    """
+    # Imported here: general imports this module.
+    from mcp_plugin.lib import general
+
+    if not general.is_multi_tenant():
+        return
+
+    principal = general.get_principal(_context_argument(func, call_args, call_kwargs))
+    if principal is None:
+        raise tool_error(
+            "This server serves authenticated users only, and the request was "
+            "not authenticated."
+        )
+
+    scope = _tool_scope(tool_name)
+    if scope not in principal.scopes:
+        general.log_event(
+            f"auth: REFUSED {tool_name} to user="
+            f"{general.log_id_prefix(principal.mcp_user_id)}, whose token lacks "
+            f"the scope {scope}"
+        )
+        raise tool_error(
+            f"The tool {tool_name} needs the scope '{scope}', which your "
+            "access was not granted."
+        )
+
+
 def tool_registrar(server):
     """Returns a ``server.tool`` replacement bound to ``server``.
 
@@ -109,10 +172,12 @@ def tool_registrar(server):
             # have been importable from these two modules since 2.0.0, so naming
             # them does not tie the plugin to 2.1.
             reported_as_is = (ToolError, ResourceError, MCPError)
+            tool_name = kwargs.get("name") or func.__name__
 
             @wraps(func)
             async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
+                    _check_caller(tool_name, func, call_args, call_kwargs)
                     return await func(*call_args, **call_kwargs)
                 except reported_as_is:
                     raise
@@ -122,6 +187,7 @@ def tool_registrar(server):
             @wraps(func)
             def sync_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
+                    _check_caller(tool_name, func, call_args, call_kwargs)
                     return func(*call_args, **call_kwargs)
                 except reported_as_is:
                     raise

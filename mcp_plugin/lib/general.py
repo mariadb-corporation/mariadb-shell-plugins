@@ -80,6 +80,13 @@ CONNECTION_MAX_LIFETIME = 43200
 MAX_CONNECTIONS_TOTAL = 64
 MAX_CONNECTIONS_PER_CLIENT = 16
 
+# How many connections one user may hold at once in multi-tenant mode, across
+# every MCP session and client they use. The per-client limit does not bound
+# that: a user can open as many MCP sessions as they like, each a client of its
+# own. A server-side gateway such as Arcade is one such user per end user, so
+# this is what keeps one of them from taking every connection the server has.
+MAX_CONNECTIONS_PER_USER = 32
+
 # The transport the MCP server is currently being served with, set by
 # mcp_plugin.lib.server.start() before it starts serving. None while no server
 # is running, which is also what the in-process tests see.
@@ -89,6 +96,12 @@ _active_transport = None
 # mcp_plugin.lib.server.start() from the --gui option before it starts serving.
 # False while no server is running, which is also what the in-process tests see.
 _gui_mode = False
+
+# Whether the server is serving several users, each authenticated and each with
+# connections and allowed paths of their own, set by
+# mcp_plugin.lib.server.start() from the configuration before the tools are
+# built (see mcp_plugin.lib.tenants). False while no server is running.
+_multi_tenant = False
 
 # MCP function groups that can be loaded independently
 FUNCTION_GROUP_DB = "db"
@@ -105,6 +118,12 @@ SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_MIGRATOR,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
+
+# The groups a multi-tenant server serves, and the only ones it may. The
+# sandbox and migrator groups run local server processes and long jobs that
+# write to the server's disk - resources one user would take from all the
+# others - so they are not offered to tenants at all.
+MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB, FUNCTION_GROUP_MSM)
 
 def get_plugin_data_path() -> str:
     # Get msm plugin data folder, create if it does not exist yet
@@ -354,6 +373,43 @@ def is_gui_mode() -> bool:
     return _gui_mode
 
 
+def set_multi_tenant(enabled) -> None:
+    """Records whether the server is serving several authenticated users.
+
+    Set by :func:`mcp_plugin.lib.server.start` from the persisted configuration
+    (see :func:`mcp_plugin.lib.tenants.is_multi_tenant`), before the tools are
+    built. What it changes is read in a few places, each of which fails CLOSED
+    when it cannot tell whose request it is serving:
+
+    * every tool call has to come from an authenticated user, with the scope
+      for the tool's group (see :mod:`mcp_plugin.lib.tool_registrar`);
+    * the connections a user can list and open are their own (see
+      :mod:`mcp_plugin.lib.db_functions`), and so are the paths they may use
+      (see :func:`mcp_plugin.lib.config.is_path_allowed`);
+    * a path that is not allowed is refused rather than offered to the client
+      to trust (see :func:`require_allowed_path`): the client is the party the
+      list restricts.
+
+    Args:
+        enabled (bool): Whether the server is multi-tenant.
+
+    Returns:
+        None
+    """
+    global _multi_tenant
+
+    _multi_tenant = bool(enabled)
+
+
+def is_multi_tenant() -> bool:
+    """Returns whether the server is serving several authenticated users.
+
+    Returns:
+        True while a server is running in multi-tenant mode.
+    """
+    return _multi_tenant
+
+
 # The token every form of a loopback address is normalized to. A client talking
 # to a dual-stack server may be seen as ::1 on one request and 127.0.0.1 on the
 # next while being the very same client, so all loopback forms have to compare
@@ -416,7 +472,7 @@ MCP_SESSION_ID_HEADER = "mcp-session-id"
 class ClientIdentity(NamedTuple):
     """Who a database connection belongs to.
 
-    Both parts are needed, and comparing two identities is a plain tuple
+    Every part is needed, and comparing two identities is a plain tuple
     equality - see
     :meth:`mcp_plugin.lib.db_functions._Connection.is_accessible_from`.
 
@@ -425,10 +481,99 @@ class ClientIdentity(NamedTuple):
             when the transport has none (stdio).
         session_id: The MCP session id the request was made on, or None when
             the transport has no sessions (stdio).
+        user: The ``mcp_user_id`` of the authenticated user who made the
+            request, or None where the server does not authenticate. Part of
+            the same equality, so a connection one user opened is unusable by
+            another even on the same address and MCP session - behind a gateway
+            that serves many users from one address, this is the part that
+            tells them apart.
     """
 
     address: Optional[str] = None
     session_id: Optional[str] = None
+    user: Optional[str] = None
+
+
+class Principal(NamedTuple):
+    """The authenticated user a request is made by, in multi-tenant mode.
+
+    Built from the access token the request was authenticated with, whichever
+    way it was issued (see :mod:`mcp_plugin.lib.auth`), so the tools never have
+    to know how a user signed in.
+
+    Attributes:
+        mcp_user_id: The user's id, which also names their secret group.
+        scopes: The scopes the token grants, as a tuple.
+        auth_method: How the user authenticated, for the log.
+    """
+
+    mcp_user_id: str
+    scopes: tuple = ()
+    auth_method: str = ""
+
+
+# The claim of an access token that carries the mcp_user_id. Set by every token
+# verifier in mcp_plugin.lib.auth, and read by get_principal.
+MCP_USER_ID_CLAIM = "mcp_user_id"
+
+# The claim of an access token that says how the user authenticated.
+AUTH_METHOD_CLAIM = "auth_method"
+
+
+def principal_from_access_token(token) -> Optional[Principal]:
+    """Returns the principal an access token stands for.
+
+    Args:
+        token: The SDK's ``AccessToken``, or None.
+
+    Returns:
+        The :class:`Principal`, or None when there is no token or it carries
+        no user.
+    """
+    claims = getattr(token, "claims", None) or {}
+    mcp_user_id = claims.get(MCP_USER_ID_CLAIM)
+    if not mcp_user_id:
+        return None
+
+    return Principal(
+        str(mcp_user_id).lower(),
+        tuple(getattr(token, "scopes", None) or ()),
+        str(claims.get(AUTH_METHOD_CLAIM, "")),
+    )
+
+
+def get_principal(ctx) -> Optional[Principal]:
+    """Returns the authenticated user the current request was made by.
+
+    Read from the request the transport attached to the context, where the
+    SDK's bearer authentication middleware put the user it authenticated - the
+    same chain :func:`get_client_address` reads, and NOT the SDK's context
+    variable, so it also works for code that reads it before handing work to a
+    worker thread.
+
+    Args:
+        ctx: The MCP request context, or None.
+
+    Returns:
+        The :class:`Principal`, or None when the request was not authenticated
+        - always the case for a server that does not authenticate, and for
+        stdio.
+    """
+    if ctx is None:
+        return None
+
+    try:
+        request = getattr(ctx.request_context, "request", None)
+    except Exception:  # noqa: BLE001 - no request context outside a request
+        return None
+
+    scope = getattr(request, "scope", None)
+    if not isinstance(scope, dict):
+        return None
+
+    return principal_from_access_token(
+        getattr(scope.get("user"), "access_token", None)
+    )
 
 
 def normalize_client_identity(client) -> ClientIdentity:
@@ -447,9 +592,12 @@ def normalize_client_identity(client) -> ClientIdentity:
     if client is None:
         return ClientIdentity()
 
+    user = getattr(client, "user", None)
+
     return ClientIdentity(
         normalize_client_address(client.address),
         client.session_id or None,
+        str(user).lower() if user else None,
     )
 
 
@@ -491,11 +639,18 @@ def get_client_identity(ctx) -> ClientIdentity:
         ctx: The MCP request context, or None.
 
     Returns:
-        The normalized :class:`ClientIdentity`. Both of its parts are None over
-        stdio, where there is only ever the one client.
+        The normalized :class:`ClientIdentity`. All of its parts are None over
+        stdio, where there is only ever the one client, and the user is None
+        wherever the request was not authenticated.
     """
+    principal = get_principal(ctx)
+
     return normalize_client_identity(
-        ClientIdentity(get_client_address(ctx), get_client_session_id(ctx))
+        ClientIdentity(
+            get_client_address(ctx),
+            get_client_session_id(ctx),
+            principal.mcp_user_id if principal else None,
+        )
     )
 
 
@@ -534,14 +689,19 @@ def describe_client(client) -> str:
 
     Returns:
         A one-line description; the parts a request did not have (both of them,
-        over stdio) are written as ``"-"``.
+        over stdio) are written as ``"-"``. The user is only written where
+        there is one, so a single-tenant server's lines read as they always did.
     """
     client = normalize_client_identity(client)
 
-    return (
+    description = (
         f"address={client.address or '-'} "
         f"session={log_id_prefix(client.session_id)}"
     )
+    if client.user:
+        description += f" user={log_id_prefix(client.user)}"
+
+    return description
 
 
 def log_event(message) -> None:
@@ -696,6 +856,13 @@ async def require_allowed_path(ctx, path) -> None:
     performs is what
     :func:`mcp_plugin.lib.config.is_path_allowed` has already answered.
 
+    In multi-tenant mode it is checked against the calling user's own allowed
+    paths, and two things change. A path that is not allowed is refused
+    outright, never offered to the client to trust: the client is the party
+    the list restricts, and an administrator grants paths with ``mcp.setup``.
+    And ``None`` is not left alone: the msm tools take it to mean the server's
+    working directory, which is a path like any other and has to be allowed.
+
     Args:
         ctx: The MCP request context, used to elicit confirmation from the
             user. May be ``None``, in which case no elicitation is attempted.
@@ -704,11 +871,25 @@ async def require_allowed_path(ctx, path) -> None:
     Returns:
         None
     """
-    if path is None:
-        return
-
     # Imported lazily to avoid a circular import (config imports general).
     from mcp_plugin.lib import config
+
+    if is_multi_tenant():
+        principal = get_principal(ctx)
+        checked = os.getcwd() if path is None else path
+        if config.is_path_allowed(
+            checked, principal.mcp_user_id if principal else None
+        ):
+            return
+
+        raise tool_error(
+            f"Access to path '{checked}' is not allowed. Ask the administrator "
+            "to add it (or a parent directory) to your allowed paths with "
+            "mcp.setup."
+        )
+
+    if path is None:
+        return
 
     if config.is_path_allowed(path):
         return

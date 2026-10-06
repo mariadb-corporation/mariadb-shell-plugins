@@ -624,7 +624,7 @@ def test_show_says_none_rather_than_printing_an_empty_list(
     clean_config, monkeypatch, capsys
 ):
     """An empty section has to read as empty, not as a missing heading."""
-    monkeypatch.setattr(config, "list_connection_uris", lambda kind=None: [])
+    monkeypatch.setattr(config, "list_connection_uris", lambda kind=None, mcp_user_id=None: [])
     monkeypatch.setattr(config, "get_allowed_paths", lambda: [])
 
     setup_cli.apply({"show": True})

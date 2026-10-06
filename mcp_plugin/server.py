@@ -36,6 +36,11 @@ def start_server(**options) -> None:
 
     The shell's interactive mode is disabled while the server runs.
 
+    Multi-tenant mode is not an option here but part of the configuration,
+    turned on with mcp setup --multiTenant=true. Such a server serves its users
+    over HTTP only, each authenticated with their API key as a bearer token,
+    each with their own connections and allowed paths.
+
     Args:
         **options (dict): Options controlling how the server is started.
 
@@ -48,7 +53,8 @@ def start_server(**options) -> None:
             "stdio". Defaults to streamable-http.
         function_groups (list): The function groups to expose, allowing them to
             be loaded independently. Supported groups are "db", "msm",
-            "sandbox" and "migrator". Defaults to all groups. The "migrator"
+            "sandbox" and "migrator". Defaults to all groups, or to "db" and
+            "msm" in multi-tenant mode, which serves no others. The "migrator"
             group registers its tools only where the MySQL-to-MariaDB
             migration tooling is installed (see mcp.setup).
         gui (bool): Serve for the MariaDB VS Code extension. The extension is
@@ -71,6 +77,12 @@ def start_server(**options) -> None:
             is only needed for those extra names; a request whose Host is none
             of them is refused, which is what protects an unauthenticated
             server from being driven by a page in a browser.
+        ssl_certfile (str): A PEM certificate (or certificate chain) file to
+            serve HTTPS with. Requires ssl_keyfile. Only used by the
+            streamable-http transport.
+        ssl_keyfile (str): The PEM private key file of ssl_certfile.
+        max_connections (int): The most database connections the server holds
+            open at once, for all clients together. Defaults to 64.
 
     Returns:
         None
@@ -80,10 +92,10 @@ def start_server(**options) -> None:
     transport = options.get("transport", lib.general.DEFAULT_TRANSPORT)
     gui = bool(options.get("gui", False))
 
+    # Left None when not given: the default depends on whether the server is
+    # multi-tenant, which lib.server.start reads from the configuration.
     function_groups = options.get("function_groups", None)
-    if function_groups is None:
-        function_groups = list(lib.general.DEFAULT_FUNCTION_GROUPS)
-    elif isinstance(function_groups, str):
+    if isinstance(function_groups, str):
         function_groups = [
             group.strip() for group in function_groups.split(",") if group.strip()
         ]
@@ -102,4 +114,7 @@ def start_server(**options) -> None:
         function_groups=function_groups,
         allowed_hosts=allowed_hosts,
         gui=gui,
+        ssl_certfile=options.get("ssl_certfile", None),
+        ssl_keyfile=options.get("ssl_keyfile", None),
+        max_connections=options.get("max_connections", None),
     )

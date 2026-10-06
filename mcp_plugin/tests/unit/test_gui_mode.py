@@ -91,7 +91,7 @@ def _registered_tools(monkeypatch, opened=None):
     Returns:
         The registered tools, by name.
     """
-    def _fake_open_session(uri, kind=None):
+    def _fake_open_session(uri, kind=None, mcp_user_id=None):
         if opened is not None:
             opened.append((uri, config.normalize_connection_kind(kind)))
 
@@ -227,12 +227,15 @@ def test_list_connections_takes_no_kind_outside_gui_mode(monkeypatch):
 
     The SDK builds a tool's input schema from its signature, so the parameter
     not being there is the whole of what keeps an ordinary MCP client from
-    asking for the extension's connections.
+    asking for the extension's connections. The one parameter it has is the
+    request context, which the SDK fills in itself and never shows a client.
     """
     import inspect
 
     tools = _registered_tools(monkeypatch)
-    assert inspect.signature(tools["db.list_connections"]).parameters == {}
+    assert list(inspect.signature(tools["db.list_connections"]).parameters) == [
+        "ctx"
+    ]
 
 
 # --- db.list_connections / db.add_connection / db.delete_connection --------
@@ -372,7 +375,7 @@ def test_the_details_of_a_connection_are_reported_in_gui_mode_only(
 
     general.set_gui_mode(False)
     plain = _registered_tools(monkeypatch)
-    listed = plain["db.list_connections"]()
+    listed = plain["db.list_connections"](None)
     assert listed == [uri]
     assert all(isinstance(entry, str) for entry in listed)
     # And nothing else served there can set or read them either.

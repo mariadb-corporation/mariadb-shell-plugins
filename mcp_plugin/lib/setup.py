@@ -29,6 +29,11 @@ does not run on. The prompt primitives are in
 Everything the menu offers can also be given as an option instead, which turns
 the whole thing declarative and terminal-free; that lives in
 :mod:`mcp_plugin.lib.setup_cli`.
+
+In multi-tenant mode (turned on with ``mcp setup --multiTenant=true``, see
+:mod:`mcp_plugin.lib.tenants`) the menu is about users instead: adding and
+removing them, their API keys, and - once one is picked - their connections and
+allowed paths, which are theirs alone.
 """
 
 # cSpell:ignore mysqlsh MariaDB
@@ -37,7 +42,7 @@ import os
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_cli, setup_migrator
+from mcp_plugin.lib import config, general, setup_cli, setup_migrator, tenants
 from mcp_plugin.lib import setup_prompts as prompts
 
 # The management menu's last choice, and its default: picking it (or replying
@@ -48,9 +53,9 @@ MENU_FINISH_LABEL = "Finish"
 # --- Connections -----------------------------------------------------------
 
 
-def _print_connections() -> list:
+def _print_connections(mcp_user_id=None) -> list:
     """Prints the configured connections and returns them."""
-    connections = config.list_connection_uris()
+    connections = config.list_connection_uris(mcp_user_id=mcp_user_id)
     if connections:
         print("\nConfigured connections:")
         for index, uri in enumerate(connections, start=1):
@@ -60,13 +65,16 @@ def _print_connections() -> list:
     return connections
 
 
-def _add_connection() -> None:
+def _add_connection(mcp_user_id=None) -> None:
     """Prompts for a connection URI and password, verifies and stores it.
 
     What is stored is the normalized URI rather than what was typed: it is the
     key the connection is then looked up under, and one canonical spelling per
     connection is what keeps the same connection from being configured twice
     over (see :func:`mcp_plugin.lib.config.normalize_connection_uri`).
+
+    Args:
+        mcp_user_id: The user to store it for, in multi-tenant mode.
     """
     entered_uri = prompts.ask(
         "Enter the MariaDB connection URI (e.g. mariadb://user@host:3306): "
@@ -102,20 +110,20 @@ def _add_connection() -> None:
         print("The connection was not stored.")
         return
 
-    config.store_connection(uri, password)
-    superseded = config.drop_superseded_spellings(uri)
-    print(f"Connection '{uri}' verified and stored.")
+    config.store_connection(uri, password, mcp_user_id=mcp_user_id)
+    superseded = config.drop_superseded_spellings(uri, mcp_user_id=mcp_user_id)
+    print(f"Connection '{uri}' verified and stored{setup_cli._for_user(mcp_user_id)}.")
     for old_uri in superseded:
         print(f"It replaces '{old_uri}', which named the same connection.")
 
 
-def _delete_connection() -> None:
+def _delete_connection(mcp_user_id=None) -> None:
     """Prompts the user to delete one of the configured connections.
 
     The list is NOT printed first: the select prompt below renders its own
     numbered list, so printing one here would show it twice.
     """
-    connections = config.list_connection_uris()
+    connections = config.list_connection_uris(mcp_user_id=mcp_user_id)
     if not connections:
         print("\nNo connections configured yet.")
         return
@@ -129,21 +137,21 @@ def _delete_connection() -> None:
     # The list is the reported one, whose spellings are not always the stored
     # keys - a connection configured before the scheme was kept is reported
     # with it - so the pick is resolved back to the key it is stored under.
-    uri = config.resolve_connection_uri(connections[index])
+    uri = config.resolve_connection_uri(connections[index], mcp_user_id=mcp_user_id)
     if uri is None:
         print(f"'{connections[index]}' is no longer configured.")
         return
 
-    config.delete_connection(uri)
-    print(f"Connection '{uri}' deleted.")
+    config.delete_connection(uri, mcp_user_id=mcp_user_id)
+    print(f"Connection '{uri}' deleted{setup_cli._for_user(mcp_user_id)}.")
 
 
 # --- Allowed paths ---------------------------------------------------------
 
 
-def _print_paths() -> list:
+def _print_paths(mcp_user_id=None) -> list:
     """Prints the configured allowed paths and returns them."""
-    paths = config.get_allowed_paths()
+    paths = setup_cli._allowed_paths(mcp_user_id)
     if paths:
         print("\nAllowed paths:")
         for index, path in enumerate(paths, start=1):
@@ -153,7 +161,7 @@ def _print_paths() -> list:
     return paths
 
 
-def _add_path() -> None:
+def _add_path(mcp_user_id=None) -> None:
     """Prompts for a directory to allow, defaulting to the current directory."""
     default_path = os.path.abspath(os.getcwd())
     entered = prompts.ask(
@@ -165,23 +173,23 @@ def _add_path() -> None:
         print(f"'{path}' is not an existing directory. It was not added.")
         return
 
-    paths = config.get_allowed_paths()
+    paths = setup_cli._allowed_paths(mcp_user_id)
     if path in paths:
         print(f"'{path}' is already allowed.")
         return
 
     paths.append(path)
-    config.set_allowed_paths(paths)
-    print(f"Allowed path '{path}' added.")
+    setup_cli._set_allowed_paths(mcp_user_id, paths)
+    print(f"Allowed path '{path}' added{setup_cli._for_user(mcp_user_id)}.")
 
 
-def _delete_path() -> None:
+def _delete_path(mcp_user_id=None) -> None:
     """Prompts the user to delete one of the allowed paths.
 
     The list is NOT printed first: the select prompt below renders its own
     numbered list, so printing one here would show it twice.
     """
-    paths = config.get_allowed_paths()
+    paths = setup_cli._allowed_paths(mcp_user_id)
     if not paths:
         print("\nNo allowed paths configured yet.")
         return
@@ -191,8 +199,167 @@ def _delete_path() -> None:
         return
 
     path = paths.pop(index)
-    config.set_allowed_paths(paths)
-    print(f"Allowed path '{path}' deleted.")
+    setup_cli._set_allowed_paths(mcp_user_id, paths)
+    print(f"Allowed path '{path}' deleted{setup_cli._for_user(mcp_user_id)}.")
+
+
+# --- Users (multi-tenant mode) ------------------------------------------------
+
+
+def _select_user(message: str):
+    """Prompts for one of the users; returns their id, or None if cancelled."""
+    users = tenants.read_users()
+    if not users:
+        print("\nNo users yet.")
+        return None
+
+    user_ids = sorted(users)
+    labels = [tenants.describe_user(user_id, users[user_id]) for user_id in user_ids]
+    index = prompts.select_or_cancel(message, labels)
+
+    return None if index < 0 else user_ids[index]
+
+
+def _print_users() -> None:
+    """Prints the users."""
+    users = tenants.read_users()
+    if not users:
+        print("\nNo users yet.")
+        return
+
+    print("\nUsers:")
+    for index, user_id in enumerate(sorted(users), start=1):
+        record = users[user_id]
+        state = " (disabled)" if record.get("disabled") else ""
+        print(f"  {index}. {tenants.describe_user(user_id, record)}{state}")
+
+
+def _add_user() -> None:
+    """Prompts for a new user's identity and name, adds them, shows their key."""
+    entered = prompts.ask(
+        "Enter the user's email address, or another identity "
+        "(userId:<id>, oauth:<issuer>|<subject>): "
+    )
+    if entered == "":
+        return
+
+    try:
+        identity = tenants.parse_identity(entered)
+        name = prompts.ask("Enter a name to show for the user (optional): ")
+        mcp_user_id = tenants.add_user([identity], name=name or None)
+    except mysqlsh.Error as error:
+        print(error)
+        print("The user was not added.")
+        return
+
+    key = tenants.issue_api_key(mcp_user_id)
+    print(f"User {tenants.describe_user(mcp_user_id)} added.")
+    print(f"API key: {key}")
+
+
+def _remove_user() -> None:
+    """Prompts for a user to remove, with everything they have."""
+    mcp_user_id = _select_user("Select the user to remove")
+    if mcp_user_id is None:
+        return
+
+    label = tenants.describe_user(mcp_user_id)
+    if not prompts.yes_no(
+        f"Remove {label} with their API key and connections?", default=False
+    ):
+        return
+
+    tenants.remove_user(mcp_user_id)
+    print(f"User {label} removed.")
+
+
+def _show_api_key() -> None:
+    """Prompts for a user and shows their API key."""
+    mcp_user_id = _select_user("Select the user whose API key to show")
+    if mcp_user_id is None:
+        return
+
+    key = tenants.get_api_key(mcp_user_id)
+    print(f"API key of {tenants.describe_user(mcp_user_id)}: {key or '(none)'}")
+
+
+def _rotate_api_key() -> None:
+    """Prompts for a user and issues them a new API key."""
+    mcp_user_id = _select_user("Select the user to issue a new API key to")
+    if mcp_user_id is None:
+        return
+
+    key = tenants.issue_api_key(mcp_user_id)
+    print(f"New API key for {tenants.describe_user(mcp_user_id)}: {key}")
+    print("The previous key no longer works.")
+
+
+def _toggle_user() -> None:
+    """Prompts for a user and disables or enables them."""
+    mcp_user_id = _select_user("Select the user to disable or enable")
+    if mcp_user_id is None:
+        return
+
+    disabled = not (tenants.get_user(mcp_user_id) or {}).get("disabled", False)
+    tenants.set_disabled(mcp_user_id, disabled)
+    print(
+        f"User {tenants.describe_user(mcp_user_id)} "
+        f"{'disabled' if disabled else 'enabled'}."
+    )
+
+
+def _manage_user_resources() -> None:
+    """Prompts for a user, then manages their connections and allowed paths."""
+    mcp_user_id = _select_user("Select the user whose connections and paths to manage")
+    if mcp_user_id is None:
+        return
+
+    entries = [
+        ("Add a connection", _add_connection),
+        ("Delete a connection", _delete_connection),
+        ("Add an allowed path", _add_path),
+        ("Delete an allowed path", _delete_path),
+    ]
+    while True:
+        print(f"\n--- {tenants.describe_user(mcp_user_id)} ---")
+        _print_connections(mcp_user_id)
+        _print_paths(mcp_user_id)
+
+        labels = [label for label, _ in entries] + ["Back"]
+        choice = prompts.select("\nWhat would you like to do?", labels, default=len(entries))
+        if choice == len(entries):
+            return
+
+        entries[choice][1](mcp_user_id)
+
+
+def _tenant_menu_entries() -> list:
+    """Returns the multi-tenant management menu's (label, action) pairs."""
+    return [
+        ("Add a user", _add_user),
+        ("Remove a user", _remove_user),
+        ("Manage a user's connections and allowed paths", _manage_user_resources),
+        ("Show a user's API key", _show_api_key),
+        ("Issue a user a new API key", _rotate_api_key),
+        ("Disable or enable a user", _toggle_user),
+    ]
+
+
+def _tenant_menu() -> None:
+    """Management menu of a multi-tenant server: its users."""
+    print("Multi-tenant mode is on (mcp setup --multiTenant=false turns it off).")
+    while True:
+        _print_users()
+
+        entries = _tenant_menu_entries()
+        labels = [label for label, _ in entries] + [MENU_FINISH_LABEL]
+        choice = prompts.select(
+            "\nWhat would you like to do?", labels, default=len(entries)
+        )
+        if choice == len(entries):
+            break
+
+        entries[choice][1]()
 
 
 # --- Entry points ----------------------------------------------------------
@@ -298,7 +465,9 @@ def run_setup(**options) -> None:
     print("=== MariaDB MCP Server setup ===")
     print(f"Configuration is stored in: {general.get_plugin_data_path()}")
 
-    if config.settings_file_exists() or config.list_connection_uris():
+    if tenants.is_multi_tenant():
+        _tenant_menu()
+    elif config.settings_file_exists() or config.list_connection_uris():
         _menu()
     else:
         _first_run()

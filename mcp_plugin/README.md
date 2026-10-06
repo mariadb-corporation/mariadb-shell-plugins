@@ -428,15 +428,81 @@ Show the built-in help for the plugin with:
 \? mcp
 ```
 
+## Multi-tenant mode
+
+In multi-tenant mode one server serves several users. Each user authenticates
+with an API key of their own, sent as a bearer token
+(`Authorization: Bearer mdbmcp_...`), and has connections and allowed paths of
+their own: a user lists and opens only their own connections, and a connection
+one user opened cannot be used by anyone else, on any address or MCP session.
+
+```bash
+# Turn the mode on, add a user (the API key is printed once - and can be shown again)
+mariadb-shell -- mcp setup --multiTenant=true
+mariadb-shell -- mcp setup --addUser=ada@example.com --name="Ada Lovelace"
+
+# Give the user a connection and a directory, naming them by any identity
+mariadb-shell -- mcp setup --user=ada@example.com \
+    --addConnection=ada@db.example.com:3306 --passwordEnv=ADA_DB_PASSWORD
+mariadb-shell -- mcp setup --user=ada@example.com --addPaths=/srv/projects/ada
+
+# Keys, users, and the administrator's view across all of them
+mariadb-shell -- mcp setup --showApiKey=ada@example.com
+mariadb-shell -- mcp setup --rotateApiKey=ada@example.com
+mariadb-shell -- mcp setup --disableUser=ada@example.com
+mariadb-shell -- mcp setup --show --allUsers --json
+
+# Serve it, over HTTPS
+mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
+    --ssl-certfile=server.pem --ssl-keyfile=server-key.pem
+```
+
+- **Users** are kept in `users.json`, next to `settings.json`, keyed by a UUID
+  the plugin generates - the user's `mcp_user_id`. A user is known by any number
+  of identities, each unique across users: an email address, a user id of your
+  choosing (`userId:<id>`), an OAuth identity (`oauth:<issuer>|<subject>`) or a
+  MariaDB account (`mariadb:<server>|<account>`). Any of them, or the UUID, names
+  the user to `mcp setup` (`--user`, `--removeUser`, `--addIdentity`, ...).
+- **Secrets** - a user's API key and their connection passwords - are kept in a
+  shell secret **group** named by their `mcp_user_id`. Groups keep users apart;
+  they do **not** protect them from each other: any process running as the
+  server's OS user can read every group, the API keys included (they are stored
+  as they are, so that `--showApiKey` can show them again). **Run the server
+  under an OS account of its own**, and on Linux note that the default
+  `login-path` helper only obfuscates `~/.mylogin.cnf`.
+- **Only the `db` and `msm` groups** are served. The `sandbox` and `migrator`
+  tools run local servers and long jobs on the machine, and are not offered to
+  tenants; neither is `--gui`, and neither is stdio, which has no request to
+  carry a key. A user's token has to grant the scope of a tool's group
+  (`mcp:db`, `mcp:msm`; set with `--setScopes`).
+- **Paths** are a user's own. A path that is not allowed is refused, never
+  offered to the client to trust, and a tool given no path (the msm tools then
+  use the server's working directory) is checked like any other.
+- **Changes apply at once.** A user removed or disabled, or given a new key, is
+  refused from their next request on, and their open connections are closed.
+  Requests with refused keys are counted per address and user, and answered
+  with `429 Too Many Requests` for a minute once there are too many.
+- **TLS**: every request carries a key. A server listening beyond loopback over
+  plain HTTP warns about it; serve HTTPS with `--ssl-certfile`/`--ssl-keyfile`,
+  or behind a TLS-terminating reverse proxy (add its name with
+  `--allowed-hosts`).
+- One user may hold at most 32 connections; `--max-connections` raises the
+  server-wide limit of 64 for many users.
+
+Switching the mode moves nothing: single-tenant connections stay where they are
+and come back when the mode is turned off again.
+
 ## Database connection behavior
 
 To understand the MCP server database connection behavior, please read the
 sections below.
 
-### The MCP server has no authentication
+### The MCP server has no authentication, unless it is multi-tenant
 
 This MCP server implementation is designed for agent-based development on a
-local developer's machine.
+local developer's machine. What follows describes the default, single-tenant
+server; a server in [multi-tenant mode](#multi-tenant-mode) authenticates every
+request.
 
 **Anyone who can reach the MCP server's port can use the stored database
 credentials.** There is no authentication of any kind: no token, no password,

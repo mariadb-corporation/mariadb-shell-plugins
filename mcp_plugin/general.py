@@ -70,6 +70,18 @@ def setup(**options) -> None:
     system Python is required, and as a POSIX shell program it is not offered on
     Windows at all.
 
+    In multi-tenant mode (multiTenant) the server serves several users, each
+    authenticated with an API key and each with connections and allowed paths
+    of their own. Users are added with addUser, which prints their API key, and
+    are named in every other option by their id or by any of their identities,
+    each being an email address, a user id of your choosing ('userId:<id>'), an
+    OAuth identity ('oauth:<issuer>|<subject>') or a MariaDB account
+    ('mariadb:<server>|<account>'). A user's secrets - their API key and their
+    connection passwords - are kept in a secret group of their own. Groups keep
+    users apart, they do not protect them from each other: run the server under
+    an OS account of its own. In multi-tenant mode the connection and path
+    options need user, naming whose they are.
+
     Args:
         **options (dict): Options saying what to configure.
 
@@ -107,7 +119,34 @@ def setup(**options) -> None:
             instead of waiting.
         show (bool): Print the current configuration and do nothing else.
             Cannot be combined with the options that change something.
-        json (bool): Print what show reports as JSON. Only applies to show.
+        json (bool): Print what show reports as JSON. Also prints the API keys
+            of add_user, rotate_api_key and show_api_key as JSON, when those
+            are the only options given.
+        multi_tenant (bool): Turn multi-tenant mode on or off. Nothing is moved
+            either way: the connections of each mode stay where they are.
+        add_user (str): Add a user, known by the given comma-separated
+            identities, and print their API key.
+        name (str): The name to show for the user add_user adds.
+        scopes (str): Comma-separated scopes the user add_user adds may be
+            granted: mcp:db, mcp:msm. Defaults to both.
+        remove_user (str): Comma-separated users to remove, together with
+            their API keys and connections.
+        user (str): The user add_connection, delete_connections, add_paths,
+            delete_paths, add_identity, remove_identity and set_scopes work on,
+            or the user show reports.
+        add_identity (str): Comma-separated identities to add to user.
+        remove_identity (str): Comma-separated identities to remove from user.
+        disable_user (str): Comma-separated users to disable. A disabled user
+            keeps everything and is refused from their next request on.
+        enable_user (str): Comma-separated users to enable again.
+        set_scopes (str): Comma-separated scopes user may be granted.
+        rotate_api_key (str): Comma-separated users to issue a new API key to.
+            Their previous key stops working at once.
+        show_api_key (str): Comma-separated users whose API key to print.
+        all_users (bool): Make show report every user with their connections
+            and allowed paths, and the secret groups that belong to no user.
+        purge_orphan_groups (bool): Delete the secret groups that belong to no
+            user, as an interrupted remove_user leaves behind.
 
     Returns:
         None
