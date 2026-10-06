@@ -9,6 +9,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The phase 2 decisions it
 refers to by number, the shared groundwork ("2a") and the Keycloak option ("2b")
 are in [oauth.md](oauth.md). Phase 1 is in [multi-tenant.md](multi-tenant.md).
 
+**Status: BUILT on 2026-10-06.** The as-built notes and deviations are in
+[oauth.md](oauth.md) ("Status"). The manual end-to-end against a real Arcade project
+(2d) is NOT done: it needs a public https deployment.
+
 ## 2c. Option C: the MCP server as its own authorization server, logging users in against MariaDB
 
 This is the Snowflake picture without changing the server. **The database account
@@ -47,19 +51,19 @@ the session runs as that account, under its default role.
     `--oauthDynamicClientRegistration`, `--oauthGrantMaxLifetime`,
     `--oauthGrantIdleTimeout`, `--oauthAllowedClientNetworks`
   - **client management** (see 2d for why each exists):
-    - `--addOAuthClient=<name>` with `--confidential`, and with `--redirectUris`
+    - `--addOauthClient=<name>` with `--confidential`, and with `--redirectUris`
       optional at creation; it prints the client ID and, for a confidential
       client, the secret
-    - `--setOAuthClientRedirectUris=<client id>`
-    - `--showOAuthClientSecret=<client id>`, the counterpart of
+    - `--setOauthClientRedirectUris=<client id>`
+    - `--showOauthClientSecret=<client id>`, the counterpart of
       `SYSTEM$SHOW_OAUTH_CLIENT_SECRETS`
-    - `--rotateOAuthClientSecret`
-    - `--setOAuthClientAllowedRoles=<client id>`, the counterpart of
+    - `--rotateOauthClientSecret`
+    - `--setOauthClientAllowedRoles=<client id>`, the counterpart of
       `ALLOWED_ROLES_LIST`: a login through that client is accepted only when
       the role the session will run under (the user's `defaultRole`, or the
       account's default role) is in the list
-    - `--removeOAuthClient`, which ends every grant of that client
-    - `--listOAuthClients`, also in `--show`
+    - `--removeOauthClient`, which ends every grant of that client
+    - `--listOauthClients`, also in `--show`
   - `--rotateSigningKey`, `--revokeTokens`
 - **SDK wiring:** `AuthSettings(issuer_url=<publicUrl origin>,
   resource_server_url=<publicUrl>, validate_token_resource=True,
@@ -256,11 +260,11 @@ separately. It discovers the endpoints through PRM, and **calls `/token` and
 
 | Arcade + Snowflake | Arcade + this plugin (2c) |
 | --- | --- |
-| `CREATE SECURITY INTEGRATION … OAUTH_CLIENT_TYPE='CONFIDENTIAL'` with a placeholder redirect URI | `mcp setup --addOAuthClient=arcade --confidential`, which prints the client ID and secret |
-| `SYSTEM$SHOW_OAUTH_CLIENT_SECRETS(...)` | `mcp setup --showOAuthClientSecret=<id>` |
+| `CREATE SECURITY INTEGRATION … OAUTH_CLIENT_TYPE='CONFIDENTIAL'` with a placeholder redirect URI | `mcp setup --addOauthClient=arcade --confidential`, which prints the client ID and secret |
+| `SYSTEM$SHOW_OAUTH_CLIENT_SECRETS(...)` | `mcp setup --showOauthClientSecret=<id>` |
 | Register the server in Arcade: the URL, the client ID and secret, the authorization and token URLs left EMPTY | the same, with `publicUrl` as the URL; Arcade discovers the endpoints from PRM and the AS metadata |
-| `ALTER SECURITY INTEGRATION … SET OAUTH_REDIRECT_URI = '<arcade redirect>'` | `mcp setup --setOAuthClientRedirectUris=<id> --redirectUris=<arcade redirect>` |
-| `ALLOWED_ROLES_LIST = ('mcp_access_role')` | `--setOAuthClientAllowedRoles=<id> --roles=mcp_access` |
+| `ALTER SECURITY INTEGRATION … SET OAUTH_REDIRECT_URI = '<arcade redirect>'` | `mcp setup --setOauthClientRedirectUris=<id> --redirectUris=<arcade redirect>` |
+| `ALLOWED_ROLES_LIST = ('mcp_access_role')` | `--setOauthClientAllowedRoles=<id> --roles=mcp_access` |
 | `GRANT USAGE ON MCP SERVER … TO ROLE mcp_access_role` | `oauth.requiredRole = "mcp_access"`, plus `GRANT mcp_access TO …` in MariaDB |
 | `ALTER USER … SET DEFAULT_ROLE = 'mcp_access_role'` | `SET DEFAULT ROLE mcp_access FOR …` in MariaDB, or a `defaultRole` per user |
 | Object grants decide what the tools can reach | the same: MariaDB grants to the account and its role |

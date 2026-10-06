@@ -505,11 +505,15 @@ class Principal(NamedTuple):
         mcp_user_id: The user's id, which also names their secret group.
         scopes: The scopes the token grants, as a tuple.
         auth_method: How the user authenticated, for the log.
+        grant_id: The grant of this server's own authorization server the
+            token was issued under, or ``""``. Its login connection is the
+            principal's (see :mod:`mcp_plugin.lib.oauth_builtin`).
     """
 
     mcp_user_id: str
     scopes: tuple = ()
     auth_method: str = ""
+    grant_id: str = ""
 
 
 # The claim of an access token that carries the mcp_user_id. Set by every token
@@ -518,6 +522,9 @@ MCP_USER_ID_CLAIM = "mcp_user_id"
 
 # The claim of an access token that says how the user authenticated.
 AUTH_METHOD_CLAIM = "auth_method"
+
+# The claim of an access token naming the grant it was issued under.
+GRANT_CLAIM = "grant"
 
 
 def principal_from_access_token(token) -> Optional[Principal]:
@@ -539,6 +546,7 @@ def principal_from_access_token(token) -> Optional[Principal]:
         str(mcp_user_id).lower(),
         tuple(getattr(token, "scopes", None) or ()),
         str(claims.get(AUTH_METHOD_CLAIM, "")),
+        str(claims.get(GRANT_CLAIM, "") or ""),
     )
 
 

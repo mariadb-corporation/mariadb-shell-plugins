@@ -536,6 +536,9 @@ class _Connection:
         # re-validation every reopened session does. Taken from the identity,
         # which is what the connection is bound to anyway.
         self.mcp_user_id = self.client.user
+        # The grant a login connection belongs to (see open_session), or None
+        # for a connection configured with mcp.setup.
+        self.grant_id = None
         # Which of the two connection lists the URI was resolved in (see
         # mcp_plugin.lib.config). Kept for the life of the connection because
         # the URI alone no longer identifies one: the password is read under
@@ -638,7 +641,12 @@ class _Connection:
                 raise _ConnectionClosed()
 
             if self.session is None:
-                self.session = _open_session(self.uri, self.kind, self.mcp_user_id)
+                if self.grant_id is not None:
+                    self.session = _open_login_session(
+                        self.uri, self.mcp_user_id, self.grant_id
+                    )
+                else:
+                    self.session = _open_session(self.uri, self.kind, self.mcp_user_id)
 
             return self.session
 
@@ -766,7 +774,90 @@ def _open_session(uri: str, kind=None, mcp_user_id=None):
         uri, kind, mcp_user_id
     )
 
-    return mysqlsh.globals.shell.open_session(connection_data)
+    session = mysqlsh.globals.shell.open_session(connection_data)
+    if mcp_user_id is not None:
+        _apply_default_role(session, mcp_user_id)
+
+    return session
+
+
+def _open_login_session(uri: str, mcp_user_id: str, grant_id: str):
+    """Opens a session on the connection a sign-in to this server produced.
+
+    The built-in authorization server (see :mod:`mcp_plugin.lib.oauth_builtin`)
+    keeps the account and password a user signed in with as a connection of the
+    grant the sign-in created, and only for as long as that grant lives. This
+    is the counterpart of :func:`_open_session`'s check that a URI is still
+    configured: the grant has to be alive, on every open and every reopen.
+
+    Args:
+        uri (str): The connection URI, as the grant has it.
+        mcp_user_id (str): The user it belongs to.
+        grant_id (str): The grant it belongs to.
+
+    Returns:
+        The open shell session.
+    """
+    from mcp_plugin.lib import oauth_builtin
+
+    credentials = oauth_builtin.login_credentials(mcp_user_id, grant_id)
+    if credentials is None or credentials[0] != uri:
+        raise tool_error(
+            f"'{uri}' is no longer available: the sign-in it came from has ended. "
+            "Sign in again."
+        )
+
+    connection_data = mysqlsh.globals.shell.parse_uri(uri)
+    connection_data["password"] = credentials[1]
+
+    session = mysqlsh.globals.shell.open_session(connection_data)
+    _apply_default_role(session, mcp_user_id)
+
+    return session
+
+
+def quote_identifier(name: str) -> str:
+    """Returns a name quoted as a MariaDB identifier."""
+    return "`" + str(name).replace("`", "``") + "`"
+
+
+def _apply_default_role(session, mcp_user_id: str) -> None:
+    """Runs a newly opened session of a user under their default role.
+
+    The role an administrator set for the user (see
+    :func:`mcp_plugin.lib.tenants.set_default_role`) - otherwise nothing is
+    run, and the session has whatever the server's own ``DEFAULT ROLE`` for
+    the account gives it. Applied on every open, the transparent reopen after
+    an idle period included, since a new session starts without it.
+
+    Least privilege only holds where the account's own grants are minimal:
+    MariaDB adds them to the active role's.
+
+    Args:
+        session: The open shell session.
+        mcp_user_id (str): The user it was opened for.
+
+    Returns:
+        None
+    """
+    from mcp_plugin.lib import tenants
+
+    role = tenants.get_default_role(mcp_user_id)
+    if not role:
+        return
+
+    try:
+        session.run_sql(f"SET ROLE {quote_identifier(role)}")
+    except Exception as error:  # noqa: BLE001 - reported, session discarded
+        try:
+            session.close()
+        except Exception:  # noqa: BLE001 - it is being thrown away anyway
+            pass
+        raise tool_error(
+            f"Your sessions run under the role '{role}', which could not be set "
+            f"on this connection: {error}. Ask the administrator to grant it to "
+            "the account, or to change your default role with mcp.setup."
+        ) from error
 
 
 def _is_connection_lost(error) -> bool:
@@ -1928,6 +2019,53 @@ def drop_connections_of_inactive_users(active_user_ids) -> int:
     return len(connection_ids)
 
 
+def drop_connections_of_grant(grant_id) -> int:
+    """Ends every open connection made from one grant's login connection.
+
+    Called when the grant ends - revoked, expired, its client removed - which is
+    also when its password is deleted, so the connections it opened go with it.
+
+    Args:
+        grant_id (str): The grant.
+
+    Returns:
+        How many open connections were dropped.
+    """
+    with _sessions_lock:
+        connection_ids = [
+            connection_id
+            for connection_id, connection in _sessions.items()
+            if connection.grant_id == grant_id
+        ]
+
+    for connection_id in connection_ids:
+        _drop_connection(connection_id, "the sign-in it came from ended")
+
+    return len(connection_ids)
+
+
+def _login_connection(principal):
+    """Returns the URI of the login connection a principal's grant holds.
+
+    Args:
+        principal: The :class:`mcp_plugin.lib.general.Principal`, or None.
+
+    Returns:
+        The URI, or None when the principal did not sign in to this server's
+        own authorization server, or the grant has ended.
+    """
+    if principal is None or not principal.grant_id:
+        return None
+
+    from mcp_plugin.lib import oauth_builtin
+
+    credentials = oauth_builtin.login_credentials(
+        principal.mcp_user_id, principal.grant_id
+    )
+
+    return credentials[0] if credentials else None
+
+
 def _register_connection_management_tools(tool) -> None:
     """Registers the connection tools a server started with ``--gui`` serves.
 
@@ -2401,9 +2539,16 @@ def register_db_tools(server, function_groups=()) -> None:
             """
             # In multi-tenant mode the calling user's own; otherwise the user
             # is None and this is the one list there is.
-            return config.list_connection_uris(
+            uris = config.list_connection_uris(
                 mcp_user_id=general.get_client_identity(ctx).user
             )
+            # A user who signed in to this server with their MariaDB account
+            # has that connection too, for as long as the sign-in lasts.
+            login_uri = _login_connection(general.get_principal(ctx))
+            if login_uri is not None and login_uri not in uris:
+                uris = [login_uri] + uris
+
+            return uris
 
     @tool(name="db.connect")
     def connect(ctx: Context, uri: str) -> str:
@@ -2469,16 +2614,28 @@ def register_db_tools(server, function_groups=()) -> None:
                 "server can determine."
             )
 
-        found = config.find_connection(uri, mcp_user_id=client.user)
-        if found is None:
-            raise tool_error(
-                f"'{uri}' is not a configured connection. Use db.list_connections "
-                "to list the available connections, or configure it with mcp.setup."
-            )
+        # The connection the client signed in with comes first: it is the
+        # user's own account, where a configured one may be another.
+        login_uri = _login_connection(general.get_principal(ctx))
+        normalized = config.normalize_connection_uri(uri)
+        if login_uri is not None and normalized is not None and (
+            normalized == config.normalize_connection_uri(login_uri)
+        ):
+            connection = _Connection(login_uri, client)
+            connection.grant_id = general.get_principal(ctx).grant_id
+            configured_uri, kind = login_uri, "login"
+        else:
+            found = config.find_connection(uri, mcp_user_id=client.user)
+            if found is None:
+                raise tool_error(
+                    f"'{uri}' is not a configured connection. Use "
+                    "db.list_connections to list the available connections, or "
+                    "configure it with mcp.setup."
+                )
 
-        configured_uri, kind = found
+            configured_uri, kind = found
 
-        connection = _Connection(configured_uri, client, kind)
+            connection = _Connection(configured_uri, client, kind)
         connection_id = str(uuid.uuid4())
 
         # Room is claimed before the session is opened, so a call that is going

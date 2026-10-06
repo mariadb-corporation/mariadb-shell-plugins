@@ -83,6 +83,9 @@ def start_server(**options) -> None:
         ssl_keyfile (str): The PEM private key file of ssl_certfile.
         max_connections (int): The most database connections the server holds
             open at once, for all clients together. Defaults to 64.
+        public_url (str): The URL clients reach the MCP endpoint at, such as
+            https://mcp.example.com/mcp, which OAuth tokens are issued for.
+            Defaults to the one set with mcp setup --publicUrl.
 
     Returns:
         None
@@ -117,4 +120,5 @@ def start_server(**options) -> None:
         ssl_certfile=options.get("ssl_certfile", None),
         ssl_keyfile=options.get("ssl_keyfile", None),
         max_connections=options.get("max_connections", None),
+        public_url=options.get("public_url", None),
     )

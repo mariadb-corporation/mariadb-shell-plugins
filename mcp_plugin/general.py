@@ -103,7 +103,8 @@ def setup(**options) -> None:
             Refused when stdin is a terminal, where it would wait for input
             nobody knows to type.
         no_verify (bool): Store the connection without opening a session to
-            check it first, for configuring a server that is not up yet.
+            check it first, for configuring a server that is not up yet. With
+            oauth_issuer, save the issuer without reading its configuration.
         delete_connections (str): Comma-separated URIs of connections to
             delete. Any spelling that names a configured connection works.
         add_paths (str): Comma-separated directories the MCP server may access.
@@ -147,6 +148,78 @@ def setup(**options) -> None:
             and allowed paths, and the secret groups that belong to no user.
         purge_orphan_groups (bool): Delete the secret groups that belong to no
             user, as an interrupted remove_user leaves behind.
+        public_url (str): The URL clients reach the MCP endpoint at, such as
+            https://mcp.example.com/mcp, which OAuth tokens are issued for. An
+            empty value clears it.
+        oauth_mode (str): How OAuth2 tokens are taken besides API keys. One of
+            none, keycloak (Keycloak issues them) or builtin (this server
+            issues them, signing users in with their MariaDB account).
+        oauth_issuer (str): The Keycloak realm's issuer URL, such as
+            https://kc.example.com/realms/mariadb. Checked by reading its
+            OpenID configuration unless no_verify is given.
+        oauth_verification (str): How Keycloak tokens are checked, jwt (their
+            signature) or introspection (asking Keycloak every 30s).
+        oauth_introspection_client_id (str): The Keycloak client introspection
+            authenticates as.
+        oauth_introspection_secret_env (str): The NAME of an environment
+            variable holding that client's secret.
+        oauth_client_ids (str): Comma-separated Keycloak clients whose tokens
+            are accepted. Empty accepts any.
+        oauth_link_by_verified_email (bool): Link a Keycloak sign-in to the
+            user whose email identity is the token's verified email.
+        oauth_auto_provision (bool): Create a user at their first sign-in.
+        oauth_required_realm_role (str): The Keycloak realm role a token needs
+            for its user to be created at sign-in.
+        oauth_default_scopes (str): Comma-separated scopes users created at
+            sign-in may be granted.
+        add_login_server (str): Comma-separated MariaDB servers users sign in
+            to the built-in authorization server against, such as
+            mariadb://db.example.com:3306.
+        remove_login_server (str): Comma-separated login servers to remove.
+        oauth_required_role (str): The MariaDB role an account needs to sign
+            in to the built-in authorization server. Empty allows any account.
+        oauth_grant_max_lifetime (int): How long a sign-in to the built-in
+            server lasts, in seconds. Defaults to 90 days.
+        oauth_grant_idle_timeout (int): How long a sign-in lasts without a
+            token refresh, in seconds. 0 turns it off, the default.
+        oauth_access_token_lifetime (int): How long an access token of the
+            built-in server is valid, in seconds. Defaults to 3600.
+        oauth_refresh_grace_period (int): How long a refresh token just
+            replaced is still answered with the same new tokens, in seconds,
+            for a client that refreshed twice in a race. Defaults to 30.
+        oauth_login_connection_store (str): Where a sign-in's MariaDB
+            connection is kept for as long as it lasts, secret-store or memory.
+        oauth_allowed_client_networks (str): Comma-separated networks the MCP
+            endpoint and the token endpoints accept requests from. Empty
+            accepts any.
+        oauth_dynamic_client_registration (bool): Let clients register
+            themselves with the built-in server.
+        oauth_cimd (bool): Accept clients that name an https Client ID
+            Metadata Document as their client id.
+        add_oauth_client (str): Register a client of the built-in server under
+            the given name, and print its id and, if confidential, its secret.
+        confidential (bool): Whether the client add_oauth_client registers
+            authenticates with a secret.
+        redirect_uris (str): Comma-separated redirect URIs for
+            add_oauth_client or set_oauth_client_redirect_uris.
+        set_oauth_client_redirect_uris (str): The client whose redirect URIs to
+            set to redirect_uris.
+        set_oauth_client_allowed_roles (str): The client whose allowed roles
+            to set to roles. A sign-in through it is refused unless the role
+            the session would run under is one of them.
+        roles (str): Comma-separated MariaDB roles for
+            set_oauth_client_allowed_roles. Empty allows any.
+        show_oauth_client_secret (str): The client whose secret to print.
+        rotate_oauth_client_secret (str): The client to give a new secret.
+        remove_oauth_client (str): The client to remove, ending every sign-in
+            through it.
+        list_oauth_clients (bool): Print the registered clients.
+        rotate_signing_key (bool): Replace the key the built-in server signs
+            access tokens with. Every access token issued so far stops working.
+        revoke_tokens (str): Comma-separated users whose OAuth tokens to
+            revoke, ending their sign-ins to the built-in server.
+        set_default_role (str): The MariaDB role the sessions of user run
+            under. Empty uses the account's own default role.
 
     Returns:
         None

@@ -492,6 +492,104 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
 Switching the mode moves nothing: single-tenant connections stay where they are
 and come back when the mode is turned off again.
 
+### OAuth2
+
+Besides API keys, a multi-tenant server can take OAuth2 access tokens. API keys
+keep working either way. The server follows the MCP authorization
+specification: it serves OAuth Protected Resource Metadata (RFC 9728), so a
+client finds the authorization server by itself, and it only accepts tokens
+issued for its own **public URL**, which has to be configured:
+
+```bash
+mariadb-shell -- mcp setup --publicUrl=https://mcp.example.com/mcp
+```
+
+The scopes are `mcp:db` and `mcp:msm`, one per tool group; a client is only
+shown, and may only call, the tools its token grants. There are deliberately no
+read or write scopes: what a user can do in the database is what MariaDB's own
+grants let their account and its role do. A user's sessions run under the role
+an administrator sets (`--user=… --setDefaultRole=analyst`), or else under the
+account's own `DEFAULT ROLE`. Revoke every token of a user with
+`--revokeTokens=<user>`.
+
+#### Keycloak
+
+Keycloak signs users in and issues the tokens; this server checks them - their
+signature against the realm's keys, the issuer, the expiry, and that they were
+issued for this server - and maps each to a user: by the `(issuer, subject)`
+identity, else by the token's **verified** email to a user an administrator
+created, else by creating the user when the token carries the realm role
+`mcp-user`. The database is reached with the connections an administrator
+stored for the user: the token itself is never passed on.
+
+```bash
+# Prepare the realm once (as a Keycloak administrator)
+KC_ADMIN_PASSWORD=... python3 scripts/keycloak_realm_setup.py \
+    --server https://kc.example.com --realm mariadb --admin-user admin \
+    --admin-password-env KC_ADMIN_PASSWORD --mcp-url https://mcp.example.com/mcp
+
+mariadb-shell -- mcp setup --oauthMode=keycloak \
+    --oauthIssuer=https://kc.example.com/realms/mariadb
+```
+
+The script creates the client scopes `mcp:db` and `mcp:msm` with an Audience
+mapper putting the public URL into the token's `aud`, the realm role `mcp-user`,
+and a public PKCE client for MCP clients. Keycloak refuses anonymous dynamic
+client registration by default ("Trusted Hosts" policy); allow your clients'
+hosts there if they register themselves. `--oauthVerification=introspection`
+asks Keycloak about every token (cached for 30s) instead of only checking its
+signature, so a session ended in Keycloak is refused at once.
+
+#### The built-in authorization server
+
+With `--oauthMode=builtin` the server is its own authorization server, and **the
+MariaDB account is the identity**, as with Snowflake's MCP server: users sign in
+on the server's own page with their MariaDB user name and password, the account
+is checked by connecting with it, and the session the tools open runs as that
+account under its default role.
+
+```bash
+mariadb-shell -- mcp setup --oauthMode=builtin \
+    --addLoginServer=mariadb://db.example.com:3306 --oauthRequiredRole=mcp_access
+```
+
+- A sign-in creates a **grant** - one user's authorization of one client - that
+  lasts 90 days by default (`--oauthGrantMaxLifetime`; an idle timeout is off
+  unless `--oauthGrantIdleTimeout` sets one). Refresh tokens rotate on every
+  use; one presented again after its 30-second grace period ends the grant.
+- The account and password become a connection of the grant, kept in the user's
+  secret group (or, with `--oauthLoginConnectionStore=memory`, only in memory)
+  for exactly as long as the grant lives.
+- `--oauthRequiredRole` is the role an account needs to sign in at all. Users
+  are created at their first sign-in unless `--oauthAutoProvision=false`;
+  several accounts can belong to one user (`--addIdentity=mariadb:<server>|<account>`).
+- Clients are registered by an administrator (below), dynamically
+  (`--oauthDynamicClientRegistration`, on by default), or by Client ID Metadata
+  Document (`--oauthCimd`, on by default).
+- The sign-in page is rate limited per address and per account, and connects to
+  a non-loopback database over TLS only.
+
+#### Arcade (and other gateways)
+
+The setup Arcade documents for Snowflake works the same way here:
+
+| Snowflake | MariaDB MCP server |
+| --- | --- |
+| `CREATE SECURITY INTEGRATION … OAUTH_CLIENT_TYPE='CONFIDENTIAL'` | `mcp setup --addOauthClient=arcade --confidential` (prints the client ID and secret) |
+| `SYSTEM$SHOW_OAUTH_CLIENT_SECRETS(...)` | `mcp setup --showOauthClientSecret=arcade` |
+| Authorization and token URL left empty in Arcade | the same - Arcade discovers them from the public URL |
+| `ALTER SECURITY INTEGRATION … SET OAUTH_REDIRECT_URI` | `mcp setup --setOauthClientRedirectUris=arcade --redirectUris=<Arcade's redirect URI>` |
+| `ALLOWED_ROLES_LIST` | `mcp setup --setOauthClientAllowedRoles=arcade --roles=mcp_access` |
+| `GRANT USAGE ON MCP SERVER … TO ROLE` | `--oauthRequiredRole=mcp_access` and `GRANT mcp_access TO …` |
+| `DEFAULT_ROLE` | `SET DEFAULT ROLE mcp_access FOR …` |
+| Network policy | `--oauthAllowedClientNetworks=<Arcade's egress networks>` |
+
+Arcade calls the server from its own addresses for all of its users: raise
+`--max-connections` for many users. Arcade discovers the tools once, with the
+administrator's sign-in, so grant that sign-in both scopes. A client may
+authenticate to the token endpoint with Basic or with the form, as OAuth 2.1
+allows.
+
 ## Database connection behavior
 
 To understand the MCP server database connection behavior, please read the

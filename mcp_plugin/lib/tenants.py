@@ -715,6 +715,102 @@ def get_scopes(mcp_user_id) -> list:
     return [scope for scope in SUPPORTED_SCOPES if scope in scopes]
 
 
+def set_default_role(mcp_user_id, role) -> None:
+    """Sets the MariaDB role a user's sessions run under; None or "" clears it.
+
+    Applied with ``SET ROLE`` every time one of the user's sessions is opened.
+    Without one, the server applies the account's own ``DEFAULT ROLE``.
+    """
+    role = str(role or "").strip()
+
+    def change(users, record):
+        if role:
+            record["defaultRole"] = role
+        else:
+            record.pop("defaultRole", None)
+
+    _change_user(mcp_user_id, change)
+
+
+def get_default_role(mcp_user_id) -> str:
+    """Returns the role a user's sessions run under, or ``""`` for the account's."""
+    record = get_user(mcp_user_id) or {}
+
+    return str(record.get("defaultRole") or "")
+
+
+def revoke_tokens(mcp_user_id) -> int:
+    """Invalidates every OAuth access token issued to a user so far.
+
+    The user's ``tokenEpoch`` is raised and the moment recorded: a token
+    carrying an older epoch, or issued before that moment, is refused. Their
+    API key is not affected - rotate it for that.
+
+    Returns:
+        The new epoch.
+    """
+    epoch = {}
+
+    def change(users, record):
+        record["tokenEpoch"] = int(record.get("tokenEpoch", 0)) + 1
+        record["tokensRevokedAt"] = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        epoch["value"] = record["tokenEpoch"]
+
+    _change_user(mcp_user_id, change)
+
+    return epoch["value"]
+
+
+def link_identity(mcp_user_id, identity: dict) -> bool:
+    """Adds an identity to a user unless they already have it.
+
+    For the server's own use when a sign-in links an identity: unlike
+    :func:`add_identity` it is not an error for the user to have it already,
+    which is what a second sign-in racing the first finds.
+
+    Returns:
+        True if it was added.
+
+    Raises:
+        mysqlsh.Error: If the identity belongs to another user.
+    """
+    added = {}
+
+    def change(users, record):
+        owner = _owner_of(users, identity)
+        if owner == mcp_user_id:
+            added["value"] = False
+            return
+        if owner is not None:
+            raise mysqlsh.Error(
+                f"The identity '{describe_identity(identity)}' already belongs "
+                f"to {describe_user(owner, users[owner])}."
+            )
+        record.setdefault("identities", []).append(dict(identity))
+        added["value"] = True
+
+    _change_user(mcp_user_id, change)
+
+    return added["value"]
+
+
+def find_user_by_identity(identity: dict) -> Optional[str]:
+    """Returns the user who has an identity, or None."""
+    return _owner_of(read_users(), identity)
+
+
+def users_with_email(email) -> list:
+    """Returns the users with an email identity matching one address."""
+    wanted = identity_key({"type": IDENTITY_EMAIL, "value": email})
+    users = read_users()
+
+    return sorted(
+        user_id
+        for user_id, record in users.items()
+        if any(identity_key(i) == wanted for i in record.get("identities", []))
+    )
+
+
 # --- Allowed paths ---------------------------------------------------------------
 
 

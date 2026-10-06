@@ -18,6 +18,7 @@ from mcp_plugin.lib import (
     config,
     tenants,
     auth,
+    oauth_config,
     db_functions,
     tool_registrar,
     msm_functions,

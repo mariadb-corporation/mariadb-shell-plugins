@@ -9,6 +9,88 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Builds on phase 1 in
 rests on: the customer's Snowflake reference, the MCP authorization spec
 2026-07-28, Keycloak's MCP support, and the SDK's auth hooks.
 
+## Status
+
+**BUILT on 2026-10-06** (2a, 2b, 2c and 2d), on branch `wip/mcp-multi-tenant` after
+phase 1. Suite **559 passed, 2 skipped (+1 opt-in), 93%**.
+
+- New modules: `lib/oauth_config.py` (settings, public URL, clients, keys),
+  `lib/oauth_keycloak.py` (`KeycloakVerifier`), `lib/oauth_builtin.py` (the provider,
+  grants, sign-in page, CIMD) and `lib/setup_oauth.py` (the `mcp setup` options).
+- Tests: `tests/unit/test_oauth.py` (51). One is an opt-in live test against a real
+  realm (`run_tests.py --keycloak`, `KEYCLOAK_*` variables).
+- Script: `scripts/keycloak_realm_setup.py`, the realm preparation (stdlib only,
+  admin REST API).
+
+**Option spellings:** the shell builds camelCase from snake_case by capitalizing
+each word, so it is **`--addOauthClient`, `--showOauthClientSecret`,
+`--setOauthClientRedirectUris`** and so on, never `OAuth`. This file and
+oauth-builtin.md were corrected to match.
+
+**As built, where it differs from or adds to the plan below:**
+
+- **2a**
+  - `general.Principal` gained `grant_id` (claim `grant`).
+  - `auth.AuthBundle` carries settings + verifier or provider.
+  - `auth.customize_app` puts the PRM route ahead of the SDK's, listing
+    `scopes_supported`. It reuses `bundle.settings.issuer_url` /
+    `resource_server_url` AS PARSED by AuthSettings, which preserves an empty
+    path: a bare origin parsed anywhere else gains a trailing slash, and a client
+    compares issuers byte for byte.
+  - `InsufficientScopeMiddleware` is appended to `starlette_app.user_middleware`,
+    which makes it the innermost middleware, after the SDK's authentication.
+  - `auth.scoped_server_class()` overrides `_handle_list_tools`.
+  - Default role: `db_functions._apply_default_role` runs ``SET ROLE `role` `` on
+    every open, including reopens.
+- **2b, from a live probe of the user's realm** (`http://192.168.10.252:8080`,
+  realm `keycloak`):
+  - discovery, `check_issuer` and the JWKS (one RS256 key) all work
+  - the user's account `dba@zinner.org` cannot get a token ("Account is not fully
+    set up": pending required actions)
+  - anonymous DCR is refused by the "Trusted Hosts" policy
+
+  So the live token test needs the realm prepared with the script by an admin.
+  Nothing was created on that server. PyJWT's `PyJWKClient` refetches for an unknown
+  `kid` at most every **30s** (a cooldown); the test ages
+  `_last_successful_fetch` rather than disabling it.
+- **2c**
+  - `BuiltinAuthProvider.load_access_token` checks API keys too: the SDK refuses
+    `auth_server_provider` together with `token_verifier`.
+  - **Basic client auth:** the SDK checks a secret only where the client's
+    `token_endpoint_auth_method` says, so `auth.BasicClientAuthMiddleware` rewrites
+    a Basic header on `/token` and `/revoke` into form fields, and every
+    confidential client is registered as `client_secret_post`.
+  - **CSP `form-action` must include the client's redirect origin:** Chrome applies
+    form-action to the redirect after the POST.
+  - **Roles:** `APPLICABLE_ROLES` lists nested roles too. `requiredRole` counts
+    nested ones (`roles["all"]`), but a configured `defaultRole` must be granted
+    directly (`roles["direct"]`), since only those can be `SET ROLE`d. The required
+    role is checked BEFORE the account is mapped, so an account without it is
+    never provisioned.
+  - **Refresh tokens:**
+    - A token that matches neither the current nor the previous one is just
+      rejected, and only true reuse of the previous one ends the grant; otherwise
+      knowing a grant id would let anyone end it.
+    - The grace check is strict (`<`).
+    - `_issue_tokens` only rotates the CURRENT token.
+  - Refresh token format: `mdbrt_<userhex>_<grantid>_<random>`. Grant record and
+    login connection: `MCP:OAUTH:GRANT:<id>` and `MCP:OAUTH:CONN:<id>` in the user's
+    group, cached 30s.
+  - `mcp setup --removeOauthClient` / `--revokeTokens` end grants OFFLINE
+    (`oauth_builtin.end_grants_of_client/_of_user` over `tenants.list_groups()`).
+  - The provider is reached by `db_functions` through `oauth_builtin._provider`,
+    set by `server.start` (`activate`).
+  - The grant sweeper is the provider's own thread; the connection reaper is
+    untouched.
+- **2d:** two end-to-end tests against the sandbox with real accounts and roles:
+  - an Arcade-shaped one (confidential client in two steps, PRM discovery, Basic
+    auth, `oauth_bob` without the role refused, refresh race, revoke → 401)
+  - the MCP SDK's own `OAuthClientProvider` (DCR, PKCE, `iss`, `tools/list` filtered
+    to `db`)
+- **Verified by hand** through the real shell against a throwaway `mariadbd`
+  (scratchpad, port 33099): the whole flow, including `CURRENT_ROLE()` =
+  `mcp_access` in the tool session.
+
 ## Overview
 
 Order: **2a groundwork → 2b Keycloak (A) → 2c built-in authorization server (C).**

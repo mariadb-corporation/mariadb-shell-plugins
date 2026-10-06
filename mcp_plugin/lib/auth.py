@@ -42,6 +42,16 @@ The verified token becomes an ``AccessToken`` whose claims carry the
 ``mcp_user_id`` (see :func:`mcp_plugin.lib.general.get_principal`), which is all
 the tools ever look at.
 
+With OAuth2 turned on (see :mod:`mcp_plugin.lib.oauth_config`) API keys keep
+working: :func:`build_auth` puts them in a :class:`CompositeVerifier` with the
+mode's own verifier - Keycloak's (:mod:`mcp_plugin.lib.oauth_keycloak`) - or, for
+the built-in authorization server, has its provider check both
+(:mod:`mcp_plugin.lib.oauth_builtin`). What the SDK does not do is added around
+its app by :func:`customize_app`: Protected Resource Metadata that lists the
+scopes, a 403 ``insufficient_scope`` for a token granting no tool at all, the
+built-in server's own authorization server metadata and sign-in page, a
+network allow list, and ``client_secret_basic`` next to ``client_secret_post``.
+
 The MCP SDK is imported only inside functions, as everywhere in this plugin
 (see :mod:`mcp_plugin.lib.tool_registrar`).
 """
@@ -198,17 +208,21 @@ def _drop_connections_of_inactive_users(active_user_ids) -> None:
 class ApiKeyVerifier:
     """The SDK token verifier that accepts users' API keys."""
 
-    def __init__(self, directory: Optional[UserDirectory] = None):
+    def __init__(self, directory: Optional[UserDirectory] = None, resource=None):
         """Creates a verifier.
 
         Args:
             directory: Where users and keys are looked up. A new one, which
                 closes the connections of users who are no longer active, by
                 default.
+            resource (str): The server's public URL, reported as the resource
+                every key is valid for - which the SDK checks wherever OAuth is
+                on - or None.
         """
         self.directory = directory or UserDirectory(
             on_users_changed=_drop_connections_of_inactive_users
         )
+        self.resource = resource
 
     async def verify_token(self, token: str):
         """Returns the access token an API key stands for, or None.
@@ -247,6 +261,7 @@ class ApiKeyVerifier:
             token=token,
             client_id=API_KEY_CLIENT_ID,
             scopes=[scope for scope in tenants.SUPPORTED_SCOPES if scope in scopes],
+            resource=self.resource,
             subject=mcp_user_id,
             claims={
                 "iss": API_KEY_ISSUER,
@@ -256,24 +271,395 @@ class ApiKeyVerifier:
         )
 
 
-def build_auth(verifier=None) -> tuple:
+class CompositeVerifier:
+    """A token verifier that asks each of several in turn.
+
+    The first that recognizes a token answers for it: an API key is told apart
+    from a JWT by its shape (see :func:`mcp_plugin.lib.tenants.is_api_key`), so
+    each verifier only ever sees the tokens meant for it.
+    """
+
+    def __init__(self, verifiers):
+        self.verifiers = list(verifiers)
+
+    async def verify_token(self, token: str):
+        for verifier in self.verifiers:
+            if tenants.is_api_key(token) != isinstance(verifier, ApiKeyVerifier):
+                continue
+            return await verifier.verify_token(token)
+
+        return None
+
+
+class AuthBundle:
+    """What a multi-tenant server needs to authenticate, for one OAuth mode.
+
+    Attributes:
+        settings: The SDK's ``AuthSettings``.
+        token_verifier: The verifier, or None where a provider checks tokens.
+        provider: The built-in authorization server's provider, or None.
+        mode (str): The OAuth mode.
+        public_url (str): The server's public URL, or ``""``.
+    """
+
+    def __init__(self, settings, token_verifier=None, provider=None, mode="none",
+                 public_url=""):
+        self.settings = settings
+        self.token_verifier = token_verifier
+        self.provider = provider
+        self.mode = mode
+        self.public_url = public_url
+
+    def server_kwargs(self) -> dict:
+        """Returns the keyword arguments ``MCPServer`` takes for this."""
+        kwargs = {"auth": self.settings}
+        if self.provider is not None:
+            kwargs["auth_server_provider"] = self.provider
+        else:
+            kwargs["token_verifier"] = self.token_verifier
+
+        return kwargs
+
+
+def build_auth(verifier=None, mode=None, public_url=None):
     """Returns what ``MCPServer`` needs to authenticate requests.
 
     Args:
-        verifier: The token verifier, or None for a new :class:`ApiKeyVerifier`.
+        verifier: The API key verifier, or None for a new
+            :class:`ApiKeyVerifier`.
+        mode (str): The OAuth mode, or None for the configured one.
+        public_url (str): The server's public URL, or None for the configured
+            one.
 
     Returns:
-        An ``(AuthSettings, verifier)`` tuple.
+        An :class:`AuthBundle`.
     """
-    from mcp.server.auth.settings import AuthSettings
-
-    settings = AuthSettings(
-        issuer_url=_API_KEY_ONLY_ISSUER_URL,
-        resource_server_url=None,
-        required_scopes=None,
+    from mcp.server.auth.settings import (
+        AuthSettings,
+        ClientRegistrationOptions,
+        RevocationOptions,
     )
 
-    return settings, verifier or ApiKeyVerifier()
+    from mcp_plugin.lib import oauth_config
+
+    mode = mode or oauth_config.get_mode()
+    if public_url is None:
+        public_url = oauth_config.get_public_url()
+
+    if mode == oauth_config.OAUTH_MODE_NONE:
+        settings = AuthSettings(
+            issuer_url=_API_KEY_ONLY_ISSUER_URL,
+            resource_server_url=None,
+            required_scopes=None,
+        )
+
+        return AuthBundle(
+            settings, token_verifier=verifier or ApiKeyVerifier(), mode=mode
+        )
+
+    oauth_config.check_ready(mode)
+    api_keys = verifier or ApiKeyVerifier(resource=public_url)
+    oauth = oauth_config.get_oauth_settings()
+
+    if mode == oauth_config.OAUTH_MODE_KEYCLOAK:
+        from mcp_plugin.lib.oauth_keycloak import KeycloakVerifier
+
+        keycloak = KeycloakVerifier(
+            oauth["keycloak"], public_url, directory=api_keys.directory
+        )
+        settings = AuthSettings(
+            issuer_url=oauth["keycloak"]["issuer"],
+            resource_server_url=public_url,
+            required_scopes=None,
+            validate_token_resource=True,
+        )
+
+        return AuthBundle(
+            settings,
+            token_verifier=CompositeVerifier([api_keys, keycloak]),
+            mode=mode,
+            public_url=public_url,
+        )
+
+    from mcp_plugin.lib.oauth_builtin import BuiltinAuthProvider
+
+    builtin = oauth["builtin"]
+    provider = BuiltinAuthProvider(builtin, public_url, api_keys)
+    settings = AuthSettings(
+        issuer_url=oauth_config.public_url_origin(public_url),
+        resource_server_url=public_url,
+        required_scopes=None,
+        validate_token_resource=True,
+        client_registration_options=ClientRegistrationOptions(
+            enabled=bool(builtin["dynamicClientRegistration"]),
+            default_scopes=list(builtin["autoProvision"]["defaultScopes"]),
+        ),
+        revocation_options=RevocationOptions(enabled=True),
+    )
+
+    return AuthBundle(settings, provider=provider, mode=mode, public_url=public_url)
+
+
+def filtered_tools(tools, principal):
+    """Returns the tools a principal's scopes let them call.
+
+    Args:
+        tools: The SDK ``Tool`` objects a server serves.
+        principal: The :class:`mcp_plugin.lib.general.Principal`, or None.
+
+    Returns:
+        The tools whose group the principal has the ``mcp:<group>`` scope of;
+        none at all without a principal.
+    """
+    if principal is None:
+        return []
+
+    return [
+        tool
+        for tool in tools
+        if f"mcp:{tool.name.split('.', 1)[0]}" in principal.scopes
+    ]
+
+
+def scoped_server_class():
+    """Returns an ``MCPServer`` that lists each caller only their tools.
+
+    The SDK lists every registered tool to everyone. A multi-tenant server
+    only lists those the caller's token grants the scope of, so a client never
+    offers its model a tool it cannot call. ``_handle_list_tools`` is a private
+    hook of the SDK; ``test_tools_are_listed_by_scope`` pins it.
+    """
+    from mcp.server.mcpserver import MCPServer
+    from mcp.types import ListToolsResult
+
+    class ScopedMCPServer(MCPServer):
+        async def _handle_list_tools(self, ctx, params):
+            listed = await super()._handle_list_tools(ctx, params)
+            principal = general.get_principal(_RequestContext(ctx))
+
+            return ListToolsResult(tools=filtered_tools(listed.tools, principal))
+
+    return ScopedMCPServer
+
+
+class _RequestContext:
+    """Presents an SDK request context the way the tools' ``ctx`` presents one."""
+
+    def __init__(self, request_context):
+        self.request_context = request_context
+
+
+class InsufficientScopeMiddleware:
+    """Answers an authenticated request whose token grants no tool with a 403.
+
+    Installed INSIDE the SDK's authentication middleware, so the user it put in
+    the scope is there to read. A token granting at least one tool scope goes
+    through; which tools it may call is checked per call. One granting none
+    could do nothing at all, and the MCP specification asks for a 403
+    ``insufficient_scope`` naming the scopes needed, which lets a client go
+    back to the authorization server for them.
+    """
+
+    def __init__(self, app, resource_metadata_url=None):
+        self.app = app
+        self.resource_metadata_url = resource_metadata_url
+
+    async def __call__(self, scope, receive, send):
+        user = scope.get("user") if scope.get("type") == "http" else None
+        token = getattr(user, "access_token", None)
+        if token is not None and not set(token.scopes) & set(tenants.SUPPORTED_SCOPES):
+            challenge = (
+                'Bearer error="insufficient_scope", '
+                f'scope="{" ".join(tenants.SUPPORTED_SCOPES)}", '
+                'error_description="The token grants no tool of this server"'
+            )
+            if self.resource_metadata_url:
+                challenge += f', resource_metadata="{self.resource_metadata_url}"'
+            await _send_json(send, 403, {"error": "insufficient_scope"},
+                             [(b"www-authenticate", challenge.encode("latin-1"))])
+            return
+
+        await self.app(scope, receive, send)
+
+
+class ClientNetworkMiddleware:
+    """Refuses requests to the protected endpoints from outside some networks.
+
+    The counterpart of a Snowflake network policy: only the listed networks
+    (Arcade's egress addresses, say) may call the MCP endpoint and the
+    authorization server's token, registration and revocation endpoints. The
+    sign-in page is not restricted - the user's browser comes from anywhere.
+    """
+
+    _PROTECTED_PATHS = ("/token", "/register", "/revoke")
+
+    def __init__(self, app, networks, mcp_path="/mcp"):
+        self.app = app
+        self.networks = list(networks)
+        self.paths = self._PROTECTED_PATHS + (mcp_path,)
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and scope.get("path") in self.paths:
+            from mcp_plugin.lib import oauth_config
+
+            address = general.normalize_client_address((scope.get("client") or (None,))[0])
+            if not oauth_config.address_allowed(address, self.networks):
+                general.log_event(
+                    f"auth: REFUSED a request to {scope.get('path')} from "
+                    f"address={address or '-'}, outside the allowed client networks"
+                )
+                await _send_json(send, 403, {"error": "access_denied"})
+                return
+
+        await self.app(scope, receive, send)
+
+
+class BasicClientAuthMiddleware:
+    """Lets a client authenticate to the token endpoint either way OAuth allows.
+
+    The SDK checks a client's secret where the client's registration says it
+    sends it - the Basic header or the form - and a client registered by an
+    administrator does not say. OAuth 2.1 has the server accept both. So a
+    request to ``/token`` or ``/revoke`` that authenticates with a Basic header
+    is turned into one that sends the same credentials in the form, which is
+    what such clients are registered for (see
+    :mod:`mcp_plugin.lib.oauth_builtin`).
+    """
+
+    _PATHS = ("/token", "/revoke")
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("path") not in self._PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        headers = list(scope.get("headers") or ())
+        basic = next(
+            (value for name, value in headers
+             if name.lower() == b"authorization" and value[:6].lower() == b"basic "),
+            None,
+        )
+        if basic is None:
+            await self.app(scope, receive, send)
+            return
+
+        import base64
+        from urllib.parse import parse_qsl, unquote, urlencode
+
+        try:
+            decoded = base64.b64decode(basic[6:].strip()).decode("utf-8")
+            client_id, client_secret = decoded.split(":", 1)
+        except (ValueError, UnicodeDecodeError):
+            await self.app(scope, receive, send)
+            return
+
+        body = b""
+        while True:
+            message = await receive()
+            body += message.get("body", b"")
+            if not message.get("more_body"):
+                break
+
+        form = dict(parse_qsl(body.decode("utf-8"), keep_blank_values=True))
+        form.setdefault("client_id", unquote(client_id))
+        form.setdefault("client_secret", unquote(client_secret))
+        new_body = urlencode(form).encode("utf-8")
+
+        scope = dict(scope)
+        scope["headers"] = [
+            (name, value) for name, value in headers
+            if name.lower() not in (b"authorization", b"content-length", b"content-type")
+        ] + [
+            (b"content-type", b"application/x-www-form-urlencoded"),
+            (b"content-length", str(len(new_body)).encode("ascii")),
+        ]
+
+        sent = False
+
+        async def replay():
+            nonlocal sent
+            if sent:
+                return {"type": "http.disconnect"}
+            sent = True
+            return {"type": "http.request", "body": new_body, "more_body": False}
+
+        await self.app(scope, replay, send)
+
+
+def customize_app(starlette_app, bundle: AuthBundle, mcp_path: str = "/mcp"):
+    """Adds what the SDK's app lacks for a multi-tenant server.
+
+    Args:
+        starlette_app: The app ``streamable_http_app()`` built.
+        bundle (AuthBundle): How the server authenticates.
+        mcp_path (str): The path the MCP endpoint is served at.
+
+    Returns:
+        The ASGI app to serve.
+    """
+    from starlette.middleware import Middleware
+
+    from mcp_plugin.lib import oauth_config
+
+    resource_metadata_url = None
+    if bundle.public_url:
+        from mcp.server.auth.routes import (
+            build_resource_metadata_url,
+            create_protected_resource_routes,
+        )
+
+        # The URLs exactly as AuthSettings parsed them, which keeps an empty
+        # path empty: a client compares the issuer it is told here with the one
+        # the authorization server's metadata states, character by character,
+        # and a bare origin parsed anywhere else gains a trailing slash.
+        resource = bundle.settings.resource_server_url
+        resource_metadata_url = str(build_resource_metadata_url(resource))
+        # Ahead of the SDK's own PRM route, which lists the required scopes -
+        # none here, as a token needs only one of the tool scopes.
+        starlette_app.router.routes[0:0] = create_protected_resource_routes(
+            resource_url=resource,
+            authorization_servers=[bundle.settings.issuer_url],
+            scopes_supported=list(tenants.SUPPORTED_SCOPES),
+        )
+
+    if bundle.provider is not None:
+        starlette_app.router.routes[0:0] = bundle.provider.routes()
+
+    # Innermost, so the SDK's authentication has run by the time it does.
+    starlette_app.user_middleware.append(
+        Middleware(InsufficientScopeMiddleware, resource_metadata_url=resource_metadata_url)
+    )
+
+    app = starlette_app
+    if bundle.provider is not None:
+        app = BasicClientAuthMiddleware(app)
+        networks = oauth_config.get_oauth_settings()["builtin"]["allowedClientNetworks"]
+        if networks:
+            app = ClientNetworkMiddleware(app, networks, mcp_path)
+
+    return app
+
+
+async def _send_json(send, status: int, payload: dict, headers=()) -> None:
+    """Answers a request with a small JSON body."""
+    import json
+
+    body = json.dumps(payload).encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+                *headers,
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
 
 
 class AuthFailureThrottle:

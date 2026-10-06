@@ -126,9 +126,10 @@ def build_mcp_server(function_groups, auth=None):
     Args:
         function_groups (list): The function groups whose tools should be
             registered on the server.
-        auth: An ``(AuthSettings, token_verifier)`` tuple to have every request
-            authenticated (see :func:`mcp_plugin.lib.auth.build_auth`), or None
-            for a server that does not authenticate.
+        auth: The :class:`mcp_plugin.lib.auth.AuthBundle` to authenticate every
+            request with (see :func:`mcp_plugin.lib.auth.build_auth`), or None
+            for a server that does not authenticate. An authenticating server
+            also lists each caller only the tools their token grants.
 
     Returns:
         The configured MCPServer instance.
@@ -140,10 +141,9 @@ def build_mcp_server(function_groups, auth=None):
     if auth is None:
         server = MCPServer("MariaDB MCP Server")
     else:
-        auth_settings, token_verifier = auth
-        server = MCPServer(
-            "MariaDB MCP Server", auth=auth_settings, token_verifier=token_verifier
-        )
+        from mcp_plugin.lib.auth import scoped_server_class
+
+        server = scoped_server_class()("MariaDB MCP Server", **auth.server_kwargs())
     # The full list of enabled groups is handed to every registrar, so a group
     # can leave out the tools that depend on another group not being served.
     for group in function_groups:
@@ -162,6 +162,7 @@ def start(
     ssl_certfile=None,
     ssl_keyfile=None,
     max_connections=None,
+    public_url=None,
 ) -> None:
     """Builds and serves the MCP server using the given transport.
 
@@ -187,6 +188,9 @@ def start(
         max_connections (int): The most database connections the server holds
             open at once, for all clients together, or None for
             :data:`mcp_plugin.lib.general.MAX_CONNECTIONS_TOTAL`.
+        public_url (str): The URL clients reach the MCP endpoint at, for OAuth
+            (see :mod:`mcp_plugin.lib.oauth_config`), or None for the
+            configured one.
 
     Returns:
         None
@@ -256,8 +260,17 @@ def start(
     auth = None
     if multi_tenant:
         from mcp_plugin.lib import auth as auth_module
+        from mcp_plugin.lib import oauth_config
 
-        auth = auth_module.build_auth()
+        if public_url:
+            public_url = oauth_config.normalize_public_url(public_url)
+        auth = auth_module.build_auth(public_url=public_url)
+        if auth.public_url:
+            # The name clients dial the server by, which a proxy in front of it
+            # makes impossible to derive from the bind address.
+            allowed_hosts = list(allowed_hosts) + [
+                oauth_config.public_url_host(auth.public_url)
+            ]
 
     mcp_server = build_mcp_server(function_groups=function_groups, auth=auth)
 
@@ -274,6 +287,13 @@ def start(
         # belongs to the server, and this is where a server begins and ends. It
         # used to be started by the first db.connect, which made a thread nobody
         # stopped the side effect of a tool call.
+        provider = auth.provider if auth is not None else None
+        if provider is not None:
+            # The built-in authorization server: its grants' login connections
+            # are looked up through it, and its sweeper ends expired grants.
+            provider.activate()
+            provider.start_sweeper()
+
         db_functions.start_connection_reaper()
         try:
             _serve_streamable_http(
@@ -284,9 +304,13 @@ def start(
                 ssl_certfile=ssl_certfile,
                 ssl_keyfile=ssl_keyfile,
                 throttle_auth_failures=multi_tenant,
+                auth=auth,
             )
         finally:
             db_functions.stop_connection_reaper()
+            if provider is not None:
+                provider.stop_sweeper()
+                provider.deactivate()
 
 
 def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
@@ -465,6 +489,7 @@ def _serve_streamable_http(
     ssl_certfile=None,
     ssl_keyfile=None,
     throttle_auth_failures: bool = False,
+    auth=None,
 ) -> None:
     """Serves the MCP server over streamable-http on our own uvicorn server.
 
@@ -499,6 +524,9 @@ def _serve_streamable_http(
         throttle_auth_failures (bool): Whether to slow down clients whose
             bearer tokens keep being refused (see
             :class:`mcp_plugin.lib.auth.AuthFailureThrottle`).
+        auth: The :class:`mcp_plugin.lib.auth.AuthBundle` the server
+            authenticates with, whose routes and middleware are added (see
+            :func:`mcp_plugin.lib.auth.customize_app`), or None.
 
     Returns:
         None
@@ -512,10 +540,14 @@ def _serve_streamable_http(
     )
 
     app = starlette_app
+    if auth is not None:
+        from mcp_plugin.lib.auth import customize_app
+
+        app = customize_app(starlette_app, auth)
     if throttle_auth_failures:
         from mcp_plugin.lib.auth import AuthFailureThrottle
 
-        app = AuthFailureThrottle(starlette_app)
+        app = AuthFailureThrottle(app)
 
     config = uvicorn.Config(
         app,

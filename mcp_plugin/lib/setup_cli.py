@@ -48,7 +48,7 @@ import sys
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_migrator, tenants
+from mcp_plugin.lib import config, general, setup_migrator, setup_oauth, tenants
 from mcp_plugin.lib import setup_prompts as prompts
 
 # Options that change something. Their presence is what switches mcp.setup from
@@ -71,7 +71,7 @@ ACTION_OPTIONS = (
     "rotate_api_key",
     "show_api_key",
     "purge_orphan_groups",
-)
+) + setup_oauth.ACTION_OPTIONS
 
 # Where the password for --add-connection may come from. Exactly one.
 PASSWORD_OPTIONS = ("password", "password_env", "password_stdin")
@@ -86,7 +86,7 @@ MODIFIER_OPTIONS = (
     "all_users",
     "name",
     "scopes",
-)
+) + setup_oauth.MODIFIER_OPTIONS
 
 KNOWN_OPTIONS = ACTION_OPTIONS + PASSWORD_OPTIONS + MODIFIER_OPTIONS
 
@@ -95,10 +95,21 @@ KNOWN_OPTIONS = ACTION_OPTIONS + PASSWORD_OPTIONS + MODIFIER_OPTIONS
 PER_USER_OPTIONS = ("add_connection", "delete_connections", "add_paths", "delete_paths")
 
 # The actions that change one user, named by --user.
-USER_TARGETED_OPTIONS = ("add_identity", "remove_identity", "set_scopes")
+USER_TARGETED_OPTIONS = (
+    "add_identity",
+    "remove_identity",
+    "set_scopes",
+) + setup_oauth.USER_TARGETED_OPTIONS
 
 # The actions whose result --json can report: each hands out an API key.
-JSON_ACTION_OPTIONS = ("add_user", "rotate_api_key", "show_api_key")
+JSON_ACTION_OPTIONS = (
+    "add_user",
+    "rotate_api_key",
+    "show_api_key",
+) + setup_oauth.JSON_ACTION_OPTIONS
+
+# The actions that are actions whenever they are given, false or empty too.
+PRESENCE_OPTIONS = ("multi_tenant",) + setup_oauth.PRESENCE_OPTIONS
 
 
 def _cli_name(option: str) -> str:
@@ -225,12 +236,13 @@ def _as_bool(value) -> bool:
 def _actions(options: dict) -> list:
     """Returns the action options that were given.
 
-    ``--multiTenant=false`` is an action even though its value is false.
+    ``--multiTenant=false`` is an action even though its value is false, and
+    so are the others in :data:`PRESENCE_OPTIONS`.
     """
     return [
         name
         for name in ACTION_OPTIONS
-        if options.get(name) or (name == "multi_tenant" and name in options)
+        if options.get(name) or (name in PRESENCE_OPTIONS and name in options)
     ]
 
 
@@ -278,6 +290,13 @@ def _check_combination(options: dict) -> None:
     if "multi_tenant" in options:
         _as_bool(options["multi_tenant"])
 
+    from mcp_plugin.lib import oauth_config
+
+    setup_oauth.check_combination(
+        options,
+        str(options.get("oauth_mode") or oauth_config.get_mode()).strip().lower(),
+    )
+
     for name in ("name", "scopes"):
         if options.get(name) and not (
             options.get("add_user") or (name == "scopes" and options.get("set_scopes"))
@@ -286,7 +305,11 @@ def _check_combination(options: dict) -> None:
                 f"{_cli_name(name)} only applies to {_cli_name('add_user')}."
             )
 
-    targeted = [name for name in USER_TARGETED_OPTIONS if options.get(name)]
+    targeted = [
+        name
+        for name in USER_TARGETED_OPTIONS
+        if options.get(name) or (name in PRESENCE_OPTIONS and name in options)
+    ]
     if targeted and not options.get("user"):
         raise mysqlsh.Error(
             f"{', '.join(_cli_name(n) for n in targeted)} needs "
@@ -336,11 +359,13 @@ def _check_combination(options: dict) -> None:
         )
 
     if not options.get("add_connection"):
-        stray = given_passwords + (["no_verify"] if options.get("no_verify") else [])
+        verified = options.get("no_verify") and not options.get("oauth_issuer")
+        stray = given_passwords + (["no_verify"] if verified else [])
         if stray:
             raise mysqlsh.Error(
                 f"{', '.join(_cli_name(n) for n in stray)} only applies to "
-                f"{_cli_name('add_connection')}."
+                f"{_cli_name('add_connection')}"
+                f"{' and ' + _cli_name('oauth_issuer') if verified else ''}."
             )
 
     if not actions and not options.get("show"):
@@ -759,6 +784,7 @@ def configuration(all_users: bool = False, mcp_user_id=None) -> dict:
             "wrapper_path": setup_migrator.wrapper_path(),
         },
     }
+    current.update(setup_oauth.configuration())
 
     if all_users or mcp_user_id is not None:
         # One listing of every group, rather than one per user: each costs a
@@ -795,6 +821,9 @@ def _show(options: dict) -> None:
     print("=== MariaDB MCP Server configuration ===")
     print(f"Configuration is stored in: {current['config_path']}")
     print(f"Multi-tenant mode: {'on' if current['multi_tenant'] else 'off'}")
+    if current["multi_tenant"]:
+        print(f"Public URL:        {current['public_url'] or '(none)'}")
+        print(f"OAuth mode:        {current['oauth']['mode']}")
 
     if "users" in current:
         _print_users(current)
@@ -895,6 +924,8 @@ def apply(options: dict) -> None:
     if options.get("rotate_api_key"):
         _rotate_api_keys(options, report)
 
+    setup_oauth.apply(options, report, mcp_user_id)
+
     if options.get("delete_connections"):
         _delete_connections(options, mcp_user_id)
     if options.get("delete_paths"):
@@ -913,7 +944,10 @@ def apply(options: dict) -> None:
         _show_api_keys(options, report)
 
     if report["json"]:
-        print(json_module.dumps({"users": report.get("users", [])}, indent=2))
+        output = {"users": report.get("users", [])}
+        if "clients" in report:
+            output["clients"] = report["clients"]
+        print(json_module.dumps(output, indent=2))
 
     # A settings file has to exist for the next run to reach the management
     # menu rather than the first-run walkthrough, exactly as _first_run ensures.

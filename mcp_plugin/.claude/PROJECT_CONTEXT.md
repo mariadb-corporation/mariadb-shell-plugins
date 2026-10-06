@@ -23,11 +23,13 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **512 tests pass, 2 SKIPPED (~61s), 96% total coverage** (3211
-statements, 128 missed) on `wip/mcp-multi-tenant` at the 2026-10-06 checkpoint, on MCP
+Standard suite: **561 tests pass, 3 SKIPPED (~75s), 94% total coverage** (4804
+statements, 288 missed) on `wip/mcp-multi-tenant` at the 2026-10-06 checkpoint, on MCP
 SDK **2.3.0** (465 / 98% on `main` before multi-tenant mode; see the coverage trap in
-[`context/testing.md`](context/testing.md)). The two skipped are the OPT-IN
-end-to-end tests (`test_migration_e2e`, `test_a_sandbox_really_runs_a_downloaded_server`).
+[`context/testing.md`](context/testing.md)). The three skipped are OPT-IN: the
+end-to-end tests (`--e2e`: `test_migration_e2e`,
+`test_a_sandbox_really_runs_a_downloaded_server`) and the live Keycloak test
+(`--keycloak`, see [`context/oauth.md`](context/oauth.md)).
 Run it with
 `mariadb-shell --py -f run_tests.py` FROM the mcp_plugin dir and with `/opt/homebrew/bin`
 on PATH (mariadbd, mariadb-dump and pv are not on the default PATH).
@@ -79,12 +81,17 @@ $ git -C mcp_plugin branch --show-current
 wip/mcp-multi-tenant
 
 $ git -C mcp_plugin status --short
-(phase 1 of multi-tenant mode, committed and pushed on this branch)
+(phases 1 and 2 of multi-tenant mode, committed and pushed on this branch)
 ```
 
-- **Branch `wip/mcp-multi-tenant`** off `main` (`67253bae`): phase 1 of multi-tenant mode
-  (API keys, users, secret groups, tenant isolation) is built. Phase 2 (OAuth2) is
-  next. The plan and its status are in [`context/multi-tenant.md`](context/multi-tenant.md),
+- **Branch `wip/mcp-multi-tenant`** off `main` (`67253bae`), pushed:
+  - phase 1 (API keys, users, secret groups, tenant isolation) is `d1bf2a31`
+  - phase 2 (OAuth2: groundwork, Keycloak, the built-in authorization server, the
+    Arcade setup) is the commit after it
+
+  No PR yet. Open: the live Keycloak token test needs the realm prepared by an
+  admin (`scripts/keycloak_realm_setup.py`) and a user with no pending required
+  actions; the manual Arcade end-to-end needs a public https deployment. The plan and its status are in [`context/multi-tenant.md`](context/multi-tenant.md),
   [`context/oauth.md`](context/oauth.md) and
   [`context/oauth-builtin.md`](context/oauth-builtin.md).
 - Rene's secret-groups design note was read and deleted (never committed). Its content
