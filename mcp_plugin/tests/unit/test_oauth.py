@@ -61,6 +61,7 @@ from mcp_plugin.lib import (
     oauth_config,
     oauth_keycloak,
     setup_cli,
+    setup_oauth,
     tenants,
 )
 
@@ -472,13 +473,14 @@ def test_keycloak_introspection_asks_keycloak_and_caches(tenant_config, realm):
 
 
 def test_setup_checks_a_keycloak_issuer(tenant_config, realm):
-    """--oauthIssuer reads the OpenID configuration; --noVerify skips it."""
-    setup_cli.apply({"multi_tenant": True, "public_url": PUBLIC_URL, "oauth_mode": "keycloak",
-                     "oauth_issuer": realm.issuer})
+    """--issuer reads the OpenID configuration; --noVerify skips it."""
+    setup_cli.apply({"multi_tenant": True})
+    setup_oauth.apply({"public_url": PUBLIC_URL, "mode": "keycloak",
+                     "issuer": realm.issuer})
     assert oauth_config.get_oauth_settings()["keycloak"]["issuer"] == realm.issuer
 
     with pytest.raises(mysqlsh.Error, match="Could not read the OpenID configuration"):
-        setup_cli.apply({"oauth_issuer": "http://127.0.0.1:9/realms/none"})
+        setup_oauth.apply({"issuer": "http://127.0.0.1:9/realms/none"})
 
     bundle = auth.build_auth()
     assert isinstance(bundle.token_verifier, auth.CompositeVerifier)
@@ -872,17 +874,18 @@ def test_a_login_connection_is_its_grants_alone(tenant_config, monkeypatch):
 
 def test_setup_registers_a_client_in_two_steps(tenant_config, capsys):
     """Arcade shows its redirect URI only after the client exists."""
-    setup_cli.apply({"multi_tenant": True, "public_url": PUBLIC_URL, "oauth_mode": "builtin",
+    setup_cli.apply({"multi_tenant": True})
+    setup_oauth.apply({"public_url": PUBLIC_URL, "mode": "builtin",
                      "add_login_server": LOGIN_SERVER})
     capsys.readouterr()
-    setup_cli.apply({"add_oauth_client": "arcade", "confidential": True, "json": True})
+    setup_oauth.apply({"add_client": "arcade", "confidential": True, "json": True})
     added = json.loads(capsys.readouterr().out)["clients"][0]
 
-    setup_cli.apply({"set_oauth_client_redirect_uris": "arcade",
+    setup_oauth.apply({"set_client_redirect_uris": "arcade",
                      "redirect_uris": "https://cloud.arcade.dev/api/v1/oauth/callback"})
-    setup_cli.apply({"set_oauth_client_allowed_roles": added["clientId"], "roles": "mcp_access"})
+    setup_oauth.apply({"set_client_allowed_roles": added["clientId"], "roles": "mcp_access"})
     capsys.readouterr()
-    setup_cli.apply({"show_oauth_client_secret": "arcade", "json": True})
+    setup_oauth.apply({"show_client_secret": "arcade", "json": True})
     assert json.loads(capsys.readouterr().out)["clients"][0]["clientSecret"] == added["clientSecret"]
 
     record = oauth_config.read_clients()[added["clientId"]]
@@ -890,9 +893,9 @@ def test_setup_registers_a_client_in_two_steps(tenant_config, capsys):
     assert record["allowedRoles"] == ["mcp_access"]
     assert record["confidential"] is True
 
-    setup_cli.apply({"rotate_oauth_client_secret": "arcade"})
+    setup_oauth.apply({"rotate_client_secret": "arcade"})
     assert oauth_config.get_client_secret(added["clientId"]) != added["clientSecret"]
-    setup_cli.apply({"remove_oauth_client": "arcade"})
+    setup_oauth.apply({"remove_client": "arcade"})
     assert oauth_config.read_clients() == {}
 
 
@@ -900,29 +903,29 @@ def test_setup_registers_a_client_in_two_steps(tenant_config, capsys):
     "options, message",
     [
         ({"redirect_uris": "https://x/cb"}, "only applies to"),
-        ({"set_oauth_client_redirect_uris": "x"}, "needs --redirectUris"),
-        ({"oauth_auto_provision": False}, "belongs to an OAuth mode"),
-        ({"oauth_login_connection_store": "disk", "oauth_mode": "builtin"}, "not a store"),
-        ({"add_login_server": "mariadb://root@db:3306", "oauth_mode": "builtin"}, "names a user"),
-        ({"oauth_grant_max_lifetime": -1, "oauth_mode": "builtin"}, "more than 0"),
+        ({"set_client_redirect_uris": "x"}, "needs --redirectUris"),
+        ({"auto_provision": False}, "belongs to an OAuth mode"),
+        ({"login_connection_store": "disk", "mode": "builtin"}, "not a store"),
+        ({"add_login_server": "mariadb://root@db:3306", "mode": "builtin"}, "names a user"),
+        ({"grant_max_lifetime": -1, "mode": "builtin"}, "more than 0"),
     ],
 )
 def test_setup_refuses_oauth_options_that_cannot_work(tenant_config, options, message):
     with pytest.raises(mysqlsh.Error, match=message):
-        setup_cli.apply(options)
+        setup_oauth.apply(options)
 
 
 def test_setup_sets_every_builtin_setting(tenant_config):
-    setup_cli.apply({"oauth_mode": "builtin",
+    setup_oauth.apply({"mode": "builtin",
                      "add_login_server": f"{LOGIN_SERVER},mariadb://db2:3306"})
-    setup_cli.apply({
+    setup_oauth.apply({
         "remove_login_server": LOGIN_SERVER,
-        "oauth_required_role": "mcp_access", "oauth_grant_max_lifetime": 86400,
-        "oauth_grant_idle_timeout": 0, "oauth_access_token_lifetime": 600,
-        "oauth_refresh_grace_period": 0, "oauth_login_connection_store": "memory",
-        "oauth_allowed_client_networks": "192.0.2.0/24",
-        "oauth_dynamic_client_registration": False, "oauth_cimd": False,
-        "oauth_auto_provision": False, "oauth_default_scopes": "mcp:db",
+        "required_role": "mcp_access", "grant_max_lifetime": 86400,
+        "grant_idle_timeout": 0, "access_token_lifetime": 600,
+        "refresh_grace_period": 0, "login_connection_store": "memory",
+        "allowed_client_networks": "192.0.2.0/24",
+        "dynamic_client_registration": False, "cimd": False,
+        "auto_provision": False, "default_scopes": "mcp:db",
     })
     builtin = oauth_config.get_oauth_settings()["builtin"]
 
@@ -1020,15 +1023,16 @@ def test_an_arcade_style_gateway_signs_users_in(tenant_config, mariadb_accounts,
     port = helpers.find_free_port()
     base = f"http://127.0.0.1:{port}"
     redirect = "https://cloud.arcade.dev/api/v1/oauth/callback"
-    setup_cli.apply({
-        "multi_tenant": True, "public_url": f"{base}/mcp", "oauth_mode": "builtin",
+    setup_cli.apply({"multi_tenant": True})
+    setup_oauth.apply({
+        "public_url": f"{base}/mcp", "mode": "builtin",
         "add_login_server": f"mariadb://127.0.0.1:{mariadb_accounts.port}",
-        "oauth_required_role": "mcp_access",
+        "required_role": "mcp_access",
     })
     capsys.readouterr()
-    setup_cli.apply({"add_oauth_client": "arcade", "confidential": True, "json": True})
+    setup_oauth.apply({"add_client": "arcade", "confidential": True, "json": True})
     arcade = json.loads(capsys.readouterr().out)["clients"][0]
-    setup_cli.apply({"set_oauth_client_redirect_uris": arcade["clientId"], "redirect_uris": redirect})
+    setup_oauth.apply({"set_client_redirect_uris": arcade["clientId"], "redirect_uris": redirect})
     # The server refuses to start without an enabled user; the sign-in will add Ada.
     tenants.add_user([tenants.parse_identity("admin@example.com")])
 
@@ -1096,8 +1100,9 @@ def test_the_sdks_own_oauth_client_completes_the_flow(tenant_config, mariadb_acc
 
     port = helpers.find_free_port()
     base = f"http://127.0.0.1:{port}"
-    setup_cli.apply({
-        "multi_tenant": True, "public_url": f"{base}/mcp", "oauth_mode": "builtin",
+    setup_cli.apply({"multi_tenant": True})
+    setup_oauth.apply({
+        "public_url": f"{base}/mcp", "mode": "builtin",
         "add_login_server": f"mariadb://127.0.0.1:{mariadb_accounts.port}",
     })
     tenants.add_user([tenants.parse_identity("admin@example.com")])
@@ -1170,14 +1175,14 @@ def test_the_sdks_own_oauth_client_completes_the_flow(tenant_config, mariadb_acc
 
 def test_setup_sets_every_keycloak_setting(tenant_config, monkeypatch):
     monkeypatch.setenv("MCP_TEST_INTROSPECTION", "isecret")
-    setup_cli.apply({
-        "oauth_mode": "keycloak", "oauth_issuer": "https://kc.example.com/realms/r",
-        "no_verify": True, "oauth_verification": "introspection",
-        "oauth_introspection_client_id": "mcp-introspector",
-        "oauth_introspection_secret_env": "MCP_TEST_INTROSPECTION",
-        "oauth_client_ids": "claude-code,vscode", "oauth_link_by_verified_email": False,
-        "oauth_required_realm_role": "", "oauth_auto_provision": False,
-        "oauth_default_scopes": "mcp:msm",
+    setup_oauth.apply({
+        "mode": "keycloak", "issuer": "https://kc.example.com/realms/r",
+        "no_verify": True, "verification": "introspection",
+        "introspection_client_id": "mcp-introspector",
+        "introspection_secret_env": "MCP_TEST_INTROSPECTION",
+        "client_ids": "claude-code,vscode", "link_by_verified_email": False,
+        "required_realm_role": "", "auto_provision": False,
+        "default_scopes": "mcp:msm",
     })
     keycloak = oauth_config.get_oauth_settings()["keycloak"]
 
@@ -1189,10 +1194,10 @@ def test_setup_sets_every_keycloak_setting(tenant_config, monkeypatch):
     assert keycloak["linkByVerifiedEmail"] is False
     assert keycloak["autoProvision"] == {"enabled": False, "requiredRealmRole": "",
                                          "defaultScopes": ["mcp:msm"]}
-    for bad in ({"oauth_verification": "guess"},
-                {"oauth_introspection_secret_env": "MCP_TEST_UNSET_VARIABLE"}):
+    for bad in ({"verification": "guess"},
+                {"introspection_secret_env": "MCP_TEST_UNSET_VARIABLE"}):
         with pytest.raises(mysqlsh.Error):
-            setup_cli.apply(bad)
+            setup_oauth.apply(bad)
 
 
 def test_setup_revokes_rotates_lists_and_sets_roles(tenant_config, capsys):
@@ -1200,7 +1205,7 @@ def test_setup_revokes_rotates_lists_and_sets_roles(tenant_config, capsys):
     ada = tenants.find_user("ada")
     first_kid = oauth_config.get_signing_key()["kid"]
 
-    setup_cli.apply({"revoke_tokens": "ada", "rotate_signing_key": True})
+    setup_oauth.apply({"revoke_tokens": "ada", "rotate_signing_key": True})
     assert tenants.get_user(ada)["tokenEpoch"] == 1
     assert oauth_config.get_signing_key()["kid"] != first_kid
 
@@ -1211,16 +1216,16 @@ def test_setup_revokes_rotates_lists_and_sets_roles(tenant_config, capsys):
 
     _client()
     capsys.readouterr()
-    setup_cli.apply({"list_oauth_clients": True, "json": True})
+    setup_oauth.apply({"list_clients": True, "json": True})
     assert json.loads(capsys.readouterr().out)["clients"][0]["name"] == "test"
-    setup_cli.apply({"list_oauth_clients": True})
+    setup_oauth.apply({"list_clients": True})
     assert "public" in capsys.readouterr().out
 
-    setup_cli.apply({"public_url": PUBLIC_URL})
-    setup_cli.apply({"show": True})
+    setup_oauth.apply({"public_url": PUBLIC_URL})
+    setup_oauth.apply({"show": True})
     shown = capsys.readouterr().out
     assert PUBLIC_URL in shown and "OAuth mode:" in shown
-    setup_cli.apply({"public_url": ""})
+    setup_oauth.apply({"public_url": ""})
     assert oauth_config.get_public_url() == ""
 
 
@@ -1229,12 +1234,12 @@ def test_setup_revokes_rotates_lists_and_sets_roles(tenant_config, capsys):
 
 @pytest.mark.keycloak
 def test_a_real_keycloak_token_is_accepted(tenant_config):
-    """Against a realm prepared with scripts/keycloak_realm_setup.py.
+    """Against a realm prepared with mcp setup-keycloak-realm.
 
     Environment:
         KEYCLOAK_ISSUER: the realm's issuer, e.g. http://kc:8080/realms/mariadb
         KEYCLOAK_CLIENT_ID: a client allowing the password grant
-            (keycloak_realm_setup.py --direct-grant)
+            (mcp setup-keycloak-realm --directGrant)
         KEYCLOAK_USERNAME / KEYCLOAK_PASSWORD: a user with the realm role
             mcp-user and no pending required actions
         KEYCLOAK_MCP_URL: the --mcp-url the realm was prepared with
@@ -1275,3 +1280,262 @@ def test_a_real_keycloak_token_is_accepted(tenant_config):
     other = oauth_keycloak.KeycloakVerifier(settings, "https://not-this-server/mcp",
                                             auth.UserDirectory())
     assert other.verify_token_sync(token) is None
+
+
+# --- mcp setup-keycloak-realm, against a stand-in for Keycloak's admin API ---------------
+
+
+class _KeycloakAdminStandIn:
+    """Just enough of Keycloak's admin REST API, and a realm's discovery."""
+
+    def __init__(self, realm="mariadb"):
+        self.realm = realm
+        self.scopes, self.mappers, self.roles, self.clients = [], {}, [], []
+        self.optional, self.role_mappings = {}, {}
+        self.users = [{"id": "u1", "username": "dba", "email": "dba@example.com"}]
+        self.server = HTTPServer(("127.0.0.1", 0), self._handler())
+        self.url = f"http://127.0.0.1:{self.server.server_port}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def _handler(self):
+        stand_in = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def _answer(self, status, body=None):
+                data = json.dumps(body).encode() if body is not None else b""
+                self.send_response(status)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def _body(self):
+                length = int(self.headers.get("content-length") or 0)
+                return self.rfile.read(length) if length else b""
+
+            def _route(self, method):
+                from urllib.parse import parse_qs, urlsplit
+
+                parts = urlsplit(self.path)
+                query = {k: v[0] for k, v in parse_qs(parts.query).items()}
+                path = parts.path
+                body = self._body()
+                if path == "/realms/master/protocol/openid-connect/token":
+                    form = dict(p.split("=", 1) for p in body.decode().split("&"))
+                    if form.get("password") != "adminpw":
+                        return self._answer(401, {"error": "invalid_grant"})
+                    return self._answer(200, {"access_token": "admintok"})
+                if path == f"/realms/{stand_in.realm}/.well-known/openid-configuration":
+                    issuer = f"{stand_in.url}/realms/{stand_in.realm}"
+                    return self._answer(200, {"issuer": issuer, "jwks_uri": issuer + "/certs"})
+                if self.headers.get("authorization") != "Bearer admintok":
+                    return self._answer(401)
+                base = f"/admin/realms/{stand_in.realm}"
+                data = json.loads(body) if body else None
+                rest = path[len(base):]
+                if rest == "/client-scopes":
+                    if method == "GET":
+                        return self._answer(200, stand_in.scopes)
+                    if any(sc["name"] == data["name"] for sc in stand_in.scopes):
+                        return self._answer(409)
+                    stand_in.scopes.append({**data, "id": f"s{len(stand_in.scopes)}"})
+                    return self._answer(201)
+                if rest.startswith("/client-scopes/") and rest.endswith("/protocol-mappers/models"):
+                    scope_id = rest.split("/")[2]
+                    if method == "GET":
+                        return self._answer(200, stand_in.mappers.get(scope_id, []))
+                    stand_in.mappers.setdefault(scope_id, []).append(data)
+                    return self._answer(201)
+                if rest == "/roles":
+                    if method == "GET":
+                        return self._answer(200, stand_in.roles)
+                    stand_in.roles.append({**data, "id": f"r{len(stand_in.roles)}"})
+                    return self._answer(201)
+                if rest == "/users":
+                    key = "username" if "username" in query else "email"
+                    return self._answer(200, [u for u in stand_in.users if u[key] == query[key]])
+                if rest.endswith("/role-mappings/realm"):
+                    stand_in.role_mappings.setdefault(rest.split("/")[2], []).extend(data)
+                    return self._answer(204)
+                if rest == "/clients":
+                    if method == "GET":
+                        return self._answer(200, [c for c in stand_in.clients
+                                                  if c["clientId"] == query.get("clientId")])
+                    stand_in.clients.append({**data, "id": f"c{len(stand_in.clients)}"})
+                    return self._answer(201)
+                if "/optional-client-scopes/" in rest:
+                    _, _, client, _, scope_id = rest.split("/")
+                    stand_in.optional.setdefault(client, set()).add(scope_id)
+                    return self._answer(204)
+                if rest.startswith("/clients/"):
+                    for index, client in enumerate(stand_in.clients):
+                        if client["id"] == rest.split("/")[2]:
+                            stand_in.clients[index] = data
+                    return self._answer(204)
+                return self._answer(404)
+
+            def do_GET(self):
+                self._route("GET")
+
+            def do_POST(self):
+                self._route("POST")
+
+            def do_PUT(self):
+                self._route("PUT")
+
+        return Handler
+
+    def close(self):
+        self.server.shutdown()
+
+
+@pytest.fixture
+def keycloak_admin():
+    stand_in = _KeycloakAdminStandIn()
+    try:
+        yield stand_in
+    finally:
+        stand_in.close()
+
+
+def test_setup_keycloak_realm_prepares_the_realm_once(tenant_config, keycloak_admin,
+                                                      monkeypatch):
+    """Scopes with the audience, the role, the client; idempotent; server configured."""
+    from mcp_plugin.lib import setup_keycloak
+
+    monkeypatch.setenv("MCP_TEST_KC_ADMIN", "adminpw")
+    options = {
+        "server": keycloak_admin.url, "realm": "mariadb", "admin_user": "admin",
+        "admin_password_env": "MCP_TEST_KC_ADMIN", "mcp_url": PUBLIC_URL,
+        "grant_realm_role_to": "dba@example.com", "non_interactive": True,
+    }
+    setup_keycloak.run_setup_keycloak_realm(**options)
+    setup_keycloak.run_setup_keycloak_realm(**options, direct_grant=True)
+
+    assert sorted(sc["name"] for sc in keycloak_admin.scopes) == ["mcp:db", "mcp:msm"]
+    for scope in keycloak_admin.scopes:
+        (mapper,) = keycloak_admin.mappers[scope["id"]]
+        assert mapper["config"]["included.custom.audience"] == PUBLIC_URL
+        assert mapper["config"]["access.token.claim"] == "true"
+    assert [role["name"] for role in keycloak_admin.roles] == ["mcp-user"]
+    assert keycloak_admin.role_mappings["u1"][0]["name"] == "mcp-user"
+    (client,) = keycloak_admin.clients
+    assert client["clientId"] == "mariadb-mcp" and client["publicClient"] is True
+    assert client["attributes"]["pkce.code.challenge.method"] == "S256"
+    assert client["directAccessGrantsEnabled"] is True
+    assert keycloak_admin.optional["c0"] == {"s0", "s1"}
+
+    assert oauth_config.get_mode() == "keycloak"
+    assert oauth_config.get_public_url() == PUBLIC_URL
+    assert oauth_config.get_oauth_settings()["keycloak"]["issuer"] == (
+        f"{keycloak_admin.url}/realms/mariadb"
+    )
+
+
+def test_setup_keycloak_realm_asks_for_what_was_not_given(tenant_config, keycloak_admin,
+                                                          monkeypatch):
+    """The admin password with the shell's own password prompt."""
+    from mcp_plugin.lib import setup_keycloak, setup_prompts
+    from mcp_plugin.tests.unit.test_config import _FakeShell
+
+    oauth_config.set_public_url(PUBLIC_URL)
+    fake_shell = _FakeShell([keycloak_admin.url, "mariadb", "admin", "adminpw"])
+    monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
+
+    setup_keycloak.run_setup_keycloak_realm(configure_server=False)
+
+    types = [(asked or {}).get("type") for _, asked in fake_shell.prompts]
+    assert types[-1] == "password"
+    assert len(keycloak_admin.scopes) == 2
+    assert oauth_config.get_mode() == "none"
+
+
+def test_setup_keycloak_realm_says_what_went_wrong(tenant_config, keycloak_admin):
+    from mcp_plugin.lib import setup_keycloak
+
+    base = {"server": keycloak_admin.url, "realm": "mariadb", "admin_user": "admin",
+            "mcp_url": PUBLIC_URL, "non_interactive": True}
+    with pytest.raises(mysqlsh.Error, match="refused the administrator sign-in"):
+        setup_keycloak.run_setup_keycloak_realm(**base, admin_password="wrong")
+    with pytest.raises(mysqlsh.Error, match="--adminPassword is needed"):
+        setup_keycloak.run_setup_keycloak_realm(**base)
+    with pytest.raises(mysqlsh.Error, match="no user 'nobody'"):
+        setup_keycloak.run_setup_keycloak_realm(**base, admin_password="adminpw",
+                                                grant_realm_role_to="nobody")
+    with pytest.raises(mysqlsh.Error, match="Unknown option"):
+        setup_keycloak.run_setup_keycloak_realm(**base, realmz="x")
+
+
+# --- mcp setup-oauth ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        ({"oauth_mode": "builtin"}, "Unknown option"),
+        ({}, "Nothing to do"),
+        ({"show": True, "mode": "builtin"}, "cannot be"),
+        ({"json": True, "mode": "builtin"}, "--json only applies"),
+        ({"no_verify": True, "mode": "keycloak"}, "--noVerify only applies"),
+    ],
+)
+def test_setup_oauth_refuses_what_it_cannot_do(tenant_config, options, message):
+    with pytest.raises(mysqlsh.Error, match=message):
+        setup_oauth.apply(options)
+
+
+def test_the_interactive_oauth_setup(tenant_config, monkeypatch, capsys):
+    """Mode, public URL, a login server and a confidential client, by menu."""
+    from mcp_plugin.lib import setup_prompts
+    from mcp_plugin.tests.unit.test_config import _FakeShell
+
+    answers = [
+        "1", PUBLIC_URL,                      # public URL
+        "2", "3",                             # mode: builtin
+        "3", LOGIN_SERVER, "mcp_access", "y", "", "y",  # built-in sign-in
+        "4", "arcade", "y", "",               # register a confidential client
+        "5", "1", "https://cloud.arcade.dev/api/v1/oauth/callback",  # its redirect URI
+        "7", "1",                             # show its secret
+        "",                                   # finish
+    ]
+    fake_shell = _FakeShell(answers)
+    monkeypatch.setattr(setup_prompts, "shell", lambda: fake_shell)
+
+    setup_oauth.run_setup_oauth()
+
+    assert oauth_config.get_public_url() == PUBLIC_URL
+    assert oauth_config.get_mode() == "builtin"
+    builtin = oauth_config.get_oauth_settings()["builtin"]
+    assert builtin["loginServers"] == [LOGIN_SERVER] and builtin["requiredRole"] == "mcp_access"
+    (client_id, record), = oauth_config.read_clients().items()
+    assert record["name"] == "arcade" and record["confidential"] is True
+    assert record["redirectUris"] == ["https://cloud.arcade.dev/api/v1/oauth/callback"]
+    assert oauth_config.get_client_secret(client_id) in capsys.readouterr().out
+
+
+def test_a_client_change_waits_for_the_lock(tenant_config):
+    """No writer reads the clients while another is between its read and write.
+
+    What was missing before: the server recording a client's use could write
+    back a client mcp setup had just removed.
+    """
+    _client()
+    path = oauth_config.get_clients_file_path()
+    finished = threading.Event()
+
+    def change():
+        oauth_config.record_client_use({next(iter(oauth_config.read_clients())): "x"})
+        finished.set()
+
+    with config.file_lock(path):
+        worker = threading.Thread(target=change)
+        worker.start()
+        time.sleep(0.3)
+        assert not finished.is_set()
+    worker.join(5)
+
+    assert finished.is_set()
+    assert next(iter(oauth_config.read_clients().values()))["lastUsed"] == "x"

@@ -77,6 +77,7 @@ Two kinds of configuration are persisted:
 
 # cSpell:ignore mysqlsh MariaDB mysqlx unparse
 
+import contextlib
 import json
 import os
 import re
@@ -209,6 +210,51 @@ _ALLOWED_PATHS_KEY = "allowedPaths"
 def _shell():
     """Returns the shell global object."""
     return mysqlsh.globals.shell
+
+
+@contextlib.contextmanager
+def file_lock(path: str):
+    """Holds an exclusive lock for a read-modify-write of one file.
+
+    For the files more than one process writes - ``users.json`` and
+    ``oauth_clients.json``, written by ``mcp setup`` and by a running server -
+    where a change lost to a race is not cosmetic: a removed OAuth client could
+    be written back by a server that read the file before the removal.
+    Advisory, on a lock file of its own (``<path>.lock``), so readers are never
+    blocked. ``fcntl.flock`` on POSIX, ``msvcrt.locking`` on Windows.
+
+    Args:
+        path (str): The file being changed.
+
+    Yields:
+        None, while the lock is held.
+    """
+    with open(f"{path}.lock", "a+b") as lock_file:
+        try:
+            import fcntl
+        except ImportError:  # pragma: no cover - Windows
+            import msvcrt
+
+            lock_file.seek(0)
+            while True:
+                try:
+                    # LK_LOCK retries for about ten seconds before raising.
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def secret_options(mcp_user_id=None) -> tuple:

@@ -70,6 +70,7 @@ this table with it.
 | [`context/multi-tenant.md`](context/multi-tenant.md) | The plan (not built yet) for multi-tenant mode: its inputs and decisions, users in `users.json` keyed by UUID, one shell secret group per user, plain-text API keys, tenant isolation (phases 0 and 1). |
 | [`context/oauth.md`](context/oauth.md) | Phase 2 of that plan (not built yet): the decisions, the shared OAuth groundwork (public URL, scopes, default role, verifier chain) and the Keycloak option. |
 | [`context/oauth-builtin.md`](context/oauth-builtin.md) | Phase 2c/2d (not built yet): the built-in authorization server that logs users in against MariaDB, grants (90 days by default) and their login connections, and the Snowflake-style setup through Arcade. |
+| [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md) | The M review of multi-tenant mode and OAuth2: M1..M21, the threat, what is built, the test and its revert probe, and what is left open. |
 | [`context/history.md`](context/history.md) | The session-by-session record and the branch and commit history. Background, not current truth. |
 
 ## Git state

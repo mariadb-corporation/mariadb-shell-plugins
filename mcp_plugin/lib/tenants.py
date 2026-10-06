@@ -220,28 +220,14 @@ def users_file_version() -> Optional[int]:
         return None
 
 
-@contextlib.contextmanager
 def _users_file_lock():
-    """Holds an exclusive lock on users.json for a read-modify-write.
+    """Returns the lock for a read-modify-write of users.json.
 
-    Two writers are possible - ``mcp setup`` in one process and, once users can
-    be provisioned at sign-in, the server in another - and an identity lost to
-    a race is not cosmetic. Advisory, on a lock file of its own, so readers are
-    never blocked. Where the platform has no ``fcntl`` (Windows) it is not taken,
-    and two simultaneous writers there are the administrator's to avoid.
+    Two writers are possible - ``mcp setup`` in one process and the server in
+    another, which links and provisions users at sign-in - and an identity lost
+    to a race is not cosmetic (see :func:`mcp_plugin.lib.config.file_lock`).
     """
-    try:
-        import fcntl
-    except ImportError:  # pragma: no cover - Windows
-        yield
-        return
-
-    with open(f"{get_users_file_path()}.lock", "a", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
+    return config.file_lock(get_users_file_path())
 
 
 def read_users() -> dict:

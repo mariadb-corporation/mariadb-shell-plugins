@@ -48,7 +48,7 @@ import sys
 
 import mysqlsh
 
-from mcp_plugin.lib import config, general, setup_migrator, setup_oauth, tenants
+from mcp_plugin.lib import config, general, setup_migrator, tenants
 from mcp_plugin.lib import setup_prompts as prompts
 
 # Options that change something. Their presence is what switches mcp.setup from
@@ -71,7 +71,8 @@ ACTION_OPTIONS = (
     "rotate_api_key",
     "show_api_key",
     "purge_orphan_groups",
-) + setup_oauth.ACTION_OPTIONS
+    "set_default_role",
+)
 
 # Where the password for --add-connection may come from. Exactly one.
 PASSWORD_OPTIONS = ("password", "password_env", "password_stdin")
@@ -86,7 +87,7 @@ MODIFIER_OPTIONS = (
     "all_users",
     "name",
     "scopes",
-) + setup_oauth.MODIFIER_OPTIONS
+)
 
 KNOWN_OPTIONS = ACTION_OPTIONS + PASSWORD_OPTIONS + MODIFIER_OPTIONS
 
@@ -99,17 +100,14 @@ USER_TARGETED_OPTIONS = (
     "add_identity",
     "remove_identity",
     "set_scopes",
-) + setup_oauth.USER_TARGETED_OPTIONS
+    "set_default_role",
+)
 
 # The actions whose result --json can report: each hands out an API key.
-JSON_ACTION_OPTIONS = (
-    "add_user",
-    "rotate_api_key",
-    "show_api_key",
-) + setup_oauth.JSON_ACTION_OPTIONS
+JSON_ACTION_OPTIONS = ("add_user", "rotate_api_key", "show_api_key")
 
 # The actions that are actions whenever they are given, false or empty too.
-PRESENCE_OPTIONS = ("multi_tenant",) + setup_oauth.PRESENCE_OPTIONS
+PRESENCE_OPTIONS = ("multi_tenant", "set_default_role")
 
 
 def _cli_name(option: str) -> str:
@@ -290,13 +288,6 @@ def _check_combination(options: dict) -> None:
     if "multi_tenant" in options:
         _as_bool(options["multi_tenant"])
 
-    from mcp_plugin.lib import oauth_config
-
-    setup_oauth.check_combination(
-        options,
-        str(options.get("oauth_mode") or oauth_config.get_mode()).strip().lower(),
-    )
-
     for name in ("name", "scopes"):
         if options.get(name) and not (
             options.get("add_user") or (name == "scopes" and options.get("set_scopes"))
@@ -359,13 +350,11 @@ def _check_combination(options: dict) -> None:
         )
 
     if not options.get("add_connection"):
-        verified = options.get("no_verify") and not options.get("oauth_issuer")
-        stray = given_passwords + (["no_verify"] if verified else [])
+        stray = given_passwords + (["no_verify"] if options.get("no_verify") else [])
         if stray:
             raise mysqlsh.Error(
                 f"{', '.join(_cli_name(n) for n in stray)} only applies to "
-                f"{_cli_name('add_connection')}"
-                f"{' and ' + _cli_name('oauth_issuer') if verified else ''}."
+                f"{_cli_name('add_connection')}."
             )
 
     if not actions and not options.get("show"):
@@ -689,6 +678,16 @@ def _show_api_keys(options: dict, report: dict) -> None:
             )
 
 
+def _set_default_role(options: dict, mcp_user_id) -> None:
+    """Sets the role the sessions of the user --user names run under."""
+    tenants.set_default_role(mcp_user_id, options["set_default_role"])
+    role = tenants.get_default_role(mcp_user_id)
+    print(
+        f"Sessions of {tenants.describe_user(mcp_user_id)} run under "
+        f"{f'the role {role}' if role else 'the account default role'}."
+    )
+
+
 def _purge_orphan_groups() -> None:
     """Deletes the secret groups that belong to no user."""
     groups = tenants.orphan_groups()
@@ -784,7 +783,10 @@ def configuration(all_users: bool = False, mcp_user_id=None) -> dict:
             "wrapper_path": setup_migrator.wrapper_path(),
         },
     }
-    current.update(setup_oauth.configuration())
+    from mcp_plugin.lib import oauth_config
+
+    current["public_url"] = oauth_config.get_public_url()
+    current["oauth_mode"] = oauth_config.get_mode()
 
     if all_users or mcp_user_id is not None:
         # One listing of every group, rather than one per user: each costs a
@@ -823,7 +825,7 @@ def _show(options: dict) -> None:
     print(f"Multi-tenant mode: {'on' if current['multi_tenant'] else 'off'}")
     if current["multi_tenant"]:
         print(f"Public URL:        {current['public_url'] or '(none)'}")
-        print(f"OAuth mode:        {current['oauth']['mode']}")
+        print(f"OAuth mode:        {current['oauth_mode']} (mcp setup-oauth --show)")
 
     if "users" in current:
         _print_users(current)
@@ -924,7 +926,8 @@ def apply(options: dict) -> None:
     if options.get("rotate_api_key"):
         _rotate_api_keys(options, report)
 
-    setup_oauth.apply(options, report, mcp_user_id)
+    if "set_default_role" in options:
+        _set_default_role(options, mcp_user_id)
 
     if options.get("delete_connections"):
         _delete_connections(options, mcp_user_id)
@@ -944,10 +947,7 @@ def apply(options: dict) -> None:
         _show_api_keys(options, report)
 
     if report["json"]:
-        output = {"users": report.get("users", [])}
-        if "clients" in report:
-            output["clients"] = report["clients"]
-        print(json_module.dumps(output, indent=2))
+        print(json_module.dumps({"users": report.get("users", [])}, indent=2))
 
     # A settings file has to exist for the next run to reach the management
     # menu rather than the first-run walkthrough, exactly as _first_run ensures.

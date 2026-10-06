@@ -546,6 +546,7 @@ class BuiltinAuthProvider:
         self._codes = {}
         self._recent_refreshes = {}
         self._cimd_cache = {}
+        self._client_uses = {}
         self._limiter = _LoginLimiter()
         self._sweeper = None
         self._sweeper_stop = threading.Event()
@@ -622,6 +623,9 @@ class BuiltinAuthProvider:
                 for digest, (_, issued) in list(self._recent_refreshes.items()):
                     if time.monotonic() - issued > grace:
                         del self._recent_refreshes[digest]
+            with self._lock:
+                used, self._client_uses = self._client_uses, {}
+            oauth_config.record_client_use(used)
             oauth_config.expire_unused_dynamic_clients(_DYNAMIC_CLIENT_MAX_IDLE)
         except Exception as error:  # noqa: BLE001 - the sweeper must not die
             general.log_event(f"oauth: a grant sweep failed, the sweeper keeps running: {error}")
@@ -1140,7 +1144,8 @@ server on your behalf, and will be sent back to <strong>{html.escape(redirect_ho
         record["refresh"] = _digest(refresh)
         record["lastRefreshed"] = now
         self.store.update(record)
-        oauth_config.touch_client(record["client"])
+        with self._lock:
+            self._client_uses[record["client"]] = oauth_config.now()
 
         grant_end = record["created"] + int(self.settings["grantMaxLifetime"])
         lifetime = max(1, min(int(self.settings["accessTokenLifetime"]), grant_end - now))

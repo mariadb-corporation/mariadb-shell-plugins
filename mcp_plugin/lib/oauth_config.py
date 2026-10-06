@@ -439,10 +439,17 @@ def _write_clients(clients: dict) -> None:
 
 
 def _change_clients(change):
-    """Applies a change to the clients and persists them."""
-    clients = read_clients()
-    result = change(clients)
-    _write_clients(clients)
+    """Applies a change to the clients and persists them, under the file lock.
+
+    ``mcp setup`` and a running server both change the clients - the server
+    registers dynamic clients and records their use - and without the lock one
+    could write back what it read before the other's change: a removed client
+    would come back.
+    """
+    with config.file_lock(get_clients_file_path()):
+        clients = read_clients()
+        result = change(clients)
+        _write_clients(clients)
 
     return result
 
@@ -643,18 +650,34 @@ def remove_client(client_id) -> None:
         pass
 
 
-def touch_client(client_id) -> None:
-    """Records that a client was used, so unused dynamic ones can expire."""
+def record_client_use(used: dict) -> None:
+    """Records when clients were last used, so unused dynamic ones can expire.
+
+    Called by the built-in server's sweeper with what it collected since its
+    last pass, so the file is written at most once a pass rather than on every
+    token issued. A client removed in the meantime stays removed.
+
+    Args:
+        used (dict): Client id to the ISO 8601 time it was last used.
+    """
+    if not used:
+        return
 
     def change(clients):
-        record = clients.get(client_id)
-        if record is not None:
-            record["lastUsed"] = _now()
+        for client_id, stamp in used.items():
+            record = clients.get(client_id)
+            if record is not None:
+                record["lastUsed"] = stamp
 
     try:
         _change_clients(change)
-    except Exception as error:  # noqa: BLE001 - bookkeeping must not fail a sign-in
-        general.log_event(f"oauth: could not record the use of client {client_id}: {error}")
+    except Exception as error:  # noqa: BLE001 - bookkeeping must not fail a sweep
+        general.log_event(f"oauth: could not record the use of clients: {error}")
+
+
+def now() -> str:
+    """Returns the current time as it is recorded in the files."""
+    return _now()
 
 
 def expire_unused_dynamic_clients(max_age_seconds: float) -> list:

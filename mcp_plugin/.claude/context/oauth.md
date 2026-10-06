@@ -22,6 +22,24 @@ phase 1. Suite **559 passed, 2 skipped (+1 opt-in), 93%**.
 - Script: `scripts/keycloak_realm_setup.py`, the realm preparation (stdlib only,
   admin REST API).
 
+**Later the same day:** the OAuth options moved out of `mcp setup` into a command of
+their own, **`mcp setup-oauth`** (`mcp.setupOauth`, `lib/setup_oauth.py`). It has its
+own validation and `--show`/`--json`, plus an interactive menu without options, and drops
+the `oauth` prefix: `--mode`, `--issuer`, `--addClient`, `--showClientSecret`,
+`--setClientRedirectUris`, `--requiredRole`, `--revokeTokens`, …
+
+- `--setDefaultRole` stays in `mcp setup`: it applies to API-key users too.
+- The realm script became **`mcp setup-keycloak-realm`** (`mcp.setupKeycloakRealm`,
+  `lib/setup_keycloak.py`). It asks for whatever is not given (the admin password with
+  the shell's password prompt), adds `--grantRealmRoleTo`, and points this server at the
+  realm unless `--configureServer=false`. It is tested against an in-process stand-in
+  for the admin REST API; it has NOT run against a real Keycloak (no admin credentials).
+- `oauth_clients.json` writes are now under `config.file_lock` (M8 in
+  [security-review-multi-tenant.md](security-review-multi-tenant.md)).
+
+Where the notes below say `mcp setup --oauth…` or `--…OauthClient…`, read the
+`setup-oauth` names.
+
 **Option spellings:** the shell builds camelCase from snake_case by capitalizing
 each word, so it is **`--addOauthClient`, `--showOauthClientSecret`,
 `--setOauthClientRedirectUris`** and so on, never `OAuth`. This file and
