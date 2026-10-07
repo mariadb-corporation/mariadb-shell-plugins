@@ -226,7 +226,7 @@ export const openableCell = (
     host.className = "blobCell openableCell";
     const text = document.createElement("span");
     text.className = "cellText";
-    text.textContent = formatValue(value, display) as string;
+    text.textContent = valueText(value, display);
     host.append(text);
 
     const overlay = document.createElement("span");
@@ -289,19 +289,22 @@ const valueIcon = (className: string, text: string): HTMLElement => {
  * as hex - is shown as `0x` and its first 64 digits; a BLOB, a spatial
  * value or a vector by an icon standing for it.
  *
+ * The content is always an element, never a string: Tabulator writes a
+ * formatter's string into the cell as HTML, and a value is data to show,
+ * not markup to render - a row holding `<style>` must not restyle the
+ * grid, and one holding `x<5` must show it.
+ *
  * @param value The value to show.
  * @param display How the column's values are shown, if not as text.
  *
- * @returns The HTML for the cell.
+ * @returns The content of the cell.
  */
 export const formatValue = (
     value: unknown,
     display?: ValueDisplay,
-): string | HTMLElement => {
+): HTMLElement => {
     if (value === null || value === undefined) {
-        const span = valueIcon("nullValue", "NULL");
-
-        return span;
+        return valueIcon("nullValue", "NULL");
     }
 
     const icon = display === undefined ? undefined : VALUE_ICONS[display];
@@ -309,6 +312,25 @@ export const formatValue = (
         return valueIcon(`${display}Value`, icon);
     }
 
+    const text = document.createElement("span");
+    text.className = "cellText";
+    text.textContent = valueText(value, display);
+
+    return text;
+};
+
+/**
+ * The text a value is shown as, where it is shown as text.
+ *
+ * A binary value - which arrives as hex - is shown as `0x` and its first
+ * 64 digits; an object as its JSON.
+ *
+ * @param value The value, not NULL.
+ * @param display How the column's values are shown, if not as text.
+ *
+ * @returns The text.
+ */
+export const valueText = (value: unknown, display?: ValueDisplay): string => {
     const text = typeof value === "object"
         ? JSON.stringify(value)
         : String(value);
@@ -327,9 +349,9 @@ export const formatValue = (
  *
  * @param cell The cell.
  *
- * @returns The HTML for the cell.
+ * @returns The content of the cell.
  */
-export const formatCell = (cell: CellComponent): string | HTMLElement => {
+export const formatCell = (cell: CellComponent): HTMLElement => {
     return formatValue(cell.getValue() as unknown);
 };
 
@@ -433,7 +455,17 @@ export const buildColumns = (
                 return columnTitle(column, showTypes);
             },
             field: column.name,
-            headerTooltip: column.typeName ?? column.datatype ?? column.name,
+            // As an element: a string tooltip is written as HTML, and the
+            // type comes from the server's DDL - `enum('...')` and all.
+            // Tabulator takes an element from the function at run time;
+            // its typings only say string.
+            headerTooltip: (() => {
+                const tooltip = document.createElement("div");
+                tooltip.textContent =
+                    column.typeName ?? column.datatype ?? column.name;
+
+                return tooltip;
+            }) as unknown as ColumnDefinition["headerTooltip"],
             cssClass: column.isPrimary ? "pkColumn" : undefined,
             frozen,
             formatter: (cell: CellComponent) => {
