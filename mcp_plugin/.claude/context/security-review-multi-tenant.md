@@ -1,7 +1,7 @@
 # The M security review: multi-tenant mode and OAuth2
 
 The attack surface multi-tenant mode and OAuth2 added (branch `wip/mcp-multi-tenant`),
-numbered M1..M23 in the style of the S and T review in
+numbered M1..M26 in the style of the S and T review in
 [security-review.md](security-review.md). Each entry gives the threat, what is built
 against it, the test that pins it, whether a REVERT PROBE has proved that test
 discriminates, and what is left open. Written on 2026-10-06 from the code as built. Unlike
@@ -171,10 +171,25 @@ run the tests named, see them fail, restore. Each entry names its probe.
     5s, and the document's `client_id` must equal its URL.
   - **Test:** `test_a_client_metadata_document_is_fetched_with_care` (9 refusals).
   - **Probe run:** the public-address check removed fails it.
-  - **Open:** the address is checked with one DNS lookup and httpx connects with a
-    second, so a name that changes its answer in between (DNS rebinding) can still reach
-    an internal address. The fix is to connect to the checked address with SNI/Host
-    set.
+  - **DNS rebinding: CLOSED on 2026-10-07** (Rene's PR #37 review). It was open: the
+    address was checked with one DNS lookup and httpx connected with a second. Now
+    `fetch_client_metadata` hands the checked addresses to `_bounded_get`, which dials
+    them in the resolver's order (`_resolve` keeps `getaddrinfo`'s RFC 6724 order; it
+    used to sort them as strings, so an IPv6 address could come first on an IPv4-only
+    host), passing over one that does not connect, all within the 5s timeout. Each IP
+    is dialed with `Host` = the original netloc and `extensions={"sni_hostname": host}`,
+    so TLS still verifies the certificate against the name (httpcore2 honours
+    `sni_hostname`, through a proxy too; `trust_env` left on on purpose).
+    - **Tests:** the address handed over (in the test above), and
+      `test_the_metadata_fetch_connects_to_the_checked_address` (a local HTTP server
+      reached as `client.invalid:<port>` pinned to `["::1", "127.0.0.1"]`: `::1` is
+      refused and passed over; the Host header is checked).
+    - **Probes run:** passing other addresses, dialing the URL unpinned, and trying
+      only the first address each fail.
+    - **Verified live:** example.com pinned to its own address answers 200; pinned to
+      8.8.8.8 it is refused (`"dns.google" certificate name does not match`). Pinning
+      to 1.1.1.1 SUCCEEDS, because example.com is on Cloudflare and any Cloudflare
+      edge IP serves it, so do not use a Cloudflare IP to test a mismatch.
 - **M18 - Dynamic client registration abuse.**
   - **Built:** at most 1000 dynamic clients; unused ones removed after 30 days. The
     setting can be turned off.
@@ -264,8 +279,64 @@ run the tests named, see them fail, restore. Each entry names its probe.
   before calling `/token`, so the server logs a grant whose "code was never redeemed".
   Not a server bug.
 
+## Found in review (Rene, PR #37, 2026-10-07)
+
+Rene ran `/code-review` on `28f39f8e` and posted 11 inline comments. Three are security
+findings, numbered here; M17's rebinding was a fourth. The other seven are correctness
+fixes recorded in [multi-tenant.md](multi-tenant.md) "Next steps". All were fixed the
+same day, each with a test and a revert probe.
+
+- **M24 - Scopes frozen at sign-in.** A built-in access token carried the grant's
+  consented scopes, and every refresh re-issued them, so `mcp setup --setScopes`
+  narrowing a user did nothing until the grant ended (up to 90 days).
+  - **Built:** `oauth_builtin._grant_scopes(record, user)` = the grant's scopes that
+    `tenants.scopes_of(user)` still allows. `_issue_tokens` signs those (so
+    `_access_token` now takes `scopes`); `verify_access_token` intersects the token's
+    claim with the user's current scopes on every request. A grant left with NONE of
+    its scopes lives on with scopeless tokens (403 on every tool) and comes back when a
+    scope does: scopes filter, `--revokeTokens` revokes. (Ending such a grant was built
+    first and taken back after the second `/code-review` round: narrowing and restoring
+    would have forced a new sign-in on every client.) Widening the user again does not
+    widen the grant beyond what was consented. Sign-in uses `scopes_of` too (it read `record.get("scopes")`).
+  - **Test:** `test_a_signed_in_user_has_the_scopes_they_may_have_now`.
+  - **Probes run:** removing either narrowing fails it, and so does ending the grant
+    when no scope is left.
+- **M25 - The failure throttle collapsed every OAuth user into one bucket.** It keyed
+  on `(address, user_of_api_key(token) or "-")`, and that is None for every JWT, so ten
+  expired tokens behind one gateway throttled all OAuth users there.
+  - **Built:** `auth._user_named_in(token)`: the API key's user, else the JWT's
+    UNVERIFIED `sub` (capped at 128 chars). A forger can name any user, exactly as they
+    can name any UUID in an API key, and so only throttles that user from their own
+    address.
+  - **Test:** `test_oauth_tokens_are_throttled_per_user_they_name` (drives the
+    middleware: ada 401, 401, 429; bob still 401).
+  - **Probe run:** keying on `user_of_api_key` again fails it.
+- **M26 - Unauthenticated requests grew memory without bound.** Every `GET /authorize`
+  stored a pending sign-in for 600s, and every https client id a cached metadata
+  document; `/authorize` is outside `ClientNetworkMiddleware`.
+  - **Built:** `_put_bounded(table, key, value, limit)` drops the oldest entries:
+    `_MAX_PENDING = 10000`, `_MAX_CIMD_CACHE = 1000`. A per-address limit is not
+    possible here: the SDK calls `authorize(client, params)` without the request.
+  - **Eviction by a flood: CLOSED the same day (the user chose the per-address
+    limit).** The second `/code-review` round found that the cap alone turned the
+    memory problem into a denial of sign-in: 10000 `/authorize` requests (seconds of
+    work) evict every real pending sign-in. `auth.AuthorizeRateLimit` (ASGI, wrapped
+    around the built-in server's app in `customize_app`) allows 30 `/authorize`
+    requests per address per 60s, answers more with 429 + `Retry-After`, and does not
+    count refused ones. A flood now needs some 330 addresses a minute.
+    - **Residual:** behind a reverse proxy every browser is the proxy's address, so
+      more than 30 sign-in starts a minute through it are refused (in the README).
+      The rejected alternative: a stateless, MACed `req` carrying the pending entry.
+    - **Tests:** `test_one_address_can_only_start_so_many_sign_ins`,
+      `test_the_builtin_server_limits_sign_in_starts` (through `httpx2.ASGITransport`
+      against the real SDK app: 30 x 302, then 429; another address 302).
+    - **Probes run:** removing the wiring, removing the check, and counting refused
+      requests each fail.
+  - **Test:** `test_unauthenticated_requests_cannot_grow_the_server`.
+  - **Probes run:** unbounding either table fails it.
+
 ## Next steps
 
-1. Close the open points named above: DNS-rebinding-proof CIMD fetch (M17), a rate limit
-   on `/register` (M18), per-tool step-up (M9). M20 (several instances) was decided
+1. Close the open points named above: a rate limit on `/register` (M18), per-tool
+   step-up (M9). The CIMD rebinding (M17) was closed on 2026-10-07. M20 (several instances) was decided
    against for now (2026-10-06).

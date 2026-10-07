@@ -162,4 +162,16 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   `--no-remote --profile <empty dir>` while the user's Firefox runs, or it writes no file.
   A user's Firefox can look different from both (extensions restyle pages), so draw
   shapes with inline SVG rather than CSS borders.
+- **Fetch before reading a PR review: the PR branch may be ahead of this checkout.**
+  On 2026-10-07 the local branch was at the checkpoint commit while PR #37's head was two
+  commits further (a `/simplify` pass made in another session), and Rene's line numbers
+  were against that head. `git fetch` and `gh pr view <n> --json headRefOid` first, then
+  `git merge --ff-only`. Inline comments come from `gh api
+  repos/{owner}/{repo}/pulls/<n>/comments`; `gh pr view --json comments` returns none of
+  them.
+
+- **Revert probes, quickly:** a small script that copies the file aside, applies one
+  `perl -0pi -e` edit (and refuses if the edit did not apply), runs `run_tests.py -k
+  <one_word>`, and copies the file back. A `-k` run of a non-sandbox test takes ~1.3s.
+
 - **macOS `sed` has no `\b`** (the edit silently changes nothing); use `perl -pi -e`.

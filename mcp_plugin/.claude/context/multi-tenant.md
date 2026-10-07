@@ -150,7 +150,7 @@ CLI: `--multiTenant=true/false`, `--addUser`, `--user=… --addConnection`, `--s
 --allUsers`, the stdio refusal, and an HTTPS server (self-signed) answering no token with
 401 + `WWW-Authenticate` and a valid key with 200.
 
-**As built, where it differs from or adds to the plan below:**
+**As built, where it differs from or adds to the plan ([multi-tenant-phase1-plan.md](multi-tenant-phase1-plan.md)):**
 
 - **Users removed or disabled lose their connections without a reaper change.**
   `auth.UserDirectory` stats `users.json` on every token check, and when it changed it
@@ -191,150 +191,9 @@ CLI: `--multiTenant=true/false`, `--addUser`, `--user=… --addConnection`, `--s
   - removing `_check_caller` fails the no-user and missing-scope tests
   - dropping the user from the identity fails 5 tests
 
-### 1a. Config layer: `config.py` and a new `tenants.py`
-
-- **`lib/tenants.py`** is shell plugin code, so it raises `mysqlsh.Error`. It holds:
-  - `users.json` I/O: `list_users`, `get_user(uuid)`,
-    `find_user(identifier)` (UUID, email, userId, `issuer|subject`), `add_user`,
-    `remove_user`, `add_identity`, `remove_identity`, `set_user_*`
-  - `is_multi_tenant()`
-  - `issue_api_key(uuid)`, which stores the key in plain text in the group,
-    stamps `apiKeyCreated` and returns it
-  - `get_api_key(uuid)`
-  - `verify_api_key(token) -> user | None`
-  - `secret_groups_supported()`
-  - `list_groups()` (all groups, for the admin view and orphan detection)
-- **`config.py` gets a `group` threaded through every secret call.** The ~10 calls
-  go through one `_secret_options(mcp_user_id)` helper. Every connection function
-  gains `mcp_user_id=None`, with None meaning the `generic` group, exactly as
-  today.
-  - `kind` picks the key prefix and `mcp_user_id` picks the group. They are
-    independent, and in multi-tenant mode only `kind="mcp"` exists.
-  - `upgrade_connection_keys` stays generic-only.
-  - No `connections.json` details are written for tenants (those are GUI-only).
-  - `is_path_allowed(path, mcp_user_id=None)` reads the user's `allowedPaths`.
-- **User removal order:** `delete_all_secrets({"group": id})` first, then the
-  `users.json` entry. If it is interrupted in between, the entry is still there to
-  be removed again. The reverse order would leave an orphan group, which the admin
-  view reports anyway.
-
-### 1b. `mcp.setup`
-
-- **Mode and users:**
-  - `--multiTenant=true|false`
-  - `--addUser` with `--email`, `--userId` and `--name` (at least one identity),
-    which prints the UUID and the API key (`--json` for scripts)
-  - `--removeUser=<id>`
-  - `--addIdentity` / `--removeIdentity` with `--user=`
-  - `--rotateApiKey=<id>`
-  - `--showApiKey=<id>`
-  - `--disableUser` / `--enableUser`
-- **Per-user resources:** `--user=<id>` is **required** with `--addConnection`,
-  `--deleteConnections`, `--addPaths` and `--deletePaths` in multi-tenant mode, and
-  **refused** in single-tenant mode.
-- **Admin view:** `--show --allUsers [--json]`, plus `--purgeOrphanGroups`.
-- **Order inside `apply()`:**
-  1. mode
-  2. user removals
-  3. user additions
-  4. identity changes
-  5. enable/disable
-  6. key rotation
-  7. connection deletions, then additions
-  8. path changes
-  9. migrator (refused in multi-tenant mode)
-
-  It stays fail-fast, as today.
-- **Interactive menu:** when multi-tenant is on, "Manage users" comes first, and
-  the connection and path items ask for the user first (`prompts.select`).
-  Prompts reuse `setup_prompts`, never hand-rolled ones.
-
-### 1c. Server: authentication and the request principal
-
-- **`start()` checks**, in multi-tenant mode:
-  - refuse stdio, `--gui`, `sandbox` and `migrator`
-  - require secret-group support and at least one enabled user
-  - warn about missing TLS on a non-loopback bind
-- **The server is built with an `ApiKeyVerifier`:**
-  `build_mcp_server(function_groups, auth=...)` →
-  `MCPServer(auth=AuthSettings(issuer_url=<own base URL>,
-  resource_server_url=None), token_verifier=...)`. The verifier returns an
-  `AccessToken` with:
-  - `client_id="mcp-api-key"`
-  - `subject=<uuid>`
-  - `scopes=user.scopes`
-  - `claims={"iss": "mariadb-mcp:api-key", "mcp_user_id": uuid}`
-- **The verifier chain is built now, even though it has one member.** Dispatch is on
-  the token's shape: `mdbmcp_` means an API key; a three-part JWT means OAuth
-  (phase 2). API keys keep working next to OAuth.
-- **Cache and revocation:**
-  - The cache maps a user to `(sha256 of the key, read at)`. It is flushed
-    whenever `users.json`'s mtime changes (one `stat` per request), so a removal,
-    disable or rotation by `mcp setup` in another process applies to the next
-    request.
-  - A 60s TTL covers a secret changed without `users.json` being touched.
-  - A miss re-reads, so a freshly rotated key works at once.
-  - The secret read runs in `anyio.to_thread`.
-  - Failed attempts are logged with no token text and rate-limited per
-    `(peer, user named in the key)`, with only a high per-peer ceiling. A gateway
-    such as Arcade sends every user's requests from a few addresses, so a pure
-    per-peer limit would let one user lock out all the others (see 2d in
-    [oauth-builtin.md](oauth-builtin.md)).
-- **`general.get_principal(ctx)`** reads `ctx.request_context.request.user`, the
-  same chain `get_client_identity` uses, which also works on a worker thread.
-  **In multi-tenant mode, no principal means fail closed**, in the
-  `tool_registrar` wrapper every tool already passes through.
-- **`ClientIdentity` gains `user`.** The connection binding stays ONE tuple
-  equality, and the unknown-id error stays byte-identical. Single-tenant mode
-  passes `user=None` on both sides.
-- **TLS:** new `ssl_certfile` / `ssl_keyfile` options go to `uvicorn.Config`.
-  The other supported setup is a TLS-terminating reverse proxy plus
-  `allowed_hosts`. Behind a proxy the address half of the binding collapses, and
-  the user and session halves carry it.
-
-### 1d. Tenant isolation in the tools
-
-- **db:** every connection lookup takes `principal.mcp_user_id`:
-  - `list_connections`, `connect`, the password read
-  - `_open_session`'s re-validation
-  - `find_connection` / `resolve_connection_uri`
-- **Caps:** `MAX_CONNECTIONS_PER_USER` is added, and `MAX_CONNECTIONS_TOTAL`
-  becomes a `startServer` option.
-- **The reaper** drops the connections of removed or disabled users (the same
-  `users.json` mtime signal).
-- **Audit log:** `describe_client` adds `user=<uuid prefix>`, plus events for API
-  key accepted/refused and user removed/disabled.
-- **msm and `db.execute_sql_script`:** paths are checked against the caller's
-  `allowedPaths`, and there is no self-granting elicitation.
-- **Tool gating:** each tool group requires its scope (`mcp:db`, `mcp:msm`),
-  checked in the `tool_registrar` wrapper. API key users have both by default.
-  This is the check phase 2 relies on.
-
-### 1e. Tests and documentation
-
-- `clean_config` covers `users.json`. A `tenant` fixture creates users with random
-  UUIDs and runs `delete_all_secrets` for each one in teardown, so the developer's
-  real groups are never touched.
-- Must-have tests, each with a revert probe:
-  - User B cannot list, connect to or use user A's connection, even with A's MCP
-    session id.
-  - A removed or disabled user is refused on the next request, and their
-    connections are dropped.
-  - Rotation stops the old key and the new one works at once.
-  - No token or a bad token gets 401, and no tool runs.
-  - stdio, `--gui`, `sandbox` and `migrator` are refused.
-  - Elicitation does not grant a path.
-  - The admin view lists all users and reports an orphan group.
-  - Single-tenant behaviour is unchanged, and the full existing suite passes.
-- One real-shell, real-HTTP end-to-end test with two users.
-- Add the new attack surface to [security-review.md](security-review.md) as new
-  numbered entries.
-- README:
-  - multi-tenant setup
-  - plain-text API keys and "groups partition, they do not protect" (run the
-    server under its own OS account)
-  - TLS
-  - the "no authentication" section rewritten for this mode
+The plan, sections 1a-1e (config layer, `mcp.setup`, server authentication,
+tenant isolation in the tools, tests and docs), is in
+[multi-tenant-phase1-plan.md](multi-tenant-phase1-plan.md).
 
 ## Phase 2: OAuth2
 
@@ -344,10 +203,11 @@ phase 2 decisions the user made on 2026-10-06.
 
 ## Next steps
 
-**Status on 2026-10-06: phases 1 and 2 are built and in PR #37**
-(`wip/mcp-multi-tenant` → `main`, not yet reviewed). The as-built notes are in the
+**Status on 2026-10-07: phases 1 and 2 are built and in PR #37**
+(`wip/mcp-multi-tenant` → `main`), reviewed by Rene once; his 11 comments are fixed in
+the working tree, NOT yet committed (see below). The as-built notes are in the
 "Status" sections here and in [oauth.md](oauth.md), and the security review is
-[security-review-multi-tenant.md](security-review-multi-tenant.md) (M1..M23).
+[security-review-multi-tenant.md](security-review-multi-tenant.md) (M1..M26).
 Later commits: `850626ee` (httpx2), `0ec99ee9` and `8f38d498` (sign-in page),
 `046d9321` (context), `72a64f89` (Arcade: tool names, binding), `176aee35` (the
 simplification pass).
@@ -381,10 +241,44 @@ reading the code and the context files above:
 - `_serve_streamable_http` has no `throttle_auth_failures` flag (`auth is not None`
   decides); `_Connection.mcp_user_id` is a property over `client.user`;
   `AuthBundle.mode` and `build_auth(verifier=)` are gone.
-- Skipped on purpose (behaviour risk): an mtime cache for `read_clients()` /
-  `get_default_role` / `get_allowed_paths`; `check_issuer` via `_same_url` (would be
+- Skipped on purpose (behaviour risk): a module-wide mtime cache for `read_clients()` /
+  `get_default_role` / `get_allowed_paths` (the provider got its own for the clients
+  in the review round below); `check_issuer` via `_same_url` (would be
   case-insensitive); `_is_loopback_redirect` via `is_loopback_host` (wider set);
   `KeycloakAdmin` on httpx2; splitting `GrantStore`.
+
+**Review round (2026-10-07):** Rene's review of `28f39f8e` (11 inline comments from his
+`/code-review`). Security findings are M24..M26 and M17's rebinding in
+[security-review-multi-tenant.md](security-review-multi-tenant.md). The others, each
+with a test and a revert probe (12 probes, all failing as they should):
+
+- `check_ready(mode, public_url=None)`: `build_auth` passes the `start-server
+  --publicUrl` override (`test_the_start_servers_public_url_counts_as_configured`).
+- `server._users_are_created_at_sign_in()`: with an OAuth mode whose `autoProvision` is
+  enabled, `_check_multi_tenant` no longer refuses a server with no users
+  (`test_a_server_that_creates_users_at_sign_in_starts_without_any`).
+- Error messages named options that do not exist (`mcp setup --publicUrl`,
+  `--oauthIssuer`, `--listOAuthClients`, …); all now name `mcp setup-oauth` options,
+  as do two module docstrings (`--oauthMode`, `--addOAuthClient`).
+  `test_every_option_an_oauth_refusal_names_exists` maps each named option to
+  `setup_oauth.KNOWN_OPTIONS`.
+- `BuiltinAuthProvider._known_clients()`: the registered clients cached by
+  `(st_mtime_ns, st_size)` of `oauth_clients.json`; `live_grant` used to read and parse
+  the file on every token check
+  (`test_a_token_check_reads_the_clients_file_only_when_it_changed`).
+- The `no_verify` docstring in `general.py` lost its stale `oauth_issuer` sentence.
+
+Then a second `/code-review` round (whole branch against `main`, the fixes included)
+found three issues in those fixes: the CIMD fetch dialed only the first of the
+string-sorted addresses (now resolver order with fallback, M17), ending a grant left
+with no scopes (taken back, M24), and the pending-sign-in eviction (closed with
+`auth.AuthorizeRateLimit`, 30 per address per minute, the user's choice; M26). That round read the uncommitted diff fully but only spot-checked the
+committed branch.
+
+Suite after it: **595 passed, 3 skipped, no warnings, 97%** (5309 statements).
+Rene's review also: asks whether `Co-Authored-By:` belongs in commit messages (a
+team policy question for the user), and suggests everyone run `/code-review`,
+`/simplify` and `/security-review` before opening a PR.
 
 **Decided by the user** (2026-10-06):
 - multi-instance support (M20) is skipped for now
@@ -397,7 +291,9 @@ reading the code and the context files above:
 
 **Open, in this order:**
 
-1. Rene's review of PR #37.
+1. PR #37: commit and push the review fixes, answer Rene's 11 threads, then his
+   next look. A second `/code-review` round was asked for at the 2026-10-07
+   checkpoint.
 2. The reference docs in `../mariadb-shell` (`wip/docs-ref`) are committed and pushed;
    they ride on mariadb-shell PR #59 ("Add MariaDB Shell reference docs …", open).
 3. Verification still missing (a real Arcade project was DONE on 2026-10-06):
@@ -406,6 +302,5 @@ reading the code and the context files above:
      it is tested against a stand-in for the admin REST API
    - the Linux secret helpers, and Windows
 4. Open M items:
-   - a DNS-rebinding-proof CIMD fetch (M17)
    - a rate limit on `/register` (M18)
    - per-tool step-up at the HTTP layer (M9)

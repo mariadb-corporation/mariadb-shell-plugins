@@ -133,13 +133,17 @@ the session runs as that account, under its default role.
   - **CIMD fetch rules:**
     - https only, no redirects
     - SSRF guard: the resolved address must not be loopback, private or
-      link-local
+      link-local, and the GET connects to those checked addresses, in the
+      resolver's order, passing over one that does not connect (no second lookup,
+      so no DNS rebinding; M17, 2026-10-07)
     - 5 s timeout, 5 KB limit
     - the document's `client_id` must equal the URL, and `redirect_uris` are
       matched exactly
-    - cached between 5 minutes and 1 day, following Cache-Control
+    - cached between 5 minutes and 1 day, following Cache-Control; at most 1000
+      documents, oldest dropped (M26)
   - `authorize(client, params)`: stashes the pending request (client, redirect
-    URI, PKCE challenge, scopes, `resource`, state) in memory for 10 minutes and
+    URI, PKCE challenge, scopes, `resource`, state) in memory for 10 minutes (at
+    most 10000, oldest dropped, and 30 `/authorize` per address per minute: M26) and
     returns `/login?req=<id>`. **It is lenient where it can safely be:**
     - A `resource` other than `publicUrl` is refused, but a MISSING one is taken
       as `publicUrl`. The spec requires clients to send it, but not every client
@@ -190,6 +194,10 @@ the session runs as that account, under its default role.
       `iat`, `exp` (1 h, capped at the grant's end), `jti`, `epoch`, `grant`.
     - `load_access_token` checks the signature, `aud`, `exp`, `epoch` against
       `tokenEpoch`, and **that the grant is still alive**.
+    - `scope` is the grant's consented scopes narrowed to the user's CURRENT
+      `scopes`, both when signed (every refresh) and when checked (every request),
+      so `--setScopes` applies at once; a grant left with none lives on with
+      scopeless tokens until a scope is restored (M24, 2026-10-07).
   - **Refresh tokens:** opaque `mdbrt_<uuid>_<random>` (the UUID picks the group
     to read). Only a hash is kept, in the grant record: `MCP:OAUTH:GRANT:<grant
     id>` in the user's group, or in memory under `"memory"`. They **rotate on
