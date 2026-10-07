@@ -266,7 +266,7 @@ button.toolbarIcon.toggled {
  * of the time, and they are there to keep their place, not to be read.
  */
 button.toolbarIcon:disabled {
-    opacity: 0.25;
+    opacity: 0.15;
     cursor: default;
 }
 
