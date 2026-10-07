@@ -29,7 +29,7 @@ import {
 import { applyKeybindings } from "./editor/keybindings.js";
 import { SqlEditorBinding } from "./editor/sqlEditorBinding.js";
 import { StatementDecorator } from "./editor/statementDecorations.js";
-import { showErrorWithLog } from "./errorMessages.js";
+import { reportError } from "./errorMessages.js";
 import { createSdkConnector } from "./mcp/sdkConnector.js";
 import {
     ServerStarter,
@@ -73,12 +73,13 @@ import {
 } from "./tree/sandboxesTreeProvider.js";
 import { deleteConnection } from "./connections/connectionStore.js";
 import { ConnectionColorDecorations } from "./tree/connectionColors.js";
-import type {
-    ConnectionsNode,
-    IConnectionNode,
-    IConnectionStatusNode,
-    IFolderNode,
-    IObjectNode,
+import {
+    folderOf,
+    type ConnectionsNode,
+    type IConnectionNode,
+    type IConnectionStatusNode,
+    type IFolderNode,
+    type IObjectNode,
 } from "./tree/connectionsModel.js";
 import {
     ResultViewProvider,
@@ -93,7 +94,6 @@ import { VALUE_SCHEME } from "./webview/valueDocuments.js";
 interface IExtensionState {
     session: McpSession;
     connections: ConnectionManager;
-    resultView: ResultViewProvider;
 }
 
 let state: IExtensionState | undefined;
@@ -181,11 +181,7 @@ const guard = async (
     try {
         await action();
     } catch (error) {
-        const message = error instanceof Error
-            ? error.message
-            : String(error);
-        log(message);
-        void showErrorWithLog(message);
+        reportError(log, error);
     }
 };
 
@@ -228,7 +224,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         // connection's output, not only the SQL an editor runs on it.
         (event) => { void resultView.appendEvent(event); },
     );
-    state = { session, connections, resultView };
+    state = { session, connections };
 
     // The folders made with New Folder, kept until a connection is in them
     // and after: the server only knows a folder as a connection's path.
@@ -248,19 +244,33 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // The sandbox tools come with the server, so asking for them is asking
     // for the server. Every call is a General Action: none is made on an
     // open connection.
+    //
+    // The server can be restarted, which hands out a new API to wrap;
+    // anything else would go on calling the dead one. So the wrapper is
+    // kept with the API it was built over, as `ConnectionManager.api` does.
+    let loggedSandboxApi: { plain: ISandboxApi; logging: ISandboxApi } |
+        undefined;
     const sandboxApi = async (): Promise<ISandboxApi> => {
         if (session.sandboxApi === undefined) {
             await starter.start();
         }
-        if (session.sandboxApi === undefined) {
+        const plain = session.sandboxApi;
+        if (plain === undefined) {
             throw new Error("The MCP server is not running.");
         }
 
-        return createLoggingSandboxApi(
-            session.sandboxApi,
-            (event) => { void resultView.appendEvent(event); },
-            () => { return settings.logAllCalls?.() ?? false; },
-        );
+        if (loggedSandboxApi?.plain !== plain) {
+            loggedSandboxApi = {
+                plain,
+                logging: createLoggingSandboxApi(
+                    plain,
+                    (event) => { void resultView.appendEvent(event); },
+                    () => { return settings.logAllCalls?.() ?? false; },
+                ),
+            };
+        }
+
+        return loggedSandboxApi.logging;
     };
     const sandboxStore = new SandboxStore(sandboxApi);
     const sandboxes = new SandboxesTreeProvider(sandboxStore, log, starter);
@@ -424,6 +434,17 @@ export const activate = (context: vscode.ExtensionContext): void => {
         return commonFolder(folders);
     };
 
+    // What the connection editor needs of the extension, whether it is
+    // opened on a new connection or an existing one.
+    const connectionEditorHost = {
+        api: () => { return connections.api(); },
+        listStored: () => {
+            return connections.listStoredConnections();
+        },
+        onSaved: () => { tree.refresh(); },
+        log,
+    };
+
     /**
      * Opens the editor on a new connection.
      *
@@ -434,17 +455,23 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const addConnectionIn = (folder: string | undefined): void => {
         ConnectionEditorPanel.show(
             context.extensionUri,
-            {
-                api: () => { return connections.api(); },
-                listStored: () => {
-                    return connections.listStoredConnections();
-                },
-                onSaved: () => { tree.refresh(); },
-                log,
-            },
+            connectionEditorHost,
             undefined,
             folder,
         );
+    };
+
+    /**
+     * Makes a folder the user named. The tree is not redrawn here: what
+     * follows the folder differs by command.
+     *
+     * @param path The folder's path.
+     *
+     * @returns Nothing.
+     */
+    const createFolder = async (path: string): Promise<void> => {
+        await customFolders.add(path);
+        log(`Created the folder '${path}'.`);
     };
 
     /**
@@ -460,8 +487,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
             return;
         }
 
-        await customFolders.add(path);
-        log(`Created the folder '${path}'.`);
+        await createFolder(path);
         tree.refresh();
     };
 
@@ -545,8 +571,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
 
                 // Kept as made even if a move below fails, so the folder the
                 // user named is there to try again with.
-                await customFolders.add(path);
-                log(`Created the folder '${path}'.`);
+                await createFolder(path);
                 await tree.fileInFolder(picked, path);
             },
         ),
@@ -610,14 +635,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 // the kind says which of the two lists it is the key in.
                 ConnectionEditorPanel.show(
                     context.extensionUri,
-                    {
-                        api: () => { return connections.api(); },
-                        listStored: () => {
-                            return connections.listStoredConnections();
-                        },
-                        onSaved: () => { tree.refresh(); },
-                        log,
-                    },
+                    connectionEditorHost,
                     // The caption and color too: the dialog starts from what
                     // it is given, and would otherwise show neither.
                     {
@@ -973,32 +991,6 @@ export const deactivate = async (): Promise<void> => {
 
     await current.connections.disconnectAll();
     await current.session.stop();
-};
-
-/**
- * The folder a command invoked on a row works in: the folder itself, or the
- * one a connection is filed in.
- *
- * @param node The row, or undefined when invoked from the toolbar.
- *
- * @returns The folder, or undefined for none in particular.
- */
-const folderOf = (
-    node: IFolderNode | IConnectionNode | undefined,
-): string | undefined => {
-    switch (node?.kind) {
-        case "folder": {
-            return node.path;
-        }
-
-        case "connection": {
-            return node.path;
-        }
-
-        default: {
-            return undefined;
-        }
-    }
 };
 
 /**

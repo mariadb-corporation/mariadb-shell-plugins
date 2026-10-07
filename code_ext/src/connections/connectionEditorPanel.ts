@@ -32,6 +32,8 @@ import type {
     EditorWebviewMessage,
     ISaveMessage,
 } from "./editorProtocol.js";
+import { errorText } from "../text.js";
+import { buildWebviewHtml, webviewOptions } from "../webview/html.js";
 
 /**
  * The webview panel behind the connection editor.
@@ -60,77 +62,6 @@ export interface IConnectionEditorHost {
 export const CONNECTION_EDITOR_VIEW_TYPE = "mariadb.connectionEditor";
 
 /**
- * Builds a nonce for one load of a dialog.
- *
- * @returns 32 random alphanumeric characters.
- */
-const createNonce = (): string => {
-    const alphabet =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let nonce = "";
-    for (let index = 0; index < 32; index += 1) {
-        nonce += alphabet[Math.floor(Math.random() * alphabet.length)];
-    }
-
-    return nonce;
-};
-
-/**
- * Builds the HTML shell a dialog webview loads - the connection editor's,
- * and the New Sandbox dialog's, each its own build.
- *
- * Mirrors the result view's: everything from the extension's own folder,
- * under a strict content security policy with a per-load nonce, so a dialog
- * that handles credentials cannot reach the network.
- *
- * @param webview The webview to build the HTML for.
- * @param extensionUri The root of the installed extension.
- * @param bundle The dialog's build: `<bundle>.js` and `<bundle>.css` under
- *               `dist/webview`.
- * @param title The document title.
- *
- * @returns The HTML document.
- */
-export const buildDialogHtml = (
-    webview: vscode.Webview,
-    extensionUri: vscode.Uri,
-    bundle: string,
-    title: string,
-): string => {
-    const asset = (...parts: string[]): string => {
-        return webview.asWebviewUri(
-            vscode.Uri.joinPath(extensionUri, ...parts),
-        ).toString();
-    };
-
-    const script = asset("dist", "webview", `${bundle}.js`);
-    const style = asset("dist", "webview", `${bundle}.css`);
-    const nonce = createNonce();
-
-    return `<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; ${""
-        }style-src ${webview.cspSource} 'unsafe-inline'; ${""
-        }img-src ${webview.cspSource} data:; ${""
-        }font-src ${webview.cspSource}; ${""
-        }script-src 'nonce-${nonce}';" />
-    <link rel="stylesheet" href="${style}" />
-    <title>${title}</title>
-</head>
-
-<body>
-    <div id="root"></div>
-    <script type="module" nonce="${nonce}" src="${script}"></script>
-</body>
-
-</html>`;
-};
-
-/**
  * Builds the HTML shell the connection editor webview loads.
  *
  * @param webview The webview to build the HTML for.
@@ -142,7 +73,7 @@ export const buildEditorHtml = (
     webview: vscode.Webview,
     extensionUri: vscode.Uri,
 ): string => {
-    return buildDialogHtml(webview, extensionUri, "editor",
+    return buildWebviewHtml(webview, extensionUri, "editor",
         "Database Connection Configuration");
 };
 
@@ -209,13 +140,7 @@ export class ConnectionEditorPanel {
             CONNECTION_EDITOR_VIEW_TYPE,
             title,
             vscode.ViewColumn.Active,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true,
-                localResourceRoots: [
-                    vscode.Uri.joinPath(extensionUri, "dist"),
-                ],
-            },
+            { ...webviewOptions(extensionUri), retainContextWhenHidden: true },
         );
 
         const editor = new ConnectionEditorPanel(panel, extensionUri, host);
@@ -381,7 +306,7 @@ export class ConnectionEditorPanel {
             this.#post({
                 type: "testResult",
                 ok: false,
-                message: error instanceof Error ? error.message : String(error),
+                message: errorText(error),
             });
         } finally {
             this.#post({ type: "busy", busy: false });
@@ -422,9 +347,7 @@ export class ConnectionEditorPanel {
             this.host.onSaved();
             this.#panel.dispose();
         } catch (error) {
-            const text = error instanceof Error
-                ? error.message
-                : String(error);
+            const text = errorText(error);
             this.#post({ type: "saveError", message: text });
         } finally {
             this.#post({ type: "busy", busy: false });

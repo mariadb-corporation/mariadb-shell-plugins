@@ -31,15 +31,6 @@ textarea {
     resize: vertical;
 }
 
-textarea:focus {
-    outline: 1px solid var(--vscode-focusBorder);
-    outline-offset: -1px;
-}
-
-textarea:disabled {
-    opacity: 0.6;
-}
-
 /* A field's hint turns into its problem, and reads as one. */
 input.invalid + .field-hint,
 input.invalid ~ .field-hint,

@@ -16,6 +16,11 @@
  */
 
 import type { ConnectionColor } from "../mcp/types.js";
+import type {
+    IBusyMessage,
+    ICancelMessage,
+    IReadyMessage,
+} from "../webview/dialogProtocol.js";
 import type { IConnectionFields } from "./connectionUri.js";
 
 /**
@@ -66,12 +71,6 @@ export interface ISaveErrorMessage {
     message: string;
 }
 
-/** Whether a long running button should be showing itself as busy. */
-export interface IBusyMessage {
-    type: "busy";
-    busy: boolean;
-}
-
 /**
  * What the clipboard held when the webview asked for it. A webview cannot
  * read the clipboard itself without the user pressing the paste keys, so the
@@ -88,11 +87,6 @@ export type EditorHostMessage =
     | ISaveErrorMessage
     | IBusyMessage
     | IClipboardMessage;
-
-/** The webview is up and wants its state. */
-export interface IReadyMessage {
-    type: "ready";
-}
 
 /** Try these credentials without storing anything. */
 export interface ITestMessage {
@@ -129,11 +123,6 @@ export interface IPasteMessage {
 export interface ICopyMessage {
     type: "copy";
     text: string;
-}
-
-/** Close without saving. */
-export interface ICancelMessage {
-    type: "cancel";
 }
 
 export type EditorWebviewMessage =

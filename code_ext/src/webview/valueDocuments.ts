@@ -19,6 +19,7 @@ import * as vscode from "vscode";
 
 import type { ValueKind } from "./protocol.js";
 import { bytesOf, extensionFor, hexOf } from "./valueFiles.js";
+import { errorText } from "../text.js";
 
 /** The scheme a grid value is opened in an editor under. */
 export const VALUE_SCHEME = "mariadb-value";
@@ -200,7 +201,7 @@ export class ValueDocuments implements vscode.FileSystemProvider {
             await document.writeBack(value);
         } catch (error) {
             throw vscode.FileSystemError.Unavailable(
-                error instanceof Error ? error.message : String(error));
+                errorText(error));
         }
 
         document.content = content;

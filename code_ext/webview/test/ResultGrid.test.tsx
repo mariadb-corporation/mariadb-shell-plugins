@@ -249,7 +249,6 @@ describe("the cell menu", () => {
         const callbacks = {
             onCellEdited: vi.fn(),
             onToggleDeleted: vi.fn(),
-            onSelectionChanged: vi.fn(),
             onSaveValue: vi.fn(),
             onLoadValue: vi.fn(),
         };
@@ -344,7 +343,6 @@ describe("editableAsText", () => {
         }), {
             onCellEdited: vi.fn(),
             onToggleDeleted: vi.fn(),
-            onSelectionChanged: vi.fn(),
         });
 
         const byField = new Map(columns.map((column) => {
@@ -450,7 +448,6 @@ describe("buildColumns", () => {
         return {
             onCellEdited: vi.fn(),
             onToggleDeleted: vi.fn(),
-            onSelectionChanged: vi.fn(),
         };
     };
 

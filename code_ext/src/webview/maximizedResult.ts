@@ -18,6 +18,8 @@
 import * as vscode from "vscode";
 
 import { captionFor } from "../sql/executionService.js";
+import { webviewOptions } from "./html.js";
+import { ReadyQueue } from "./readyQueue.js";
 import type {
     HostMessage,
     IActionRow,
@@ -63,8 +65,8 @@ export class MaximizedResult implements vscode.Disposable {
     public applyContext?: IApplyContext;
 
     readonly #panel: vscode.WebviewPanel;
-    #ready = false;
-    #pending: HostMessage[] = [];
+    /** Messages for the tab, held until its frontend is listening. */
+    readonly #queue: ReadyQueue<HostMessage>;
     /** Set once the tab is gone, so a late message is not sent to it. */
     #disposed = false;
 
@@ -96,13 +98,10 @@ export class MaximizedResult implements vscode.Disposable {
             this.#title(),
             { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
             {
-                enableScripts: true,
+                ...webviewOptions(extensionUri),
                 // Pending edits have to survive another editor tab being
                 // brought to the front, as they do in the panel.
                 retainContextWhenHidden: true,
-                localResourceRoots: [
-                    vscode.Uri.joinPath(extensionUri, "dist"),
-                ],
             },
         );
         this.#panel.iconPath = {
@@ -112,15 +111,13 @@ export class MaximizedResult implements vscode.Disposable {
                 extensionUri, "images", "dark", "schemaTable.svg"),
         };
         this.#panel.webview.html = html(this.#panel.webview);
+        this.#queue = new ReadyQueue((message) => {
+            void this.#panel.webview.postMessage(message);
+        });
 
         this.#panel.webview.onDidReceiveMessage((message: WebviewMessage) => {
             if (message.type === "ready") {
-                this.#ready = true;
-                const pending = this.#pending;
-                this.#pending = [];
-                for (const queued of pending) {
-                    void this.#panel.webview.postMessage(queued);
-                }
+                this.#queue.ready();
             }
             onMessage(message);
         });
@@ -153,17 +150,9 @@ export class MaximizedResult implements vscode.Disposable {
      * @returns Nothing.
      */
     public send(message: HostMessage): void {
-        if (this.#disposed) {
-            return;
+        if (!this.#disposed) {
+            this.#queue.post(message);
         }
-
-        if (!this.#ready) {
-            this.#pending.push(message);
-
-            return;
-        }
-
-        void this.#panel.webview.postMessage(message);
     }
 
     /**

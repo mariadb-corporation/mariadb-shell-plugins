@@ -17,7 +17,7 @@
 
 import * as vscode from "vscode";
 
-import { buildDialogHtml } from "../connections/connectionEditorPanel.js";
+import { buildWebviewHtml, webviewOptions } from "../webview/html.js";
 import { showErrorWithLog } from "../errorMessages.js";
 import {
     defaultServerVersion,
@@ -33,6 +33,7 @@ import type {
     SandboxWebviewMessage,
 } from "./sandboxProtocol.js";
 import type { ISandboxStore } from "./sandboxStore.js";
+import { errorText } from "../text.js";
 
 /**
  * The webview panel behind the New Sandbox dialog.
@@ -86,7 +87,7 @@ export const buildSandboxEditorHtml = (
     webview: vscode.Webview,
     extensionUri: vscode.Uri,
 ): string => {
-    return buildDialogHtml(webview, extensionUri, "sandbox", TITLE);
+    return buildWebviewHtml(webview, extensionUri, "sandbox", TITLE);
 };
 
 /**
@@ -132,13 +133,7 @@ export class SandboxEditorPanel {
             SANDBOX_EDITOR_VIEW_TYPE,
             TITLE,
             vscode.ViewColumn.Active,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true,
-                localResourceRoots: [
-                    vscode.Uri.joinPath(extensionUri, "dist"),
-                ],
-            },
+            { ...webviewOptions(extensionUri), retainContextWhenHidden: true },
         );
 
         const editor = new SandboxEditorPanel(panel, host);
@@ -239,7 +234,7 @@ export class SandboxEditorPanel {
             return await this.host.store.availableVersions();
         } catch (error) {
             this.host.log("Could not list the sandbox server versions: "
-                + `${error instanceof Error ? error.message : String(error)}`);
+                + errorText(error));
 
             return [];
         }
@@ -262,7 +257,7 @@ export class SandboxEditorPanel {
         } catch (error) {
             this.host.log("Could not list the connections to suggest a "
                 + "sandbox port: "
-                + `${error instanceof Error ? error.message : String(error)}`);
+                + errorText(error));
 
             return [];
         }
@@ -298,7 +293,7 @@ export class SandboxEditorPanel {
             this.host.onCreated(message);
             this.#panel.dispose();
         } catch (error) {
-            const text = error instanceof Error ? error.message : String(error);
+            const text = errorText(error);
             this.host.log(`Failed to deploy the sandbox on port `
                 + `${built.options.port}: ${text}`);
             if (this.#disposed) {

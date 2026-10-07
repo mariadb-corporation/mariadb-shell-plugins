@@ -39,7 +39,7 @@ import type {
 } from "../../src/webview/protocol.js";
 import { createQueryBuilder } from "../../src/sql/resultSetQueryBuilder.js";
 import { ActionsGrid } from "./ActionsGrid.js";
-import { cellActionsOf, ResultGrid } from "./ResultGrid.js";
+import { cellActionsOf, pageKeyOf, ResultGrid } from "./ResultGrid.js";
 import {
     ResultStatusBar,
     type ResultAction,
@@ -48,6 +48,7 @@ import {
 import { SqlPreview } from "./SqlPreview.js";
 import { COPIED_FOR_MS } from "./overflowPopup.js";
 import { post } from "./vscodeApi.js";
+import { counted } from "../../src/text.js";
 
 /** The id of the always-present Actions tab. */
 const ACTIONS_TAB = "actions";
@@ -206,16 +207,19 @@ interface IEditingState {
 }
 
 /**
- * @param set A result set.
+ * @param set The result set a value is in.
+ * @param column The column it is in.
+ * @param rowIndex The row it is in.
  *
- * @returns What tells one fetch of its rows from another: the page, and
- *          how often it was fetched - the same page again, after an
- *          apply, is new rows.
+ * @returns What a file holding it is named: after where it came from, so
+ *          a few saved in a row are told apart.
  */
-const pageKeyOf = (set: IResultSet): string => {
-    return set.page === undefined
-        ? ""
-        : `${set.page.index}/${set.page.loads}`;
+const valueFileName = (
+    set: IResultSet,
+    column: string,
+    rowIndex: number,
+): string => {
+    return `${set.target?.table ?? "value"}-${column}-${rowIndex + 1}`;
 };
 
 /**
@@ -301,12 +305,13 @@ export const App = (): JSX.Element => {
     const content = useRef<HTMLElement>(null);
     const [tooShortForTypes, setTooShortForTypes] = useState(false);
     /**
-     * The tabs the editing state below was built for. State arrives
-     * whenever anything at all happens on the connection - a schema
-     * listed while the user is part way through editing a grid, say - and
-     * only a change of tabs may throw that editing away.
+     * The tabs the editing state below was built for, in their order,
+     * each with the page it was on. State arrives whenever anything at
+     * all happens on the connection - a schema listed while the user is
+     * part way through editing a grid, say - and only a change of tabs
+     * may throw that editing away.
      */
-    const shownResults = useRef<string>("");
+    const shownResults = useRef(new Map<string, string>());
 
     useEffect(() => {
         const onMessage = (event: MessageEvent<HostMessage>): void => {
@@ -319,15 +324,20 @@ export const App = (): JSX.Element => {
                     const ids = sets.map((set) => {
                         return set.id;
                     });
-                    const previousIds = shownResults.current.split("\u0000")
-                        .map((key) => { return key.split("\u0001")[0]; });
+                    const previous = shownResults.current;
+                    const previousShown = [...previous];
                     // A new page of a result set is new rows for its grid,
                     // as much as a new result set is.
-                    const shownKey = sets.map((set) => {
-                        return `${set.id}\u0001${pageKeyOf(set)}`;
-                    }).join("\u0000");
-                    if (shownKey !== shownResults.current) {
-                        shownResults.current = shownKey;
+                    const changed = sets.length !== previousShown.length
+                        || sets.some((set, index) => {
+                            const [id, pageKey] = previousShown[index]!;
+
+                            return id !== set.id || pageKey !== pageKeyOf(set);
+                        });
+                    if (changed) {
+                        shownResults.current = new Map(sets.map((set) => {
+                            return [set.id, pageKeyOf(set)];
+                        }));
                         const seed = message.editing ?? {};
                         // A tab that is still there keeps what it was
                         // part way through: one leaving for an editor tab
@@ -362,7 +372,7 @@ export const App = (): JSX.Element => {
                         // started - stays on the actions, which is where
                         // its progress and its outcome are.
                         const arrived = ids.find((id) => {
-                            return !previousIds.includes(id);
+                            return !previous.has(id);
                         });
                         setActiveTab((current) => {
                             if (arrived !== undefined) {
@@ -406,10 +416,8 @@ export const App = (): JSX.Element => {
                         });
                     } else {
                         showErrors([]);
-                        setNotice(
-                            `Applied ${message.statements.length} statement`
-                            + `${message.statements.length === 1 ? "" : "s"}.`,
-                        );
+                        setNotice(`Applied ${
+                            counted(message.statements.length, "statement")}.`);
                         // A paged result set reloads the page it is on,
                         // rather than going back to the first.
                         const applied = latestState.current?.resultSets
@@ -703,7 +711,7 @@ export const App = (): JSX.Element => {
         rowIndex: number,
         column: string,
     ): void => {
-        const row = active && editing[active.id]?.rows[rowIndex];
+        const row = editState?.rows[rowIndex];
         const described = active?.columns.find((candidate) => {
             return candidate.name === column;
         });
@@ -729,19 +737,17 @@ export const App = (): JSX.Element => {
                 : display === undefined
                     ? "text"
                     : "binary",
-            name: `${active.target?.table ?? "value"}-${column}-`
-                + `${rowIndex + 1}`,
+            name: valueFileName(active, column, rowIndex),
             readOnly: cellActionsOf(active, described, value, row.deleted)
                 .openReadOnly,
         });
-    }, [active, editing]);
+    }, [active, editState]);
 
     const onSaveValue = useCallback((
         rowIndex: number,
         column: string,
     ): void => {
-        const value = active && editing[active.id]?.rows[rowIndex]
-            ?.current[column];
+        const value = editState?.rows[rowIndex]?.current[column];
         if (!active || value === null || value === undefined) {
             return;
         }
@@ -749,12 +755,10 @@ export const App = (): JSX.Element => {
         post({
             type: "saveValue",
             value: String(value),
-            // Named after where it came from, so a few saved in a row are
-            // told apart; the extension is guessed from the content.
-            name: `${active.target?.table ?? "value"}-${column}-`
-                + `${rowIndex + 1}`,
+            // The extension is guessed from the content.
+            name: valueFileName(active, column, rowIndex),
         });
-    }, [active, editing]);
+    }, [active, editState]);
 
     const onToggleDeleted = useCallback((rowIndex: number): void => {
         updateState((current) => {
@@ -1058,11 +1062,6 @@ export const App = (): JSX.Element => {
                                         onLoadValue={onLoadValue}
                                         onOpenValue={onOpenValue}
                                         onToggleDeleted={onToggleDeleted}
-                                        onSelectionChanged={() => {
-                                            // Selection is Tabulator's
-                                            // own; the app does not
-                                            // track it.
-                                        }}
                                     />
                                 )}
 

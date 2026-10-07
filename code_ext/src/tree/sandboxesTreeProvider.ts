@@ -20,6 +20,8 @@ import * as vscode from "vscode";
 import type { ISandboxInstance } from "../mcp/sandboxApi.js";
 import type { IServerStatus } from "../mcp/serverStarter.js";
 import type { ISandboxStore } from "../sandboxes/sandboxStore.js";
+import { errorText } from "../text.js";
+import { ViewStateTracker, type ViewState } from "./viewState.js";
 
 /** The id the Sandboxes view is contributed under. */
 export const SANDBOXES_VIEW_ID = "mariadb.sandboxes";
@@ -31,20 +33,8 @@ export const SANDBOXES_VIEW_ID = "mariadb.sandboxes";
  */
 export const SANDBOXES_VIEW_STATE_CONTEXT_KEY = "mariadb.sandboxesView";
 
-/**
- * What the Sandboxes view is showing when it has no rows.
- *
- * - `looking`: the server is being found or started.
- * - `installing`: the MariaDB Shell is being downloaded and installed.
- * - `failed`: the last attempt to list the sandboxes failed.
- * - `listed`: the sandboxes were listed - an empty view now means there
- *   are none.
- */
-export type SandboxesViewState =
-    | "looking"
-    | "installing"
-    | "failed"
-    | "listed";
+/** What the Sandboxes view is showing when it has no rows. */
+export type SandboxesViewState = ViewState;
 
 /** What is being done to a sandbox while its row shows a spinner. */
 export type SandboxAction = "starting" | "stopping" | "deleting";
@@ -116,11 +106,8 @@ export class SandboxesTreeProvider
 
     readonly #onDidChangeTreeData =
         new vscode.EventEmitter<ISandboxNode | undefined>();
-    readonly #unsubscribeStatus: () => void;
-    /** How the last attempt at listing went, if there was one. */
-    #listing: "unasked" | "listed" | "failed" = "unasked";
-    /** The state last handed to the context key. */
-    #shownState?: SandboxesViewState;
+    /** What the view says while it has no rows. */
+    readonly #viewState: ViewStateTracker;
     /** The actions under way, by port. */
     readonly #actions = new Map<number, SandboxAction>();
 
@@ -135,15 +122,10 @@ export class SandboxesTreeProvider
     public constructor(
         private readonly store: ISandboxStore,
         private readonly log: (message: string) => void,
-        private readonly status?: IServerStatus,
+        status?: IServerStatus,
     ) {
-        this.#unsubscribeStatus = status?.onDidChangePhase((phase) => {
-            if (phase === "locating" && this.#listing === "failed") {
-                this.#listing = "unasked";
-            }
-            this.#showState();
-        }) ?? (() => { /* nothing to stop */ });
-        this.#showState();
+        this.#viewState =
+            new ViewStateTracker(SANDBOXES_VIEW_STATE_CONTEXT_KEY, status);
     }
 
     /**
@@ -186,8 +168,7 @@ export class SandboxesTreeProvider
 
         try {
             const instances = await this.store.listInstances();
-            this.#listing = "listed";
-            this.#showState();
+            this.#viewState.listed();
 
             return instances.map((instance): ISandboxNode => {
                 const action = this.#actions.get(instance.port);
@@ -204,9 +185,8 @@ export class SandboxesTreeProvider
             // has already put up a notification when the server itself
             // could not be started.
             this.log("Failed to list the sandboxes: "
-                + `${error instanceof Error ? error.message : String(error)}`);
-            this.#listing = "failed";
-            this.#showState();
+                + errorText(error));
+            this.#viewState.failed();
 
             return [];
         }
@@ -216,15 +196,7 @@ export class SandboxesTreeProvider
      * @returns What the view should say while it has no rows.
      */
     public get state(): SandboxesViewState {
-        if (this.status?.phase === "installing") {
-            return "installing";
-        }
-
-        if (this.#listing === "failed" || this.status?.phase === "failed") {
-            return "failed";
-        }
-
-        return this.#listing === "listed" ? "listed" : "looking";
+        return this.#viewState.state;
     }
 
     /**
@@ -308,31 +280,12 @@ export class SandboxesTreeProvider
     }
 
     /**
-     * Hands the view's state to its welcome content, when it changed.
-     *
-     * @returns Nothing.
-     */
-    #showState(): void {
-        const state = this.state;
-        if (state === this.#shownState) {
-            return;
-        }
-
-        this.#shownState = state;
-        void vscode.commands.executeCommand(
-            "setContext",
-            SANDBOXES_VIEW_STATE_CONTEXT_KEY,
-            state,
-        );
-    }
-
-    /**
      * Stops listening to the server's startup.
      *
      * @returns Nothing.
      */
     public dispose(): void {
-        this.#unsubscribeStatus();
+        this.#viewState.dispose();
         this.#onDidChangeTreeData.dispose();
     }
 }

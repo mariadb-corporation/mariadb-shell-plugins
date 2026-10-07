@@ -30,6 +30,10 @@ import type { ExecutionService } from "../sql/executionService.js";
 import type { IEditableRow } from "./changes.js";
 import { loadValueFromFile, saveValueToFile } from "./valueFiles.js";
 import { ValueDocuments } from "./valueDocuments.js";
+import { buildWebviewHtml, webviewOptions } from "./html.js";
+import { ReadyQueue } from "./readyQueue.js";
+import { reportError } from "../errorMessages.js";
+import { counted, errorText } from "../text.js";
 
 /** How long a saved value waits for the grid to take it. */
 export const VALUE_EDIT_TIMEOUT_MS = 10000;
@@ -129,71 +133,6 @@ const sessionOf = (row: IActionRow | undefined): string => {
 };
 
 /**
- * Builds a nonce for one load of the webview.
- *
- * @returns 32 random alphanumeric characters.
- */
-const createNonce = (): string => {
-    const alphabet =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let nonce = "";
-    for (let index = 0; index < 32; index += 1) {
-        nonce += alphabet[Math.floor(Math.random() * alphabet.length)];
-    }
-
-    return nonce;
-};
-
-/**
- * Builds the HTML shell the webview loads.
- *
- * Everything is served from the extension's own folder under a strict
- * content security policy, with a per-load nonce on the one script tag, so
- * the view cannot pull anything off the network.
- *
- * @param webview The webview to build the HTML for.
- * @param extensionUri The root of the installed extension.
- *
- * @returns The HTML document.
- */
-export const buildViewHtml = (
-    webview: vscode.Webview,
-    extensionUri: vscode.Uri,
-): string => {
-    const asset = (...parts: string[]): string => {
-        return webview.asWebviewUri(
-            vscode.Uri.joinPath(extensionUri, ...parts),
-        ).toString();
-    };
-
-    const script = asset("dist", "webview", "main.js");
-    const style = asset("dist", "webview", "main.css");
-    const nonce = createNonce();
-
-    return `<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; ${""
-        }style-src ${webview.cspSource} 'unsafe-inline'; ${""
-        }img-src ${webview.cspSource} data:; ${""
-        }font-src ${webview.cspSource}; ${""
-        }script-src 'nonce-${nonce}';" />
-    <link rel="stylesheet" href="${style}" />
-    <title>MariaDB</title>
-</head>
-
-<body>
-    <div id="root"></div>
-    <script type="module" nonce="${nonce}" src="${script}"></script>
-</body>
-
-</html>`;
-};
-
-/**
  * The MariaDB result view, docked in the bottom panel beside Problems,
  * Output and the Debug Console.
  *
@@ -220,8 +159,10 @@ export class ResultViewProvider
      */
     #activeSession?: string;
     /** Set once the frontend says it is listening. */
-    #ready = false;
-    #pending: HostMessage[] = [];
+    /** Messages for the panel, held until its frontend is listening. */
+    readonly #queue = new ReadyQueue<HostMessage>((message) => {
+        void this.#view?.webview.postMessage(message);
+    });
     /** Counts the events, so each row put up for one has its own id. */
     #eventCount = 0;
     /** The configured connections, as last listed, and when. */
@@ -334,6 +275,15 @@ export class ResultViewProvider
     }
 
     /**
+     * @param webview The panel's or a maximized tab's webview.
+     *
+     * @returns The HTML document that loads the result view into it.
+     */
+    #html(webview: vscode.Webview): string {
+        return buildWebviewHtml(webview, this.extensionUri, "main", "MariaDB");
+    }
+
+    /**
      * Called by VS Code when the view first becomes visible.
      *
      * @param view The view to fill.
@@ -342,15 +292,10 @@ export class ResultViewProvider
      */
     public resolveWebviewView(view: vscode.WebviewView): void {
         this.#view = view;
-        this.#ready = false;
+        this.#queue.reset();
 
-        view.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [
-                vscode.Uri.joinPath(this.extensionUri, "dist"),
-            ],
-        };
-        view.webview.html = buildViewHtml(view.webview, this.extensionUri);
+        view.webview.options = webviewOptions(this.extensionUri);
+        view.webview.html = this.#html(view.webview);
 
         view.webview.onDidReceiveMessage((message: WebviewMessage) => {
             void this.#onMessage(message);
@@ -358,8 +303,7 @@ export class ResultViewProvider
 
         view.onDidDispose(() => {
             this.#view = undefined;
-            this.#ready = false;
-            this.#pending = [];
+            this.#queue.reset();
         });
     }
 
@@ -424,10 +368,7 @@ export class ResultViewProvider
             // Where nothing is on show yet - or only General Actions, by
             // default - the run is what the panel has to show, without
             // being brought up for it.
-            if (this.#active === undefined || this.#generalByDefault) {
-                this.#active = connection;
-                this.#generalByDefault = false;
-            }
+            this.#claimIfUnset(connection);
             if (connection === this.#active) {
                 await this.#sendState();
             }
@@ -533,14 +474,7 @@ export class ResultViewProvider
         // is often first - listing the connections is - and an empty panel
         // is no better for it, but it is there to be looked up rather than
         // to stand in front of the connection being worked on.
-        if (this.#active === undefined) {
-            this.#active = event.connection;
-            this.#generalByDefault = event.connection === GENERAL_ACTIONS;
-        } else if (this.#generalByDefault
-            && event.connection !== GENERAL_ACTIONS) {
-            this.#active = event.connection;
-            this.#generalByDefault = false;
-        }
+        this.#claimIfUnset(event.connection);
 
         if (event.connection === this.#active) {
             await this.#sendState();
@@ -555,8 +489,7 @@ export class ResultViewProvider
      * @returns Nothing.
      */
     public async selectConnection(connection: string): Promise<void> {
-        this.#active = connection;
-        this.#generalByDefault = false;
+        this.#setActive(connection);
         // Another connection's connections are not this one's, so the
         // filter goes back to showing all of them.
         this.#activeSession = undefined;
@@ -608,21 +541,6 @@ export class ResultViewProvider
     }
 
     /**
-     * @returns The connection whose results are on show.
-     */
-    public get activeConnection(): string | undefined {
-        return this.#active;
-    }
-
-    /**
-     * @returns Which connection open on it is on show, or undefined when
-     *          all of them are.
-     */
-    public get activeSession(): string | undefined {
-        return this.#activeSession;
-    }
-
-    /**
      * @param connection The connection to look up.
      *
      * @returns What happened on it, newest first, across every
@@ -646,9 +564,7 @@ export class ResultViewProvider
      *          connection on show.
      */
     public get applyContext(): IApplyContext | undefined {
-        return this.#active === undefined
-            ? undefined
-            : this.#sessionResults(this.#active)?.applyContext;
+        return this.#sessionResults(this.#active)?.applyContext;
     }
 
     /**
@@ -685,7 +601,7 @@ export class ResultViewProvider
         this.#active = undefined;
         this.#generalByDefault = false;
         this.#activeSession = undefined;
-        this.#pending = [];
+        this.#queue.reset();
     }
 
     /**
@@ -698,12 +614,7 @@ export class ResultViewProvider
     async #onMessage(message: WebviewMessage): Promise<void> {
         switch (message.type) {
             case "ready": {
-                this.#ready = true;
-                const pending = this.#pending;
-                this.#pending = [];
-                for (const queued of pending) {
-                    this.#send(queued);
-                }
+                this.#queue.ready();
 
                 // A view VS Code re-created after being hidden starts
                 // empty, so what it was showing is sent again.
@@ -724,13 +635,10 @@ export class ResultViewProvider
             }
 
             case "applyChanges": {
-                const active = this.#active;
                 await this.#applyChanges(
                     this.#resultSet(message.resultId),
                     this.applyContext,
-                    active === undefined
-                        ? ""
-                        : this.#shownSession(active) ?? "",
+                    this.#shownLabel(),
                     message.resultId,
                     message.changes,
                     (reply) => { this.#send(reply); },
@@ -749,23 +657,20 @@ export class ResultViewProvider
             }
 
             case "page": {
-                const held = this.#active === undefined
-                    ? undefined
-                    : this.#sessionResults(this.#active);
+                const held = this.#sessionResults(this.#active);
                 await this.#fetchPage(
                     this.#resultSet(message.resultId),
                     this.applyContext,
-                    this.#active === undefined
-                        ? ""
-                        : this.#shownSession(this.#active) ?? "",
+                    this.#shownLabel(),
                     message.page,
                     (next) => {
+                        // The page is in place before the fetch is put in
+                        // the actions, and that sends the state.
                         if (held) {
                             held.resultSets = held.resultSets.map((set) => {
                                 return set.id === next.id ? next : set;
                             });
                         }
-                        void this.#sendState();
                     },
                     (reply) => { this.#send(reply); },
                 );
@@ -773,9 +678,7 @@ export class ResultViewProvider
             }
 
             case "closeResult": {
-                const held = this.#active === undefined
-                    ? undefined
-                    : this.#sessionResults(this.#active);
+                const held = this.#sessionResults(this.#active);
                 if (held) {
                     held.resultSets = held.resultSets.filter((set) => {
                         return set.id !== message.resultId;
@@ -821,9 +724,7 @@ export class ResultViewProvider
                     await this.#onReveal?.(message.source);
                 } catch (error) {
                     this.log("Could not show the statement: "
-                        + `${error instanceof Error
-                            ? error.message
-                            : String(error)}`);
+                        + errorText(error));
                 }
                 break;
             }
@@ -841,12 +742,7 @@ export class ResultViewProvider
                         this.log(`Saved a value to ${saved.fsPath}`);
                     }
                 } catch (error) {
-                    const text = error instanceof Error
-                        ? error.message
-                        : String(error);
-                    this.log(`Could not save the value: ${text}`);
-                    void vscode.window.showErrorMessage(
-                        `Could not save the value: ${text}`);
+                    reportError(this.log, error, "save the value");
                 }
                 break;
             }
@@ -878,9 +774,7 @@ export class ResultViewProvider
                     });
                 } catch (error) {
                     this.log("Could not open the value: "
-                        + `${error instanceof Error
-                            ? error.message
-                            : String(error)}`);
+                        + errorText(error));
                 }
                 break;
             }
@@ -904,9 +798,7 @@ export class ResultViewProvider
                         value: await loadValueFromFile(),
                     });
                 } catch (error) {
-                    const text = error instanceof Error
-                        ? error.message
-                        : String(error);
+                    const text = errorText(error);
                     this.log(`Could not load the value: ${text}`);
                     send({
                         type: "valueLoaded",
@@ -1071,7 +963,7 @@ export class ResultViewProvider
             origin,
             resultSet,
             title,
-            (webview) => { return buildViewHtml(webview, this.extensionUri); },
+            (webview) => { return this.#html(webview); },
             this.extensionUri,
             (message) => {
                 void this.#onMaximizedMessage(maximized, message);
@@ -1189,8 +1081,7 @@ export class ResultViewProvider
         // It has to be on show once it is back, so the view goes to its
         // connection - and to the connection open on it that produced it,
         // where that is not the one whose tabs are on show.
-        this.#active = connection;
-        this.#generalByDefault = false;
+        this.#setActive(connection);
         results.lastRun ??= label;
         if (this.#shownSession(connection) !== label) {
             this.#activeSession = label;
@@ -1307,26 +1198,69 @@ export class ResultViewProvider
      * the one that ran last - the tabs stand for the last run, whichever
      * connection it was on.
      *
-     * @param connection The connection URI on show.
+     * @param connection The connection URI on show, or undefined where
+     *                   none is.
      *
      * @returns Its label, or undefined where nothing has run yet.
      */
-    #shownSession(connection: string): string | undefined {
-        return this.#activeSession
-            ?? this.#byConnection.get(connection)?.lastRun;
+    #shownSession(connection: string | undefined): string | undefined {
+        return connection === undefined
+            ? undefined
+            : this.#activeSession
+                ?? this.#byConnection.get(connection)?.lastRun;
     }
 
     /**
-     * @param connection The connection URI on show.
+     * @returns The label of the connection whose tabs are on show, or ""
+     *          where there is none - what an activity row is filed under.
+     */
+    #shownLabel(): string {
+        return this.#shownSession(this.#active) ?? "";
+    }
+
+    /**
+     * @param connection The connection URI on show, or undefined where
+     *                   none is.
      *
      * @returns The result sets and apply context on show for it.
      */
-    #sessionResults(connection: string): ISessionResults | undefined {
+    #sessionResults(
+        connection: string | undefined,
+    ): ISessionResults | undefined {
         const shown = this.#shownSession(connection);
 
-        return shown === undefined
+        return shown === undefined || connection === undefined
             ? undefined
             : this.#byConnection.get(connection)?.sessions.get(shown);
+    }
+
+    /**
+     * Puts a connection on show because the user, or a run, asked for it.
+     *
+     * @param connection The connection to show.
+     *
+     * @returns Nothing.
+     */
+    #setActive(connection: string): void {
+        this.#active = connection;
+        this.#generalByDefault = false;
+    }
+
+    /**
+     * Puts a connection on show where nothing is yet - or only General
+     * Actions, which holds the view until a real connection reports.
+     *
+     * @param connection The connection that has something to show.
+     *
+     * @returns Nothing.
+     */
+    #claimIfUnset(connection: string): void {
+        if (this.#active === undefined) {
+            this.#active = connection;
+            this.#generalByDefault = connection === GENERAL_ACTIONS;
+        } else if (this.#generalByDefault && connection !== GENERAL_ACTIONS) {
+            this.#setActive(connection);
+        }
     }
 
     /**
@@ -1342,8 +1276,7 @@ export class ResultViewProvider
      * @returns Nothing.
      */
     #show(connection: string, label: string): void {
-        this.#active = connection;
-        this.#generalByDefault = false;
+        this.#setActive(connection);
         if (this.#activeSession !== undefined
             && this.#activeSession !== label) {
             this.#activeSession = undefined;
@@ -1502,9 +1435,7 @@ export class ResultViewProvider
                 // The list is worth less than what is already gathered,
                 // so a server that cannot produce it is not fatal here.
                 this.log("Could not list the connections for the result "
-                    + `view: ${error instanceof Error
-                        ? error.message
-                        : String(error)}`);
+                    + `view: ${errorText(error)}`);
             }
         }
 
@@ -1561,10 +1492,7 @@ export class ResultViewProvider
         try {
             await this.#onRefresh(resultSet, target);
         } catch (error) {
-            const text = error instanceof Error
-                ? error.message
-                : String(error);
-            this.log(`Failed to refresh the result set: ${text}`);
+            this.log(`Failed to refresh the result set: ${errorText(error)}`);
         }
     }
 
@@ -1603,48 +1531,81 @@ export class ResultViewProvider
         // Writing a grid back runs SQL on the connection like anything
         // else, so it is a row of that connection's actions too - the one
         // place the statements it ran can be read afterwards.
-        const when = new Date();
-        const startedMs = Date.now();
-        const event = {
-            connection: applyContext.connectionUri,
-            label,
-            call: "db.execute_sql_script()",
-            when,
-        };
-
         try {
-            const statements = await applyContext.service.applyChanges(
-                applyContext.connectionId,
-                resultSet,
-                changes,
+            const statements = await this.#recorded(
+                {
+                    connection: applyContext.connectionUri,
+                    label,
+                    call: "db.execute_sql_script()",
+                },
+                "apply changes",
+                async () => {
+                    const applied = await applyContext.service.applyChanges(
+                        applyContext.connectionId, resultSet, changes);
+                    for (const statement of applied) {
+                        this.log(`Applied: ${statement}`);
+                    }
+
+                    return applied;
+                },
+                (applied) => {
+                    return `Applied ${counted(applied.length, "statement")}`;
+                },
             );
-            for (const statement of statements) {
-                this.log(`Applied: ${statement}`);
-            }
-            await this.appendEvent({
-                ...event,
-                message: `Applied ${statements.length} statement`
-                    + `${statements.length === 1 ? "" : "s"}`,
-                elapsedMs: Date.now() - startedMs,
-            });
             send({ type: "applied", resultId, statements });
         } catch (error) {
-            const text = error instanceof Error
-                ? error.message
-                : String(error);
-            this.log(`Failed to apply changes: ${text}`);
-            await this.appendEvent({
-                ...event,
-                message: "",
-                error: text,
-                elapsedMs: Date.now() - startedMs,
-            });
             send({
                 type: "applied",
                 resultId,
                 statements: [],
-                error: text,
+                error: errorText(error),
             });
+        }
+    }
+
+    /**
+     * Runs SQL on a connection for a grid and files it in the connection's
+     * actions: a row saying what it came to, or what went wrong.
+     *
+     * @param event Which connection, which `db.*` call.
+     * @param what The attempt, as a verb phrase, for the log on failure.
+     * @param work The call to make.
+     * @param describe Puts what it came to in the words the row shows.
+     *
+     * @returns What the call came to; rethrows what it failed with, once
+     *          that is logged and filed, for the caller to tell the grid.
+     */
+    async #recorded<T>(
+        event: Pick<IActivityEvent, "connection" | "label" | "call">,
+        what: string,
+        work: () => Promise<T>,
+        describe: (value: T) => string,
+    ): Promise<T> {
+        const when = new Date();
+        const startedMs = Date.now();
+
+        try {
+            const value = await work();
+            await this.appendEvent({
+                ...event,
+                when,
+                message: describe(value),
+                elapsedMs: Date.now() - startedMs,
+            });
+
+            return value;
+        } catch (error) {
+            const text = errorText(error);
+            this.log(`Failed to ${what}: ${text}`);
+            await this.appendEvent({
+                ...event,
+                when,
+                message: "",
+                error: text,
+                elapsedMs: Date.now() - startedMs,
+            });
+
+            throw error;
         }
     }
 
@@ -1719,35 +1680,29 @@ export class ResultViewProvider
             return;
         }
 
-        const startedMs = Date.now();
-        const event = {
-            connection: applyContext.connectionUri,
-            label,
-            call: "db.execute_sql()",
-            when: new Date(),
-        };
-
         try {
-            const next = await applyContext.service.fetchPage(
-                applyContext.connectionId, resultSet, page);
-            show(next);
-            await this.appendEvent({
-                ...event,
-                message: `Page ${page + 1}: ${next.status}`,
-                elapsedMs: Date.now() - startedMs,
-            });
+            await this.#recorded(
+                {
+                    connection: applyContext.connectionUri,
+                    label,
+                    call: "db.execute_sql()",
+                },
+                `fetch page ${page + 1}`,
+                async () => {
+                    const next = await applyContext.service.fetchPage(
+                        applyContext.connectionId, resultSet, page);
+                    show(next);
+
+                    return next;
+                },
+                (next) => { return `Page ${page + 1}: ${next.status}`; },
+            );
         } catch (error) {
-            const text = error instanceof Error
-                ? error.message
-                : String(error);
-            this.log(`Failed to fetch page ${page + 1}: ${text}`);
-            await this.appendEvent({
-                ...event,
-                message: "",
-                error: text,
-                elapsedMs: Date.now() - startedMs,
+            send({
+                type: "pageFailed",
+                resultId: resultSet.id,
+                error: errorText(error),
             });
-            send({ type: "pageFailed", resultId: resultSet.id, error: text });
         }
     }
 
@@ -1757,10 +1712,6 @@ export class ResultViewProvider
      * @returns It, if the connection on show still holds it.
      */
     #resultSet(resultId: string): IResultSet | undefined {
-        if (this.#active === undefined) {
-            return undefined;
-        }
-
         return this.#sessionResults(this.#active)?.resultSets
             .find((set) => {
                 return set.id === resultId;
@@ -1775,16 +1726,8 @@ export class ResultViewProvider
      * @returns Nothing.
      */
     #send(message: HostMessage): void {
-        if (!this.#view) {
-            return;
+        if (this.#view) {
+            this.#queue.post(message);
         }
-
-        if (!this.#ready) {
-            this.#pending.push(message);
-
-            return;
-        }
-
-        void this.#view.webview.postMessage(message);
     }
 }

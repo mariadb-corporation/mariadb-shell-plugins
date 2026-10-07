@@ -451,6 +451,14 @@ describe("runHolding", () => {
 
 describe("buildActionColumns", () => {
     /**
+     * @returns What the columns are told about the result sets on show:
+     *          none of them.
+     */
+    const none = (): ReadonlySet<string> => {
+        return new Set();
+    };
+
+    /**
      * @returns A click on a control of the given class.
      */
     const clickOn = (className: string): Event => {
@@ -461,7 +469,7 @@ describe("buildActionColumns", () => {
     };
 
     it("leads with what happened", () => {
-        const columns = buildActionColumns(new Set(), onCopy);
+        const columns = buildActionColumns(none, onCopy);
 
         expect(columns.map((column) => {
             return column.title;
@@ -473,8 +481,7 @@ describe("buildActionColumns", () => {
 
     it("names the connection last, and only when several are on show",
         () => {
-            const withConnection = buildActionColumns(
-                new Set(), onCopy, true);
+            const withConnection = buildActionColumns(none, onCopy, true);
 
             expect(withConnection.map((column) => {
                 return column.title;
@@ -486,13 +493,13 @@ describe("buildActionColumns", () => {
 
             // With one connection picked, a column repeating its name
             // the whole way down says nothing.
-            expect(buildActionColumns(new Set(), onCopy)
+            expect(buildActionColumns(none, onCopy)
                 .some((column) => { return column.title === "Conn"; }))
                 .toBe(false);
         });
 
     it("puts how long it took in the Time column", () => {
-        const columns = buildActionColumns(new Set(), onCopy);
+        const columns = buildActionColumns(none, onCopy);
         const format = columns[1].formatter as
             (cell: CellComponent) => string;
 

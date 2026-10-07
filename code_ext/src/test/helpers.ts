@@ -16,6 +16,7 @@
  */
 
 import type { IConnectionSettings } from "../connections/connectionManager.js";
+import { ObjectNotFoundError } from "../mcp/mariaDbApi.js";
 import type { IToolResult } from "../mcp/protocol.js";
 import type { IMcpConnection, IMcpConnector } from "../mcp/session.js";
 import type {
@@ -28,6 +29,7 @@ import type {
     ISchemaInfo,
     IPageRequest,
     IStatementResult,
+    ObjectType,
 } from "../mcp/types.js";
 import type { InstallCommand, ProcessRunner } from "../shell/installer.js";
 import type { ShellEnvironment } from "../shell/locator.js";
@@ -358,19 +360,22 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             _id: string,
             schema: string,
             name: string,
-            objectType: string,
+            objectType: ObjectType,
         ) => {
             api.lookups.push(`${schema}.${name}:${objectType}`);
             const details = options.details?.[`${schema}.${name}`];
             // Asked for as the wrong kind, the server finds nothing either.
             if (!details || (details.basic.type ?? "table") !== objectType) {
-                // Worded as the server words it, which is what tells a
-                // view apart from a failure.
-                return Promise.reject(new Error(
+                // The typed answer the real API turns the server's words
+                // into, which is what tells a view apart from a failure.
+                return Promise.reject(new ObjectNotFoundError(
                     `Error executing tool db.get_object_details: Shell `
                     + `Error: No ${objectType} '${name}' found in schema `
                     + `'${schema}'. Use db.list_objects to list the `
                     + `${objectType}s of a schema.`,
+                    objectType,
+                    schema,
+                    name,
                 ));
             }
 

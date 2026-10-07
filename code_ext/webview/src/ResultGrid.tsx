@@ -42,7 +42,6 @@ export const ROW_INDEX_FIELD = "__mariadbRowIndex";
 export interface IGridCallbacks {
     onCellEdited(rowIndex: number, column: string, value: unknown): void;
     onToggleDeleted(rowIndex: number): void;
-    onSelectionChanged(rowIndex: number | undefined): void;
     /** Saves a cell's value to a file the user picks. */
     onSaveValue?(rowIndex: number, column: string): void;
     /** Loads a file the user picks into a cell. */
@@ -560,6 +559,46 @@ export const toTableData = (
 };
 
 /**
+ * @param set A result set.
+ *
+ * @returns What tells one fetch of its rows from another: the page, and
+ *          how often it was fetched - the same page again, after an
+ *          apply, is new rows.
+ */
+export const pageKeyOf = (set: IResultSet): string => {
+    return set.page === undefined
+        ? ""
+        : `${set.page.index}/${set.page.loads}`;
+};
+
+/**
+ * What the grid has to be built afresh for, as against fed new rows.
+ *
+ * The page sends the whole of its state on every message, and the result
+ * set in it is a new object each time whether or not anything about it
+ * changed; building a table from scratch on each would throw away the
+ * scroll position, the column widths and the selection for nothing. So
+ * the table is keyed on what its columns are built from: which result
+ * set it is, which fetch of its rows - another page, or the same page
+ * reloaded, starts over at the top as a new result set does - whether it
+ * may be edited, and the columns themselves, with everything the header
+ * and the editors read from them. The rows are not in it: they go in
+ * through `replaceData`, which keeps all of the above.
+ *
+ * @param set The result set on show.
+ *
+ * @returns A key that changes only when the table has to.
+ */
+const gridKeyOf = (set: IResultSet): string => {
+    return [
+        set.id,
+        pageKeyOf(set),
+        String(set.editable),
+        JSON.stringify(set.columns),
+    ].join("\u0000");
+};
+
+/**
  * An editable result grid, built on Tabulator.
  *
  * Tabulator owns the DOM below its container, so the component holds it in
@@ -612,9 +651,6 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                 onOpenValue: (index, column) => {
                     callbacks.current.onOpenValue?.(index, column);
                 },
-                onSelectionChanged: (index) => {
-                    callbacks.current.onSelectionChanged(index);
-                },
             }, freezeKeys, showTypes),
             index: ROW_INDEX_FIELD,
             layout: "fitDataStretch",
@@ -638,14 +674,6 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                     );
                 }
             },
-        });
-
-        instance.on("rowSelectionChanged", (_data, selected) => {
-            const first = selected[0]?.getData() as
-                Record<string, unknown> | undefined;
-            callbacks.current.onSelectionChanged(
-                first?.[ROW_INDEX_FIELD] as number | undefined,
-            );
         });
 
         instance.on("tableBuilt", () => {
@@ -672,11 +700,11 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                 // rather than being a no-op.
             }
         };
-        // Rebuilt only when the result set itself changes, which of its
-        // columns are frozen, or whether the header shows their types; the
-        // rows are pushed in by the effect below.
+        // Rebuilt only when what the columns are built from changes - see
+        // `gridKeyOf` - or which of them are frozen, or whether the header
+        // shows their types; the rows are pushed in by the effect below.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [resultSet, freezeKeys, showTypes]);
+    }, [gridKeyOf(resultSet), freezeKeys, showTypes]);
 
     useEffect(() => {
         const instance = table.current;

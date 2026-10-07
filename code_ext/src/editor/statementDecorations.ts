@@ -72,8 +72,23 @@ const nextTick = (): Promise<void> => {
 export class StatementDecorator implements vscode.Disposable {
     readonly #decoration: vscode.TextEditorDecorationType;
     readonly #disposables: vscode.Disposable[] = [];
-    /** Document URI -> the scan running for it, so it can be cancelled. */
-    readonly #running = new Map<string, { cancelled: boolean }>();
+    /**
+     * Document URI -> the scan running for it, so it can be cancelled,
+     * and which version of the text it is scanning.
+     */
+    readonly #running = new Map<string, {
+        cancelled: boolean;
+        version: number;
+    }>();
+    /**
+     * Document URI -> what the last finished scan found, and in which
+     * version of the text. A document shown in two editors, or shown
+     * again, is decorated from here rather than scanned again.
+     */
+    readonly #scanned = new Map<string, {
+        version: number;
+        ranges: vscode.Range[];
+    }>();
     /** Document URI -> the pending rescan after an edit. */
     readonly #debounced = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -113,7 +128,9 @@ export class StatementDecorator implements vscode.Disposable {
                 this.#scheduleRescan(event.document);
             }),
             vscode.workspace.onDidCloseTextDocument((document) => {
-                this.#cancel(document.uri.toString());
+                const key = document.uri.toString();
+                this.#cancel(key);
+                this.#scanned.delete(key);
             }),
         );
 
@@ -121,7 +138,8 @@ export class StatementDecorator implements vscode.Disposable {
     }
 
     /**
-     * Rescans every visible SQL editor.
+     * Decorates every visible SQL editor: from the last scan where the
+     * text has not changed since, by a new one otherwise.
      *
      * @returns Nothing.
      */
@@ -137,6 +155,10 @@ export class StatementDecorator implements vscode.Disposable {
      * Scans one editor's document and marks its statement starts,
      * showing them as they are found.
      *
+     * The scan is of the document, not of the editor: every editor
+     * showing it gets the dots, and one whose text was scanned already -
+     * or is being scanned - is not scanned again.
+     *
      * @param editor The editor to decorate.
      *
      * @returns Nothing, once the whole document has been scanned.
@@ -144,12 +166,25 @@ export class StatementDecorator implements vscode.Disposable {
     public async decorate(editor: vscode.TextEditor): Promise<void> {
         const { document } = editor;
         const key = document.uri.toString();
+        const version = document.version;
+
+        const scanned = this.#scanned.get(key);
+        if (scanned?.version === version) {
+            editor.setDecorations(this.#decoration, scanned.ranges);
+
+            return;
+        }
+
+        // A scan of this very text is under way; it reaches this editor
+        // along with the others when it finishes.
+        if (this.#running.get(key)?.version === version) {
+            return;
+        }
         this.#cancel(key);
 
-        const token = { cancelled: false };
+        const token = { cancelled: false, version };
         this.#running.set(key, token);
 
-        const version = document.version;
         const text = document.getText();
         const ranges: vscode.Range[] = [];
 
@@ -161,6 +196,22 @@ export class StatementDecorator implements vscode.Disposable {
          */
         const stale = (): boolean => {
             return token.cancelled || document.version !== version;
+        };
+
+        /**
+         * Shows what has been found so far in every editor on the
+         * document - this one, and whichever others are open on it now.
+         *
+         * @returns Nothing.
+         */
+        const apply = (): void => {
+            editor.setDecorations(this.#decoration, [...ranges]);
+            for (const other of vscode.window.visibleTextEditors) {
+                if (other !== editor
+                    && other.document.uri.toString() === key) {
+                    other.setDecorations(this.#decoration, [...ranges]);
+                }
+            }
         };
 
         try {
@@ -195,7 +246,7 @@ export class StatementDecorator implements vscode.Disposable {
                 // re-apply on every slice.
                 if (lastApply === 0
                     || now - lastApply >= this.#applyIntervalMs) {
-                    editor.setDecorations(this.#decoration, [...ranges]);
+                    apply();
                     lastApply = now;
                 }
 
@@ -206,7 +257,8 @@ export class StatementDecorator implements vscode.Disposable {
                 sliceStart = Date.now();
             }
 
-            editor.setDecorations(this.#decoration, ranges);
+            this.#scanned.set(key, { version, ranges });
+            apply();
         } finally {
             if (this.#running.get(key) === token) {
                 this.#running.delete(key);
@@ -229,6 +281,7 @@ export class StatementDecorator implements vscode.Disposable {
             clearTimeout(timer);
         }
         this.#debounced.clear();
+        this.#scanned.clear();
 
         for (const disposable of this.#disposables) {
             disposable.dispose();
@@ -248,6 +301,14 @@ export class StatementDecorator implements vscode.Disposable {
         }
 
         const key = document.uri.toString();
+        // An event that changed no text - the dirty flag flipping on a
+        // save, say - leaves the last scan good, or the one running on
+        // course, and nothing to redo.
+        if (this.#scanned.get(key)?.version === document.version
+            || this.#running.get(key)?.version === document.version) {
+            return;
+        }
+
         // The scan in flight is for text that no longer exists.
         this.#cancel(key);
 

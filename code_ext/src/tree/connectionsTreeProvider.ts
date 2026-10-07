@@ -31,10 +31,11 @@ import {
     type IFiling,
     type IStoredConnection,
 } from "../connections/connectionStore.js";
-import { showErrorWithLog } from "../errorMessages.js";
+import { reportError } from "../errorMessages.js";
 import type { IServerStatus } from "../mcp/serverStarter.js";
 import {
     ConnectionsModel,
+    folderOf,
     type ConnectionsNode,
     type IConnectionNode,
     type IFolderNode,
@@ -52,6 +53,8 @@ import {
     createTreeItem,
     type IconResolver,
 } from "./treeItems.js";
+import { ViewStateTracker, type ViewState } from "./viewState.js";
+import { errorText } from "../text.js";
 
 /** What the tree needs of the folders the user made. */
 export interface ICustomFolders {
@@ -86,20 +89,8 @@ export const CONNECTIONS_DRAG_MIME = "application/vnd.mariadb.connections";
  */
 export const CONNECTIONS_VIEW_STATE_CONTEXT_KEY = "mariadb.connectionsView";
 
-/**
- * What the Connections view is showing when it has no rows.
- *
- * - `looking`: the server is being found or started.
- * - `installing`: the MariaDB Shell is being downloaded and installed.
- * - `failed`: the last attempt to list the connections failed.
- * - `listed`: the connections were listed - an empty tree now means there
- *   are none.
- */
-export type ConnectionsViewState =
-    | "looking"
-    | "installing"
-    | "failed"
-    | "listed";
+/** What the Connections view is showing when it has no rows. */
+export type ConnectionsViewState = ViewState;
 
 /**
  * Feeds the Connections view in the primary sidebar.
@@ -119,11 +110,8 @@ export class ConnectionsTreeProvider
     readonly #onDidChangeTreeData =
         new vscode.EventEmitter<ConnectionsNode | undefined>();
     readonly #unsubscribe: () => void;
-    readonly #unsubscribeStatus: () => void;
-    /** How the last attempt at listing the roots went, if there was one. */
-    #listing: "unasked" | "listed" | "failed" = "unasked";
-    /** The state last handed to the context key. */
-    #shownState?: ConnectionsViewState;
+    /** What the view says while it has no rows. */
+    readonly #viewState: ViewStateTracker;
     /**
      * The tree's attempts at opening a connection, by URI, while they are
      * under way and after they failed. Cleared once one succeeds.
@@ -150,7 +138,7 @@ export class ConnectionsTreeProvider
         private readonly resolveIcon: IconResolver,
         private readonly log: (message: string) => void,
         private readonly connectOnOpen: () => boolean,
-        private readonly status?: IServerStatus,
+        status?: IServerStatus,
         private readonly customFolders: ICustomFolders = new FolderSet(),
         private readonly collapsedFolders =
         new FolderSet(undefined, COLLAPSED_FOLDERS_KEY),
@@ -161,15 +149,8 @@ export class ConnectionsTreeProvider
         this.#unsubscribe = connections.onDidChange(() => {
             this.refresh();
         });
-        this.#unsubscribeStatus = status?.onDidChangePhase((phase) => {
-            // A new attempt is under way, so the last one's failure is no
-            // longer what the view should be saying.
-            if (phase === "locating" && this.#listing === "failed") {
-                this.#listing = "unasked";
-            }
-            this.#showState();
-        }) ?? (() => { /* nothing to stop */ });
-        this.#showState();
+        this.#viewState =
+            new ViewStateTracker(CONNECTIONS_VIEW_STATE_CONTEXT_KEY, status);
     }
 
     /**
@@ -225,16 +206,12 @@ export class ConnectionsTreeProvider
             }
 
             const roots = await this.#model.getRoots();
-            this.#listing = "listed";
-            this.#showState();
+            this.#viewState.listed();
 
             return roots;
         } catch (error) {
             this.#report("list the connections", error);
-            // The attempt is over. A view left saying it is still looking
-            // would be as wrong as one saying nothing is configured.
-            this.#listing = "failed";
-            this.#showState();
+            this.#viewState.failed();
 
             return [];
         }
@@ -244,37 +221,7 @@ export class ConnectionsTreeProvider
      * @returns What the view should say while it has no rows.
      */
     public get state(): ConnectionsViewState {
-        if (this.status?.phase === "installing") {
-            return "installing";
-        }
-
-        // A server that did not start is a failure whoever asked for it;
-        // rows listed earlier still hide the welcome content, so this only
-        // shows where there is nothing else to show.
-        if (this.#listing === "failed" || this.status?.phase === "failed") {
-            return "failed";
-        }
-
-        return this.#listing === "listed" ? "listed" : "looking";
-    }
-
-    /**
-     * Hands the view's state to its welcome content, when it changed.
-     *
-     * @returns Nothing.
-     */
-    #showState(): void {
-        const state = this.state;
-        if (state === this.#shownState) {
-            return;
-        }
-
-        this.#shownState = state;
-        void vscode.commands.executeCommand(
-            "setContext",
-            CONNECTIONS_VIEW_STATE_CONTEXT_KEY,
-            state,
-        );
+        return this.#viewState.state;
     }
 
     /**
@@ -353,9 +300,7 @@ export class ConnectionsTreeProvider
             // Opening fired the refresh that lists the schemas already.
             this.#attempts.delete(node.uri);
         } catch (error) {
-            const message = error instanceof Error
-                ? error.message
-                : String(error);
+            const message = errorText(error);
             this.log(`Failed to open '${node.uri}': ${message}`);
             this.#attempts.set(node.uri, { state: "failed", message });
             this.refresh(node);
@@ -570,11 +515,7 @@ export class ConnectionsTreeProvider
      * @returns Nothing.
      */
     #report(what: string, error: unknown): void {
-        const message = error instanceof Error
-            ? error.message
-            : String(error);
-        this.log(`Failed to ${what}: ${message}`);
-        void showErrorWithLog(message);
+        reportError(this.log, error, what);
     }
 
     /**
@@ -584,7 +525,7 @@ export class ConnectionsTreeProvider
      */
     public dispose(): void {
         this.#unsubscribe();
-        this.#unsubscribeStatus();
+        this.#viewState.dispose();
         this.#onDidChangeTreeData.dispose();
     }
 }
@@ -598,23 +539,7 @@ export class ConnectionsTreeProvider
  *          schema or an object, say, which belong to a connection's database.
  */
 const dropFolder = (target: ConnectionsNode | undefined): string | undefined => {
-    if (target === undefined) {
-        return ROOT_FOLDER;
-    }
-
-    switch (target.kind) {
-        case "folder": {
-            return target.path;
-        }
-
-        case "connection": {
-            return target.path ?? ROOT_FOLDER;
-        }
-
-        default: {
-            return undefined;
-        }
-    }
+    return target === undefined ? ROOT_FOLDER : folderOf(target);
 };
 
 /**

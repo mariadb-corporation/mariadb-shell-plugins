@@ -19,6 +19,7 @@ import type { McpServerCommand } from "../shell/mcpServer.js";
 import { MariaDbApi, type IToolCaller } from "./mariaDbApi.js";
 import { SandboxApi, type ISandboxApi } from "./sandboxApi.js";
 import type { IMariaDbApi } from "./types.js";
+import { errorText } from "../text.js";
 
 /**
  * A live connection to a running MCP server: it answers tool calls and can
@@ -127,7 +128,7 @@ export class McpSession {
             await connection.close();
         } catch (error) {
             this.log(`Failed to stop the MCP server cleanly: `
-                + `${error instanceof Error ? error.message : String(error)}`);
+                + errorText(error));
         }
     }
 

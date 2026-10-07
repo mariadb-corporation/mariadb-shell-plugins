@@ -24,6 +24,7 @@ import type { McpServerCommand } from "../shell/mcpServer.js";
 import { LineReader } from "../shell/lineReader.js";
 import type { IToolResult } from "./protocol.js";
 import type { IMcpConnection, IMcpConnector } from "./session.js";
+import { errorText } from "../text.js";
 
 /** How many of the server's last stderr lines a start failure quotes. */
 const STDERR_LINES_KEPT = 5;
@@ -76,9 +77,7 @@ export const createSdkConnector = (): IMcpConnector => {
                 await client.connect(transport);
             } catch (error) {
                 reader.flush();
-                const message = error instanceof Error
-                    ? error.message
-                    : String(error);
+                const message = errorText(error);
                 const said = recent.length > 0
                     ? ` Its last output: ${recent.join(" | ")}`
                     : "";

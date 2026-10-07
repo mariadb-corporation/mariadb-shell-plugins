@@ -20,9 +20,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
     MariaDbApi,
     normalizeStatementResult,
+    ObjectNotFoundError,
     type IToolCaller,
 } from "../../mcp/mariaDbApi.js";
-import type { IToolResult } from "../../mcp/protocol.js";
+import { McpToolError, type IToolResult } from "../../mcp/protocol.js";
 
 /** Records the calls made, and answers from a canned table. */
 const createCaller = (
@@ -291,6 +292,48 @@ describe("MariaDbApi", () => {
             object_name: "city",
             object_type: "table",
         });
+    });
+
+    it("tells no such object apart from the call failing", async () => {
+        // As the server words it, with the SDK's own words in front.
+        const notFound = createCaller({
+            "db.get_object_details": {
+                isError: true,
+                content: [{
+                    type: "text",
+                    text: "Error executing tool db.get_object_details: "
+                        + "No table 'user' found in schema 'mysql'. Use "
+                        + "db.list_objects to list the tables of a schema.",
+                }],
+            },
+        });
+
+        const error = await new MariaDbApi(notFound)
+            .getObjectDetails("uuid-1", "mysql", "user", "table")
+            .catch((caught: unknown) => { return caught; });
+
+        expect(error).toBeInstanceOf(ObjectNotFoundError);
+        expect(error).toMatchObject({
+            objectType: "table",
+            schemaName: "mysql",
+            objectName: "user",
+            message: expect.stringContaining(
+                "No table 'user' found in schema 'mysql'") as string,
+        });
+
+        // Any other failure stays the plain tool error it is.
+        const closed = createCaller({
+            "db.get_object_details": {
+                isError: true,
+                content: [{ type: "text", text: "The connection was closed." }],
+            },
+        });
+        const other = await new MariaDbApi(closed)
+            .getObjectDetails("uuid-1", "mysql", "user", "table")
+            .catch((caught: unknown) => { return caught; });
+
+        expect(other).toBeInstanceOf(McpToolError);
+        expect(other).not.toBeInstanceOf(ObjectNotFoundError);
     });
 
     it("runs a script and returns one result per statement", async () => {

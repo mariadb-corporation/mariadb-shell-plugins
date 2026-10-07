@@ -15,6 +15,11 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import type {
+    IBusyMessage,
+    ICancelMessage,
+    IReadyMessage,
+} from "../webview/dialogProtocol.js";
 import type { ISandboxFields } from "./sandboxFields.js";
 
 /**
@@ -45,21 +50,10 @@ export interface ISandboxErrorMessage {
     message: string;
 }
 
-/** Whether the deploy is under way. */
-export interface ISandboxBusyMessage {
-    type: "busy";
-    busy: boolean;
-}
-
 export type SandboxHostMessage =
     | ISandboxLoadMessage
     | ISandboxErrorMessage
-    | ISandboxBusyMessage;
-
-/** The webview is up and wants its state. */
-export interface ISandboxReadyMessage {
-    type: "ready";
-}
+    | IBusyMessage;
 
 /** Deploy a sandbox with these fields. */
 export interface ISandboxCreateMessage {
@@ -67,12 +61,7 @@ export interface ISandboxCreateMessage {
     fields: ISandboxFields;
 }
 
-/** Close without deploying. */
-export interface ISandboxCancelMessage {
-    type: "cancel";
-}
-
 export type SandboxWebviewMessage =
-    | ISandboxReadyMessage
+    | IReadyMessage
     | ISandboxCreateMessage
-    | ISandboxCancelMessage;
+    | ICancelMessage;

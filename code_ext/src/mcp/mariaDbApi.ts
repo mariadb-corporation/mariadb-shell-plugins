@@ -20,6 +20,7 @@ import {
     decodeObject,
     decodeScalar,
     decodeVoid,
+    McpToolError,
     type IToolResult,
 } from "./protocol.js";
 import {
@@ -40,6 +41,34 @@ import type {
     IStatementResult,
     ObjectType,
 } from "./types.js";
+import { errorText } from "../text.js";
+
+/**
+ * How the MCP server says an object it was asked to describe does not
+ * exist: `No table 'user' found in schema 'mysql'. Use db.list_objects...`
+ * (`db.get_object_details` in `mcp_plugin/lib/db_functions.py`). Matched
+ * anywhere in the text, since the SDK puts its own words in front.
+ */
+const OBJECT_NOT_FOUND = /No (\w+) '([^']*)' found in schema '([^']*)'/;
+
+/**
+ * Raised by `getObjectDetails` when there is no such object.
+ *
+ * It is an answer as much as a failure: asking for a table is how a
+ * SELECT's source is found out to be a view, so the callers that ask
+ * tell this apart from the connection having gone away.
+ */
+export class ObjectNotFoundError extends McpToolError {
+    public constructor(
+        message: string,
+        public readonly objectType: ObjectType,
+        public readonly schemaName: string,
+        public readonly objectName: string,
+    ) {
+        super("db.get_object_details", message);
+        this.name = "ObjectNotFoundError";
+    }
+}
 
 /**
  * A statement's result as the wire carries it: a shell that predates
@@ -380,7 +409,8 @@ export class MariaDbApi implements IMariaDbApi {
      * @param objectName The object to describe.
      * @param objectType The type of the object.
      *
-     * @returns The object's description.
+     * @returns The object's description. It rejects with an
+     *          {@link ObjectNotFoundError} when there is no such object.
      */
     public async getObjectDetails(
         connectionId: string,
@@ -390,15 +420,25 @@ export class MariaDbApi implements IMariaDbApi {
     ): Promise<IObjectDetails> {
         const name = "db.get_object_details";
 
-        return decodeObject<IObjectDetails>(
-            name,
-            await this.caller.callTool(name, {
-                connection_id: connectionId,
-                schema_name: schemaName,
-                object_name: objectName,
-                object_type: objectType,
-            }),
-        );
+        try {
+            return decodeObject<IObjectDetails>(
+                name,
+                await this.caller.callTool(name, {
+                    connection_id: connectionId,
+                    schema_name: schemaName,
+                    object_name: objectName,
+                    object_type: objectType,
+                }),
+            );
+        } catch (error) {
+            const text = errorText(error);
+            if (OBJECT_NOT_FOUND.test(text)) {
+                throw new ObjectNotFoundError(
+                    text, objectType, schemaName, objectName);
+            }
+
+            throw error;
+        }
     }
 
     /**

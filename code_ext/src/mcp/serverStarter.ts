@@ -16,6 +16,7 @@
  */
 
 import type { IMariaDbApi } from "./types.js";
+import { errorText } from "../text.js";
 
 /**
  * Where getting a server up has got to.
@@ -140,9 +141,7 @@ export class ServerStarter implements IServerStatus {
 
             return api;
         } catch (error) {
-            const message = error instanceof Error
-                ? error.message
-                : String(error);
+            const message = errorText(error);
             this.log(`The MCP server could not be started: ${message}`);
             this.#set("failed");
             throw error;

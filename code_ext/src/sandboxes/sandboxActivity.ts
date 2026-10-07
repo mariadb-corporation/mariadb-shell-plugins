@@ -17,10 +17,10 @@
 
 import {
     callArguments,
-    counted,
     createGeneralWatcher,
     type ActivityReporter,
 } from "../connections/connectionActivity.js";
+import { counted } from "../text.js";
 import type { ISandboxApi } from "../mcp/sandboxApi.js";
 
 /**

@@ -138,6 +138,36 @@ export type ConnectionsNode =
     | IObjectGroupNode
     | IObjectNode;
 
+/**
+ * The folder a row stands for: a folder row is its own, a connection row
+ * the one it is filed in. Where a command on a row or a drop onto it
+ * works.
+ *
+ * @param node The row, or undefined when there is none - a command run
+ *             from the toolbar, say.
+ *
+ * @returns The folder, `/` for a connection at the top level; undefined
+ *          for no row and for the rows under a connection, which belong
+ *          to its database rather than to a folder.
+ */
+export const folderOf = (
+    node: ConnectionsNode | undefined,
+): string | undefined => {
+    switch (node?.kind) {
+        case "folder": {
+            return node.path;
+        }
+
+        case "connection": {
+            return node.path ?? ROOT_FOLDER;
+        }
+
+        default: {
+            return undefined;
+        }
+    }
+};
+
 /** The caption each object group is shown under. */
 export const OBJECT_GROUP_LABELS: Record<ObjectType, string> = {
     table: "Tables",
@@ -253,6 +283,8 @@ export class ConnectionsModel {
         const defaultUri = this.connections.defaultConnection === undefined
             ? undefined
             : withDefaultScheme(this.connections.defaultConnection);
+        // A settings read; once per listing rather than once per row.
+        const connectOnOpen = this.connectOnOpen();
 
         return stored.map((connection) => {
             // Any connection open on it, not only the one the tree
@@ -273,7 +305,7 @@ export class ConnectionsModel {
                 connected,
                 isDefault: withDefaultScheme(connection.uri) === defaultUri,
                 connectionKind: connection.kind,
-                expandable: connected || this.connectOnOpen(),
+                expandable: connected || connectOnOpen,
             };
         });
     }
