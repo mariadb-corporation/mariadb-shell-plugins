@@ -585,6 +585,10 @@ mariadb-shell -- mcp setup-oauth --mode=builtin \
   Document (`--cimd`, on by default).
 - The sign-in page is rate limited per address and per account, and connects to
   a non-loopback database over TLS only.
+- Starting a sign-in (`/authorize`) is limited to 30 per address per minute.
+  Behind a reverse proxy every browser shares the proxy's address, so many
+  people signing in within the same minute can reach that limit; they are told
+  to retry after a minute.
 
 #### Arcade (and other gateways)
 

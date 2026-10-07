@@ -48,8 +48,8 @@ adds:
 * **Access tokens** are JWTs this server signs (ES256, the key in the generic
   secret group), for this server's public URL alone, carrying the user, the
   grant and the user's token epoch - raising which revokes every token at once.
-* **Clients** are registered by an administrator (``mcp setup
-  --addOAuthClient``), dynamically, or - with a Client ID Metadata Document - by
+* **Clients** are registered by an administrator (``mcp setup-oauth
+  --addClient``), dynamically, or - with a Client ID Metadata Document - by
   naming an https URL as the client id, which is fetched with a guard against
   being pointed at internal addresses.
 
@@ -66,6 +66,7 @@ import hmac
 import html
 import ipaddress
 import json
+import os
 import secrets
 import socket
 import threading
@@ -89,6 +90,13 @@ REFRESH_TOKEN_PREFIX = "mdbrt_"
 # How long a pending sign-in, and an authorization code, stay usable.
 PENDING_LIFETIME = 600
 CODE_LIFETIME = 60
+
+# The most pending sign-ins, and cached Client ID Metadata Documents, kept at
+# once. Both are created by requests nobody has authenticated yet, so without
+# a bound a stream of them would grow the server's memory; past it the oldest
+# are dropped.
+_MAX_PENDING = 10000
+_MAX_CIMD_CACHE = 1000
 
 # How long a grant record read from the secret store is trusted, in seconds.
 # What another process changes - mcp setup removing a client or revoking a
@@ -442,8 +450,8 @@ def fetch_client_metadata(url: str, resolve=None, http_get=None) -> dict:
     Args:
         url (str): The client id, an https URL with a path.
         resolve: ``(host) -> [addresses]``, for tests.
-        http_get: ``(url, max_bytes, timeout) -> (status, headers, body)``, for
-            tests.
+        http_get: ``(url, addresses, max_bytes, timeout) -> (status, headers,
+            body)``, for tests.
 
     Returns:
         A dict with the document as ``metadata`` and how long it may be cached
@@ -460,7 +468,12 @@ def fetch_client_metadata(url: str, resolve=None, http_get=None) -> dict:
     if not addresses or not all(_is_public_address(a) for a in addresses):
         raise ValueError(f"'{parts.hostname}' resolves to an address that is not public")
 
-    status, headers, body = (http_get or _bounded_get)(url, _CIMD_MAX_BYTES, _CIMD_TIMEOUT)
+    # Connected to the addresses checked above, never resolved again: a name
+    # answering a public address to the check and an internal one to the
+    # connect (DNS rebinding) would otherwise get the fetch past the check.
+    status, headers, body = (http_get or _bounded_get)(
+        url, addresses, _CIMD_MAX_BYTES, _CIMD_TIMEOUT
+    )
     if status != 200:
         raise ValueError(f"fetching the document answered {status}")
     if len(body) > _CIMD_MAX_BYTES:
@@ -485,22 +498,58 @@ def fetch_client_metadata(url: str, resolve=None, http_get=None) -> dict:
 
 
 def _resolve(host: str) -> list:
-    """Returns the addresses a host name resolves to."""
-    return sorted({info[4][0] for info in socket.getaddrinfo(host, 443)})
+    """Returns the addresses a host name resolves to, in the resolver's order.
+
+    That order is the one to try them in (RFC 6724): on a host without IPv6
+    the IPv4 addresses come first.
+    """
+    return list(dict.fromkeys(info[4][0] for info in socket.getaddrinfo(host, 443)))
 
 
-def _bounded_get(url: str, max_bytes: int, timeout: float) -> tuple:
-    """GETs a URL without following redirects, reading at most max_bytes + 1."""
+def _bounded_get(url: str, addresses: list, max_bytes: int, timeout: float) -> tuple:
+    """GETs a URL from one of the given addresses of its host.
+
+    The addresses are tried in turn until one connects, all within
+    ``timeout``. The host name is still what the request names (``Host``) and
+    what TLS checks the certificate against (``sni_hostname``). Redirects are
+    not followed, and at most ``max_bytes + 1`` bytes are read.
+    """
     import httpx2
 
-    with httpx2.stream("GET", url, timeout=timeout, follow_redirects=False) as response:
-        body = b""
-        for chunk in response.iter_bytes():
-            body += chunk
-            if len(body) > max_bytes:
-                break
+    parts = urlsplit(url)
+    host_header = parts.netloc.rpartition("@")[2]
+    deadline = time.monotonic() + timeout
+    error = ValueError("no address to connect to")
+    for address in addresses:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        ip = ipaddress.ip_address(address)
+        netloc = f"[{ip}]" if ip.version == 6 else str(ip)
+        if parts.port is not None:
+            netloc += f":{parts.port}"
+        request = {
+            "url": parts._replace(netloc=netloc).geturl(),
+            "headers": {"Host": host_header},
+            "extensions": {"sni_hostname": parts.hostname},
+        }
+        try:
+            with httpx2.Client(timeout=remaining, follow_redirects=False) as client, client.stream(
+                "GET", **request
+            ) as response:
+                body = b""
+                for chunk in response.iter_bytes():
+                    body += chunk
+                    if len(body) > max_bytes:
+                        break
 
-        return response.status_code, response.headers, body
+                return response.status_code, response.headers, body
+        except (httpx2.ConnectError, httpx2.ConnectTimeout) as connect_error:
+            # This address is unreachable from here (an IPv6 one on a host
+            # without IPv6, say); the next one may not be.
+            error = connect_error
+
+    raise error
 
 
 # --- The provider -------------------------------------------------------------------
@@ -539,6 +588,7 @@ class BuiltinAuthProvider:
         self._recent_refreshes = {}
         self._cimd_cache = {}
         self._client_uses = {}
+        self._clients = ({}, None)
         # Failed sign-ins, counted per account and per address.
         self._login_failures = auth.FailureCounter(_LOGIN_WINDOW)
         self._sweeper = None
@@ -713,13 +763,35 @@ class BuiltinAuthProvider:
         if record is None:
             return None
 
-        clients = oauth_config.read_clients()
-        reason = self._grant_end_reason(record, int(time.time()), clients)
+        reason = self._grant_end_reason(record, int(time.time()), self._known_clients())
         if reason:
             self.end_grant(user, grant_id, reason)
             return None
 
         return record
+
+    def _known_clients(self) -> dict:
+        """Returns the registered clients, read again only when their file changed.
+
+        Every built-in token check asks whether its grant's client still
+        exists, so this is a ``stat`` per request rather than a read and a
+        parse, the way :class:`mcp_plugin.lib.auth.UserDirectory` treats
+        ``users.json``.
+        """
+        try:
+            stat = os.stat(oauth_config.get_clients_file_path())
+            version = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            version = None
+
+        with self._lock:
+            clients, read_version = self._clients
+        if version is None or version != read_version:
+            clients = oauth_config.read_clients()
+            with self._lock:
+                self._clients = (clients, version)
+
+        return clients
 
     def live_grant_uri(self, user, grant_id) -> Optional[str]:
         """Returns the URI of a live grant's login connection, or None."""
@@ -811,7 +883,7 @@ class BuiltinAuthProvider:
             None,
         )
         with self._lock:
-            self._cimd_cache[url] = (client, now + fetched["max_age"])
+            _put_bounded(self._cimd_cache, url, (client, now + fetched["max_age"]), _MAX_CIMD_CACHE)
 
         return client
 
@@ -859,18 +931,19 @@ class BuiltinAuthProvider:
             )
 
         request_id = secrets.token_urlsafe(32)
+        entry = {
+            "client_id": client.client_id,
+            "client_name": client.client_name or client.client_id,
+            "redirect_uri": str(params.redirect_uri),
+            "explicit": params.redirect_uri_provided_explicitly,
+            "code_challenge": params.code_challenge,
+            "scopes": params.scopes or list(tenants.SUPPORTED_SCOPES),
+            "state": params.state,
+            "csrf": secrets.token_urlsafe(32),
+            "created": time.time(),
+        }
         with self._lock:
-            self._pending[request_id] = {
-                "client_id": client.client_id,
-                "client_name": client.client_name or client.client_id,
-                "redirect_uri": str(params.redirect_uri),
-                "explicit": params.redirect_uri_provided_explicitly,
-                "code_challenge": params.code_challenge,
-                "scopes": params.scopes or list(tenants.SUPPORTED_SCOPES),
-                "state": params.state,
-                "csrf": secrets.token_urlsafe(32),
-                "created": time.time(),
-            }
+            _put_bounded(self._pending, request_id, entry, _MAX_PENDING)
 
         return f"{self.issuer}/login?req={request_id}"
 
@@ -1023,7 +1096,7 @@ this server on your behalf, and will be sent back to
 
         self._check_roles(pending["client_id"], record, roles, default_role)
 
-        granted = [scope for scope in consented if scope in (record.get("scopes") or [])]
+        granted = [scope for scope in consented if scope in tenants.scopes_of(record)]
         if not granted:
             raise SignInError("Your account may not be granted any of these uses.")
 
@@ -1229,11 +1302,14 @@ this server on your behalf, and will be sent back to
 
         grant_end = record["created"] + int(self.settings["grantMaxLifetime"])
         lifetime = max(1, min(int(self.settings["accessTokenLifetime"]), grant_end - now))
+        # Narrowed to what the user may have NOW, so mcp setup --setScopes
+        # reaches a signed-in user at their next refresh at the latest.
+        scopes = _grant_scopes(record, self.directory.active_user(user))
         token = OAuthToken(
-            access_token=self._access_token(record, now, now + lifetime),
+            access_token=self._access_token(record, scopes, now, now + lifetime),
             token_type="Bearer",
             expires_in=lifetime,
-            scope=" ".join(record["scopes"]),
+            scope=" ".join(scopes),
             refresh_token=refresh,
         )
         if previous_refresh:
@@ -1242,8 +1318,8 @@ this server on your behalf, and will be sent back to
 
         return token
 
-    def _access_token(self, record, issued_at, expires_at) -> str:
-        """Signs an access token for a grant."""
+    def _access_token(self, record, scopes, issued_at, expires_at) -> str:
+        """Signs an access token for a grant, carrying the given scopes."""
         import jwt
 
         claims = {
@@ -1251,7 +1327,7 @@ this server on your behalf, and will be sent back to
             "aud": self.public_url,
             "sub": record["user"],
             "client_id": record["client"],
-            "scope": " ".join(record["scopes"]),
+            "scope": " ".join(scopes),
             "iat": issued_at,
             "exp": expires_at,
             "jti": secrets.token_hex(16),
@@ -1381,10 +1457,14 @@ this server on your behalf, and will be sent back to
         if active is None or int(active.get("tokenEpoch", 0)) != int(claims.get("epoch", -1)):
             return None
 
+        # The user's current scopes bound the token's, so a narrowing by mcp
+        # setup --setScopes applies to the next request, not the next sign-in.
+        allowed = tenants.scopes_of(active)
+
         return AccessToken(
             token=token,
             client_id=str(claims.get("client_id")),
-            scopes=str(claims.get("scope", "")).split(),
+            scopes=[scope for scope in str(claims.get("scope", "")).split() if scope in allowed],
             expires_at=int(claims["exp"]),
             resource=self.public_url,
             subject=user,
@@ -1409,6 +1489,27 @@ this server on your behalf, and will be sent back to
             user, grant_id = named
 
         await anyio.to_thread.run_sync(self.end_grant, user, grant_id, "it was revoked")
+
+
+def _put_bounded(table: dict, key, value, limit: int) -> None:
+    """Stores a value, dropping the oldest entries to keep at most ``limit``."""
+    table.pop(key, None)
+    while len(table) >= limit:
+        del table[next(iter(table))]
+    table[key] = value
+
+
+def _grant_scopes(record, user) -> list:
+    """Returns the scopes of a grant its user may still be granted.
+
+    A grant keeps the scopes consented to at sign-in; the user's record says
+    what they may have now (see :func:`mcp_plugin.lib.tenants.scopes_of`).
+    """
+    if user is None:
+        return []
+    allowed = tenants.scopes_of(user)
+
+    return [scope for scope in record.get("scopes") or [] if scope in allowed]
 
 
 _SCOPE_DESCRIPTIONS = {

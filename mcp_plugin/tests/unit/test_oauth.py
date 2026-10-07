@@ -60,6 +60,7 @@ from mcp_plugin.lib import (
     oauth_builtin,
     oauth_config,
     oauth_keycloak,
+    server,
     setup_cli,
     setup_oauth,
     tenants,
@@ -218,6 +219,58 @@ def test_an_oauth_mode_needs_what_it_needs(tenant_config):
         oauth_config.check_ready(oauth_config.OAUTH_MODE_BUILTIN)
     with pytest.raises(mysqlsh.Error, match="issuer"):
         oauth_config.check_ready(oauth_config.OAUTH_MODE_KEYCLOAK)
+
+
+def test_the_start_servers_public_url_counts_as_configured(tenant_config):
+    """mcp start-server --publicUrl stands in for one never set with setup-oauth."""
+    with pytest.raises(mysqlsh.Error, match="--addLoginServer"):
+        oauth_config.check_ready(oauth_config.OAUTH_MODE_BUILTIN, PUBLIC_URL)
+
+
+def test_every_option_an_oauth_refusal_names_exists(tenant_config):
+    """What a refusal tells the administrator to run is an option they can run."""
+    def refusal(call, *args):
+        with pytest.raises(mysqlsh.Error) as refused:
+            call(*args)
+        return str(refused.value)
+
+    messages = [refusal(oauth_config.check_ready, oauth_config.OAUTH_MODE_BUILTIN)]
+    oauth_config.set_public_url(PUBLIC_URL)
+    messages.append(refusal(oauth_config.check_ready, oauth_config.OAUTH_MODE_BUILTIN))
+    messages.append(refusal(oauth_config.check_ready, oauth_config.OAUTH_MODE_KEYCLOAK))
+    oauth_config.update_oauth_settings(lambda oauth: oauth["keycloak"].update(
+        issuer="https://kc.example.com/realms/r",
+        verification=oauth_config.VERIFICATION_INTROSPECTION,
+    ))
+    messages.append(refusal(oauth_config.check_ready, oauth_config.OAUTH_MODE_KEYCLOAK))
+    messages.append(refusal(oauth_config.resolve_client, "no-such-client"))
+
+    named = set()
+    for message in messages:
+        assert "mcp setup-oauth --" in message, message
+        assert "mcp setup --" not in message, message
+        named.update(re.findall(r"--([a-zA-Z]+)", message))
+    assert named == {"publicUrl", "addLoginServer", "issuer", "introspectionClientId",
+                     "introspectionSecretEnv", "listClients"}
+    for option in named:
+        assert re.sub(r"[A-Z]", lambda m: "_" + m.group().lower(), option) in (
+            setup_oauth.KNOWN_OPTIONS
+        )
+
+
+def test_a_server_that_creates_users_at_sign_in_starts_without_any(tenant_config):
+    """The first sign-in adds the first user, and that needs the server running."""
+    tenants.set_multi_tenant(True)
+    oauth_config.set_public_url(PUBLIC_URL)
+    oauth_config.set_mode(oauth_config.OAUTH_MODE_BUILTIN)
+
+    server._check_multi_tenant("streamable-http", ["db"], False)
+
+    oauth_config.update_oauth_settings(
+        lambda oauth: oauth["builtin"]["autoProvision"].update(enabled=False)
+    )
+    with pytest.raises(mysqlsh.Error, match="no enabled user"):
+        server._check_multi_tenant("streamable-http", ["db"], False)
 
 
 def test_client_networks_are_checked_against_the_peer():
@@ -662,6 +715,60 @@ def test_refresh_tokens_rotate_and_a_reuse_ends_the_grant(tenant_config):
     assert provider.verify_access_token(third.access_token) is None
 
 
+def test_a_signed_in_user_has_the_scopes_they_may_have_now(tenant_config):
+    """--setScopes reaches a live token at once and every refresh after it."""
+    provider = _provider()
+    client_id = _client()
+    client = SimpleNamespace(client_id=client_id)
+    tokens = _redeem(provider, client_id, _sign_in(provider, client_id))
+    ada = tenants.find_user(f"mariadb:{LOGIN_SERVER}|ada@%")
+
+    tenants.set_scopes(ada, ["mcp:db"])
+    assert provider.verify_access_token(tokens.access_token).scopes == ["mcp:db"]
+
+    loaded = asyncio.run(provider.load_refresh_token(client, tokens.refresh_token))
+    refreshed = asyncio.run(provider.exchange_refresh_token(client, loaded, loaded.scopes))
+    assert refreshed.scope == "mcp:db"
+    assert jwt.decode(refreshed.access_token, options={"verify_signature": False})[
+        "scope"] == "mcp:db"
+
+    # Widening the user again does not widen what was consented to.
+    tenants.set_scopes(ada, list(tenants.SUPPORTED_SCOPES))
+    assert provider.verify_access_token(refreshed.access_token).scopes == ["mcp:db"]
+
+    # A grant left with none of its scopes lives on, good for no tool, until the
+    # user may have one of them again: scopes filter, --revokeTokens revokes.
+    only_db = _redeem(provider, client_id, _sign_in(provider, client_id, scopes=["mcp:db"]))
+    grant = provider.verify_access_token(only_db.access_token).claims[general.GRANT_CLAIM]
+    tenants.set_scopes(ada, ["mcp:msm"])
+    assert provider.verify_access_token(only_db.access_token).scopes == []
+    assert provider.live_grant(ada, grant) is not None
+    loaded = asyncio.run(provider.load_refresh_token(client, only_db.refresh_token))
+    empty = asyncio.run(provider.exchange_refresh_token(client, loaded, loaded.scopes))
+    assert provider.verify_access_token(empty.access_token).scopes == []
+    tenants.set_scopes(ada, ["mcp:db"])
+    assert provider.verify_access_token(only_db.access_token).scopes == ["mcp:db"]
+
+
+def test_a_token_check_reads_the_clients_file_only_when_it_changed(tenant_config,
+                                                                    monkeypatch):
+    """A stat per request; a removal by mcp setup-oauth is still seen at once."""
+    provider = _provider()
+    client_id = _client()
+    tokens = _redeem(provider, client_id, _sign_in(provider, client_id))
+    reads = []
+    read_clients = oauth_config.read_clients
+    monkeypatch.setattr(oauth_config, "read_clients",
+                        lambda: reads.append(1) or read_clients())
+
+    for _ in range(3):
+        assert provider.verify_access_token(tokens.access_token) is not None
+    assert reads == []
+
+    oauth_config.remove_client(client_id)
+    assert provider.verify_access_token(tokens.access_token) is None
+
+
 def test_the_password_lives_exactly_as_long_as_the_grant(tenant_config):
     """In both stores: found while the grant lives, gone after each way it ends."""
     for store in oauth_config.LOGIN_CONNECTION_STORES:
@@ -772,6 +879,94 @@ def test_the_authorization_request_is_lenient_where_it_safely_can_be(tenant_conf
     assert client.validate_scope("session:role:all") is None
 
 
+def test_unauthenticated_requests_cannot_grow_the_server(tenant_config, monkeypatch):
+    """Pending sign-ins and cached metadata documents are bounded; the oldest go."""
+    monkeypatch.setattr(oauth_builtin, "_MAX_PENDING", 3)
+    monkeypatch.setattr(oauth_builtin, "_MAX_CIMD_CACHE", 2)
+    provider = _provider()
+    client = provider.get_client_sync(_client())
+    params = SimpleNamespace(
+        resource=None, redirect_uri="http://127.0.0.1/callback",
+        redirect_uri_provided_explicitly=True, code_challenge="c" * 43,
+        scopes=None, state="st",
+    )
+
+    requests = [asyncio.run(provider.authorize(client, params)).split("req=")[1]
+                for _ in range(5)]
+    assert len(provider._pending) == 3
+    assert provider._pending_request(requests[0]) is None
+    assert provider._pending_request(requests[-1]) is not None
+
+    provider._cimd_fetch = lambda url: {
+        "metadata": {"client_id": url, "redirect_uris": ["http://127.0.0.1/cb"]},
+        "max_age": 300,
+    }
+    for index in range(3):
+        provider.get_client_sync(f"https://client{index}.example.com/c.json")
+    assert list(provider._cimd_cache) == [
+        "https://client1.example.com/c.json", "https://client2.example.com/c.json"]
+
+
+def test_one_address_can_only_start_so_many_sign_ins():
+    """Past the limit a 429; other addresses and other paths are not affected."""
+    seen = []
+
+    async def app(scope, receive, send):
+        seen.append(scope["path"])
+        await send({"type": "http.response.start", "status": 302, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    limit = auth.AuthorizeRateLimit(app, max_requests=3)
+
+    async def status(path, address):
+        sent = []
+
+        async def send(message):
+            sent.append(message)
+
+        await limit({"type": "http", "path": path, "client": (address, 1), "headers": []},
+                    None, send)
+        return sent[0]["status"]
+
+    async def scenario():
+        assert [await status("/authorize", "192.0.2.1") for _ in range(4)] == [
+            302, 302, 302, 429]
+        assert await status("/authorize", "192.0.2.2") == 302
+        assert await status("/login", "192.0.2.1") == 302
+        # Refused requests do not count: the address is free again after the window.
+        limit._requests.window = 0
+        assert await status("/authorize", "192.0.2.1") == 302
+
+    asyncio.run(scenario())
+    assert seen.count("/authorize") == 5
+
+
+def test_the_builtin_server_limits_sign_in_starts(tenant_config):
+    """The limit is in front of the SDK's /authorize of a built-in server."""
+    oauth_config.set_public_url(PUBLIC_URL)
+    oauth_config.update_oauth_settings(
+        lambda oauth: oauth["builtin"].update(loginServers=[LOGIN_SERVER])
+    )
+    bundle = auth.build_auth(mode=oauth_config.OAUTH_MODE_BUILTIN)
+    mcp_server = server.build_mcp_server(["db"], auth=bundle)
+    app = auth.customize_app(mcp_server.streamable_http_app(host="127.0.0.1"), bundle)
+    client_id = _client()
+    query = {"client_id": client_id, "response_type": "code",
+             "redirect_uri": "http://127.0.0.1/callback", "code_challenge": "c" * 43,
+             "code_challenge_method": "S256", "state": "st"}
+
+    async def starts(address, count):
+        transport = httpx2.ASGITransport(app=app, client=(address, 1234))
+        async with httpx2.AsyncClient(transport=transport,
+                                      base_url="https://mcp.example.com") as client:
+            return [(await client.get("/authorize", params=query)).status_code
+                    for _ in range(count)]
+
+    first = asyncio.run(starts("192.0.2.1", 31))
+    assert first == [302] * 30 + [429]
+    assert asyncio.run(starts("192.0.2.2", 1)) == [302]
+
+
 def test_a_loopback_redirect_may_use_any_port(tenant_config):
     """Native clients pick a free port per sign-in; other hosts match exactly."""
     from mcp.shared.auth import InvalidRedirectUriError
@@ -794,13 +989,21 @@ def test_a_client_metadata_document_is_fetched_with_care(tenant_config):
                 "redirect_uris": ["http://127.0.0.1/cb"]}
 
     def get(doc, status=200, headers=None):
-        return lambda u, limit, timeout: (status, headers or {}, json.dumps(doc).encode())
+        return lambda u, addresses, limit, timeout: (status, headers or {}, json.dumps(doc).encode())
 
     public = lambda host: ["93.184.216.34"]  # noqa: E731
     fetched = oauth_builtin.fetch_client_metadata(
         url, resolve=public, http_get=get(document, headers={"cache-control": "max-age=10"}))
     assert fetched["metadata"]["client_name"] == "Example"
     assert fetched["max_age"] == oauth_builtin._CIMD_MIN_CACHE
+
+    # The fetch is told the addresses that were checked, so it never resolves again.
+    connected = []
+    oauth_builtin.fetch_client_metadata(
+        url, resolve=public,
+        http_get=lambda u, addresses, limit, timeout: connected.append(addresses) or (
+            200, {}, json.dumps(document).encode()))
+    assert connected == [["93.184.216.34"]]
 
     for bad_url, resolve, http_get in (
         ("http://client.example.com/c.json", public, get(document)),
@@ -811,7 +1014,7 @@ def test_a_client_metadata_document_is_fetched_with_care(tenant_config):
         (url, public, get({**document, "client_id": "https://evil/c.json"})),
         (url, public, get({**document, "token_endpoint_auth_method": "client_secret_post"})),
         (url, public, get(document, status=302)),
-        (url, public, lambda u, limit, timeout: (200, {}, b"x" * (limit + 1))),
+        (url, public, lambda u, addresses, limit, timeout: (200, {}, b"x" * (limit + 1))),
     ):
         with pytest.raises(ValueError):
             oauth_builtin.fetch_client_metadata(bad_url, resolve=resolve, http_get=http_get)
@@ -820,6 +1023,40 @@ def test_a_client_metadata_document_is_fetched_with_care(tenant_config):
     provider._cimd_fetch = lambda u: {"metadata": document, "max_age": 300}
     client = provider.get_client_sync(url)
     assert client.client_name == "Example" and client.token_endpoint_auth_method == "none"
+
+
+def test_the_metadata_fetch_connects_to_the_checked_address():
+    """Not to what the name resolves to by then: the request names the host.
+
+    An address that does not connect is passed over for the next one: here
+    ::1, which nothing listens on, before the 127.0.0.1 the server is on.
+    """
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - the http.server name
+            seen["host"], seen["path"] = self.headers["Host"], self.path
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    listener = HTTPServer(("127.0.0.1", 0), Handler)
+    port = listener.server_address[1]
+    thread = threading.Thread(target=listener.handle_request, daemon=True)
+    thread.start()
+    try:
+        # The name does not resolve (.invalid); only the pinned address works.
+        status, _, body = oauth_builtin._bounded_get(
+            f"http://client.invalid:{port}/c.json", ["::1", "127.0.0.1"], 100, 5)
+    finally:
+        thread.join(5)
+        listener.server_close()
+
+    assert (status, body) == (200, b"{}")
+    assert seen == {"host": f"client.invalid:{port}", "path": "/c.json"}
 
 
 def test_dynamic_registration_is_stored_and_can_be_turned_off(tenant_config):

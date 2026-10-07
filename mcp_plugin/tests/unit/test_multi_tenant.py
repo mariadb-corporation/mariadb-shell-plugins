@@ -373,6 +373,48 @@ def test_the_directory_reports_who_is_still_active(tenant_config):
     assert seen == [{ada, bob}, {ada}]
 
 
+def test_oauth_tokens_are_throttled_per_user_they_name():
+    """Behind one gateway, one user's expired tokens do not throttle the others."""
+    import jwt
+
+    key = "k" * 32
+
+    def token(subject):
+        return jwt.encode({"sub": subject, "exp": 1}, key, algorithm="HS256")
+
+    assert auth._user_named_in(token("ada")) == "ada"
+    assert auth._user_named_in(token("x" * 1000)) == "x" * auth._MAX_THROTTLE_SUBJECT
+    assert auth._user_named_in("not-a-token") is None
+    assert auth._user_named_in(jwt.encode({"aud": "x"}, key, algorithm="HS256")) is None
+
+    ada = str(uuid.uuid4())
+    api_key = f"{tenants.API_KEY_PREFIX}{uuid.UUID(ada).hex}_{'A' * 43}"
+    assert auth._user_named_in(api_key) == ada
+
+    async def refuse(scope, receive, send):
+        await send({"type": "http.response.start", "status": 401, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    throttle = auth.AuthFailureThrottle(refuse, max_failures=2)
+
+    async def status(subject):
+        sent = []
+
+        async def send(message):
+            sent.append(message)
+
+        headers = [(b"authorization", f"Bearer {token(subject)}".encode())]
+        await throttle({"type": "http", "path": "/mcp", "client": ("gateway", 1),
+                        "headers": headers}, None, send)
+        return sent[0]["status"]
+
+    async def scenario():
+        assert [await status("ada") for _ in range(3)] == [401, 401, 429]
+        assert await status("bob") == 401
+
+    asyncio.run(scenario())
+
+
 def test_failures_are_throttled_per_address_and_user():
     """One user's bad tokens do not lock out another user on that address."""
     throttle = auth.AuthFailureThrottle(app=None, max_failures=3,

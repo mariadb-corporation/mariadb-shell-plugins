@@ -17,7 +17,7 @@
 
 A multi-tenant server (see :mod:`mcp_plugin.lib.tenants`) always accepts its
 users' API keys. On top of that it can take OAuth2 access tokens, in one of two
-modes, set with ``mcp setup --oauthMode``:
+modes, set with ``mcp setup-oauth --mode``:
 
 * ``keycloak``: Keycloak (or another OpenID Connect provider working the same
   way) is the authorization server. This server only checks the tokens it
@@ -264,11 +264,13 @@ def set_mode(mode) -> None:
     update_oauth_settings(change)
 
 
-def check_ready(mode=None) -> None:
+def check_ready(mode=None, public_url=None) -> None:
     """Refuses to serve an OAuth mode that is not configured enough to work.
 
     Args:
         mode: The mode to check, or None for the configured one.
+        public_url: The server's public URL when ``mcp start-server
+            --publicUrl`` overrides it, or None for the configured one.
 
     Raises:
         mysqlsh.Error: If something the mode needs is missing.
@@ -277,17 +279,17 @@ def check_ready(mode=None) -> None:
     if mode == OAUTH_MODE_NONE:
         return
 
-    if not get_public_url():
+    if not (public_url or get_public_url()):
         raise mysqlsh.Error(
             f"OAuth mode '{mode}' needs the server's public URL, which tokens are "
-            "issued for. Set it with mcp setup --publicUrl=https://<host>/mcp."
+            "issued for. Set it with mcp setup-oauth --publicUrl=https://<host>/mcp."
         )
 
     oauth = get_oauth_settings()
     if mode == OAUTH_MODE_KEYCLOAK and not oauth["keycloak"]["issuer"]:
         raise mysqlsh.Error(
             "OAuth mode 'keycloak' needs the realm's issuer URL. Set it with mcp "
-            "setup --oauthIssuer=https://<keycloak>/realms/<realm>."
+            "setup-oauth --issuer=https://<keycloak>/realms/<realm>."
         )
     if (
         mode == OAUTH_MODE_KEYCLOAK
@@ -296,13 +298,13 @@ def check_ready(mode=None) -> None:
     ):
         raise mysqlsh.Error(
             "Keycloak introspection needs a client to introspect with. Set it "
-            "with mcp setup --oauthIntrospectionClientId and its secret with "
-            "--oauthIntrospectionSecretEnv."
+            "with mcp setup-oauth --introspectionClientId and its secret with "
+            "--introspectionSecretEnv."
         )
     if mode == OAUTH_MODE_BUILTIN and not oauth["builtin"]["loginServers"]:
         raise mysqlsh.Error(
             "OAuth mode 'builtin' signs users in against a MariaDB server, and "
-            "none is configured. Add one with mcp setup --addLoginServer."
+            "none is configured. Add one with mcp setup-oauth --addLoginServer."
         )
 
 
@@ -545,7 +547,7 @@ def resolve_client(identifier) -> str:
     if not named:
         raise mysqlsh.Error(
             f"'{identifier}' is not a registered OAuth client. Use "
-            "--listOAuthClients to list them."
+            "mcp setup-oauth --listClients to list them."
         )
 
     raise mysqlsh.Error(

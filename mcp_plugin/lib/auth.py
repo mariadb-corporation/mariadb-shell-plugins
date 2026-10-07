@@ -50,7 +50,8 @@ the built-in authorization server, has its provider check both
 its app by :func:`customize_app`: Protected Resource Metadata that lists the
 scopes, a 403 ``insufficient_scope`` for a token granting no tool at all, the
 built-in server's own authorization server metadata and sign-in page, a
-network allow list, and ``client_secret_basic`` next to ``client_secret_post``.
+per-address limit on its ``/authorize`` endpoint, a network allow list, and
+``client_secret_basic`` next to ``client_secret_post``.
 
 The MCP SDK is imported only inside functions, as everywhere in this plugin
 (see :mod:`mcp_plugin.lib.tool_registrar`).
@@ -346,7 +347,7 @@ def build_auth(mode=None, public_url=None):
 
         return AuthBundle(settings, token_verifier=ApiKeyVerifier())
 
-    oauth_config.check_ready(mode)
+    oauth_config.check_ready(mode, public_url)
     api_keys = ApiKeyVerifier(resource=public_url)
     oauth = oauth_config.get_oauth_settings()
 
@@ -500,6 +501,59 @@ class ClientNetworkMiddleware:
         await self.app(scope, receive, send)
 
 
+class AuthorizeRateLimit:
+    """ASGI middleware limiting how often one address may start a sign-in.
+
+    Every request to ``/authorize`` stores a pending sign-in on the built-in
+    server, before anyone has authenticated, and only so many are kept (see
+    :mod:`mcp_plugin.lib.oauth_builtin`). Without a limit one address could
+    push every real user's pending sign-in out in seconds. Per address,
+    because ``/authorize`` is the user's own browser, as the sign-in page is;
+    behind a reverse proxy the address is the proxy's, so the limit is set well
+    above what one person signing in needs. A refused request is not counted,
+    so an address over the limit can start again once the window has passed.
+    """
+
+    _PATH = "/authorize"
+
+    def __init__(self, app, window: float = 60.0, max_requests: int = 30):
+        """Wraps an ASGI app.
+
+        Args:
+            app: The ASGI app to protect.
+            window (float): The time over which requests are counted, in
+                seconds.
+            max_requests (int): Requests from one address within the window
+                after which further ones are answered with a 429.
+        """
+        self.app = app
+        self.window = window
+        self.max_requests = max_requests
+        self._requests = FailureCounter(window)
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("path") != self._PATH:
+            await self.app(scope, receive, send)
+            return
+
+        address = general.normalize_client_address((scope.get("client") or (None,))[0])
+        if self._requests.count(address) >= self.max_requests:
+            general.log_event(
+                f"auth: REFUSED a sign-in start from address={address or '-'}: "
+                f"more than {self.max_requests} in {int(self.window)}s"
+            )
+            await _send_json(
+                send,
+                429,
+                {"error": "too_many_requests"},
+                [(b"retry-after", str(int(self.window)).encode("ascii"))],
+            )
+            return
+
+        self._requests.record(address)
+        await self.app(scope, receive, send)
+
+
 class BasicClientAuthMiddleware:
     """Lets a client authenticate to the token endpoint either way OAuth allows.
 
@@ -621,7 +675,7 @@ def customize_app(starlette_app, bundle: AuthBundle, mcp_path: str = "/mcp"):
 
     app = starlette_app
     if bundle.provider is not None:
-        app = BasicClientAuthMiddleware(app)
+        app = AuthorizeRateLimit(BasicClientAuthMiddleware(app))
         networks = oauth_config.get_oauth_settings()["builtin"]["allowedClientNetworks"]
         if networks:
             app = ClientNetworkMiddleware(app, networks, mcp_path)
@@ -651,9 +705,11 @@ async def _send_json(send, status: int, payload: dict, headers=()) -> None:
 class FailureCounter:
     """Counts failures per key over a sliding window. Thread-safe.
 
-    What a rate limit is made of: the bearer-token throttle below and the
+    What a rate limit is made of: the bearer-token throttle below, the
     built-in server's sign-in page (see :mod:`mcp_plugin.lib.oauth_builtin`)
-    each count under keys of their own and compare against their own limits.
+    and :class:`AuthorizeRateLimit`, which counts every request rather than
+    failures, each count under keys of their own and compare against their own
+    limits.
     """
 
     # Keys nobody asks about again would never be pruned - a probe from many
@@ -754,7 +810,7 @@ class AuthFailureThrottle:
             return
 
         address = general.normalize_client_address((scope.get("client") or (None,))[0])
-        user = tenants.user_of_api_key(token) or "-"
+        user = _user_named_in(token) or "-"
 
         if self.is_throttled(address, user):
             await _send_json(
@@ -780,6 +836,34 @@ class AuthFailureThrottle:
                 f"auth: REFUSED a bearer token from address={address or '-'} "
                 f"for user={general.log_id_prefix(user if user != '-' else None)}"
             )
+
+
+# The longest subject a throttle key takes from a token nobody has verified.
+_MAX_THROTTLE_SUBJECT = 128
+
+
+def _user_named_in(token) -> Optional[str]:
+    """Returns who a bearer token claims to be, without verifying it.
+
+    The user inside an API key, or the ``sub`` claim of a JWT. Only good for
+    keeping one user's failures apart from another's: a forger can name any
+    user, as they can name any UUID in an API key, and so only throttle that
+    user from their own address.
+    """
+    user = tenants.user_of_api_key(token)
+    if user is not None:
+        return user
+
+    import jwt
+
+    try:
+        subject = jwt.decode(token, options={"verify_signature": False}).get("sub")
+    except Exception:  # noqa: BLE001 - not a JWT
+        return None
+    if not isinstance(subject, str) or not subject:
+        return None
+
+    return subject[:_MAX_THROTTLE_SUBJECT]
 
 
 def _bearer_token(scope) -> Optional[str]:

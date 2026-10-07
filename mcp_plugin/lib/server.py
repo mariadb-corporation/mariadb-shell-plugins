@@ -369,11 +369,30 @@ def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
     tenants.require_secret_groups()
 
     users = tenants.read_users()
-    if not any(not record.get("disabled", False) for record in users.values()):
+    if not any(
+        not record.get("disabled", False) for record in users.values()
+    ) and not _users_are_created_at_sign_in():
         raise mysqlsh.Error(
             "Multi-tenant mode is on, but there is no enabled user to serve. "
             "Add one with mcp setup --addUser."
         )
+
+
+def _users_are_created_at_sign_in() -> bool:
+    """Returns whether the OAuth mode served creates users when they sign in.
+
+    Such a server has somebody to serve before ``users.json`` has anyone in
+    it: the first sign-in, which needs the server running, adds the first user.
+    """
+    from mcp_plugin.lib import oauth_config
+
+    mode = oauth_config.get_mode()
+    if mode == oauth_config.OAUTH_MODE_NONE:
+        return False
+
+    provision = oauth_config.get_oauth_settings()[mode].get("autoProvision") or {}
+
+    return bool(provision.get("enabled"))
 
 
 def _warn_if_tokens_travel_in_clear(host: str, port: int, tls: bool) -> None:

@@ -103,8 +103,7 @@ def setup(**options) -> None:
             Refused when stdin is a terminal, where it would wait for input
             nobody knows to type.
         no_verify (bool): Store the connection without opening a session to
-            check it first, for configuring a server that is not up yet. With
-            oauth_issuer, save the issuer without reading its configuration.
+            check it first, for configuring a server that is not up yet.
         delete_connections (str): Comma-separated URIs of connections to
             delete. Any spelling that names a configured connection works.
         add_paths (str): Comma-separated directories the MCP server may access.
