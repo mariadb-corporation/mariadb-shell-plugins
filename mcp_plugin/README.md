@@ -227,6 +227,20 @@ defaults to all):
 mariadb-shell -- mcp start-server --function-groups=db
 ```
 
+Tools are named `<group>.<tool>`, such as `db.list_connections`, as the MCP
+specification allows. Some gateways and model APIs accept only letters, digits,
+`-` and `_` in a tool name, Arcade and OpenAI's function names among them. For
+those, publish the names with another separator:
+
+```bash
+mariadb-shell -- mcp setup --toolNameSeparator=_   # db_list_connections, msm_create_project, ...
+mariadb-shell -- mcp setup --toolNameSeparator=.   # back to the default
+```
+
+The tools' descriptions and error messages name the other tools by the same
+names. A running server keeps its names until it is restarted, and
+`mcp setup --show` reports the setting.
+
 ### Database connection tools (`db`)
 
 Tools for working with the connections configured via `mcp.setup`. Sessions opened
@@ -428,15 +442,195 @@ Show the built-in help for the plugin with:
 \? mcp
 ```
 
+## Multi-tenant mode
+
+In multi-tenant mode one server serves several users. Each user authenticates
+with an API key of their own, sent as a bearer token
+(`Authorization: Bearer mdbmcp_...`), and has connections and allowed paths of
+their own: a user lists and opens only their own connections, and a connection
+one user opened cannot be used by anyone else, on any address or MCP session.
+A connection is bound to the user and the authorization it was opened under
+rather than to an MCP session (see
+[Connection handling over HTTP](#connection-handling-over-http)), so a gateway
+that opens a new session for every tool call keeps using it.
+
+```bash
+# Turn the mode on, add a user (the API key is printed once - and can be shown again)
+mariadb-shell -- mcp setup --multiTenant=true
+mariadb-shell -- mcp setup --addUser=ada@example.com --name="Ada Lovelace"
+
+# Give the user a connection and a directory, naming them by any identity
+mariadb-shell -- mcp setup --user=ada@example.com \
+    --addConnection=ada@db.example.com:3306 --passwordEnv=ADA_DB_PASSWORD
+mariadb-shell -- mcp setup --user=ada@example.com --addPaths=/srv/projects/ada
+
+# Keys, users, and the administrator's view across all of them
+mariadb-shell -- mcp setup --showApiKey=ada@example.com
+mariadb-shell -- mcp setup --rotateApiKey=ada@example.com
+mariadb-shell -- mcp setup --disableUser=ada@example.com
+mariadb-shell -- mcp setup --show --allUsers --json
+
+# Serve it, over HTTPS
+mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
+    --ssl-certfile=server.pem --ssl-keyfile=server-key.pem
+```
+
+- **Users** are kept in `users.json`, next to `settings.json`, keyed by a UUID
+  the plugin generates - the user's `mcp_user_id`. A user is known by any number
+  of identities, each unique across users: an email address, a user id of your
+  choosing (`userId:<id>`), an OAuth identity (`oauth:<issuer>|<subject>`) or a
+  MariaDB account (`mariadb:<server>|<account>`). Any of them, or the UUID, names
+  the user to `mcp setup` (`--user`, `--removeUser`, `--addIdentity`, ...).
+- **Secrets** - a user's API key and their connection passwords - are kept in a
+  shell secret **group** named by their `mcp_user_id`. Groups keep users apart;
+  they do **not** protect them from each other: any process running as the
+  server's OS user can read every group, the API keys included (they are stored
+  as they are, so that `--showApiKey` can show them again). **Run the server
+  under an OS account of its own**, and on Linux note that the default
+  `login-path` helper only obfuscates `~/.mylogin.cnf`.
+- **Only the `db` and `msm` groups** are served. The `sandbox` and `migrator`
+  tools run local servers and long jobs on the machine, and are not offered to
+  tenants; neither is `--gui`, and neither is stdio, which has no request to
+  carry a key. A user's token has to grant the scope of a tool's group
+  (`mcp:db`, `mcp:msm`; set with `--setScopes`).
+- **Paths** are a user's own. A path that is not allowed is refused, never
+  offered to the client to trust, and a tool given no path (the msm tools then
+  use the server's working directory) is checked like any other.
+- **Changes apply at once.** A user removed or disabled, or given a new key, is
+  refused from their next request on, and their open connections are closed.
+  Requests with refused keys are counted per address and user, and answered
+  with `429 Too Many Requests` for a minute once there are too many.
+- **TLS**: every request carries a key. A server listening beyond loopback over
+  plain HTTP warns about it; serve HTTPS with `--ssl-certfile`/`--ssl-keyfile`,
+  or behind a TLS-terminating reverse proxy (add its name with
+  `--allowed-hosts`).
+- One user may hold at most 32 connections; `--max-connections` raises the
+  server-wide limit of 64 for many users.
+
+Switching the mode moves nothing: single-tenant connections stay where they are
+and come back when the mode is turned off again.
+
+### OAuth2
+
+Besides API keys, a multi-tenant server can take OAuth2 access tokens, configured
+with their own command, `mcp setup-oauth` - an interactive menu without options,
+declarative with them (`mariadb-shell -- mcp setup-oauth --help`). API keys
+keep working either way. The server follows the MCP authorization
+specification: it serves OAuth Protected Resource Metadata (RFC 9728), so a
+client finds the authorization server by itself, and it only accepts tokens
+issued for its own **public URL**, which has to be configured:
+
+```bash
+mariadb-shell -- mcp setup-oauth --publicUrl=https://mcp.example.com/mcp
+```
+
+The scopes are `mcp:db` and `mcp:msm`, one per tool group; a client is only
+shown, and may only call, the tools its token grants. There are deliberately no
+read or write scopes: what a user can do in the database is what MariaDB's own
+grants let their account and its role do. A user's sessions run under the role
+an administrator sets (`--user=… --setDefaultRole=analyst`), or else under the
+account's own `DEFAULT ROLE`. Revoke every token of a user with
+`mcp setup-oauth --revokeTokens=<user>`.
+
+#### Keycloak
+
+Keycloak signs users in and issues the tokens; this server checks them - their
+signature against the realm's keys, the issuer, the expiry, and that they were
+issued for this server - and maps each to a user: by the `(issuer, subject)`
+identity, else by the token's **verified** email to a user an administrator
+created, else by creating the user when the token carries the realm role
+`mcp-user`. The database is reached with the connections an administrator
+stored for the user: the token itself is never passed on.
+
+```bash
+# Prepare the realm once, as a Keycloak administrator - asks for whatever is not given,
+# the password with a password prompt, and points this server at the realm
+mariadb-shell -- mcp setup-keycloak-realm --server=https://kc.example.com --realm=mariadb \
+    --adminUser=admin --mcpUrl=https://mcp.example.com/mcp --grantRealmRoleTo=ada
+```
+
+`setup-keycloak-realm` creates the client scopes `mcp:db` and `mcp:msm` with an Audience
+mapper putting the public URL into the token's `aud`, the realm role `mcp-user`,
+and a public PKCE client for MCP clients. Keycloak refuses anonymous dynamic
+client registration by default ("Trusted Hosts" policy); allow your clients'
+hosts there if they register themselves. `--verification=introspection`
+asks Keycloak about every token (cached for 30s) instead of only checking its
+signature, so a session ended in Keycloak is refused at once.
+
+#### The built-in authorization server
+
+With `--mode=builtin` the server is its own authorization server, and **the
+MariaDB account is the identity**, as with Snowflake's MCP server: users sign in
+on the server's own page with their MariaDB user name and password, the account
+is checked by connecting with it, and the session the tools open runs as that
+account under its default role.
+
+```bash
+mariadb-shell -- mcp setup-oauth --mode=builtin \
+    --addLoginServer=mariadb://db.example.com:3306 --requiredRole=mcp_access
+```
+
+- A sign-in creates a **grant** - one user's authorization of one client - that
+  lasts 90 days by default (`--grantMaxLifetime`; an idle timeout is off
+  unless `--grantIdleTimeout` sets one). Refresh tokens rotate on every
+  use; one presented again after its 30-second grace period ends the grant.
+- The account and password become a connection of the grant, kept in the user's
+  secret group (or, with `--loginConnectionStore=memory`, only in memory)
+  for exactly as long as the grant lives.
+- `--requiredRole` is the role an account needs to sign in at all. Users
+  are created at their first sign-in unless `--autoProvision=false`;
+  several accounts can belong to one user (`--addIdentity=mariadb:<server>|<account>`).
+- Clients are registered by an administrator (below), dynamically
+  (`--dynamicClientRegistration`, on by default), or by Client ID Metadata
+  Document (`--cimd`, on by default).
+- The sign-in page is rate limited per address and per account, and connects to
+  a non-loopback database over TLS only.
+- Starting a sign-in (`/authorize`) is limited to 30 per address per minute.
+  Behind a reverse proxy every browser shares the proxy's address, so many
+  people signing in within the same minute can reach that limit; they are told
+  to retry after a minute.
+
+#### Arcade (and other gateways)
+
+The setup Arcade documents for Snowflake works the same way here:
+
+| Snowflake | MariaDB MCP server |
+| --- | --- |
+| `CREATE SECURITY INTEGRATION … OAUTH_CLIENT_TYPE='CONFIDENTIAL'` | `mcp setup-oauth --addClient=arcade --confidential` (prints the client ID and secret) |
+| `SYSTEM$SHOW_OAUTH_CLIENT_SECRETS(...)` | `mcp setup-oauth --showClientSecret=arcade` |
+| Authorization and token URL left empty in Arcade | the same - Arcade discovers them from the public URL |
+| `ALTER SECURITY INTEGRATION … SET OAUTH_REDIRECT_URI` | `mcp setup-oauth --setClientRedirectUris=arcade --redirectUris=<Arcade's redirect URI>` |
+| `ALLOWED_ROLES_LIST` | `mcp setup-oauth --setClientAllowedRoles=arcade --roles=mcp_access` |
+| `GRANT USAGE ON MCP SERVER … TO ROLE` | `--requiredRole=mcp_access` and `GRANT mcp_access TO …` |
+| `DEFAULT_ROLE` | `SET DEFAULT ROLE mcp_access FOR …` |
+| Network policy | `--allowedClientNetworks=<Arcade's egress networks>` |
+
+Arcade refuses a tool name that contains a dot, so a server for Arcade needs
+`mcp setup --toolNameSeparator=_` (see [Exposed MCP tools](#exposed-mcp-tools)).
+Without it, adding the server fails with *tool name must only contain ASCII
+letters, numbers, and the dash and underscore characters*.
+
+Arcade calls the server from its own addresses for all of its users: raise
+`--max-connections` for many users. It also opens a new MCP session for every
+tool call, which is why a multi-tenant server binds a connection to the user
+and their grant instead of the session. Arcade discovers the tools once, with
+the administrator's sign-in, so grant that sign-in both scopes. Each Arcade
+user then signs in on their own the first time they call a tool; with Arcade's
+default user verification, that sign-in completes only for the Arcade account
+the `user_id` names. A client may authenticate to the token endpoint with Basic
+or with the form, as OAuth 2.1 allows.
+
 ## Database connection behavior
 
 To understand the MCP server database connection behavior, please read the
 sections below.
 
-### The MCP server has no authentication
+### The MCP server has no authentication, unless it is multi-tenant
 
 This MCP server implementation is designed for agent-based development on a
-local developer's machine.
+local developer's machine. What follows describes the default, single-tenant
+server; a server in [multi-tenant mode](#multi-tenant-mode) authenticates every
+request.
 
 **Anyone who can reach the MCP server's port can use the stored database
 credentials.** There is no authentication of any kind: no token, no password,
@@ -456,6 +650,17 @@ rather than exposing it directly.
 Note also that the sandbox tools can start database servers and the `msm` tools
 can read and write files within the allowed paths, so the same reachability
 applies to those.
+
+### Clients without MCP sessions need multi-tenant mode over HTTP
+
+MCP protocol revision 2026-07-28 has no sessions, and clients that speak it -
+Claude Code among them - never send an MCP session id. A server that does not
+authenticate binds each database connection to the client's address AND its
+session id (see below), so over HTTP it refuses such a client a connection:
+bound to the address alone, it would be usable by every process on the same
+machine that learned its id. Use these clients over stdio, or run the server in
+[multi-tenant mode](#multi-tenant-mode), where every client signs in and the
+user and their authorization take the place of the address and session id.
 
 ### Requests from a browser are refused
 
@@ -524,6 +729,15 @@ substitute for the authentication described above.
   Over stdio a request has neither a peer address nor a session id, so the
   connection is bound to "no client" and the single client keeps matching it; the
   comparison itself is always made, and never conditional on the transport.
+
+  In [multi-tenant mode](#multi-tenant-mode) every request is authenticated, and
+  a connection is bound to the user and the authorization it was opened under
+  instead: the OAuth grant of the built-in authorization server (one user's
+  authorization of one client), or, for a Keycloak token or an API key, the
+  client the token was issued to. Neither the session nor the address is part of
+  it, because a gateway such as Arcade opens a new MCP session for every tool
+  call, from whichever of its addresses. Another user, or another client of the
+  same user, is answered as if the UUID had never been handed out.
 - **An unused connection is closed after 30 minutes.** A background reaper closes
   the database session of every connection that has been unused for that long,
   releasing the connection on the server. The connection UUID stays valid: the
@@ -630,9 +844,9 @@ server writes what happens to its connections to **stderr**, one line per event,
 whichever transport is in use:
 
 ```text
-2026-08-07T14:03:11+0200 [mcp] db.connect: opened connection 6f2a91c4... on 'root@127.0.0.1:3306' for address=192.0.2.10 session=0123abcd...
-2026-08-07T14:07:44+0200 [mcp] db: REFUSED use of connection 6f2a91c4... bound to address=192.0.2.10 session=0123abcd... by a request from address=192.0.2.20 session=fedc4321...
-2026-08-07T14:37:44+0200 [mcp] db: closed the idle session of connection 6f2a91c4... (address=192.0.2.10 session=0123abcd...) after 1800s unused; the connection stays valid and opens a new session when it is used again
+2026-08-07T14:03:11+0200 [mcp] db.connect: opened a connection on 'root@127.0.0.1:3306' (mcp) for address=192.0.2.10
+2026-08-07T14:07:44+0200 [mcp] db: REFUSED use of a connection on 'root@127.0.0.1:3306' (mcp) bound to address=192.0.2.10 by a request from address=192.0.2.20
+2026-08-07T14:37:44+0200 [mcp] db: closed the idle session of a connection on 'root@127.0.0.1:3306' (mcp) for address=192.0.2.10 after 1800s unused; the connection stays valid and opens a new session when it is used again
 ```
 
 Recorded are: a connection opened (with the client it is bound to and the URI it
@@ -645,10 +859,12 @@ keep the trail:
 mariadb-shell -- mcp start-server --port=8080 2>> ~/mcp-server.log
 ```
 
-Connection UUIDs and MCP session ids appear **truncated to their first eight
-characters**: both are credentials - holding one is what lets a client use a
-connection - so the log is not a place they can be read out of. Nothing else
-about a request is logged; the SQL statements a client runs are not.
+**No id is ever logged, not even in part**: no connection UUID, MCP session
+id, user id, API key, token, grant or client id. A connection is named by the
+connection URI it was opened on, a client by its address and - on a multi-tenant
+server - a user by the name their record has (`user='Ada Lovelace'`), or not at
+all if it has none. Nothing else about a request is logged; the SQL statements
+a client runs are not.
 
 ## Running the tests
 

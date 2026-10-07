@@ -57,6 +57,11 @@ their own message, and ``MCPError``, which MEANS "answer with a protocol error"
 - the SDK re-raises it ahead of its own generic handler for that reason, and
 converting it here would quietly downgrade it to a tool failure.
 
+The wrapper is also where a multi-tenant server checks who is calling, because
+it is the one place every tool of every group passes through (see
+:func:`_check_caller`): a tool that forgot the check would otherwise be a tool
+anyone can call.
+
 Nothing in this module imports the MCP SDK at module import time: the shell
 imports this plugin package eagerly, and pulling in ``mcp`` that early binds
 ``mcp.client.stdio.stdio_client``'s ``errlog=sys.stderr`` default to the shell's
@@ -64,6 +69,7 @@ imports this plugin package eagerly, and pulling in ``mcp`` that early binds
 """
 
 import inspect
+import re
 from functools import wraps
 from typing import Any, Callable
 
@@ -84,6 +90,175 @@ def tool_error(message: str) -> Exception:
     from mcp.server.mcpserver.exceptions import ToolError
 
     return ToolError(message)
+
+
+# --- Published tool names ----------------------------------------------------
+#
+# The tools are registered as ``<group>.<name>``. A server whose
+# ``mcp setup --toolNameSeparator`` is not ``.`` publishes them with that
+# separator instead, for gateways that refuse a dot in a tool name although the
+# MCP specification (SEP-986) allows it - Arcade, and OpenAI's function names.
+# The tools also name each other, in their descriptions ("the UUID returned by
+# db.connect") and in their errors, so those are rewritten to match: a model
+# told to call a tool that does not exist would be worse than no hint at all.
+
+_separator = "."
+
+# The tools registered under a dotted name, which is what gets rewritten; a
+# dotted word that is not one of them (a table, a schema) never is.
+_registered = set()
+
+_TOOL_REFERENCE = re.compile(r"\b[a-z]+\.[a-z_]+\b")
+
+
+def tool_group(tool_name) -> str:
+    """Returns the group of a tool, whichever separator its name uses."""
+    return re.split(r"[._-]", str(tool_name), maxsplit=1)[0]
+
+
+def published_name(tool_name) -> str:
+    """Returns the name a tool is published under."""
+    return str(tool_name).replace(".", _separator, 1)
+
+
+def translate_tool_names(text):
+    """Rewrites the tools a text names to the names they are published under."""
+    if _separator == "." or not text:
+        return text
+
+    return _TOOL_REFERENCE.sub(
+        lambda match: published_name(match.group(0)) if match.group(0) in _registered
+        else match.group(0),
+        text,
+    )
+
+
+def _translating_errors(func):
+    """Wraps a tool so that the tools its errors name are published names."""
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    @wraps(func)
+    async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
+        try:
+            return await func(*call_args, **call_kwargs)
+        except ToolError as error:
+            raise ToolError(translate_tool_names(str(error))) from error
+
+    @wraps(func)
+    def sync_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
+        try:
+            return func(*call_args, **call_kwargs)
+        except ToolError as error:
+            raise ToolError(translate_tool_names(str(error))) from error
+
+    return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
+
+
+def use_tool_name_separator(server, separator: str) -> None:
+    """Makes every tool registered on server from now on use the separator.
+
+    Called before the groups register their tools; :func:`finish_tool_names`
+    after them. With ``.`` nothing is changed.
+
+    Args:
+        server: The MCPServer.
+        separator (str): What separates a tool's group from its name.
+    """
+    global _separator
+
+    _separator = separator
+    _registered.clear()
+    if separator == ".":
+        return
+
+    register = server.tool
+
+    def tool(*args: Any, **kwargs: Any):
+        name = kwargs.get("name")
+        if name:
+            _registered.add(name)
+            kwargs = {**kwargs, "name": published_name(name)}
+        decorate = register(*args, **kwargs)
+
+        return lambda func: decorate(_translating_errors(func))
+
+    server.tool = tool
+
+
+def finish_tool_names(server) -> None:
+    """Rewrites the tools the registered tools' descriptions name.
+
+    Afterwards, because a description can name a tool registered after its
+    own. Reaches into the SDK's private tool manager, as the descriptions are
+    only settled once a tool is registered; test_tool_names_with_a_separator
+    pins it.
+    """
+    if _separator == ".":
+        return
+
+    import json
+
+    for tool in server._tool_manager.list_tools():
+        tool.description = translate_tool_names(tool.description)
+        tool.parameters = json.loads(translate_tool_names(json.dumps(tool.parameters)))
+
+
+def _tool_scope(tool_name) -> str:
+    """Returns the scope a tool needs: ``mcp:`` and the tool's group."""
+    return f"mcp:{tool_group(tool_name)}"
+
+
+def _context_argument(signature, call_args, call_kwargs):
+    """Returns the ``ctx`` a tool was called with, or None if it takes none."""
+    try:
+        bound = signature.bind_partial(*call_args, **call_kwargs)
+    except TypeError:
+        return None
+
+    return bound.arguments.get("ctx")
+
+
+def _check_caller(tool_name, signature, call_args, call_kwargs) -> None:
+    """Refuses a tool call a multi-tenant server must not run.
+
+    Every call has to come from an authenticated user - which the SDK's bearer
+    authentication already demands of every HTTP request, so this is the
+    second, independent check - and the user's token has to grant the scope of
+    the tool's group. A server that is not multi-tenant checks nothing here.
+
+    Args:
+        tool_name (str): The name the tool is registered under.
+        signature: The tool function's ``inspect.Signature``.
+        call_args: The positional arguments it was called with.
+        call_kwargs: The keyword arguments it was called with.
+
+    Raises:
+        ToolError: If the call is refused.
+    """
+    # Imported here: general imports this module.
+    from mcp_plugin.lib import general
+
+    if not general.is_multi_tenant():
+        return
+
+    principal = general.get_principal(_context_argument(signature, call_args, call_kwargs))
+    if principal is None:
+        raise tool_error(
+            "This server serves authenticated users only, and the request was "
+            "not authenticated."
+        )
+
+    scope = _tool_scope(tool_name)
+    if scope not in principal.scopes:
+        general.log_event(
+            f"auth: REFUSED {published_name(tool_name)} to "
+            f"{general.log_user(principal.mcp_user_id)}, whose token lacks the "
+            f"scope {scope}"
+        )
+        raise tool_error(
+            f"The tool {published_name(tool_name)} needs the scope '{scope}', which your "
+            "access was not granted."
+        )
 
 
 def tool_registrar(server):
@@ -109,10 +284,14 @@ def tool_registrar(server):
             # have been importable from these two modules since 2.0.0, so naming
             # them does not tie the plugin to 2.1.
             reported_as_is = (ToolError, ResourceError, MCPError)
+            tool_name = kwargs.get("name") or func.__name__
+            # Once, here, not on every call: it is what finds the ctx argument.
+            signature = inspect.signature(func)
 
             @wraps(func)
             async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
+                    _check_caller(tool_name, signature, call_args, call_kwargs)
                     return await func(*call_args, **call_kwargs)
                 except reported_as_is:
                     raise
@@ -122,6 +301,7 @@ def tool_registrar(server):
             @wraps(func)
             def sync_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
                 try:
+                    _check_caller(tool_name, signature, call_args, call_kwargs)
                     return func(*call_args, **call_kwargs)
                 except reported_as_is:
                     raise

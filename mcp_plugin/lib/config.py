@@ -60,6 +60,13 @@ Two kinds of configuration are persisted:
   cannot have; connections stored under the old ones are moved to the
   new ones the first time the store is read (see
   :func:`upgrade_connection_keys`).
+  In multi-tenant mode every user has connections of their own, kept in a
+  shell secret GROUP named by the user's ``mcp_user_id`` (see
+  :mod:`mcp_plugin.lib.tenants`). The keys are the same - a group is not part
+  of the key - so every connection function takes the user as
+  ``mcp_user_id``, None meaning the ``generic`` group every single-tenant
+  connection is in. A user's connections have no details: those are for the VS
+  Code extension, which is not served in multi-tenant mode.
 * **Allowed paths**: the local directories the MCP server is allowed to
   access. These are stored in a ``settings.json`` file inside the plugin data
   directory (see :func:`mcp_plugin.lib.general.get_mcp_plugin_data_path`).
@@ -70,6 +77,7 @@ Two kinds of configuration are persisted:
 
 # cSpell:ignore mysqlsh MariaDB mysqlx unparse
 
+import contextlib
 import json
 import os
 import re
@@ -184,6 +192,10 @@ MAX_CONNECTION_CAPTION_LENGTH = 100
 # Name of the settings file inside the plugin data directory.
 SETTINGS_FILE_NAME = "settings.json"
 
+# What may separate a tool's group from its name (see get_tool_name_separator).
+TOOL_NAME_SEPARATORS = (".", "_", "-")
+_TOOL_NAME_SEPARATOR_SETTING = "toolNameSeparator"
+
 # Name of the file inside the plugin data directory that holds the details of
 # the stored connections (see get_connection_details).
 CONNECTIONS_FILE_NAME = "connections.json"
@@ -202,6 +214,95 @@ _ALLOWED_PATHS_KEY = "allowedPaths"
 def _shell():
     """Returns the shell global object."""
     return mysqlsh.globals.shell
+
+
+def write_json_file(path: str, content) -> None:
+    """Writes a JSON file, replacing it whole and atomically.
+
+    Written to ``<path>.tmp`` and renamed over the file, so a reader never sees
+    half of it: every file this plugin keeps is read by a running server while
+    ``mcp setup`` writes it.
+
+    Args:
+        path (str): The file to write.
+        content: What ``json.dump`` takes.
+
+    Returns:
+        None
+    """
+    temporary = f"{path}.tmp"
+    with open(temporary, "w", encoding="utf-8") as json_file:
+        json.dump(content, json_file, indent=4)
+    os.replace(temporary, path)
+
+
+@contextlib.contextmanager
+def file_lock(path: str):
+    """Holds an exclusive lock for a read-modify-write of one file.
+
+    For the files more than one process writes - ``users.json`` and
+    ``oauth_clients.json``, written by ``mcp setup`` and by a running server -
+    where a change lost to a race is not cosmetic: a removed OAuth client could
+    be written back by a server that read the file before the removal.
+    Advisory, on a lock file of its own (``<path>.lock``), so readers are never
+    blocked. ``fcntl.flock`` on POSIX, ``msvcrt.locking`` on Windows.
+
+    Args:
+        path (str): The file being changed.
+
+    Yields:
+        None, while the lock is held.
+    """
+    with open(f"{path}.lock", "a+b") as lock_file:
+        try:
+            import fcntl
+        except ImportError:  # pragma: no cover - Windows
+            import msvcrt
+
+            lock_file.seek(0)
+            while True:
+                try:
+                    # LK_LOCK retries for about ten seconds before raising.
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
+def secret_options(mcp_user_id=None) -> tuple:
+    """Returns the trailing arguments that make a secret call use a user's group.
+
+    Every generic-secret function of the shell takes an optional options
+    dictionary whose ``group`` names the secret group to work in. A user's
+    secrets are in the group named by their ``mcp_user_id``; everything else is
+    in the default ``generic`` group, which is what a call without options uses
+    - so for no user this returns nothing at all, and the call is exactly the
+    one made before groups existed.
+
+    Args:
+        mcp_user_id: The user whose group to use, or None for the ``generic``
+            group.
+
+    Returns:
+        A tuple to splat after the call's own arguments: empty, or holding the
+        one options dictionary.
+    """
+    if mcp_user_id is None:
+        return ()
+
+    return ({"group": mcp_user_id},)
 
 
 # --- Connections (stored as shell secrets) --------------------------------
@@ -503,11 +604,7 @@ def _write_connections_file(details: dict) -> None:
             if entry and uri in stored[kind]
         }
 
-    path = get_connections_file_path()
-    temporary = f"{path}.tmp"
-    with open(temporary, "w", encoding="utf-8") as connections_file:
-        json.dump(content, connections_file, indent=4)
-    os.replace(temporary, path)
+    write_json_file(get_connections_file_path(), content)
 
 
 def get_connection_details(uri, kind=None) -> dict:
@@ -730,23 +827,43 @@ def upgrade_connection_keys() -> int:
     return moved
 
 
-def _list_stored_connections(kind=None) -> list:
+def _list_stored_connections(kind=None, mcp_user_id=None) -> list:
     """Returns every stored connection URI of one kind, exactly as stored.
 
     Args:
         kind: The connection kind, or None for :data:`DEFAULT_CONNECTION_KIND`.
+        mcp_user_id: The user whose connections to list, or None for the
+            ``generic`` group.
 
     Returns:
         The URIs, sorted.
     """
-    upgrade_connection_keys()
     prefix = connection_secret_prefix(kind)
 
     return sorted(
         key[len(prefix):]
-        for key in _shell().list_secrets()
+        for key in _shell().list_secrets(*_connection_store(mcp_user_id))
         if key.startswith(prefix)
     )
+
+
+def _connection_store(mcp_user_id) -> tuple:
+    """Returns the secret options the connections of a user are stored under.
+
+    What every connection function reaches the store with: for the ``generic``
+    group it first brings the keys up to the current format, which only that
+    group can hold in an earlier one - groups came after both formats.
+
+    Args:
+        mcp_user_id: The user, or None for the ``generic`` group.
+
+    Returns:
+        What :func:`secret_options` returns.
+    """
+    if mcp_user_id is None:
+        upgrade_connection_keys()
+
+    return secret_options(mcp_user_id)
 
 
 def list_connections_with_details(kind=None) -> list:
@@ -800,7 +917,7 @@ def list_connections_with_details(kind=None) -> list:
     return sorted(connections, key=lambda connection: connection["uri"])
 
 
-def list_stored_connection_uris(kind=None) -> list:
+def list_stored_connection_uris(kind=None, mcp_user_id=None) -> list:
     """Returns the connection URIs of one kind exactly as they are stored.
 
     This is the KEY list: what comes back is what the secret store is keyed on,
@@ -813,15 +930,17 @@ def list_stored_connection_uris(kind=None) -> list:
     Args:
         kind: The connection kind to list, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
+        mcp_user_id: The user whose connections to list, or None for the
+            ``generic`` group.
 
     Returns:
         The sorted list of stored connection URIs of that kind, without the
         folder any of them is filed in.
     """
-    return _list_stored_connections(kind)
+    return _list_stored_connections(kind, mcp_user_id)
 
 
-def list_connection_uris(kind=None) -> list:
+def list_connection_uris(kind=None, mcp_user_id=None) -> list:
     """Returns the configured connection URIs of one kind, as they are named.
 
     The spelling to report and to hand out. A connection configured before the
@@ -834,13 +953,16 @@ def list_connection_uris(kind=None) -> list:
     Args:
         kind: The connection kind to list, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
+        mcp_user_id: The user whose connections to list, or None for the
+            ``generic`` group.
 
     Returns:
         The sorted list of connection URIs of that kind that have a stored
         password.
     """
     return sorted(
-        with_default_scheme(uri) for uri in list_stored_connection_uris(kind)
+        with_default_scheme(uri)
+        for uri in list_stored_connection_uris(kind, mcp_user_id)
     )
 
 
@@ -986,12 +1108,14 @@ def normalize_connection_uri(uri) -> Optional[str]:
         return None
 
 
-def _resolve_in_kind(uri, kind) -> Optional[str]:
+def _resolve_in_kind(uri, kind, mcp_user_id=None) -> Optional[str]:
     """Returns the configured URI of one kind that the given URI names.
 
     Args:
         uri: The connection URI to resolve.
         kind (str): The connection kind to look in, already normalized.
+        mcp_user_id: The user whose connections to look in, or None for the
+            ``generic`` group.
 
     Returns:
         The configured connection URI AS IT IS STORED, which is the key its
@@ -1004,7 +1128,7 @@ def _resolve_in_kind(uri, kind) -> Optional[str]:
         mysqlsh.Error: If more than one connection in that list is - the same
             connection configured twice, under two spellings.
     """
-    configured_uris = list_stored_connection_uris(kind)
+    configured_uris = list_stored_connection_uris(kind, mcp_user_id)
 
     # The spelling that was stored is a match for itself whatever it looks
     # like, including one no longer parsable by this shell.
@@ -1037,7 +1161,7 @@ def _resolve_in_kind(uri, kind) -> Optional[str]:
     return matches[0]
 
 
-def find_connection(uri, kinds=None) -> Optional[tuple]:
+def find_connection(uri, kinds=None, mcp_user_id=None) -> Optional[tuple]:
     """Returns the configured connection the given URI names, and its kind.
 
     The kind comes back with the URI because the URI on its own no longer
@@ -1058,6 +1182,8 @@ def find_connection(uri, kinds=None) -> Optional[tuple]:
             :func:`usable_connection_kinds`, which is the GUI list before the
             MCP one where the server was started with ``--gui`` and the MCP list
             alone otherwise.
+        mcp_user_id: The user whose connections to search, or None for the
+            ``generic`` group.
 
     Returns:
         A ``(configured_uri, kind)`` tuple, or None if no configured connection
@@ -1071,14 +1197,14 @@ def find_connection(uri, kinds=None) -> Optional[tuple]:
 
     for kind in kinds:
         kind = normalize_connection_kind(kind)
-        configured_uri = _resolve_in_kind(uri, kind)
+        configured_uri = _resolve_in_kind(uri, kind, mcp_user_id)
         if configured_uri is not None:
             return (configured_uri, kind)
 
     return None
 
 
-def resolve_connection_uri(uri, kind=None) -> Optional[str]:
+def resolve_connection_uri(uri, kind=None, mcp_user_id=None) -> Optional[str]:
     """Returns the configured connection URI that the given URI names.
 
     The URI a client passes to ``db.connect`` does not have to be spelled
@@ -1094,6 +1220,8 @@ def resolve_connection_uri(uri, kind=None) -> Optional[str]:
         uri: The connection URI to resolve.
         kind: The connection kind to look in, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
+        mcp_user_id: The user whose connections to look in, or None for the
+            ``generic`` group.
 
     Returns:
         The configured connection URI, or None if no configured connection is
@@ -1103,28 +1231,36 @@ def resolve_connection_uri(uri, kind=None) -> Optional[str]:
         mysqlsh.Error: If more than one configured connection is - the same
             connection configured twice, under two spellings.
     """
-    return _resolve_in_kind(uri, normalize_connection_kind(kind))
+    return _resolve_in_kind(uri, normalize_connection_kind(kind), mcp_user_id)
 
 
-def get_connection_password(uri: str, kind=None) -> str:
+def get_connection_password(uri: str, kind=None, mcp_user_id=None) -> str:
     """Returns the stored password for the given connection URI.
 
     Args:
         uri (str): The connection URI.
         kind: The connection kind it is stored under, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
+        mcp_user_id: The user it is stored for, or None for the ``generic``
+            group.
 
     Returns:
         The stored password.
     """
-    upgrade_connection_keys()
-
     # A URI not stored fails with the shell's own error for a missing secret.
-    return _shell().read_secret(_connection_key(uri, kind))
+    return _shell().read_secret(
+        _connection_key(uri, kind), *_connection_store(mcp_user_id)
+    )
 
 
 def store_connection(
-    uri: str, password: str, kind=None, path=None, caption=None, color=None
+    uri: str,
+    password: str,
+    kind=None,
+    path=None,
+    caption=None,
+    color=None,
+    mcp_user_id=None,
 ) -> None:
     """Stores the password for the given connection URI, and its details.
 
@@ -1148,6 +1284,9 @@ def store_connection(
             For each of the three, None keeps what the connection has, or
             none for a new connection - so replacing a password never moves a
             connection - and ``""`` clears it.
+        mcp_user_id: The user to store it for, or None for the ``generic``
+            group. A user's connection has no details, so giving one with a
+            user is refused.
 
     Returns:
         None
@@ -1159,16 +1298,22 @@ def store_connection(
     """
     kind = normalize_connection_kind(kind)
     changes = _normalized_details(path, caption, color)
+    if changes and mcp_user_id is not None:
+        raise mysqlsh.Error(
+            "A user's connection has no folder, caption or color: those are "
+            "for the VS Code extension, which multi-tenant mode does not serve."
+        )
     check_connection_key_length(uri, kind)
-    upgrade_connection_keys()
 
-    _shell().store_secret(_connection_key(uri, kind), password)
+    _shell().store_secret(
+        _connection_key(uri, kind), password, *_connection_store(mcp_user_id)
+    )
 
     if changes:
         set_connection_details(uri, kind, **changes)
 
 
-def drop_superseded_spellings(uri, kind=None) -> list:
+def drop_superseded_spellings(uri, kind=None, mcp_user_id=None) -> list:
     """Deletes the connections that name the same one as the given URI.
 
     One connection has one key, and this is what holds that after a connection
@@ -1191,6 +1336,8 @@ def drop_superseded_spellings(uri, kind=None) -> list:
             guessing is worse than leaving it alone.
         kind: The connection kind to clear up, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
+        mcp_user_id: The user whose connections to clear up, or None for the
+            ``generic`` group.
 
     Returns:
         The connection URIs that were deleted - empty in the ordinary case. A
@@ -1203,50 +1350,54 @@ def drop_superseded_spellings(uri, kind=None) -> list:
 
     superseded = [
         configured_uri
-        for configured_uri in list_stored_connection_uris(kind)
+        for configured_uri in list_stored_connection_uris(kind, mcp_user_id)
         if configured_uri != uri
         and normalize_connection_uri(configured_uri) == normalized
     ]
 
     # The connection kept is the one being configured, so how it was shown
-    # goes with it - unless it has details of its own already.
-    inherited = next(
-        (
-            details
-            for details in (
-                get_connection_details(old_uri, kind) for old_uri in superseded
-            )
-            if any(details.values())
-        ),
-        None,
-    )
-    if inherited and not any(get_connection_details(uri, kind).values()):
-        set_connection_details(uri, kind, **inherited)
+    # goes with it - unless it has details of its own already. A user's
+    # connections have no details to pass on.
+    if mcp_user_id is None:
+        inherited = next(
+            (
+                details
+                for details in (
+                    get_connection_details(old_uri, kind) for old_uri in superseded
+                )
+                if any(details.values())
+            ),
+            None,
+        )
+        if inherited and not any(get_connection_details(uri, kind).values()):
+            set_connection_details(uri, kind, **inherited)
 
     for old_uri in superseded:
-        delete_connection(old_uri, kind)
+        delete_connection(old_uri, kind, mcp_user_id)
 
     return superseded
 
 
-def delete_connection(uri: str, kind=None) -> None:
+def delete_connection(uri: str, kind=None, mcp_user_id=None) -> None:
     """Deletes the stored password for the given connection URI, and its details.
 
     Args:
         uri (str): The connection URI.
         kind: The connection kind it is stored under, or None for
             :data:`DEFAULT_CONNECTION_KIND`.
+        mcp_user_id: The user it is stored for, or None for the ``generic``
+            group.
 
     Returns:
         None
     """
     kind = normalize_connection_kind(kind)
-    upgrade_connection_keys()
 
     # A URI not stored raises the shell's own error for a missing secret -
     # callers rely on that. The details go only once the secret has.
-    _shell().delete_secret(_connection_key(uri, kind))
-    _drop_connection_details(uri, kind)
+    _shell().delete_secret(_connection_key(uri, kind), *_connection_store(mcp_user_id))
+    if mcp_user_id is None:
+        _drop_connection_details(uri, kind)
 
 
 # --- Allowed paths (stored in settings.json) ------------------------------
@@ -1272,8 +1423,44 @@ def get_settings() -> dict:
         return json.load(settings_file)
 
 
+def get_tool_name_separator() -> str:
+    """Returns what separates a tool's group from its name: ``.`` by default.
+
+    ``mcp setup --toolNameSeparator=_`` publishes ``db_list_connections``
+    instead of ``db.list_connections``, for gateways that refuse dots in a tool
+    name although the MCP specification allows them (Arcade, OpenAI's function
+    names). A server reads it once, when it starts.
+    """
+    separator = get_settings().get(_TOOL_NAME_SEPARATOR_SETTING, ".")
+
+    return separator if separator in TOOL_NAME_SEPARATORS else "."
+
+
+def set_tool_name_separator(separator: str) -> None:
+    """Persists what separates a tool's group from its name.
+
+    Raises:
+        mysqlsh.Error: If the separator is not one of TOOL_NAME_SEPARATORS.
+    """
+    if separator not in TOOL_NAME_SEPARATORS:
+        raise mysqlsh.Error(
+            f"The tool name separator must be one of: {' '.join(TOOL_NAME_SEPARATORS)}."
+        )
+
+    settings = get_settings()
+    if separator == ".":
+        settings.pop(_TOOL_NAME_SEPARATOR_SETTING, None)
+    else:
+        settings[_TOOL_NAME_SEPARATOR_SETTING] = separator
+    save_settings(settings)
+
+
 def save_settings(settings: dict) -> None:
     """Persists the given settings to settings.json.
+
+    Replaced whole and atomically: the file is an access control (the allowed
+    paths, and whether the server is multi-tenant), so a reader must never see
+    half of it.
 
     Args:
         settings (dict): The settings to persist.
@@ -1281,24 +1468,45 @@ def save_settings(settings: dict) -> None:
     Returns:
         None
     """
-    with open(get_settings_file_path(), "w", encoding="utf-8") as settings_file:
-        json.dump(settings, settings_file, indent=4)
+    write_json_file(get_settings_file_path(), settings)
 
 
-def get_allowed_paths() -> list:
-    """Returns the list of directories the MCP server is allowed to access."""
+def get_allowed_paths(mcp_user_id=None) -> list:
+    """Returns the directories the MCP server may access.
+
+    Args:
+        mcp_user_id: The user whose list it is, in multi-tenant mode, or None
+            for the server-wide list in settings.json.
+
+    Returns:
+        The allowed directories; none for an unknown user.
+    """
+    if mcp_user_id is not None:
+        # Imported here: tenants imports this module.
+        from mcp_plugin.lib import tenants
+
+        return tenants.get_allowed_paths(mcp_user_id)
+
     return list(get_settings().get(_ALLOWED_PATHS_KEY, []))
 
 
-def set_allowed_paths(paths: list) -> None:
-    """Persists the list of allowed directories.
+def set_allowed_paths(paths: list, mcp_user_id=None) -> None:
+    """Persists the allowed directories.
 
     Args:
         paths (list): The allowed directories.
+        mcp_user_id: The user whose list it is, in multi-tenant mode, or None
+            for the server-wide list in settings.json.
 
     Returns:
         None
     """
+    if mcp_user_id is not None:
+        from mcp_plugin.lib import tenants
+
+        tenants.set_allowed_paths(mcp_user_id, paths)
+        return
+
     settings = get_settings()
     settings[_ALLOWED_PATHS_KEY] = list(paths)
     save_settings(settings)
@@ -1324,7 +1532,7 @@ def add_allowed_path(path: str) -> None:
         set_allowed_paths(paths)
 
 
-def is_path_allowed(path: str) -> bool:
+def is_path_allowed(path: str, mcp_user_id=None) -> bool:
     """Returns whether the given path is within an allowed directory.
 
     A path is allowed if it equals one of the allowed directories or is located
@@ -1340,8 +1548,14 @@ def is_path_allowed(path: str) -> bool:
     for that - both ``db.execute_sql_script`` and
     :func:`mcp_plugin.lib.general.require_allowed_path` come through here.
 
+    In multi-tenant mode the list is the calling user's own (see
+    :func:`mcp_plugin.lib.tenants.get_allowed_paths`), and a call that names
+    no user is allowed nothing: the server-wide list belongs to single-tenant
+    mode, and falling back to it would hand every user whatever it holds.
+
     Args:
         path (str): The path to check.
+        mcp_user_id: The user asking, in multi-tenant mode.
 
     Returns:
         True if access to the path is allowed, False otherwise.
@@ -1349,7 +1563,10 @@ def is_path_allowed(path: str) -> bool:
     if general.is_gui_mode():
         return True
 
-    allowed_paths = get_allowed_paths()
+    if general.is_multi_tenant() and mcp_user_id is None:
+        return False
+
+    allowed_paths = get_allowed_paths(mcp_user_id)
     if not allowed_paths:
         return False
 

@@ -182,7 +182,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   --no-cov -q mcp_plugin -k "a or b"` with the plugin symlinked into `<home>/plugins`.
   Note that `-k test_db_sql` ALONE selects nothing useful: the sandbox those tests need is
   deployed by `test_sandbox_deploy`, so it has to be selected too or every db test skips
-  with "sandbox was not deployed".
+  with "sandbox was not deployed". `-k multi_tenant` is worse:
+  `test_a_real_server_serves_each_user_their_own` then FAILS (`db.connect` gets MySQL
+  2002, the test then indexes the error string: *string indices must be integers*), which
+  looks like a regression and is not. Trust the full run.
 
 - **A pytest mark is NOT a `-k` pattern.** `run_tests.py --only=migration_e2e` selects the
   e2e test and it is then SKIPPED anyway, because the mark is checked in

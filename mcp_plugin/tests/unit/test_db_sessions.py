@@ -54,8 +54,9 @@ has left the cache - that session would never be closed by anything.
 
 Also covers what these leave behind on stderr: a refused use is invisible to
 the client by design, so the log line is the only evidence of an attempted
-takeover there is - and it must carry enough to act on without writing out the
-connection id or the MCP session id that would let its reader use the connection.
+takeover there is - and it must carry enough to act on without writing out any
+part of the connection id or the MCP session id that would let its reader use the
+connection, or of the id of the user it belongs to.
 
 These drive lib/db_functions.py in-process with a stub session, so no database
 server is needed and no time has to be waited out. The tools themselves are
@@ -76,7 +77,7 @@ import mysqlsh
 # The Context annotation of the db tools comes from the MCP SDK.
 pytest.importorskip("mcp")
 
-from mcp_plugin.lib import db_functions, general
+from mcp_plugin.lib import db_functions, general, tenants
 
 # Deliberately NOT loopback: every loopback form normalizes to one token, so
 # loopback addresses could not stand in for two different clients here.
@@ -87,8 +88,29 @@ OTHER_ADDRESS = "192.0.2.20"
 SESSION_ID = "0123456789abcdef0123456789abcdef"
 OTHER_SESSION_ID = "fedcba9876543210fedcba9876543210"
 
+# Connection ids as db.connect hands them out (str(uuid4())).
+CONNECTION_ID = "6f2a91c4-5b3d-4e8f-9a1b-2c3d4e5f6a7b"
+LIVE_CONNECTION_ID = "0f1e2d3c-4b5a-4968-8776-655443322110"
+ABANDONED_CONNECTION_ID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+
+# A multi-tenant user's mcp_user_id.
+USER_ID = "3b241101-e2bb-4255-8caf-4136c566a962"
+
 # The identity a request over stdio presents: it has neither part.
 STDIO_CLIENT = general.ClientIdentity()
+
+
+def _assert_no_part_of(logged, *ids):
+    """Asserts that not even a part of any of the ids was written to the log.
+
+    Any eight characters in a row are taken to be a part: the length of the
+    prefix the log used to write, and more than an address or a URI in these
+    tests has in common with an id by chance.
+    """
+    for value in ids:
+        for start in range(len(value) - 7):
+            part = value[start:start + 8]
+            assert part not in logged, f"{part!r} of {value!r} is in the log"
 
 
 class _StubResult:
@@ -174,7 +196,7 @@ def _context(client_address, session_id=SESSION_ID):
     return SimpleNamespace(request_context=SimpleNamespace(request=request))
 
 
-def _register_connection(client, session=None, connection_id="test-connection-id"):
+def _register_connection(client, session=None, connection_id=CONNECTION_ID):
     """Registers a connection with a stub session and returns its id."""
     connection = db_functions._Connection("root@127.0.0.1:3306", client)
     connection.session = session if session is not None else _StubSession()
@@ -459,14 +481,14 @@ def test_the_tools_pass_the_client_identity_on(http_transport, monkeypatch):
     """db.connect binds to the caller and the db tools check the binding."""
     opened = []
 
-    def _fake_open_session(uri, kind=None):
+    def _fake_open_session(uri, kind=None, mcp_user_id=None):
         opened.append(uri)
         return _StubSession()
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
     uri = "root@127.0.0.1:3306"
     monkeypatch.setattr(
-        db_functions.config, "list_stored_connection_uris", lambda kind=None: [uri]
+        db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
     )
 
     tools = _ToolRecorder()
@@ -554,7 +576,7 @@ def test_an_idle_session_is_closed_and_opened_again(http_transport, monkeypatch)
 
     second_session = _StubSession()
     monkeypatch.setattr(
-        db_functions, "_open_session", lambda uri, kind=None: second_session
+        db_functions, "_open_session", lambda uri, kind=None, mcp_user_id=None: second_session
     )
 
     # Using the connection opens a new session, transparently to the caller.
@@ -602,7 +624,7 @@ def test_close_does_not_open_an_idle_session_again(http_transport, monkeypatch):
     connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
     assert db_functions._close_idle_sessions() == 1
 
-    def _fail_to_open(uri, kind=None):
+    def _fail_to_open(uri, kind=None, mcp_user_id=None):
         raise AssertionError("db.close must not open a session")
 
     monkeypatch.setattr(db_functions, "_open_session", _fail_to_open)
@@ -621,17 +643,18 @@ def test_close_does_not_open_an_idle_session_again(http_transport, monkeypatch):
 def test_opening_a_connection_is_logged(http_transport, monkeypatch, capsys):
     """db.connect records which client a connection was bound to.
 
-    The line every later one about the connection refers back to. It carries
-    only a prefix of the connection id and of the MCP session id: both are
-    credentials - whoever has one can use the connection - so the log must not
-    be a place to read them out of.
+    The line every later one about the connection refers back to. It names
+    the connection by the URI it was opened on and carries no part of the
+    connection id or of the MCP session id: both are credentials - whoever has
+    one can use the connection - so the log must not be a place to read them,
+    or enough of them to tell one from another, out of.
     """
     uri = "root@127.0.0.1:3306"
     monkeypatch.setattr(
-        db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
+        db_functions, "_open_session", lambda _uri, kind=None, mcp_user_id=None: _StubSession()
     )
     monkeypatch.setattr(
-        db_functions.config, "list_stored_connection_uris", lambda kind=None: [uri]
+        db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
     )
 
     tools = _ToolRecorder()
@@ -639,15 +662,11 @@ def test_opening_a_connection_is_logged(http_transport, monkeypatch, capsys):
     connection_id = tools.tools["db.connect"](_context(CLIENT_ADDRESS), uri)
 
     logged = capsys.readouterr().err
-    assert "db.connect: opened connection" in logged
-    assert general.log_id_prefix(connection_id) in logged
-    assert uri in logged
-    assert f"address={CLIENT_ADDRESS}" in logged
-    assert general.log_id_prefix(SESSION_ID) in logged
+    assert f"db.connect: opened a connection on '{uri}' (mcp) for address={CLIENT_ADDRESS}\n" in logged
 
-    # Neither of the two secrets is written out in full.
-    assert connection_id not in logged
-    assert SESSION_ID not in logged
+    # Neither of the two secrets is written out, in full or in part.
+    _assert_no_part_of(logged, connection_id, SESSION_ID)
+    assert "session=" not in logged
 
     # A request that cannot be attributed to a client is refused, and that is
     # recorded too - it is a client trying to open a connection the server
@@ -657,6 +676,7 @@ def test_opening_a_connection_is_logged(http_transport, monkeypatch, capsys):
 
     logged = capsys.readouterr().err
     assert "db.connect: REFUSED" in logged
+    assert f"(address={CLIENT_ADDRESS}, no MCP session)" in logged
 
 
 def test_a_refused_connection_use_is_logged(http_transport, capsys):
@@ -676,14 +696,12 @@ def test_a_refused_connection_use_is_logged(http_transport, capsys):
             pass
 
     logged = capsys.readouterr().err
-    assert "db: REFUSED use of connection" in logged
-    assert general.log_id_prefix(connection_id) in logged
+    assert "db: REFUSED use of a connection on 'root@127.0.0.1:3306' (mcp)" in logged
     # Both sides of the comparison, which is what makes the line worth having:
     # who the connection belongs to and who asked for it.
     assert f"bound to address={CLIENT_ADDRESS}" in logged
     assert f"request from address={OTHER_ADDRESS}" in logged
-    assert general.log_id_prefix(OTHER_SESSION_ID) in logged
-    assert OTHER_SESSION_ID not in logged
+    _assert_no_part_of(logged, connection_id, SESSION_ID, OTHER_SESSION_ID)
 
     # An id that was never handed out is a stale connection id, not an attempt
     # to use one that exists - the client cannot tell the two answers apart, but
@@ -706,8 +724,11 @@ def test_closing_an_idle_session_is_logged(http_transport, capsys):
     assert db_functions._close_idle_sessions() == 1
 
     logged = capsys.readouterr().err
-    assert "db: closed the idle session of connection" in logged
-    assert general.log_id_prefix(connection_id) in logged
+    assert (
+        "db: closed the idle session of a connection on 'root@127.0.0.1:3306' "
+        f"(mcp) for address={CLIENT_ADDRESS} after"
+    ) in logged
+    _assert_no_part_of(logged, connection_id, SESSION_ID)
     assert f"{general.SESSION_IDLE_TIMEOUT:g}s unused" in logged
     # The connection is kept, and the line says so - a reader must not take
     # this for the connection having been closed.
@@ -716,6 +737,43 @@ def test_closing_an_idle_session_is_logged(http_transport, capsys):
     # Nothing to close, nothing to say.
     assert db_functions._close_idle_sessions() == 0
     assert capsys.readouterr().err == ""
+
+
+def test_a_user_is_logged_by_name_and_never_by_id(http_transport, monkeypatch, capsys):
+    """A multi-tenant user is named in the log by their name, if they have one.
+
+    Never by their mcp_user_id, nor by any part of it: a user without a name is
+    simply not named, and neither is one whose record cannot be read - which is
+    no reason to fail the event being logged either.
+    """
+    users = {USER_ID: {"name": "Ada Lovelace"}}
+    monkeypatch.setattr(tenants, "get_user", lambda user: users.get(user))
+    client = general.ClientIdentity(CLIENT_ADDRESS, SESSION_ID, USER_ID)
+
+    connection_id, connection = _register_connection(client)
+    connection.last_used -= general.SESSION_IDLE_TIMEOUT + 1
+    capsys.readouterr()
+
+    assert db_functions._close_idle_sessions() == 1
+
+    logged = capsys.readouterr().err
+    assert f"for address={CLIENT_ADDRESS} user='Ada Lovelace' after" in logged
+    _assert_no_part_of(logged, connection_id, SESSION_ID, USER_ID)
+
+    # A user without a name, and one who is gone.
+    users[USER_ID] = {"identities": [{"type": "email", "value": "ada@example.com"}]}
+    assert general.describe_client(client) == f"address={CLIENT_ADDRESS}"
+    assert general.log_user(USER_ID) == "a user"
+    users.clear()
+    assert general.describe_client(client) == f"address={CLIENT_ADDRESS}"
+    assert general.log_user(None) == "a user"
+
+    def unreadable(user):
+        raise mysqlsh.Error("Could not read the users file")
+
+    monkeypatch.setattr(tenants, "get_user", unreadable)
+    assert general.describe_client(client) == f"address={CLIENT_ADDRESS}"
+    assert general.log_user(USER_ID) == "a user"
 
 
 def test_a_session_that_fails_to_close_is_logged(http_transport, capsys):
@@ -844,8 +902,8 @@ def test_a_connection_does_not_live_for_ever(http_transport, capsys):
     assert open_session.closed is True
 
     logged = capsys.readouterr().err
-    assert "db: dropped connection" in logged
-    assert general.log_id_prefix(connection_id) in logged
+    assert "db: dropped a connection on 'root@127.0.0.1:3306' (mcp)" in logged
+    _assert_no_part_of(logged, connection_id, SESSION_ID)
     assert f"maximum lifetime of {general.CONNECTION_MAX_LIFETIME:g}s" in logged
 
 
@@ -881,10 +939,10 @@ def test_the_reaper_drops_a_connection_nobody_comes_back_to(http_transport, caps
     live_session = _StubSession()
     abandoned_session = _StubSession()
     live_id, live = _register_connection(
-        _identity(CLIENT_ADDRESS), live_session, "live-connection-id"
+        _identity(CLIENT_ADDRESS), live_session, LIVE_CONNECTION_ID
     )
     abandoned_id, abandoned = _register_connection(
-        _identity(OTHER_ADDRESS), abandoned_session, "abandoned-connection-id"
+        _identity(OTHER_ADDRESS), abandoned_session, ABANDONED_CONNECTION_ID
     )
 
     _age(abandoned, general.CONNECTION_MAX_LIFETIME)
@@ -899,8 +957,8 @@ def test_the_reaper_drops_a_connection_nobody_comes_back_to(http_transport, caps
     assert live_session.closed is False
 
     logged = capsys.readouterr().err
-    assert "db: dropped connection" in logged
-    assert general.log_id_prefix(abandoned_id) in logged
+    assert f"db: dropped a connection on 'root@127.0.0.1:3306' (mcp) for address={OTHER_ADDRESS}" in logged
+    _assert_no_part_of(logged, abandoned_id, live_id, SESSION_ID)
 
     # Nothing left to expire, and a second pass says nothing.
     assert db_functions._drop_expired_connections() == 0
@@ -925,7 +983,7 @@ def test_removing_a_connection_revokes_it(http_transport, monkeypatch):
     monkeypatch.setattr(
         db_functions.config,
         "list_stored_connection_uris",
-        lambda kind=None: list(configured),
+        lambda kind=None, mcp_user_id=None: list(configured),
     )
 
     connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
@@ -960,7 +1018,7 @@ def test_a_first_open_is_validated_too(http_transport, monkeypatch):
     so a caller reaching the cache another way cannot open an unconfigured URI.
     """
     monkeypatch.setattr(
-        db_functions.config, "list_stored_connection_uris", lambda kind=None: []
+        db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: []
     )
 
     with pytest.raises(ToolError) as refused:
@@ -981,13 +1039,13 @@ def _registered_tools(monkeypatch, opened):
     """
     uri = "root@127.0.0.1:3306"
 
-    def _fake_open_session(session_uri, kind=None):
+    def _fake_open_session(session_uri, kind=None, mcp_user_id=None):
         opened.append(session_uri)
         return _StubSession()
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
     monkeypatch.setattr(
-        db_functions.config, "list_stored_connection_uris", lambda kind=None: [uri]
+        db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
     )
 
     tools = _ToolRecorder()
@@ -1084,7 +1142,7 @@ def test_a_connection_that_fails_to_open_gives_its_slot_back(
     tools, uri = _registered_tools(monkeypatch, opened)
     context = _context(CLIENT_ADDRESS)
 
-    def _fail_to_open(_uri, kind=None):
+    def _fail_to_open(_uri, kind=None, mcp_user_id=None):
         raise mysqlsh.DBError(2003, "Can't connect to MariaDB server")
 
     monkeypatch.setattr(db_functions, "_open_session", _fail_to_open)
@@ -1100,7 +1158,7 @@ def test_a_connection_that_fails_to_open_gives_its_slot_back(
 
     # Which is what lets it try again once the server is back.
     monkeypatch.setattr(
-        db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
+        db_functions, "_open_session", lambda _uri, kind=None, mcp_user_id=None: _StubSession()
     )
     assert tools["db.connect"](context, uri) in db_functions._sessions
 
@@ -1596,7 +1654,7 @@ def test_a_lost_connection_throws_the_session_away(http_transport, monkeypatch):
     """
     sessions = []
 
-    def _open(_uri, kind=None):
+    def _open(_uri, kind=None, mcp_user_id=None):
         sessions.append(_StubSession())
         return sessions[-1]
 
@@ -1604,7 +1662,7 @@ def test_a_lost_connection_throws_the_session_away(http_transport, monkeypatch):
     monkeypatch.setattr(
         db_functions.config,
         "list_stored_connection_uris",
-        lambda kind=None: ["root@127.0.0.1:3306"],
+        lambda kind=None, mcp_user_id=None: ["root@127.0.0.1:3306"],
     )
 
     connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
@@ -1643,7 +1701,7 @@ def test_an_ordinary_sql_error_keeps_the_session(http_transport, monkeypatch):
     typo.
     """
     monkeypatch.setattr(
-        db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
+        db_functions, "_open_session", lambda _uri, kind=None, mcp_user_id=None: _StubSession()
     )
 
     connection_id, connection = _register_connection(_identity(CLIENT_ADDRESS))
@@ -1739,7 +1797,7 @@ def test_a_session_being_closed_is_not_replaced_underneath(
     # does end up holding a second session - that leaked session is the whole
     # point, and the test has to be able to see it.
     monkeypatch.setattr(
-        db_functions, "_open_session", lambda _uri, kind=None: _StubSession()
+        db_functions, "_open_session", lambda _uri, kind=None, mcp_user_id=None: _StubSession()
     )
 
     attempted = []
