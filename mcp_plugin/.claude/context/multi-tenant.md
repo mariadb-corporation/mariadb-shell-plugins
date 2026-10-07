@@ -205,7 +205,7 @@ phase 2 decisions the user made on 2026-10-06.
 
 **Status on 2026-10-07: phases 1 and 2 are built and in PR #37**
 (`wip/mcp-multi-tenant` → `main`), reviewed by Rene once; his 11 comments are fixed in
-the working tree, NOT yet committed (see below). The as-built notes are in the
+`fe4dbfe6`, pushed, and each thread answered (see below). The as-built notes are in the
 "Status" sections here and in [oauth.md](oauth.md), and the security review is
 [security-review-multi-tenant.md](security-review-multi-tenant.md) (M1..M26).
 Later commits: `850626ee` (httpx2), `0ec99ee9` and `8f38d498` (sign-in page),
@@ -291,9 +291,8 @@ team policy question for the user), and suggests everyone run `/code-review`,
 
 **Open, in this order:**
 
-1. PR #37: commit and push the review fixes, answer Rene's 11 threads, then his
-   next look. A second `/code-review` round was asked for at the 2026-10-07
-   checkpoint.
+1. PR #37: Rene's next look at `fe4dbfe6`. Still open for the user or the team:
+   the `Co-Authored-By:` question from his review.
 2. The reference docs in `../mariadb-shell` (`wip/docs-ref`) are committed and pushed;
    they ride on mariadb-shell PR #59 ("Add MariaDB Shell reference docs …", open).
 3. Verification still missing (a real Arcade project was DONE on 2026-10-06):
