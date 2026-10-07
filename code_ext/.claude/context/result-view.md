@@ -18,11 +18,17 @@ when one exists, and otherwise by running the `mariadb.results.focus`
 command VS Code registers for every contributed view.
 
 It serves `dist/webview/` under a strict CSP with a per-load nonce, so the
-view cannot reach the network. Messages are held back until the frontend
-posts `ready`, and the current report is re-sent whenever a view is
-resolved again - VS Code throws a hidden view's DOM away, so it comes back
-empty. `retainContextWhenHidden` keeps pending grid edits alive while
-another panel tab is in front.
+view cannot reach the network. The HTML and the webview options come from
+`src/webview/html.ts` (`buildWebviewHtml`, `webviewOptions`), which every
+webview of the extension shares - the panel, a maximized tab, the
+connection editor and New Sandbox - so the CSP is written once. Messages
+are held back until the frontend posts `ready` (`ReadyQueue` in
+`src/webview/readyQueue.ts`, shared with `MaximizedResult`), and the
+current report is re-sent whenever a view is resolved again - VS Code
+throws a hidden view's DOM away, so it comes back empty.
+`retainContextWhenHidden` keeps pending grid edits alive while another
+panel tab is in front. The CSP's one soft spot is `style-src
+'unsafe-inline'`: see the security note in [result-grid.md](result-grid.md).
 
 ## Layout
 
@@ -144,6 +150,11 @@ Two things they deliberately do not do:
 State is sent for every row that appears, which is why the configured
 connection list is cached for `CONNECTION_LIST_TTL_MS`: listing it costs
 two tool calls, and it only changes when the user edits a connection.
+Writing a grid's edits back and fetching a page are rows too: both go
+through `#recorded()`, which times the call and files it as an event -
+what it came to, or `error` - and rethrows for the caller to answer the
+grid. A page fetch therefore sends the state ONCE, from that event; the
+`show` callback only puts the page in place first.
 
 A run goes into the actions **when it starts**, not when it finishes.
 `startRun()` puts up the row `pendingRunRow()` built - marked `pending`,
@@ -182,7 +193,10 @@ nothing is on show yet the first general action IS what the view comes
 up on - with the logging on it is usually first, and the panel used to
 stay empty. `#generalByDefault` marks General Actions picked that way, and
 the first CONNECTION event takes the view over from it; General Actions
-picked by the user (`selectConnection`) stays.
+picked by the user (`selectConnection`) stays. Two helpers own the rule:
+`#setActive(connection)` for a pick (the user's, a run's, a minimize) and
+`#claimIfUnset(connection)` for the takeover `startRun` and `appendEvent`
+both apply - it used to be spelled out at seven sites.
 
 The second picker offers **All Sessions** first, which is what the view
 opens on and the only case in which the actions name a connection per
@@ -270,4 +284,7 @@ collection) and `src/sql/queryBuilder.ts` with
 `src/sql/resultSetQueryBuilder.ts` (statement generation) live on the
 extension side but are bundled into the frontend too - they are pure
 TypeScript with no Node imports, and having one copy is what keeps the
-preview and the execution identical.
+preview and the execution identical. `src/text.ts` is shared the same way
+(`errorText`, `counted`), and must stay free of `vscode` for it; the
+host-only error helpers (`showErrorWithLog`, `reportError`) are in
+`src/errorMessages.ts`.

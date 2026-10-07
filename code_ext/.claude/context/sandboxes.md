@@ -14,10 +14,10 @@ MCP plugin's own `context/sandbox.md`.
 | `src/sandboxes/sandboxStore.ts` | `SandboxStore`: the instance and version lists, read once and kept, and the calls that change them. |
 | `src/sandboxes/sandboxActivity.ts` | `createLoggingSandboxApi`: every `sandbox.*` call as a General Action. |
 | `src/sandboxes/sandboxFields.ts` | The dialog's fields: defaults, the port suggestion, validation, the deploy options. Pure. |
-| `src/sandboxes/sandboxProtocol.ts` | The messages the dialog and its host exchange. |
-| `src/sandboxes/sandboxEditorPanel.ts` | The dialog's panel, HTML and message loop. |
+| `src/sandboxes/sandboxProtocol.ts` | The messages the dialog and its host exchange; `ready` / `busy` / `cancel` from `src/webview/dialogProtocol.ts`, shared with the connection editor. |
+| `src/sandboxes/sandboxEditorPanel.ts` | The dialog's panel and message loop; HTML and options from `src/webview/html.ts`. |
 | `webview/src/SandboxEditor.tsx` | The dialog itself; `sandbox.tsx` is its entry. |
-| `webview/src/dialogParts.tsx` | `Field` and `useScrollFades`, moved out of `ConnectionEditor.tsx` so both dialogs share them. |
+| `webview/src/dialogParts.tsx` | `Field`, `TabStrip`, `TabBody` (with `useScrollFades`) and `Tooltips`, shared by both dialogs. New Sandbox does not mount `Tooltips` yet. |
 
 ## Decisions
 
@@ -46,7 +46,9 @@ MCP plugin's own `context/sandbox.md`.
   `mariadb.actions.logAllCalls` is on: `createLoggingSandboxApi` wraps the
   API in `extension.ts`'s `sandboxApi()`, using the same
   `createGeneralWatcher` the `db.*` wrapper does (extracted from
-  `createLoggingApi` for this). The deploy's password shows as `***`.
+  `createLoggingApi` for this). The wrapper is built once per
+  `session.sandboxApi` instance and kept, as `ConnectionManager.api()`
+  keeps `#logged`. The deploy's password shows as `***`.
 
 - **Only the default sandbox path.** `sandbox.list_instances` lists
   nothing else (the user's decision, made on the plugin side), so nothing
@@ -83,7 +85,9 @@ MCP plugin's own `context/sandbox.md`.
   `stopping…` / `deleting…` on the row; a second action on it is refused.
   The view is listed again after every action, success or failure.
 - **Welcome content** switches on `mariadb.sandboxesView` (looking /
-  installing / failed / listed), worked out as the Connections view's is.
+  installing / failed / listed), worked out as the Connections view's is -
+  by the same `ViewStateTracker` (`src/tree/viewState.ts`), one instance
+  per view.
   A failed listing is LOGGED, not notified: the welcome content says so
   with Show Log and Retry, and the Connections view has already notified
   when the server itself failed. Both views show the startup busy bar.

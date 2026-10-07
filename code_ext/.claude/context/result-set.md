@@ -21,7 +21,11 @@ status text ...... View: [grid v] | Pages: [<][>] | Edit: [edit][add-row][sql_pr
 - The `|` are 1px lines, 16px high, 6px either side, in
   `--vscode-panel-border` (the MySQL Shell's are invisible spacers; lines
   were asked for). The section labels are 0.8em. Buttons are 20px,
-  icons 18px.
+  icons 18px. A **disabled** button is `opacity: 0.2` (settled 2026-10-07
+  after 0.4, 0.25 and 0.15): most of the bar is disabled most of the
+  time, and the icons are there to keep their place, not to be read. The
+  other disabled rules (error bar steps, tab pager, copy menu) stay at
+  0.4.
 - The icons are drawn as **CSS masks over `currentColor`**, as the MySQL
   Shell draws them, so they take the button's colour in every theme and
   only the **light** files are used: `styles.css` sets `--icon-<name>`
@@ -84,8 +88,10 @@ set" - is the page's own.
   `ExecutionService.fetchPage` -> `db.execute_sql` with `limit` and
   `offset = index * size`, on the result set's apply context, and
   replaces the result set IN PLACE (same id, so jump arrows keep working;
-  `loads` + 1). It is logged as an event row ("Page 3: ..."). A failure
-  keeps the page on show and sends `pageFailed`, shown in the error bar.
+  `loads` + 1). It is logged as an event row ("Page 3: ...") through the
+  provider's `#recorded()`, and that event is what sends the state - once.
+  A failure keeps the page on show and sends `pageFailed`, shown in the
+  error bar.
 - Maximized tabs page the same way, in their own tab.
 - The page's grid edits are rebuilt when `index` or `loads` change
   (`pageKeyOf` in App.tsx); paging is off while edits are pending, as

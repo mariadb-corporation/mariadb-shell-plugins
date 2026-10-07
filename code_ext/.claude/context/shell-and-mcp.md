@@ -28,7 +28,7 @@ which is what most of GUI mode exists for, is in
 | --- | --- |
 | `types.ts` | The `db.*` result shapes and the `IMariaDbApi` interface. |
 | `protocol.ts` | Decodes MCP tool results into the values the Python tools returned. |
-| `mariaDbApi.ts` | The `db.*` tools as typed calls, and `IToolCaller`, whose `callTool` takes an optional `timeoutMs` for a tool that outlasts the SDK's 60 s default. |
+| `mariaDbApi.ts` | The `db.*` tools as typed calls, and `IToolCaller`, whose `callTool` takes an optional `timeoutMs` for a tool that outlasts the SDK's 60 s default. `getObjectDetails` is the one call that classifies its failure: "no such object" is rejected as a typed `ObjectNotFoundError` (type, schema, name), so no caller matches error text - see [running-sql.md](running-sql.md). |
 | `sandboxApi.ts` | The `sandbox.*` tools as typed calls (`ISandboxApi`), with their timeouts; see [sandboxes.md](sandboxes.md). |
 | `session.ts` | `McpSession` — starts the server once and hands out the API, and `sandboxApi` beside it on the same connection. |
 | `serverStarter.ts` | `ServerStarter` — the whole way up (locate, install, start) once however many callers ask, and the phase the Connections view follows. |

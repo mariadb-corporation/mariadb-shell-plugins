@@ -48,7 +48,15 @@ What is *not* there is deliberate:
   nothing. It comes last, where it labels the row without standing
   between the marker and what it says, and is drawn smaller and
   quieter than what it labels. The columns close over whether it is there, so
-  the table is rebuilt when that changes.
+  the table is rebuilt when that changes - and on a switch to another
+  connection (`connection` prop), so the other log opens at its newest
+  rows rather than at the scroll offset of the one left. Nothing else
+  rebuilds it: which result sets are on show (`availableResultIds`) is
+  read through the props ref by the formatter and the row click, and a
+  change of that set re-puts the rows with `replaceData` (`availableKey`,
+  the sorted ids) - every row afresh, the statements under a closed run
+  included, where `reformat()` would miss rows not in the DOM. Until
+  2026-10-07 every state message rebuilt the whole table.
 
 The marker and the message lead together, as they do in the Problems
 panel; the details follow. The grid draws **no vertical rules**: it is a
@@ -188,7 +196,13 @@ Three things about the tree had to be told to Tabulator:
 
 Rows are looked up by index among the **top level only**, so a statement
 cannot be scrolled to by its own id: `openTo()` finds its run, opens it
-and takes the child component from `getTreeChildren()`.
+and takes the child component from `getTreeChildren()`. **Latent bug,
+found by the 2026-10-07 reviews and NOT fixed:** `openTo`'s
+`rowId === runId` branch is unreachable - its only caller is gated on
+`runHolding()`, which finds a run only by its CHILDREN - so the error
+bar's "go to" on an event row, or on a failed run with no failed
+statement under it (both of which `errorsOf()` produces), never scrolls
+the grid. Fall back to the row itself when `runHolding` finds nothing.
 
 ## Nothing scrolls itself
 

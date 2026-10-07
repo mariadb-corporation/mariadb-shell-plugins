@@ -13,8 +13,8 @@ several open on one URI, the Connections view, folders and the default.
 | --- | --- |
 | `connectionUri.ts` | Fields <-> URI, and the allow-list of URI options. Pure. |
 | `connectionStore.ts` | Add / edit / delete / test, over `IMariaDbApi`. Pure. |
-| `editorProtocol.ts` | The messages the panel and its webview exchange. |
-| `connectionEditorPanel.ts` | The panel, its HTML and the message loop. |
+| `editorProtocol.ts` | The messages the panel and its webview exchange; `ready` / `busy` / `cancel` come from `src/webview/dialogProtocol.ts`, shared with New Sandbox. |
+| `connectionEditorPanel.ts` | The panel and its message loop. The HTML and webview options are `src/webview/html.ts`'s, as for every webview. |
 | `webview/src/ConnectionEditor.tsx` | The dialog itself. |
 
 It is modelled on the MySQL Shell extension's `ConnectionEditor`: the same
@@ -26,7 +26,14 @@ cannot be written into one cannot be offered. That rules out the OCI/MDS tabs,
 `ssh-identity-file-password`), which the shell keeps out of a URI deliberately.
 `URI_OPTIONS` is `uri_connection_attributes` plus `ssh_uri_query_attributes`
 from the shell's `mysqlshdk/libs/db/utils_connection.h`, and is what tells a
-typo in the "Other Connection Options" table from a real option.
+typo in the "Other Connection Options" table from a real option. The
+options the editor gives a text field of its own are ONE table,
+`DEDICATED_URI_OPTIONS` (option name -> field), which `optionsOf` writes
+from and `parseConnectionUri` reads through (`URI_OPTION_FIELDS`, that
+table merged with `SSH_URI_OPTIONS`); `UPPERCASE_URI_OPTIONS` names the two
+whose values the shell spells in capitals, and `compression-algorithms`
+is handled apart as the one list field. Three hand-kept lists used to
+have to agree.
 
 The Basic tab's two-column grid starts Caption | Folder, then Host |
 Port + Protocol - those two share one cell as a `.field-pair`, in halves -
@@ -57,7 +64,9 @@ a second late and inside a webview often never shown (Paste's seldom
 was). `Tooltips` (`dialogParts.tsx`, mounted once at the dialog's root)
 draws them: ONE `position: fixed` `.tooltip` for the page, placed from the
 element's bounding rect under it - over it where there is no room below,
-clamped to the window's sides - so the scrolling tab body cannot clip it
+clamped to the window's sides (`placeBelowOrAbove` in
+`webview/src/position.ts`, which the overflow popup and the context menu
+also place with, each keeping its own gap and margin) - so the scrolling tab body cannot clip it
 (a CSS `::after` hung from the button was tried first and would have
 been). It shows after `TOOLTIP_DELAY_MS` (350) on hover, at once on
 focus-visible, and goes on mousedown / keydown (staying gone until the
@@ -133,7 +142,10 @@ Five things about it are load bearing:
 - **The tab body says when it scrolls.** `.tab-body` is wrapped in
   `.tab-scroller`, which lays a gradient (`.scroll-fade.top` / `.bottom`,
   into `--vscode-editor-background`) over an edge only while content is
-  hidden past it. `useScrollFades` measures after every render AND on the
+  hidden past it. The strip of tabs and that body are `TabStrip` and
+  `TabBody` in `dialogParts.tsx` (the body owns the ref and calls
+  `useScrollFades` itself), shared with New Sandbox, which had a pasted
+  copy of both. `useScrollFades` measures after every render AND on the
   frame after, on scroll, on the area or its content resizing (content
   re-watched by a MutationObserver when a tab switch swaps it), on window
   resize, on fonts arriving, and on pointerenter as a last resort. That many

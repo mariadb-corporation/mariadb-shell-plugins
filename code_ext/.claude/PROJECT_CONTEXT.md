@@ -16,13 +16,14 @@ extension grows.
 | `src/extension.ts` | Activation entry point. Wires everything together and registers the commands. |
 | `src/shell/` | Finding, installing and launching the MariaDB Shell. |
 | `src/mcp/` | The MCP client: the one-at-a-time server startup, session lifecycle, wire decoding, typed `db.*` and `sandbox.*` APIs. |
-| `src/errorMessages.ts` | The error notification every failure uses, with its Show Log button. |
+| `src/errorMessages.ts` | The error notification every failure uses, with its Show Log button, and `reportError` (log it, then notify). |
+| `src/text.ts` | `errorText` and `counted`: text helpers shared with the webviews, so free of `vscode`. |
 | `src/connections/` | Which connections are open on which URI and which is the default, what happens on each one, plus the connection editor: URI building, the store, the panel and its protocol. |
-| `src/tree/` | The Connections view: its data model and its tree items; the Sandboxes view. |
+| `src/tree/` | The Connections view: its data model and its tree items; the Sandboxes view; `viewState.ts`, the welcome-content state machine both share. |
 | `src/sandboxes/` | The New Sandbox dialog: its fields, protocol and panel. |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
 | `src/editor/` | The SQL editor toolbar, status bar entry and run command. |
-| `src/webview/` | The result view host, its message protocol and the edit-collection logic; a maximized result set's editor tab (`maximizedResult.ts`); grid values as files - saved / loaded (`valueFiles.ts`) and opened in editors (`valueDocuments.ts`). |
+| `src/webview/` | The result view host, its message protocol and the edit-collection logic; a maximized result set's editor tab (`maximizedResult.ts`); grid values as files - saved / loaded (`valueFiles.ts`) and opened in editors (`valueDocuments.ts`); what every webview shares - the HTML, CSP and options (`html.ts`), the hold-until-`ready` queue (`readyQueue.ts`), the dialogs' common messages (`dialogProtocol.ts`). |
 | `webview/src/` | The three Preact frontends: the result view, the connection editor and New Sandbox. |
 | `src/test/` | The extension-side test suite, mirroring the source layout. |
 | `webview/test/` | The frontend test suite, run under jsdom. |
@@ -116,50 +117,74 @@ change belongs to up to date, and this table with it.
   element as zero sized, so it never finishes building under test. The
   grid's mapping, formatters and cell callbacks are tested directly
   (`webview/test/ResultGrid.test.tsx`); its rendering is not.
+- The webview CSP allows inline STYLES (`style-src 'unsafe-inline'`,
+  `src/webview/html.ts`). Harmless now that every grid cell and header
+  tooltip is built as an element (see [`context/result-grid.md`](context/result-grid.md)),
+  and left as the 2026-10-07 security review's one defence-in-depth
+  suggestion: dropping it needs a check that the bundled CSS does not rely
+  on it.
+- The actions grid's `openTo` has an unreachable branch that was meant to
+  scroll to an event row or a summary-only failed run from the error bar;
+  flagged by both 2026-10-07 reviews, not fixed
+  ([`context/actions-grid.md`](context/actions-grid.md)).
 
 ## Git state
 
-Checked at this checkpoint (2026-10-07; the 2026-10-06 and 2026-10-07 sessions
-did no code_ext work, and the bullets below are still the 2026-10-02 record):
+Checked at this checkpoint (2026-10-07, after the merge and cleanup):
 
 ```text
 $ git -C code_ext branch --show-current
-wip/mcp-multi-tenant   (the checkout is mcp_plugin's PR #37 branch; code_ext's own work is on main)
+main
 
-$ git -C code_ext status --short   (one repository: mcp_plugin's lines too)
+$ git -C code_ext status --short   (one repository: every project's lines)
 (clean before this checkpoint's context edits)
 ```
 
-- **On `main`, nothing open.** PR #34 (`wip/ext-ui-improvements`) was
-  squash-merged as `b3ecaac4`; the branch is deleted locally and on
-  GitHub. PR #32 (result grid styling) was merged before it.
-- This session (PR #34), each in the context file named:
-  - New Sandbox: an empty root password becomes a generated 12-character
-    one ([`context/sandboxes.md`](context/sandboxes.md)).
-  - Result set: the column types hide under 250px high, unticked in the
-    menu; ticking makes it manual
-    ([`context/result-grid.md`](context/result-grid.md)).
-  - SQL editor connection picker: folder paths, in the tree's order
-    (`inTreeOrder`) ([`context/running-sql.md`](context/running-sql.md)).
-  - Connection editor: Basic tab re-laid out, caption and color loaded on
-    edit (they were dropped), host / socket radio buttons, Copy URI,
-    focus, and page-drawn tooltips on every button (`Tooltips` in
-    `dialogParts.tsx`, 350ms)
-    ([`context/connection-editor.md`](context/connection-editor.md)).
-  - Connections view toolbar: New Folder / New Connection go by the
-    view's selection, not the focused row VS Code hands them
-    ([`context/commands.md`](context/commands.md)).
-- Suite: **1296 pass across 56 files**, `npm run pretest` and
-  `npm run build` clean.
-- NOT looked at in a running VS Code - the next step: the connection
-  editor (layout, radio buttons, tooltip placement), the result set's
-  auto-hide, the toolbar's folder behaviour, and still PR #32's grid
-  restyle (dark and light theme, frozen keys, a join).
+- **On `main`, nothing open.** PR #38 (`wip/code-ext-code-review`) was
+  squash-merged as `86ee7f24`; the branch is deleted locally and on
+  GitHub. Before it: PR #34 (`b3ecaac4`), PR #32.
+- **This session (PR #38)** was a `/simplify` over the whole of `code_ext`
+  (four review angles, four fix agents on disjoint files), then a
+  `/code-review` (7 findings, 6 fixed) and a `/security-review` (1 Medium,
+  fixed) of the result, then the toolbar's disabled icons at 0.2. No
+  behaviour change beyond what a finding asked for. 50 files, 7 new; what
+  moved where is in the context file named:
+  - `src/text.ts` (`errorText`, `counted`) and `reportError`
+    ([`context/result-view.md`](context/result-view.md) "Shared code").
+  - `src/webview/html.ts`, `readyQueue.ts`, `dialogProtocol.ts`
+    ([`context/result-view.md`](context/result-view.md)).
+  - `src/tree/viewState.ts` ([`context/connections.md`](context/connections.md)).
+  - `ObjectNotFoundError`, `runScript` options, split-once, decoration
+    cache, header-only read ([`context/running-sql.md`](context/running-sql.md)).
+  - `DEDICATED_URI_OPTIONS`, `TabStrip`/`TabBody`, `position.ts`,
+    `dismiss.ts` ([`context/connection-editor.md`](context/connection-editor.md)).
+  - Grids no longer rebuilt per state message; `gridKeyOf`;
+    `formatValue` returns elements (the security fix)
+    ([`context/result-grid.md`](context/result-grid.md),
+    [`context/actions-grid.md`](context/actions-grid.md)).
+  - `#setActive` / `#claimIfUnset` / `#recorded`, page sends state once
+    ([`context/result-view.md`](context/result-view.md)).
+- Deliberately NOT done, with the reasons, in PR #38's description: the
+  double tree refresh on a default-connection change (the manager's
+  synchronous notify is a tested contract), unifying the four `--`
+  comment rules (they differ at `\r`/end-of-input on purpose), a shared
+  `useTabulator` hook, incremental state messages, a unified panel /
+  maximized dispatcher, `'unsafe-inline'` in `style-src`.
+- Suite: **1301 pass across 56 files** (1296 + 5 new), `npm run pretest`
+  clean.
+- NOT looked at in a running VS Code - still the next step: everything
+  PR #34 listed (connection editor layout, radio buttons, tooltip
+  placement, the result set's auto-hide, the toolbar's folder behaviour,
+  PR #32's grid restyle) plus PR #38's: switching connections in the
+  panel (log opens at the top), hovering a column header (type as text),
+  a `.sql` file in two split editors (both get dots), the 0.2 icons.
 - Test traps met: opening the `ToolbarMenu` twice in a row closes it
   (read it, then click its button again to close, before the next look);
   a `ToolbarMenu` item clicked inside the `act` that opened it fails the
   next open; Tabulator never draws its header under jsdom, so `App` tests
-  record `ResultGrid`'s props through a `vi.mock` instead.
+  record `ResultGrid`'s props through a `vi.mock` instead; Tabulator's
+  `headerTooltip` typing says `string` while the runtime takes an element
+  ([`context/testing-and-debugging.md`](context/testing-and-debugging.md)).
 
 ## Conventions
 

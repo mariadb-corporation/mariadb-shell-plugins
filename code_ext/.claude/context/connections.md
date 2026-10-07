@@ -186,7 +186,11 @@ dba@localhost:3310/world      connection (icon by scheme; "default" if default)
   `failed` rather than `listed` on a failure: the view used to claim
   nothing was configured when the shell could not even be installed.
   A new start attempt (phase `locating`) clears a listing failure back
-  to `looking`. The view also shows its busy bar for the whole startup
+  to `looking`. The machine is `ViewStateTracker` (`src/tree/viewState.ts`:
+  `listed()`, `failed()`, `state`, the phase subscription and the
+  `setContext` write-on-change), one instance per view - the Sandboxes
+  view has the same four states under its own key, and the two providers
+  used to carry a copy each. The view also shows its busy bar for the whole startup
   (`withProgress` at `{ viewId }`, in `showStartupInView`). It cannot
   show the failure's text: setting `TreeView.message` hides welcome
   content (VS Code's `shouldShowWelcome` requires it empty), so the
@@ -313,7 +317,10 @@ everything still goes by URI and kind.
   the connections, asks for a name (`askForNewFolder`, shared with New
   Folder), and makes the folder INSIDE `commonFolder` of their paths - the
   folder they are in, or the deepest one a mixed selection shares, `/` if
-  none. The folder is added to the created set first, so it survives a move
+  none. "The folder a row works in" is `folderOf(node)` in
+  `connectionsModel.ts` (a folder row's path, a connection row's folder,
+  else undefined), used by every folder command in `extension.ts` and by
+  the provider's drop target; it was spelled out three ways before. The folder is added to the created set first, so it survives a move
   that fails, then `ConnectionsTreeProvider.fileInFolder` moves them.
 - The editor's **Folder** field (Basic tab) offers every folder in use through
   a `<datalist>`; the panel lists them on `ready`, and a failed listing just

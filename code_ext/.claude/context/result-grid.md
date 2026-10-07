@@ -29,7 +29,18 @@ Its stylesheet is `tabulator_simple`, imported at the top of
 variables, since Tabulator ships a light theme of its own.
 
 **Values are shown as the MySQL Shell shows them** (`formatValue` in
-`ResultGrid.tsx`, by `IResultColumn.display`):
+`ResultGrid.tsx`, by `IResultColumn.display`). **`formatValue` returns an
+element, never a string** - a `span` with the value as `textContent`, the
+text itself from `valueText()` for the callers that need the string.
+Tabulator writes a formatter's string return into the cell as
+`innerHTML`, and a string `headerTooltip` the same way, so a row holding
+`<style>` restyled the grid and `x<5` lost its text; the 2026-10-07
+security review rated it Medium (UI spoofing and link planting; the CSP
+keeps scripts out but allows inline styles). The header tooltip is built
+as an element for the same reason - Tabulator takes one from the function
+at run time, though its typings say `string`, hence the one cast.
+`ActionsGrid` had done this all along. Tests: a value and a column type
+carrying `<style>`/`<b>` render as text.
 
 - NULL, and a BLOB, a spatial value or a VECTOR, are its data icons
   (`data-null`, `data-blob`, `data-geometry`, `data-vector`.svg, copied to
@@ -157,7 +168,12 @@ result set keeps following the setting). Unlike the freeze setting it
 applies at once - `extension.ts` calls `ResultViewProvider.settingsChanged`,
 which resends the view's and every maximized tab's state (same page keys,
 so pending edits stay), and `showTypes` is a dependency of the build
-effect. The primary key's codicon key is `.columnName.keyColumn::after`
+effect. **The build effect is keyed on `gridKeyOf(resultSet)`** - id,
+`pageKeyOf` (page index and loads), `editable` and the columns as JSON -
+memoized per result set, plus `freezeKeys` and `showTypes`; NOT on the
+result set object, which is a fresh clone on every state message (every
+`db.*` call on the connection) and used to rebuild the grid each time.
+Rows go in through the separate `replaceData` effect. The primary key's codicon key is `.columnName.keyColumn::after`
 now, since a title formatter replaces the title's text.
 **A short result set hides them for the time being**: `App.tsx` watches
 `section.content` (grid plus status bar) with a `ResizeObserver`, and

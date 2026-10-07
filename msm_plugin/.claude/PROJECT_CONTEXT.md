@@ -79,10 +79,10 @@ Checked at this checkpoint (2026-10-07), repo `mariadb-shell-plugins` (msm_plugi
 
 ```text
 $ git -C msm_plugin branch --show-current
-wip/mcp-multi-tenant   (the checkout is mcp_plugin's PR #37 branch; no msm_plugin work this session)
+main   (no msm_plugin work this session)
 
 $ git -C msm_plugin status --short
-(clean)
+(clean before this checkpoint's context edits)
 ```
 
-msm_plugin itself: nothing open on `main`. PR #36 (`wip/msm_mrs_fixes`: MSM section 180, MRS GROUP BY queries, NO_AUTO_CREATE_USER / issue 14) is merged as `4bdf0ece`.
+msm_plugin itself: nothing open on `main`. PR #36 (`wip/msm_mrs_fixes`: MSM section 180, MRS GROUP BY queries, NO_AUTO_CREATE_USER / issue 14) is merged as `4bdf0ece`. Its remote branch `origin/wip/msm_mrs_fixes` is still on GitHub - deleting it was asked for and blocked by the session's permission layer; `git push origin --delete wip/msm_mrs_fixes` is the one command left.

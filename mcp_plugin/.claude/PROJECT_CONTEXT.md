@@ -82,15 +82,20 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-07):
+Checked at this checkpoint (2026-10-07, after the merge):
 
 ```text
 $ git -C mcp_plugin branch --show-current
-wip/mcp-multi-tenant
+main
 
 $ git -C mcp_plugin status --short
-(clean)
+(clean before this checkpoint's context edits)
 ```
+
+- **PR #37 is MERGED** (2026-10-07 14:07, squash-merged as `a5ad8bdf` on
+  `main`); `wip/mcp-multi-tenant` is deleted locally and on GitHub. No
+  mcp_plugin work this session; the bullets below are the record of the
+  branch as it was merged.
 
 - **Rene's 11 PR #37 comments are fixed, pushed and answered** (2026-10-07):
   `fe4dbfe6` (the fixes, both `/code-review` rounds and the `/authorize` limit) and

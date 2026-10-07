@@ -26,7 +26,16 @@ code must return `{ dispose }` objects rather than `new vscode.Disposable`.
 
 The MCP decoding fixtures in `src/test/mcp/protocol.test.ts` are the shapes
 the running server actually answers with, so the mapping is pinned to the
-server rather than to an idea of it.
+server rather than to an idea of it. The shared fake API in
+`src/test/helpers.ts` rejects a missing object with the real API's
+`ObjectNotFoundError`, since the execution service and the logging
+wrapper now tell it apart by type, not by message.
+
+Two typing traps in the grid tests: Tabulator's `headerTooltip` typing
+says the function returns a `string` while the runtime takes an element,
+so a test calls it (`as unknown as () => HTMLElement`) and reads
+`textContent`; and `formatValue` / `formatCell` return elements, so
+their tests read `textContent` rather than comparing strings.
 
 ## Debugging in VS Code
 

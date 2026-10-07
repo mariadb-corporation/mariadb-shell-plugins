@@ -82,11 +82,17 @@ is always the truth.
 Tab captions skip leading comments (`dropLeadingComments`), or the first
 result of every generated file would be captioned with its header.
 
-`ExecutionService.execute()` then:
+`SqlEditorBinding.runScript(uri, script, options)` takes an `IRunOptions`
+(`label`, `source`, `stopOnError`, `into`) - it had six positionals. It
+splits the script ONCE and hands the statements to both
+`describeStatements()` (the pending row's `Running N statements`) and
+`execute()` (`IExecutionOptions.statements`, trusted to be the split of
+`script`; `describeRun(script)` still exists for callers with only the
+text). `ExecutionService.execute()` then:
 
-1. splits the script client-side (`splitStatements.ts`) so each result can
-   be paired with the statement that produced it — the server splits again
-   on its own side, and the two have to line up,
+1. pairs each result with the statement that produced it from that split
+   (`splitStatements.ts`) — the server splits again on its own side, and
+   the two have to line up,
 2. runs it with `db.execute_sql_script`,
 3. sends statements without a result set to the **Actions** tab and each
    result set to a tab of its own,
@@ -173,14 +179,20 @@ thing.
 For a statement that passes, the name is looked up AS A TABLE outright:
 one `db.get_object_details(..., "table")`, the common case in one call. A
 view - `mysql.user` is one since MariaDB 10.4 - is found out by the answer
-being no such table. `OBJECT_NOT_FOUND` (`src/mcp/protocol.ts`) matches
-the server's wording, `No table 'user' found in schema 'mysql'`, anywhere
-in the text since the SDK prefixes its own; the grid then reads "Read only:
-mysql.user is not a table - a view, say.", and `createLoggingApi` reports
-that call as an INFO row, "No table mysql.user", not as an error - asking
-is how the question is answered. Any other failure is still an error, and
-the grid says the columns could not be looked up. Nothing more is asked
-about a view: its columns would only feed the header tooltips.
+being no such table. **That is classified ONCE, at the source**:
+`MariaDbApi.getObjectDetails` matches the server's wording (`No table
+'user' found in schema 'mysql'`, anywhere in the text since the SDK
+prefixes its own; `OBJECT_NOT_FOUND` now lives in `mariaDbApi.ts`) and
+rejects with a typed `ObjectNotFoundError` carrying the type, schema and
+name. `#buildResultSet` checks `instanceof` and the grid reads "Read only:
+mysql.user is not a table - a view, say."; `createLoggingApi` recognises
+the same error and reports that call as an INFO row, "No table
+mysql.user", not as an error - asking is how the question is answered (it
+used to take an `expected` callback that re-ran the regex). Any other
+failure is still an error, and the grid says the columns could not be
+looked up. Nothing more is asked about a view: its columns would only
+feed the header tooltips. The test fake (`src/test/helpers.ts`) rejects
+with the same typed error.
 
 (Two rounds before this: first the table lookup failed and was logged as
 an ERROR row for a SELECT that had worked; then an `information_schema`
@@ -233,6 +245,23 @@ A scan is abandoned when its document changes under it (the version is
 re-checked at every statement), when a newer scan starts for the same
 document, when the document is closed, or when the decorator is disposed.
 Edits schedule a rescan 300 ms after they stop.
+
+**The scan is of the document, not the editor.** What the last scan found
+is kept per URI with its `version` (`#scanned`): an editor switch, a
+split or a reopen with the text unchanged just applies it, and a change
+event that changed no text (the dirty flag flipping on save) schedules
+nothing - checked by version, since the vscode mock fires changes without
+`contentChanges`. One scan paints every visible editor on the document,
+progressively and at the end; a second editor opened while a scan runs
+gets what it has found so far at once (the running token carries its
+`ranges`) and the rest as it goes, instead of starting a scan that
+cancelled the first and left one editor bare.
+
+Two more reads were trimmed in `sqlEditorBinding.ts` at the same time:
+`connectionFor` reads only the header's `HEADER_SEARCH_LINES` (5) as a
+`Range`, not the whole document, and `updateStatusBar` sets the
+`mariadb.stopOnError` context only when the value changed
+(`#publishedStopOnError`).
 
 Comments get no dot: the dot goes on `contentStart`, not `span.start`.
 DELIMITER commands get none either, so the dots line up with the
