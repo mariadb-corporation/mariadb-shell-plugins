@@ -15,11 +15,6 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-/** A configured connection, as `db.list_connections` reports it. */
-export interface IConnectionUri {
-    uri: string;
-}
-
 /**
  * Which list of connections a `db.*_connection` call works on.
  *

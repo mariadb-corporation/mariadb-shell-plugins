@@ -19,6 +19,7 @@ import type { JSX } from "preact";
 
 import type { IEditableRow } from "../../src/webview/changes.js";
 import type { IResultSet } from "../../src/webview/protocol.js";
+import { counted } from "../../src/text.js";
 import { ToolbarMenu } from "./ToolbarMenu.js";
 
 /** The two ways a result set can be looked at. */
@@ -57,16 +58,6 @@ interface IResultStatusBarProperties {
     onToggleMaximized(): void;
     onAction(action: ResultAction): void;
 }
-
-/**
- * @param count How many.
- * @param noun What, in the singular.
- *
- * @returns The two together, the noun made plural where it has to be.
- */
-const counted = (count: number, noun: string): string => {
-    return `${count} ${noun}${count === 1 ? "" : "s"}`;
-};
 
 /**
  * Says what the pending edits of a result set come to, the way the MySQL

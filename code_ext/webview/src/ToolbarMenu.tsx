@@ -18,6 +18,8 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
+import { dismissOnOutside } from "./dismiss.js";
+
 /** One entry of a toolbar menu; a separator when it has no caption. */
 export interface IToolbarMenuItem {
     id: string;
@@ -70,27 +72,7 @@ export const ToolbarMenu = (props: IToolbarMenuProperties): JSX.Element => {
             return undefined;
         }
 
-        const onPointer = (event: Event): void => {
-            if (!host.current?.contains(event.target as Node)) {
-                setOpen(false);
-            }
-        };
-        const onKey = (event: KeyboardEvent): void => {
-            if (event.key === "Escape") {
-                event.preventDefault();
-                setOpen(false);
-            }
-        };
-        const close = (): void => { setOpen(false); };
-        document.addEventListener("mousedown", onPointer, true);
-        document.addEventListener("keydown", onKey, true);
-        window.addEventListener("blur", close);
-
-        return () => {
-            document.removeEventListener("mousedown", onPointer, true);
-            document.removeEventListener("keydown", onKey, true);
-            window.removeEventListener("blur", close);
-        };
+        return dismissOnOutside(host, () => { setOpen(false); });
     }, [open]);
 
     return (

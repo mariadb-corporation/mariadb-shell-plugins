@@ -15,7 +15,11 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { parseConnectionUri } from "../connections/connectionUri.js";
+import {
+    DEFAULT_PORT,
+    parseConnectionUri,
+    usesSshTunnel,
+} from "../connections/connectionUri.js";
 import type { ISandboxDeployOptions } from "../mcp/sandboxApi.js";
 
 /**
@@ -73,9 +77,6 @@ export const SERVER_ON_PATH = "Server on the PATH";
 /** A version as `sandbox.deploy` takes it: `11`, `11.8` or `11.8.9`. */
 const VERSION_PATTERN = /^v?\d+(\.\d+){0,2}$/;
 
-/** The port a connection that names none is made on. */
-const DEFAULT_SERVER_PORT = 3306;
-
 /**
  * The names of this machine a connection can use. The same server answers
  * on all of them, so `localhost:3310` and `127.0.0.1:3310` are one port.
@@ -127,13 +128,13 @@ export const localConnectionPorts = (uris: readonly string[]): number[] => {
     const ports = new Set<number>();
     for (const uri of uris) {
         const fields = parseConnectionUri(uri);
-        if (fields.scheme.endsWith("+ssh")
+        if (usesSshTunnel(fields.scheme)
             || !LOCAL_HOSTS.has(fields.host.toLowerCase())) {
             continue;
         }
 
         const port = fields.port.trim() === ""
-            ? DEFAULT_SERVER_PORT
+            ? DEFAULT_PORT
             : wholeNumber(fields.port);
         if (port !== undefined) {
             ports.add(port);

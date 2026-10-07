@@ -28,6 +28,7 @@ import {
     editableAsText,
     formatCell,
     formatValue,
+    valueText,
     LONG_TEXT,
     openableCell,
     ROW_INDEX_FIELD,
@@ -114,19 +115,29 @@ const editable = (row: Record<string, unknown>): IEditableRow => {
     };
 };
 
-describe("formatValue", () => {
+describe("valueText", () => {
     it("shows a binary value as 0x and its hex", () => {
-        expect(formatValue("00ff", "binary")).toBe("0x00ff");
-        expect(formatValue("", "binary")).toBe("0x");
+        expect(valueText("00ff", "binary")).toBe("0x00ff");
+        expect(valueText("", "binary")).toBe("0x");
     });
 
     it("cuts a long binary value short, as the MySQL Shell does", () => {
         const long = "ab".repeat(BINARY_DIGITS_SHOWN);
 
-        expect(formatValue(long, "binary"))
+        expect(valueText(long, "binary"))
             .toBe(`0x${long.slice(0, 64)}\u2026`);
-        expect(formatValue("ab".repeat(32), "binary"))
+        expect(valueText("ab".repeat(32), "binary"))
             .toBe(`0x${"ab".repeat(32)}`);
+    });
+
+    it("shows an object as its JSON", () => {
+        expect(valueText({ a: 1 })).toBe('{"a":1}');
+    });
+});
+
+describe("formatValue", () => {
+    it("shows a binary value by its text", () => {
+        expect(formatValue("00ff", "binary").textContent).toBe("0x00ff");
     });
 
     it("shows a BLOB, a spatial value and a vector by an icon", () => {
@@ -150,7 +161,17 @@ describe("formatValue", () => {
     });
 
     it("leaves every other value as text", () => {
-        expect(formatValue("{\"a\": 1}")).toBe("{\"a\": 1}");
+        expect(formatValue("{\"a\": 1}").textContent).toBe("{\"a\": 1}");
+    });
+
+    it("shows markup in a value as text, not as HTML", () => {
+        // Tabulator writes a string into the cell as HTML; a node is
+        // appended as it is, so a value cannot restyle the grid.
+        const rendered = formatValue("<style>td{opacity:0}</style><b>x</b>");
+
+        expect(rendered.querySelector("style, b")).toBeNull();
+        expect(rendered.textContent)
+            .toBe("<style>td{opacity:0}</style><b>x</b>");
     });
 });
 
@@ -249,7 +270,6 @@ describe("the cell menu", () => {
         const callbacks = {
             onCellEdited: vi.fn(),
             onToggleDeleted: vi.fn(),
-            onSelectionChanged: vi.fn(),
             onSaveValue: vi.fn(),
             onLoadValue: vi.fn(),
         };
@@ -344,7 +364,6 @@ describe("editableAsText", () => {
         }), {
             onCellEdited: vi.fn(),
             onToggleDeleted: vi.fn(),
-            onSelectionChanged: vi.fn(),
         });
 
         const byField = new Map(columns.map((column) => {
@@ -352,6 +371,28 @@ describe("editableAsText", () => {
         }));
         expect(byField.get("shape")?.editor).toBeUndefined();
         expect(byField.get("data")?.editor).toBe("input");
+    });
+});
+
+describe("header tooltips", () => {
+    it("shows the column's type as text, not as HTML", () => {
+        // The type is the server's DDL - an enum's values and all - and
+        // Tabulator writes a string tooltip in as HTML.
+        const [column] = buildColumns(resultSet({
+            columns: [{
+                name: "kind",
+                datatype: "enum('<b>a</b>','<style>td{opacity:0}</style>')",
+                isPrimary: false,
+                nullable: false,
+            }],
+        }), { onCellEdited: vi.fn(), onToggleDeleted: vi.fn() });
+
+        const tooltip =
+            (column.headerTooltip as unknown as () => HTMLElement)();
+
+        expect(tooltip.querySelector("b, style")).toBeNull();
+        expect(tooltip.textContent)
+            .toBe("enum('<b>a</b>','<style>td{opacity:0}</style>')");
     });
 });
 
@@ -365,17 +406,17 @@ describe("formatCell", () => {
     });
 
     it("tells an empty string from NULL", () => {
-        expect(formatCell(cell(""))).toBe("");
+        expect(formatCell(cell("")).textContent).toBe("");
     });
 
     it("renders scalars as text", () => {
-        expect(formatCell(cell(42))).toBe("42");
-        expect(formatCell(cell("Kabul"))).toBe("Kabul");
-        expect(formatCell(cell(false))).toBe("false");
+        expect(formatCell(cell(42)).textContent).toBe("42");
+        expect(formatCell(cell("Kabul")).textContent).toBe("Kabul");
+        expect(formatCell(cell(false)).textContent).toBe("false");
     });
 
     it("renders an object as JSON", () => {
-        expect(formatCell(cell({ a: 1 }))).toBe('{"a":1}');
+        expect(formatCell(cell({ a: 1 })).textContent).toBe('{"a":1}');
     });
 });
 
@@ -450,7 +491,6 @@ describe("buildColumns", () => {
         return {
             onCellEdited: vi.fn(),
             onToggleDeleted: vi.fn(),
-            onSelectionChanged: vi.fn(),
         };
     };
 
@@ -524,8 +564,10 @@ describe("buildColumns", () => {
 
     it("shows a column's type as its header tooltip", () => {
         const columns = buildColumns(resultSet(), callbacks());
+        const tooltip =
+            (columns[0].headerTooltip as unknown as () => HTMLElement)();
 
-        expect(columns[0].headerTooltip).toBe("int(11)");
+        expect(tooltip.textContent).toBe("int(11)");
     });
 
     it("freezes nothing unless asked to", () => {

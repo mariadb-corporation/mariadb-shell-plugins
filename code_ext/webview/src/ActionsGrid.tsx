@@ -16,7 +16,12 @@
  */
 
 import type { JSX } from "preact";
-import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
+import {
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+} from "preact/hooks";
 import {
     TabulatorFull as Tabulator,
     type CellComponent,
@@ -40,6 +45,12 @@ interface IActionsGridProperties {
      * repeating its name the whole way down says nothing.
      */
     showConnection?: boolean;
+    /**
+     * Whose rows these are. A switch to another connection's log opens
+     * it at its newest rows, where replacing the rows in place would
+     * keep the scroll offset of the one left.
+     */
+    connection?: string;
     /** The result sets whose tabs are still on show. */
     availableResultIds: ReadonlySet<string>;
     /** Switches to the tab of the result set a row produced. */
@@ -65,12 +76,9 @@ const SEVERITY_ICONS = {
 } as const;
 
 /** What the marker's tooltip says, where the kind is not the word. */
-const SEVERITY_TITLES = {
+const SEVERITY_TITLES: Partial<Record<IActionRow["kind"], string>> = {
     pending: "running",
-    info: "info",
-    warning: "warning",
-    error: "error",
-} as const;
+};
 
 /**
  * The twistie a run is opened and closed with. VS Code's own chevrons,
@@ -115,7 +123,7 @@ export const createSeverityIcon = (row: IActionRow): HTMLElement => {
     const icon = document.createElement("span");
     icon.className =
         `markerIcon ${row.kind} codicon ${SEVERITY_ICONS[row.kind]}`;
-    icon.title = SEVERITY_TITLES[row.kind];
+    icon.title = SEVERITY_TITLES[row.kind] ?? row.kind;
 
     return icon;
 };
@@ -363,15 +371,17 @@ export const timeOf = (row: IActionRow): string => {
 /**
  * Builds the actions grid's columns.
  *
- * @param available The result sets still on show.
- * @param onJump Switches to a result set's tab.
- * @param onGoTo Puts the cursor on the statement a row came from.
+ * @param available Says which result sets are still on show. Asked each
+ *                  time a cell is rendered rather than given the answer,
+ *                  so the columns - and the table built on them - outlive
+ *                  a change of tabs.
+ * @param onCopy Puts a cut-off cell's full text on the clipboard.
  * @param showConnection Whether to name the connection each row is on.
  *
  * @returns The column definitions.
  */
 export const buildActionColumns = (
-    available: ReadonlySet<string>,
+    available: () => ReadonlySet<string>,
     onCopy: (text: string) => void,
     showConnection = false,
 ): ColumnDefinition[] => {
@@ -386,7 +396,7 @@ export const buildActionColumns = (
             // grows to hold it, which is what variableHeight is for.
             variableHeight: true,
             formatter: (cell) => {
-                return formatMessageCell(cell, available, onCopy);
+                return formatMessageCell(cell, available(), onCopy);
             },
         },
         {
@@ -583,17 +593,30 @@ const openTo = (
  * @returns The rendered grid.
  */
 export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
-    const { rows, availableResultIds, scrollToRowId, showConnection } = props;
+    const {
+        rows,
+        availableResultIds,
+        scrollToRowId,
+        showConnection,
+        connection,
+    } = props;
     const host = useRef<HTMLDivElement>(null);
     const table = useRef<Tabulator | undefined>(undefined);
     const built = useRef(false);
     const pendingRows = useRef<IActionRow[] | undefined>(undefined);
-    // Held in a ref so the callbacks Tabulator keeps never go stale.
+    // Held in a ref so the callbacks Tabulator keeps never go stale - and
+    // so the cells can ask which result sets are on show as they render,
+    // rather than the table being rebuilt to tell them.
     const callbacks = useRef(props);
     callbacks.current = props;
     // Read by Tabulator as it builds each row, long after this render.
     const expandedIds = useRef<ReadonlySet<string>>(new Set());
     expandedIds.current = expandedIdsOf(rows);
+    // The page hands over a new set on every message, whether or not the
+    // tabs changed; what the rows are re-rendered for is its contents.
+    const availableKey = useMemo(() => {
+        return [...availableResultIds].sort().join("\u0000");
+    }, [availableResultIds]);
 
     useLayoutEffect(() => {
         if (!host.current) {
@@ -603,7 +626,9 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
         const instance = new Tabulator(host.current, {
             data: [...rows],
             columns: buildActionColumns(
-                availableResultIds,
+                () => {
+                    return callbacks.current.availableResultIds;
+                },
                 (text) => {
                     callbacks.current.onCopyText(text);
                 },
@@ -652,7 +677,8 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
         // as the message.
         instance.on("rowClick", (event, row) => {
             const data = row.getData() as IActionRow;
-            switch (actionClick(event, data, availableResultIds)) {
+            const available = callbacks.current.availableResultIds;
+            switch (actionClick(event, data, available)) {
                 case "jump": {
                     callbacks.current.onJumpToResult(data.resultId as string);
                     break;
@@ -706,11 +732,12 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
                 // rather than being a no-op.
             }
         };
-        // The columns close over which result sets are still available
-        // and over whether the connection is named, so the table is
-        // rebuilt when either changes.
+        // Only a change of columns - whether the connection is named - or
+        // of connection rebuilds the table. The rows are pushed in by the
+        // effect below, and which result sets are on show is read through
+        // the ref.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [availableResultIds, showConnection]);
+    }, [showConnection, connection]);
 
     useEffect(() => {
         const instance = table.current;
@@ -755,8 +782,16 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
         // through the older rows is already where the new ones arrive,
         // and one who has is not taken away from what they are
         // reading.
+        //
+        // The rows are also put in again when the result tabs change
+        // without them - one closed, say - because the jump arrows are
+        // rendered from which result sets are on show. Replacing the data
+        // renders every row afresh, the statements under a closed run
+        // included, where reformatting the rows on screen would not.
         void instance.replaceData([...rows]);
-    }, [rows]);
+        // The key stands for the set the arrows are rendered from.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rows, availableKey]);
 
     return <div class="actionsGridHost" ref={host} />;
 };

@@ -19,6 +19,7 @@ import {
     INSTALL_SCRIPT_URL_POSIX,
     INSTALL_SCRIPT_URL_WINDOWS,
 } from "./constants.js";
+import { errorText } from "../text.js";
 
 export interface InstallCommand {
     /** The interpreter to spawn. */
@@ -290,9 +291,7 @@ export const installShell = async (
             );
         }
 
-        const message = error instanceof Error
-            ? error.message
-            : String(error);
+        const message = errorText(error);
         log(`The installer could not be run: ${message}`);
         throw new Error(
             `The MariaDB Shell installer could not be run `

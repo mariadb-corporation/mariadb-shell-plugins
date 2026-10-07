@@ -15,7 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 
 import {
     emptySandboxFields,
@@ -32,7 +32,7 @@ import type {
     SandboxHostMessage,
     SandboxWebviewMessage,
 } from "../../src/sandboxes/sandboxProtocol.js";
-import { Field, useScrollFades } from "./dialogParts.js";
+import { Field, TabBody, TabStrip } from "./dialogParts.js";
 import { post } from "./vscodeApi.js";
 
 /**
@@ -74,8 +74,6 @@ export const SandboxEditor = (): preact.JSX.Element => {
     // A problem is only shown once Create was pressed, or for a field that
     // has been typed into: a new dialog is not a list of complaints.
     const [touched, setTouched] = useState<Set<SandboxField>>(new Set());
-    const tabBody = useRef<HTMLDivElement>(null);
-    const fades = useScrollFades(tabBody);
 
     useEffect(() => {
         const onMessage = (event: MessageEvent<SandboxHostMessage>): void => {
@@ -145,7 +143,7 @@ export const SandboxEditor = (): preact.JSX.Element => {
 
     const text = (
         key: Exclude<SandboxField, "ssl" | "mcpAccess">,
-        options: { placeholder?: string; type?: string; list?: string } = {},
+        options: { placeholder?: string; type?: string } = {},
     ): preact.JSX.Element => {
         return (
             <input
@@ -154,7 +152,6 @@ export const SandboxEditor = (): preact.JSX.Element => {
                 aria-invalid={shownProblem?.field === key}
                 value={fields[key]}
                 placeholder={options.placeholder ?? ""}
-                list={options.list}
                 spellcheck={false}
                 disabled={busy}
                 onInput={(event) => {
@@ -223,159 +220,134 @@ export const SandboxEditor = (): preact.JSX.Element => {
                 </label>
             </section>
 
-            <nav class="tabs" role="tablist">
-                {TABS.map((name) => {
-                    return (
-                        <button
-                            key={name}
-                            type="button"
-                            role="tab"
-                            aria-selected={tab === name}
-                            class={tab === name ? "tab selected" : "tab"}
-                            onClick={() => { setTab(name); }}
+            <TabStrip
+                tabs={TABS}
+                current={tab}
+                onSelect={(name) => { setTab(name); }}
+            />
+
+            <TabBody>
+                {tab === "Basic" ? (
+                    <section class="grid">
+                        <Field
+                            caption="Port"
+                            hint={hintOf("port",
+                                "Between 1024 and 65535.")}
                         >
-                            {name}
-                        </button>
-                    );
-                })}
-            </nav>
+                            {text("port", { placeholder: "3310" })}
+                        </Field>
+                        <Field
+                            caption="Server Version"
+                            hint={hintOf("serverVersion",
+                                isServerOnPath(fields.serverVersion)
+                                    ? "The mariadbd found on the PATH, "
+                                    + "whichever version that is."
+                                    : "One this machine does not have is "
+                                    + "downloaded first, which can take a "
+                                    + "few minutes.")}
+                        >
+                            <ComboBox
+                                value={fields.serverVersion}
+                                choices={serverVersionChoices(versions)}
+                                invalid={versionProblem !== undefined}
+                                disabled={busy}
+                                placeholder="12.3.2"
+                                listLabel="Show the server versions"
+                                onInput={(value) => {
+                                    update("serverVersion", value);
+                                }}
+                            />
+                        </Field>
 
-            <div class="tab-scroller">
-                <div class="tab-body" ref={tabBody}>
-                    {tab === "Basic" ? (
-                        <section class="grid">
-                            <Field
-                                caption="Port"
-                                hint={hintOf("port",
-                                    "Between 1024 and 65535.")}
-                            >
-                                {text("port", { placeholder: "3310" })}
-                            </Field>
-                            <Field
-                                caption="Server Version"
-                                hint={hintOf("serverVersion",
-                                    isServerOnPath(fields.serverVersion)
-                                        ? "The mariadbd found on the PATH, "
-                                        + "whichever version that is."
-                                        : "One this machine does not have is "
-                                        + "downloaded first, which can take a "
-                                        + "few minutes.")}
-                            >
-                                <ComboBox
-                                    value={fields.serverVersion}
-                                    choices={serverVersionChoices(versions)}
-                                    invalid={versionProblem !== undefined}
+                        <Field caption="Root Password">
+                            {text("password", { type: "password" })}
+                        </Field>
+                        <Field
+                            caption="Confirm Root Password"
+                            hint={hintOf("passwordConfirmation")}
+                        >
+                            {text("passwordConfirmation",
+                                { type: "password" })}
+                        </Field>
+                        <p class="note password-note">
+                            Stored with the connection, so it is not
+                            asked for again. Left empty, a random
+                            12 character password is generated.
+                        </p>
+                    </section>
+                ) : null}
+
+                {tab === "Advanced" ? (
+                    <section class="grid">
+                        <Field
+                            caption="Allow root Access From"
+                            hint={hintOf("allowRootFrom",
+                                "The host a second root account may "
+                                + "connect from, as root@host. "
+                                + "127.0.0.1 is this machine only; % is "
+                                + "anywhere. Empty creates none.")}
+                        >
+                            {text("allowRootFrom",
+                                { placeholder: "127.0.0.1" })}
+                        </Field>
+                        <Field
+                            caption="Server ID"
+                            hint={hintOf("serverId",
+                                "The server_id, for replication.")}
+                        >
+                            {text("serverId")}
+                        </Field>
+                        <Field
+                            caption="Startup Timeout"
+                            hint={hintOf("timeout",
+                                "Seconds to wait for the server to "
+                                + "start. Defaults to 60.")}
+                        >
+                            {text("timeout", { placeholder: "60" })}
+                        </Field>
+
+                        <div class="group">
+                            <label class="checkbox">
+                                <input
+                                    type="checkbox"
+                                    checked={fields.ssl}
                                     disabled={busy}
-                                    placeholder="12.3.2"
-                                    listLabel="Show the server versions"
-                                    onInput={(value) => {
-                                        update("serverVersion", value);
+                                    onChange={(event) => {
+                                        update("ssl", (event.target as
+                                            HTMLInputElement).checked);
                                     }}
                                 />
-                            </Field>
-
-                            <Field caption="Root Password">
-                                {text("password", { type: "password" })}
-                            </Field>
-                            <Field
-                                caption="Confirm Root Password"
-                                hint={hintOf("passwordConfirmation")}
-                            >
-                                {text("passwordConfirmation",
-                                    { type: "password" })}
-                            </Field>
-                            <p class="note password-note">
-                                Stored with the connection, so it is not
-                                asked for again. Left empty, a random
-                                12 character password is generated.
+                                <span>Enable SSL/TLS</span>
+                            </label>
+                            <p class="note">
+                                Generates certificates for the server,
+                                which needs openssl. Off by default: a
+                                local sandbox does not need it.
                             </p>
-                        </section>
-                    ) : null}
+                        </div>
 
-                    {tab === "Advanced" ? (
-                        <section class="grid">
-                            <Field
-                                caption="Allow root Access From"
-                                hint={hintOf("allowRootFrom",
-                                    "The host a second root account may "
-                                    + "connect from, as root@host. "
-                                    + "127.0.0.1 is this machine only; % is "
-                                    + "anywhere. Empty creates none.")}
-                            >
-                                {text("allowRootFrom",
-                                    { placeholder: "127.0.0.1" })}
-                            </Field>
-                            <Field
-                                caption="Server ID"
-                                hint={hintOf("serverId",
-                                    "The server_id, for replication.")}
-                            >
-                                {text("serverId")}
-                            </Field>
-                            <Field
-                                caption="Startup Timeout"
-                                hint={hintOf("timeout",
-                                    "Seconds to wait for the server to "
-                                    + "start. Defaults to 60.")}
-                            >
-                                {text("timeout", { placeholder: "60" })}
-                            </Field>
-
-                            <div class="group">
-                                <label class="checkbox">
-                                    <input
-                                        type="checkbox"
-                                        checked={fields.ssl}
-                                        disabled={busy}
-                                        onChange={(event) => {
-                                            update("ssl", (event.target as
-                                                HTMLInputElement).checked);
-                                        }}
-                                    />
-                                    <span>Enable SSL/TLS</span>
-                                </label>
-                                <p class="note">
-                                    Generates certificates for the server,
-                                    which needs openssl. Off by default: a
-                                    local sandbox does not need it.
-                                </p>
-                            </div>
-
-                            <div class="group">
-                                <h2>Server Options</h2>
-                                <textarea
-                                    rows={5}
-                                    value={fields.mariadbdOptions}
-                                    placeholder="innodb_buffer_pool_size=64M"
-                                    spellcheck={false}
-                                    disabled={busy}
-                                    onInput={(event) => {
-                                        const area = event.target as
-                                            HTMLTextAreaElement;
-                                        update("mariadbdOptions", area.value);
-                                    }}
-                                />
-                                <p class="note">
-                                    One option=value per line, written to the
-                                    [mysqld] section of the sandbox's my.cnf.
-                                </p>
-                            </div>
-                        </section>
-                    ) : null}
-                </div>
-                <div
-                    class={fades.above ? "scroll-fade top shown" : "scroll-fade top"}
-                    style={{ right: `${fades.scrollbar}px` }}
-                    aria-hidden="true"
-                />
-                <div
-                    class={fades.below
-                        ? "scroll-fade bottom shown"
-                        : "scroll-fade bottom"}
-                    style={{ right: `${fades.scrollbar}px` }}
-                    aria-hidden="true"
-                />
-            </div>
+                        <div class="group">
+                            <h2>Server Options</h2>
+                            <textarea
+                                rows={5}
+                                value={fields.mariadbdOptions}
+                                placeholder="innodb_buffer_pool_size=64M"
+                                spellcheck={false}
+                                disabled={busy}
+                                onInput={(event) => {
+                                    const area = event.target as
+                                        HTMLTextAreaElement;
+                                    update("mariadbdOptions", area.value);
+                                }}
+                            />
+                            <p class="note">
+                                One option=value per line, written to the
+                                [mysqld] section of the sandbox's my.cnf.
+                            </p>
+                        </div>
+                    </section>
+                ) : null}
+            </TabBody>
 
             {busy ? (
                 <p class="message">

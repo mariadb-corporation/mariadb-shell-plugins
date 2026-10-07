@@ -16,9 +16,10 @@
  */
 
 import { formatTime } from "../sql/executionService.js";
-import { OBJECT_NOT_FOUND } from "../mcp/protocol.js";
+import { ObjectNotFoundError } from "../mcp/mariaDbApi.js";
 import type { IMariaDbApi } from "../mcp/types.js";
 import type { IActionRow } from "../webview/protocol.js";
+import { counted, errorText } from "../text.js";
 
 /**
  * Something that happened on one open connection: a `db.*` call that was
@@ -84,16 +85,6 @@ export const activityRow = (
         kind: event.error === undefined ? "info" : "error",
         elapsedMs: event.elapsedMs,
     };
-};
-
-/**
- * @param count How many of something came back.
- * @param singular What one of them is called.
- *
- * @returns `1 schema`, `4 schemas`.
- */
-export const counted = (count: number, singular: string): string => {
-    return `${count} ${singular}${count === 1 ? "" : "s"}`;
 };
 
 /**
@@ -172,7 +163,7 @@ export const createGeneralWatcher = (
                 ...event,
                 elapsedMs: Date.now() - startedMs,
                 message: "",
-                error: error instanceof Error ? error.message : String(error),
+                error: errorText(error),
             });
 
             throw error;
@@ -237,7 +228,6 @@ export const createLoggingApi = (
         call: string,
         describe: (value: T) => string,
         work: () => Promise<T>,
-        expected?: (message: string) => string | undefined,
     ): Promise<T> => {
         const session = sessionOf(connectionId);
         const when = new Date();
@@ -258,11 +248,14 @@ export const createLoggingApi = (
 
             return value;
         } catch (error) {
-            const text = error instanceof Error ? error.message : String(error);
             // An answer the caller asked in order to find out - "there is
-            // no such table" - is reported as the answer it is, not as a
+            // no such table", which is how a SELECT's source turns out to
+            // be a view - is reported as the answer it is, not as a
             // failure of the connection. The caller still gets the error.
-            const answer = expected?.(text);
+            const answer = error instanceof ObjectNotFoundError
+                ? `No ${error.objectType} `
+                + `${error.schemaName}.${error.objectName}`
+                : undefined;
             if (session) {
                 report({
                     connection: session.uri,
@@ -271,7 +264,7 @@ export const createLoggingApi = (
                     when,
                     elapsedMs: Date.now() - startedMs,
                     ...(answer === undefined
-                        ? { message: "", error: text }
+                        ? { message: "", error: errorText(error) }
                         : { message: answer }),
                 });
             }
@@ -400,13 +393,6 @@ export const createLoggingApi = (
                 () => {
                     return api.getObjectDetails(connectionId, schemaName,
                         objectName, objectType);
-                },
-                // Asking is how a SELECT's source is found out to be no
-                // table - a view, say - so that answer is no error.
-                (message) => {
-                    return OBJECT_NOT_FOUND.test(message)
-                        ? `No ${objectType} ${schemaName}.${objectName}`
-                        : undefined;
                 },
             );
         },

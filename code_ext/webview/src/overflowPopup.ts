@@ -15,6 +15,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { placeBelowOrAbove } from "./position.js";
+
 /**
  * The hover popup that shows a cut-off cell in full, with a button that
  * copies it.
@@ -85,22 +87,8 @@ export const popupPosition = (
     popup: { width: number; height: number },
     viewport: { width: number; height: number },
 ): { top: number; left: number } => {
-    const below = anchor.bottom + ANCHOR_GAP;
-    const fitsBelow = below + popup.height
-        <= viewport.height - VIEWPORT_MARGIN;
-
-    return {
-        top: fitsBelow
-            ? below
-            : Math.max(VIEWPORT_MARGIN, anchor.top - ANCHOR_GAP - popup.height),
-        left: Math.max(
-            VIEWPORT_MARGIN,
-            Math.min(
-                anchor.left,
-                viewport.width - VIEWPORT_MARGIN - popup.width,
-            ),
-        ),
-    };
+    return placeBelowOrAbove(anchor, popup, viewport,
+        { gap: ANCHOR_GAP, margin: VIEWPORT_MARGIN });
 };
 
 /** What one hovered cell offers. */

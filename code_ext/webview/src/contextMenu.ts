@@ -15,6 +15,9 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { dismissOnOutside } from "./dismiss.js";
+import { clampToViewport } from "./position.js";
+
 /**
  * The menu a right-click on a cell of the actions grid opens: one item,
  * Copy, for that cell's text.
@@ -58,12 +61,8 @@ export const menuPosition = (
     size: { width: number; height: number },
     viewport: { width: number; height: number },
 ): { left: number; top: number } => {
-    return {
-        left: Math.max(VIEWPORT_MARGIN, Math.min(pointer.x,
-            viewport.width - size.width - VIEWPORT_MARGIN)),
-        top: Math.max(VIEWPORT_MARGIN, Math.min(pointer.y,
-            viewport.height - size.height - VIEWPORT_MARGIN)),
-    };
+    return clampToViewport({ left: pointer.x, top: pointer.y }, size,
+        viewport, VIEWPORT_MARGIN);
 };
 
 /**
@@ -167,29 +166,8 @@ export const openContextMenu = (
 
     // Whatever else happens next closes it: a click elsewhere, a key, the
     // grid scrolling out from under it, the window going away.
-    const onPointer = (pointer: Event): void => {
-        if (!element.contains(pointer.target as Node)) {
-            closeCopyMenu();
-        }
-    };
-    const onKey = (key: KeyboardEvent): void => {
-        if (key.key === "Escape") {
-            key.preventDefault();
-            closeCopyMenu();
-        }
-    };
-    document.addEventListener("mousedown", onPointer, true);
-    document.addEventListener("keydown", onKey, true);
-    document.addEventListener("scroll", closeCopyMenu, true);
-    window.addEventListener("resize", closeCopyMenu);
-    window.addEventListener("blur", closeCopyMenu);
-    stopListening = () => {
-        document.removeEventListener("mousedown", onPointer, true);
-        document.removeEventListener("keydown", onKey, true);
-        document.removeEventListener("scroll", closeCopyMenu, true);
-        window.removeEventListener("resize", closeCopyMenu);
-        window.removeEventListener("blur", closeCopyMenu);
-    };
+    stopListening = dismissOnOutside(element, closeCopyMenu,
+        { scroll: true, resize: true });
 
     return element;
 };

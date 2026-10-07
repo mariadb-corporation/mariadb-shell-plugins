@@ -23,6 +23,8 @@ import {
     useState,
 } from "preact/hooks";
 
+import { placeBelowOrAbove } from "./position.js";
+
 /**
  * What the two dialogs - the connection editor and New Sandbox - are both
  * built from, so they lay out and behave alike.
@@ -158,6 +160,76 @@ export const useScrollFades = (
     return fades;
 };
 
+/**
+ * The row of tabs above a dialog's body, one button per tab.
+ *
+ * @param props The tabs, which one is showing, and what a click does.
+ *
+ * @returns The rendered tab list.
+ */
+export const TabStrip = <T extends string>(props: {
+    tabs: readonly T[];
+    current: T;
+    /** What each tab's tooltip says it holds, where it has one. */
+    tooltips?: Record<T, string>;
+    onSelect(tab: T): void;
+}): preact.JSX.Element => {
+    return (
+        <nav class="tabs" role="tablist">
+            {props.tabs.map((name) => {
+                return (
+                    <button
+                        key={name}
+                        type="button"
+                        role="tab"
+                        aria-selected={props.current === name}
+                        class={props.current === name ? "tab selected" : "tab"}
+                        data-tooltip={props.tooltips?.[name]}
+                        onClick={() => { props.onSelect(name); }}
+                    >
+                        {name}
+                    </button>
+                );
+            })}
+        </nav>
+    );
+};
+
+/**
+ * The scrolling body under the tabs, with a fade at whichever edge has
+ * content hidden past it (see {@link useScrollFades}).
+ *
+ * @param props The showing tab's fields.
+ *
+ * @returns The rendered body and its fades.
+ */
+export const TabBody = (props: {
+    children: preact.ComponentChildren;
+}): preact.JSX.Element => {
+    const body = useRef<HTMLDivElement>(null);
+    const fades = useScrollFades(body);
+
+    return (
+        <div class="tab-scroller">
+            <div class="tab-body" ref={body}>
+                {props.children}
+            </div>
+            <div
+                class={fades.above ? "scroll-fade top shown" : "scroll-fade top"}
+                style={{ right: `${fades.scrollbar}px` }}
+                aria-hidden="true"
+            />
+            <div
+                class={fades.below
+                    ? "scroll-fade bottom shown"
+                    : "scroll-fade bottom"}
+                style={{ right: `${fades.scrollbar}px` }}
+                aria-hidden="true"
+            />
+        </div>
+    );
+};
+
 /** How long the pointer rests on an element before its tooltip shows. */
 export const TOOLTIP_DELAY_MS = 350;
 
@@ -267,14 +339,12 @@ export const Tooltips = (): preact.JSX.Element | null => {
             return;
         }
 
-        const { anchor } = shown;
-        const { width, height } = element.getBoundingClientRect();
-        const left = Math.max(TOOLTIP_GAP_PX, Math.min(anchor.left,
-            window.innerWidth - width - TOOLTIP_GAP_PX));
-        const below = anchor.bottom + TOOLTIP_GAP_PX;
-        const top = below + height <= window.innerHeight - TOOLTIP_GAP_PX
-            ? below
-            : Math.max(TOOLTIP_GAP_PX, anchor.top - height - TOOLTIP_GAP_PX);
+        const { top, left } = placeBelowOrAbove(
+            shown.anchor,
+            element.getBoundingClientRect(),
+            { width: window.innerWidth, height: window.innerHeight },
+            { gap: TOOLTIP_GAP_PX, margin: TOOLTIP_GAP_PX },
+        );
         element.style.left = `${left}px`;
         element.style.top = `${top}px`;
         element.style.visibility = "visible";

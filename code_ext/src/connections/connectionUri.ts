@@ -63,11 +63,14 @@ export type ConnectionScheme = (typeof CONNECTION_SCHEMES)[number];
  */
 export const DEFAULT_SCHEME = "mariadb";
 
+/** The port a connection that names none is made on. */
+export const DEFAULT_PORT = 3306;
+
 /** The scheme extension that asks for an SSH tunnel. */
 export const SSH_SCHEME_SUFFIX = "+ssh";
 
-/** Matches the `scheme://` a URI starts with, if it has one. */
-const SCHEME_PREFIX = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+/** Matches the `scheme://` a URI starts with, if any, capturing the scheme. */
+const SCHEME_PREFIX = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//;
 
 /**
  * The same URI with {@link DEFAULT_SCHEME} filled in where it names none.
@@ -199,19 +202,28 @@ export const URI_OPTIONS = [
     ...Object.keys(SSH_URI_OPTIONS),
 ] as const;
 
-/** The options the editor gives a field of its own, so the table skips them. */
-const DEDICATED_OPTIONS = new Set<string>([
-    "ssl-mode",
-    "ssl-cipher",
-    "ssl-ca",
-    "ssl-cert",
-    "ssl-key",
-    "connect-timeout",
-    "compression",
-    "compression-level",
-    "compression-algorithms",
-    ...Object.keys(SSH_URI_OPTIONS),
-]);
+/**
+ * The options the editor gives a text field of its own, and that field.
+ * `compression-algorithms` is a field too, but a list, so it is handled
+ * on its own; the SSH options are in {@link SSH_URI_OPTIONS}.
+ */
+const DEDICATED_URI_OPTIONS = {
+    "ssl-mode": "sslMode",
+    "ssl-cipher": "sslCipher",
+    "ssl-ca": "sslCa",
+    "ssl-cert": "sslCert",
+    "ssl-key": "sslKey",
+    "connect-timeout": "connectTimeout",
+    "compression": "compression",
+    "compression-level": "compressionLevel",
+} as const;
+
+/** The options whose values the shell spells in capitals. */
+const UPPERCASE_URI_OPTIONS = new Set<string>(["ssl-mode", "compression"]);
+
+/** Every option that goes to a string field of its own, and that field. */
+const URI_OPTION_FIELDS: Record<string, keyof IConnectionFields | undefined> =
+    { ...DEDICATED_URI_OPTIONS, ...SSH_URI_OPTIONS };
 
 /** One row of the "Other Connection Options" table. */
 export interface IExtraOption {
@@ -257,7 +269,7 @@ export const emptyConnectionFields = (): IConnectionFields => {
     return {
         scheme: DEFAULT_SCHEME,
         host: "localhost",
-        port: "3306",
+        port: String(DEFAULT_PORT),
         socket: "",
         user: "",
         schema: "",
@@ -332,14 +344,9 @@ const optionsOf = (fields: IConnectionFields): Map<string, string> => {
         }
     };
 
-    set("ssl-mode", fields.sslMode);
-    set("ssl-cipher", fields.sslCipher);
-    set("ssl-ca", fields.sslCa);
-    set("ssl-cert", fields.sslCert);
-    set("ssl-key", fields.sslKey);
-    set("connect-timeout", fields.connectTimeout);
-    set("compression", fields.compression);
-    set("compression-level", fields.compressionLevel);
+    for (const [option, field] of Object.entries(DEDICATED_URI_OPTIONS)) {
+        set(option, fields[field]);
+    }
     set("compression-algorithms", fields.compressionAlgorithms.join(","));
 
     // Only on a tunnelling URI: the shell refuses an ssh-* option on any other
@@ -383,11 +390,20 @@ const validate = (
         return "A host name, an IP address or a socket is required.";
     }
 
-    if (!usesSocket && fields.port.trim() !== "") {
-        const port = Number(fields.port);
-        if (!Number.isInteger(port) || port < 1 || port > 65535) {
-            return `'${fields.port}' is not a port number between 1 and 65535.`;
-        }
+    /**
+     * @param port A port as written, known not to be blank.
+     *
+     * @returns Whether it is a whole number from 1 to 65535.
+     */
+    const isPortNumber = (port: string): boolean => {
+        const value = Number(port);
+
+        return Number.isInteger(value) && value >= 1 && value <= 65535;
+    };
+
+    if (!usesSocket && fields.port.trim() !== ""
+        && !isPortNumber(fields.port)) {
+        return `'${fields.port}' is not a port number between 1 and 65535.`;
     }
 
     if (fields.scheme !== ""
@@ -408,12 +424,9 @@ const validate = (
         }
     }
 
-    if (usesSshTunnel(fields.scheme) && fields.sshPort.trim() !== "") {
-        const port = Number(fields.sshPort);
-        if (!Number.isInteger(port) || port < 1 || port > 65535) {
-            return `'${fields.sshPort}' is not an SSH port `
-                + "between 1 and 65535.";
-        }
+    if (usesSshTunnel(fields.scheme) && fields.sshPort.trim() !== ""
+        && !isPortNumber(fields.sshPort)) {
+        return `'${fields.sshPort}' is not an SSH port between 1 and 65535.`;
     }
 
     return undefined;
@@ -527,7 +540,7 @@ export const parseConnectionUri = (uri: string): IConnectionFields => {
     // Kept as written, lowercased - schemes are case-insensitive. A URI with
     // none is one the MCP server stored before it kept them, and it means the
     // default, which is what the field already holds.
-    const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(rest);
+    const scheme = SCHEME_PREFIX.exec(rest);
     if (scheme) {
         fields.scheme = scheme[1]!.toLowerCase();
         rest = rest.slice(scheme[0].length);
@@ -599,55 +612,24 @@ export const parseConnectionUri = (uri: string): IConnectionFields => {
             ? ""
             : decodeURIComponent(pair.slice(equals + 1));
 
-        switch (name) {
-            case "ssl-mode": { fields.sslMode = value.toUpperCase(); break; }
-            case "ssl-cipher": { fields.sslCipher = value; break; }
-            case "ssl-ca": { fields.sslCa = value; break; }
-            case "ssl-cert": { fields.sslCert = value; break; }
-            case "ssl-key": { fields.sslKey = value; break; }
-            case "connect-timeout": { fields.connectTimeout = value; break; }
-            case "compression": {
-                fields.compression = value.toUpperCase();
-                break;
-            }
-            case "compression-level": {
-                fields.compressionLevel = value;
-                break;
-            }
-            case "compression-algorithms": {
-                fields.compressionAlgorithms = value
-                    .split(",")
-                    .map((entry) => { return entry.trim(); })
-                    .filter((entry) => { return entry !== ""; });
-                break;
-            }
-
-            default: {
-                const sshField =
-                    (SSH_URI_OPTIONS as Record<string, string>)[name];
-                if (sshField === undefined) {
-                    fields.extraOptions.push({ name, value });
-                } else {
-                    fields[sshField as keyof IConnectionFields] =
-                        value as never;
-                }
-            }
+        // The string fields, dedicated and SSH alike, take the value as
+        // written; the list field splits it; anything else is a table row.
+        const field = URI_OPTION_FIELDS[name];
+        if (field !== undefined) {
+            fields[field] = (UPPERCASE_URI_OPTIONS.has(name)
+                ? value.toUpperCase()
+                : value) as never;
+        } else if (name === "compression-algorithms") {
+            fields.compressionAlgorithms = value
+                .split(",")
+                .map((entry) => { return entry.trim(); })
+                .filter((entry) => { return entry !== ""; });
+        } else {
+            fields.extraOptions.push({ name, value });
         }
     }
 
     return fields;
-};
-
-/**
- * Whether an option belongs in the "Other Connection Options" table rather
- * than in a field of its own.
- *
- * @param name The option name.
- *
- * @returns True when the table owns it.
- */
-export const isExtraOption = (name: string): boolean => {
-    return !DEDICATED_OPTIONS.has(name);
 };
 
 /**
@@ -659,7 +641,7 @@ export const isExtraOption = (name: string): boolean => {
  * @returns The scheme.
  */
 export const schemeOf = (uri: string): string => {
-    const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(uri.trim());
+    const scheme = SCHEME_PREFIX.exec(uri.trim());
 
     return scheme ? scheme[1]!.toLowerCase() : DEFAULT_SCHEME;
 };

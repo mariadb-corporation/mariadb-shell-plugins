@@ -32,11 +32,12 @@ import type {
     ActionSeverity,
     RowChange,
 } from "../webview/protocol.js";
-import { OBJECT_NOT_FOUND } from "../mcp/protocol.js";
+import { ObjectNotFoundError } from "../mcp/mariaDbApi.js";
 import { valueDisplayOf } from "./dataTypes.js";
 import { createQueryBuilder } from "./resultSetQueryBuilder.js";
-import { splitStatements } from "./splitStatements.js";
+import { type ISqlStatement, splitStatements } from "./splitStatements.js";
 import { findUpdatableTarget } from "./statementTarget.js";
+import { counted, errorText } from "../text.js";
 
 /**
  * Describes one statement's outcome in the words the client would use.
@@ -48,7 +49,7 @@ import { findUpdatableTarget } from "./statementTarget.js";
 export const describeResult = (result: IStatementResult): string => {
     const warningCount = result.warnings_count ?? 0;
     const warnings = warningCount > 0
-        ? `, ${warningCount} warning${warningCount === 1 ? "" : "s"}`
+        ? `, ${counted(warningCount, "warning")}`
         : "";
 
     // Each set has a row of its own under this one saying what is in it.
@@ -58,14 +59,12 @@ export const describeResult = (result: IStatementResult): string => {
     }
 
     if (sets.length === 1) {
-        const count = sets[0].rows.length;
-
-        return `${count} row${count === 1 ? "" : "s"} in set${warnings}`;
+        return `${rowsInSet(sets[0].rows.length)}${warnings}`;
     }
 
     const affected = result.affected_items_count ?? 0;
 
-    return `Query OK, ${affected} row${affected === 1 ? "" : "s"} affected`
+    return `Query OK, ${counted(affected, "row")} affected`
         + warnings;
 };
 
@@ -113,7 +112,7 @@ export const warningRowsOf = (
  * @returns `1 row in set`, `4 rows in set`.
  */
 const rowsInSet = (count: number): string => {
-    return `${count} row${count === 1 ? "" : "s"} in set`;
+    return `${counted(count, "row")} in set`;
 };
 
 /**
@@ -182,11 +181,45 @@ export const describeStatementCount = (
 };
 
 /**
- * The same phrase, worked out from the script itself.
+ * The statements of a script the server actually runs.
+ *
+ * A comment is one of the statements the server splits out and takes up
+ * an index among them, but it is not one the server runs and there is no
+ * result for it. Counting it would make a file that opens with a
+ * connection header - which every generated one does - report one
+ * statement more than it has.
+ *
+ * @param statements The script, split.
+ *
+ * @returns The ones with SQL in them.
+ */
+const executableOf = (statements: ISqlStatement[]): ISqlStatement[] => {
+    return statements.filter((statement) => {
+        return statement.executable;
+    });
+};
+
+/**
+ * The same phrase, worked out from the split script.
  *
  * This is what a caller uses to open the run's row before it has a
  * connection to run on, which is the whole point of the row: it appears
  * the moment the user asks for it, not once the server answers.
+ *
+ * @param statements The SQL about to be run, split.
+ * @param label What the caller wants the run called instead.
+ *
+ * @returns The phrase the run's row is built around.
+ */
+export const describeStatements = (
+    statements: ISqlStatement[],
+    label?: string,
+): string => {
+    return describeStatementCount(executableOf(statements).length, label);
+};
+
+/**
+ * The same phrase, worked out from the script itself.
  *
  * @param script The SQL about to be run.
  * @param label What the caller wants the run called instead.
@@ -194,11 +227,7 @@ export const describeStatementCount = (
  * @returns The phrase the run's row is built around.
  */
 export const describeRun = (script: string, label?: string): string => {
-    const executable = splitStatements(script).filter((statement) => {
-        return statement.executable;
-    });
-
-    return describeStatementCount(executable.length, label);
+    return describeStatements(splitStatements(script), label);
 };
 
 /**
@@ -346,6 +375,44 @@ export const mapColumns = (
     });
 };
 
+/** Why a procedure's result sets cannot be edited. */
+const PROCEDURE_READ_ONLY =
+    "Read only: the result set of a stored procedure.";
+
+/**
+ * A result set as it is shown before anything is known about where its
+ * rows came from: read only, captioned by its place among the run's.
+ *
+ * @param statement The statement that produced it.
+ * @param set Its columns and rows.
+ * @param ordinal The index of this result set among the run's.
+ * @param runId The run it belongs to.
+ * @param status The status line for it.
+ * @param page Which page of the rows it holds, where the server paged
+ *             them.
+ *
+ * @returns The result set to show, or to build an editable one on.
+ */
+const plainResultSet = (
+    statement: string,
+    set: IResultSetData,
+    ordinal: number,
+    runId: string,
+    status: string,
+    page?: IResultPage,
+): IResultSet => {
+    return {
+        id: `${runId}-result-${ordinal}`,
+        caption: `Result #${ordinal + 1}`,
+        statement,
+        columns: mapColumns(set.columns, undefined, set.column_metadata),
+        rows: set.rows,
+        editable: false,
+        status,
+        ...(page === undefined ? {} : { page }),
+    };
+};
+
 /** Where a script came from, so its statements can be jumped to. */
 export interface IScriptSource {
     /** The document, as `Uri.toString()` renders it. */
@@ -376,6 +443,12 @@ export interface IExecutionOptions {
      * replaced.
      */
     runId: string;
+    /**
+     * The script, split, where the caller split it already - to put the
+     * run's row up - so it is not split a second time. Left out, it is
+     * split here.
+     */
+    statements?: ISqlStatement[];
     /** Where the script came from, for the jump-to-statement links. */
     source?: IScriptSource;
     /** Whether a failing statement ends the script. */
@@ -422,20 +495,22 @@ export class ExecutionService {
     ): Promise<IExecutionReport> {
         const { connectionUri, connectionId, script, runId } = options;
         const connectionLabel = options.connectionLabel;
-        const statements = splitStatements(script);
-        // A comment is one of the statements the server splits out and
-        // takes up an index among them, but it is not one the server runs
-        // and there is no result for it. Counting it would make a file
-        // that opens with a connection header - which every generated one
-        // does - report one statement more than it has.
-        const executable = statements.filter((statement) => {
-            return statement.executable;
-        });
+        const statements = options.statements ?? splitStatements(script);
+        const executable = executableOf(statements);
         const children: IActionRow[] = [];
         const resultSets: IResultSet[] = [];
 
         const startedAt = formatTime(new Date());
         const startedMs = Date.now();
+
+        // What every statement row of this run carries: when, where and
+        // on what. Each adds what the server said about its statement.
+        const base = {
+            time: startedAt,
+            connection: connectionUri,
+            connectionLabel,
+            role: "statement" as const,
+        };
 
         /**
          * @param index The statement's position in the script.
@@ -522,15 +597,10 @@ export class ExecutionService {
             // The call itself failed - a closed connection, a shell that
             // went away - so nothing ran and there is no statement to
             // blame.
-            const message = error instanceof Error
-                ? error.message
-                : String(error);
+            const message = errorText(error);
             const failure: IActionRow = {
+                ...base,
                 id: `${runId}-error`,
-                time: startedAt,
-                connection: connectionUri,
-                connectionLabel,
-                role: "statement",
                 statement: captionFor(script),
                 message,
                 kind: "error",
@@ -560,11 +630,8 @@ export class ExecutionService {
                 firstErrorId ??= id;
                 firstErrorSource ??= source;
                 children.push({
+                    ...base,
                     id,
-                    time: startedAt,
-                    connection: connectionUri,
-                    connectionLabel,
-                    role: "statement",
                     statement: captionFor(statement || result.statement || ""),
                     message: result.error,
                     kind: "error",
@@ -581,21 +648,13 @@ export class ExecutionService {
                 : "info" as const;
             // And what each of them said hangs under it, so the count in
             // the message is a row away from the text behind it.
-            const warnings = warningRowsOf(result, id, {
-                time: startedAt,
-                connection: connectionUri,
-                connectionLabel,
-                source,
-            });
+            const warnings = warningRowsOf(result, id, { ...base, source });
 
             const sets = result.result_sets ?? [];
             if (sets.length === 0) {
                 children.push({
+                    ...base,
                     id,
-                    time: startedAt,
-                    connection: connectionUri,
-                    connectionLabel,
-                    role: "statement",
                     statement: captionFor(statement),
                     message: describeResult(result),
                     kind,
@@ -633,11 +692,8 @@ export class ExecutionService {
                         resultSets.push(shown);
                     }
                     setRows.push({
+                        ...base,
                         id: `${id}-set-${position}`,
-                        time: startedAt,
-                        connection: connectionUri,
-                        connectionLabel,
-                        role: "statement",
                         statement: shown.caption,
                         message: rowsInSet(set.rows.length),
                         kind: "info",
@@ -649,11 +705,8 @@ export class ExecutionService {
             const nested = [...setRows, ...warnings];
 
             children.push({
+                ...base,
                 id,
-                time: startedAt,
-                connection: connectionUri,
-                connectionLabel,
-                role: "statement",
                 statement: captionFor(statement),
                 message: describeResult(result),
                 kind,
@@ -675,10 +728,8 @@ export class ExecutionService {
                 ? `Finished ${what} successfully`
                 + (warningCount === 0
                     ? ""
-                    : ` with ${warningCount} warning`
-                    + `${warningCount === 1 ? "" : "s"}`)
-                : `Finished with ${errorCount} error`
-                + `${errorCount === 1 ? "" : "s"}`
+                    : ` with ${counted(warningCount, "warning")}`)
+                : `Finished with ${counted(errorCount, "error")}`
                 + (stoppedEarly
                     ? `, stopped after ${ran} of ${executable.length}`
                     : ""),
@@ -782,6 +833,10 @@ export class ExecutionService {
      * @param set Its first result set - the only one a SELECT has.
      * @param ordinal The index of this result set among the others.
      * @param status The status line for it.
+     * @param currentSchema Answers which schema the connection is using,
+     *                      for a table named without one.
+     * @param runId The run it belongs to.
+     * @param pageSize How many rows the server was asked for at a time.
      *
      * @returns The result set to show.
      */
@@ -808,23 +863,17 @@ export class ExecutionService {
                     hasMore: set.has_more_pages,
                     loads: 1,
                 };
-        const base: IResultSet = {
-            id: `${runId}-result-${ordinal}`,
-            caption: `Result #${ordinal + 1}`,
+        const base = plainResultSet(
             statement,
-            columns: mapColumns(labels, undefined, set.column_metadata),
-            rows,
-            editable: false,
-            status: page === undefined ? status : pageStatus(rows.length, page),
-            ...(page === undefined ? {} : { page }),
-        };
+            set,
+            ordinal,
+            runId,
+            page === undefined ? status : pageStatus(rows.length, page),
+            page,
+        );
 
         if (isProcedureCall(statement)) {
-            return {
-                ...base,
-                readOnlyReason:
-                    "Read only: the result set of a stored procedure.",
-            };
+            return { ...base, readOnlyReason: PROCEDURE_READ_ONLY };
         }
 
         const target = findUpdatableTarget(statement);
@@ -861,11 +910,9 @@ export class ExecutionService {
                 "table",
             );
         } catch (error) {
-            const text = error instanceof Error ? error.message : String(error);
-
             return {
                 ...base,
-                readOnlyReason: OBJECT_NOT_FOUND.test(text)
+                readOnlyReason: error instanceof ObjectNotFoundError
                     ? `Read only: ${schema}.${target.table} is not a table - `
                     + "a view, say."
                     : `Read only: the columns of ${target.table} could not `
@@ -916,14 +963,9 @@ export class ExecutionService {
         runId: string,
     ): IResultSet {
         return {
-            id: `${runId}-result-${ordinal}`,
-            caption: `Result #${ordinal + 1}`,
-            statement,
-            columns: mapColumns(set.columns, undefined, set.column_metadata),
-            rows: set.rows,
-            editable: false,
-            status: rowsInSet(set.rows.length),
-            readOnlyReason: "Read only: the result set of a stored procedure.",
+            ...plainResultSet(
+                statement, set, ordinal, runId, rowsInSet(set.rows.length)),
+            readOnlyReason: PROCEDURE_READ_ONLY,
         };
     }
 

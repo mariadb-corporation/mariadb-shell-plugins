@@ -16,7 +16,7 @@
  */
 
 import type { JSX } from "preact";
-import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import {
     TabulatorFull as Tabulator,
     type CellComponent,
@@ -42,7 +42,6 @@ export const ROW_INDEX_FIELD = "__mariadbRowIndex";
 export interface IGridCallbacks {
     onCellEdited(rowIndex: number, column: string, value: unknown): void;
     onToggleDeleted(rowIndex: number): void;
-    onSelectionChanged(rowIndex: number | undefined): void;
     /** Saves a cell's value to a file the user picks. */
     onSaveValue?(rowIndex: number, column: string): void;
     /** Loads a file the user picks into a cell. */
@@ -227,7 +226,7 @@ export const openableCell = (
     host.className = "blobCell openableCell";
     const text = document.createElement("span");
     text.className = "cellText";
-    text.textContent = formatValue(value, display) as string;
+    text.textContent = valueText(value, display);
     host.append(text);
 
     const overlay = document.createElement("span");
@@ -290,19 +289,22 @@ const valueIcon = (className: string, text: string): HTMLElement => {
  * as hex - is shown as `0x` and its first 64 digits; a BLOB, a spatial
  * value or a vector by an icon standing for it.
  *
+ * The content is always an element, never a string: Tabulator writes a
+ * formatter's string into the cell as HTML, and a value is data to show,
+ * not markup to render - a row holding `<style>` must not restyle the
+ * grid, and one holding `x<5` must show it.
+ *
  * @param value The value to show.
  * @param display How the column's values are shown, if not as text.
  *
- * @returns The HTML for the cell.
+ * @returns The content of the cell.
  */
 export const formatValue = (
     value: unknown,
     display?: ValueDisplay,
-): string | HTMLElement => {
+): HTMLElement => {
     if (value === null || value === undefined) {
-        const span = valueIcon("nullValue", "NULL");
-
-        return span;
+        return valueIcon("nullValue", "NULL");
     }
 
     const icon = display === undefined ? undefined : VALUE_ICONS[display];
@@ -310,6 +312,25 @@ export const formatValue = (
         return valueIcon(`${display}Value`, icon);
     }
 
+    const text = document.createElement("span");
+    text.className = "cellText";
+    text.textContent = valueText(value, display);
+
+    return text;
+};
+
+/**
+ * The text a value is shown as, where it is shown as text.
+ *
+ * A binary value - which arrives as hex - is shown as `0x` and its first
+ * 64 digits; an object as its JSON.
+ *
+ * @param value The value, not NULL.
+ * @param display How the column's values are shown, if not as text.
+ *
+ * @returns The text.
+ */
+export const valueText = (value: unknown, display?: ValueDisplay): string => {
     const text = typeof value === "object"
         ? JSON.stringify(value)
         : String(value);
@@ -328,9 +349,9 @@ export const formatValue = (
  *
  * @param cell The cell.
  *
- * @returns The HTML for the cell.
+ * @returns The content of the cell.
  */
-export const formatCell = (cell: CellComponent): string | HTMLElement => {
+export const formatCell = (cell: CellComponent): HTMLElement => {
     return formatValue(cell.getValue() as unknown);
 };
 
@@ -434,7 +455,17 @@ export const buildColumns = (
                 return columnTitle(column, showTypes);
             },
             field: column.name,
-            headerTooltip: column.typeName ?? column.datatype ?? column.name,
+            // As an element: a string tooltip is written as HTML, and the
+            // type comes from the server's DDL - `enum('...')` and all.
+            // Tabulator takes an element from the function at run time;
+            // its typings only say string.
+            headerTooltip: (() => {
+                const tooltip = document.createElement("div");
+                tooltip.textContent =
+                    column.typeName ?? column.datatype ?? column.name;
+
+                return tooltip;
+            }) as unknown as ColumnDefinition["headerTooltip"],
             cssClass: column.isPrimary ? "pkColumn" : undefined,
             frozen,
             formatter: (cell: CellComponent) => {
@@ -560,6 +591,46 @@ export const toTableData = (
 };
 
 /**
+ * @param set A result set.
+ *
+ * @returns What tells one fetch of its rows from another: the page, and
+ *          how often it was fetched - the same page again, after an
+ *          apply, is new rows.
+ */
+export const pageKeyOf = (set: IResultSet): string => {
+    return set.page === undefined
+        ? ""
+        : `${set.page.index}/${set.page.loads}`;
+};
+
+/**
+ * What the grid has to be built afresh for, as against fed new rows.
+ *
+ * The page sends the whole of its state on every message, and the result
+ * set in it is a new object each time whether or not anything about it
+ * changed; building a table from scratch on each would throw away the
+ * scroll position, the column widths and the selection for nothing. So
+ * the table is keyed on what its columns are built from: which result
+ * set it is, which fetch of its rows - another page, or the same page
+ * reloaded, starts over at the top as a new result set does - whether it
+ * may be edited, and the columns themselves, with everything the header
+ * and the editors read from them. The rows are not in it: they go in
+ * through `replaceData`, which keeps all of the above.
+ *
+ * @param set The result set on show.
+ *
+ * @returns A key that changes only when the table has to.
+ */
+const gridKeyOf = (set: IResultSet): string => {
+    return [
+        set.id,
+        pageKeyOf(set),
+        String(set.editable),
+        JSON.stringify(set.columns),
+    ].join("\u0000");
+};
+
+/**
  * An editable result grid, built on Tabulator.
  *
  * Tabulator owns the DOM below its container, so the component holds it in
@@ -578,6 +649,10 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
         freezeKeys = false,
         showTypes = true,
     } = props;
+    // Worked out once per result set, not once per edit of its rows.
+    const gridKey = useMemo(() => {
+        return gridKeyOf(resultSet);
+    }, [resultSet]);
     const host = useRef<HTMLDivElement>(null);
     const table = useRef<Tabulator | undefined>(undefined);
     // Tabulator builds itself asynchronously, and every call that touches
@@ -612,9 +687,6 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                 onOpenValue: (index, column) => {
                     callbacks.current.onOpenValue?.(index, column);
                 },
-                onSelectionChanged: (index) => {
-                    callbacks.current.onSelectionChanged(index);
-                },
             }, freezeKeys, showTypes),
             index: ROW_INDEX_FIELD,
             layout: "fitDataStretch",
@@ -638,14 +710,6 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                     );
                 }
             },
-        });
-
-        instance.on("rowSelectionChanged", (_data, selected) => {
-            const first = selected[0]?.getData() as
-                Record<string, unknown> | undefined;
-            callbacks.current.onSelectionChanged(
-                first?.[ROW_INDEX_FIELD] as number | undefined,
-            );
         });
 
         instance.on("tableBuilt", () => {
@@ -672,11 +736,11 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
                 // rather than being a no-op.
             }
         };
-        // Rebuilt only when the result set itself changes, which of its
-        // columns are frozen, or whether the header shows their types; the
-        // rows are pushed in by the effect below.
+        // Rebuilt only when what the columns are built from changes - see
+        // `gridKeyOf` - or which of them are frozen, or whether the header
+        // shows their types; the rows are pushed in by the effect below.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [resultSet, freezeKeys, showTypes]);
+    }, [gridKey, freezeKeys, showTypes]);
 
     useEffect(() => {
         const instance = table.current;

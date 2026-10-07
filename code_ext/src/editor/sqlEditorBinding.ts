@@ -27,15 +27,16 @@ import {
     stopOnError,
     STOP_ON_ERROR_CONTEXT_KEY,
 } from "../connections/settings.js";
-import { showErrorWithLog } from "../errorMessages.js";
+import { reportError } from "../errorMessages.js";
 import {
     captionFor,
-    describeRun,
+    describeStatements,
     ExecutionService,
     type IScriptSource,
     pendingRunRow,
 } from "../sql/executionService.js";
 import { quoteIdentifier } from "../sql/queryBuilder.js";
+import { splitStatements } from "../sql/splitStatements.js";
 import { statementAtOffset } from "../sql/statementAtOffset.js";
 import type {
     IResultSet,
@@ -97,6 +98,24 @@ export const readConnectionHeader = (
     return undefined;
 };
 
+/** How a script is run, beyond the connection and the SQL. */
+export interface IRunOptions {
+    /** What to call the run in the actions. */
+    label?: string;
+    /** Where the script came from, for the jump links. */
+    source?: IScriptSource;
+    /**
+     * Whether a failing statement ends the run. Left out, the extension
+     * setting decides.
+     */
+    stopOnError?: boolean;
+    /**
+     * The editor tab the result goes to, rather than the panel's tabs: a
+     * maximized result set's key, or the title of a new one.
+     */
+    into?: RunInto;
+}
+
 /**
  * Binds SQL editors to a connection and runs their contents.
  *
@@ -112,6 +131,8 @@ export class SqlEditorBinding implements vscode.Disposable {
     readonly #stopOnError = new Map<string, boolean>();
     /** Counts the runs, so each one's result sets have their own ids. */
     #runCount = 0;
+    /** The stop-on-error state last published to the toolbar, if any. */
+    #publishedStopOnError: boolean | undefined;
     readonly #statusItem: vscode.StatusBarItem;
     readonly #disposables: vscode.Disposable[] = [];
 
@@ -161,7 +182,10 @@ export class SqlEditorBinding implements vscode.Disposable {
         document: vscode.TextDocument,
     ): string | undefined {
         return this.#chosen.get(document.uri.toString())
-            ?? readConnectionHeader(document.getText())
+            // Asked on every change of editor, so only the lines the
+            // header can be on are read, not the whole file.
+            ?? readConnectionHeader(document.getText(
+                new vscode.Range(0, 0, HEADER_SEARCH_LINES, 0)))
             ?? this.connections.defaultConnection;
     }
 
@@ -263,11 +287,14 @@ export class SqlEditorBinding implements vscode.Disposable {
 
         // A toolbar button cannot change its own icon, so the two states
         // are two commands and this context key picks which is shown.
-        void vscode.commands.executeCommand(
-            "setContext",
-            STOP_ON_ERROR_CONTEXT_KEY,
-            this.stopOnErrorFor(editor.document),
-        );
+        // Published only when it changes: this runs on every change of
+        // editor, and the key rarely moves.
+        const stopping = this.stopOnErrorFor(editor.document);
+        if (stopping !== this.#publishedStopOnError) {
+            this.#publishedStopOnError = stopping;
+            void vscode.commands.executeCommand(
+                "setContext", STOP_ON_ERROR_CONTEXT_KEY, stopping);
+        }
     }
 
     /**
@@ -416,18 +443,22 @@ export class SqlEditorBinding implements vscode.Disposable {
         }
 
         const { document } = editor;
-        await this.runScript(uri, script, label, {
-            uri: document.uri.toString(),
-            positionAt: (offsetInScript: number) => {
-                const position = document.positionAt(
-                    baseOffset + offsetInScript);
+        await this.runScript(uri, script, {
+            label,
+            source: {
+                uri: document.uri.toString(),
+                positionAt: (offsetInScript: number) => {
+                    const position = document.positionAt(
+                        baseOffset + offsetInScript);
 
-                return {
-                    line: position.line,
-                    character: position.character,
-                };
+                    return {
+                        line: position.line,
+                        character: position.character,
+                    };
+                },
             },
-        }, this.stopOnErrorFor(document));
+            stopOnError: this.stopOnErrorFor(document),
+        });
     }
 
     /**
@@ -455,28 +486,25 @@ export class SqlEditorBinding implements vscode.Disposable {
      *
      * @param uri The connection to run on.
      * @param script The SQL to run.
-     * @param label What to call the run in the actions.
-     * @param source Where the script came from, for the jump links.
-     * @param stopAtFirstError Whether a failing statement ends the run.
-     * @param into The editor tab the result goes to, rather than the
-     *             panel's tabs: a maximized result set's key, or the
-     *             title of a new one.
+     * @param options What to call the run, where it came from, whether a
+     *                failing statement ends it and where its result goes.
      *
      * @returns Nothing.
      */
     public async runScript(
         uri: string,
         script: string,
-        label?: string,
-        source?: IScriptSource,
-        stopAtFirstError: boolean = stopOnError(),
-        into?: RunInto,
+        options: IRunOptions = {},
     ): Promise<void> {
+        const { label, source, into } = options;
         // The run is put up before the connection is even opened, which
         // is what the shell may have to be started for, so the actions
         // shows it is under way rather than nothing at all.
         const runId = this.#nextRunId();
-        const what = describeRun(script, label);
+        // Split here and handed on, so the row can say what is about to
+        // run without the script being split a second time to run it.
+        const statements = splitStatements(script);
+        const what = describeStatements(statements, label);
         // Which connection this will run on has to be known before it is
         // opened, because the row goes up first: the manager answers it
         // from what is open now, and opens that same one below.
@@ -498,10 +526,11 @@ export class SqlEditorBinding implements vscode.Disposable {
                 connectionId,
                 connectionLabel,
                 script,
+                statements,
                 runId,
                 source,
                 label,
-                stopOnError: stopAtFirstError,
+                stopOnError: options.stopOnError ?? stopOnError(),
                 pageSize: pageSize(),
             });
             await this.resultView.showResults(report, {
@@ -510,11 +539,8 @@ export class SqlEditorBinding implements vscode.Disposable {
                 service,
             });
         } catch (error) {
-            const message = error instanceof Error
-                ? error.message
-                : String(error);
-            this.log(`Failed to run the script on ${uri}: ${message}`);
-            void showErrorWithLog(message);
+            const message = reportError(
+                this.log, error, `run the script on ${uri}`);
             // Shown without an apply context: the failure happened
             // before there was anything editable to write back. It
             // closes off the run that was put up above - same id - so
@@ -565,9 +591,10 @@ export class SqlEditorBinding implements vscode.Disposable {
             return;
         }
 
-        await this.runScript(
-            uri, `${resultSet.statement};`, "1 statement", undefined,
-            stopOnError(), target.into);
+        await this.runScript(uri, `${resultSet.statement};`, {
+            label: "1 statement",
+            into: target.into,
+        });
     }
 
     /**
@@ -589,10 +616,7 @@ export class SqlEditorBinding implements vscode.Disposable {
             uri,
             `SELECT * FROM ${quoteIdentifier(schema)}.`
             + `${quoteIdentifier(name)};`,
-            "1 statement",
-            undefined,
-            stopOnError(),
-            { title: `${schema}.${name}` },
+            { label: "1 statement", into: { title: `${schema}.${name}` } },
         );
     }
 

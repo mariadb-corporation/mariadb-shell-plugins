@@ -296,31 +296,6 @@ export const saveConnection = async (
     return { ...saved, uri: stored };
 };
 
-/**
- * Files connections in a folder, keeping everything else about them.
- *
- * What a drop in the Connections view does. Each is moved with its own
- * `db.update_connection`, so a failure part way leaves the ones before it
- * moved and the rest where they were - never a connection in neither place.
- * One already in the folder is left alone.
- *
- * @param api The database API.
- * @param connections The connections to move, with the list and folder
- *                    each is in now.
- * @param path The folder to file them in; `/` is the top level.
- *
- * @returns The connections that were moved.
- */
-export const moveConnections = async (
-    api: IMariaDbApi,
-    connections: IStoredConnection[],
-    path: string,
-): Promise<IStoredConnection[]> => {
-    return await fileConnections(api, connections.map((connection) => {
-        return { connection, path };
-    }));
-};
-
 /** One connection and the folder it is to be filed in. */
 export interface IFiling {
     connection: IStoredConnection;
@@ -329,10 +304,13 @@ export interface IFiling {
 }
 
 /**
- * Files each connection in its own folder - what moving a folder does to
- * the connections in and below it. Otherwise as `moveConnections`: one
- * update each, those already in place left alone. A folder is not part of
- * the stored key, so no move can make a connection too long to store.
+ * Files each connection in its own folder - what a drop in the Connections
+ * view does, and what moving a folder does to the connections in and below
+ * it. Each is moved with its own `db.update_connection`, so a failure part
+ * way leaves the ones before it moved and the rest where they were - never
+ * a connection in neither place. One already in place is left alone. A
+ * folder is not part of the stored key, so no move can make a connection
+ * too long to store.
  *
  * @param api The database API.
  * @param filings Each connection with the folder it goes in.
