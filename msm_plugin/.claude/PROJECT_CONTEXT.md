@@ -75,7 +75,7 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-06), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-07), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
 $ git -C msm_plugin branch --show-current

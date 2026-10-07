@@ -89,18 +89,20 @@ $ git -C mcp_plugin branch --show-current
 wip/mcp-multi-tenant
 
 $ git -C mcp_plugin status --short
-(clean after fc1cf5dd; then only this index and multi-tenant.md, committed next)
+(clean)
 ```
 
 - **Rene's 11 PR #37 comments are fixed, pushed and answered** (2026-10-07):
   `fe4dbfe6` (the fixes, both `/code-review` rounds and the `/authorize` limit) and
-  `fc1cf5dd` (context); each thread has a reply naming the commit and the test. What
+  `fc1cf5dd` + `e18acff8` (context); each thread has a reply naming the commit and the test. What
   they are: "Review round" in [`context/multi-tenant.md`](context/multi-tenant.md) and
   M24..M26 in
   [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md).
 - **Branch `wip/mcp-multi-tenant`** off `main` (`67253bae`), pushed, **PR #37** to
   `main`, reviewed once by Rene (2026-10-06 21:33, "COMMENTED", on `28f39f8e`). CI green
-  at `850626ee`; the run for `fc1cf5dd` was not checked. The PR description ends with a "Simplification pass over the new code"
+  at `e18acff8` (and `fc1cf5dd`), checked 2026-10-07. A `/security-review` of the whole
+  branch the same day found nothing HIGH or MEDIUM (see
+  [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md)). The PR description ends with a "Simplification pass over the new code"
   section. Commits:
   - `d1bf2a31` phase 1
   - `f388ea7b` phase 2
@@ -119,7 +121,7 @@ $ git -C mcp_plugin status --short
     helpers)
   - `28f39f8e` its checkpoint (made in another session; this session fast-forwarded to
     it, see the fetch gotcha in working-practices.md)
-  - `fe4dbfe6` the review fixes, `fc1cf5dd` their context
+  - `fe4dbfe6` the review fixes, `fc1cf5dd` and `e18acff8` their context
 - **Docs:** the MCP reference docs in `../mariadb-shell/docs-ref/` are committed and
   pushed on `wip/docs-ref` (`5ae870fa5`, `42ea44ca4`), mariadb-shell PR #59.
 - **Left on the machine:** `cloudflared` (Homebrew). The user's Arcade dashboard still

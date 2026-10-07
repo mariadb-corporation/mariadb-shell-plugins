@@ -291,7 +291,8 @@ team policy question for the user), and suggests everyone run `/code-review`,
 
 **Open, in this order:**
 
-1. PR #37: Rene's next look at `fe4dbfe6`. Still open for the user or the team:
+1. PR #37: Rene's next look at `fe4dbfe6` (CI green at `e18acff8`; a
+   `/security-review` found nothing HIGH or MEDIUM). Still open for the user or the team:
    the `Co-Authored-By:` question from his review.
 2. The reference docs in `../mariadb-shell` (`wip/docs-ref`) are committed and pushed;
    they ride on mariadb-shell PR #59 ("Add MariaDB Shell reference docs …", open).
@@ -301,5 +302,7 @@ team policy question for the user), and suggests everyone run `/code-review`,
      it is tested against a stand-in for the admin REST API
    - the Linux secret helpers, and Windows
 4. Open M items:
+   - `ssl-mode=VERIFY_IDENTITY` as the default for login servers (LOW, from the
+     `/security-review`; the user's call)
    - a rate limit on `/register` (M18)
    - per-tool step-up at the HTTP layer (M9)

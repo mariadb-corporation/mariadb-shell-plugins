@@ -335,8 +335,26 @@ same day, each with a test and a revert probe.
   - **Test:** `test_unauthenticated_requests_cannot_grow_the_server`.
   - **Probes run:** unbounding either table fails it.
 
+## `/security-review` of the whole branch (2026-10-07)
+
+Run on `e18acff8` against `main`, after the review round above. **No HIGH or MEDIUM
+finding at >= 80% confidence.** It traced `/authorize`, `/login`, `/token`, `/register`,
+`/revoke`, `/mcp`, JWT claims, CIMD documents, Keycloak answers and tool arguments, and
+read the SDK's auth handlers the plugin relies on (code/refresh client binding,
+redirect_uri, PKCE, revoke's client check, DCR-assigned ids). Considered and left below
+the bar:
+
+- **LOW, the user's call:** a non-loopback login server gets `ssl-mode=REQUIRED`, which
+  encrypts but does not verify the certificate, so an active MITM between this server
+  and the database could read sign-in passwords. `VERIFY_IDENTITY` in the login server
+  URI already works; making it the default is open.
+- DCR/CIMD consent phishing (the page shows the redirect host); `/login` not bound to a
+  browser cookie (the code still goes to the registered redirect, and `state` covers
+  it); a client's `allowedRoles` not restricting the same user via another client (per
+  client by design); M15, M17 edge prefixes (NAT64, 6to4) and M20 as accepted.
+
 ## Next steps
 
 1. Close the open points named above: a rate limit on `/register` (M18), per-tool
-   step-up (M9). The CIMD rebinding (M17) was closed on 2026-10-07. M20 (several instances) was decided
+   step-up (M9), and decide on `VERIFY_IDENTITY` as the login servers' default. The CIMD rebinding (M17) was closed on 2026-10-07. M20 (several instances) was decided
    against for now (2026-10-06).
