@@ -562,7 +562,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 const path = await askForNewFolder(
                     "New Folder with Selection",
                     commonFolder(picked.map((row) => {
-                        return row.path ?? ROOT_FOLDER;
+                        return folderOf(row) ?? ROOT_FOLDER;
                     })),
                 );
                 if (path === undefined) {

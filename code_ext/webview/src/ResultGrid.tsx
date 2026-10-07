@@ -16,7 +16,7 @@
  */
 
 import type { JSX } from "preact";
-import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import {
     TabulatorFull as Tabulator,
     type CellComponent,
@@ -617,6 +617,10 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
         freezeKeys = false,
         showTypes = true,
     } = props;
+    // Worked out once per result set, not once per edit of its rows.
+    const gridKey = useMemo(() => {
+        return gridKeyOf(resultSet);
+    }, [resultSet]);
     const host = useRef<HTMLDivElement>(null);
     const table = useRef<Tabulator | undefined>(undefined);
     // Tabulator builds itself asynchronously, and every call that touches
@@ -704,7 +708,7 @@ export const ResultGrid = (props: IResultGridProperties): JSX.Element => {
         // `gridKeyOf` - or which of them are frozen, or whether the header
         // shows their types; the rows are pushed in by the effect below.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [gridKeyOf(resultSet), freezeKeys, showTypes]);
+    }, [gridKey, freezeKeys, showTypes]);
 
     useEffect(() => {
         const instance = table.current;

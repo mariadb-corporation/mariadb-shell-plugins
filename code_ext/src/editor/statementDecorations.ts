@@ -79,6 +79,8 @@ export class StatementDecorator implements vscode.Disposable {
     readonly #running = new Map<string, {
         cancelled: boolean;
         version: number;
+        /** What it has found so far, for an editor that opens meanwhile. */
+        ranges: vscode.Range[];
     }>();
     /**
      * Document URI -> what the last finished scan found, and in which
@@ -175,18 +177,22 @@ export class StatementDecorator implements vscode.Disposable {
             return;
         }
 
-        // A scan of this very text is under way; it reaches this editor
-        // along with the others when it finishes.
-        if (this.#running.get(key)?.version === version) {
+        // A scan of this very text is under way: this editor gets what it
+        // has found so far now, and the rest along with the others as the
+        // scan goes on.
+        const running = this.#running.get(key);
+        if (running?.version === version) {
+            editor.setDecorations(this.#decoration, [...running.ranges]);
+
             return;
         }
         this.#cancel(key);
 
-        const token = { cancelled: false, version };
+        const ranges: vscode.Range[] = [];
+        const token = { cancelled: false, version, ranges };
         this.#running.set(key, token);
 
         const text = document.getText();
-        const ranges: vscode.Range[] = [];
 
         let sliceStart = Date.now();
         let lastApply = 0;

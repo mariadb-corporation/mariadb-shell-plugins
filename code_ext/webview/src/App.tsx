@@ -1027,6 +1027,7 @@ export const App = (): JSX.Element => {
                     ? (
                         <ActionsGrid
                             rows={state.actions}
+                            connection={state.connection}
                             showConnection={state.session === undefined
                                 && state.sessions.length > 0}
                             availableResultIds={availableResultIds}

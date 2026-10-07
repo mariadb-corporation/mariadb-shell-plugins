@@ -221,6 +221,10 @@ const DEDICATED_URI_OPTIONS = {
 /** The options whose values the shell spells in capitals. */
 const UPPERCASE_URI_OPTIONS = new Set<string>(["ssl-mode", "compression"]);
 
+/** Every option that goes to a string field of its own, and that field. */
+const URI_OPTION_FIELDS: Record<string, keyof IConnectionFields | undefined> =
+    { ...DEDICATED_URI_OPTIONS, ...SSH_URI_OPTIONS };
+
 /** One row of the "Other Connection Options" table. */
 export interface IExtraOption {
     name: string;
@@ -610,10 +614,7 @@ export const parseConnectionUri = (uri: string): IConnectionFields => {
 
         // The string fields, dedicated and SSH alike, take the value as
         // written; the list field splits it; anything else is a table row.
-        const field = (
-            { ...DEDICATED_URI_OPTIONS, ...SSH_URI_OPTIONS } as
-                Record<string, keyof IConnectionFields | undefined>
-        )[name];
+        const field = URI_OPTION_FIELDS[name];
         if (field !== undefined) {
             fields[field] = (UPPERCASE_URI_OPTIONS.has(name)
                 ? value.toUpperCase()

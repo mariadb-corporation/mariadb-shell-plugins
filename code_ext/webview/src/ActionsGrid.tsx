@@ -45,6 +45,12 @@ interface IActionsGridProperties {
      * repeating its name the whole way down says nothing.
      */
     showConnection?: boolean;
+    /**
+     * Whose rows these are. A switch to another connection's log opens
+     * it at its newest rows, where replacing the rows in place would
+     * keep the scroll offset of the one left.
+     */
+    connection?: string;
     /** The result sets whose tabs are still on show. */
     availableResultIds: ReadonlySet<string>;
     /** Switches to the tab of the result set a row produced. */
@@ -587,7 +593,13 @@ const openTo = (
  * @returns The rendered grid.
  */
 export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
-    const { rows, availableResultIds, scrollToRowId, showConnection } = props;
+    const {
+        rows,
+        availableResultIds,
+        scrollToRowId,
+        showConnection,
+        connection,
+    } = props;
     const host = useRef<HTMLDivElement>(null);
     const table = useRef<Tabulator | undefined>(undefined);
     const built = useRef(false);
@@ -720,11 +732,12 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
                 // rather than being a no-op.
             }
         };
-        // Only a change of columns - whether the connection is named -
-        // rebuilds the table. The rows are pushed in by the effect below,
-        // and which result sets are on show is read through the ref.
+        // Only a change of columns - whether the connection is named - or
+        // of connection rebuilds the table. The rows are pushed in by the
+        // effect below, and which result sets are on show is read through
+        // the ref.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showConnection]);
+    }, [showConnection, connection]);
 
     useEffect(() => {
         const instance = table.current;

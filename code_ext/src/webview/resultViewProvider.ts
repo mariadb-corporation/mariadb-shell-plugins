@@ -32,7 +32,7 @@ import { loadValueFromFile, saveValueToFile } from "./valueFiles.js";
 import { ValueDocuments } from "./valueDocuments.js";
 import { buildWebviewHtml, webviewOptions } from "./html.js";
 import { ReadyQueue } from "./readyQueue.js";
-import { reportError } from "../errorMessages.js";
+import { showErrorWithLog } from "../errorMessages.js";
 import { counted, errorText } from "../text.js";
 
 /** How long a saved value waits for the grid to take it. */
@@ -742,7 +742,10 @@ export class ResultViewProvider
                         this.log(`Saved a value to ${saved.fsPath}`);
                     }
                 } catch (error) {
-                    reportError(this.log, error, "save the value");
+                    const text =
+                        `Could not save the value: ${errorText(error)}`;
+                    this.log(text);
+                    void showErrorWithLog(text);
                 }
                 break;
             }
