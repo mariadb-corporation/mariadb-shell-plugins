@@ -252,8 +252,8 @@ class KeycloakVerifier:
         allowed_clients = self.settings.get("clientIds") or []
         if allowed_clients and claims.get("azp") not in allowed_clients:
             general.log_event(
-                f"oauth: REFUSED a Keycloak token of client '{claims.get('azp')}', "
-                "which is not an allowed client"
+                "oauth: REFUSED a Keycloak token of a client that is not an allowed "
+                "client"
             )
             return False
 
@@ -286,8 +286,8 @@ class KeycloakVerifier:
             if len(owners) == 1:
                 tenants.link_identity(owners[0], identity)
                 general.log_event(
-                    f"oauth: linked the Keycloak subject {general.log_id_prefix(identity['subject'])} "
-                    f"to user={general.log_id_prefix(owners[0])} by their verified email"
+                    "oauth: linked a Keycloak subject to "
+                    f"{general.log_user(owners[0])} by their verified email"
                 )
                 return owners[0]
             if len(owners) > 1:
@@ -310,14 +310,13 @@ class KeycloakVerifier:
                 scopes=provision.get("defaultScopes"),
             )
             general.log_event(
-                f"oauth: created user={general.log_id_prefix(mcp_user_id)} for the "
-                f"Keycloak subject {general.log_id_prefix(identity['subject'])}"
+                f"oauth: created {general.log_user(mcp_user_id)} for a Keycloak "
+                "subject"
             )
             return mcp_user_id
 
         general.log_event(
-            f"oauth: REFUSED a Keycloak token: the subject "
-            f"{general.log_id_prefix(identity['subject'])} is no user of this server"
+            "oauth: REFUSED a Keycloak token: its subject is no user of this server"
         )
         return None
 

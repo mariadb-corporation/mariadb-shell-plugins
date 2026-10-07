@@ -709,27 +709,49 @@ def get_client_identity(ctx) -> ClientIdentity:
     )
 
 
-# How many leading characters of an id are written to the log. A connection id
-# and an MCP session id are both credentials - whoever holds one can use the
-# connection it belongs to - so neither is ever logged in full. A prefix is
-# enough to recognize the lines belonging to one connection as one another's.
-LOG_ID_PREFIX_LENGTH = 8
-
-
-def log_id_prefix(value) -> str:
-    """Returns as much of an id as may be written to the log.
+# What the log names a user by. Ids are never written to the log, not even in
+# part: a connection id and an MCP session id are credentials - whoever holds one
+# can use the connection it belongs to - and a user, token, grant or client id
+# is no business of whoever reads the log either. A connection is named by the
+# configured connection it was opened on, a client by its address and a user by
+# the name their record has, if it has one.
+def log_user_name(mcp_user_id) -> Optional[str]:
+    """Returns the name a user is written to the log by.
 
     Args:
-        value (str): The id to shorten, or None.
+        mcp_user_id (str): The user, or None.
 
     Returns:
-        The first :data:`LOG_ID_PREFIX_LENGTH` characters, marked as a prefix,
-        or ``"-"`` when there is no id.
+        The ``name`` of the user's record, or None if there is no such user, the
+        user has no name or the users cannot be read.
     """
-    if not value:
-        return "-"
+    if not mcp_user_id:
+        return None
 
-    return f"{value[:LOG_ID_PREFIX_LENGTH]}..."
+    # Imported lazily to avoid a circular import (tenants imports general).
+    from mcp_plugin.lib import tenants
+
+    try:
+        record = tenants.get_user(mcp_user_id) or {}
+    except Exception:  # noqa: BLE001 - logging must not break the caller
+        return None
+
+    return str(record.get("name") or "") or None
+
+
+def log_user(mcp_user_id, unnamed="a user") -> str:
+    """Returns a user in the form it is written to the log in.
+
+    Args:
+        mcp_user_id (str): The user, or None.
+        unnamed (str): What to write for a user without a name.
+
+    Returns:
+        ``user='<name>'``, or ``unnamed`` when the user has no name.
+    """
+    name = log_user_name(mcp_user_id)
+
+    return f"user='{name}'" if name else unnamed
 
 
 def describe_client(client) -> str:
@@ -737,24 +759,23 @@ def describe_client(client) -> str:
 
     The address is written out in the normalized form it is compared in, so a
     log line and the binding it reports on cannot disagree. The session id is
-    only ever given as a prefix, being a secret the client was issued.
+    never written, being a secret the client was issued.
 
     Args:
         client (ClientIdentity): The identity to describe, or None.
 
     Returns:
-        A one-line description; the parts a request did not have (both of them,
-        over stdio) are written as ``"-"``. The user is only written where
-        there is one, so a single-tenant server's lines read as they always did.
+        A one-line description; an address a request did not have (over stdio)
+        is written as ``"-"``. The user is only written where there is one, and
+        only if they have a name.
     """
     client = normalize_client_identity(client)
 
-    description = (
-        f"address={client.address or '-'} "
-        f"session={log_id_prefix(client.session_id)}"
-    )
+    description = f"address={client.address or '-'}"
     if client.user:
-        description += f" user={log_id_prefix(client.user)}"
+        user = log_user(client.user, unnamed="")
+        if user:
+            description += f" {user}"
 
     return description
 

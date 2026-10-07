@@ -832,10 +832,8 @@ class AuthFailureThrottle:
 
         if status.get("code") == 401:
             self.record_failure(address, user)
-            general.log_event(
-                f"auth: REFUSED a bearer token from address={address or '-'} "
-                f"for user={general.log_id_prefix(user if user != '-' else None)}"
-            )
+            # Not who the token names: that is no more than a claim, and an id.
+            general.log_event(f"auth: REFUSED a bearer token from address={address or '-'}")
 
 
 # The longest subject a throttle key takes from a token nobody has verified.

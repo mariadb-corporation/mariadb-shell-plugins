@@ -753,8 +753,7 @@ class BuiltinAuthProvider:
         self.store.delete(user, grant_id)
         db_functions.drop_connections_of_grant(grant_id)
         general.log_event(
-            f"oauth: ended grant {general.log_id_prefix(grant_id)} of "
-            f"user={general.log_id_prefix(user)} - {reason}"
+            f"oauth: ended a grant of {general.log_user(user)} - {reason}"
         )
 
     def live_grant(self, user, grant_id) -> Optional[dict]:
@@ -915,8 +914,9 @@ class BuiltinAuthProvider:
             client_secret=client_info.client_secret,
         )
         general.log_event(
-            f"oauth: registered the client {client_info.client_id} "
-            f"('{client_info.client_name or ''}') dynamically"
+            "oauth: registered "
+            + (f"the client '{client_info.client_name}'" if client_info.client_name else "a client")
+            + " dynamically"
         )
 
     # --- authorization --------------------------------------------------------------
@@ -1133,9 +1133,17 @@ this server on your behalf, and will be sent back to
                 "expires_at": time.time() + CODE_LIFETIME,
             }
 
+        # The client by its name, never its id - which is what the name falls
+        # back to for a client that has none.
+        client_name = pending["client_name"]
+        client = (
+            f"the client '{client_name}'"
+            if client_name and client_name != pending["client_id"]
+            else "an unnamed client"
+        )
         general.log_event(
-            f"oauth: user={general.log_id_prefix(mcp_user_id)} signed in as {account} on "
-            f"{server} for the client {pending['client_id']} from address={address or '-'}, "
+            f"oauth: {general.log_user(mcp_user_id)} signed in as {account} on "
+            f"{server} for {client} from address={address or '-'}, "
             f"granting {' '.join(granted)}"
         )
 
@@ -1218,7 +1226,7 @@ this server on your behalf, and will be sent back to
             [identity], name=username, scopes=provision.get("defaultScopes")
         )
         general.log_event(
-            f"oauth: created user={general.log_id_prefix(mcp_user_id)} for "
+            f"oauth: created {general.log_user(mcp_user_id)} for "
             f"{identity['account']} on {identity['server']}"
         )
 

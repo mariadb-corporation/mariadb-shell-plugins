@@ -844,9 +844,9 @@ server writes what happens to its connections to **stderr**, one line per event,
 whichever transport is in use:
 
 ```text
-2026-08-07T14:03:11+0200 [mcp] db.connect: opened connection 6f2a91c4... on 'root@127.0.0.1:3306' for address=192.0.2.10 session=0123abcd...
-2026-08-07T14:07:44+0200 [mcp] db: REFUSED use of connection 6f2a91c4... bound to address=192.0.2.10 session=0123abcd... by a request from address=192.0.2.20 session=fedc4321...
-2026-08-07T14:37:44+0200 [mcp] db: closed the idle session of connection 6f2a91c4... (address=192.0.2.10 session=0123abcd...) after 1800s unused; the connection stays valid and opens a new session when it is used again
+2026-08-07T14:03:11+0200 [mcp] db.connect: opened a connection on 'root@127.0.0.1:3306' (mcp) for address=192.0.2.10
+2026-08-07T14:07:44+0200 [mcp] db: REFUSED use of a connection on 'root@127.0.0.1:3306' (mcp) bound to address=192.0.2.10 by a request from address=192.0.2.20
+2026-08-07T14:37:44+0200 [mcp] db: closed the idle session of a connection on 'root@127.0.0.1:3306' (mcp) for address=192.0.2.10 after 1800s unused; the connection stays valid and opens a new session when it is used again
 ```
 
 Recorded are: a connection opened (with the client it is bound to and the URI it
@@ -859,10 +859,12 @@ keep the trail:
 mariadb-shell -- mcp start-server --port=8080 2>> ~/mcp-server.log
 ```
 
-Connection UUIDs and MCP session ids appear **truncated to their first eight
-characters**: both are credentials - holding one is what lets a client use a
-connection - so the log is not a place they can be read out of. Nothing else
-about a request is logged; the SQL statements a client runs are not.
+**No id is ever logged, not even in part**: no connection UUID, MCP session
+id, user id, API key, token, grant or client id. A connection is named by the
+connection URI it was opened on, a client by its address and - on a multi-tenant
+server - a user by the name their record has (`user='Ada Lovelace'`), or not at
+all if it has none. Nothing else about a request is logged; the SQL statements
+a client runs are not.
 
 ## Running the tests
 

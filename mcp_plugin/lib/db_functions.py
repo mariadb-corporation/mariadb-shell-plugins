@@ -926,8 +926,8 @@ def _drop_connection(connection_id: str, reason: str) -> None:
         return
 
     general.log_event(
-        f"db: dropped connection {general.log_id_prefix(connection_id)} "
-        f"({general.describe_client(connection.client)}) - {reason}"
+        f"db: dropped a connection on '{connection.uri}' ({connection.kind}) "
+        f"for {general.describe_client(connection.client)} - {reason}"
     )
 
     # Waits for a tool call that is still running on the session, unlike the
@@ -1069,8 +1069,8 @@ def _get_connection(connection_id: str, client):
 
     if not connection.is_accessible_from(client):
         general.log_event(
-            "db: REFUSED use of connection "
-            f"{general.log_id_prefix(connection_id)} bound to "
+            f"db: REFUSED use of a connection on '{connection.uri}' "
+            f"({connection.kind}) bound to "
             f"{general.describe_client(connection.client)} by a request from "
             f"{general.describe_client(client)}"
         )
@@ -1200,8 +1200,8 @@ def use_session(connection_id: str, client=None):
                 # anything it had open - a transaction above all - is gone with
                 # the connection, so the client is told and decides.
                 general.log_event(
-                    "db: the server connection of "
-                    f"{general.log_id_prefix(connection_id)} was lost "
+                    "db: the server connection of a connection on "
+                    f"'{connection.uri}' ({connection.kind}) was lost "
                     f"({getattr(error, 'code', '?')}); its session is "
                     "discarded and the next call opens a new one"
                 )
@@ -1240,9 +1240,9 @@ def _close_idle_sessions() -> int:
         # call on it runs on a new server session, and this line is what says
         # when the old one went away.
         general.log_event(
-            "db: closed the idle session of connection "
-            f"{general.log_id_prefix(connection_id)} "
-            f"({general.describe_client(connection.client)}) after "
+            "db: closed the idle session of a connection on "
+            f"'{connection.uri}' ({connection.kind}) for "
+            f"{general.describe_client(connection.client)} after "
             f"{timeout:g}s unused; the connection stays valid and opens a new "
             "session when it is used again"
         )
@@ -2622,7 +2622,9 @@ def register_db_tools(server, function_groups=()) -> None:
         ) or (general.is_multi_tenant() and client.user is None):
             general.log_event(
                 "db.connect: REFUSED to open a connection for a request that "
-                f"could not be fully identified ({general.describe_client(client)})"
+                f"could not be fully identified ({general.describe_client(client)}"
+                + (", no MCP session" if client.session_id is None else "")
+                + ")"
             )
 
             if client.address is not None and not general.is_multi_tenant():
@@ -2692,8 +2694,7 @@ def register_db_tools(server, function_groups=()) -> None:
         # The line every later one about this connection refers back to: which
         # client it was bound to, and which stored credentials it was opened on.
         general.log_event(
-            f"db.connect: opened connection {general.log_id_prefix(connection_id)} "
-            f"on '{configured_uri}' ({kind}) for "
+            f"db.connect: opened a connection on '{configured_uri}' ({kind}) for "
             f"{general.describe_client(client)}"
         )
 
@@ -3062,8 +3063,8 @@ def register_db_tools(server, function_groups=()) -> None:
                     # or which statement to fix.
                     general.log_event(
                         "db.execute_sql_script: statement "
-                        f"{index} failed on connection "
-                        f"{general.log_id_prefix(connection_id)}: {error}"
+                        f"{index} failed for "
+                        f"{general.describe_client(client)}: {error}"
                     )
                     results.append(
                         {

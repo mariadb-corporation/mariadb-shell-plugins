@@ -108,8 +108,9 @@ handling are in [connections.md](connections.md).
     than statements means it stopped early); False attempts every statement, one entry per
     statement, error or not. Default True: a script whose later statements build on its
     earlier ones must not plough on.
-  - The failure is `general.log_event`'d with the statement index and the connection's
-    log-id prefix before being returned, so the server log still shows it.
+  - The failure is `general.log_event`'d with the statement index and the client
+    (`describe_client`, never the connection id) before being returned, so the server log
+    still shows it.
   - `statement_index` is `enumerate()` over the non-empty pieces the splitter returned —
     NOT `len(results)`, which is what it used to be. The two only agree while every piece
     produces an entry, and a comment-only piece does not (next bullet).

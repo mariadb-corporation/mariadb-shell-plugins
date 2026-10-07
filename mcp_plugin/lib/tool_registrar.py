@@ -251,9 +251,9 @@ def _check_caller(tool_name, signature, call_args, call_kwargs) -> None:
     scope = _tool_scope(tool_name)
     if scope not in principal.scopes:
         general.log_event(
-            f"auth: REFUSED {published_name(tool_name)} to user="
-            f"{general.log_id_prefix(principal.mcp_user_id)}, whose token lacks "
-            f"the scope {scope}"
+            f"auth: REFUSED {published_name(tool_name)} to "
+            f"{general.log_user(principal.mcp_user_id)}, whose token lacks the "
+            f"scope {scope}"
         )
         raise tool_error(
             f"The tool {published_name(tool_name)} needs the scope '{scope}', which your "
