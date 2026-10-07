@@ -140,6 +140,15 @@ def main() -> int:
             "migration tooling, so they are not part of a standard run."
         ),
     )
+    parser.add_argument(
+        "--keycloak",
+        action="store_true",
+        default=False,
+        help=(
+            "Also run the tests against a real Keycloak realm, configured by the "
+            "KEYCLOAK_* environment variables (see tests/unit/test_oauth.py)."
+        ),
+    )
     args = parser.parse_args()
 
     shell = _resolve_shell(args.shell)
@@ -192,6 +201,7 @@ def main() -> int:
 
     pattern = f"-k {args.only}" if args.only else ""
     e2e = "--e2e" if args.e2e else ""
+    keycloak = "--keycloak" if args.keycloak else ""
     # Install the test dependencies into the shell's Python. Driven off
     # requirements.txt so the versions here honour the pins declared there,
     # notably the MCP SDK major version.
@@ -204,7 +214,7 @@ def main() -> int:
 
     command = (
         f"{shell} --pym pytest -c {plugin_dir / 'pytest-coverage.ini'} "
-        f"--cov={plugin_dir} --cov-append -vv {plugin_dir} {pattern} {e2e} "
+        f"--cov={plugin_dir} --cov-append -vv {plugin_dir} {pattern} {e2e} {keycloak} "
         f"-W ignore::DeprecationWarning"
     )
     print(command)

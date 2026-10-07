@@ -119,13 +119,12 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-06; unchanged since 2026-10-02 - the
-2026-10-06 session did no code_ext work, and the bullets below are still
-the 2026-10-02 record):
+Checked at this checkpoint (2026-10-07; the 2026-10-06 and 2026-10-07 sessions
+did no code_ext work, and the bullets below are still the 2026-10-02 record):
 
 ```text
 $ git -C code_ext branch --show-current
-main
+wip/mcp-multi-tenant   (the checkout is mcp_plugin's PR #37 branch; code_ext's own work is on main)
 
 $ git -C code_ext status --short   (one repository: mcp_plugin's lines too)
 (clean before this checkpoint's context edits)

@@ -277,7 +277,7 @@ def tools(monkeypatch):
     uri = "root@127.0.0.1:3306"
     opened = []
 
-    def _fake_open_session(_uri, kind=None):
+    def _fake_open_session(_uri, kind=None, mcp_user_id=None):
         session = _TableSession(list(range(25)))
         opened.append(session)
 
@@ -285,7 +285,7 @@ def tools(monkeypatch):
 
     monkeypatch.setattr(db_functions, "_open_session", _fake_open_session)
     monkeypatch.setattr(
-        db_functions.config, "list_stored_connection_uris", lambda kind=None: [uri]
+        db_functions.config, "list_stored_connection_uris", lambda kind=None, mcp_user_id=None: [uri]
     )
 
     recorder = SimpleNamespace(tools={})

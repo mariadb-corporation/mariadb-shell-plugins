@@ -47,6 +47,20 @@ def pytest_addoption(parser):
             "the migration tooling."
         ),
     )
+    _add_keycloak_option(parser)
+
+
+def _add_keycloak_option(parser):
+    """Adds the option that opts a run into the tests against a real Keycloak."""
+    parser.addoption(
+        "--keycloak",
+        action="store_true",
+        default=False,
+        help=(
+            "Also run the tests marked 'keycloak', against the realm the "
+            "KEYCLOAK_* environment variables describe."
+        ),
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -70,6 +84,14 @@ def pytest_collection_modifyitems(config, items):
         else:
             middle.append(item)
     items[:] = first + middle + last
+
+    if not config.getoption("--keycloak"):
+        skip_keycloak = pytest.mark.skip(
+            reason="live Keycloak test: pass --keycloak (run_tests.py --keycloak) to run it"
+        )
+        for item in items:
+            if "keycloak" in item.keywords:
+                item.add_marker(skip_keycloak)
 
     if config.getoption("--e2e"):
         return
@@ -187,6 +209,84 @@ def clean_config():
             settings_path = config.get_settings_file_path()
             if os.path.exists(settings_path):
                 os.remove(settings_path)
+
+
+def _read_bytes(path):
+    """Returns a file's bytes, or None if it does not exist."""
+    if not os.path.exists(path):
+        return None
+
+    with open(path, "rb") as content:
+        return content.read()
+
+
+def _restore_bytes(path, data) -> None:
+    """Puts a file back as _read_bytes found it, removing it if it was absent."""
+    if data is None:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+
+    with open(path, "wb") as content:
+        content.write(data)
+
+
+def _generic_oauth_secrets() -> set:
+    """Returns the OAuth secrets in the generic group: client secrets and keys."""
+    return {
+        key for key in mysqlsh.globals.shell.list_secrets() if key.startswith("MCP:OAUTH:")
+    }
+
+
+@pytest.fixture
+def tenant_config():
+    """Isolates the multi-tenant configuration for a test.
+
+    settings.json (which says whether the server is multi-tenant) and
+    users.json - and oauth_clients.json - are backed up as BYTES and put back
+    exactly; the OAuth secrets the test added to the generic group (client
+    secrets, the signing key) are deleted; and every secret group the test
+    created - a user's API key and connections - is deleted
+    afterwards, so a test may add and remove users freely without touching the
+    developer's own. Groups that existed before the test are left alone. The
+    process-wide multi-tenant flag a server would set is turned off again.
+
+    Yields:
+        None
+    """
+    from mcp_plugin.lib import general as lib_general
+    from mcp_plugin.lib import tenants
+
+    from mcp_plugin.lib import oauth_config
+
+    settings_path = config.get_settings_file_path()
+    users_path = tenants.get_users_file_path()
+    clients_path = oauth_config.get_clients_file_path()
+    settings = _read_bytes(settings_path)
+    users = _read_bytes(users_path)
+    clients = _read_bytes(clients_path)
+    groups_before = set(tenants.list_groups())
+    oauth_secrets_before = _generic_oauth_secrets()
+
+    try:
+        yield
+    finally:
+        lib_general.set_multi_tenant(False)
+        for group in set(tenants.list_groups()) - groups_before:
+            try:
+                tenants.purge_group(group)
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
+
+        for key in _generic_oauth_secrets() - oauth_secrets_before:
+            try:
+                mysqlsh.globals.shell.delete_secret(key)
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
+
+        _restore_bytes(settings_path, settings)
+        _restore_bytes(users_path, users)
+        _restore_bytes(clients_path, clients)
 
 
 @pytest.fixture(scope="session")

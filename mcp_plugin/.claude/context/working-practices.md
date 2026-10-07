@@ -72,3 +72,106 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   before diagnosing. Confirm the server itself is healthy by piping
   `initialize`/`initialized`/`tools/list` JSON-RPC straight into
   `mariadb-shell -- mcp start-server --transport=stdio`.
+
+- **A `@plugin_function` docstring line that ENDS IN A COLON breaks the whole plugin.**
+  The shell's docstring parser takes it for a section header ("ERROR: Invalid format:
+  section without content: …"), the plugin does not load, and EVERY test then errors
+  with `ModuleNotFoundError: No module named 'mcp_plugin'`. Hit on 2026-10-06 with "…by
+  any of their identities:". Reword the sentence; never end a description line with `:`.
+
+- **The shell's camelCase capitalizes every word**, so `add_oauth_client` is
+  `--addOauthClient`, never `--addOAuthClient`. The shell refuses the latter as an
+  invalid option. Check `mariadb-shell -- mcp <command> --help` before documenting an
+  option name.
+
+- **`run_tests.py -k` pastes the pattern UNQUOTED into a shell command**, so
+  `-k "a or b"` silently runs nothing ("file or directory not found: and"). Run one
+  single-word pattern per call. `-k` runs also skip `test_sandbox_deploy`, so every
+  sandbox-dependent test fails or errors there (`MySQL Error (2002)`); only a full run
+  judges those.
+
+- **The test runner isolates the secret store, a manual smoke test does not.**
+  `run_tests.py` uses a temp `MARIADB_SHELL_USER_CONFIG_HOME` and the plaintext
+  helper, so tests never touch the developer's keychain or users. For a manual run
+  through the real shell, do the same:
+  - a scratchpad home, with `mcp_plugin` AND `msm_plugin` symlinked into its
+    `plugins/` (the default groups need msm: without it the server dies with
+    `No module named 'msm_plugin'` and curl waits for ever)
+  - `shell.options.set_persist('credentialStore.helper','plaintext')`
+
+  Remove the home by its LITERAL path: `rm -rf $(…)` is blocked by a safety check.
+
+- **A throwaway `mariadbd` for OAuth sign-in tests:**
+  - `mariadb-install-db --auth-root-authentication-method=normal`
+  - start it FROM its datadir with a relative `--socket=s.sock`, since the scratchpad
+    path exceeds the Unix socket path limit
+  - DROP the anonymous `''@'localhost'` / `''@'<hostname>'` accounts, or `'ada'@'%'`
+    logins fail with 1045, because the anonymous account matches first
+
+- **Test with a real MCP client before calling a transport feature done.** Claude Code
+  speaks MCP 2026-07-28, which has NO sessions; no test client did, so the S3
+  session-id rule refused every Claude Code `db.connect` (M22) while 560 tests passed.
+  `claude -p "…" --mcp-config mcp.json --strict-mcp-config --allowedTools mcp__<name>`
+  (with a `headers` entry for an API key) drives it headless. Its OAuth sign-in needs a
+  person at the browser.
+
+- **Import `httpx2`, never `httpx`.** MCP SDK 2.3 depends on `httpx2`; the shell ships no `httpx`. A local build that still had `httpx` 0.28.1 (left over from an older SDK, and pulled in by manually installed `anthropic`/`openai`) hid this, and PR #37 failed CI on collection. The local build's `site-packages` was cleaned on 2026-10-06 to match `build/bundled-python-deps` exactly; after a `--pym pip install`, run `msh --pym pip check` and check for duplicate `*.dist-info` folders.
+
+- **The local shell build goes stale behind the source.** 111 tenant tests erroring at
+  fixture setup with `ValueError: Invalid number of arguments, expected 0 but got 1`
+  (from `list_secrets({"allGroups": True})`) means `build/bin/mariadb-shell` predates
+  secret groups (`f988b48d3`, in `main` since 2026-10-06), not a plugin bug. An
+  incremental `ninja -C build mariadb-shell mariadb-secret-store-plaintext` in
+  `../mariadb-shell` fixes it in a minute. The release shell in `~/.local/bin` is no
+  substitute for the suite: it loads ITS bundled `plugins/mcp_plugin`, which shadows the
+  repo's symlink (`ImportError: cannot import name 'auth'`).
+
+- **`test_a_rotated_realm_key_is_followed` needs PyJWT >= 2.15.** It ages
+  `PyJWKClient._last_successful_fetch`, the refetch cooldown 2.13 does not have; with
+  2.13.0 in the build's `site-packages` the unknown-kid token is accepted and the test
+  fails with the suite otherwise green. The release deps are 2.15.1; the user's rebuild
+  on 2026-10-06 brought `build/bundled-python-deps` and `site-packages` up to it, leaving
+  a stale `pyjwt-2.13.0.dist-info` next to the new one (see the `pip check` note above).
+
+- **`config._shell` is a test seam: do not rename it.** Six tests monkeypatch
+  `config._shell` (and one did `tenants._shell`, now `config._shell` too) to stand in a
+  failing or old shell. Renaming it to a public `shell()` broke them and collided with a
+  local `shell = _shell()` in `upgrade_connection_keys`. The other modules call
+  `config._shell()` rather than keeping copies.
+
+- **macOS `grep` does not honour `\b` reliably either**: a grep for `\._shell\b` over the
+  tests found nothing although six files matched. Grep the literal (`'"_shell"'`) or use
+  `perl -ne`.
+
+- **Testing with a real gateway (Arcade), as done on 2026-10-06:**
+  - `brew install cloudflared`; `cloudflared tunnel --url http://127.0.0.1:<port>` gives
+    a temporary public https URL with no account. Set it as `--publicUrl` BEFORE starting
+    the server (its host is then allowed automatically).
+  - Throwaway `mariadbd` as above, a fresh `MARIADB_SHELL_USER_CONFIG_HOME`, a placeholder
+    `--addUser` (a multi-tenant server refuses to start with no user).
+  - Arcade's server setup is dashboard-only; its API key only executes tools:
+    `POST https://api.arcade.dev/v1/tools/execute {tool_name: "<server id>.<tool>", input,
+    user_id}`. Use curl: Python's urllib gets a 403 from it. `user_id` must be the user's
+    Arcade account (`ARCADE_USER_ID` in `/Users/mzinner/Documents/test/.env`, with
+    `ARCADE_API_KEY`; never print the key).
+  - Stop the tunnel, server and mariadbd afterwards and delete the test home (it holds
+    the client secret and the test password).
+- **Rendering a page to check it:** headless Chrome
+  (`--headless=new --screenshot=… --window-size=…`, `--force-device-scale-factor=3` to
+  zoom, crop with `sips -c H W --cropOffset Y X`). Headless Firefox needs
+  `--no-remote --profile <empty dir>` while the user's Firefox runs, or it writes no file.
+  A user's Firefox can look different from both (extensions restyle pages), so draw
+  shapes with inline SVG rather than CSS borders.
+- **Fetch before reading a PR review: the PR branch may be ahead of this checkout.**
+  On 2026-10-07 the local branch was at the checkpoint commit while PR #37's head was two
+  commits further (a `/simplify` pass made in another session), and Rene's line numbers
+  were against that head. `git fetch` and `gh pr view <n> --json headRefOid` first, then
+  `git merge --ff-only`. Inline comments come from `gh api
+  repos/{owner}/{repo}/pulls/<n>/comments`; `gh pr view --json comments` returns none of
+  them.
+
+- **Revert probes, quickly:** a small script that copies the file aside, applies one
+  `perl -0pi -e` edit (and refuses if the edit did not apply), runs `run_tests.py -k
+  <one_word>`, and copies the file back. A `-k` run of a non-sandbox test takes ~1.3s.
+
+- **macOS `sed` has no `\b`** (the edit silently changes nothing); use `perl -pi -e`.

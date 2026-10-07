@@ -190,6 +190,14 @@ produced most of this is in [security-review.md](security-review.md).
     knowledge of the transport. A mismatch raises the BYTE-IDENTICAL error an unknown UUID
     raises, so probing cannot tell a real UUID from a guessed one — keep those two
     messages the same. In HTTP mode `db.connect` FAILS CLOSED when EITHER part is missing.
+  - **Multi-tenant servers bind differently (M23, 2026-10-06, user's decision).** For an
+    authenticated request `get_client_identity` returns `(None,
+    Principal.authorization(), user)`: `grant:<id>` for a built-in-server token, else
+    `client:<client id>` (Keycloak `azp`, `mcp-api-key` for API keys). No address, no MCP
+    session: Arcade opens a new session per tool call from changing addresses. `db.connect`
+    accepts an authenticated user without address or session. Single-tenant unchanged.
+    Test: `test_a_gateway_keeps_a_connection_across_sessions_and_addresses`. Details in
+    [security-review-multi-tenant.md](security-review-multi-tenant.md).
     One `general.get_client_identity(ctx)` feeds all 9 call sites (8 db tools +
     `msm.deploy_schema`); a single value rather than two parallel args precisely so a
     caller cannot pass one and forget the other.
@@ -256,11 +264,12 @@ produced most of this is in [security-review.md](security-review.md).
     `connection.open_session()`; a failed open pops the entry again. Expired connections are
     not counted. Over stdio every request has the same empty identity, so the per-client cap
     is the one that binds there.
-  - **stderr audit trail** (S5): `general.log_event` (+ `describe_client`, `log_id_prefix`,
-    `LOG_ID_PREFIX_LENGTH = 8`). Records: connection opened, a use REFUSED, a `db.connect`
+  - **stderr audit trail** (S5): `general.log_event` (+ `describe_client`, `log_user`,
+    `log_user_name`). Records: connection opened, a use REFUSED, a `db.connect`
     refused as unidentifiable or over a cap, an idle session closed, a connection dropped, a
-    failing `session.close()`, a failing reaper pass. Connection UUIDs and MCP session ids
-    are TRUNCATED to 8 chars — both are credentials.
+    failing `session.close()`, a failing reaper pass. NO id is logged, not even in part
+    (PR #37 review; it used to be an 8-char prefix): a connection is named by its URI and
+    kind, a client by `address=`, a user by `user='<name>'` from users.json or not at all.
 
 - **All db.\* tools now take a leading `ctx: Context`** (same `from mcp.server.mcpserver
   import Context` inside the registrar as msm/sandbox; the server strips it from the
@@ -277,7 +286,7 @@ produced most of this is in [security-review.md](security-review.md).
   `normalize_client_address`/`normalize_client_identity`, `LOOPBACK_ADDRESS`,
   `MCP_SESSION_ID_HEADER`), the bind-address helpers (`is_loopback_host`,
   `is_wildcard_host`, `LOOPBACK_HOST_NAMES`), the stderr audit log (`log_event`,
-  `describe_client`, `log_id_prefix`, `LOG_ID_PREFIX_LENGTH`) and every connection limit
+  `describe_client`, `log_user`, `log_user_name`) and every connection limit
   (`SESSION_IDLE_TIMEOUT`, `CONNECTION_MAX_LIFETIME`, `MAX_CONNECTIONS_TOTAL`,
   `MAX_CONNECTIONS_PER_CLIENT`). **100% covered — keep it that way.**
 
@@ -381,10 +390,12 @@ produced most of this is in [security-review.md](security-review.md).
   factory, `_no_such_connection(connection_id)`, and THREE callers (unknown id, wrong client,
   expired) — build the error there, never inline, or the three drift.
 
-- **Never log a connection UUID or an MCP session id in full.** Both are credentials: with
-  either, a client can use a connection. Everything goes through
-  `general.log_id_prefix` (8 chars + `...`) and `general.describe_client`. Two tests assert
-  the full values are ABSENT from the log; writing them out fails them.
+- **Never log any id, in full or in part** - connection UUID, MCP session id, mcp_user_id,
+  API key, token, grant, client id, Keycloak subject (the user's decision on the PR #37
+  review). Connections are named by URI + kind, clients by `general.describe_client`
+  (address, plus `user='<name>'` if the user record has a name), users by
+  `general.log_user`. `test_db_sessions._assert_no_part_of` fails a test on any 8 chars
+  of an id in the log.
 
 - **`general.log_event` must never raise.** The idle reaper calls it from inside its own
   `except` block, where an exception would end the thread and silently stop the idle timeout

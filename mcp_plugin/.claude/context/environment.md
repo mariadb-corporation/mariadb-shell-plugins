@@ -23,6 +23,14 @@ overlaid rather than installed: `mcp-2.0.0.dist-info` still sits beside
 `mcp-2.1.1.dist-info` there. Harmless — diffing the two `RECORD`s showed zero 2.0.0-only
 files left on disk, and `importlib.metadata.version('mcp')` answers 2.1.1 — but do not
 read a version off a directory listing.
+  **Since 2026-10-06 the SDK is 2.3.0** (the user updated the shell's dependency). The
+  stale-dist-info trap bit for real that day: `mcp-2.0.0`, `2.1.1`, `2.2.0` and `2.3.0`
+  dist-infos all sit side by side, and `importlib.metadata.version('mcp')` answered
+  **2.2.0 — wrong**. What decided it was checking the files against each `RECORD`:
+  every one of 2.3.0's 124 `.py` hashes matched, 19 of 2.2.0's did not. Do that (a
+  ten-line script over `RECORD`) rather than trusting `importlib.metadata`. The suite
+  passed unchanged on 2.3.0 (465 / 2 skipped), and every auth hook the multi-tenant
+  plan relies on is the same as in 2.2.0 (see multi-tenant.md).
 
 The shell's env vars are `MARIADB_SHELL`, `MARIADB_SHELL_USER_CONFIG_HOME` and
 `MARIADB_SHELL_TERM_COLOR_MODE` — the pre-rename `MYSQLSH*` names are GONE from all
@@ -80,6 +88,54 @@ silently runs against whatever `mariadb-shell` is on PATH.
   onto `run()`, `_mcp_server` -> `_lowlevel_server`, `streamablehttp_client` ->
   `streamable_http_client` (2-tuple), and `.isError`/`structuredContent` ->
   `.is_error`/`structured_content` at 31 assertion sites + `tool_payload`.
+
+## Shell secret groups (the basis of multi-tenant mode)
+
+Rene's design ("MariaDB Shell — Secret Groups"). It is implemented in the local shell,
+26.9.5: `shell.help("store_secret")` documents the option. The plan that uses it is
+[multi-tenant.md](multi-tenant.md).
+
+- **Every generic secret belongs to a group.** The default group, `generic`, is
+  used when no group is named, and it is where every secret stored before (all
+  `MCP:CONN:` / `GUI:CONN:` keys) already lives. Any other group is a **UUID in
+  lower-case canonical form**. The shell validates and lower-cases it, and rejects
+  anything else. A key is unique only within its group.
+- **API:** each generic-secret function takes an optional trailing options dict:
+  - `store_secret(key, value, {"group": g})`, `read_secret(key, {"group": g})`,
+    `delete_secret(key, {"group": g})`, `delete_all_secrets({"group": g})` and
+    `list_secrets({"group": g})` (which returns the keys).
+  - `list_secrets({"allGroups": True})` returns `[{"key", "group"}]`, with the
+    default group reported as `"generic"`.
+  - `group` + `allGroups` together is an error, and `{"group": "generic"}` is the
+    same as no group.
+  - **There is no fallback**: a call with a group never sees `generic`.
+  - There is **no persisted or default group**: no shell option, flag or environment
+    variable, only the per-call value. There is no cross-group delete.
+  - Credentials (`store_credential` …, the shell's own connection passwords, SSH
+    passwords) are **out of scope** and never grouped.
+- **How it is stored:** the group goes to the helper as the `SecretType` (which used to
+  be the word `generic`). Helpers treat every non-`password` type as opaque, so **neither
+  the helpers nor the shell–helper protocol changed**. A key `k` in group `g`:
+  - keychain: service `mysqlsh:/<g>`, account `k`
+  - login-path: section `[mysqlsh+<g>:/k]`
+  - secret-service: attribute `secret_type=<g>`
+  - windows-credential: name `MariaDB|…|<g>|k`
+- **Older shells and MySQL Shell cannot see grouped secrets** on any helper. Their
+  `delete_all_secrets()` never touches them, and what they store lands in `generic`.
+- **Groups partition, they do not protect.** Group UUIDs are stored in clear, and any
+  process running as the same OS user can list and read every group. Isolation between
+  tenants needs the server to run under its own OS account; the README must say so.
+- **The per-helper key limits still apply**, and the group does not count against
+  the key:
+  - windows-credential: keys up to 256 bytes (hence `MAX_CONNECTION_KEY_BYTES`),
+    case-insensitive, and unusable over SSH
+  - secret-service: keys must be UTF-8
+  - keychain: no NUL or newline in a key
+- **Open in the design (verify before relying on it):** whether `store_secret(key, None,
+  {"group": g})` still prompts for the value. The plugin never stores without a value,
+  so it should not matter.
+- On Linux the default helper is **login-path** (`~/.mylogin.cnf`, obfuscated rather
+  than encrypted). That matters for a multi-tenant server deployment.
 
 ## Gotchas / things not to repeat
 

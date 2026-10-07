@@ -91,7 +91,7 @@ def configured_connections(monkeypatch):
     # Also the list the refusals name: without this a test would read - and
     # print - whatever the developer happens to have configured.
     monkeypatch.setattr(
-        config, "list_connection_uris", lambda kind=None: sorted(connections)
+        config, "list_connection_uris", lambda kind=None, mcp_user_id=None: sorted(connections)
     )
     yield connections
 

@@ -58,6 +58,14 @@ cannot be settled any later. It says the client is the MariaDB VS Code
 extension, which is the one client that is a user interface rather than an
 autonomous agent - see that function for what it turns on and why the answer is
 different for it.
+
+Multi-tenant mode is not an option of this function but part of the
+configuration (``mcp setup --multiTenant=true``, see
+:mod:`mcp_plugin.lib.tenants`), read here and recorded with
+:func:`mcp_plugin.lib.general.set_multi_tenant` before the tools are built. A
+multi-tenant server only serves over HTTP, only the ``db`` and ``msm`` groups,
+never ``--gui``, and only to requests carrying a user's bearer token, which the
+SDK checks before any tool runs (see :mod:`mcp_plugin.lib.auth`).
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver streamable fdopen dup2 uvicorn starlette
@@ -72,7 +80,7 @@ import mysqlsh
 # same way, lazily. It costs nothing: `mcp_plugin.lib` imports it eagerly
 # anyway, and unlike `migrator_functions` it pulls in no MCP SDK module at
 # import time.
-from mcp_plugin.lib import db_functions, general
+from mcp_plugin.lib import config, db_functions, general, tenants
 
 
 # Maps a function group name to the (module, function) naming the callback that
@@ -109,7 +117,7 @@ def _registrar(group):
     return getattr(module, function_name)
 
 
-def build_mcp_server(function_groups):
+def build_mcp_server(function_groups, auth=None, tool_name_separator="."):
     """Builds and configures the MariaDB MCP server.
 
     The host and port are not part of the server itself; they are transport
@@ -118,6 +126,13 @@ def build_mcp_server(function_groups):
     Args:
         function_groups (list): The function groups whose tools should be
             registered on the server.
+        auth: The :class:`mcp_plugin.lib.auth.AuthBundle` to authenticate every
+            request with (see :func:`mcp_plugin.lib.auth.build_auth`), or None
+            for a server that does not authenticate. An authenticating server
+            also lists each caller only the tools their token grants.
+        tool_name_separator (str): What separates a tool's group from its name
+            in the names the tools are published under (see
+            :func:`mcp_plugin.lib.config.get_tool_name_separator`).
 
     Returns:
         The configured MCPServer instance.
@@ -126,11 +141,20 @@ def build_mcp_server(function_groups):
     # `mcp` dependency is not available.
     from mcp.server.mcpserver import MCPServer
 
-    server = MCPServer("MariaDB MCP Server")
+    if auth is None:
+        server = MCPServer("MariaDB MCP Server")
+    else:
+        from mcp_plugin.lib.auth import scoped_server_class
+
+        server = scoped_server_class()("MariaDB MCP Server", **auth.server_kwargs())
     # The full list of enabled groups is handed to every registrar, so a group
     # can leave out the tools that depend on another group not being served.
+    from mcp_plugin.lib import tool_registrar
+
+    tool_registrar.use_tool_name_separator(server, tool_name_separator)
     for group in function_groups:
         _registrar(group)(server, function_groups)
+    tool_registrar.finish_tool_names(server)
 
     return server
 
@@ -142,6 +166,10 @@ def start(
     function_groups,
     allowed_hosts=(),
     gui: bool = False,
+    ssl_certfile=None,
+    ssl_keyfile=None,
+    max_connections=None,
+    public_url=None,
 ) -> None:
     """Builds and serves the MCP server using the given transport.
 
@@ -161,10 +189,27 @@ def start(
         gui (bool): Whether to serve for the MariaDB VS Code extension, which
             widens what a client may do (see
             :func:`mcp_plugin.lib.general.set_gui_mode`).
+        ssl_certfile (str): A PEM certificate (chain) to serve HTTPS with,
+            together with ssl_keyfile (streamable-http only).
+        ssl_keyfile (str): The private key of ssl_certfile.
+        max_connections (int): The most database connections the server holds
+            open at once, for all clients together, or None for
+            :data:`mcp_plugin.lib.general.MAX_CONNECTIONS_TOTAL`.
+        public_url (str): The URL clients reach the MCP endpoint at, for OAuth
+            (see :mod:`mcp_plugin.lib.oauth_config`), or None for the
+            configured one.
 
     Returns:
         None
     """
+    multi_tenant = tenants.is_multi_tenant()
+    if function_groups is None:
+        function_groups = list(
+            general.MULTI_TENANT_FUNCTION_GROUPS
+            if multi_tenant
+            else general.DEFAULT_FUNCTION_GROUPS
+        )
+
     if transport not in general.SUPPORTED_TRANSPORTS:
         raise mysqlsh.Error(
             f"Unsupported transport '{transport}'. Supported transports are: "
@@ -186,6 +231,22 @@ def start(
             f"function groups are: {', '.join(general.SUPPORTED_FUNCTION_GROUPS)}."
         )
 
+    if bool(ssl_certfile) != bool(ssl_keyfile):
+        raise mysqlsh.Error(
+            "Give both --sslCertfile and --sslKeyfile to serve HTTPS, or neither."
+        )
+    if ssl_certfile and transport != general.TRANSPORT_STREAMABLE_HTTP:
+        raise mysqlsh.Error("--sslCertfile and --sslKeyfile only apply to --transport=streamable-http.")
+
+    if max_connections is not None:
+        max_connections = int(max_connections)
+        if max_connections < 1:
+            raise mysqlsh.Error("max_connections must be at least 1.")
+        general.MAX_CONNECTIONS_TOTAL = max_connections
+
+    if multi_tenant:
+        _check_multi_tenant(transport, function_groups, gui)
+
     # Disable interactive mode so the wrapped msm functions return their
     # results instead of prompting for input.
     mysqlsh.globals.shell.options.useWizards = False
@@ -200,23 +261,170 @@ def start(
     # server cannot change what it advertises once a client has asked.
     general.set_gui_mode(gui)
 
-    mcp_server = build_mcp_server(function_groups=function_groups)
+    # The same for multi-tenant mode: it decides who may call a tool at all.
+    general.set_multi_tenant(multi_tenant)
+
+    auth = None
+    if multi_tenant:
+        from mcp_plugin.lib import auth as auth_module
+        from mcp_plugin.lib import oauth_config
+
+        if public_url:
+            public_url = oauth_config.normalize_public_url(public_url)
+        auth = auth_module.build_auth(public_url=public_url)
+        if auth.public_url:
+            # The name clients dial the server by, which a proxy in front of it
+            # makes impossible to derive from the bind address.
+            allowed_hosts = list(allowed_hosts) + [
+                oauth_config.public_url_host(auth.public_url)
+            ]
+
+    mcp_server = build_mcp_server(
+        function_groups=function_groups,
+        auth=auth,
+        tool_name_separator=config.get_tool_name_separator(),
+    )
 
     if transport == general.TRANSPORT_STDIO:
         _serve_stdio(mcp_server)
     else:
-        _warn_if_reachable_from_the_network(host, port)
+        if multi_tenant:
+            _warn_if_tokens_travel_in_clear(host, port, bool(ssl_certfile))
+        else:
+            _warn_if_reachable_from_the_network(host, port)
         _warn_if_gui_mode_over_http(gui, host, port)
 
         # The reaper that closes idle sessions and drops expired connections
         # belongs to the server, and this is where a server begins and ends. It
         # used to be started by the first db.connect, which made a thread nobody
         # stopped the side effect of a tool call.
+        provider = auth.provider if auth is not None else None
+        if provider is not None:
+            # The built-in authorization server: its grants' login connections
+            # are looked up through it, and its sweeper ends expired grants.
+            provider.activate()
+            provider.start_sweeper()
+
         db_functions.start_connection_reaper()
         try:
-            _serve_streamable_http(mcp_server, host, port, allowed_hosts)
+            _serve_streamable_http(
+                mcp_server,
+                host,
+                port,
+                allowed_hosts,
+                ssl_certfile=ssl_certfile,
+                ssl_keyfile=ssl_keyfile,
+                auth=auth,
+            )
         finally:
             db_functions.stop_connection_reaper()
+            if provider is not None:
+                provider.stop_sweeper()
+                provider.deactivate()
+
+
+def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
+    """Refuses to start a multi-tenant server in a way it cannot serve.
+
+    Args:
+        transport (str): The transport asked for.
+        function_groups (list): The function groups asked for.
+        gui (bool): Whether GUI mode was asked for.
+
+    Returns:
+        None
+
+    Raises:
+        mysqlsh.Error: If anything asked for is not available to tenants, or
+            there is nobody to serve.
+    """
+    if transport != general.TRANSPORT_STREAMABLE_HTTP:
+        raise mysqlsh.Error(
+            "This server is configured for multi-tenant mode, which serves "
+            "authenticated users over HTTP only: stdio has no request to carry "
+            "a user's credentials. Use --transport=streamable-http, or turn "
+            "multi-tenant mode off with mcp setup --multiTenant=false."
+        )
+
+    if gui:
+        raise mysqlsh.Error(
+            "--gui cannot be used in multi-tenant mode: it hands the client "
+            "every local file and the connection list, which is for a single "
+            "user's own editor."
+        )
+
+    refused = [
+        group
+        for group in function_groups
+        if group not in general.MULTI_TENANT_FUNCTION_GROUPS
+    ]
+    if refused:
+        raise mysqlsh.Error(
+            f"The function group(s) {', '.join(refused)} are not available in "
+            "multi-tenant mode, as they run local servers and long jobs on this "
+            "machine. Available groups: "
+            f"{', '.join(general.MULTI_TENANT_FUNCTION_GROUPS)}."
+        )
+
+    tenants.require_secret_groups()
+
+    users = tenants.read_users()
+    if not any(
+        not record.get("disabled", False) for record in users.values()
+    ) and not _users_are_created_at_sign_in():
+        raise mysqlsh.Error(
+            "Multi-tenant mode is on, but there is no enabled user to serve. "
+            "Add one with mcp setup --addUser."
+        )
+
+
+def _users_are_created_at_sign_in() -> bool:
+    """Returns whether the OAuth mode served creates users when they sign in.
+
+    Such a server has somebody to serve before ``users.json`` has anyone in
+    it: the first sign-in, which needs the server running, adds the first user.
+    """
+    from mcp_plugin.lib import oauth_config
+
+    mode = oauth_config.get_mode()
+    if mode == oauth_config.OAUTH_MODE_NONE:
+        return False
+
+    provision = oauth_config.get_oauth_settings()[mode].get("autoProvision") or {}
+
+    return bool(provision.get("enabled"))
+
+
+def _warn_if_tokens_travel_in_clear(host: str, port: int, tls: bool) -> None:
+    """Warns when a multi-tenant server would take API keys over plain HTTP.
+
+    Every request carries the user's bearer token, so a server reachable from
+    other machines without TLS hands those tokens to anyone on the path. A
+    warning and not a refusal: TLS is often terminated by a reverse proxy in
+    front of the server, which this cannot see.
+
+    Args:
+        host (str): The host the server is about to bind to.
+        port (int): The port the server is about to listen on.
+        tls (bool): Whether the server serves HTTPS itself.
+
+    Returns:
+        None
+    """
+    if tls or general.is_loopback_host(host):
+        return
+
+    print(
+        f"\nWARNING: the multi-tenant MariaDB MCP server is about to listen on "
+        f"{host}:{port} over plain HTTP.\n"
+        "         Every request carries a user's API key or access token, which "
+        "anyone on the network\n"
+        "         path can read. Serve HTTPS with --sslCertfile and --sslKeyfile, "
+        "or put a TLS-terminating\n"
+        "         reverse proxy in front of the server.\n",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def _warn_if_reachable_from_the_network(host: str, port: int) -> None:
@@ -303,7 +511,13 @@ def _warn_if_gui_mode_over_http(gui: bool, host: str, port: int) -> None:
 
 
 def _serve_streamable_http(
-    mcp_server, host: str, port: int, allowed_hosts=()
+    mcp_server,
+    host: str,
+    port: int,
+    allowed_hosts=(),
+    ssl_certfile=None,
+    ssl_keyfile=None,
+    auth=None,
 ) -> None:
     """Serves the MCP server over streamable-http on our own uvicorn server.
 
@@ -333,6 +547,13 @@ def _serve_streamable_http(
         port (int): The TCP port to listen on.
         allowed_hosts: Additional Host header values to accept, for a server
             reachable under a name this cannot derive from the bind address.
+        ssl_certfile (str): The certificate to serve HTTPS with, or None.
+        ssl_keyfile (str): Its private key, or None.
+        auth: The :class:`mcp_plugin.lib.auth.AuthBundle` the server
+            authenticates with, whose routes and middleware are added (see
+            :func:`mcp_plugin.lib.auth.customize_app`) and whose refused
+            tokens are throttled (see
+            :class:`mcp_plugin.lib.auth.AuthFailureThrottle`), or None.
 
     Returns:
         None
@@ -345,12 +566,20 @@ def _serve_streamable_http(
         transport_security=_transport_security_settings(host, port, allowed_hosts),
     )
 
+    app = starlette_app
+    if auth is not None:
+        from mcp_plugin.lib.auth import AuthFailureThrottle, customize_app
+
+        app = AuthFailureThrottle(customize_app(starlette_app, auth))
+
     config = uvicorn.Config(
-        starlette_app,
+        app,
         host=host,
         port=port,
         log_level=mcp_server.settings.log_level.lower(),
         proxy_headers=False,
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
     )
 
     anyio.run(uvicorn.Server(config).serve)
