@@ -82,62 +82,39 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-07, after the merge):
+Checked at this checkpoint (2026-10-08):
 
 ```text
-$ git -C mcp_plugin branch --show-current
-main
+$ git branch --show-current
+wip/mrs_schema_improvements   (pushed, tracks origin; no PR yet)
 
-$ git -C mcp_plugin status --short
-(clean before this checkpoint's context edits)
+$ git status --short   (one repository: every project's lines)
+ M mcp_plugin/run_tests.py
+ M mcp_plugin/tests/unit/helpers.py
+ M mcp_plugin/tests/unit/test_migration_e2e.py
+ M mcp_plugin/tests/unit/test_migrator_tools.py
+ M mcp_plugin/tests/unit/test_oauth.py
+ M mrs_plugin/scripts/run_grammar_test.sh
 ```
 
-- **PR #37 is MERGED** (2026-10-07 14:07, squash-merged as `a5ad8bdf` on
-  `main`); `wip/mcp-multi-tenant` is deleted locally and on GitHub. No
-  mcp_plugin work this session; the bullets below are the record of the
-  branch as it was merged.
-
-- **Rene's 11 PR #37 comments are fixed, pushed and answered** (2026-10-07):
-  `fe4dbfe6` (the fixes, both `/code-review` rounds and the `/authorize` limit) and
-  `fc1cf5dd` + `e18acff8` (context); each thread has a reply naming the commit and the test. What
-  they are: "Review round" in [`context/multi-tenant.md`](context/multi-tenant.md) and
-  M24..M26 in
-  [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md).
-- **Branch `wip/mcp-multi-tenant`** off `main` (`67253bae`), pushed, **PR #37** to
-  `main`, reviewed once by Rene (2026-10-06 21:33, "COMMENTED", on `28f39f8e`). CI green
-  at `e18acff8` (and `fc1cf5dd`), checked 2026-10-07. A `/security-review` of the whole
-  branch the same day found nothing HIGH or MEDIUM (see
-  [`context/security-review-multi-tenant.md`](context/security-review-multi-tenant.md)). The PR description ends with a "Simplification pass over the new code"
-  section. Commits:
-  - `d1bf2a31` phase 1
-  - `f388ea7b` phase 2
-  - `512029e8` the live Keycloak test
-  - `5d137af0` `setup-oauth`, `setup-keycloak-realm`, the clients lock, the M review
-  - `b79866d1` the sessionless binding
-  - `1bf93817` signing-key overlap, the sessionless refusal, the checkboxes
-  - `c81bbd98` the HTTPS option names
-  - `850626ee` `httpx2` instead of `httpx` (the CI failure)
-  - `0ec99ee9`, `8f38d498` the sign-in page in the MRS style, with the MariaDB seal
-  - `046d9321` a checkpoint
-  - `72a64f89` Arcade: `--toolNameSeparator`, connections bound to user + grant (M23)
-  - `abc58808` the 2026-10-06 evening checkpoint
-  - `176aee35` the simplification pass (see
-    [`context/multi-tenant.md`](context/multi-tenant.md) "Next steps" for the renamed
-    helpers)
-  - `28f39f8e` its checkpoint (made in another session; this session fast-forwarded to
-    it, see the fetch gotcha in working-practices.md)
-  - `fe4dbfe6` the review fixes, `fc1cf5dd` and `e18acff8` their context
-- **Docs:** the MCP reference docs in `../mariadb-shell/docs-ref/` are committed and
-  pushed on `wip/docs-ref` (`5ae870fa5`, `42ea44ca4`), mariadb-shell PR #59.
+- Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
+  sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
+  the `--disable-modules=mrs` / `MARIADB_SHELL_OPTIONS` support for the new shell build.
+- **mcp_plugin this session:** only the test harness - `run_tests.py -M/--shell-options`
+  and `helpers.shell_command()` for every shell the tests start (see
+  [`context/testing.md`](context/testing.md) Gotchas). 596 passed, 3 skipped on the new
+  shell with `--disable-modules=mrs`. The mrs_plugin work is in
+  [`context/siblings.md`](context/siblings.md).
+- Earlier: PR #37 (multi-tenant mode and OAuth2) merged as `a5ad8bdf` on 2026-10-07,
+  branch deleted; Rene's review fixes are `fe4dbfe6` (see "Review round" in
+  [`context/multi-tenant.md`](context/multi-tenant.md)). What is open from it is in that
+  file's Next steps.
+- **Docs:** the MCP reference docs in `../mariadb-shell/docs-ref/` are on `wip/docs-ref`
+  (`5ae870fa5`, `42ea44ca4`), mariadb-shell PR #59.
 - **Left on the machine:** `cloudflared` (Homebrew). The user's Arcade dashboard still
   lists a `mariadb` server with a dead URL.
-- What is open is in the Next steps of
-  [`context/multi-tenant.md`](context/multi-tenant.md).
-- **Split at this checkpoint:** `context/multi-tenant.md` (440 -> 299) lost the phase 1
-  plan 1a-1e, verbatim, to
-  [`context/multi-tenant-phase1-plan.md`](context/multi-tenant-phase1-plan.md) (153).
-- **Over the ~400-line split threshold and NOT split:** `context/connections.md` (507,
-  not touched this session), `context/history.md` (466, an archive),
-  `context/security-review.md` (402), `context/migrator.md` (401).
-- [`context/history.md`](context/history.md) is deliberately NOT updated, as by
-  every session since `wip/sandbox-binaries`; this section is the current record.
+- **Over the ~400-line split threshold and NOT split:** `context/connections.md` (507),
+  `context/history.md` (466, an archive), `context/security-review.md` (402),
+  `context/migrator.md` (401). None touched this session.
+- [`context/history.md`](context/history.md) is deliberately NOT updated, as by every
+  session since `wip/sandbox-binaries`; this section is the current record.

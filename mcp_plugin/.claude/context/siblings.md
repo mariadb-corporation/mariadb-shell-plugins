@@ -47,10 +47,34 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     crashes, 7.4.4 / 8.4.2 / 9.1.1 all pass. The inline package lists in the runners
     existed to dodge this pin; fixing the pin is what let them switch to `-r`.
 
+- **`mrs_plugin` reworked on `wip/mrs_schema_improvements` (2026-10-08, pushed, no PR yet;
+  commits `35c80f6a`, `58714069`, plus uncommitted shell-option changes):**
+  - Both suites deploy their OWN MariaDB sandbox on a free port and delete it afterwards
+    (also on a failed setup): `tests/conftest.py` `init_mrs` publishes MYSQL_PORT /
+    MYSQL_PASSWORD to `helpers.get_connection_data`; `scripts/run_grammar_test.sh` uses a
+    temp config home with plugin symlinks, loads `grammar/test/sakila-schema.sql`, exits 1
+    on any `ERROR`/`Syntax` statement result, takes `MARIADB_SHELL_OPTIONS`.
+    `run_tests.py` was rewritten after this plugin's runner. No more fixed port 3388, so the
+    "leaked sandbox on 3388" gotcha below is history for mrs_plugin.
+  - **MRS metadata schema 5.0.0**: every id/FK column `UUID` (was `BINARY(16)`), PKs
+    `DEFAULT UUID_v7()`, `get_sequence_id()` returns `UUID_v7()`, ids in JSON are UUID
+    strings, `*_SWAP` functions gone, `NO_AUTO_CREATE_USER` in section 010. Releases before
+    4.1.6 deleted (MySQL-only DDL); release files generated with the msm functions.
+    Python ids are canonical UUID strings: `lib.core.id_to_uuid` (was `id_to_binary`,
+    accepts UUID / `0x` / base64 / bytes), `convert_ids_to_uuid`, `NIL_UUID`;
+    `interactive.py` resolvers detect ids by value (`_as_id`). `DB_VERSION = [5, 0, 0]`.
+    The mcp REST SQL tests pass against it unchanged.
+  - Results (new shell, `--disable-modules=mrs`): mrs 248 passed / 2 skipped, grammar
+    test passed, `--mdupgrade` 4.1.6 -> 5.0.0 passed, mcp 596 passed.
+  - Workbench: UUID is set via a `db.UserDatatype` and the new `UUID_Columns` plugin in
+    `development/wb/Audit_Log_Triggers_grt.py` (the table editor's grammar rejects UUID).
+
 ## Gotchas / things not to repeat
 
 - **msm_plugin / mrs_plugin suites**: run each as `mariadb-shell --py -f run_tests.py` from
-  ITS OWN plugin dir, with `/opt/homebrew/bin` on PATH for `mariadbd`. `-s <path>` is no
+  ITS OWN plugin dir, with `/opt/homebrew/bin` on PATH for `mariadbd`.
+  On a shell with the built-in `mrs` module add `--disable-modules=mrs` to the shell AND
+  `-M="--disable-modules=mrs"` to `run_tests.py`. `-s <path>` is no
   longer needed now that the runners default from `MARIADB_SHELL` or
   `shutil.which("mariadb-shell")`.
 

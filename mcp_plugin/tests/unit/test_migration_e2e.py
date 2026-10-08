@@ -287,7 +287,7 @@ def _setup_cli(*options, password=None) -> str:
         child_env[PASSWORD_ENV_VAR] = password
 
     completed = subprocess.run(
-        [helpers.shell_binary(), "--quiet-start=2", "--", "mcp", "setup", *options],
+        [*helpers.shell_command(), "--quiet-start=2", "--", "mcp", "setup", *options],
         env=child_env,
         capture_output=True,
         text=True,

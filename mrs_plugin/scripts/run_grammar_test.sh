@@ -33,6 +33,9 @@
 #
 # Exits non-zero when a statement of the grammar test fails. With
 # SLEEP_ON_ERROR=1 the output pauses for five seconds at each error.
+# MARIADB_SHELL_OPTIONS is added to every shell call, for example
+# MARIADB_SHELL_OPTIONS=--disable-modules=mrs on a shell whose built-in mrs
+# module would clash with this plugin.
 
 set -u
 
@@ -40,7 +43,9 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 
 SHELL_BIN="${MARIADB_SHELL:-mariadb-shell}"
-if ! command -v "$SHELL_BIN" > /dev/null; then
+# Word-split on purpose: it may hold several options.
+SHELL_OPTS=(${MARIADB_SHELL_OPTIONS:-})
+if ! command -v "$SHELL_BIN" ${SHELL_OPTS[@]+"${SHELL_OPTS[@]}"} > /dev/null; then
     echo "Could not find the MariaDB Shell binary. Set MARIADB_SHELL or put mariadb-shell on the PATH." >&2
     exit 1
 fi
@@ -64,13 +69,13 @@ export MARIADB_SHELL_TERM_COLOR_MODE=nocolor
 # A throw-away test server: skipping the syncs makes its DDL much faster.
 export MARIADB_SANDBOX_NO_SYNC="${MARIADB_SANDBOX_NO_SYNC:-1}"
 
-PORT="$("$SHELL_BIN" --py -e 'import socket
+PORT="$("$SHELL_BIN" ${SHELL_OPTS[@]+"${SHELL_OPTS[@]}"} --py -e 'import socket
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
     sock.bind(("127.0.0.1", 0))
     print(sock.getsockname()[1])')"
 
 cleanup() {
-    "$SHELL_BIN" --py -e "
+    "$SHELL_BIN" ${SHELL_OPTS[@]+"${SHELL_OPTS[@]}"} --py -e "
 for operation in (sandbox.stop, sandbox.kill, sandbox.delete):
     try:
         operation($PORT, {'sandboxDir': '$SANDBOX_DIR'})
@@ -81,14 +86,14 @@ for operation in (sandbox.stop, sandbox.kill, sandbox.delete):
 trap cleanup EXIT
 
 echo "Deploying a MariaDB sandbox on port $PORT ..."
-"$SHELL_BIN" --py -e "sandbox.deploy($PORT, {'password': '$PASSWORD', 'sandboxDir': '$SANDBOX_DIR', 'ssl': False})" || exit 1
+"$SHELL_BIN" ${SHELL_OPTS[@]+"${SHELL_OPTS[@]}"} --py -e "sandbox.deploy($PORT, {'password': '$PASSWORD', 'sandboxDir': '$SANDBOX_DIR', 'ssl': False})" || exit 1
 
 URI="root:$PASSWORD@127.0.0.1:$PORT"
 
 # The test schemas: sakila (schema only, no data is needed) and the setup's
 # own objects. A failure here is a failure of the run, not of the grammar.
-"$SHELL_BIN" "$URI" --sql -f ./grammar/test/sakila-schema.sql || exit 1
-"$SHELL_BIN" "$URI" --sql -f ./grammar/test/grammar_test_setup.sql || exit 1
+"$SHELL_BIN" ${SHELL_OPTS[@]+"${SHELL_OPTS[@]}"} "$URI" --sql -f ./grammar/test/sakila-schema.sql || exit 1
+"$SHELL_BIN" ${SHELL_OPTS[@]+"${SHELL_OPTS[@]}"} "$URI" --sql -f ./grammar/test/grammar_test_setup.sql || exit 1
 
 function check_errors() {
     grep --color=always -e ^ -e 'Syntax.*' -e 'Error:.*' -e '^ERROR.*' | while read line
@@ -108,7 +113,7 @@ fi
 
 # --interactive=full keeps going after a failed statement, so the whole file
 # is exercised and every error is in the log.
-"$SHELL_BIN" "$URI" --sql --interactive=full --log-level=debug3 --verbose=4 -f ./grammar/test/grammar_test.sql 2>&1 | tee "$LOG" | $color
+"$SHELL_BIN" ${SHELL_OPTS[@]+"${SHELL_OPTS[@]}"} "$URI" --sql --interactive=full --log-level=debug3 --verbose=4 -f ./grammar/test/grammar_test.sql 2>&1 | tee "$LOG" | $color
 
 # The shell's verbose lines include errors the plugin handles itself (a REVOKE
 # of a grant that was never given, say); only the statements' own results

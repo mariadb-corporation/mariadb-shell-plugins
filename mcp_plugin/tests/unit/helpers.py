@@ -25,6 +25,7 @@ The server is launched as a ``mariadb-shell`` subprocess running
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import socket
 import subprocess
@@ -60,6 +61,21 @@ def shell_binary() -> str:
         or shutil.which("mariadb-shell")
         or "mariadb-shell"
     )
+
+
+def shell_options() -> list:
+    """Returns the extra options every shell the tests start is given.
+
+    Taken from MARIADB_SHELL_OPTIONS, which run_tests.py sets from its
+    --shell-options. A shell build with a built-in module that clashes with a
+    plugin under test, for example, needs ``--disable-modules=mrs``.
+    """
+    return shlex.split(os.environ.get("MARIADB_SHELL_OPTIONS", ""))
+
+
+def shell_command() -> list:
+    """Returns the shell binary followed by the extra options to start it with."""
+    return [shell_binary(), *shell_options()]
 
 
 def find_free_port() -> int:
@@ -105,6 +121,7 @@ def _stdio_server_params(function_groups, gui=False):
         # MARIADB_SHELL_USER_CONFIG_HOME from the environment, so it sees the
         # same secrets and settings.json.
         args=[
+            *shell_options(),
             "--quiet-start=2",
             "--",
             "mcp",
@@ -324,7 +341,7 @@ async def http_server(function_groups, timeout=None, bind_host=None):
 
     proc = subprocess.Popen(
         [
-            shell_binary(),
+            *shell_command(),
             "--quiet-start=2",
             "--",
             "mcp",
