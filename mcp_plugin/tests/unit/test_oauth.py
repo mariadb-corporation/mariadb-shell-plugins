@@ -1217,7 +1217,7 @@ def _start_server(port, timeout=90):
         env["COVERAGE_PROCESS_START"] = env["MCP_COVERAGE_RC"]
 
     proc = subprocess.Popen(
-        [helpers.shell_binary(), "--quiet-start=2", "--", "mcp", "start-server",
+        [*helpers.shell_command(), "--quiet-start=2", "--", "mcp", "start-server",
          "--transport=streamable-http", "--host=127.0.0.1", f"--port={port}"],
         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )

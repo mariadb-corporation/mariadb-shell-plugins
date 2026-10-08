@@ -130,61 +130,36 @@ change belongs to up to date, and this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-07, after the merge and cleanup):
+Checked at this checkpoint (2026-10-08):
 
 ```text
-$ git -C code_ext branch --show-current
-main
+$ git branch --show-current
+wip/mrs_schema_improvements   (pushed, tracks origin; no PR yet)
 
-$ git -C code_ext status --short   (one repository: every project's lines)
-(clean before this checkpoint's context edits)
+$ git status --short   (one repository: every project's lines)
+ M mcp_plugin/run_tests.py
+ M mcp_plugin/tests/unit/helpers.py
+ M mcp_plugin/tests/unit/test_migration_e2e.py
+ M mcp_plugin/tests/unit/test_migrator_tools.py
+ M mcp_plugin/tests/unit/test_oauth.py
+ M mrs_plugin/scripts/run_grammar_test.sh
 ```
 
-- **On `main`, nothing open.** PR #38 (`wip/code-ext-code-review`) was
-  squash-merged as `86ee7f24`; the branch is deleted locally and on
-  GitHub. Before it: PR #34 (`b3ecaac4`), PR #32.
-- **This session (PR #38)** was a `/simplify` over the whole of `code_ext`
-  (four review angles, four fix agents on disjoint files), then a
-  `/code-review` (7 findings, 6 fixed) and a `/security-review` (1 Medium,
-  fixed) of the result, then the toolbar's disabled icons at 0.2. No
-  behaviour change beyond what a finding asked for. 50 files, 7 new; what
-  moved where is in the context file named:
-  - `src/text.ts` (`errorText`, `counted`) and `reportError`
-    ([`context/result-view.md`](context/result-view.md) "Shared code").
-  - `src/webview/html.ts`, `readyQueue.ts`, `dialogProtocol.ts`
-    ([`context/result-view.md`](context/result-view.md)).
-  - `src/tree/viewState.ts` ([`context/connections.md`](context/connections.md)).
-  - `ObjectNotFoundError`, `runScript` options, split-once, decoration
-    cache, header-only read ([`context/running-sql.md`](context/running-sql.md)).
-  - `DEDICATED_URI_OPTIONS`, `TabStrip`/`TabBody`, `position.ts`,
-    `dismiss.ts` ([`context/connection-editor.md`](context/connection-editor.md)).
-  - Grids no longer rebuilt per state message; `gridKeyOf`;
-    `formatValue` returns elements (the security fix)
-    ([`context/result-grid.md`](context/result-grid.md),
-    [`context/actions-grid.md`](context/actions-grid.md)).
-  - `#setActive` / `#claimIfUnset` / `#recorded`, page sends state once
-    ([`context/result-view.md`](context/result-view.md)).
-- Deliberately NOT done, with the reasons, in PR #38's description: the
-  double tree refresh on a default-connection change (the manager's
-  synchronous notify is a tested contract), unifying the four `--`
-  comment rules (they differ at `\r`/end-of-input on purpose), a shared
-  `useTabulator` hook, incremental state messages, a unified panel /
-  maximized dispatcher, `'unsafe-inline'` in `style-src`.
-- Suite: **1301 pass across 56 files** (1296 + 5 new), `npm run pretest`
-  clean.
-- NOT looked at in a running VS Code - still the next step: everything
-  PR #34 listed (connection editor layout, radio buttons, tooltip
-  placement, the result set's auto-hide, the toolbar's folder behaviour,
-  PR #32's grid restyle) plus PR #38's: switching connections in the
-  panel (log opens at the top), hovering a column header (type as text),
-  a `.sql` file in two split editors (both get dots), the 0.2 icons.
-- Test traps met: opening the `ToolbarMenu` twice in a row closes it
-  (read it, then click its button again to close, before the next look);
-  a `ToolbarMenu` item clicked inside the `act` that opened it fails the
-  next open; Tabulator never draws its header under jsdom, so `App` tests
-  record `ResultGrid`'s props through a `vi.mock` instead; Tabulator's
-  `headerTooltip` typing says `string` while the runtime takes an element
-  ([`context/testing-and-debugging.md`](context/testing-and-debugging.md)).
+- Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
+  sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
+  the `--disable-modules=mrs` / `MARIADB_SHELL_OPTIONS` support for the new shell build.
+- **code_ext: no work this session**, nothing open. PR #38 merged as `86ee7f24`.
+- Still NOT looked at in a running VS Code - the next step: everything PR #34 listed
+  (connection editor layout, radio buttons, tooltip placement, the result set's auto-hide,
+  the toolbar's folder behaviour, PR #32's grid restyle) plus PR #38's: switching
+  connections in the panel (log opens at the top), hovering a column header (type as
+  text), a `.sql` file in two split editors (both get dots), the 0.2 icons.
+- Test traps met in PR #38: opening the `ToolbarMenu` twice in a row closes it; a
+  `ToolbarMenu` item clicked inside the `act` that opened it fails the next open;
+  Tabulator never draws its header under jsdom, so `App` tests record `ResultGrid`'s props
+  through a `vi.mock`; Tabulator's `headerTooltip` typing says `string` while the runtime
+  takes an element ([`context/testing-and-debugging.md`](context/testing-and-debugging.md)).
+- Suite at PR #38: 1301 pass across 56 files.
 
 ## Conventions
 

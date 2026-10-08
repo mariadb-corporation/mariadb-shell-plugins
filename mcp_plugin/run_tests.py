@@ -22,6 +22,10 @@
 # MARIADB_SHELL to the mariadb-shell found in PATH
 # MARIADB_SHELL_USER_CONFIG_HOME to a temporary directory
 #
+# MARIADB_SHELL_OPTIONS (or --shell-options) holds extra options for every
+# shell the run starts, for example --disable-modules=mrs on a shell build
+# whose built-in mrs module clashes with the mrs_plugin under test.
+#
 # Either way the run keeps its secrets in that home, with the shell's
 # plaintext credential helper, never in the OS secret store: the tests store,
 # clear and restore connections, and on the OS store those are the
@@ -130,6 +134,15 @@ def main() -> int:
         "-k", "--only", default=None, help="Only run tests matching this pattern"
     )
     parser.add_argument(
+        "-M",
+        "--shell-options",
+        default=os.environ.get("MARIADB_SHELL_OPTIONS", ""),
+        help=(
+            "Extra options for every shell the run starts, the MCP servers "
+            "the tests launch included, e.g. --disable-modules=mrs"
+        ),
+    )
+    parser.add_argument(
         "-e",
         "--e2e",
         action="store_true",
@@ -184,6 +197,9 @@ def main() -> int:
     env["MARIADB_SHELL_USER_CONFIG_HOME"] = user_home.as_posix()
     env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
     env["MARIADB_SHELL"] = shell
+    # Read by the tests' helpers for every shell they start.
+    env["MARIADB_SHELL_OPTIONS"] = args.shell_options
+    shell = f"{shell} {args.shell_options}".rstrip()
 
     # Enable coverage of the MCP server stdio subprocess: put the coverage
     # bootstrap (a sitecustomize) on the subprocess PYTHONPATH and tell the
