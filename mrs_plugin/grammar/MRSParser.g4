@@ -37,7 +37,7 @@ options {
 /* START OF MERGE PART */
 
 mrsScript:
-    (mrsStatement (SEMICOLON_SYMBOL+ mrsStatement)*)? SEMICOLON_SYMBOL? EOF
+    SEMICOLON_SYMBOL* (mrsStatement (SEMICOLON_SYMBOL+ mrsStatement)*)? SEMICOLON_SYMBOL* EOF
 ;
 
 mrsStatement:
@@ -72,11 +72,9 @@ mrsStatement:
     | dropRestUserStatement
     | dropRestRoleStatement
     | dumpRestServiceStatement
-    | dumpRestProjectStatement
     | grantRestRoleStatement
     | grantRestPrivilegeStatement
     | loadRestServiceStatement
-    | loadRestProjectStatement
     | revokeRestPrivilegeStatement
     | revokeRestRoleStatement
     | useStatement
@@ -89,6 +87,9 @@ mrsStatement:
     | showRestContentSetsStatement
     | showRestContentFilesStatement
     | showRestAuthAppsStatement
+    | showRestAuthVendorsStatement
+    | showRestUsersStatement
+    | showRestColumnsStatement
     | showRestRolesStatement
     | showRestGrantsStatement
     | showCreateRestServiceStatement
@@ -751,7 +752,9 @@ showRestMetadataStatusStatement:
 ;
 
 showRestServicesStatement:
-    SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL
+    SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL (
+        FOR_SYMBOL AUTH_SYMBOL APP_SYMBOL authAppName
+    )?
 ;
 
 showRestSchemasStatement:
@@ -797,6 +800,31 @@ showRestAuthAppsStatement:
     )?
 ;
 
+showRestAuthVendorsStatement:
+    SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL VENDORS_SYMBOL
+;
+
+showRestUsersStatement:
+    SHOW_SYMBOL REST_SYMBOL USERS_SYMBOL (
+        (ON_SYMBOL | FROM_SYMBOL) SERVICE_SYMBOL? serviceRequestPath
+    )? (FOR_SYMBOL AUTH_SYMBOL APP_SYMBOL authAppName)?
+;
+
+showRestColumnsStatement:
+    SHOW_SYMBOL REST_SYMBOL COLUMNS_SYMBOL (FROM_SYMBOL | IN_SYMBOL) (
+        TABLE_SYMBOL
+        | VIEW_SYMBOL
+        | PROCEDURE_SYMBOL
+        | FUNCTION_SYMBOL
+    )? qualifiedIdentifier formatClause?
+;
+
+// FORMAT=JSON or FORMAT=TRADITIONAL (the default), as EXPLAIN FORMAT=JSON in
+// the server
+formatClause:
+    FORMAT_SYMBOL EQUAL_OPERATOR (JSON_SYMBOL | textOrIdentifier)
+;
+
 showRestRolesStatement:
     SHOW_SYMBOL REST_SYMBOL ROLES_SYMBOL (
         (ON_SYMBOL | FROM_SYMBOL) (
@@ -818,56 +846,56 @@ showRestGrantsStatement:
 showCreateRestServiceStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL SERVICE_SYMBOL serviceRequestPath? (
         INCLUDING_SYMBOL DATABASE_SYMBOL ENDPOINTS_SYMBOL
-    )?
+    )? formatClause?
 ;
 
 showCreateRestSchemaStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL DATABASE_SYMBOL schemaRequestPath? (
         (ON_SYMBOL | FROM_SYMBOL) SERVICE_SYMBOL? serviceRequestPath
-    )?
+    )? formatClause?
 ;
 
 showCreateRestViewStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL DATA_SYMBOL? MAPPING_SYMBOL? VIEW_SYMBOL viewRequestPath (
         (ON_SYMBOL | FROM_SYMBOL) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 
 showCreateRestProcedureStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL PROCEDURE_SYMBOL procedureRequestPath (
         (ON_SYMBOL | FROM_SYMBOL) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 
 showCreateRestFunctionStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL FUNCTION_SYMBOL functionRequestPath (
         (ON_SYMBOL | FROM_SYMBOL) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 
 showCreateRestContentSetStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL CONTENT_SYMBOL SET_SYMBOL contentSetRequestPath (
         (ON_SYMBOL | FROM_SYMBOL) SERVICE_SYMBOL? serviceRequestPath
-    )?
+    )? formatClause?
 ;
 
 showCreateRestContentFileStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL CONTENT_SYMBOL FILE_SYMBOL contentFileRequestPath (
         ON_SYMBOL
         | FROM_SYMBOL
-    ) (SERVICE_SYMBOL? serviceRequestPath)? CONTENT_SYMBOL SET_SYMBOL contentSetRequestPath
+    ) (SERVICE_SYMBOL? serviceRequestPath)? CONTENT_SYMBOL SET_SYMBOL contentSetRequestPath formatClause?
 ;
 
 showCreateRestAuthAppStatement:
-    SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL AUTH_SYMBOL APP_SYMBOL authAppName
+    SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL AUTH_SYMBOL APP_SYMBOL authAppName formatClause?
 ;
 
 showCreateRestRoleStatement:
-    SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL ROLE_SYMBOL roleName roleService?
+    SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL ROLE_SYMBOL roleName roleService? formatClause?
 ;
 
 showCreateRestUserStatement:
-    SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL USER_SYMBOL userName AT_SIGN_SYMBOL authAppName
+    SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL USER_SYMBOL userName AT_SIGN_SYMBOL authAppName formatClause?
 ;
 
 dumpRestServiceStatement:
@@ -885,78 +913,13 @@ dumpRestServiceStatement:
     ) ENDPOINTS_SYMBOL TO_SYMBOL (ZIP_SYMBOL)? directoryFilePath
 ;
 
-dumpRestProjectStatement:
-    DUMP_SYMBOL REST_SYMBOL PROJECT_SYMBOL restProjectName VERSION_SYMBOL restProjectVersion (
-        dumpRestProjectService
-    )+ (dumpRestProjectDatabaseSchema)* (dumpRestProjectSettings)? TO_SYMBOL (
-        ZIP_SYMBOL
-    )? directoryFilePath
-;
-
 loadRestServiceStatement:
     LOAD_SYMBOL REST_SYMBOL SERVICE_SYMBOL (
         AS_SYMBOL serviceRequestPath
     )? FROM_SYMBOL directoryFilePath
 ;
 
-loadRestProjectStatement:
-    LOAD_SYMBOL REST_SYMBOL PROJECT_SYMBOL FROM_SYMBOL (
-        ZIP_SYMBOL
-        | URL_SYMBOL
-    )? directoryFilePath
-;
-
 // Named identifiers ========================================================
-
-dumpRestProjectService:
-    SERVICE_SYMBOL serviceRequestPath INCLUDING_SYMBOL (
-        (
-            DATABASE_SYMBOL (
-                AND_SYMBOL STATIC_SYMBOL (
-                    AND_SYMBOL DYNAMIC_SYMBOL
-                )?
-            )?
-        )
-        | ALL_SYMBOL
-    ) ENDPOINTS_SYMBOL
-;
-
-dumpRestProjectDatabaseSchema:
-    DATABASE_SYMBOL schemaName (
-        FROM_SYMBOL restProjectDatabaseSchemaFilePath
-    )?
-;
-
-dumpRestProjectSettings: (
-        ICON_SYMBOL FROM_SYMBOL restProjectIconFilePath
-        | DESCRIPTION_SYMBOL restProjectDescription
-        | PUBLISHER_SYMBOL restProjectPublisher
-    )+
-;
-
-restProjectName:
-    textStringLiteral
-;
-
-restProjectDatabaseSchemaFilePath:
-    textStringLiteral
-;
-
-restProjectIconFilePath:
-    textStringLiteral
-;
-
-restProjectDescription:
-    textStringLiteral
-;
-
-restProjectPublisher:
-    textStringLiteral
-;
-
-restProjectVersion:
-    textStringLiteral
-;
 
 serviceRequestPath:
     serviceDevelopersIdentifier? requestPathIdentifier
@@ -1075,8 +1038,7 @@ jsonArr:
 
 jsonValue:
     DOUBLE_QUOTED_TEXT
-    | (MINUS_OPERATOR | PLUS_OPERATOR)? FLOAT_NUMBER
-    | INT_NUMBER
+    | (MINUS_OPERATOR | PLUS_OPERATOR)? (INT_NUMBER | DECIMAL_NUMBER | FLOAT_NUMBER)
     | jsonObj
     | jsonArr
     | TRUE_SYMBOL
@@ -1224,7 +1186,6 @@ graphQlAllowedKeyword:
     | FEED_SYMBOL
     | ITEM_SYMBOL
     | SETS_SYMBOL
-    | FILES_SYMBOL
     | AUTH_SYMBOL
     | APPS_SYMBOL
     | APP_SYMBOL
@@ -1245,6 +1206,7 @@ graphQlAllowedKeyword:
     | EXTENDS_SYMBOL
     | OBJECT_SYMBOL
     | HIERARCHY_SYMBOL
+    | TABLE_SYMBOL
 ;
 
 graphQlPairKey:
@@ -1265,6 +1227,7 @@ graphQlReduceToValue:
 
 graphQlDatatypeValue:
     DOUBLE_QUOTED_TEXT
+    | SINGLE_QUOTED_TEXT
     | identifier
 ;
 
@@ -1297,6 +1260,14 @@ pureIdentifier:
 // sql_yacc.yy
 identifier:
     pureIdentifier
+    | identifierKeyword
+;
+
+// Keywords that are also allowed as unquoted identifiers.
+identifierKeyword:
+    FILES_SYMBOL
+    | VENDORS_SYMBOL
+    | COLUMNS_SYMBOL
 ;
 
 identifierList: // ident_string_list in sql_yacc.yy.

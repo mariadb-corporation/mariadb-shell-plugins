@@ -67,6 +67,7 @@ TO_SYMBOL:             T O;
 IGNORE_SYMBOL:         I G N O R E;
 CLONE_SYMBOL:          C L O N E;
 FILE_SYMBOL:           F I L E;
+FILES_SYMBOL:          F I L E S;
 BINARY_SYMBOL:         B I N A R Y;
 DATA_SYMBOL:           D A T A;
 LOAD_SYMBOL:           L O A D;
@@ -95,7 +96,6 @@ COMMENT_SYMBOL:        C O M M E N T;
 DYNAMIC_SYMBOL:        D Y N A M I C;
 SQL_SYMBOL:            S Q L;
 AND_SYMBOL:            A N D;
-DESCRIPTION_SYMBOL:    D E S C R I P T I O N;
 SETS_SYMBOL:           S E T S;
 
 // Used for auto merging this grammar and the standard MySQL grammar.
@@ -136,6 +136,9 @@ APP_SYMBOL:         A P P;
 ID_SYMBOL:          I D;
 SECRET_SYMBOL:      S E C R E T;
 VENDOR_SYMBOL:      V E N D O R;
+VENDORS_SYMBOL:     V E N D O R S;
+TABLE_SYMBOL:       T A B L E;
+COLUMNS_SYMBOL:     C O L U M N S;
 MRS_SYMBOL:         M R S;
 MYSQL_SYMBOL:       M Y S Q L;
 USERS_SYMBOL:       U S E R S;
@@ -158,10 +161,6 @@ DUMP_SYMBOL:        D U M P;
 ZIP_SYMBOL:         Z I P;
 SCRIPT_SYMBOL:      S C R I P T;
 STATIC_SYMBOL:      S T A T I C;
-PROJECT_SYMBOL:     P R O J E C T;
-VERSION_SYMBOL:     V E R S I O N;
-ICON_SYMBOL:        I C O N;
-PUBLISHER_SYMBOL:   P U B L I S H E R;
 
 //----------------- GraphQL --------------------------------------------------------------------------------------------
 
@@ -232,7 +231,6 @@ OPEN_PAR_SYMBOL:     '(';
 CLOSE_PAR_SYMBOL:    ')';
 OPEN_CURLY_SYMBOL:   '{';
 CLOSE_CURLY_SYMBOL:  '}';
-UNDERLINE_SYMBOL:    '_';
 OPEN_SQUARE_SYMBOL:  '[';
 CLOSE_SQUARE_SYMBOL: ']';
 
@@ -242,8 +240,8 @@ JSON_UNQUOTED_SEPARATOR_SYMBOL: '->>';
 // The MySQL server parser uses custom code in its lexer to allow base alphanum chars (and ._$) as
 // variable name. For this it handles user variables in 2 different ways and we have to model this
 // to match that behavior.
+// A name directly after '@' (user@app) is lexed as AT_SIGN_SYMBOL and an identifier.
 AT_SIGN_SYMBOL: '@';
-AT_TEXT_SUFFIX: '@' SIMPLE_IDENTIFIER;
 
 AT_AT_SIGN_SYMBOL: '@@';
 
@@ -325,11 +323,17 @@ fragment BACK_TICK:    '`';
 fragment SINGLE_QUOTE: '\'';
 fragment DOUBLE_QUOTE: '"';
 
-BACK_TICK_QUOTED_ID:
-    BACK_TICK (({!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\')? .)*? BACK_TICK;
+// As in the server, a backslash is no escape character in a quoted identifier; a doubled back
+// tick is the escaped back tick.
+BACK_TICK_QUOTED_ID: (BACK_TICK .*? BACK_TICK)+;
 
+// Under ANSI_QUOTES a double quoted string is an identifier, so a backslash is no escape there.
 DOUBLE_QUOTED_TEXT: (
-        DOUBLE_QUOTE (({!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\')? .)*? DOUBLE_QUOTE
+        DOUBLE_QUOTE (
+            (
+                {!this.isSqlModeActive(SqlMode.NoBackslashEscapes) && !this.isSqlModeActive(SqlMode.AnsiQuotes)}? '\\'
+            )? .
+        )*? DOUBLE_QUOTE
     )+;
 
 SINGLE_QUOTED_TEXT: (

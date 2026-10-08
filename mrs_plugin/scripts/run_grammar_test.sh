@@ -34,8 +34,8 @@
 # Exits non-zero when a statement of the grammar test fails. With
 # SLEEP_ON_ERROR=1 the output pauses for five seconds at each error.
 # MARIADB_SHELL_OPTIONS is added to every shell call, for example
-# MARIADB_SHELL_OPTIONS=--disable-modules=mrs on a shell whose built-in mrs
-# module would clash with this plugin.
+# MARIADB_SHELL_OPTIONS=--log-level=debug3. The REST SQL of the test runs
+# through the MRS SQL handler of the shell's built-in mrs module.
 
 set -u
 

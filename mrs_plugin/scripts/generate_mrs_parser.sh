@@ -26,7 +26,7 @@ echo "Starting MRS parser file generation ..."
 
 cd grammar
 
-COPYRIGHT="# Copyright (c) 2023, 2025, Oracle and\/or its affiliates."
+COPYRIGHT="# Copyright (c) 2023, 2026, Oracle and\/or its affiliates."
 
 mkdir -p pytmp
 
@@ -36,13 +36,17 @@ sed -e 's/!this.isSqlModeActive(SqlMode.AnsiQuotes)/not self.isSqlModeActive("AN
 
 sed -e 's/!this.isSqlModeActive(SqlMode.NoBackslashEscapes)/not self.isSqlModeActive("NO_BACKSLASH_ESCAPES")/'\
      -e 's/this.isSqlModeActive(SqlMode.NoBackslashEscapes)/self.isSqlModeActive("NO_BACKSLASH_ESCAPES")/'\
+     -e 's/!this.isSqlModeActive(SqlMode.AnsiQuotes)/not self.isSqlModeActive("ANSI_QUOTES")/'\
+     -e 's/this.isSqlModeActive(SqlMode.AnsiQuotes)/self.isSqlModeActive("ANSI_QUOTES")/'\
+     -e 's/ \&\& / and /'\
      MRSLexer.g4 > pytmp/MRSLexer.g4
 
 cd pytmp
 antlr4ng -Dlanguage=Python3 ./MRSLexer.g4 ./MRSParser.g4 -lib ../../../gui/frontend/src/parsing/mysql/ -o ../../lib/mrs_parser
+GENERATE_STATUS=$?
 cd ..
 
-if [ $? -eq 0 ]; then
+if [ $GENERATE_STATUS -eq 0 ]; then
     if [[ $(uname -s) == "Darwin" ]]; then
         sed -i '' "1s/.*/$COPYRIGHT/" ../lib/mrs_parser/MRSParser.py
         sed -i '' "1s/.*/$COPYRIGHT/" ../lib/mrs_parser/MRSLexer.py

@@ -59,3 +59,16 @@ AUTHENTICATION REQUIRED;
 ```
 
 > Note: Please ensure to install the [MySQL sakila example database schema](https://downloads.mysql.com/docs/sakila-db.zip) before running the MRS DDL script above.
+
+## Syntax Conventions
+
+The REST SQL statements follow the lexical rules of MariaDB SQL statements.
+
+- **Separators.** Statements are separated by `;`. Leading, trailing and repeated semicolons are ignored, so `;SHOW REST SERVICES;;` is a valid script.
+- **Comments.** `-- ` (two dashes followed by a space), `#` to the end of the line, and `/* ... */`. A `/*! ... */` version comment is not supported.
+- **Request paths.** An unquoted request path is a sequence of `/segment` parts, e.g. `/myService/v1`. Each segment is an identifier: it may contain letters, digits, `_` and `$`, but it must not consist of digits only or look like a number (`/2024`, `/1e5`). Such paths, and paths with other characters, are written in back ticks, e.g. `` CREATE REST SERVICE `/2024`; ``. A quoted request path has to start with `/`, or with a wildcard (`*`, `?`) where wildcards are allowed.
+- **Identifiers.** Names of database schemas, tables, views, routines and columns, and class names, are written unquoted or in back ticks. Inside back ticks a backslash is an ordinary character and a back tick is written twice (`` `a``b` ``). With the `ANSI_QUOTES` SQL mode, a double quoted string is an identifier as well.
+- **Text.** Comments, passwords and similar values are written in single quotes, or in double quotes unless `ANSI_QUOTES` is set. A quote character is escaped by doubling it (`'it''s'`) or, unless `NO_BACKSLASH_ESCAPES` is set, with a backslash (`'it\'s'`). Names of REST users, roles and authentication apps accept double quotes in every SQL mode.
+- **Keywords as names.** Keywords used as names have to be quoted, e.g. `` `role` ``. `FILES` and `VENDORS` are exceptions and can be used unquoted, e.g. `` AS `sakila`.files ``.
+- **REST users.** A REST user is written as `name@app`, e.g. `admin@myApp` or `"admin"@"MRS"`; each part is quoted as needed (`MRS` is a keyword).
+- **JSON values.** `OPTIONS`, `METADATA`, `APP OPTIONS` and `JSON SCHEMA` take a JSON value. Its keys and strings are written in double quotes in every SQL mode; numbers may be negative and may have a decimal part, e.g. `{"maxItems": -1, "ratio": 0.5}`.

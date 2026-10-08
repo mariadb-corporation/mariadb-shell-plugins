@@ -175,6 +175,7 @@ ignore_undocumented = [
     "mrsStatement",
     "graphQlAllowedKeyword",
     "identifier",
+    "identifierKeyword",
 ]
 
 print_missing = "--print-missing" in sys.argv

@@ -50,11 +50,15 @@ restServiceOptions: (
 ;
 
 addAuthApp:
-    ADD AUTH APP authAppName (IF EXISTS)?
+    ADD AUTH APP authAppName (
+        IF EXISTS
+    )?
 ;
 
 removeAuthApp:
-    REMOVE AUTH APP authAppName (IF EXISTS)?
+    REMOVE AUTH APP authAppName (
+        IF EXISTS
+    )?
 ;
 ```
 

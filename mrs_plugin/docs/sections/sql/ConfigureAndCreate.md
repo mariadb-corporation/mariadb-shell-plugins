@@ -220,6 +220,14 @@ updateIfAvailable:
 updateIfAvailable ::=
 ![updateIfAvailable](../../images/sql/updateIfAvailable.svg "updateIfAvailable")
 
+The current version of the metadata schema is 5.0.0, which stores all ids as MariaDB `UUID` values. A schema of version 4.1.6 is updated to 5.0.0 in place, and its ids keep their values. Older versions cannot be updated. Without `UPDATE IF AVAILABLE`, `CONFIGURE REST METADATA` leaves an older schema as it is and reports that it needs to be updated, and the other REST statements refuse to work on it.
+
+The schema is deployed with the MySQL Schema Management (msm) plugin when it is loaded, and with the same procedure built into the MariaDB Shell otherwise. Before an update, the schema is dumped to the `plugin_data/msm_plugin/backups` folder of the MariaDB Shell user configuration and loaded back if the update fails. The steps are logged to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
+
+```sql
+CONFIGURE REST METADATA UPDATE IF AVAILABLE;
+```
+
 ## CREATE REST SERVICE
 
 The CREATE REST SERVICE statement is used to create a new or replace an existing REST service.
@@ -403,7 +411,9 @@ REST authentication apps can be linked while creating the REST service or they c
 
 ```antlr
 addAuthApp:
-    ADD AUTH APP authAppName (IF EXISTS)?
+    ADD AUTH APP authAppName (
+        IF EXISTS
+    )?
 ;
 ```
 
@@ -1000,6 +1010,8 @@ graphQlValue ::=
 graphQlValueJsonSchema ::=
 ![graphQlValueJsonSchema](../../images/sql/graphQlValueJsonSchema.svg "graphQlValueJsonSchema")
 
+The data type given with `@DATATYPE` can be written as an identifier or in single or double quotes, e.g. `@DATATYPE(int)`, `@DATATYPE('varchar(20)')` or `@DATATYPE("varchar(20)")`.
+
 ### REST View Metadata
 
 The metadata can hold any JSON data. It can later be consumed by a front end implementation to dynamically render certain attributes, like a specific icon or a color.
@@ -1292,6 +1304,8 @@ createRestContentSetStatement ::=
 
 restContentSetOptions ::=
 ![restContentSetOptions](../../images/sql/restContentSetOptions.svg "restContentSetOptions")
+
+> Note: With `LOAD SCRIPTS` or `LOAD TYPESCRIPT SCRIPTS`, the content set is marked as holding MRS scripts, but the MRS module of the MariaDB Shell does not analyze the scripts yet, so no REST endpoints are created from them.
 
 ## CREATE REST CONTENT FILE
 

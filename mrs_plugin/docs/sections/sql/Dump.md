@@ -23,11 +23,11 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 # DUMP
 
-## DUMP REST PROJECT
+## REST Projects
 
-An existing REST service can be dumped as REST project by using the `DUMP REST PROJECT` statement.
+A REST project bundles one or more REST services with the database schemas they are based on, so they can be deployed together. REST projects are not handled by REST SQL statements; they are dumped and loaded with the `mrs.dump.serviceProject()` and `mrs.load.serviceProject()` functions of the mrs_plugin.
 
-The command will generate a directory containing the following:
+A dumped project is a directory containing the following:
 
 - ```mrs.package.json``` containing the project details
 - ```*.service.mrs.sql``` containing the REST SQL for each service
@@ -35,116 +35,51 @@ The command will generate a directory containing the following:
 - directories containing schema dumps
 - ```appIcon.*``` being the icon for this project
 
-This directory may then be zipped into a file.
+This directory may also be written as a ZIP file.
 
-**_SYNTAX_**
+`mrs.dump.serviceProject()` takes the following options:
 
-```antlr
-dumpRestProjectStatement:
-    DUMP REST PROJECT
-    restProjectName VERSION restProjectVersion
-    (dumpRestProjectService)+
-    (dumpRestProjectDatabaseSchema)*
-    (dumpRestProjectSettings)?
-    TO (ZIP)? directoryFilePath
-;
+- `services`, a list of the REST services to include. Each one gives its request path as `name` and selects the endpoints to include:
+    - `include_database_endpoints`: REST objects like VIEW, PROCEDURE and FUNCTION
+    - `include_static_endpoints`: content sets that are not of SCRIPT type
+    - `include_dynamic_endpoints`: content sets that are of SCRIPT type
 
-dumpRestProjectService:
-    SERVICE serviceRequestPath
-        INCLUDING ((DATABASE (AND STATIC (AND DYNAMIC)?)?) | ALL) ENDPOINTS
-;
+  Each REST service is written to its own REST SQL file containing the statements to recreate it.
+- `schemas`, a list of the database schemas to include. Each one gives its `name`, and optionally a `file_path` of an SQL file or directory holding a dump of it. Without a `file_path`, the schema is dumped.
+- `settings`, the project details stored in ```mrs.package.json```: `name` and `version` (in any format, e.g. `'v1.0'` or `'1.0.0b'`), and optionally a `description`, the `publisher` and an `icon_path` to copy the project icon from.
+- `destination`, the directory or ZIP file to write, and `zip` to write a ZIP file.
 
-dumpRestProjectDatabaseSchema:
-    DATABASE schemaName (FROM restProjectDatabaseSchemaFilePath)?
-;
-
-dumpRestProjectSettings: (
-        ICON FROM restProjectIconFilePath
-        | DESCRIPTION restProjectDescription
-        | PUBLISHER restProjectPublisher
-    )+
-;
-```
-
-dumpRestProjectStatement ::=
-![dumpRestProjectStatement](../../images/sql/dumpRestProjectStatement.svg "dumpRestProjectStatement")
-
-dumpRestProjectService ::=
-![dumpRestProjectService](../../images/sql/dumpRestProjectService.svg "dumpRestProjectService")
-
-dumpRestProjectDatabaseSchema ::=
-![dumpRestProjectDatabaseSchema](../../images/sql/dumpRestProjectDatabaseSchema.svg "dumpRestProjectDatabaseSchema")
-
-dumpRestProjectSettings ::=
-![dumpRestProjectSettings](../../images/sql/dumpRestProjectSettings.svg "dumpRestProjectSettings")
+Paths may start with `~`.
 
 **_Examples_**
 
 The following example dumps the REST service with the request path `/myService` to a REST project, including the database schema `sakila` it is based on.
 
-```sql
-DUMP REST PROJECT 'myServiceProject' VERSION '1.0.0'
-    SERVICE /myService INCLUDING ALL ENDPOINTS
-    DATABASE `sakila`
-    DESCRIPTION 'My first REST project'
-    PUBLISHER 'Oracle'
-    TO ZIP '~/myServiceProject.zip';
+```py
+mrs.dump.service_project(
+    services=[{"name": "/myService",
+               "include_database_endpoints": True,
+               "include_static_endpoints": True,
+               "include_dynamic_endpoints": True}],
+    schemas=[{"name": "sakila"}],
+    settings={"name": "myServiceProject", "version": "1.0.0",
+              "description": "My first REST project",
+              "publisher": "MariaDB"},
+    destination="~/myServiceProject.zip",
+    zip=True)
 ```
 
-Here's a full example to dump a REST service containing most variations of the command.
+`mrs.load.serviceProject()` loads a project from a directory, a ZIP file, a URL or a GitHub shortcut.
 
-```sql
-DUMP REST PROJECT 'myProject' VERSION '1.0.0'
-    SERVICE /myService INCLUDING DATABASE AND STATIC AND DYNAMIC ENDPOINTS
-    SERVICE /myService2 INCLUDING ALL ENDPOINTS
-    DATABASE `chatApp` FROM '~/mrs_plugin/examples/mrs_chat/db_schema/chat_db_schema.sql'
-    DATABASE `chatRestService` FROM '~/mrs_plugin/examples/mrs_chat/db_schema/chat_rest_service.sql'
-    DATABASE `chatApp2` FROM '~/mrs_plugin/examples/mrs_chat/db_schema/'
-    DATABASE `sakila`
-    DESCRIPTION 'This is my first project'
-    PUBLISHER 'Oracle'
-    ICON FROM '~/icon.svg'
-    TO ZIP '~/project.myService.zip';
+```py
+mrs.load.service_project(source="~/myServiceProject.zip")
 ```
-Lets go through the command an explain it in detail.
-
-The first part ```DUMP REST PROJECT 'myProject' VERSION '1.0.0'``` is the project name and version. The version is not strict to any version format, allowing for ```'v1.0'``` or ```'1.0.0b'``` to be valid versions.
-
-Following we have the services that should be included in the project. You can check the
-```sql
-SERVICE /myService INCLUDING DATABASE AND STATIC AND DYNAMIC ENDPOINTS
-```
-
-The service request path is referring to the service required on the project and you are able to include multiple services in the project. Each of these statements will create its own REST SQL file containing all the REST SQL commands to recreate the service. From that service, you choose what to include:
-- ```DATABASE``` include REST objects like TABLE, VIEW, PROCEDURE, FUNCTION and SCRIPT
-- ```STATIC``` include content sets that are not of SCRIPT type
-- ```DYNAMIC``` include content sets that are of SCRIPT type
-- ```ALL``` short for ```DATABASE AND STATIC AND DYNAMIC```
-
-Each of these settings are a superset of the former.
-
-Then we have the ```DATABASE``` sub-statements that either dump a schema
-```sql
-DATABASE `sakila`
-```
-or uses a SQL file containing the dump of a schema
-```sql
-DATABASE `chatApp` FROM '~/mrs_plugin/examples/mrs_chat/db_schema/chat_db_schema.sql'
-```
-
-Then we can find the project settings. These settings are optional but brings some detail to the project.
-
-- ```DESCRIPTION``` is a short description for the project.
-- ```PUBLISHER``` the owner or publisher of the project.
-- ```ICON``` will copy an icon file from the specified path.
-
-All this information will be in the ```mrs.package.json``` project file.
-
-Finally there's the ```TO ZIP '~/project.myService.zip'``` which defined the output of the command. The command can generate a directory with all the contents or, if the ```ZIP``` command is used, generate a zip file with the directory contents.
 
 ## DUMP REST SERVICE
 
-An existing REST service can be dumped to disk by using the `DUMP REST SERVICE` statement. This dump does not include the database schema that it is based on. To create a fully consistent dump that also includes the database schema, please use the `DUMP REST PROJECT` statement instead.
+An existing REST service can be dumped to disk by using the `DUMP REST SERVICE` statement. This dump does not include the database schema that it is based on. To create a fully consistent dump that also includes the database schema, dump a [REST project](#rest-projects) instead.
+
+> Note: Dumping a REST service to a ZIP file (`TO ZIP`) is not supported by the MRS module of the MariaDB Shell yet; such a statement reports an error.
 
 ```antlr
 dumpRestServiceStatement:
@@ -152,7 +87,7 @@ dumpRestServiceStatement:
         SQL
     )? SCRIPT INCLUDING (
         (
-            DATABASE (
+            SCHEMA (
                 AND STATIC (
                     AND DYNAMIC
                 )?
