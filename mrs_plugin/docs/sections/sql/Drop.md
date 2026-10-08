@@ -221,3 +221,30 @@ dropRestRoleStatement:
 
 dropRestRoleStatement ::=
 ![dropRestRoleStatement](../../images/sql/dropRestRoleStatement.svg "dropRestRoleStatement")
+
+## DROP REST DAEMON
+
+Removes a MariaDB REST Daemon instance from the REST metadata, together with its status reports and log entries, e.g. an instance that no longer runs. The id is the one [SHOW REST DAEMONS](#show-rest-daemons) lists. An instance that is still running registers itself again when it restarts.
+
+**_SYNTAX_**
+
+```antlr
+dropRestDaemonStatement:
+    DROP REST DAEMON (IF EXISTS)? daemonId
+;
+
+daemonId:
+    INT_NUMBER
+;
+```
+
+dropRestDaemonStatement ::=
+![dropRestDaemonStatement](../../images/sql/dropRestDaemonStatement.svg "dropRestDaemonStatement")
+
+**_Examples_**
+
+The following example removes the MariaDB REST Daemon instance with the id 3.
+
+```sql
+DROP REST DAEMON 3;
+```

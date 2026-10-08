@@ -57,11 +57,19 @@ packages with msm_plugin and mcp_plugin.
   `ONLY_FULL_GROUP_BY` the MariaDB way (no functional dependency, no plain columns in
   HAVING) because MSM scripts set that mode; the test conftest sets it too.
 
+## Context files
+
+| File | What is in it |
+| --- | --- |
+| [`context/plugin-reduction.md`](context/plugin-reduction.md) | Which `mrs.*` plugin functions REST SQL in the shell's mrs module covers, which stay (and why), the undecided ones, and what removing `run.script` takes |
+| [`context/metadata-schema-5.0.0.md`](context/metadata-schema-5.0.0.md) | The exact changes of metadata schema 4.1.6 -> 5.0.0 (UUID ids): tables, data, views, routines, triggers, the update script, releases, plugin code |
+
 ## Current state
 
 - **Branch `wip/mrs_schema_improvements`**, pushed, no PR. Commits `863f536e` (suites on
   their own sandbox), `da8fa01d` (5.0.0), `8e3d70c9` (shell option + context), `d1b5f1ee`
-  (context); a rebase replaced the hashes earlier checkpoints named.
+  (context), `71651e6f` (REST SQL moves to the shell's mrs module), then the daemon
+  statements and this checkpoint; a rebase replaced the hashes earlier checkpoints named.
 - **Session 2026-10-08 (uncommitted, both repos):**
   - New REST SQL `SHOW REST USERS [(ON|FROM) [SERVICE] path] [FOR AUTH APP name]`,
     `SHOW REST AUTH VENDORS`, `SHOW REST SERVICES [FOR AUTH APP name]` (replace
@@ -122,152 +130,6 @@ packages with msm_plugin and mcp_plugin.
     (module, pre-existing): re-creating from the text loses them. Blocks code_ext saving
     views as generated REST SQL; offered to the user, not fixed.
 
-## Plugin reduction: coverage by REST SQL (decision pending)
-
-Analysis of 2026-10-08; the user wants to discuss before anything is removed.
-
-- **Covered by REST SQL (83):** `configure`, `status`, `ls`, `cd`, `set.currentService`; all
-  `add/list/get/enable/disable/delete/update/set.*` of service, schema, dbObject,
-  contentSet, authenticationApp(+Link), user, userRole(s), role, rolePrivilege; content file
-  listing; every `get/dump.*CreateStatement`; `dump/load.serviceSqlScript` (DUMP/LOAD REST
-  SERVICE, no ZIP); `run.script`; `list.users`, `get.authenticationVendors`,
-  `list.authenticationAppServices` (new statements).
-- **GUI helpers, now covered too (2026-10-08):** `get.objects`,
-  `get.objectFieldsWithReferences` -> `SHOW CREATE REST VIEW|PROCEDURE|FUNCTION ...
-  FORMAT=JSON`; `get.tableColumnsWithReferences`, `get.dbObjectParameters`,
-  `get.dbFunctionReturnType` -> `SHOW REST COLUMNS`; `get.currentServiceMetadata` ->
-  `metadata_version` + `SHOW REST SERVICES` `current`; `get.contentSetCount` -> count rows;
-  `get.serviceRequestPathAvailability` -> client-side check against the SHOW lists.
-  code_ext (re-implementing the MySQL Shell for VS Code GUI) reaches the shell only via
-  mcp_plugin's `db.*` SQL tools, so REST SQL is its only API; recommended: it writes views
-  by generating `CREATE OR REPLACE REST VIEW` text (no JSON input form).
-- **Suggested to remove as well:** legacy JSON
-  `dump/load.service/schema/object`, `get.ociDomainAppSecret`, `info`,
-  `ignoreVersionUpgrade`, `get.runtimeManagementCode`.
-- **Keep (12):** SDK (`get.sdkBaseClasses`, `get.sdkServiceClasses`, `get.sdkOptions`,
-  `dump.sdkServiceFiles`), `dump/load.serviceProject`, MRS scripts
-  (`get.fileMrsScriptDefinitions`, `get.folderMrsScriptDefinitions`,
-  `get.folderMrsScriptLanguage`, `update.mrsScriptsFromContentSet`), `dump.auditLog`,
-  `version`.
-- **Undecided:** routers (`list.routerIds`, `list.routers`, `get.routerServices`,
-  `delete.router`) -> REST SQL in the module once a MariaDB runtime exists;
-  `get.availableMetadataVersions`, `get.configurationOptions` -> maybe
-  `SHOW REST METADATA STATUS`.
-- Removing `run.script` lets `grammar/`'s Python use, `lib/mrs_parser/`,
-  `MrsDdlListener/Executor*.py`, `lib/script.py` go; first move
-  `lib/services.run_sql_script` (used by `load.serviceProject`) to `session.run_sql` (the
-  shell's MRS handler catches it) and drop `lib/content_files.py`'s `MrsDdlExecutor`
-  import. The ANTLR grammar stays as the docs grammar.
-- Nothing outside the plugin calls `mrs.*` by name (code_ext, mcp_plugin, msm_plugin
-  checked); mcp_plugin only sends REST SQL.
-
-## Metadata schema 4.1.6 -> 5.0.0: the exact changes
-
-Branch `wip/mrs_schema_improvements`, commit `58714069` (2026-10-08). Diffed against `main`.
-
-### Tables (`sections/140-10_tables.sql`, regenerated from the Workbench model)
-
-- **63 columns in 29 tables** go from `BINARY(16)` to `UUID`, NULL-ability unchanged. The
-  19 single-column primary keys (`*`) also get `DEFAULT UUID_v7()`; nothing else gets a
-  default:
-  - `url_host`: id*
-  - `service`: id*, parent_id, url_host_id
-  - `db_schema`: id*, service_id
-  - `db_object`: id*, db_schema_id
-  - `auth_vendor`: id*
-  - `auth_app`: id*, auth_vendor_id, default_role_id
-  - `mrs_user`: id*, auth_app_id
-  - `redirect`: id*
-  - `url_host_alias`: id*, url_host_id
-  - `content_set`: id*, service_id
-  - `content_file`: id*, content_set_id
-  - `audit_log`: old_row_id, new_row_id
-  - `mrs_role`: id*, derived_from_role_id, specific_to_service_id
-  - `mrs_user_has_role`: user_id, role_id
-  - `mrs_user_hierarchy_type`: id*, specific_to_service_id
-  - `mrs_user_hierarchy`: user_id, reporting_to_user_id, user_hierarchy_type_id
-  - `mrs_privilege`: id*, role_id
-  - `mrs_user_group`: id*, specific_to_service_id
-  - `mrs_user_group_has_role`: user_group_id, role_id
-  - `mrs_user_has_group`: user_id, user_group_id
-  - `mrs_group_hierarchy_type`: id*
-  - `mrs_user_group_hierarchy`: user_group_id, parent_group_id, group_hierarchy_type_id
-  - `mrs_db_object_row_group_security`: db_object_id, group_hierarchy_type_id
-  - `router_session`: user_id, service_id
-  - `object`: id*, db_object_id, row_ownership_field_id
-  - `object_reference`: id*, reduce_to_value_of_field_id, row_ownership_field_id
-  - `object_field`: id*, object_id, parent_reference_id, represents_reference_id
-  - `service_has_auth_app`: service_id, auth_app_id
-  - `content_set_has_obj_def`: content_set_id, db_object_id
-- Unchanged: the integer keys of `router`, `router_status`, `router_session.id`,
-  `router_general_log`, `audit_log.id`, `config`, `audit_log_status`.
-- `db_object.fk_db_objects_db_schema1_idx` was `INVISIBLE` in the model and hand-stripped
-  in the SQL; it is now visible in the model, so the export carries `VISIBLE` like every
-  other index. The only other text change is the export date line.
-- In the model only (no SQL effect): the `service.in_development` comment no longer uses
-  MySQL's `->>`, matching the committed SQL.
-
-### Data, views, routines, triggers
-
-- `140-30_inserts.sql`: the 14 short binary literals (`0x30`..`0x35`, MariaDB rejects them
-  as UUIDs) become full UUID literals: `0x31` -> `'31000000-0000-0000-0000-000000000000'`,
-  etc. Same bytes, so upgraded rows keep their ids.
-- `150-10_views.sql`, `object_fields_with_references`: `reduce_to_value_of_field_id` and
-  `row_ownership_field_id` in the `object_reference` JSON are emitted as UUID strings
-  instead of `TO_BASE64(...)` (4 places).
-- `150-20_procedures_functions.sql`: `UUID_TO_BIN_SWAP` and `BIN_TO_UUID_SWAP` removed;
-  `get_sequence_id()` returns `UUID` and is `RETURN UUID_v7()` (was `UUID_TO_BIN(UUID(), 1)`
-  with the swap fallback); `sdk_service_data(IN service_id UUID)` and its four cursor
-  variables (`schema_id`, `db_object_id`, `object_id`, `field_id`) are `UUID`.
-- `150-30_triggers.sql`: the `router` audit triggers write the integer id as
-  `CAST(LPAD(HEX(x.id), 32, '0') AS UUID)` (was `UNHEX(LPAD(CONV(x.id, 10, 16), 32, '0'))`,
-  3 places); the two `mrs_user` checks compare `auth_vendor_id` with
-  `'30000000-0000-0000-0000-000000000000'` (was `0x3000...`).
-- `150-40_audit_log_triggers.sql` (regenerated by the WB plugin): the 236
-  `CONCAT("0x", HEX(OLD/NEW.col))` values in the row JSON become the bare UUID columns, so
-  the audit log holds `"id": "01a1..."` instead of `"id": "0x01A1..."`; the `config`
-  triggers store their TINYINT key in the UUID `old_row_id`/`new_row_id` via the same
-  `CAST(LPAD(HEX(...)) AS UUID)`.
-- `140-20`, `140-40`, `150-50`, `170_roles.sql`: unchanged.
-- Dev script: section 010's `SQL_MODE` gains `NO_AUTO_CREATE_USER`; section 910 is now
-  `SELECT 5, 0, 1` (set by `prepare_release`).
-
-### Update script `releases/updates/..._4.1.6_to_5.0.0.sql`
-
-- Section 240 (runs inside `msm_update_4.1.6_to_5.0.0()`): 36 `ALTER TABLE ... DROP FOREIGN
-  KEY`, then one `ALTER TABLE ... MODIFY COLUMN ...` per table for the 63 columns (same
-  definitions as 140-10, defaults included), then the 36 FKs re-added as 140-10 defines
-  them, except `fk_priv_role_priv_role1` with `ON DELETE CASCADE` as 140-20 redefines it.
-  The 16 bytes of every id are kept; only the type changes.
-- Section 290: `DROP FUNCTION IF EXISTS` for the two swap functions.
-- Sections 230, 250, 270 untouched (template). Views, routines and triggers reach the
-  target state through the deployment's full run of 150, as always.
-
-### Releases
-
-- Added: `versions/..._5.0.0.sql`, `updates/..._4.1.6_to_5.0.0.sql`,
-  `deployment/..._deployment_5.0.0.sql`, all generated by the msm functions.
-- Deleted: versions 4.0.0-4.1.5 (11), their deployment scripts (11) and all 11 earlier
-  update scripts (4.0.0_to_4.0.1 .. 4.1.5_to_4.1.6). Kept: `versions/4.1.6`,
-  `deployment/4.1.6`. (Git shows the 4.1.5 version and deployment files as renamed to
-  5.0.0, being similar enough.)
-- `CHANGELOG.md` has a 5.0.0 entry; `lib/general.py` `DB_VERSION = [5, 0, 0]`.
-
-### Plugin code for the new id type
-
-- `lib/core.py`: `id_to_binary` -> `id_to_uuid` (also takes UUID strings, returns the
-  canonical string); `convert_ids_to_binary` / `try_convert_ids_to_binary` ->
-  `..._to_uuid`, renamed in every caller; `convert_id_to_string` returns the UUID string
-  (was `0x` + hex); `convert_id_to_base64_string` encodes the UUID's bytes; `NIL_UUID`;
-  `ConfigFile` drops a stored `current_service_id` that is no id instead of failing.
-- Constants as UUID strings: `lib/auth_apps.DEFAULT_ROLE_ID`, `lib/roles.FULL_ACCESS_ROLE_ID`,
-  `lib/users.MRS_VENDOR_ID`; `lib/services` uses `NIL_UUID` for "no current service" and
-  normalizes the stored current service id.
-- `lib/users.get_user_roles`: `(_binary ?)` -> `?`.
-- `interactive.py`: `_as_id()`; `resolve_service/schema/user/role/auth_app` test the value.
-- Tests: expected ids in UUID form (`test_auth_vendors`), `update_services` with an int
-  id now expects MariaDB 4078, a well-formed unknown UUID replaces `b"no_service"`.
-
 ## Files that matter
 
 - `init.py` -> the `mrs` global and its sub-objects; `script.py` -> `mrs.run.script`
@@ -293,9 +155,19 @@ Branch `wip/mrs_schema_improvements`, commit `58714069` (2026-10-08). Diffed aga
 
 ## Next steps
 
-1. Decide the plugin reduction with the user (section above), then remove the functions,
+1. Decide the plugin reduction with the user ([context/plugin-reduction.md](context/plugin-reduction.md)), then remove the functions,
    their tests and the Python REST SQL stack.
 2. Fix the `@DATATYPE` / `JSON SCHEMA` loss in `SHOW CREATE REST VIEW` (if the user agrees).
+- **Later (user's note):** a metadata schema version that renames the `router*` tables
+  (`router`, `router_status`, `router_session`, `router_general_log`, the `router_services`
+  view) to `daemon*`, with the daemon fork, the module's queries and
+  `required_router_version` following. In the same version the ids of these tables
+  (`router.id`, `router_status.id`, `router_session.id`, `router_general_log.id` and their
+  `router_id` / `router_session_id` references, INT UNSIGNED AUTO_INCREMENT today) become
+  `UUID` like every other id (`DEFAULT UUID_v7()`), so `DROP REST DAEMON` and
+  `SHOW REST SERVICES FOR DAEMON` will take a UUID instead of an integer (grammar:
+  `daemonId`, bison `daemon_id`), and the audit triggers' `CAST(LPAD(HEX(id)...) AS UUID)`
+  for router ids go away.
 3. Commit this session's work (plugin repo, and `wip/mrs_module` in mariadb-shell),
    separating it from the other session's parity changes as the user wants.
 4. Open a PR for `wip/mrs_schema_improvements` (title without `[bypass-ci]`: source changes).
@@ -361,25 +233,23 @@ Branch `wip/mrs_schema_improvements`, commit `58714069` (2026-10-08). Diffed aga
 
 ## Git state
 
-Checked at this checkpoint (2026-10-08, after the FORMAT=JSON work):
+Checked at this checkpoint (2026-10-08), before its commit:
 
 ```text
 $ git -C mrs_plugin branch --show-current
-wip/mrs_schema_improvements   (pushed, up to date with origin; no PR yet)
+wip/mrs_schema_improvements   (tracks origin; no PR yet)
 
-$ git -C mrs_plugin status --short   (mrs_plugin part; summarized)
- M .claude/PROJECT_CONTEXT.md, script.py, services.py, package.json
+$ git -C mrs_plugin status --short   (mrs_plugin part; committed with this checkpoint)
+ M .claude/PROJECT_CONTEXT.md
+?? .claude/context/{plugin-reduction,metadata-schema-5.0.0}.md (split out of it)
+ M docs/sections/sql/{Drop,UseAndShow}.md, docs/sql.html
  M grammar/MRSLexer.g4, grammar/MRSParser.g4, grammar/test/grammar_test.sql
- M lib/MrsDdlExecutor.py, lib/MrsDdlListener.py, lib/mrs_parser/* (regenerated)
- M scripts/generate_mrs_parser.sh, scripts/run_grammar_test.sh, scripts/update_grammar_docs.py
- D scripts/fix_rrd_svg_files.sh (staged)
-?? scripts/generate_rrd_svg_files.py
- M docs/README.md, docs/sql.html, docs/sections/sql/{Alter,ConfigureAndCreate,Dump,Introduction,UseAndShow}.md
- M/D/?? docs/images/sql/*.svg (25 modified, 12 deleted, 6 new incl. formatClause,
-        showRestColumnsStatement, showRestUsersStatement, showRestAuthVendorsStatement)
+ M lib/mrs_parser/* (regenerated)
+ M/?? docs/images/sql/*.svg (3 modified; new dropRestDaemonStatement, showRestDaemonsStatement, daemonId)
 ```
 
-- Outside mrs_plugin the tree also has uncommitted changes of other sessions
-  (`code_ext`, `mcp_plugin`, `msm_plugin` context files, `mcp_plugin/run_tests.py`,
-  `mcp_plugin/tests/unit/helpers.py`).
-- Commits on top of `main`: `863f536e`, `da8fa01d`, `8e3d70c9`, `d1b5f1ee`.
+- Last pushed commit: `71651e6f`. Commits on top of `main`: `863f536e`, `da8fa01d`,
+  `8e3d70c9`, `d1b5f1ee`, `71651e6f`, plus this checkpoint's commit.
+- Outside mrs_plugin the tree has uncommitted changes of other sessions that are NOT
+  committed with it (`code_ext`, `mcp_plugin`, `msm_plugin` context files,
+  `mcp_plugin/run_tests.py`, `mcp_plugin/tests/unit/helpers.py`).

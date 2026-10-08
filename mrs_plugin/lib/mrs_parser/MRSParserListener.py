@@ -810,6 +810,18 @@ class MRSParserListener(ParseTreeListener):
     def exitDropRestRoleStatement(self, ctx: MRSParser.DropRestRoleStatementContext):
         pass
 
+    # Enter a parse tree produced by MRSParser#dropRestDaemonStatement.
+    def enterDropRestDaemonStatement(
+        self, ctx: MRSParser.DropRestDaemonStatementContext
+    ):
+        pass
+
+    # Exit a parse tree produced by MRSParser#dropRestDaemonStatement.
+    def exitDropRestDaemonStatement(
+        self, ctx: MRSParser.DropRestDaemonStatementContext
+    ):
+        pass
+
     # Enter a parse tree produced by MRSParser#grantRestPrivilegeStatement.
     def enterGrantRestPrivilegeStatement(
         self, ctx: MRSParser.GrantRestPrivilegeStatementContext
@@ -911,6 +923,18 @@ class MRSParserListener(ParseTreeListener):
     # Exit a parse tree produced by MRSParser#showRestServicesStatement.
     def exitShowRestServicesStatement(
         self, ctx: MRSParser.ShowRestServicesStatementContext
+    ):
+        pass
+
+    # Enter a parse tree produced by MRSParser#showRestDaemonsStatement.
+    def enterShowRestDaemonsStatement(
+        self, ctx: MRSParser.ShowRestDaemonsStatementContext
+    ):
+        pass
+
+    # Exit a parse tree produced by MRSParser#showRestDaemonsStatement.
+    def exitShowRestDaemonsStatement(
+        self, ctx: MRSParser.ShowRestDaemonsStatementContext
     ):
         pass
 
@@ -1196,6 +1220,14 @@ class MRSParserListener(ParseTreeListener):
     def exitLoadRestServiceStatement(
         self, ctx: MRSParser.LoadRestServiceStatementContext
     ):
+        pass
+
+    # Enter a parse tree produced by MRSParser#daemonId.
+    def enterDaemonId(self, ctx: MRSParser.DaemonIdContext):
+        pass
+
+    # Exit a parse tree produced by MRSParser#daemonId.
+    def exitDaemonId(self, ctx: MRSParser.DaemonIdContext):
         pass
 
     # Enter a parse tree produced by MRSParser#serviceRequestPath.
