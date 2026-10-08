@@ -40,40 +40,12 @@ END%%
 -- CREATE FUNCTIONs
 -- -----------------------------------------------------------------------------
 
-DROP FUNCTION IF EXISTS `UUID_TO_BIN_SWAP`%%
-CREATE FUNCTION UUID_TO_BIN_SWAP(_uuid CHAR(36)) RETURNS BINARY(16) SQL SECURITY INVOKER DETERMINISTIC NO SQL
-BEGIN
-    RETURN UNHEX(CONCAT(
-            SUBSTR(_uuid, 15, 4),
-            SUBSTR(_uuid, 10, 4),
-            SUBSTR(_uuid,  1, 8),
-            SUBSTR(_uuid, 20, 4),
-            SUBSTR(_uuid, 25) ));
-END%%
-
-DROP FUNCTION IF EXISTS `BIN_TO_UUID_SWAP`%%
-CREATE FUNCTION BIN_TO_UUID_SWAP(_bin BINARY(16)) RETURNS CHAR(36) SQL SECURITY INVOKER DETERMINISTIC NO SQL
-BEGIN
-    RETURN LCASE(CONCAT_WS('-',
-            HEX(SUBSTR(_bin,  5, 4)),
-            HEX(SUBSTR(_bin,  3, 2)),
-            HEX(SUBSTR(_bin,  1, 2)),
-            HEX(SUBSTR(_bin,  9, 2)),
-            HEX(SUBSTR(_bin, 11))
-                 ));
-END%%
-
 DROP FUNCTION IF EXISTS `get_sequence_id`%%
-CREATE FUNCTION `get_sequence_id`() RETURNS BINARY(16) SQL SECURITY INVOKER NOT DETERMINISTIC NO SQL
+CREATE FUNCTION `get_sequence_id`() RETURNS UUID SQL SECURITY INVOKER NOT DETERMINISTIC NO SQL
 BEGIN
-    DECLARE result BINARY(16);
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-        SET result = UUID_TO_BIN_SWAP(UUID());
-    END;
-
-    SET result = UUID_TO_BIN(UUID(), 1);
-    RETURN result;
+    -- Time-ordered, like the UUID_v7() DEFAULT of the id columns, so new rows
+    -- append to the primary key index.
+    RETURN UUID_v7();
 END%%
 
 DROP FUNCTION IF EXISTS `valid_request_path`%%
@@ -630,10 +602,10 @@ END%%
 
 
 DROP PROCEDURE IF EXISTS `sdk_service_data`%%
-CREATE PROCEDURE `sdk_service_data`(IN service_id BINARY(16))
+CREATE PROCEDURE `sdk_service_data`(IN service_id UUID)
 BEGIN
     DECLARE service_res JSON;
-    DECLARE schema_id BINARY(16);
+    DECLARE schema_id UUID;
     DECLARE schema_res JSON;
 
     -- Get all db_schemas of the given service, fetch the id to do the nested SELECTs and
@@ -684,7 +656,7 @@ BEGIN
         ELSE schema_block: BEGIN
             -- Get all db_objects of the given db_schema, fetch the id to do the nested SELECTs and
             -- the data as JSON
-            DECLARE db_object_id BINARY(16);
+            DECLARE db_object_id UUID;
             DECLARE db_object_res JSON;
             DECLARE db_object_loop_done TINYINT DEFAULT FALSE;
             DECLARE db_object_cursor CURSOR FOR
@@ -715,7 +687,7 @@ BEGIN
                 IF db_object_loop_done THEN
                     LEAVE db_object_loop;
                 ELSE db_object_block: BEGIN
-                    DECLARE object_id BINARY(16);
+                    DECLARE object_id UUID;
                     DECLARE object_res JSON;
                     DECLARE object_loop_done TINYINT DEFAULT FALSE;
                     DECLARE object_cursor CURSOR FOR
@@ -746,7 +718,7 @@ BEGIN
                         IF object_loop_done THEN
                             LEAVE object_loop;
                         ELSE object_block: BEGIN
-                            DECLARE field_id BINARY(16);
+                            DECLARE field_id UUID;
                             DECLARE field_res JSON;
                             DECLARE field_loop_done TINYINT DEFAULT FALSE;
                             DECLARE field_cursor CURSOR FOR

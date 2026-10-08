@@ -34,6 +34,7 @@ import json
 from enum import IntEnum
 import threading
 import base64
+import uuid
 from typing import Optional
 
 MRS_METADATA_LOCK_ERROR = "Failed to acquire MRS metadata lock. Please ensure no other metadata update is running, then try again."
@@ -52,7 +53,13 @@ class ConfigFile:
             with open(self._filename, "r") as f:
                 self._settings = json.load(f)
                 for item in self._settings.get("current_objects", []):
-                    convert_ids_to_binary(["current_service_id"], item)
+                    # Earlier versions stored the id in its '0x' form; a value
+                    # that is no id at all is dropped rather than failing
+                    # every later call.
+                    try:
+                        convert_ids_to_uuid(["current_service_id"], item)
+                    except RuntimeError:
+                        item["current_service_id"] = None
         except:
             pass
 
@@ -640,9 +647,9 @@ def check_mrs_object_name(session, db_schema_id, obj_id, obj_name):
             WHERE dbo.db_schema_id = ? AND UPPER(o.name) = UPPER(?) AND o.id <> ?
         """,
         [
-            id_to_binary(db_schema_id, "db_schema_id"),
+            id_to_uuid(db_schema_id, "db_schema_id"),
             obj_name,
-            id_to_binary(obj_id, "object.id"),
+            id_to_uuid(obj_id, "object.id"),
         ],
     )
 
@@ -718,11 +725,36 @@ def format_json_entry(key: str, value: dict, advance: int = 1):
     # return f"    {key} {js_indented[4:-1]}"
 
 
-def id_to_binary(id: str, context: str, allowNone=False):
+NIL_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def id_to_uuid(id, context: str, allowNone=False) -> str | None:
+    """Returns the canonical form of a REST object id.
+
+    The ids of the MRS metadata are UUIDs. Inside the plugin they are held in
+    the lower-case, hyphenated form MariaDB returns for a UUID column, which is
+    also what the SQL parameters are bound as. Accepted inputs:
+
+      - a UUID string, with or without hyphens
+      - the hexadecimal form of earlier metadata versions, '0x' followed by
+        32 hex digits
+      - the base64 form of the 16 id bytes, as the SDK config carries it
+      - the 16 raw bytes
+
+    Args:
+        id: The id in any of the accepted forms
+        context (str): What the id is, for the error message
+        allowNone (bool): Whether None is passed through
+
+    Returns:
+        The canonical UUID string, or None
+    """
     if allowNone and id is None:
         return None
     if isinstance(id, bytes):
-        return id
+        if len(id) != 16:
+            raise RuntimeError(f"The '{context}' has an invalid size.")
+        return str(uuid.UUID(bytes=id))
     elif isinstance(id, str):
         if id.startswith("0x"):
             try:
@@ -737,27 +769,31 @@ def id_to_binary(id: str, context: str, allowNone=False):
             except Exception:
                 raise RuntimeError(f"Invalid base64 string '{id}' for '{context}'.")
         else:
-            raise RuntimeError(f"Invalid id format '{id}' for '{context}'.")
+            try:
+                return str(uuid.UUID(id))
+            except ValueError:
+                raise RuntimeError(f"Invalid id format '{id}' for '{context}'.")
 
         if len(result) != 16:
             raise RuntimeError(f"The '{context}' has an invalid size.")
-        return result
+        return str(uuid.UUID(bytes=result))
 
     raise RuntimeError(f"Invalid id type for '{context}'.")
 
 
 def convert_id_to_base64_string(id) -> str:
-    return base64.b64encode(id).decode("ascii")
+    """Returns the base64 form of an id's 16 bytes, as the SDK config carries it."""
+    return base64.b64encode(uuid.UUID(id_to_uuid(id, "id")).bytes).decode("ascii")
 
 
-def convert_ids_to_binary(id_options, kwargs):
+def convert_ids_to_uuid(id_options, kwargs):
     for id_option in id_options:
         id = kwargs.get(id_option)
         if id is not None:
-            kwargs[id_option] = id_to_binary(id, id_option)
+            kwargs[id_option] = id_to_uuid(id, id_option)
 
 
-def try_convert_ids_to_binary(id_options, kwargs):
+def try_convert_ids_to_uuid(id_options, kwargs):
     """
     Try to convert the kwargs ID entries, but don't fail if it's an invalid ID type.
 
@@ -765,6 +801,7 @@ def try_convert_ids_to_binary(id_options, kwargs):
     An use case for this is when we want a parameter, for example 'service',
     that can be one of the following:
       - 'localhost@myService'
+      - '11ef8496-143c-fdec-969c-7413ea499d96'
       - '0x11EF8496143CFDEC969C7413EA499D96'
       - 'Ee+ElhQ8/eyWnHQT6kmdlg=='
     """
@@ -772,7 +809,7 @@ def try_convert_ids_to_binary(id_options, kwargs):
         id = kwargs.get(id_option)
         if id is not None:
             try:
-                kwargs[id_option] = id_to_binary(id, id_option)
+                kwargs[id_option] = id_to_uuid(id, id_option)
             except RuntimeError as e:
                 if str(e) in [
                     f"Invalid id type for '{id_option}'.",
@@ -783,7 +820,8 @@ def try_convert_ids_to_binary(id_options, kwargs):
 
 
 def convert_id_to_string(id) -> str:
-    return f"0x{id.hex()}"
+    """Returns the canonical UUID string of an id, whatever form it came in."""
+    return id_to_uuid(id, "id")
 
 
 def convert_dict_to_json_string(dic) -> str:

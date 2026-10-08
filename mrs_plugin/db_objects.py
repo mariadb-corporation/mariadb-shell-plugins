@@ -89,7 +89,7 @@ def resolve_db_object_ids(
 
 
 def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_binary(["service_id", "schema_id", "db_object_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id", "db_object_id"], kwargs)
     db_object_id = kwargs.get("db_object_id")
     schema_id = kwargs.get("schema_id")
     service_id = kwargs.get("service_id")
@@ -145,7 +145,7 @@ def add_db_object(**kwargs):
     Returns:
         None
     """
-    lib.core.convert_ids_to_binary(["schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["schema_id"], kwargs)
 
     if kwargs.get("request_path") is not None:
         lib.core.Validations.request_path(kwargs.get("request_path"))
@@ -408,7 +408,7 @@ def get_db_object(request_path=None, db_object_name=None, **kwargs):
     Returns:
         The db_object as dict
     """
-    lib.core.convert_ids_to_binary(["schema_id", "db_object_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["schema_id", "db_object_id"], kwargs)
 
     if request_path is not None:
         lib.core.Validations.request_path(request_path)
@@ -518,7 +518,7 @@ def get_db_objects(**kwargs):
     Returns:
         A list of dicts representing the db_objects of the schema
     """
-    lib.core.convert_ids_to_binary(["schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["schema_id"], kwargs)
 
     schema_id = kwargs.get("schema_id")
 
@@ -565,7 +565,7 @@ def get_db_object_parameters(request_path=None, **kwargs):
 
     db_object_id = kwargs.get("db_object_id")
     if db_object_id is not None:
-        db_object_id = lib.core.id_to_binary(db_object_id, "db_object_id")
+        db_object_id = lib.core.id_to_uuid(db_object_id, "db_object_id")
 
     db_schema_name = kwargs.get("db_schema_name")
     db_object_name = kwargs.get("db_object_name")
@@ -629,7 +629,7 @@ def set_request_path(db_object_id=None, request_path=None, **kwargs):
         None
     """
     if db_object_id is not None:
-        db_object_id = lib.core.id_to_binary(db_object_id, "db_object_id")
+        db_object_id = lib.core.id_to_uuid(db_object_id, "db_object_id")
 
     if request_path is not None:
         lib.core.Validations.request_path(request_path)
@@ -691,7 +691,7 @@ def enable_db_object(db_object_name=None, schema_id=None, **kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["schema_id", "db_object_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["schema_id", "db_object_id"], kwargs)
 
     kwargs["value"] = True
 
@@ -728,10 +728,10 @@ def disable_db_object(db_object_name=None, schema_id=None, **kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["db_object_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["db_object_id"], kwargs)
 
     if schema_id is not None:
-        schema_id = lib.core.id_to_binary(schema_id, "schema_id")
+        schema_id = lib.core.id_to_uuid(schema_id, "schema_id")
 
     kwargs["value"] = False
 
@@ -768,10 +768,10 @@ def delete_db_object(db_object_name=None, schema_id=None, **kwargs):
     Returns:
         True if the object was deleted.
     """
-    lib.core.convert_ids_to_binary(["db_object_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["db_object_id"], kwargs)
 
     if schema_id is not None:
-        schema_id = lib.core.id_to_binary(schema_id, "schema_id")
+        schema_id = lib.core.id_to_uuid(schema_id, "schema_id")
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
@@ -831,12 +831,12 @@ def update_db_object(**kwargs):
 
     # convert to python native types or default kwargs["value"] to {} of "values" is not supplied
     kwargs["value"] = lib.core.convert_json(kwargs.get("value", {}))
-    lib.core.convert_ids_to_binary(["db_schema_id"], kwargs["value"])
+    lib.core.convert_ids_to_uuid(["db_schema_id"], kwargs["value"])
 
     if kwargs.get("request_path") is not None:
         lib.core.Validations.request_path(kwargs["request_path"])
 
-    lib.core.convert_ids_to_binary(["schema_id", "db_object_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["schema_id", "db_object_id"], kwargs)
 
     schema_name = kwargs["value"].pop("schema_name", None)
 
@@ -928,9 +928,9 @@ def get_table_columns_with_references(
         The list of table columns and references
     """
     if db_object_id is not None:
-        db_object_id = lib.core.id_to_binary(db_object_id, "db_object_id")
+        db_object_id = lib.core.id_to_uuid(db_object_id, "db_object_id")
     if schema_id is not None:
-        schema_id = lib.core.id_to_binary(schema_id, "schema_id")
+        schema_id = lib.core.id_to_uuid(schema_id, "schema_id")
 
     if request_path is not None:
         lib.core.Validations.request_path(request_path)
@@ -982,7 +982,7 @@ def get_objects(db_object_id=None, **kwargs):
     if not db_object_id:
         raise Exception("You must supply the db_object_id.")
 
-    db_object_id = lib.core.id_to_binary(db_object_id, "db_object_id")
+    db_object_id = lib.core.id_to_uuid(db_object_id, "db_object_id")
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
@@ -1007,7 +1007,7 @@ def get_object_fields_with_references(object_id=None, **kwargs):
     if not object_id:
         raise Exception("You must supply the object_id.")
 
-    object_id = lib.core.id_to_binary(object_id, "object_id")
+    object_id = lib.core.id_to_uuid(object_id, "object_id")
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs

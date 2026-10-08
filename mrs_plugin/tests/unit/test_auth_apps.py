@@ -38,7 +38,7 @@ def test_verify_auth_vendors(phone_book, table_contents):
         {
             "comments": "Built-in user management of MRS",
             "enabled": 1,
-            "id": lib.core.id_to_binary("0x30000000000000000000000000000000", ""),
+            "id": lib.core.id_to_uuid("0x30000000000000000000000000000000", ""),
             "name": "MRS",
             "validation_url": None,
             "options": None,
@@ -46,7 +46,7 @@ def test_verify_auth_vendors(phone_book, table_contents):
         {
             "comments": "Provides basic authentication via MySQL Server accounts",
             "enabled": 1,
-            "id": lib.core.id_to_binary("0x31000000000000000000000000000000", ""),
+            "id": lib.core.id_to_uuid("0x31000000000000000000000000000000", ""),
             "name": "MySQL Internal",
             "validation_url": None,
             "options": None,
@@ -54,7 +54,7 @@ def test_verify_auth_vendors(phone_book, table_contents):
         {
             "comments": "Uses the Facebook Login OAuth2 service",
             "enabled": 1,
-            "id": lib.core.id_to_binary("0x32000000000000000000000000000000", ""),
+            "id": lib.core.id_to_uuid("0x32000000000000000000000000000000", ""),
             "name": "Facebook",
             "validation_url": None,
             "options": None,
@@ -62,13 +62,13 @@ def test_verify_auth_vendors(phone_book, table_contents):
         {
             "comments": "Uses the Google OAuth2 service",
             "enabled": 1,
-            "id": lib.core.id_to_binary("0x34000000000000000000000000000000", ""),
+            "id": lib.core.id_to_uuid("0x34000000000000000000000000000000", ""),
             "name": "Google",
             "validation_url": None,
             "options": None,
         },
         {
-            "id": lib.core.id_to_binary("0x35000000000000000000000000000000", ""),
+            "id": lib.core.id_to_uuid("0x35000000000000000000000000000000", ""),
             "name": "OCI OAuth2",
             "validation_url": None,
             "enabled": 1,
@@ -102,7 +102,7 @@ def test_add_auth_apps(phone_book, table_contents):
     assert auth_apps_table.get("id", result1["auth_app_id"]) == {
         "access_token": args["access_token"],
         "app_id": args["app_id"],
-        "auth_vendor_id": lib.core.id_to_binary(args["auth_vendor_id"], ""),
+        "auth_vendor_id": lib.core.id_to_uuid(args["auth_vendor_id"], ""),
         "default_role_id": lib.auth_apps.DEFAULT_ROLE_ID,
         "description": args["description"],
         "enabled": 1,
@@ -134,7 +134,7 @@ def test_add_auth_apps(phone_book, table_contents):
     assert auth_apps_table.get("id", result2["auth_app_id"]) == {
         "access_token": args["access_token"],
         "app_id": args["app_id"],
-        "auth_vendor_id": lib.core.id_to_binary(args["auth_vendor_id"], ""),
+        "auth_vendor_id": lib.core.id_to_uuid(args["auth_vendor_id"], ""),
         "default_role_id": lib.auth_apps.DEFAULT_ROLE_ID,
         "description": args["description"],
         "enabled": 1,
@@ -169,7 +169,7 @@ def test_get_auth_apps(phone_book):
     args1 = {
         "name": "Test Auth App",
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary(
+        "auth_vendor_id": lib.core.id_to_uuid(
             "0x31000000000000000000000000000000", "auth_vendor_id"
         ),
         "description": "Authentication via MySQL accounts",
@@ -184,7 +184,7 @@ def test_get_auth_apps(phone_book):
     args2 = {
         "name": "Test Auth App 2",
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary(
+        "auth_vendor_id": lib.core.id_to_uuid(
             "0x31000000000000000000000000000000", "auth_vendor_id"
         ),
         "description": "Authentication via MySQL accounts 2",
@@ -228,7 +228,7 @@ def test_update_auth_apps(phone_book, table_contents):
     args = {
         "name": "Test Auth App",
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary(
+        "auth_vendor_id": lib.core.id_to_uuid(
             "0x31000000000000000000000000000000", "auth_vendor_id"
         ),
         "description": "Authentication via MySQL accounts",
@@ -259,7 +259,7 @@ def test_update_auth_apps(phone_book, table_contents):
         assert auth_apps_table.get("id", args["app_id"]) == {
             "access_token": value["access_token"],
             "app_id": value["app_id"],
-            "auth_vendor_id": lib.core.id_to_binary(
+            "auth_vendor_id": lib.core.id_to_uuid(
                 "0x31000000000000000000000000000000", ""
             ),
             "default_role_id": value["default_role_id"],
@@ -297,7 +297,7 @@ GRANT REST ROLE `Full Access` ON ANY SERVICE TO `user1`@`MyAuthApp`
     auth_app = get_default_auth_app_init(
         name="MyAuthApp",
         url="/myAuthApp",
-        default_role_id=lib.core.id_to_binary(
+        default_role_id=lib.core.id_to_uuid(
             "0x31000000000000000000000000000000", "default_role_id"
         ),
         description="This is a comment",
@@ -325,7 +325,7 @@ GRANT REST ROLE `Full Access` ON ANY SERVICE TO `user1`@`MyAuthApp`
             lib.users.add_user_role(
                 session,
                 user_id,
-                lib.core.id_to_binary("0x31000000000000000000000000000000", "role_id"),
+                lib.core.id_to_uuid("0x31000000000000000000000000000000", "role_id"),
                 comments="Comment for user role",
             )
 

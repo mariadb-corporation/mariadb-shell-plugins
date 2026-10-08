@@ -26,40 +26,40 @@ from .... import lib
 from ..helpers import TableContents
 
 EXPECTED = {
-    "0x30000000000000000000000000000000": {
-        "id": lib.core.id_to_binary("0x30000000000000000000000000000000", ""),
+    "30000000-0000-0000-0000-000000000000": {
+        "id": lib.core.id_to_uuid("0x30000000000000000000000000000000", ""),
         "name": "MRS",
         "validation_url": None,
         "enabled": 1,
         "comments": "Built-in user management of MRS",
         "options": None,
     },
-    "0x31000000000000000000000000000000": {
-        "id": lib.core.id_to_binary("0x31000000000000000000000000000000", ""),
+    "31000000-0000-0000-0000-000000000000": {
+        "id": lib.core.id_to_uuid("0x31000000000000000000000000000000", ""),
         "name": "MySQL Internal",
         "validation_url": None,
         "enabled": 1,
         "comments": "Provides basic authentication via MySQL Server accounts",
         "options": None,
     },
-    "0x32000000000000000000000000000000": {
-        "id": lib.core.id_to_binary("0x32000000000000000000000000000000", ""),
+    "32000000-0000-0000-0000-000000000000": {
+        "id": lib.core.id_to_uuid("0x32000000000000000000000000000000", ""),
         "name": "Facebook",
         "validation_url": None,
         "enabled": 1,
         "comments": "Uses the Facebook Login OAuth2 service",
         "options": None,
     },
-    "0x34000000000000000000000000000000": {
-        "id": lib.core.id_to_binary("0x34000000000000000000000000000000", ""),
+    "34000000-0000-0000-0000-000000000000": {
+        "id": lib.core.id_to_uuid("0x34000000000000000000000000000000", ""),
         "name": "Google",
         "validation_url": None,
         "enabled": 1,
         "comments": "Uses the Google OAuth2 service",
         "options": None,
     },
-    "0x35000000000000000000000000000000": {
-        "id": lib.core.id_to_binary("0x35000000000000000000000000000000", ""),
+    "35000000-0000-0000-0000-000000000000": {
+        "id": lib.core.id_to_uuid("0x35000000000000000000000000000000", ""),
         "name": "OCI OAuth2",
         "validation_url": None,
         "enabled": 1,
@@ -75,7 +75,7 @@ def test_get_auth_vendor(phone_book, table_contents):
     auth_vendor_table: TableContents = table_contents("auth_vendor")
 
     for key, value in EXPECTED.items():
-        value["id"] = lib.core.id_to_binary(key, value["name"])
+        value["id"] = lib.core.id_to_uuid(key, value["name"])
 
         auth_vendor = lib.auth_apps.get_auth_vendor(session, value["id"])
 

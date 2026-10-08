@@ -42,7 +42,7 @@ def test_get_auth_app(phone_book, table_contents):
 
     new_auth_app_data = {
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary(
+        "auth_vendor_id": lib.core.id_to_uuid(
             "0x30000000000000000000000000000000", "auth_vendor_id"
         ),
         "name": "New Auth App",
@@ -85,7 +85,7 @@ def test_get_auth_apps(phone_book, table_contents):
 
     new_auth_app_data = {
         "service_id": phone_book["service_id"],
-        "auth_vendor_id": lib.core.id_to_binary(
+        "auth_vendor_id": lib.core.id_to_uuid(
             "0x30000000000000000000000000000000", "auth_vendor_id"
         ),
         "name": "New Auth App",

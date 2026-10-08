@@ -24,7 +24,7 @@
 from mrs_plugin.lib import core, services, users, roles
 
 MYSQL_AUTHENTICATION = 1
-DEFAULT_ROLE_ID = bytes.fromhex("31000000000000000000000000000000")
+DEFAULT_ROLE_ID = "31000000-0000-0000-0000-000000000000"
 
 
 def format_auth_app_listing(auth_apps, print_header=False):

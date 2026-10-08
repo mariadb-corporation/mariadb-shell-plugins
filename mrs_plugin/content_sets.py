@@ -168,7 +168,7 @@ def resolve_content_set_ids(**kwargs):
 
 
 def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_binary(["service_id", "content_set_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "content_set_id"], kwargs)
     service_id = kwargs.get("service_id")
     content_set_id = kwargs.get("content_set_id")
     allow_load_scripts = kwargs.get("allow_load_scripts", False)
@@ -209,7 +209,7 @@ def add_content_set(service_id=None, content_dir=None, **kwargs):
             number_of_files_uploaded
     """
     if service_id is not None:
-        service_id = lib.core.id_to_binary(service_id, "service_id")
+        service_id = lib.core.id_to_uuid(service_id, "service_id")
 
     request_path = kwargs.get("request_path")
     requires_auth = kwargs.get("requires_auth")
@@ -341,7 +341,7 @@ def get_content_sets(service_id=None, **kwargs):
         of dicts representing the content sets
     """
     if service_id is not None:
-        service_id = lib.core.id_to_binary(service_id, "service_id")
+        service_id = lib.core.id_to_uuid(service_id, "service_id")
 
     include_enable_state = kwargs.get("include_enable_state")
 
@@ -381,7 +381,7 @@ def get_content_set(**kwargs):
     Returns:
         The schema as dict or None on error in interactive mode
     """
-    lib.core.convert_ids_to_binary(["content_set_id", "service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["content_set_id", "service_id"], kwargs)
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
@@ -406,7 +406,7 @@ def enable_content_set(**kwargs):
         The result message as string
     """
 
-    lib.core.convert_ids_to_binary(["content_set_id", "service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["content_set_id", "service_id"], kwargs)
 
     kwargs["value"] = True
 
@@ -439,7 +439,7 @@ def disable_content_set(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["content_set_id", "service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["content_set_id", "service_id"], kwargs)
 
     kwargs["value"] = False
 
@@ -473,7 +473,7 @@ def delete_content_set(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["content_set_id", "service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["content_set_id", "service_id"], kwargs)
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
@@ -603,7 +603,7 @@ def update_scripts_from_content_set(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["content_set_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["content_set_id"], kwargs)
 
     language = kwargs.get("language")
     send_gui_message = kwargs.get("send_gui_message")

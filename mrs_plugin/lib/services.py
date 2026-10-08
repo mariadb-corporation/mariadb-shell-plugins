@@ -395,7 +395,7 @@ def query_services(
 
     current_service_id = get_current_service_id(session)
     if not current_service_id:
-        current_service_id = "0x00000000000000000000000000000000"
+        current_service_id = core.NIL_UUID
 
     wheres = []
     params = [current_service_id]
@@ -612,7 +612,12 @@ def get_current_service_id(session):
     if not connection_settings:
         return None
 
-    return connection_settings[0].get("current_service_id")
+    # Settings written by earlier versions hold the id in its '0x' form.
+    return core.id_to_uuid(
+        connection_settings[0].get("current_service_id"),
+        "current_service_id",
+        allowNone=True,
+    )
 
 
 def set_current_service_id(session, service_id: bytes):

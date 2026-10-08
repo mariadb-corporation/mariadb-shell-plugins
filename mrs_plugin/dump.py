@@ -46,7 +46,7 @@ def dump(path, **kwargs):
     """
     session = kwargs.get("session", None)
 
-    lib.core.convert_ids_to_binary(["service_id", "schema_id", "object_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id", "object_id"], kwargs)
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, session=session
@@ -161,7 +161,7 @@ def load(path, **kwargs):
     session = kwargs.get("session", None)
     reuse_ids = kwargs.get("reuse_ids", True)
 
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, session=session

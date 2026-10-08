@@ -384,12 +384,16 @@ END%%"""
         old_row_id = "NULL,"
         new_row_id = "NULL,"
         if len(table.primaryKey.columns) >= 1:
-            old_row_id = (
-                "OLD." + table.primaryKey.columns[0].referencedColumn.name + ","
-            )
-            new_row_id = (
-                "NEW." + table.primaryKey.columns[0].referencedColumn.name + ","
-            )
+            pk_column = table.primaryKey.columns[0].referencedColumn
+            if pk_column.formattedRawType.upper() == UUID_TYPE_NAME:
+                old_row_id = f"OLD.{pk_column.name},"
+                new_row_id = f"NEW.{pk_column.name},"
+            else:
+                # audit_log.old_row_id/new_row_id are UUIDs; an integer key
+                # (config) is stored as a UUID with the number in its low
+                # bytes, so MariaDB does not reject the value.
+                old_row_id = f"CAST(LPAD(HEX(OLD.{pk_column.name}), 32, '0') AS UUID),"
+                new_row_id = f"CAST(LPAD(HEX(NEW.{pk_column.name}), 32, '0') AS UUID),"
 
         insert_trigger += (
             new_rows
@@ -456,4 +460,133 @@ END%%"""
         with open(file_path, "w") as out:
             out.write(sql_script)
 
+    return 0
+
+
+# ----------------------------------------------------------------------------
+# UUID columns
+#
+# MariaDB has a native UUID type, which Workbench's table editor refuses: it
+# checks a typed-in type against its built-in MySQL grammar, and that grammar
+# has no UUID. Workbench does, however, emit a *user datatype* by its SQL
+# definition when forward engineering, and it shows the type by its name in
+# the editor and the diagrams. So the model carries a user datatype named UUID
+# whose definition is "UUID", and this plugin assigns it to the id columns -
+# the only route, since the type cannot be typed in by hand.
+
+UUID_TYPE_NAME = "UUID"
+# The default of every single-column primary key: time-ordered UUIDs, so the
+# keys stay index-friendly.
+UUID_DEFAULT = "UUID_v7()"
+
+
+def get_uuid_user_type(catalog):
+    """Returns the model's UUID user datatype, creating it if it is missing.
+
+    The actual type is BINARY, which is what the rest of Workbench falls back
+    to where it needs a built-in type (the type group, the icon); the SQL
+    definition is what forward engineering emits.
+
+    Args:
+        catalog: The model's db.Catalog
+
+    Returns:
+        The db.UserDatatype named UUID
+    """
+    for user_type in catalog.userDatatypes:
+        if user_type.name.upper() == UUID_TYPE_NAME:
+            return user_type
+
+    binary = next(t for t in catalog.simpleDatatypes if t.name == "BINARY")
+    user_type = grt.classes.db_UserDatatype()
+    user_type.name = UUID_TYPE_NAME
+    user_type.sqlDefinition = UUID_TYPE_NAME
+    user_type.actualType = binary
+    user_type.owner = catalog
+    catalog.userDatatypes.append(user_type)
+    return user_type
+
+
+def apply_uuid_type(catalog):
+    """Switches every BINARY(16) column of the model to the UUID user type.
+
+    Every BINARY(16) column in this model is an id or a foreign key to one.
+    A column that is a table's whole primary key also gets UUID_v7() as its
+    default, unless it has a default already; foreign key columns get none.
+    Columns already on the UUID type are left alone, so the plugin can be run
+    again after new columns were added.
+
+    Args:
+        catalog: The model's db.Catalog
+
+    Returns:
+        A (converted, defaulted) tuple with the number of columns switched to
+        UUID and the number that received the default
+    """
+    uuid_type = get_uuid_user_type(catalog)
+    converted = 0
+    defaulted = 0
+
+    for schema in catalog.schemata:
+        for table in schema.tables:
+            pk_column_ids = []
+            if table.primaryKey:
+                pk_column_ids = [
+                    index_column.referencedColumn.__id__
+                    for index_column in table.primaryKey.columns
+                ]
+
+            for column in table.columns:
+                is_binary16 = (
+                    column.simpleType is not None
+                    and column.simpleType.name == "BINARY"
+                    and column.length == 16
+                )
+                is_uuid = (
+                    column.userType is not None
+                    and column.userType.__id__ == uuid_type.__id__
+                )
+                if not (is_binary16 or is_uuid):
+                    continue
+
+                if is_binary16:
+                    column.userType = uuid_type
+                    column.simpleType = None
+                    # A UUID takes no length; one left over from BINARY(16)
+                    # would be emitted as UUID(16).
+                    column.length = -1
+                    column.precision = -1
+                    column.scale = -1
+                    converted += 1
+
+                is_whole_primary_key = (
+                    len(pk_column_ids) == 1 and column.__id__ == pk_column_ids[0]
+                )
+                if is_whole_primary_key and not column.defaultValue:
+                    column.defaultValue = UUID_DEFAULT
+                    defaulted += 1
+
+    return converted, defaulted
+
+
+# This plugin takes no arguments
+@ModuleInfo.plugin(
+    "UUID_Columns",
+    caption="Use the UUID type for all BINARY(16) id columns",
+    description=(
+        "Switches every BINARY(16) column of the model to a UUID user datatype "
+        "(created if missing) and gives single-column primary keys the "
+        "default UUID_v7()"
+    ),
+    input=[],
+    pluginMenu="Utilities",
+)
+@ModuleInfo.export(grt.INT)
+def UUID_Columns():
+    catalog = grt.root.wb.doc.physicalModels[0].catalog
+    converted, defaulted = apply_uuid_type(catalog)
+    print(
+        f"{converted} BINARY(16) column(s) switched to {UUID_TYPE_NAME}, "
+        f"{defaulted} primary key column(s) given the default {UUID_DEFAULT}."
+    )
     return 0

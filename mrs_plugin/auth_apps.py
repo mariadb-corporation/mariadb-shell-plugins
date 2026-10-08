@@ -39,8 +39,8 @@ import sys
 
 
 def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_binary(["service_id", "auth_app_id"], kwargs)
-    lib.core.try_convert_ids_to_binary(["service", "schema"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "auth_app_id"], kwargs)
+    lib.core.try_convert_ids_to_uuid(["service", "schema"], kwargs)
 
     include_all_objects = kwargs.get("include_all_objects", False)
     auth_app_query = auth_app_query_selection(**kwargs)
@@ -108,8 +108,8 @@ def add_auth_app(app_name=None, service_id=None, **kwargs):
         A dict with content_set_id and number_of_files_uploaded
     """
     if service_id:
-        service_id = lib.core.id_to_binary(service_id, "service_id")
-    lib.core.convert_ids_to_binary(["auth_vendor_id", "default_role_id"], kwargs)
+        service_id = lib.core.id_to_uuid(service_id, "service_id")
+    lib.core.convert_ids_to_uuid(["auth_vendor_id", "default_role_id"], kwargs)
 
     auth_vendor_id = kwargs.get("auth_vendor_id")
     default_role_id = kwargs.get("default_role_id")
@@ -280,7 +280,7 @@ def get_auth_app(app_id=None, session=None):
         of dicts representing the authentication app
     """
     if app_id is not None:
-        app_id = lib.core.id_to_binary(app_id, "app_id")
+        app_id = lib.core.id_to_uuid(app_id, "app_id")
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, session=session
@@ -312,7 +312,7 @@ def get_auth_apps(service_id=None, **kwargs):
         of dicts representing the authentication apps
     """
     if service_id is not None:
-        service_id = lib.core.id_to_binary(service_id, "service_id")
+        service_id = lib.core.id_to_uuid(service_id, "service_id")
 
     include_enable_state = kwargs.get("include_enable_state")
 
@@ -345,7 +345,7 @@ def delete_auth_app(**kwargs):
     Returns:
         None
     """
-    lib.core.convert_ids_to_binary(["app_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["app_id"], kwargs)
     app_id = kwargs.get("app_id")
 
     with lib.core.MrsDbSession(
@@ -385,8 +385,8 @@ def update_auth_app(**kwargs):
     Returns:
         A dict with content_set_id and number_of_files_uploaded
     """
-    lib.core.convert_ids_to_binary(["app_id", "service_id"], kwargs)
-    lib.core.convert_ids_to_binary(
+    lib.core.convert_ids_to_uuid(["app_id", "service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(
         ["default_role_id", "auth_vendor_id"], kwargs["value"]
     )
 
@@ -533,8 +533,8 @@ def link_auth_app(app_id, service_id, **kwargs):
     ) as session:
         lib.auth_apps.link_auth_app(
             session=session,
-            auth_app_id=lib.core.id_to_binary(app_id, "app_id"),
-            service_id=lib.core.id_to_binary(service_id, "service_id"),
+            auth_app_id=lib.core.id_to_uuid(app_id, "app_id"),
+            service_id=lib.core.id_to_uuid(service_id, "service_id"),
         )
 
 
@@ -559,8 +559,8 @@ def unlink_auth_app(app_id, service_id, **kwargs):
     ) as session:
         lib.auth_apps.unlink_auth_app(
             session=session,
-            auth_app_id=lib.core.id_to_binary(app_id, "app_id"),
-            service_id=lib.core.id_to_binary(service_id, "service_id"),
+            auth_app_id=lib.core.id_to_uuid(app_id, "app_id"),
+            service_id=lib.core.id_to_uuid(service_id, "service_id"),
         )
 
 
@@ -576,7 +576,7 @@ def get_auth_app_services(app_id=None, session=None):
         A list of dicts representing the services
     """
     if app_id is not None:
-        app_id = lib.core.id_to_binary(app_id, "app_id")
+        app_id = lib.core.id_to_uuid(app_id, "app_id")
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, session=session

@@ -665,7 +665,7 @@ def set_objects(session, db_object_id, objects):
 
     sql = "DELETE FROM mysql_rest_service_metadata.object WHERE db_object_id = ?"
     core.MrsDbExec(sql).exec(
-        session, [core.id_to_binary(db_object_id, "db_object_id")]
+        session, [core.id_to_uuid(db_object_id, "db_object_id")]
     ).items
 
     for obj in objects:
@@ -674,8 +674,8 @@ def set_objects(session, db_object_id, objects):
 
 def set_object_fields_with_references(session, db_object_id, obj):
     values = {
-        "id": core.id_to_binary(obj.get("id"), "object.id"),
-        "db_object_id": core.id_to_binary(db_object_id, "db_object_id"),
+        "id": core.id_to_uuid(obj.get("id"), "object.id"),
+        "db_object_id": core.id_to_uuid(db_object_id, "db_object_id"),
         "name": obj.get("name"),
         "kind": obj.get("kind", "RESULT"),
         "position": obj.get("position"),
@@ -698,7 +698,7 @@ def set_object_fields_with_references(session, db_object_id, obj):
         values["options"] = options
         row_ownership_field_id = obj.get("row_ownership_field_id", None)
         if row_ownership_field_id is not None:
-            values["row_ownership_field_id"] = core.id_to_binary(
+            values["row_ownership_field_id"] = core.id_to_uuid(
                 row_ownership_field_id, "row_ownership_field_id"
             )
 
@@ -745,8 +745,8 @@ def set_object_fields_with_references(session, db_object_id, obj):
                 )
 
             values = {
-                "id": core.id_to_binary(obj_ref.get("id"), "objectReference.id"),
-                "reduce_to_value_of_field_id": core.id_to_binary(
+                "id": core.id_to_uuid(obj_ref.get("id"), "objectReference.id"),
+                "reduce_to_value_of_field_id": core.id_to_uuid(
                     obj_ref.get("reduce_to_value_of_field_id"),
                     "objectReference.reduce_to_value_of_field_id",
                     True,
@@ -778,7 +778,7 @@ def set_object_fields_with_references(session, db_object_id, obj):
                 values["options"] = options
                 row_ownership_field_id = obj_ref.get("row_ownership_field_id", None)
                 if row_ownership_field_id is not None:
-                    values["row_ownership_field_id"] = core.id_to_binary(
+                    values["row_ownership_field_id"] = core.id_to_uuid(
                         row_ownership_field_id, "objectReference.row_ownership_field_id"
                     )
 
@@ -793,14 +793,14 @@ def set_object_fields_with_references(session, db_object_id, obj):
             inserted_field_ids.append(field.get("id"))
 
             values = {
-                "id": core.id_to_binary(field.get("id"), "field.id"),
-                "object_id": core.id_to_binary(
+                "id": core.id_to_uuid(field.get("id"), "field.id"),
+                "object_id": core.id_to_uuid(
                     field.get("object_id"), "field.object_id"
                 ),
-                "parent_reference_id": core.id_to_binary(
+                "parent_reference_id": core.id_to_uuid(
                     field.get("parent_reference_id"), "field.parent_reference_id", True
                 ),
-                "represents_reference_id": core.id_to_binary(
+                "represents_reference_id": core.id_to_uuid(
                     field.get("represents_reference_id"),
                     "field.represents_reference_id",
                     True,

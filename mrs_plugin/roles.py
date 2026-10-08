@@ -33,8 +33,8 @@ from .interactive import (
 
 
 def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_binary(["role_id"], kwargs)
-    lib.core.try_convert_ids_to_binary(["role"], kwargs)
+    lib.core.convert_ids_to_uuid(["role_id"], kwargs)
+    lib.core.try_convert_ids_to_uuid(["role"], kwargs)
 
     role_query = role_query_selection(**kwargs)
 
@@ -61,7 +61,7 @@ def get_roles(service_id=None, session=None):
         The list of roles for the specified service
     """
     if service_id:
-        service_id = lib.core.id_to_binary(service_id, "service_id")
+        service_id = lib.core.id_to_uuid(service_id, "service_id")
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, session=session
@@ -83,7 +83,7 @@ def get_role(role_id=None, session=None, specific_to_service_id=None, caption=No
         The role with the given id or caption.
     """
     if specific_to_service_id:
-        specific_to_service_id = lib.core.id_to_binary(
+        specific_to_service_id = lib.core.id_to_uuid(
             specific_to_service_id, "specific_to_service_id"
         )
 
@@ -115,7 +115,7 @@ def add_role(caption, **kwargs):
     Returns:
         None
     """
-    lib.core.convert_ids_to_binary(
+    lib.core.convert_ids_to_uuid(
         ["derived_from_role_id", "specific_to_service_id"], kwargs
     )
 
@@ -154,7 +154,7 @@ def add_role_privilege(role_id=None, session=None, operations=[], **kwargs):
     if not operations:
         return
 
-    lib.core.convert_ids_to_binary(["role_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["role_id"], kwargs)
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
@@ -189,7 +189,7 @@ def delete_role_privilege(role_id=None, session=None, operations=None, **kwargs)
         object (str): The object path or pattern to revoke privileges from.
     """
 
-    lib.core.convert_ids_to_binary(["role_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["role_id"], kwargs)
 
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs

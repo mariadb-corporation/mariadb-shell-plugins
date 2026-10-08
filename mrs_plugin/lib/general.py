@@ -29,7 +29,7 @@ import mysqlsh
 # Define plugin version
 VERSION = "26.10.2"
 
-DB_VERSION = [4, 1, 6]
+DB_VERSION = [5, 0, 0]
 REQUIRED_ROUTER_VERSION = [8, 1, 0]
 SUPPORTED_MAJOR_VERSION = 3
 

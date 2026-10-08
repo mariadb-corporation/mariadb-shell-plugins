@@ -18,7 +18,7 @@ BEGIN
             "id", NEW.id,
             "options", NEW.options),
         NULL,
-        UNHEX(LPAD(CONV(NEW.id, 10, 16), 32, '0')),
+        CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
         CURRENT_USER(),
         CURRENT_TIMESTAMP
     );
@@ -39,8 +39,8 @@ BEGIN
             JSON_OBJECT(
                 "id", NEW.id,
                 "options", NEW.options),
-            UNHEX(LPAD(CONV(OLD.id, 10, 16), 32, '0')),
-            UNHEX(LPAD(CONV(NEW.id, 10, 16), 32, '0')),
+            CAST(LPAD(HEX(OLD.id), 32, '0') AS UUID),
+            CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
             CURRENT_USER(),
             CURRENT_TIMESTAMP
         );
@@ -240,7 +240,7 @@ BEGIN
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This email has already been used.";
     END IF;
     IF (NEW.auth_string IS NULL AND
-        (SELECT a.auth_vendor_id FROM `mysql_rest_service_metadata`.`auth_app` AS a WHERE a.id = NEW.auth_app_id) = 0x30000000000000000000000000000000)
+        (SELECT a.auth_vendor_id FROM `mysql_rest_service_metadata`.`auth_app` AS a WHERE a.id = NEW.auth_app_id) = '30000000-0000-0000-0000-000000000000')
     THEN
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "A this account requires a password to be set.";
     END IF;
@@ -263,7 +263,7 @@ BEGIN
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This email has already been used.";
     END IF;
     IF (NEW.auth_string IS NULL AND
-        (SELECT a.auth_vendor_id FROM `mysql_rest_service_metadata`.`auth_app` AS a WHERE a.id = NEW.auth_app_id) = 0x30000000000000000000000000000000)
+        (SELECT a.auth_vendor_id FROM `mysql_rest_service_metadata`.`auth_app` AS a WHERE a.id = NEW.auth_app_id) = '30000000-0000-0000-0000-000000000000')
     THEN
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "A this account requires a password to be set.";
     END IF;
