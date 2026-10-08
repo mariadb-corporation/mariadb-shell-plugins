@@ -68,27 +68,41 @@ def save_server_state(session):
 
 @pytest.fixture(scope="module")
 def module_fixture(phone_book):
+    """Deploys the second sandbox the upgrade test installs old metadata on.
+
+    It gets a free port of its own (MYSQL_PORT1 names one instead) and is
+    stopped and deleted afterwards, also when a test fails.
+
+    The session to it is made the shell's global session for the module and
+    the suite's session put back afterwards. It is opened with open_session
+    rather than shell.connect, which would close the suite's session for good
+    and leave every later test "Not connected".
+    """
     conn = helpers.get_connection_data(instance=1)
-    try:
-        mysqlsh.globals.sandbox.kill(
-            conn["port"], {"sandboxDir": phone_book["temp_dir"]}
-        )
-    except:
-        pass
+    port = int(conn["port"])
+    sandbox_dir = phone_book["temp_dir"]
 
     mysqlsh.globals.sandbox.deploy(
-        conn["port"],
-        {"password": conn["password"], "sandboxDir": phone_book["temp_dir"]},
+        port,
+        {"password": conn["password"], "sandboxDir": sandbox_dir, "ssl": False},
     )
-    mysqlsh.globals.shell.connect(conn)
-    yield conn
-    mysqlsh.globals.shell.set_session(phone_book["session"])
-    mysqlsh.globals.sandbox.stop(
-        conn["port"], {"sandboxDir": phone_book["temp_dir"]}
-    )
-    mysqlsh.globals.sandbox.delete(
-        conn["port"], {"sandboxDir": phone_book["temp_dir"]}
-    )
+    session = None
+    try:
+        session = mysqlsh.globals.shell.open_session(conn)
+        mysqlsh.globals.shell.set_session(session)
+        yield conn
+    finally:
+        mysqlsh.globals.shell.set_session(phone_book["session"])
+        if session is not None:
+            session.close()
+        for operation in (
+            mysqlsh.globals.sandbox.stop,
+            mysqlsh.globals.sandbox.delete,
+        ):
+            try:
+                operation(port, {"sandboxDir": sandbox_dir})
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
 
 
 def snapshot_server(session, orig_users, orig_schemas):

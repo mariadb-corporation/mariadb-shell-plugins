@@ -643,6 +643,42 @@ def test_sql_service_add_authapp(phone_book):
     session.run_sql("drop rest service /myTestSvc")
 
 
+def test_sql_clone_service_with_developers(phone_book):
+    """CLONE REST SERVICE must resolve a developer-prefixed service and may
+    clone it to a path without developers.
+
+    Two services share the request path here, so a lookup by path alone finds
+    none; and the clone has no developers, which the service table's check
+    constraint only accepts as a NULL in_development.
+    """
+    session = phone_book["session"]
+
+    session.run_sql("create or replace rest service mike@/cloneSource")
+    session.run_sql("create or replace rest service miguel@/cloneSource")
+    session.run_sql(
+        "create or replace rest schema /cloneSchema on service mike@/cloneSource from `PhoneBook`"
+    )
+
+    try:
+        session.run_sql(
+            "clone rest service mike@/cloneSource new request path /clonedService"
+        )
+
+        clone = lib.services.get_service(session, url_context_root="/clonedService")
+        assert clone is not None
+        assert clone["in_development"] is None
+        assert clone["published"] == 0
+
+        cloned_schemas = lib.schemas.get_schemas(session, clone["id"])
+        assert [schema["request_path"] for schema in cloned_schemas] == [
+            "/cloneSchema"
+        ]
+    finally:
+        session.run_sql("drop rest service if exists /clonedService")
+        session.run_sql("drop rest service if exists mike@/cloneSource")
+        session.run_sql("drop rest service if exists miguel@/cloneSource")
+
+
 def test_service_as_project(phone_book, table_contents):
     session = phone_book["session"]
 

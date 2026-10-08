@@ -22,6 +22,11 @@ After the dependencies are installed, the test script can execute as follows:
 $ mariadb-shell --py -f run_tests.py
 ```
 
+The suite deploys its own MariaDB sandbox on a free port and removes it again
+at the end, so no database server needs to be set up; a `mariadbd` binary has
+to be on the `PATH`, though. The same holds for the grammar test,
+`scripts/run_grammar_test.sh`.
+
 To run a single test or test suite, the script provides a `-k` option that allows to specify a test name or a file name.
 
 ```sh
