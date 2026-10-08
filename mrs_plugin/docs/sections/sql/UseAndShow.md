@@ -95,14 +95,17 @@ SHOW REST STATUS;
 
 ## SHOW REST SERVICES
 
-The `SHOW REST SERVICES` statement lists all available REST services. With `FOR AUTH APP`, only the REST services the given REST auth app is linked to are listed.
+The `SHOW REST SERVICES` statement lists all available REST services. With `FOR AUTH APP`, only the REST services the given REST auth app is linked to are listed. With `FOR DAEMON`, only the REST services the given MariaDB REST Daemon instance serves are listed; [SHOW REST DAEMONS](#show-rest-daemons) lists the daemon ids.
 
 **_SYNTAX_**
 
 ```antlr
 showRestServicesStatement:
     SHOW REST SERVICES (
-        FOR AUTH APP authAppName
+        FOR (
+            AUTH APP authAppName
+            | DAEMON daemonId
+        )
     )?
 ;
 ```
@@ -122,6 +125,33 @@ The following example lists the REST services the REST auth app `MRS` is linked 
 
 ```sql
 SHOW REST SERVICES FOR AUTH APP "MRS";
+```
+
+## SHOW REST DAEMONS
+
+The `SHOW REST DAEMONS` statement lists the MariaDB REST Daemon instances that serve the REST services. Each instance registers itself in the REST metadata when it starts, and checks in regularly.
+
+**_SYNTAX_**
+
+```antlr
+showRestDaemonsStatement:
+    SHOW REST DAEMONS formatClause?
+;
+```
+
+showRestDaemonsStatement ::=
+![showRestDaemonsStatement](../../images/sql/showRestDaemonsStatement.svg "showRestDaemonsStatement")
+
+The result has one row per instance, with the columns `id`, `name`, `address`, `product_name`, `version`, `last_check_in`, `active` and `developer`. An instance is active when it has checked in within the last 10 seconds. `developer` is the developer an instance serves REST services in development for.
+
+With `FORMAT=JSON`, the result is a single JSON array of the instances, which also holds their `attributes` and `options` documents.
+
+**_Examples_**
+
+The following example lists the MariaDB REST Daemon instances.
+
+```sql
+SHOW REST DAEMONS;
 ```
 
 ## SHOW REST SCHEMAS

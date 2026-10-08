@@ -71,6 +71,7 @@ mrsStatement:
     | dropRestAuthAppStatement
     | dropRestUserStatement
     | dropRestRoleStatement
+    | dropRestDaemonStatement
     | dumpRestServiceStatement
     | grantRestRoleStatement
     | grantRestPrivilegeStatement
@@ -90,6 +91,7 @@ mrsStatement:
     | showRestAuthVendorsStatement
     | showRestUsersStatement
     | showRestColumnsStatement
+    | showRestDaemonsStatement
     | showRestRolesStatement
     | showRestGrantsStatement
     | showCreateRestServiceStatement
@@ -686,6 +688,10 @@ dropRestRoleStatement:
     DROP_SYMBOL REST_SYMBOL ROLE_SYMBOL (IF_SYMBOL EXISTS_SYMBOL)? roleName roleService?
 ;
 
+dropRestDaemonStatement:
+    DROP_SYMBOL REST_SYMBOL DAEMON_SYMBOL (IF_SYMBOL EXISTS_SYMBOL)? daemonId
+;
+
 // GRANT statements ===========================================================
 
 grantRestPrivilegeStatement:
@@ -753,8 +759,15 @@ showRestMetadataStatusStatement:
 
 showRestServicesStatement:
     SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL (
-        FOR_SYMBOL AUTH_SYMBOL APP_SYMBOL authAppName
+        FOR_SYMBOL (
+            AUTH_SYMBOL APP_SYMBOL authAppName
+            | DAEMON_SYMBOL daemonId
+        )
     )?
+;
+
+showRestDaemonsStatement:
+    SHOW_SYMBOL REST_SYMBOL DAEMONS_SYMBOL formatClause?
 ;
 
 showRestSchemasStatement:
@@ -920,6 +933,11 @@ loadRestServiceStatement:
 ;
 
 // Named identifiers ========================================================
+
+// The id of a MariaDB REST Daemon instance, as SHOW REST DAEMONS lists it
+daemonId:
+    INT_NUMBER
+;
 
 serviceRequestPath:
     serviceDevelopersIdentifier? requestPathIdentifier
@@ -1268,6 +1286,8 @@ identifierKeyword:
     FILES_SYMBOL
     | VENDORS_SYMBOL
     | COLUMNS_SYMBOL
+    | DAEMON_SYMBOL
+    | DAEMONS_SYMBOL
 ;
 
 identifierList: // ident_string_list in sql_yacc.yy.
