@@ -81,9 +81,13 @@ showRestMetadataStatusStatement:
 showRestMetadataStatusStatement ::=
 ![showRestMetadataStatusStatement](../../images/sql/showRestMetadataStatusStatement.svg "showRestMetadataStatusStatement")
 
+The result reports whether the metadata schema is configured and enabled, the number of enabled REST services, the current and the available version of the metadata schema and whether it can be updated.
+
+The `metadata_version` column holds the id of the last entry in the metadata's audit log. It changes whenever the REST metadata changes, so a client can poll it and refresh its view of the REST services only when the value has changed.
+
 **_Examples_**
 
-The following example drops a REST schema using the request path `/myService`.
+The following example shows the status of the MariaDB REST Service.
 
 ```sql
 SHOW REST STATUS;
@@ -91,13 +95,15 @@ SHOW REST STATUS;
 
 ## SHOW REST SERVICES
 
-The `SHOW REST SERVICES` statement lists all available REST services.
+The `SHOW REST SERVICES` statement lists all available REST services. With `FOR AUTH APP`, only the REST services the given REST auth app is linked to are listed.
 
 **_SYNTAX_**
 
 ```antlr
 showRestServicesStatement:
-    SHOW REST SERVICES
+    SHOW REST SERVICES (
+        FOR AUTH APP authAppName
+    )?
 ;
 ```
 
@@ -110,6 +116,12 @@ The following example lists all REST services.
 
 ```sql
 SHOW REST SERVICES;
+```
+
+The following example lists the REST services the REST auth app `MRS` is linked to.
+
+```sql
+SHOW REST SERVICES FOR AUTH APP "MRS";
 ```
 
 ## SHOW REST SCHEMAS
@@ -278,7 +290,7 @@ Shows the CREATE SQL statement corresponding to the given content set.
 showCreateRestContentSetStatement:
     SHOW CREATE REST CONTENT SET contentSetRequestPath (
         (ON | FROM) SERVICE? serviceRequestPath
-    )?
+    )? formatClause?
 ;
 ```
 
@@ -296,7 +308,7 @@ showCreateRestContentFileStatement:
     SHOW CREATE REST CONTENT FILE contentFileRequestPath (
         ON
         | FROM
-    ) (SERVICE? serviceRequestPath)? CONTENT SET contentSetRequestPath
+    ) (SERVICE? serviceRequestPath)? CONTENT SET contentSetRequestPath formatClause?
 ;
 ```
 
@@ -328,6 +340,143 @@ The following example lists all REST auth apps of the given REST service.
 SHOW REST AUTH APPS FROM SERVICE /myService;
 ```
 
+## SHOW REST AUTH VENDORS
+
+The `SHOW REST AUTH VENDORS` statement lists the vendors a REST auth app can be created for, e.g. `MRS`, `MySQL Internal` or an OAuth2 vendor. The vendor is given by the `VENDOR` clause of the `CREATE REST AUTH APP` statement.
+
+**_SYNTAX_**
+
+```antlr
+showRestAuthVendorsStatement:
+    SHOW REST AUTH VENDORS
+;
+```
+
+showRestAuthVendorsStatement ::=
+![showRestAuthVendorsStatement](../../images/sql/showRestAuthVendorsStatement.svg "showRestAuthVendorsStatement")
+
+**_Examples_**
+
+The following example lists all REST auth vendors.
+
+```sql
+SHOW REST AUTH VENDORS;
+```
+
+## SHOW REST USERS
+
+The `SHOW REST USERS` statement lists REST user accounts. With a REST service, the users of the REST auth apps linked to that service are listed. With `FOR AUTH APP`, the users of the given REST auth app are listed. Both can be combined.
+
+When neither is given, the users of the current REST service are listed, or all users if no current REST service is set. When only `FOR AUTH APP` is given, the current REST service is not taken into account.
+
+Passwords are never shown.
+
+**_SYNTAX_**
+
+```antlr
+showRestUsersStatement:
+    SHOW REST USERS (
+        (ON | FROM) SERVICE? serviceRequestPath
+    )? (FOR AUTH APP authAppName)?
+;
+```
+
+showRestUsersStatement ::=
+![showRestUsersStatement](../../images/sql/showRestUsersStatement.svg "showRestUsersStatement")
+
+**_Examples_**
+
+The following example lists the users of all REST auth apps linked to the REST service `/myService`.
+
+```sql
+SHOW REST USERS ON SERVICE /myService;
+```
+
+The following example lists the users of the REST auth app `MRS`.
+
+```sql
+SHOW REST USERS FOR AUTH APP "MRS";
+```
+
+## SHOW REST COLUMNS
+
+The `SHOW REST COLUMNS` statement lists what a REST object can expose from a database object. For a table or a view, these are its columns and its references to and from other tables (its foreign keys in both directions), which can be added to the data mapping of a REST view. For a procedure or a function, these are its parameters and, for a function, its return type.
+
+The object type is optional; without it, the type is detected. Without a schema name, the database schema of the current REST schema is used, or the current database of the session.
+
+**_SYNTAX_**
+
+```antlr
+showRestColumnsStatement:
+    SHOW REST COLUMNS (FROM | IN) (
+        TABLE
+        | VIEW
+        | PROCEDURE
+        | FUNCTION
+    )? qualifiedIdentifier formatClause?
+;
+```
+
+showRestColumnsStatement ::=
+![showRestColumnsStatement](../../images/sql/showRestColumnsStatement.svg "showRestColumnsStatement")
+
+The result has one row per column, reference or parameter, with the columns `position`, `name`, `kind`, `datatype`, `not_null`, `is_primary`, `id_generation` and `reference`:
+
+- A column has the kind `COLUMN`.
+- A reference has the kind `REFERENCE`. Its `reference` column describes it, e.g. `n:1 sakila.country (country_id = country_id)` for a reference to one row of another table, or `1:n sakila.address (city_id = city_id)` for a reference to many rows.
+- A parameter has its mode as kind: `IN`, `OUT` or `INOUT`.
+- The return value of a function has the kind `RETURN`.
+
+With `FORMAT=JSON`, the result is a single JSON document. For a table or a view, it holds the `columns` with their `db_column` and `reference_mapping` documents, the same documents that the data mapping of a REST view stores. For a procedure or a function, it holds the `parameters` and the `return_type`.
+
+**_Examples_**
+
+The following example lists the columns and references of the `sakila.city` table.
+
+```sql
+SHOW REST COLUMNS FROM sakila.city;
+```
+
+The following example returns the parameters of the `film_in_stock` procedure as a JSON document.
+
+```sql
+SHOW REST COLUMNS FROM PROCEDURE sakila.film_in_stock FORMAT=JSON;
+```
+
+## SHOW CREATE ... FORMAT=JSON
+
+Every `SHOW CREATE REST` statement ends with an optional `FORMAT` clause, as the `EXPLAIN` statement of the MariaDB server does. `FORMAT=TRADITIONAL`, the default, returns the statement that creates the REST object. `FORMAT=JSON` returns a JSON document of the REST object instead, for tools that work with the REST objects, e.g. an editor for the data mapping of a REST view.
+
+**_SYNTAX_**
+
+```antlr
+formatClause:
+    FORMAT EQUAL_OPERATOR (JSON | textOrIdentifier)
+;
+```
+
+formatClause ::=
+![formatClause](../../images/sql/formatClause.svg "formatClause")
+
+The format name can be written in any case and in quotes, e.g. `FORMAT=JSON`, `FORMAT = json` or `FORMAT='json'`.
+
+The JSON document holds the values of the REST object as the REST metadata stores them, with the column names as keys. Ids are UUID strings, and option documents are embedded as JSON. In addition:
+
+- A REST service lists the names of its REST auth apps. With `INCLUDING DATABASE ENDPOINTS`, it holds its REST schemas, each with its REST objects.
+- A REST view, procedure or function holds its data mapping as `objects`, each with its `fields`. A field that represents a reference to another table holds it as `object_reference`, and the fields below the reference point to it with their `parent_reference_id`. Columns that are not part of the data mapping are stored as disabled fields.
+- A REST auth app lists the REST services it is linked to. Its app secret is never returned; `has_app_secret` tells whether one is set.
+- A REST user lists the REST roles granted to it. Its password is never returned; `has_password` tells whether one is set.
+- A REST role lists its privileges.
+- A REST content file holds its size, not its content.
+
+**_Examples_**
+
+The following example returns the REST view `/city` with its data mapping as a JSON document.
+
+```sql
+SHOW CREATE REST VIEW /city ON SERVICE /myService SCHEMA /sakila FORMAT=JSON;
+```
+
 ## SHOW CREATE REST SERVICE
 
 The `SHOW CREATE REST SERVICE` statement shows the corresponding DDL statement for the given REST service.
@@ -338,7 +487,7 @@ The `SHOW CREATE REST SERVICE` statement shows the corresponding DDL statement f
 showCreateRestServiceStatement:
     SHOW CREATE REST SERVICE serviceRequestPath? (
         INCLUDING SCHEMA ENDPOINTS
-    )?
+    )? formatClause?
 ;
 ```
 
@@ -363,7 +512,7 @@ The `SHOW CREATE REST SCHEMA` statement shows the corresponding DDL statement fo
 showCreateRestSchemaStatement:
     SHOW CREATE REST SCHEMA schemaRequestPath? (
         (ON | FROM) SERVICE? serviceRequestPath
-    )?
+    )? formatClause?
 ;
 ```
 
@@ -388,7 +537,7 @@ The `SHOW CREATE REST DATA MAPPING VIEW` statement shows the corresponding DDL s
 showCreateRestViewStatement:
     SHOW CREATE REST DATA? MAPPING? VIEW viewRequestPath (
         (ON | FROM) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 
 serviceSchemaSelector:
@@ -420,7 +569,7 @@ The `SHOW CREATE REST PROCEDURE` statement shows the corresponding DDL statement
 showCreateRestProcedureStatement:
     SHOW CREATE REST PROCEDURE procedureRequestPath (
         (ON | FROM) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 
 serviceSchemaSelector:
@@ -444,7 +593,7 @@ The `SHOW CREATE REST FUNCTION` statement shows the corresponding DDL statement 
 showCreateRestFunctionStatement:
     SHOW CREATE REST FUNCTION functionRequestPath (
         (ON | FROM) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 
 serviceSchemaSelector:
@@ -474,7 +623,7 @@ The `SHOW CREATE REST AUTH APP` statement shows the corresponding DDL statement 
 
 ```antlr
 showCreateRestAuthAppStatement:
-    SHOW CREATE REST AUTH APP authAppName
+    SHOW CREATE REST AUTH APP authAppName formatClause?
 ;
 ```
 
@@ -497,7 +646,7 @@ The `SHOW CREATE REST ROLE` statement shows the corresponding DDL statement for 
 
 ```antlr
 showCreateRestRoleStatement:
-    SHOW CREATE REST ROLE roleName roleService?
+    SHOW CREATE REST ROLE roleName roleService? formatClause?
 ;
 
 roleService:
@@ -530,7 +679,7 @@ The `SHOW CREATE REST USER` statement shows the corresponding DDL statement for 
 
 ```antlr
 showCreateRestUserStatement:
-    SHOW CREATE REST USER userName AT_SIGN authAppName
+    SHOW CREATE REST USER userName AT_SIGN authAppName formatClause?
 ;
 ```
 

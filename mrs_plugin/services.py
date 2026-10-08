@@ -1394,10 +1394,19 @@ def dump_service_as_project(**kwargs):
     Returns:
         True if the file was saved.
     """
-    destination = kwargs.get("destination")
+
+    def checked_path(path):
+        lib.core.validate_path_for_filesystem(path)
+        return os.path.expanduser(path) if path else path
+
+    destination = checked_path(kwargs.get("destination"))
     services = kwargs.get("services")
-    schemas = kwargs.get("schemas")
-    project_settings = kwargs.get("settings")
+    schemas = [
+        {**schema, "file_path": checked_path(schema.get("file_path"))}
+        for schema in kwargs.get("schemas") or []
+    ]
+    project_settings = dict(kwargs.get("settings") or {})
+    project_settings["icon_path"] = checked_path(project_settings.get("icon_path"))
     create_zip = kwargs.get("zip")
 
     with lib.core.MrsDbSession(

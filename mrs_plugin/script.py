@@ -21,9 +21,8 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from mysqlsh.plugin_manager import plugin_function, sql_handler
+from mysqlsh.plugin_manager import plugin_function
 import mrs_plugin.lib as lib
-import mysqlsh
 
 
 @plugin_function("mrs.run.script", shell=True, cli=True, web=True)
@@ -84,73 +83,8 @@ def run_mrs_script(mrs_script=None, **kwargs):
             raise
 
 
-MRS_PREFIXES = [
-    "CONFIGURE REST ",
-    "CREATE REST ",
-    "CREATE OR REPLACE REST ",
-    "ALTER REST ",
-    "DROP REST ",
-    "USE REST ",
-    "SHOW REST ",
-    "SHOW CREATE REST ",
-    "GRANT REST ",
-    "REVOKE REST ",
-    "CLONE REST ",
-    "DUMP REST ",
-    "LOAD REST ",
-]
-
-
-def get_shell_result(mrs_result):
-    shell_result = {}
-
-    def set_data(item, target_item=None):
-        if target_item is None:
-            target_item = item
-
-        if item in mrs_result:
-            shell_result[target_item] = mrs_result[item]
-
-    if mrs_result["type"] == "success":
-        set_data("message", "info")
-        set_data("result", "data")
-        set_data("affectedItemsCount")
-        set_data("executionTime")
-        set_data("autoIncrementValue")
-        set_data("warnings")
-        set_data("columns")
-    else:
-        set_data("message", "error")
-        set_data("code")
-        set_data("sqlstate")
-
-    return shell_result
-
-
-@sql_handler("MRS", prefixes=MRS_PREFIXES)
-def mrs_sql_handler(session, sql):
-    "MySQL REST Service SQL Extension"
-    try:
-        if not session.connection_id in mrs_sql_handler.state:
-            mrs_sql_handler.state[session.connection_id] = {}
-
-        state_data = mrs_sql_handler.state[session.connection_id]
-        # TODO(alfredo) sql_mode should come from the shell session object or the caller
-        sql_mode = session.run_sql("select @@session.sql_mode").fetch_one()[0]
-
-        results = lib.script.run_mrs_script(
-            sql, **{"session": session, "sql_mode": sql_mode, "state_data": state_data}
-        )
-
-        shell_results = [get_shell_result(result) for result in results]
-
-        return mysqlsh.globals.shell.create_result(shell_results)
-    except Exception as e:
-        # Suppress traceback information to have the shell only print the relevant exception
-        if mysqlsh.globals.shell.options.logLevel <= 5:
-            e.with_traceback(None)
-        raise
-
-
-# The sql handler will hold state data across calls
-mrs_sql_handler.state = {}
+# The REST SQL statements (CREATE REST SERVICE, SHOW REST SERVICES, ...) are
+# handled by the MRS module built into the MariaDB Shell, which registers the
+# "MRS" SQL handler. This plugin no longer registers one, so both can be
+# loaded together; the plugin only adds its functions to the built-in mrs
+# object.

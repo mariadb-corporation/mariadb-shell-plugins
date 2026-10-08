@@ -994,6 +994,46 @@ class MRSParserListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by MRSParser#showRestAuthVendorsStatement.
+    def enterShowRestAuthVendorsStatement(
+        self, ctx: MRSParser.ShowRestAuthVendorsStatementContext
+    ):
+        pass
+
+    # Exit a parse tree produced by MRSParser#showRestAuthVendorsStatement.
+    def exitShowRestAuthVendorsStatement(
+        self, ctx: MRSParser.ShowRestAuthVendorsStatementContext
+    ):
+        pass
+
+    # Enter a parse tree produced by MRSParser#showRestUsersStatement.
+    def enterShowRestUsersStatement(self, ctx: MRSParser.ShowRestUsersStatementContext):
+        pass
+
+    # Exit a parse tree produced by MRSParser#showRestUsersStatement.
+    def exitShowRestUsersStatement(self, ctx: MRSParser.ShowRestUsersStatementContext):
+        pass
+
+    # Enter a parse tree produced by MRSParser#showRestColumnsStatement.
+    def enterShowRestColumnsStatement(
+        self, ctx: MRSParser.ShowRestColumnsStatementContext
+    ):
+        pass
+
+    # Exit a parse tree produced by MRSParser#showRestColumnsStatement.
+    def exitShowRestColumnsStatement(
+        self, ctx: MRSParser.ShowRestColumnsStatementContext
+    ):
+        pass
+
+    # Enter a parse tree produced by MRSParser#formatClause.
+    def enterFormatClause(self, ctx: MRSParser.FormatClauseContext):
+        pass
+
+    # Exit a parse tree produced by MRSParser#formatClause.
+    def exitFormatClause(self, ctx: MRSParser.FormatClauseContext):
+        pass
+
     # Enter a parse tree produced by MRSParser#showRestRolesStatement.
     def enterShowRestRolesStatement(self, ctx: MRSParser.ShowRestRolesStatementContext):
         pass
@@ -1146,18 +1186,6 @@ class MRSParserListener(ParseTreeListener):
     ):
         pass
 
-    # Enter a parse tree produced by MRSParser#dumpRestProjectStatement.
-    def enterDumpRestProjectStatement(
-        self, ctx: MRSParser.DumpRestProjectStatementContext
-    ):
-        pass
-
-    # Exit a parse tree produced by MRSParser#dumpRestProjectStatement.
-    def exitDumpRestProjectStatement(
-        self, ctx: MRSParser.DumpRestProjectStatementContext
-    ):
-        pass
-
     # Enter a parse tree produced by MRSParser#loadRestServiceStatement.
     def enterLoadRestServiceStatement(
         self, ctx: MRSParser.LoadRestServiceStatementContext
@@ -1168,106 +1196,6 @@ class MRSParserListener(ParseTreeListener):
     def exitLoadRestServiceStatement(
         self, ctx: MRSParser.LoadRestServiceStatementContext
     ):
-        pass
-
-    # Enter a parse tree produced by MRSParser#loadRestProjectStatement.
-    def enterLoadRestProjectStatement(
-        self, ctx: MRSParser.LoadRestProjectStatementContext
-    ):
-        pass
-
-    # Exit a parse tree produced by MRSParser#loadRestProjectStatement.
-    def exitLoadRestProjectStatement(
-        self, ctx: MRSParser.LoadRestProjectStatementContext
-    ):
-        pass
-
-    # Enter a parse tree produced by MRSParser#dumpRestProjectService.
-    def enterDumpRestProjectService(self, ctx: MRSParser.DumpRestProjectServiceContext):
-        pass
-
-    # Exit a parse tree produced by MRSParser#dumpRestProjectService.
-    def exitDumpRestProjectService(self, ctx: MRSParser.DumpRestProjectServiceContext):
-        pass
-
-    # Enter a parse tree produced by MRSParser#dumpRestProjectDatabaseSchema.
-    def enterDumpRestProjectDatabaseSchema(
-        self, ctx: MRSParser.DumpRestProjectDatabaseSchemaContext
-    ):
-        pass
-
-    # Exit a parse tree produced by MRSParser#dumpRestProjectDatabaseSchema.
-    def exitDumpRestProjectDatabaseSchema(
-        self, ctx: MRSParser.DumpRestProjectDatabaseSchemaContext
-    ):
-        pass
-
-    # Enter a parse tree produced by MRSParser#dumpRestProjectSettings.
-    def enterDumpRestProjectSettings(
-        self, ctx: MRSParser.DumpRestProjectSettingsContext
-    ):
-        pass
-
-    # Exit a parse tree produced by MRSParser#dumpRestProjectSettings.
-    def exitDumpRestProjectSettings(
-        self, ctx: MRSParser.DumpRestProjectSettingsContext
-    ):
-        pass
-
-    # Enter a parse tree produced by MRSParser#restProjectName.
-    def enterRestProjectName(self, ctx: MRSParser.RestProjectNameContext):
-        pass
-
-    # Exit a parse tree produced by MRSParser#restProjectName.
-    def exitRestProjectName(self, ctx: MRSParser.RestProjectNameContext):
-        pass
-
-    # Enter a parse tree produced by MRSParser#restProjectDatabaseSchemaFilePath.
-    def enterRestProjectDatabaseSchemaFilePath(
-        self, ctx: MRSParser.RestProjectDatabaseSchemaFilePathContext
-    ):
-        pass
-
-    # Exit a parse tree produced by MRSParser#restProjectDatabaseSchemaFilePath.
-    def exitRestProjectDatabaseSchemaFilePath(
-        self, ctx: MRSParser.RestProjectDatabaseSchemaFilePathContext
-    ):
-        pass
-
-    # Enter a parse tree produced by MRSParser#restProjectIconFilePath.
-    def enterRestProjectIconFilePath(
-        self, ctx: MRSParser.RestProjectIconFilePathContext
-    ):
-        pass
-
-    # Exit a parse tree produced by MRSParser#restProjectIconFilePath.
-    def exitRestProjectIconFilePath(
-        self, ctx: MRSParser.RestProjectIconFilePathContext
-    ):
-        pass
-
-    # Enter a parse tree produced by MRSParser#restProjectDescription.
-    def enterRestProjectDescription(self, ctx: MRSParser.RestProjectDescriptionContext):
-        pass
-
-    # Exit a parse tree produced by MRSParser#restProjectDescription.
-    def exitRestProjectDescription(self, ctx: MRSParser.RestProjectDescriptionContext):
-        pass
-
-    # Enter a parse tree produced by MRSParser#restProjectPublisher.
-    def enterRestProjectPublisher(self, ctx: MRSParser.RestProjectPublisherContext):
-        pass
-
-    # Exit a parse tree produced by MRSParser#restProjectPublisher.
-    def exitRestProjectPublisher(self, ctx: MRSParser.RestProjectPublisherContext):
-        pass
-
-    # Enter a parse tree produced by MRSParser#restProjectVersion.
-    def enterRestProjectVersion(self, ctx: MRSParser.RestProjectVersionContext):
-        pass
-
-    # Exit a parse tree produced by MRSParser#restProjectVersion.
-    def exitRestProjectVersion(self, ctx: MRSParser.RestProjectVersionContext):
         pass
 
     # Enter a parse tree produced by MRSParser#serviceRequestPath.
@@ -1644,6 +1572,14 @@ class MRSParserListener(ParseTreeListener):
 
     # Exit a parse tree produced by MRSParser#identifier.
     def exitIdentifier(self, ctx: MRSParser.IdentifierContext):
+        pass
+
+    # Enter a parse tree produced by MRSParser#identifierKeyword.
+    def enterIdentifierKeyword(self, ctx: MRSParser.IdentifierKeywordContext):
+        pass
+
+    # Exit a parse tree produced by MRSParser#identifierKeyword.
+    def exitIdentifierKeyword(self, ctx: MRSParser.IdentifierKeywordContext):
         pass
 
     # Enter a parse tree produced by MRSParser#identifierList.
