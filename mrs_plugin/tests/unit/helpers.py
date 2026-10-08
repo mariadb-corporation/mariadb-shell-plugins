@@ -25,6 +25,8 @@
 import json
 import os
 import re
+import shutil
+import socket
 
 import mysqlsh
 from mrs_plugin import lib
@@ -1034,21 +1036,44 @@ def get_db_object_privileges(session, schema_name, db_object_name):
     return list(dict.fromkeys(all_grants))
 
 
+def find_free_port() -> int:
+    """Returns a currently-free TCP port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def server_binary_available() -> bool:
+    """Returns whether a MariaDB/MySQL server binary is on the PATH.
+
+    The sandbox functions look the server up there, so this says whether a
+    sandbox can be deployed at all.
+    """
+    return bool(shutil.which("mariadbd") or shutil.which("mysqld"))
+
+
 def get_connection_data(instance: int = 0):
-    if instance == 0:
-        return {
-            "user": os.environ.get("MYSQL_USER", "root"),
-            "host": os.environ.get("MYSQL_HOST", "localhost"),
-            "port": os.environ.get("MYSQL_PORT", "3388"),
-            "password": os.environ.get("MYSQL_PASSWORD", ""),
-        }
-    else:
-        return {
-            "user": os.environ.get("MYSQL_USER", "root"),
-            "host": os.environ.get("MYSQL_HOST", "localhost"),
-            "port": os.environ.get(f"MYSQL_PORT{instance}", str(3388 + instance)),
-            "password": os.environ.get("MYSQL_PASSWORD", ""),
-        }
+    """Returns the root connection data of one of the run's sandboxes.
+
+    Instance 0 is the sandbox the ``init_mrs`` fixture deploys for the whole
+    session; the fixture publishes its port and password through MYSQL_PORT
+    and MYSQL_PASSWORD before anything connects. A further instance (the
+    metadata upgrade test deploys one of its own) gets a free port unless
+    MYSQL_PORT<instance> names one.
+
+    Args:
+        instance (int): Which sandbox of the run, 0 being the session's.
+
+    Returns:
+        A dict with user, host, port (as a string) and password.
+    """
+    port_variable = "MYSQL_PORT" if instance == 0 else f"MYSQL_PORT{instance}"
+    return {
+        "user": os.environ.get("MYSQL_USER", "root"),
+        "host": os.environ.get("MYSQL_HOST", "localhost"),
+        "port": os.environ.get(port_variable) or str(find_free_port()),
+        "password": os.environ.get("MYSQL_PASSWORD", ""),
+    }
 
 
 def create_shell_session(instance=0) -> mysqlsh.globals.session:

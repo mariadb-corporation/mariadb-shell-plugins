@@ -1251,15 +1251,14 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
         self.current_operation = mrs_object.pop("current_operation")
 
         full_path = self.getFullServicePath(mrs_object)
-        url_context_root = mrs_object.get("url_context_root")
         new_url_context_root = mrs_object.get("new_url_context_root")
 
         try:
+            # Resolved with the developer list and host name, as several
+            # services may share a request path (mike@/svc, /svc).
             service_id = self.get_given_or_current_service_id(mrs_object)
 
-            service = lib.services.get_service(
-                self.session, url_context_root=url_context_root
-            )
+            service = lib.services.get_service(self.session, service_id=service_id)
 
             if service is None:
                 raise Exception("The given REST SERVICE was not found.")

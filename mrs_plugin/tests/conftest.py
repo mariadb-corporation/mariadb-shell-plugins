@@ -22,11 +22,16 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-import pytest
-import tempfile
+# cSpell:ignore mysqlsh mariadb mdupgrade
+
 import os
+import shutil
+import tempfile
+
+import pytest
 
 import mysqlsh
+from mysqlsh.globals import sandbox
 
 from mrs_plugin import lib
 import mrs_plugin.tests.unit.helpers as helpers
@@ -34,142 +39,120 @@ from mrs_plugin import general
 
 PHONE_BOOKS = {}
 
-
-def start_mysql_session(connection_id=0):
-    connection_data = helpers.get_connection_data()
-
-    os.makedirs(os.path.join("tests", "mariadb-sandboxes"), exist_ok=True)
-
-    deployment_dir = tempfile.TemporaryDirectory()
-
-    if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.sandbox.deploy(
-            connection_data["port"],
-            {
-                "password": connection_data["password"],
-                "sandboxDir": deployment_dir.name,
-            },
-        )
-
-    session: mysqlsh.globals.session = helpers.create_shell_session()
-    assert session is not None
-
-    if os.getenv("REUSE_MYSQLD"):
-        session.run_sql("drop schema if exists mysql_rest_service_metadata")
-
-    phone_book_dbs = ["PhoneBook", "MobilePhoneBook", "AnalogPhoneBook"]
-
-    # ONLY_FULL_GROUP_BY keeps the plugin's queries valid on MariaDB, which
-    # unlike MySQL 8 does not accept columns that merely depend on a GROUP BY
-    # key; MSM deployment scripts run the REST DDL with this mode set.
-    session.run_sql("set sql_mode='ONLY_FULL_GROUP_BY'")
-
-    helpers.create_test_db(session, "EmptyPhoneBook")
-    for db in phone_book_dbs:
-        helpers.create_test_db(session, db)
-
-    general.configure(session=session)
-
-    temp_dirs = []
-
-    for db in phone_book_dbs:
-        temp_dir = tempfile.TemporaryDirectory()
-        temp_dirs.append(temp_dir)
-        PHONE_BOOKS[db] = helpers.create_mrs_phonebook_schema(
-            session, "/test", db, temp_dir
-        )
-
-    lib.services.set_current_service_id(session, PHONE_BOOKS["PhoneBook"]["service_id"])
-
-    return {
-        "session": session,
-        "temp_dirs": temp_dirs,
-        "deployment_dir": deployment_dir,
-    }
+# The root password of the sandbox the suite deploys, unless MYSQL_PASSWORD
+# names another.
+SANDBOX_PASSWORD = "mrs_pytest_root"
 
 
-def cleanup_mysql_session(session_data):
-    for temp_dir in session_data["temp_dirs"]:
-        temp_dir.cleanup()
+def pytest_addoption(parser):
+    parser.addoption(
+        "--mdupgrade",
+        action="store_true",
+        dest="mdupgrade",
+        default=False,
+        help="enable metadata upgrade tests (slow)",
+    )
 
-    session_data["session"].close()
-    # mysqlsh.globals.sandbox.stop(connection_data["port"], {
-    #     "password": connection_data["password"],
-    #     "sandboxDir": deployment_dir.name
-    # })
 
-    if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.sandbox.kill(
-            session_data["connection_data"]["port"],
-            {"sandboxDir": session_data["deployment_dir"].name},
-        )
+@pytest.fixture(scope="session", autouse=True)
+def non_interactive_shell():
+    """Runs the shell non-interactively for the duration of the test session."""
+    mysqlsh.globals.shell.options.set("useWizards", False)
+    yield
+
+
+def _remove_sandbox(port: int, sandbox_dir: str) -> None:
+    """Stops and deletes a sandbox, then removes its directory.
+
+    Every step is best-effort: a sandbox that never started, or one the test
+    already stopped, must not keep the next step from running.
+    """
+    for operation in (sandbox.stop, sandbox.kill, sandbox.delete):
+        try:
+            operation(port, {"sandboxDir": sandbox_dir})
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            pass
+    shutil.rmtree(sandbox_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
 def init_mrs():
+    """Deploys the session's sandbox and configures MRS on it.
 
-    shell = mysqlsh.globals.shell
-    shell.options.set("useWizards", False)
+    The sandbox listens on a free port (MYSQL_PORT names one instead) under a
+    temporary directory, with SSL off so the run does not depend on openssl.
+    Its port and password are published through MYSQL_PORT and MYSQL_PASSWORD,
+    which is where the helpers read the connection from, so every test and
+    every later sandbox of the run agrees on them.
 
+    The sandbox is stopped and deleted afterwards - also when the setup fails
+    half-way, so a broken run leaves no server running on its port.
+
+    Yields:
+        The shell session connected to the sandbox.
+    """
+    if not helpers.server_binary_available():
+        pytest.exit(
+            "No mariadbd or mysqld binary on the PATH: the suite deploys a "
+            "sandbox and cannot run without one.",
+            returncode=1,
+        )
+
+    port = int(os.environ.get("MYSQL_PORT") or helpers.find_free_port())
+    os.environ["MYSQL_PORT"] = str(port)
+    os.environ.setdefault("MYSQL_PASSWORD", SANDBOX_PASSWORD)
     connection_data = helpers.get_connection_data()
 
-    os.makedirs(os.path.join("tests", "mariadb-sandboxes"), exist_ok=True)
-
-    deployment_dir = tempfile.TemporaryDirectory()
-
-    if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.sandbox.deploy(
-            connection_data["port"],
+    sandbox_dir = tempfile.mkdtemp(prefix="mrs_sandbox_")
+    session = None
+    temp_dirs = []
+    try:
+        sandbox.deploy(
+            port,
             {
                 "password": connection_data["password"],
-                "sandboxDir": deployment_dir.name,
+                "sandboxDir": sandbox_dir,
+                "ssl": False,
             },
         )
 
-    session: mysqlsh.globals.session = helpers.create_shell_session()
-    assert session is not None
+        session = helpers.create_shell_session()
+        assert session is not None
 
-    if os.getenv("REUSE_MYSQLD"):
-        session.run_sql("drop schema if exists mysql_rest_service_metadata")
+        phone_book_dbs = ["PhoneBook", "MobilePhoneBook", "AnalogPhoneBook"]
 
-    phone_book_dbs = ["PhoneBook", "MobilePhoneBook", "AnalogPhoneBook"]
+        # ONLY_FULL_GROUP_BY keeps the plugin's queries valid on MariaDB,
+        # which unlike MySQL 8 does not accept columns that merely depend on a
+        # GROUP BY key; MSM deployment scripts run the REST DDL with this mode
+        # set.
+        session.run_sql("set sql_mode='ONLY_FULL_GROUP_BY'")
 
-    # ONLY_FULL_GROUP_BY keeps the plugin's queries valid on MariaDB, which
-    # unlike MySQL 8 does not accept columns that merely depend on a GROUP BY
-    # key; MSM deployment scripts run the REST DDL with this mode set.
-    session.run_sql("set sql_mode='ONLY_FULL_GROUP_BY'")
+        helpers.create_test_db(session, "EmptyPhoneBook")
+        for db in phone_book_dbs:
+            helpers.create_test_db(session, db)
 
-    helpers.create_test_db(session, "EmptyPhoneBook")
-    for db in phone_book_dbs:
-        helpers.create_test_db(session, db)
+        general.configure(session=session)
 
-    general.configure(session=session)
+        for db in phone_book_dbs:
+            temp_dir = tempfile.TemporaryDirectory()
+            temp_dirs.append(temp_dir)
+            PHONE_BOOKS[db] = helpers.create_mrs_phonebook_schema(
+                session, "/test", db, temp_dir
+            )
 
-    temp_dirs = []
-
-    for db in phone_book_dbs:
-        temp_dir = tempfile.TemporaryDirectory()
-        temp_dirs.append(temp_dir)
-        PHONE_BOOKS[db] = helpers.create_mrs_phonebook_schema(
-            session, "/test", db, temp_dir
+        lib.services.set_current_service_id(
+            session, PHONE_BOOKS["PhoneBook"]["service_id"]
         )
 
-    lib.services.set_current_service_id(session, PHONE_BOOKS["PhoneBook"]["service_id"])
+        yield session
+    finally:
+        for temp_dir in temp_dirs:
+            temp_dir.cleanup()
 
-    yield session
+        if session is not None:
+            session.close()
 
-    for temp_dir in temp_dirs:
-        temp_dir.cleanup()
-
-    session.close()
-
-    if not os.getenv("REUSE_MYSQLD"):
-        mysqlsh.globals.sandbox.stop(
-            connection_data["port"], {"sandboxDir": deployment_dir.name}
-        )
-        mysqlsh.globals.sandbox.delete(
-            connection_data["port"], {"sandboxDir": deployment_dir.name}
-        )
+        _remove_sandbox(port, sandbox_dir)
 
 
 @pytest.fixture(scope="session")
@@ -196,13 +179,3 @@ def table_contents(phone_book):
         return helpers.TableContents(schema["session"], table_name, take_snapshot)
 
     yield create_table_content_object
-
-
-def pytest_addoption(parser):
-    parser.addoption(
-        "--mdupgrade",
-        action="store_true",
-        dest="mdupgrade",
-        default=False,
-        help="enable metadata upgrade tests (slow)",
-    )

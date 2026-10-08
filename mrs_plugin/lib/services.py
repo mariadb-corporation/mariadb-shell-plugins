@@ -497,11 +497,14 @@ def query_services(
             )
             for dev in developer_list
         )
-        having = (
-            "\nHAVING h.name = ? AND url_context_root = ? AND sorted_developers = ?"
-        )
+        # Only the computed alias may go into HAVING: with ONLY_FULL_GROUP_BY,
+        # MariaDB refuses plain columns there (1463), while MySQL lets them
+        # through. Host and path are ordinary WHERE conditions.
+        wheres.append("h.name = ?")
+        wheres.append("url_context_root = ?")
         params.append(url_host_name)
         params.append(url_context_root)
+        having = "\nHAVING sorted_developers = ?"
         params.append(sorted_developers)
 
     result = (
@@ -1108,7 +1111,9 @@ def clone_service(session, service, new_url_context_root, dev_list):
 
     new_service["url_context_root"] = new_url_context_root
     new_service["published"] = False
-    new_service["in_development"] = {"developers": dev_list}
+    # A service without developers is not in development at all: the table's
+    # check constraint refuses an empty developers list.
+    new_service["in_development"] = {"developers": dev_list} if dev_list else None
 
     # Add the service
     new_service_id = add_service(
