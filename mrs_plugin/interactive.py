@@ -70,6 +70,21 @@ def auth_app_query_selection(**kwargs):
     return None
 
 
+def _as_id(query):
+    """Returns the canonical id when a query names an object by id, else None.
+
+    Ids used to be bytes and were told apart from a path by their type. They
+    are UUID strings now (or their '0x' and base64 forms), so a query is an id
+    exactly when it parses as one; anything else is a 'host/path' query.
+    """
+    if query is None or isinstance(query, str) and "/" in query:
+        return None
+    try:
+        return lib.core.id_to_uuid(query, "id")
+    except RuntimeError:
+        return None
+
+
 def resolve_service(
     session,
     service_query: str | bytes = None,
@@ -78,10 +93,11 @@ def resolve_service(
 ):
     service = None
     if service_query:
-        if isinstance(service_query, bytes):
+        service_id = _as_id(service_query)
+        if service_id is not None:
             # Check if given service exists by searching its id
             service = lib.services.get_service(
-                service_id=service_query, session=session
+                service_id=service_id, session=session
             )
         else:
             # Check if the service exists by host and context root
@@ -133,8 +149,9 @@ def resolve_schema(
     service = None
 
     if schema_query is not None:
-        if isinstance(schema_query, bytes):
-            schema = lib.schemas.get_schema(session=session, schema_id=schema_query)
+        schema_id = _as_id(schema_query)
+        if schema_id is not None:
+            schema = lib.schemas.get_schema(session=session, schema_id=schema_id)
         elif isinstance(schema_query, str):
             url_host_name, url_context_root, request_path = schema_query.split("/")
             service = lib.services.get_service(
@@ -284,8 +301,9 @@ def user_query_selection(**kwargs):
 
 
 def resolve_user(session, user_query: str | bytes):
-    if isinstance(user_query, bytes):
-        return lib.users.get_user(session, user_id=user_query)
+    user_id = _as_id(user_query)
+    if user_id is not None:
+        return lib.users.get_user(session, user_id=user_id)
 
     if isinstance(user_query, str):
         url_host_name, url_context_root, auth_app_name, user_name = user_query.split(
@@ -338,8 +356,9 @@ def role_query_selection(**kwargs):
 
 
 def resolve_role(session, role_query: str | bytes):
-    if isinstance(role_query, bytes):
-        return lib.roles.get_role(session, role_id=role_query)
+    role_id = _as_id(role_query)
+    if role_id is not None:
+        return lib.roles.get_role(session, role_id=role_id)
 
     role_query_list = role_query.split("/")
 
@@ -405,8 +424,9 @@ def resolve_auth_app(
     service_query: str | bytes = None,
     required: bool = True,
 ):
-    if isinstance(auth_app_query, bytes):
-        return lib.auth_apps.get_auth_app(session, auth_app_query)
+    auth_app_id = _as_id(auth_app_query)
+    if auth_app_id is not None:
+        return lib.auth_apps.get_auth_app(session, auth_app_id)
 
     service = resolve_service(session, service_query=service_query)
 

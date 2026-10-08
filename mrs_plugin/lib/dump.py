@@ -69,7 +69,7 @@ def reformat_field(field):
         cleanup_object(object_reference, ["reduce_to_value_of_field_id"])
 
         if object_reference.get("reduce_to_value_of_field_id"):
-            binary_id = lib.core.id_to_binary(
+            binary_id = lib.core.id_to_uuid(
                 object_reference["reduce_to_value_of_field_id"],
                 "reduce_to_value_of_field_id",
             )
@@ -95,7 +95,7 @@ def get_object_dump(session, id):
     for obj in objects:
         # Removes fields if they are None in object
         cleanup_object(obj)
-        id = core.id_to_binary(obj["id"], "object.id")
+        id = core.id_to_uuid(obj["id"], "object.id")
         obj["fields"] = db_objects.get_object_fields_with_references(
             session, id, binary_formatter=lambda x: f"0x{x.hex()}"
         )
@@ -173,7 +173,7 @@ def get_service_dump(session, id):
 def load_object_dump(session, target_schema_id, object, reuse_ids):
     db_object_id = None
     if reuse_ids:
-        db_object_id = lib.core.id_to_binary(object["id"], "object.id")
+        db_object_id = lib.core.id_to_uuid(object["id"], "object.id")
 
     objects = object.get("objects")
 
@@ -226,7 +226,7 @@ def load_object_dump(session, target_schema_id, object, reuse_ids):
 def load_schema_dump(session, target_service_id, schema, reuse_ids):
     schema_id = None
     if reuse_ids:
-        schema_id = lib.core.id_to_binary(schema["id"], "schema.id")
+        schema_id = lib.core.id_to_uuid(schema["id"], "schema.id")
 
     schema_id = lib.schemas.add_schema(
         session,

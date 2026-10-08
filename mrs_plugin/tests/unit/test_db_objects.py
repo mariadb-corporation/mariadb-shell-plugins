@@ -64,8 +64,8 @@ def test_add_delete_db_object(phone_book, table_contents):
     assert db_objects_table.count == db_objects_table.snapshot.count + 1
 
     assert db_objects_table.get("id", db_object_id1) == {
-        "id": lib.core.id_to_binary(db_object_id1, "id"),
-        "db_schema_id": lib.core.id_to_binary(phone_book["schema_id"], "schema_id"),
+        "id": lib.core.id_to_uuid(db_object_id1, "id"),
+        "db_schema_id": lib.core.id_to_uuid(phone_book["schema_id"], "schema_id"),
         "name": db_object_init1["db_object_name"],
         "object_type": db_object_init1["db_object_type"],
         "request_path": db_object_init1["request_path"],
@@ -527,7 +527,8 @@ def test_add_db_object_auto_add_schema(phone_book, table_contents):
 
     service_id = get_current_service_id(session)
     assert service_id is not None
-    set_current_service_id(session, b"no_service")
+    # A well-formed id that no service has.
+    set_current_service_id(session, "ffffffff-ffff-ffff-ffff-ffffffffffff")
 
     db_object_init = {
         "session": session,

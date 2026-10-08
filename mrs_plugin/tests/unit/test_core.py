@@ -204,7 +204,7 @@ def test_validate_service_path(phone_book):
         assert str(exc_info.value) == "The given MRS service was not found."
 
 
-def test_id_to_binary():
+def test_id_to_uuid():
     context = "my_context"
     ids = ["", "1234", "/myService"]
 
@@ -212,11 +212,11 @@ def test_id_to_binary():
         with pytest.raises(
             RuntimeError, match=f"Invalid id format '{id}' for '{context}'."
         ):
-            core.id_to_binary(id, context, False)
+            core.id_to_uuid(id, context, False)
 
     id = "0x1234"
     with pytest.raises(RuntimeError, match=f"The '{context}' has an invalid size."):
-        core.id_to_binary(id, context, False)
+        core.id_to_uuid(id, context, False)
 
 
 def test_convert_path_to_camel_case():

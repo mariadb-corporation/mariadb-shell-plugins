@@ -23,7 +23,7 @@
 
 from mrs_plugin.lib import core, services
 
-FULL_ACCESS_ROLE_ID = bytes.fromhex("31000000000000000000000000000000")
+FULL_ACCESS_ROLE_ID = "31000000-0000-0000-0000-000000000000"
 
 k_role_query = """
     SELECT r.id, r.derived_from_role_id, pr.caption derived_from_role_caption,

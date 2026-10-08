@@ -260,8 +260,8 @@ def default_copyright_header(
 
 
 def generate_create_statement(**kwargs):
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
-    lib.core.try_convert_ids_to_binary(["service"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
+    lib.core.try_convert_ids_to_uuid(["service"], kwargs)
 
     include_database_endpoints = kwargs.get("include_database_endpoints", False)
     include_static_endpoints = kwargs.get("include_static_endpoints", False)
@@ -286,8 +286,8 @@ def generate_create_statement(**kwargs):
 
 
 def store_create_statement(**kwargs):
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
-    lib.core.try_convert_ids_to_binary(["service"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
+    lib.core.try_convert_ids_to_uuid(["service"], kwargs)
 
     include_database_endpoints = kwargs.get("include_database_endpoints", False)
     include_static_endpoints = kwargs.get("include_static_endpoints", False)
@@ -442,7 +442,7 @@ def get_service(**kwargs):
     Returns:
         The service as dict or None on error in interactive mode
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     url_context_root = kwargs.get("url_context_root")
     url_host_name = kwargs.get("url_host_name")
@@ -564,7 +564,7 @@ def enable_service(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     kwargs["value"] = {"enabled": True}
     kwargs["allow_multi_select"] = True
@@ -588,7 +588,7 @@ def disable_service(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     kwargs["value"] = {"enabled": False}
     kwargs["allow_multi_select"] = True
@@ -616,7 +616,7 @@ def delete_service(**kwargs):
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
     ) as session:
-        lib.core.convert_ids_to_binary(["service_id"], kwargs)
+        lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
         kwargs["session"] = session
         kwargs["allow_multi_select"] = True
@@ -650,7 +650,7 @@ def set_url_context_root(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     kwargs["value"] = {"url_context_root": kwargs["value"]}
     if "service_id" not in kwargs:
@@ -678,7 +678,7 @@ def set_protocol(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     kwargs["value"] = {"url_protocol": kwargs["value"]}
     if "service_id" not in kwargs:
@@ -706,7 +706,7 @@ def set_comments(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     kwargs["value"] = {"comments": kwargs["value"]}
     if "service_id" not in kwargs:
@@ -734,7 +734,7 @@ def set_options(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     kwargs["value"] = {"options": kwargs["value"]}
     if "service_id" not in kwargs:
@@ -784,7 +784,7 @@ def update_service(**kwargs):
         # create a copy so that the dict won't change for the caller...and convert to dict
         kwargs["value"] = lib.core.convert_json(kwargs["value"])
 
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     verify_value_keys(**kwargs)
 
@@ -808,7 +808,7 @@ def get_service_request_path_availability(**kwargs):
     Returns:
         True or False
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     service_id = kwargs.get("service_id")
     request_path = kwargs.get("request_path")
@@ -931,7 +931,7 @@ def set_current_service(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     service_id = kwargs.get("service_id")
 
@@ -1000,7 +1000,7 @@ def get_sdk_service_classes(**kwargs):
     Returns:
         The SDK base classes source
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     service_id = kwargs.get("service_id")
     # internally, we use the programming language name in lowercase
@@ -1058,7 +1058,7 @@ def dump_sdk_service_files(**kwargs):
     directory = kwargs.get("directory")
     options = kwargs.get("options", {})
 
-    lib.core.convert_ids_to_binary(["service_id"], options)
+    lib.core.convert_ids_to_uuid(["service_id"], options)
 
     if not directory:
         if lib.core.get_interactive_default():
@@ -1087,7 +1087,7 @@ def dump_sdk_service_files(**kwargs):
         (
             None
             if config_service_id is None
-            else lib.core.id_to_binary(config_service_id, "mrs.config.json")
+            else lib.core.id_to_uuid(config_service_id, "mrs.config.json")
         ),
     )
     mrs_config["serviceUrl"] = options.get("service_url", mrs_config.get("serviceUrl"))

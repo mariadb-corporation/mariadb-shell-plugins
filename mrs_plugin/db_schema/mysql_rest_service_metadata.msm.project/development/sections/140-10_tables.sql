@@ -1,6 +1,6 @@
 -- Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 -- Copyright (c) 2026, MariaDB plc.
--- Wed Apr 30 12:25:31 2025
+-- Thu Oct 08 09:45:39 2026
 -- Model: New Model    Version: 1.0
 -- MySQL Workbench Forward Engineering
 
@@ -17,7 +17,7 @@ SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,N
 -- Table `url_host`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `url_host` (
-  `id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `name` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'Specifies the host name of the MRS as represented in the request URLs. Example: example.com',
   `comments` VARCHAR(512) NULL,
   PRIMARY KEY (`id`),
@@ -29,9 +29,9 @@ ENGINE = InnoDB;
 -- Table `service`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `service` (
-  `id` BINARY(16) NOT NULL,
-  `parent_id` BINARY(16) NULL,
-  `url_host_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `parent_id` UUID NULL,
+  `url_host_id` UUID NOT NULL,
   `url_context_root` VARCHAR(255) NOT NULL DEFAULT '/mrs' COMMENT 'Specifies context root of the MRS as represented in the request URLs, default being /mrs. URL Example: https://www.example.com/mrs',
   `url_protocol` SET('HTTP', 'HTTPS') NOT NULL DEFAULT 'HTTPS',
   `name` VARCHAR(255) NOT NULL,
@@ -67,8 +67,8 @@ ENGINE = InnoDB;
 -- Table `db_schema`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `db_schema` (
-  `id` BINARY(16) NOT NULL,
-  `service_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `service_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `schema_type` ENUM('DATABASE_SCHEMA', 'SCRIPT_MODULE') NOT NULL DEFAULT 'DATABASE_SCHEMA',
   `request_path` VARCHAR(255) NOT NULL,
@@ -93,8 +93,8 @@ ENGINE = InnoDB;
 -- Table `db_object`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `db_object` (
-  `id` BINARY(16) NOT NULL,
-  `db_schema_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `db_schema_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `request_path` VARCHAR(255) NOT NULL,
   `enabled` TINYINT NOT NULL DEFAULT 1,
@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS `db_object` (
   `comments` VARCHAR(512) NULL,
   `metadata` JSON NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_db_objects_db_schema1_idx` (`db_schema_id` ASC),
+  INDEX `fk_db_objects_db_schema1_idx` (`db_schema_id` ASC) VISIBLE,
   CONSTRAINT `fk_db_objects_db_schema1`
     FOREIGN KEY (`db_schema_id`)
     REFERENCES `db_schema` (`id`)
@@ -125,7 +125,7 @@ ENGINE = InnoDB;
 -- Table `auth_vendor`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `auth_vendor` (
-  `id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `name` VARCHAR(65) NOT NULL,
   `validation_url` VARCHAR(255) NULL COMMENT 'URL used to validate the access_token provided by the client. Example: https://graph.facebook.com/debug_token?input_token=%access_token%&access_token=%app_access_token%',
   `enabled` TINYINT NOT NULL DEFAULT 1,
@@ -139,8 +139,8 @@ ENGINE = InnoDB;
 -- Table `auth_app`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `auth_app` (
-  `id` BINARY(16) NOT NULL,
-  `auth_vendor_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `auth_vendor_id` UUID NOT NULL,
   `name` VARCHAR(45) NOT NULL,
   `description` VARCHAR(512) NULL,
   `url` VARCHAR(255) NULL,
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS `auth_app` (
   `app_id` VARCHAR(1024) NULL,
   `enabled` TINYINT NULL,
   `limit_to_registered_users` TINYINT NOT NULL DEFAULT 1 COMMENT 'Limit the users that can log in to the list of users in the auth_user table. The auth_user table can be pre-filled with users by specifying the name and email only. The vendor_user_id will be added on the first login automatically.',
-  `default_role_id` BINARY(16) NULL COMMENT 'If set, a new user that has not any auth_roles assigned will get this role assigned when he logs in the first time.',
+  `default_role_id` UUID NULL COMMENT 'If set, a new user that has not any auth_roles assigned will get this role assigned when he logs in the first time.',
   `options` JSON NULL,
   PRIMARY KEY (`id`),
   INDEX `fk_auth_app_auth_vendor1_idx` (`auth_vendor_id` ASC) VISIBLE,
@@ -166,8 +166,8 @@ ENGINE = InnoDB;
 -- Table `mrs_user`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_user` (
-  `id` BINARY(16) NOT NULL,
-  `auth_app_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `auth_app_id` UUID NOT NULL,
   `name` VARCHAR(225) NULL,
   `email` VARCHAR(255) NULL,
   `vendor_user_id` VARCHAR(255) NULL,
@@ -204,7 +204,7 @@ ENGINE = InnoDB;
 -- Table `redirect`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `redirect` (
-  `id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `pattern` VARCHAR(1024) NOT NULL,
   `target` VARCHAR(1024) NOT NULL,
   `kind` ENUM('REDIRECT', 'REWRITE') NOT NULL DEFAULT 'REDIRECT',
@@ -217,8 +217,8 @@ ENGINE = InnoDB;
 -- Table `url_host_alias`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `url_host_alias` (
-  `id` BINARY(16) NOT NULL,
-  `url_host_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `url_host_id` UUID NOT NULL,
   `alias` VARCHAR(255) NOT NULL COMMENT 'Specifies additional aliases for the given host, e.g. www.example.com',
   PRIMARY KEY (`id`),
   INDEX `fk_url_host_alias_url_host1_idx` (`url_host_id` ASC) VISIBLE,
@@ -234,8 +234,8 @@ ENGINE = InnoDB;
 -- Table `content_set`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `content_set` (
-  `id` BINARY(16) NOT NULL,
-  `service_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `service_id` UUID NOT NULL,
   `content_type` ENUM('STATIC', 'SCRIPTS') NOT NULL DEFAULT 'STATIC',
   `request_path` VARCHAR(255) NOT NULL,
   `requires_auth` TINYINT NOT NULL DEFAULT 0,
@@ -257,8 +257,8 @@ ENGINE = InnoDB;
 -- Table `content_file`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `content_file` (
-  `id` BINARY(16) NOT NULL,
-  `content_set_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `content_set_id` UUID NOT NULL,
   `request_path` VARCHAR(255) NOT NULL DEFAULT '/',
   `requires_auth` TINYINT NOT NULL DEFAULT 0,
   `enabled` TINYINT NOT NULL DEFAULT 1,
@@ -287,8 +287,8 @@ CREATE TABLE IF NOT EXISTS `audit_log` (
   `new_row_data` JSON NULL,
   `changed_by` VARCHAR(255) NOT NULL,
   `changed_at` TIMESTAMP(6) NOT NULL,
-  `old_row_id` BINARY(16) NULL,
-  `new_row_id` BINARY(16) NULL,
+  `old_row_id` UUID NULL,
+  `new_row_id` UUID NULL,
   PRIMARY KEY (`id`),
   INDEX `idx_table_name` (`table_name` ASC) VISIBLE,
   INDEX `idx_changed_at` (`changed_at` ASC) VISIBLE,
@@ -302,9 +302,9 @@ ENGINE = InnoDB;
 -- Table `mrs_role`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_role` (
-  `id` BINARY(16) NOT NULL,
-  `derived_from_role_id` BINARY(16) NULL,
-  `specific_to_service_id` BINARY(16) NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `derived_from_role_id` UUID NULL,
+  `specific_to_service_id` UUID NULL,
   `caption` VARCHAR(150) NOT NULL,
   `description` VARCHAR(512) NULL,
   `options` JSON NULL,
@@ -329,8 +329,8 @@ ENGINE = InnoDB;
 -- Table `mrs_user_has_role`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_user_has_role` (
-  `user_id` BINARY(16) NOT NULL,
-  `role_id` BINARY(16) NOT NULL,
+  `user_id` UUID NOT NULL,
+  `role_id` UUID NOT NULL,
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
   PRIMARY KEY (`user_id`, `role_id`),
@@ -353,10 +353,10 @@ ENGINE = InnoDB;
 -- Table `mrs_user_hierarchy_type`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_user_hierarchy_type` (
-  `id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `caption` VARCHAR(150) NULL,
   `description` VARCHAR(512) NULL,
-  `specific_to_service_id` BINARY(16) NULL,
+  `specific_to_service_id` UUID NULL,
   `options` JSON NULL,
   PRIMARY KEY (`id`),
   INDEX `fk_user_hierarchy_type_service1_idx` (`specific_to_service_id` ASC) VISIBLE,
@@ -372,9 +372,9 @@ ENGINE = InnoDB;
 -- Table `mrs_user_hierarchy`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_user_hierarchy` (
-  `user_id` BINARY(16) NOT NULL,
-  `reporting_to_user_id` BINARY(16) NOT NULL,
-  `user_hierarchy_type_id` BINARY(16) NOT NULL,
+  `user_id` UUID NOT NULL,
+  `reporting_to_user_id` UUID NOT NULL,
+  `user_hierarchy_type_id` UUID NOT NULL,
   `options` JSON NULL,
   PRIMARY KEY (`user_id`, `reporting_to_user_id`, `user_hierarchy_type_id`),
   INDEX `fk_user_hierarchy_auth_user2_idx` (`reporting_to_user_id` ASC) VISIBLE,
@@ -401,8 +401,8 @@ ENGINE = InnoDB;
 -- Table `mrs_privilege`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_privilege` (
-  `id` BINARY(16) NOT NULL,
-  `role_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `role_id` UUID NOT NULL,
   `crud_operations` SET('CREATE', 'READ', 'UPDATE', 'DELETE') NOT NULL DEFAULT '',
   `service_path` VARCHAR(512) NOT NULL DEFAULT '*',
   `schema_path` VARCHAR(255) NOT NULL DEFAULT '*',
@@ -421,8 +421,8 @@ ENGINE = InnoDB;
 -- Table `mrs_user_group`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_user_group` (
-  `id` BINARY(16) NOT NULL,
-  `specific_to_service_id` BINARY(16) NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `specific_to_service_id` UUID NULL,
   `caption` VARCHAR(45) NULL,
   `description` VARCHAR(512) NULL,
   `options` JSON NULL,
@@ -440,8 +440,8 @@ ENGINE = InnoDB;
 -- Table `mrs_user_group_has_role`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_user_group_has_role` (
-  `user_group_id` BINARY(16) NOT NULL,
-  `role_id` BINARY(16) NOT NULL,
+  `user_group_id` UUID NOT NULL,
+  `role_id` UUID NOT NULL,
   `options` JSON NULL,
   PRIMARY KEY (`user_group_id`, `role_id`),
   INDEX `fk_user_group_has_auth_role_auth_role1_idx` (`role_id` ASC) VISIBLE,
@@ -463,8 +463,8 @@ ENGINE = InnoDB;
 -- Table `mrs_user_has_group`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_user_has_group` (
-  `user_id` BINARY(16) NOT NULL,
-  `user_group_id` BINARY(16) NOT NULL,
+  `user_id` UUID NOT NULL,
+  `user_group_id` UUID NOT NULL,
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
   PRIMARY KEY (`user_id`, `user_group_id`),
@@ -487,7 +487,7 @@ ENGINE = InnoDB;
 -- Table `mrs_group_hierarchy_type`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_group_hierarchy_type` (
-  `id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `caption` VARCHAR(150) NULL,
   `description` VARCHAR(512) NULL,
   `options` JSON NULL,
@@ -499,9 +499,9 @@ ENGINE = InnoDB;
 -- Table `mrs_user_group_hierarchy`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_user_group_hierarchy` (
-  `user_group_id` BINARY(16) NOT NULL,
-  `parent_group_id` BINARY(16) NOT NULL,
-  `group_hierarchy_type_id` BINARY(16) NOT NULL,
+  `user_group_id` UUID NOT NULL,
+  `parent_group_id` UUID NOT NULL,
+  `group_hierarchy_type_id` UUID NOT NULL,
   `level` INT UNSIGNED NOT NULL DEFAULT 0,
   `options` JSON NULL,
   PRIMARY KEY (`user_group_id`, `parent_group_id`, `group_hierarchy_type_id`),
@@ -530,8 +530,8 @@ ENGINE = InnoDB;
 -- Table `mrs_db_object_row_group_security`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `mrs_db_object_row_group_security` (
-  `db_object_id` BINARY(16) NOT NULL,
-  `group_hierarchy_type_id` BINARY(16) NOT NULL,
+  `db_object_id` UUID NOT NULL,
+  `group_hierarchy_type_id` UUID NOT NULL,
   `row_group_ownership_column` VARCHAR(255) NOT NULL,
   `level` INT UNSIGNED NOT NULL DEFAULT 0,
   `match_level` ENUM('HIGHER', 'EQUAL OR HIGHER', 'EQUAL', 'LOWER OR EQUAL', 'LOWER') NOT NULL DEFAULT 'HIGHER',
@@ -603,8 +603,8 @@ COMMENT = 'no_audit_log';
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `router_session` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `user_id` BINARY(16) NOT NULL,
-  `service_id` BINARY(16) NOT NULL,
+  `user_id` UUID NOT NULL,
+  `service_id` UUID NOT NULL,
   `expires` DATETIME NOT NULL,
   PRIMARY KEY (`id`))
 ENGINE = InnoDB
@@ -649,12 +649,12 @@ COMMENT = 'no_audit_log';
 -- Table `object`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `object` (
-  `id` BINARY(16) NOT NULL,
-  `db_object_id` BINARY(16) NOT NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `db_object_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `kind` ENUM('RESULT', 'PARAMETERS', 'INTERFACE') NOT NULL DEFAULT 'RESULT',
   `position` INT NOT NULL DEFAULT 0,
-  `row_ownership_field_id` BINARY(16) NULL,
+  `row_ownership_field_id` UUID NULL,
   `options` JSON NULL COMMENT 'Holds data mapping view options for INSERT, UPDATE, DELETE and CHECK, e.g. { dataMappingViewInsert: true, dataMappingViewUpdate: true, dataMappingViewDelete: false, dataMappingViewNoCheck: false }',
   `sdk_options` JSON NULL,
   `comments` VARCHAR(512) NULL,
@@ -673,9 +673,9 @@ ENGINE = InnoDB;
 -- Table `object_reference`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `object_reference` (
-  `id` BINARY(16) NOT NULL,
-  `reduce_to_value_of_field_id` BINARY(16) NULL COMMENT 'If set to an object_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
-  `row_ownership_field_id` BINARY(16) NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `reduce_to_value_of_field_id` UUID NULL COMMENT 'If set to an object_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
+  `row_ownership_field_id` UUID NULL,
   `reference_mapping` JSON NOT NULL COMMENT 'Holds all column mappings of the FK, {kind:\"n:1\", constraint: \"constraint_name\", referenced_schema: \"schema_name\", referenced_table: \"table_name\", column_mapping: [{\"column_name\": \"referenced_column_name\"}, \"to_many\": true, \"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using BINARY(16) for the primary key.',
   `unnest` BIT(1) NOT NULL DEFAULT 0 COMMENT 'If set to TRUE, the properties will be directly added to the parent',
   `options` JSON NULL COMMENT 'Holds data mapping view options for INSERT, UPDATE, DELETE and CHECK, e.g. { dataMappingViewInsert: true, dataMappingViewUpdate: true, dataMappingViewDelete: false, dataMappingViewNoCheck: false }',
@@ -691,10 +691,10 @@ ENGINE = InnoDB;
 -- Table `object_field`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `object_field` (
-  `id` BINARY(16) NOT NULL,
-  `object_id` BINARY(16) NOT NULL,
-  `parent_reference_id` BINARY(16) NULL,
-  `represents_reference_id` BINARY(16) NULL,
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `object_id` UUID NOT NULL,
+  `parent_reference_id` UUID NULL,
+  `represents_reference_id` UUID NULL,
   `name` VARCHAR(255) NOT NULL COMMENT 'The name of the field as returned in the JSON',
   `position` INT NOT NULL,
   `db_column` JSON NULL COMMENT 'Holds information about the original database column, e.g. {\"name\": \"first_name\", \"datatype\":\"VARCHAR(45)\", \"not_null\": true, \"is_primary\": false, \"is_unique\": false, \"is_generated\": false, \"auto_inc\": false}. When representing a STORED PROCEDURE parameter, two optional fields can be set, {\"in\": true, \"out\": false}',
@@ -733,8 +733,8 @@ ENGINE = InnoDB;
 -- Table `service_has_auth_app`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `service_has_auth_app` (
-  `service_id` BINARY(16) NOT NULL,
-  `auth_app_id` BINARY(16) NOT NULL,
+  `service_id` UUID NOT NULL,
+  `auth_app_id` UUID NOT NULL,
   `options` JSON NULL,
   PRIMARY KEY (`service_id`, `auth_app_id`),
   INDEX `fk_service_has_auth_app_auth_app1_idx` (`auth_app_id` ASC) VISIBLE,
@@ -756,8 +756,8 @@ ENGINE = InnoDB;
 -- Table `content_set_has_obj_def`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `content_set_has_obj_def` (
-  `content_set_id` BINARY(16) NOT NULL,
-  `db_object_id` BINARY(16) NOT NULL,
+  `content_set_id` UUID NOT NULL,
+  `db_object_id` UUID NOT NULL,
   `kind` ENUM('Script', 'BeforeCreate', 'BeforeRead', 'BeforeUpdate', 'BeforeDelete', 'AfterCreate', 'AfterRead', 'AfterUpdate', 'AfterDelete') NOT NULL,
   `priority` INT NOT NULL DEFAULT 0,
   `language` VARCHAR(45) NOT NULL,

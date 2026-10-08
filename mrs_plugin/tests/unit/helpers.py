@@ -167,7 +167,7 @@ def get_default_auth_app_init(**kwargs):
     return {
         "service_id": kwargs.get("service_id"),
         "auth_vendor_id": kwargs.get("auth_vendor_id")
-        or lib.core.id_to_binary(
+        or lib.core.id_to_uuid(
             "0x31000000000000000000000000000000", "auth:vendor_id"
         ),
         "name": name,
@@ -708,7 +708,7 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
 
     schema_id = add_schema(**schema_data)
     schema = lib.schemas.get_schema(
-        session, schema_id=lib.core.id_to_binary(schema_id, "schema_id")
+        session, schema_id=lib.core.id_to_uuid(schema_id, "schema_id")
     )
 
     content_set = lib.content_sets.get_content_set(

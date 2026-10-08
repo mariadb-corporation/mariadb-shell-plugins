@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,28 +29,31 @@
 -- -----------------------------------------------------------------------------
 -- This script contains the current development version of the database schema
 -- `mysql_rest_service_metadata`
--- -----------------------------------------------------------------------------
+-- #############################################################################
+
 
 -- #############################################################################
 -- MSM Section 010: Server Variable Settings
 -- -----------------------------------------------------------------------------
 -- Set server variables, remember their state to be able to restore accordingly.
--- -----------------------------------------------------------------------------
+-- #############################################################################
 
 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
     'NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,'
-    'NO_ENGINE_SUBSTITUTION';
+    'NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
 
 -- #############################################################################
 -- MSM Section 110: Database Schema Creation
 -- -----------------------------------------------------------------------------
 -- CREATE SCHEMA statement.
--- -----------------------------------------------------------------------------
+-- #############################################################################
 
 CREATE SCHEMA IF NOT EXISTS `mysql_rest_service_metadata`
     DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+USE `mysql_rest_service_metadata`;
 
 -- #############################################################################
 -- MSM Section 120: Database Schema Version Creation Indication
@@ -57,7 +61,7 @@ CREATE SCHEMA IF NOT EXISTS `mysql_rest_service_metadata`
 -- Create the `mysql_rest_service_metadata`.`msm_schema_version` VIEW
 -- and initialize it with the version 0, 0, 0 which indicates the ongoing
 -- creation processes of the database schema.
--- -----------------------------------------------------------------------------
+-- #############################################################################
 
 CREATE OR REPLACE SQL SECURITY INVOKER
 VIEW `mysql_rest_service_metadata`.`msm_schema_version` (
@@ -74,13 +78,13 @@ SELECT 0, 0, 0;
 -- ROLEs and GRANTs are defined in the MSM Section 170: Authorization.
 -- -----------------------------------------------------------------------------
 -- CREATE TABLE statements and standard INSERTs.
--- -----------------------------------------------------------------------------
+-- #############################################################################
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`url_host`
+-- Table `url_host`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`url_host` (
-  `id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `url_host` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `name` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'Specifies the host name of the MRS as represented in the request URLs. Example: example.com',
   `comments` VARCHAR(512) NULL,
   PRIMARY KEY (`id`),
@@ -89,18 +93,18 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`service`
+-- Table `service`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`service` (
-  `id` BINARY(16) NOT NULL,
-  `parent_id` BINARY(16) NULL,
-  `url_host_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `service` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `parent_id` UUID NULL,
+  `url_host_id` UUID NOT NULL,
   `url_context_root` VARCHAR(255) NOT NULL DEFAULT '/mrs' COMMENT 'Specifies context root of the MRS as represented in the request URLs, default being /mrs. URL Example: https://www.example.com/mrs',
   `url_protocol` SET('HTTP', 'HTTPS') NOT NULL DEFAULT 'HTTPS',
   `name` VARCHAR(255) NOT NULL,
   `enabled` TINYINT NOT NULL DEFAULT 1,
   `published` TINYINT NOT NULL DEFAULT 0,
-  `in_development` JSON NULL COMMENT 'If not NULL, this column indicates that the REST service is currently \"in development\" and holds the name(s) of the developer(s) who is(/are) allowed to work with the service in the \"$.developers\" string array. REST services with this column not being NULL may use the same url_host+url_context_root context path as existing services. Routers only serve REST services with this column being NULL, unless they are bootstrapped with --mrs-development <user> which sets `router`.`option`->>\"$.developer\". When bootstrapped with the --mrs-development <user> option the Router also serves REST services marked \"in development\" with this column\'s \"$.developers\" including the same name as the <user> specified during bootstrap, while these REST services marked \"in development\" take priority over services with the same url_host+url_context_root context path and this column being NULL.',
+  `in_development` JSON NULL COMMENT 'If not NULL, this column indicates that the REST service is currently \"in development\" and holds the name(s) of the developer(s) who is(/are) allowed to work with the service in the \"$.developers\" string array. REST services with this column not being NULL may use the same url_host+url_context_root context path as existing services. Routers only serve REST services with this column being NULL, unless they are bootstrapped with --mrs-development <user> which sets JSON_UNQUOTE(JSON_EXTRACT(router.option, \"$.developer\")). When bootstrapped with the --mrs-development <user> option the Router also serves REST services marked \"in development\" with this column\'s \"$.developers\" including the same name as the <user> specified during bootstrap, while these REST services marked \"in development\" take priority over services with the same url_host+url_context_root context path and this column being NULL.',
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
   `auth_path` VARCHAR(255) NOT NULL DEFAULT '/authentication' COMMENT 'The path used for authentication. The following sub-paths will be made available for <service_path>/<auth_path>:  /login /status /logout /completed',
@@ -115,23 +119,23 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`service` (
   INDEX `fk_service_service1_idx` (`parent_id` ASC) VISIBLE,
   CONSTRAINT `fk_service_url_host1`
     FOREIGN KEY (`url_host_id`)
-    REFERENCES `mysql_rest_service_metadata`.`url_host` (`id`)
+    REFERENCES `url_host` (`id`)
     ON DELETE RESTRICT
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_service_service1`
     FOREIGN KEY (`parent_id`)
-    REFERENCES `mysql_rest_service_metadata`.`service` (`id`)
+    REFERENCES `service` (`id`)
     ON DELETE RESTRICT
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`db_schema`
+-- Table `db_schema`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`db_schema` (
-  `id` BINARY(16) NOT NULL,
-  `service_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `db_schema` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `service_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `schema_type` ENUM('DATABASE_SCHEMA', 'SCRIPT_MODULE') NOT NULL DEFAULT 'DATABASE_SCHEMA',
   `request_path` VARCHAR(255) NOT NULL,
@@ -146,18 +150,18 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`db_schema` (
   INDEX `fk_db_schema_service1_idx` (`service_id` ASC) VISIBLE,
   CONSTRAINT `fk_db_schema_service1`
     FOREIGN KEY (`service_id`)
-    REFERENCES `mysql_rest_service_metadata`.`service` (`id`)
+    REFERENCES `service` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`db_object`
+-- Table `db_object`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`db_object` (
-  `id` BINARY(16) NOT NULL,
-  `db_schema_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `db_object` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `db_schema_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `request_path` VARCHAR(255) NOT NULL,
   `enabled` TINYINT NOT NULL DEFAULT 1,
@@ -175,20 +179,20 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`db_object` (
   `comments` VARCHAR(512) NULL,
   `metadata` JSON NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_db_objects_db_schema1_idx` (`db_schema_id` ASC) INVISIBLE,
+  INDEX `fk_db_objects_db_schema1_idx` (`db_schema_id` ASC) VISIBLE,
   CONSTRAINT `fk_db_objects_db_schema1`
     FOREIGN KEY (`db_schema_id`)
-    REFERENCES `mysql_rest_service_metadata`.`db_schema` (`id`)
+    REFERENCES `db_schema` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`auth_vendor`
+-- Table `auth_vendor`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`auth_vendor` (
-  `id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `auth_vendor` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `name` VARCHAR(65) NOT NULL,
   `validation_url` VARCHAR(255) NULL COMMENT 'URL used to validate the access_token provided by the client. Example: https://graph.facebook.com/debug_token?input_token=%access_token%&access_token=%app_access_token%',
   `enabled` TINYINT NOT NULL DEFAULT 1,
@@ -199,11 +203,11 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`auth_app`
+-- Table `auth_app`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`auth_app` (
-  `id` BINARY(16) NOT NULL,
-  `auth_vendor_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `auth_app` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `auth_vendor_id` UUID NOT NULL,
   `name` VARCHAR(45) NOT NULL,
   `description` VARCHAR(512) NULL,
   `url` VARCHAR(255) NULL,
@@ -212,25 +216,25 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`auth_app` (
   `app_id` VARCHAR(1024) NULL,
   `enabled` TINYINT NULL,
   `limit_to_registered_users` TINYINT NOT NULL DEFAULT 1 COMMENT 'Limit the users that can log in to the list of users in the auth_user table. The auth_user table can be pre-filled with users by specifying the name and email only. The vendor_user_id will be added on the first login automatically.',
-  `default_role_id` BINARY(16) NULL COMMENT 'If set, a new user that has not any auth_roles assigned will get this role assigned when he logs in the first time.',
+  `default_role_id` UUID NULL COMMENT 'If set, a new user that has not any auth_roles assigned will get this role assigned when he logs in the first time.',
   `options` JSON NULL,
   PRIMARY KEY (`id`),
   INDEX `fk_auth_app_auth_vendor1_idx` (`auth_vendor_id` ASC) VISIBLE,
   UNIQUE INDEX `name_UNIQUE` (`name` ASC) VISIBLE,
   CONSTRAINT `fk_auth_app_auth_vendor1`
     FOREIGN KEY (`auth_vendor_id`)
-    REFERENCES `mysql_rest_service_metadata`.`auth_vendor` (`id`)
+    REFERENCES `auth_vendor` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_user`
+-- Table `mrs_user`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user` (
-  `id` BINARY(16) NOT NULL,
-  `auth_app_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_user` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `auth_app_id` UUID NOT NULL,
   `name` VARCHAR(225) NULL,
   `email` VARCHAR(255) NULL,
   `vendor_user_id` VARCHAR(255) NULL,
@@ -246,16 +250,16 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user` (
   INDEX `mrs_user_email` (`email` ASC) VISIBLE,
   CONSTRAINT `fk_auth_user_auth_app1`
     FOREIGN KEY (`auth_app_id`)
-    REFERENCES `mysql_rest_service_metadata`.`auth_app` (`id`)
+    REFERENCES `auth_app` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`config`
+-- Table `config`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`config` (
+CREATE TABLE IF NOT EXISTS `config` (
   `id` TINYINT NOT NULL DEFAULT 1,
   `service_enabled` TINYINT NULL,
   `data` JSON NULL,
@@ -264,10 +268,10 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`redirect`
+-- Table `redirect`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`redirect` (
-  `id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `redirect` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `pattern` VARCHAR(1024) NOT NULL,
   `target` VARCHAR(1024) NOT NULL,
   `kind` ENUM('REDIRECT', 'REWRITE') NOT NULL DEFAULT 'REDIRECT',
@@ -277,28 +281,28 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`url_host_alias`
+-- Table `url_host_alias`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`url_host_alias` (
-  `id` BINARY(16) NOT NULL,
-  `url_host_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `url_host_alias` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `url_host_id` UUID NOT NULL,
   `alias` VARCHAR(255) NOT NULL COMMENT 'Specifies additional aliases for the given host, e.g. www.example.com',
   PRIMARY KEY (`id`),
   INDEX `fk_url_host_alias_url_host1_idx` (`url_host_id` ASC) VISIBLE,
   CONSTRAINT `fk_url_host_alias_url_host1`
     FOREIGN KEY (`url_host_id`)
-    REFERENCES `mysql_rest_service_metadata`.`url_host` (`id`)
+    REFERENCES `url_host` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`content_set`
+-- Table `content_set`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`content_set` (
-  `id` BINARY(16) NOT NULL,
-  `service_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `content_set` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `service_id` UUID NOT NULL,
   `content_type` ENUM('STATIC', 'SCRIPTS') NOT NULL DEFAULT 'STATIC',
   `request_path` VARCHAR(255) NOT NULL,
   `requires_auth` TINYINT NOT NULL DEFAULT 0,
@@ -310,18 +314,18 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`content_set` (
   INDEX `fk_static_content_version_service1_idx` (`service_id` ASC) VISIBLE,
   CONSTRAINT `fk_static_content_version_service1`
     FOREIGN KEY (`service_id`)
-    REFERENCES `mysql_rest_service_metadata`.`service` (`id`)
+    REFERENCES `service` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`content_file`
+-- Table `content_file`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`content_file` (
-  `id` BINARY(16) NOT NULL,
-  `content_set_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `content_file` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `content_set_id` UUID NOT NULL,
   `request_path` VARCHAR(255) NOT NULL DEFAULT '/',
   `requires_auth` TINYINT NOT NULL DEFAULT 0,
   `enabled` TINYINT NOT NULL DEFAULT 1,
@@ -332,16 +336,16 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`content_file` (
   INDEX `fk_content_content_set1_idx` (`content_set_id` ASC) VISIBLE,
   CONSTRAINT `fk_content_content_set1`
     FOREIGN KEY (`content_set_id`)
-    REFERENCES `mysql_rest_service_metadata`.`content_set` (`id`)
+    REFERENCES `content_set` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`audit_log`
+-- Table `audit_log`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`audit_log` (
+CREATE TABLE IF NOT EXISTS `audit_log` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `schema_name` VARCHAR(255) NULL,
   `table_name` VARCHAR(255) NOT NULL,
@@ -349,9 +353,9 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`audit_log` (
   `old_row_data` JSON NULL,
   `new_row_data` JSON NULL,
   `changed_by` VARCHAR(255) NOT NULL,
-  `changed_at` TIMESTAMP NOT NULL,
-  `old_row_id` BINARY(16) NULL,
-  `new_row_id` BINARY(16) NULL,
+  `changed_at` TIMESTAMP(6) NOT NULL,
+  `old_row_id` UUID NULL,
+  `new_row_id` UUID NULL,
   PRIMARY KEY (`id`),
   INDEX `idx_table_name` (`table_name` ASC) VISIBLE,
   INDEX `idx_changed_at` (`changed_at` ASC) VISIBLE,
@@ -362,12 +366,12 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_role`
+-- Table `mrs_role`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_role` (
-  `id` BINARY(16) NOT NULL,
-  `derived_from_role_id` BINARY(16) NULL,
-  `specific_to_service_id` BINARY(16) NULL,
+CREATE TABLE IF NOT EXISTS `mrs_role` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `derived_from_role_id` UUID NULL,
+  `specific_to_service_id` UUID NULL,
   `caption` VARCHAR(150) NOT NULL,
   `description` VARCHAR(512) NULL,
   `options` JSON NULL,
@@ -377,23 +381,23 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_role` (
   UNIQUE INDEX `unique_caption_per_service` (`specific_to_service_id` ASC, `caption` ASC) VISIBLE,
   CONSTRAINT `fk_priv_role_priv_role1`
     FOREIGN KEY (`derived_from_role_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_role` (`id`)
+    REFERENCES `mrs_role` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_auth_role_service1`
     FOREIGN KEY (`specific_to_service_id`)
-    REFERENCES `mysql_rest_service_metadata`.`service` (`id`)
+    REFERENCES `service` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_user_has_role`
+-- Table `mrs_user_has_role`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_has_role` (
-  `user_id` BINARY(16) NOT NULL,
-  `role_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_user_has_role` (
+  `user_id` UUID NOT NULL,
+  `role_id` UUID NOT NULL,
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
   PRIMARY KEY (`user_id`, `role_id`),
@@ -401,71 +405,71 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_has_role` (
   INDEX `fk_auth_user_has_privilege_role_auth_user1_idx` (`user_id` ASC) VISIBLE,
   CONSTRAINT `fk_auth_user_has_privilege_role_auth_user1`
     FOREIGN KEY (`user_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user` (`id`)
+    REFERENCES `mrs_user` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_auth_user_has_privilege_role_privilege_role1`
     FOREIGN KEY (`role_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_role` (`id`)
+    REFERENCES `mrs_role` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_user_hierarchy_type`
+-- Table `mrs_user_hierarchy_type`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy_type` (
-  `id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_user_hierarchy_type` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `caption` VARCHAR(150) NULL,
   `description` VARCHAR(512) NULL,
-  `specific_to_service_id` BINARY(16) NULL,
+  `specific_to_service_id` UUID NULL,
   `options` JSON NULL,
   PRIMARY KEY (`id`),
   INDEX `fk_user_hierarchy_type_service1_idx` (`specific_to_service_id` ASC) VISIBLE,
   CONSTRAINT `fk_user_hierarchy_type_service1`
     FOREIGN KEY (`specific_to_service_id`)
-    REFERENCES `mysql_rest_service_metadata`.`service` (`id`)
+    REFERENCES `service` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_user_hierarchy`
+-- Table `mrs_user_hierarchy`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy` (
-  `user_id` BINARY(16) NOT NULL,
-  `reporting_to_user_id` BINARY(16) NOT NULL,
-  `user_hierarchy_type_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_user_hierarchy` (
+  `user_id` UUID NOT NULL,
+  `reporting_to_user_id` UUID NOT NULL,
+  `user_hierarchy_type_id` UUID NOT NULL,
   `options` JSON NULL,
   PRIMARY KEY (`user_id`, `reporting_to_user_id`, `user_hierarchy_type_id`),
   INDEX `fk_user_hierarchy_auth_user2_idx` (`reporting_to_user_id` ASC) VISIBLE,
   INDEX `fk_user_hierarchy_hierarchy_type1_idx` (`user_hierarchy_type_id` ASC) VISIBLE,
   CONSTRAINT `fk_user_hierarchy_auth_user1`
     FOREIGN KEY (`user_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user` (`id`)
+    REFERENCES `mrs_user` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_user_hierarchy_auth_user2`
     FOREIGN KEY (`reporting_to_user_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user` (`id`)
+    REFERENCES `mrs_user` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_user_hierarchy_hierarchy_type1`
     FOREIGN KEY (`user_hierarchy_type_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user_hierarchy_type` (`id`)
+    REFERENCES `mrs_user_hierarchy_type` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_privilege`
+-- Table `mrs_privilege`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_privilege` (
-  `id` BINARY(16) NOT NULL,
-  `role_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_privilege` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `role_id` UUID NOT NULL,
   `crud_operations` SET('CREATE', 'READ', 'UPDATE', 'DELETE') NOT NULL DEFAULT '',
   `service_path` VARCHAR(512) NOT NULL DEFAULT '*',
   `schema_path` VARCHAR(255) NOT NULL DEFAULT '*',
@@ -474,18 +478,18 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_privilege` (
   PRIMARY KEY (`id`),
   CONSTRAINT `fk_priv_on_schema_auth_role1`
     FOREIGN KEY (`role_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_role` (`id`)
+    REFERENCES `mrs_role` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_user_group`
+-- Table `mrs_user_group`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_group` (
-  `id` BINARY(16) NOT NULL,
-  `specific_to_service_id` BINARY(16) NULL,
+CREATE TABLE IF NOT EXISTS `mrs_user_group` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `specific_to_service_id` UUID NULL,
   `caption` VARCHAR(45) NULL,
   `description` VARCHAR(512) NULL,
   `options` JSON NULL,
@@ -493,41 +497,41 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_group` (
   INDEX `fk_user_group_service1_idx` (`specific_to_service_id` ASC) VISIBLE,
   CONSTRAINT `fk_user_group_service1`
     FOREIGN KEY (`specific_to_service_id`)
-    REFERENCES `mysql_rest_service_metadata`.`service` (`id`)
+    REFERENCES `service` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_user_group_has_role`
+-- Table `mrs_user_group_has_role`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_group_has_role` (
-  `user_group_id` BINARY(16) NOT NULL,
-  `role_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_user_group_has_role` (
+  `user_group_id` UUID NOT NULL,
+  `role_id` UUID NOT NULL,
   `options` JSON NULL,
   PRIMARY KEY (`user_group_id`, `role_id`),
   INDEX `fk_user_group_has_auth_role_auth_role1_idx` (`role_id` ASC) VISIBLE,
   INDEX `fk_user_group_has_auth_role_user_group1_idx` (`user_group_id` ASC) VISIBLE,
   CONSTRAINT `fk_user_group_has_auth_role_user_group1`
     FOREIGN KEY (`user_group_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user_group` (`id`)
+    REFERENCES `mrs_user_group` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_user_group_has_auth_role_auth_role1`
     FOREIGN KEY (`role_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_role` (`id`)
+    REFERENCES `mrs_role` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_user_has_group`
+-- Table `mrs_user_has_group`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_has_group` (
-  `user_id` BINARY(16) NOT NULL,
-  `user_group_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_user_has_group` (
+  `user_id` UUID NOT NULL,
+  `user_group_id` UUID NOT NULL,
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
   PRIMARY KEY (`user_id`, `user_group_id`),
@@ -535,22 +539,22 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_has_group` (
   INDEX `fk_auth_user_has_user_group_auth_user1_idx` (`user_id` ASC) VISIBLE,
   CONSTRAINT `fk_auth_user_has_user_group_auth_user1`
     FOREIGN KEY (`user_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user` (`id`)
+    REFERENCES `mrs_user` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_auth_user_has_user_group_user_group1`
     FOREIGN KEY (`user_group_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user_group` (`id`)
+    REFERENCES `mrs_user_group` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_group_hierarchy_type`
+-- Table `mrs_group_hierarchy_type`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_group_hierarchy_type` (
-  `id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_group_hierarchy_type` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
   `caption` VARCHAR(150) NULL,
   `description` VARCHAR(512) NULL,
   `options` JSON NULL,
@@ -559,12 +563,12 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_user_group_hierarchy`
+-- Table `mrs_user_group_hierarchy`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_group_hierarchy` (
-  `user_group_id` BINARY(16) NOT NULL,
-  `parent_group_id` BINARY(16) NOT NULL,
-  `group_hierarchy_type_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_user_group_hierarchy` (
+  `user_group_id` UUID NOT NULL,
+  `parent_group_id` UUID NOT NULL,
+  `group_hierarchy_type_id` UUID NOT NULL,
   `level` INT UNSIGNED NOT NULL DEFAULT 0,
   `options` JSON NULL,
   PRIMARY KEY (`user_group_id`, `parent_group_id`, `group_hierarchy_type_id`),
@@ -573,28 +577,28 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_user_group_hierarc
   INDEX `fk_user_group_hierarchy_group_hierarchy_type1_idx` (`group_hierarchy_type_id` ASC) VISIBLE,
   CONSTRAINT `fk_user_group_has_user_group_user_group1`
     FOREIGN KEY (`user_group_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user_group` (`id`)
+    REFERENCES `mrs_user_group` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_user_group_has_user_group_user_group2`
     FOREIGN KEY (`parent_group_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_user_group` (`id`)
+    REFERENCES `mrs_user_group` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_user_group_hierarchy_group_hierarchy_type1`
     FOREIGN KEY (`group_hierarchy_type_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_group_hierarchy_type` (`id`)
+    REFERENCES `mrs_group_hierarchy_type` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`mrs_db_object_row_group_security`
+-- Table `mrs_db_object_row_group_security`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_db_object_row_group_security` (
-  `db_object_id` BINARY(16) NOT NULL,
-  `group_hierarchy_type_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_db_object_row_group_security` (
+  `db_object_id` UUID NOT NULL,
+  `group_hierarchy_type_id` UUID NOT NULL,
   `row_group_ownership_column` VARCHAR(255) NOT NULL,
   `level` INT UNSIGNED NOT NULL DEFAULT 0,
   `match_level` ENUM('HIGHER', 'EQUAL OR HIGHER', 'EQUAL', 'LOWER OR EQUAL', 'LOWER') NOT NULL DEFAULT 'HIGHER',
@@ -604,21 +608,21 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`mrs_db_object_row_grou
   PRIMARY KEY (`db_object_id`, `group_hierarchy_type_id`),
   CONSTRAINT `fk_table1_db_object1`
     FOREIGN KEY (`db_object_id`)
-    REFERENCES `mysql_rest_service_metadata`.`db_object` (`id`)
+    REFERENCES `db_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_db_object_row_security_group_hierarchy_type1`
     FOREIGN KEY (`group_hierarchy_type_id`)
-    REFERENCES `mysql_rest_service_metadata`.`mrs_group_hierarchy_type` (`id`)
+    REFERENCES `mrs_group_hierarchy_type` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`router`
+-- Table `router`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`router` (
+CREATE TABLE IF NOT EXISTS `router` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'The ID of the router instance that uniquely identifies the router on this MySQL REST Service setup.',
   `router_name` VARCHAR(255) NOT NULL COMMENT 'A user specified name for an instance of the router. Should default to address:port, where port is the http server port of the router. Set via --name during router bootstrap.',
   `address` VARCHAR(255) CHARACTER SET 'ascii' COLLATE 'ascii_general_ci' NOT NULL COMMENT 'Network address of the host the Router is running on. Set via --report--host during bootstrap.',
@@ -634,9 +638,9 @@ COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`router_status`
+-- Table `router_status`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`router_status` (
+CREATE TABLE IF NOT EXISTS `router_status` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `router_id` INT UNSIGNED NOT NULL,
   `status_time` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'The time the status was reported',
@@ -654,7 +658,7 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`router_status` (
   INDEX `status_time` (`status_time` ASC) VISIBLE,
   CONSTRAINT `fk_router_status_router1`
     FOREIGN KEY (`router_id`)
-    REFERENCES `mysql_rest_service_metadata`.`router` (`id`)
+    REFERENCES `router` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB
@@ -662,12 +666,12 @@ COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`router_session`
+-- Table `router_session`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`router_session` (
+CREATE TABLE IF NOT EXISTS `router_session` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `user_id` BINARY(16) NOT NULL,
-  `service_id` BINARY(16) NOT NULL,
+  `user_id` UUID NOT NULL,
+  `service_id` UUID NOT NULL,
   `expires` DATETIME NOT NULL,
   PRIMARY KEY (`id`))
 ENGINE = InnoDB
@@ -675,13 +679,13 @@ COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`router_general_log`
+-- Table `router_general_log`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`router_general_log` (
+CREATE TABLE IF NOT EXISTS `router_general_log` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `router_id` INT UNSIGNED NOT NULL,
   `router_session_id` INT UNSIGNED NULL,
-  `log_time` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `log_time` TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `log_type` ENUM("INFO", "WARNING", "DEBUG", "ERROR", "FATAL", "SYSTEM", "NOTE") NOT NULL,
   `code` INT UNSIGNED NULL,
   `domain` VARCHAR(255) NULL,
@@ -696,12 +700,12 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`router_general_log` (
   INDEX `router_log_thread_id` (`thread_id` ASC) VISIBLE,
   CONSTRAINT `fk_router_general_log_router1`
     FOREIGN KEY (`router_id`)
-    REFERENCES `mysql_rest_service_metadata`.`router` (`id`)
+    REFERENCES `router` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_router_general_log_router_session1`
     FOREIGN KEY (`router_session_id`)
-    REFERENCES `mysql_rest_service_metadata`.`router_session` (`id`)
+    REFERENCES `router_session` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB
@@ -709,15 +713,15 @@ COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`object`
+-- Table `object`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`object` (
-  `id` BINARY(16) NOT NULL,
-  `db_object_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `object` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `db_object_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `kind` ENUM('RESULT', 'PARAMETERS', 'INTERFACE') NOT NULL DEFAULT 'RESULT',
   `position` INT NOT NULL DEFAULT 0,
-  `row_ownership_field_id` BINARY(16) NULL,
+  `row_ownership_field_id` UUID NULL,
   `options` JSON NULL COMMENT 'Holds data mapping view options for INSERT, UPDATE, DELETE and CHECK, e.g. { dataMappingViewInsert: true, dataMappingViewUpdate: true, dataMappingViewDelete: false, dataMappingViewNoCheck: false }',
   `sdk_options` JSON NULL,
   `comments` VARCHAR(512) NULL,
@@ -726,19 +730,19 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`object` (
   INDEX `row_ownership_object_idx` (`row_ownership_field_id` ASC) VISIBLE,
   CONSTRAINT `fk_result_db_object1`
     FOREIGN KEY (`db_object_id`)
-    REFERENCES `mysql_rest_service_metadata`.`db_object` (`id`)
+    REFERENCES `db_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`object_reference`
+-- Table `object_reference`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`object_reference` (
-  `id` BINARY(16) NOT NULL,
-  `reduce_to_value_of_field_id` BINARY(16) NULL COMMENT 'If set to an object_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
-  `row_ownership_field_id` BINARY(16) NULL,
+CREATE TABLE IF NOT EXISTS `object_reference` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `reduce_to_value_of_field_id` UUID NULL COMMENT 'If set to an object_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
+  `row_ownership_field_id` UUID NULL,
   `reference_mapping` JSON NOT NULL COMMENT 'Holds all column mappings of the FK, {kind:\"n:1\", constraint: \"constraint_name\", referenced_schema: \"schema_name\", referenced_table: \"table_name\", column_mapping: [{\"column_name\": \"referenced_column_name\"}, \"to_many\": true, \"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using BINARY(16) for the primary key.',
   `unnest` BIT(1) NOT NULL DEFAULT 0 COMMENT 'If set to TRUE, the properties will be directly added to the parent',
   `options` JSON NULL COMMENT 'Holds data mapping view options for INSERT, UPDATE, DELETE and CHECK, e.g. { dataMappingViewInsert: true, dataMappingViewUpdate: true, dataMappingViewDelete: false, dataMappingViewNoCheck: false }',
@@ -751,13 +755,13 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`object_field`
+-- Table `object_field`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`object_field` (
-  `id` BINARY(16) NOT NULL,
-  `object_id` BINARY(16) NOT NULL,
-  `parent_reference_id` BINARY(16) NULL,
-  `represents_reference_id` BINARY(16) NULL,
+CREATE TABLE IF NOT EXISTS `object_field` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `object_id` UUID NOT NULL,
+  `parent_reference_id` UUID NULL,
+  `represents_reference_id` UUID NULL,
   `name` VARCHAR(255) NOT NULL COMMENT 'The name of the field as returned in the JSON',
   `position` INT NOT NULL,
   `db_column` JSON NULL COMMENT 'Holds information about the original database column, e.g. {\"name\": \"first_name\", \"datatype\":\"VARCHAR(45)\", \"not_null\": true, \"is_primary\": false, \"is_unique\": false, \"is_generated\": false, \"auto_inc\": false}. When representing a STORED PROCEDURE parameter, two optional fields can be set, {\"in\": true, \"out\": false}',
@@ -776,51 +780,51 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`object_field` (
   INDEX `fk_result_property_result_reference2_idx` (`represents_reference_id` ASC) VISIBLE,
   CONSTRAINT `fk_properties_result1`
     FOREIGN KEY (`object_id`)
-    REFERENCES `mysql_rest_service_metadata`.`object` (`id`)
+    REFERENCES `object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_result_property_result_reference1`
     FOREIGN KEY (`parent_reference_id`)
-    REFERENCES `mysql_rest_service_metadata`.`object_reference` (`id`)
+    REFERENCES `object_reference` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_result_property_result_reference2`
     FOREIGN KEY (`represents_reference_id`)
-    REFERENCES `mysql_rest_service_metadata`.`object_reference` (`id`)
+    REFERENCES `object_reference` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`service_has_auth_app`
+-- Table `service_has_auth_app`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`service_has_auth_app` (
-  `service_id` BINARY(16) NOT NULL,
-  `auth_app_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `service_has_auth_app` (
+  `service_id` UUID NOT NULL,
+  `auth_app_id` UUID NOT NULL,
   `options` JSON NULL,
   PRIMARY KEY (`service_id`, `auth_app_id`),
   INDEX `fk_service_has_auth_app_auth_app1_idx` (`auth_app_id` ASC) VISIBLE,
   INDEX `fk_service_has_auth_app_service1_idx` (`service_id` ASC) VISIBLE,
   CONSTRAINT `fk_service_has_auth_app_service1`
     FOREIGN KEY (`service_id`)
-    REFERENCES `mysql_rest_service_metadata`.`service` (`id`)
+    REFERENCES `service` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_service_has_auth_app_auth_app1`
     FOREIGN KEY (`auth_app_id`)
-    REFERENCES `mysql_rest_service_metadata`.`auth_app` (`id`)
+    REFERENCES `auth_app` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`content_set_has_obj_def`
+-- Table `content_set_has_obj_def`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`content_set_has_obj_def` (
-  `content_set_id` BINARY(16) NOT NULL,
-  `db_object_id` BINARY(16) NOT NULL,
+CREATE TABLE IF NOT EXISTS `content_set_has_obj_def` (
+  `content_set_id` UUID NOT NULL,
+  `db_object_id` UUID NOT NULL,
   `kind` ENUM('Script', 'BeforeCreate', 'BeforeRead', 'BeforeUpdate', 'BeforeDelete', 'AfterCreate', 'AfterRead', 'AfterUpdate', 'AfterDelete') NOT NULL,
   `priority` INT NOT NULL DEFAULT 0,
   `language` VARCHAR(45) NOT NULL,
@@ -835,21 +839,21 @@ CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`content_set_has_obj_de
   INDEX `content_set_has_obj_dev_method_type` (`kind` ASC) VISIBLE,
   CONSTRAINT `fk_content_set_has_db_object_content_set1`
     FOREIGN KEY (`content_set_id`)
-    REFERENCES `mysql_rest_service_metadata`.`content_set` (`id`)
+    REFERENCES `content_set` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_content_set_has_db_object_db_object1`
     FOREIGN KEY (`db_object_id`)
-    REFERENCES `mysql_rest_service_metadata`.`db_object` (`id`)
+    REFERENCES `db_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mysql_rest_service_metadata`.`audit_log_status`
+-- Table `audit_log_status`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mysql_rest_service_metadata`.`audit_log_status` (
+CREATE TABLE IF NOT EXISTS `audit_log_status` (
   `id` TINYINT NOT NULL,
   `last_dump_at` TIMESTAMP NULL,
   `data` JSON NULL,
@@ -861,37 +865,37 @@ COMMENT = 'no_audit_log';
 -- -----------------------------------------------------
 -- Additional SQL
 
--- Ensure only one row in `mysql_rest_service_metadata`.`config`
-ALTER TABLE `mysql_rest_service_metadata`.`config`
+-- Ensure only one row in `config`
+ALTER TABLE `config`
 	ADD CONSTRAINT Config_OnlyOneRow CHECK (id = 1);
 
--- Ensure only one row in `mysql_rest_service_metadata`.`audit_log_status`
-ALTER TABLE `mysql_rest_service_metadata`.`audit_log_status`
+-- Ensure only one row in `audit_log_status`
+ALTER TABLE `audit_log_status`
 	ADD CONSTRAINT AuditLogStatus_OnlyOneRow CHECK (id = 1);
 
 -- Ensure there is a default for service.name taken from url_context_root
-ALTER TABLE `mysql_rest_service_metadata`.`service`
+ALTER TABLE `service`
     CHANGE COLUMN name name VARCHAR(255) NOT NULL DEFAULT (REGEXP_REPLACE(url_context_root, '[^0-9a-zA-Z ]', ''));
 
 -- Ensure page size is within 16K limit
-ALTER TABLE `mysql_rest_service_metadata`.`db_schema`
+ALTER TABLE `db_schema`
 	ADD CONSTRAINT db_schema_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
-ALTER TABLE `mysql_rest_service_metadata`.`db_object`
+ALTER TABLE `db_object`
 	ADD CONSTRAINT db_object_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
 
 -- Ensure an email cannot be used as user name and a user name cannot be used as email
-ALTER TABLE `mysql_rest_service_metadata`.`mrs_user`
+ALTER TABLE `mrs_user`
     ADD CONSTRAINT `mrs_user_no_at_symbol_in_user_name` CHECK (INSTR(name, '@') = 0),
     ADD CONSTRAINT `mrs_user_at_symbol_in_email` CHECK (INSTR(email, '@') > 0 OR email IS NULL OR email = '');
 
 -- Ensure that for STORED PROCEDURE parameters at least one of the 'in' and 'out' flag is set to true
-ALTER TABLE `mysql_rest_service_metadata`.`object_field`
+ALTER TABLE `object_field`
   ADD CONSTRAINT param_mode_not_false CHECK (
-    (db_column->"$.in" IS NULL AND db_column->"$.out" IS NULL) OR
-    (db_column->"$.in" + db_column->"$.out" >= 1));
+    (JSON_EXTRACT(db_column, "$.in") IS NULL AND JSON_EXTRACT(db_column, "$.out") IS NULL) OR
+    (JSON_EXTRACT(db_column, "$.in") + JSON_EXTRACT(db_column, "$.out") >= 1));
 
--- Ensure the service.in_development->>$.developers is a list that only holds unique strings
-ALTER TABLE `mysql_rest_service_metadata`.`service`
+-- Ensure the JSON_UNQUOTE(JSON_EXTRACT(service.in_development, '$.developers')) is a list that only holds unique strings
+ALTER TABLE `service`
   ADD CONSTRAINT in_development_developers_check CHECK(
     JSON_SCHEMA_VALID('{
     "id": "https://dev.mysql.com/mrs/service/in_development",
@@ -907,8 +911,18 @@ ALTER TABLE `mysql_rest_service_metadata`.`service`
         }
     },
     "required": [ "developers" ]
-    }', s.in_development)
+    }', in_development)
 );
+
+-- Ensure roles associated to a service are deleted in order when that service is deleted.
+ALTER TABLE `mrs_role`
+    DROP FOREIGN KEY `fk_priv_role_priv_role1`;
+ALTER TABLE `mrs_role`
+    ALGORITHM = COPY,
+    ADD CONSTRAINT `fk_priv_role_priv_role1`
+        FOREIGN KEY (`derived_from_role_id`)
+        REFERENCES `mrs_role` (`id`)
+        ON DELETE CASCADE;
 
 -- -----------------------------------------------------
 -- INSERTs
@@ -916,61 +930,61 @@ ALTER TABLE `mysql_rest_service_metadata`.`service`
 -- -----------------------------------------------------------------------------
 -- Host filter that matches any string
 INSERT INTO `mysql_rest_service_metadata`.`url_host` (`id`, `name`, `comments`)
-VALUES (0x31, '', 'Match any host');
+VALUES ('31000000-0000-0000-0000-000000000000', '', 'Match any host');
 
 -- -----------------------------------------------------------------------------
 -- MRS Authentication Vendors
 INSERT INTO `mysql_rest_service_metadata`.`auth_vendor` (
     `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
-VALUES (0x30, 'MRS', NULL, 1, 'Built-in user management of MRS', NULL);
+VALUES ('30000000-0000-0000-0000-000000000000', 'MRS', NULL, 1, 'Built-in user management of MRS', NULL);
 
 INSERT INTO `mysql_rest_service_metadata`.`auth_vendor` (
     `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
-VALUES (0x31, 'MySQL Internal', NULL, 1,
+VALUES ('31000000-0000-0000-0000-000000000000', 'MySQL Internal', NULL, 1,
     'Provides basic authentication via MySQL Server accounts', NULL);
 
 INSERT INTO `mysql_rest_service_metadata`.`auth_vendor` (
     `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
-VALUES (0x32, 'Facebook', NULL, 1, 'Uses the Facebook Login OAuth2 service',
+VALUES ('32000000-0000-0000-0000-000000000000', 'Facebook', NULL, 1, 'Uses the Facebook Login OAuth2 service',
     NULL);
 
 INSERT INTO `mysql_rest_service_metadata`.`auth_vendor` (
     `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
-VALUES (0x34, 'Google', NULL, 1, 'Uses the Google OAuth2 service', NULL);
+VALUES ('34000000-0000-0000-0000-000000000000', 'Google', NULL, 1, 'Uses the Google OAuth2 service', NULL);
 
 INSERT INTO `mysql_rest_service_metadata`.`auth_vendor` (
     `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
-VALUES (0x35, 'OCI OAuth2', NULL, 1, 'Uses the OCI OAuth2 service', NULL);
+VALUES ('35000000-0000-0000-0000-000000000000', 'OCI OAuth2', NULL, 1, 'Uses the OCI OAuth2 service', NULL);
 
 -- Default MySQL auth_app for MySQL Internal Authentication
 INSERT INTO `mysql_rest_service_metadata`.`auth_app` (
     `id`, `auth_vendor_id`, `name`, `description`, `enabled`,
     `limit_to_registered_users`, `default_role_id`, `options`)
-VALUES (0x31, 0x31, 'MySQL',
+VALUES ('31000000-0000-0000-0000-000000000000', '31000000-0000-0000-0000-000000000000', 'MySQL',
     'Provide login capabilities for MySQL Server user accounts.',
-    TRUE, FALSE, 0x31, NULL);
+    TRUE, FALSE, '31000000-0000-0000-0000-000000000000', NULL);
 
 -- Default role for full access
 INSERT INTO `mysql_rest_service_metadata`.`mrs_role` (
     `id`, `derived_from_role_id`, `specific_to_service_id`, `caption`,
     `description`, `options`)
-VALUES (0x31, NULL, NULL, 'Full Access', 'Full access to all db_objects', NULL);
+VALUES ('31000000-0000-0000-0000-000000000000', NULL, NULL, 'Full Access', 'Full access to all db_objects', NULL);
 
 -- Default privilege that defines full access
 INSERT INTO `mysql_rest_service_metadata`.`mrs_privilege` (
     `id`, `role_id`, `crud_operations`, `service_path`, `schema_path`,
     `object_path`, `options`)
-VALUES (0x31, 0x31, 'CREATE,READ,UPDATE,DELETE', DEFAULT, DEFAULT, DEFAULT,
+VALUES ('31000000-0000-0000-0000-000000000000', '31000000-0000-0000-0000-000000000000', 'CREATE,READ,UPDATE,DELETE', DEFAULT, DEFAULT, DEFAULT,
     NULL);
 
 -- User hierarchy types
 INSERT INTO `mysql_rest_service_metadata`.`mrs_user_hierarchy_type` (
     `id`, `caption`, `description`, `specific_to_service_id`, `options`)
-VALUES (0x31, 'Direct Report', 'An employee directly reporting to the user',
+VALUES ('31000000-0000-0000-0000-000000000000', 'Direct Report', 'An employee directly reporting to the user',
     NULL, NULL);
 INSERT INTO `mysql_rest_service_metadata`.`mrs_user_hierarchy_type` (
     `id`, `caption`, `description`, `specific_to_service_id`, `options`)
-VALUES (0x32, 'Dotted Line Report',
+VALUES ('32000000-0000-0000-0000-000000000000', 'Dotted Line Report',
     'An employee reporting to the user via a dotted line relationship',
     NULL, NULL);
 
@@ -995,7 +1009,7 @@ INSERT INTO `mysql_rest_service_metadata`.`config` (`id`, `service_enabled`, `da
 -- -----------------------------------------------------------------------------
 -- All other schema object definitions (VIEWS, PROCEDUREs, FUNCTIONs, TRIGGERs,
 -- EVENTS, ...).
--- -----------------------------------------------------------------------------
+-- #############################################################################
 
 -- -----------------------------------------------------
 -- VIEWs
@@ -1004,14 +1018,14 @@ INSERT INTO `mysql_rest_service_metadata`.`config` (`id`, `service_enabled`, `da
 -- View `mysql_rest_service_metadata`.`mrs_user_schema_version`
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE SQL SECURITY INVOKER
-VIEW `mysql_rest_service_metadata`.`mrs_user_schema_version` (
+VIEW `mrs_user_schema_version` (
     major, minor, patch) AS
 SELECT 4, 0, 0;
 
 -- -----------------------------------------------------------------------------
 -- View `mysql_rest_service_metadata`.`object_fields_with_references`
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE SQL SECURITY INVOKER VIEW `mysql_rest_service_metadata`.`object_fields_with_references` AS
+CREATE OR REPLACE SQL SECURITY INVOKER VIEW `object_fields_with_references` AS
 WITH RECURSIVE obj_fields (
     caption, lev, position, id, represents_reference_id, parent_reference_id, object_id,
     name, db_column, enabled,
@@ -1023,8 +1037,8 @@ WITH RECURSIVE obj_fields (
         f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
         f.options, f.sdk_options, f.comments,
         IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
-            'reduce_to_value_of_field_id', TO_BASE64(r.reduce_to_value_of_field_id),
-            'row_ownership_field_id', TO_BASE64(r.row_ownership_field_id),
+            'reduce_to_value_of_field_id', r.reduce_to_value_of_field_id,
+            'row_ownership_field_id', r.row_ownership_field_id,
             'reference_mapping', r.reference_mapping,
             'unnest', (r.unnest = 1),
             'options', r.options,
@@ -1041,8 +1055,8 @@ WITH RECURSIVE obj_fields (
         f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
         f.options, f.sdk_options, f.comments,
         IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
-            'reduce_to_value_of_field_id', TO_BASE64(rc.reduce_to_value_of_field_id),
-            'row_ownership_field_id', TO_BASE64(rc.row_ownership_field_id),
+            'reduce_to_value_of_field_id', rc.reduce_to_value_of_field_id,
+            'row_ownership_field_id', rc.row_ownership_field_id,
             'reference_mapping', rc.reference_mapping,
             'unnest', (rc.unnest = 1),
             'options', rc.options,
@@ -1063,15 +1077,15 @@ SELECT * FROM obj_fields;
 -- View `mysql_rest_service_metadata`.`router_services`
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE SQL SECURITY INVOKER
-VIEW `mysql_rest_service_metadata`.`router_services` AS
-SELECT r.id AS router_id, r.router_name, r.address, r.attributes->>'$.developer' AS router_developer,
+VIEW `router_services` AS
+SELECT r.id AS router_id, r.router_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.attributes, '$.developer')) AS router_developer,
     s.id as service_id, h.name AS service_url_host_name,
     s.url_context_root AS service_url_context_root,
     CONCAT(h.name, s.url_context_root) AS service_host_ctx,
     s.published, s.in_development,
     (SELECT GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item)
         FROM JSON_TABLE(
-        s.in_development->>'$.developers', '$[*]' COLUMNS (item text path '$')
+        JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
     ) AS jt) AS sorted_developers
 FROM `mysql_rest_service_metadata`.`service` s
     LEFT JOIN `mysql_rest_service_metadata`.`url_host` h
@@ -1081,13 +1095,13 @@ WHERE
     (enabled = 1)
     AND (
     ((published = 1) AND (NOT EXISTS (select s2.id from `mysql_rest_service_metadata`.`service` s2 where s.url_host_id=s2.url_host_id AND s.url_context_root=s2.url_context_root
-        AND JSON_OVERLAPS(r.attributes->'$.developer', s2.in_development->>'$.developers'))))
+        AND JSON_OVERLAPS(JSON_EXTRACT(r.attributes, '$.developer'), JSON_UNQUOTE(JSON_EXTRACT(s2.in_development, '$.developers'))))))
     OR
     ((published = 0) AND (s.id IN (select s2.id from `mysql_rest_service_metadata`.`service` s2 where s.url_host_id=s2.url_host_id AND s.url_context_root=s2.url_context_root
-        AND JSON_OVERLAPS(r.attributes->'$.developer', s2.in_development->>'$.developers'))))
+        AND JSON_OVERLAPS(JSON_EXTRACT(r.attributes, '$.developer'), JSON_UNQUOTE(JSON_EXTRACT(s2.in_development, '$.developers'))))))
     OR
-    ((published = 0) AND (r.options->'$.developer' IS NOT NULL
-        OR r.attributes->'$.developer' IS NOT NULL) AND s.in_development IS NULL)
+    ((published = 0) AND (JSON_EXTRACT(r.options, '$.developer') IS NOT NULL
+        OR JSON_EXTRACT(r.attributes, '$.developer') IS NOT NULL) AND s.in_development IS NULL)
     );
 
 -- -----------------------------------------------------
@@ -1096,11 +1110,11 @@ WHERE
 DELIMITER %%
 
 -- -----------------------------------------------------------------------------
--- CREATE PROCEDURE `mysql_rest_service_metadata`.`msm_instance_demoted`
+-- CREATE PROCEDURE `msm_instance_demoted`
 -- -----------------------------------------------------------------------------
 
-DROP PROCEDURE IF EXISTS `mysql_rest_service_metadata`.`msm_instance_demoted`%%
-CREATE PROCEDURE `mysql_rest_service_metadata`.`msm_instance_demoted`()
+DROP PROCEDURE IF EXISTS `msm_instance_demoted`%%
+CREATE PROCEDURE `msm_instance_demoted`()
 SQL SECURITY DEFINER
 COMMENT 'This procedure needs to be called on a primary instance in an InnoDB Cluster setup before it is demoted to
     become a secondary.'
@@ -1111,11 +1125,11 @@ BEGIN
 END%%
 
 -- -----------------------------------------------------------------------------
--- CREATE PROCEDURE `mysql_rest_service_metadata`.`msm_instance_promoted`
+-- CREATE PROCEDURE `msm_instance_promoted`
 -- -----------------------------------------------------------------------------
 
-DROP PROCEDURE IF EXISTS `mysql_rest_service_metadata`.`msm_instance_promoted`%%
-CREATE PROCEDURE `mysql_rest_service_metadata`.`msm_instance_promoted`()
+DROP PROCEDURE IF EXISTS `msm_instance_promoted`%%
+CREATE PROCEDURE `msm_instance_promoted`()
 SQL SECURITY DEFINER
 COMMENT 'This procedure needs to be called on an instance in an InnoDB Cluster setup when it is promoted to
     become the primary.'
@@ -1130,35 +1144,39 @@ END%%
 -- CREATE FUNCTIONs
 -- -----------------------------------------------------------------------------
 
-DROP FUNCTION IF EXISTS `mysql_rest_service_metadata`.`get_sequence_id`%%
-CREATE FUNCTION `mysql_rest_service_metadata`.`get_sequence_id`() RETURNS BINARY(16) SQL SECURITY INVOKER NOT DETERMINISTIC NO SQL
-RETURN UUID_TO_BIN(UUID(), 1)%%
+DROP FUNCTION IF EXISTS `get_sequence_id`%%
+CREATE FUNCTION `get_sequence_id`() RETURNS UUID SQL SECURITY INVOKER NOT DETERMINISTIC NO SQL
+BEGIN
+    -- Time-ordered, like the UUID_v7() DEFAULT of the id columns, so new rows
+    -- append to the primary key index.
+    RETURN UUID_v7();
+END%%
 
-DROP FUNCTION IF EXISTS `mysql_rest_service_metadata`.`valid_request_path`%%
-CREATE FUNCTION `mysql_rest_service_metadata`.`valid_request_path`(path VARCHAR(255))
+DROP FUNCTION IF EXISTS `valid_request_path`%%
+CREATE FUNCTION `valid_request_path`(path VARCHAR(255))
 RETURNS TINYINT(1) NOT DETERMINISTIC READS SQL DATA
 BEGIN
     SET @valid := (SELECT COUNT(*) = 0 AS valid FROM
-        (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name,
+        (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name,
             se.url_context_root) as full_request_path
         FROM `mysql_rest_service_metadata`.service se
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
-        WHERE CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) = path
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) = path
             AND se.enabled = TRUE
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.db_schema sc
             LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
                 ON se.id = sc.service_id
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
-        WHERE CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
                 sc.request_path) = path
             AND se.enabled = TRUE
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path, o.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.db_object o
             LEFT OUTER JOIN `mysql_rest_service_metadata`.db_schema sc
@@ -1167,18 +1185,18 @@ BEGIN
                 ON se.id = sc.service_id
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
-        WHERE CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
                 sc.request_path, o.request_path) = path
             AND se.enabled = TRUE
         UNION
-        SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             co.request_path) as full_request_path
         FROM `mysql_rest_service_metadata`.content_set co
             LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
                 ON se.id = co.service_id
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
-        WHERE CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root,
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
                 co.request_path) = path
             AND se.enabled = TRUE) AS p);
 
@@ -1190,8 +1208,8 @@ END%%
 -- CREATE PROCEDUREs
 -- -----------------------------------------------------------------------------
 
-DROP PROCEDURE IF EXISTS `mysql_rest_service_metadata`.`dump_audit_log`%%
-CREATE PROCEDURE `mysql_rest_service_metadata`.`dump_audit_log`()
+DROP PROCEDURE IF EXISTS `dump_audit_log`%%
+CREATE PROCEDURE `dump_audit_log`()
 SQL SECURITY DEFINER
 COMMENT 'The dump_audit_log procedure allows the audit_log table to be exported to a file
     Please note that the secure_file_priv global variable must be set for this to work in the my.ini / my.cnf file
@@ -1244,135 +1262,263 @@ END%%
 
 -- Procedure to fetch all table columns as well as references to related tables
 
-DROP PROCEDURE IF EXISTS `mysql_rest_service_metadata`.`table_columns_with_references`%%
-CREATE PROCEDURE `mysql_rest_service_metadata`.`table_columns_with_references`(
+DROP PROCEDURE IF EXISTS `table_columns_with_references`%%
+CREATE PROCEDURE `table_columns_with_references`(
     p_schema_name VARCHAR(64), p_table_name VARCHAR(64))
 BEGIN
-    SELECT f.*, js.json_schema_def FROM (
-        -- Get the table columns
-        SELECT c.ORDINAL_POSITION AS position, c.COLUMN_NAME AS name,
-            NULL AS ref_column_names,
-            JSON_OBJECT(
-                'name', c.COLUMN_NAME,
-                'datatype', c.COLUMN_TYPE,
-                'not_null', c.IS_NULLABLE = 'NO',
-                'is_primary', c.COLUMN_KEY = 'PRI',
-                'is_unique', c.COLUMN_KEY = 'UNI',
-                'is_generated', c.GENERATION_EXPRESSION <> '',
-                'id_generation', IF(c.EXTRA = 'auto_increment', 'auto_inc',
-                    IF(c.COLUMN_KEY = 'PRI' AND c.DATA_TYPE = 'binary' AND c.CHARACTER_MAXIMUM_LENGTH = 16,
-                        'rev_uuid', NULL)),
-                'comment', c.COLUMN_COMMENT,
-                'srid', c.SRS_ID,
-                'column_default', c.COLUMN_DEFAULT,
-                'charset', c.CHARACTER_SET_NAME,
-                'collation', c.COLLATION_NAME
-                ) AS db_column,
-            NULL AS reference_mapping,
-            c.TABLE_SCHEMA as table_schema, c.TABLE_NAME as table_name
-        FROM INFORMATION_SCHEMA.COLUMNS AS c
-            LEFT OUTER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
-                ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
-                    AND c.COLUMN_NAME=k.COLUMN_NAME
-                    AND NOT ISNULL(k.POSITION_IN_UNIQUE_CONSTRAINT)
-        WHERE c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
-        -- Union with the references that point from the table to other tables (n:1)
-        UNION
-        SELECT MAX(c.ORDINAL_POSITION) + 100 AS position, MAX(k.REFERENCED_TABLE_NAME) AS name,
-            GROUP_CONCAT(c.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
-            NULL AS db_column,
-            JSON_MERGE_PRESERVE(
-                JSON_OBJECT('kind', 'n:1'),
-                JSON_OBJECT('constraint',
-                    CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
-                JSON_OBJECT('to_many', FALSE),
-                JSON_OBJECT('referenced_schema', MAX(k.REFERENCED_TABLE_SCHEMA)),
-                JSON_OBJECT('referenced_table', MAX(k.REFERENCED_TABLE_NAME)),
-                JSON_OBJECT('column_mapping',
-                    JSON_ARRAYAGG(JSON_OBJECT(
-                        'base', c.COLUMN_NAME,
-                        'ref', k.REFERENCED_COLUMN_NAME)))
-            ) AS reference_mapping,
-            MAX(c.TABLE_SCHEMA) AS table_schema, MAX(c.TABLE_NAME) AS table_name
-        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
-            JOIN INFORMATION_SCHEMA.COLUMNS AS c
-                ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
-                    AND c.COLUMN_NAME=k.COLUMN_NAME
-                    AND c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
-        WHERE NOT ISNULL(k.REFERENCED_TABLE_NAME)
-        GROUP BY k.CONSTRAINT_NAME, k.table_schema, k.table_name
-        UNION
-        -- Union with the references that point from other tables to the table (1:1 and 1:n)
-        SELECT MAX(c.ORDINAL_POSITION) + 1000 AS position,
-            MAX(c.TABLE_NAME) AS name,
-            GROUP_CONCAT(k.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
-            NULL AS db_column,
-            JSON_MERGE_PRESERVE(
-                -- If the PKs of the table and the referred table are exactly the same,
-                -- this is a 1:1 relationship, otherwise an 1:n
-                JSON_OBJECT('kind', IF(JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 1,
-                    '1:1', '1:n')),
-                JSON_OBJECT('constraint',
-                    CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
-                JSON_OBJECT('to_many', JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 0),
-                JSON_OBJECT('referenced_schema', MAX(c.TABLE_SCHEMA)),
-                JSON_OBJECT('referenced_table', MAX(c.TABLE_NAME)),
-                JSON_OBJECT('column_mapping',
-                    JSON_ARRAYAGG(JSON_OBJECT(
-                        'base', k.REFERENCED_COLUMN_NAME,
-                        'ref', c.COLUMN_NAME)))
-            ) AS reference_mapping,
-            MAX(k.REFERENCED_TABLE_SCHEMA) AS table_schema,
-            MAX(k.REFERENCED_TABLE_NAME) AS table_name
-        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
-            JOIN INFORMATION_SCHEMA.COLUMNS AS c
-                ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
-                    AND c.COLUMN_NAME=k.COLUMN_NAME
-            -- The PK columns of the table, e.g. ['test_fk.product.id']
-            JOIN (SELECT JSON_ARRAYAGG(CONCAT(c2.TABLE_SCHEMA, '.',
-                        c2.TABLE_NAME, '.', c2.COLUMN_NAME)) AS PK,
-                    c2.TABLE_SCHEMA, c2.TABLE_NAME
-                    FROM INFORMATION_SCHEMA.COLUMNS AS c2
-                    WHERE c2.COLUMN_KEY = 'PRI'
-                    GROUP BY c2.COLUMN_KEY, c2.TABLE_SCHEMA, c2.TABLE_NAME) AS PK_TABLE
-                ON PK_TABLE.TABLE_SCHEMA = k.REFERENCED_TABLE_SCHEMA
-                    AND PK_TABLE.TABLE_NAME = k.REFERENCED_TABLE_NAME
-            -- The PK columns of the referenced table,
-            -- e.g. ['test_fk.product_part.id', 'test_fk.product.id']
-            JOIN (SELECT JSON_ARRAYAGG(PK2.PK_COL) AS PK, PK2.TABLE_SCHEMA, PK2.TABLE_NAME
-                FROM (SELECT IFNULL(
-                    CONCAT(MAX(k1.REFERENCED_TABLE_SCHEMA), '.',
-                        MAX(k1.REFERENCED_TABLE_NAME), '.', MAX(k1.REFERENCED_COLUMN_NAME)),
-                    CONCAT(c1.TABLE_SCHEMA, '.', c1.TABLE_NAME, '.', c1.COLUMN_NAME)) AS PK_COL,
-                    c1.TABLE_SCHEMA AS TABLE_SCHEMA, c1.TABLE_NAME AS TABLE_NAME
-                    FROM INFORMATION_SCHEMA.COLUMNS AS c1
-                        JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k1
-                            ON k1.TABLE_SCHEMA = c1.TABLE_SCHEMA
-                                AND k1.TABLE_NAME = c1.TABLE_NAME
-                                AND k1.COLUMN_NAME = c1.COLUMN_NAME
-                    WHERE c1.COLUMN_KEY = 'PRI'
-                    GROUP BY c1.COLUMN_NAME, c1.TABLE_SCHEMA, c1.TABLE_NAME) AS PK2
-                    GROUP BY PK2.TABLE_SCHEMA, PK2.TABLE_NAME) AS PK_REF
-                ON PK_REF.TABLE_SCHEMA = k.TABLE_SCHEMA AND PK_REF.TABLE_NAME = k.TABLE_NAME
-        WHERE k.REFERENCED_TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND k.REFERENCED_TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
-        GROUP BY k.CONSTRAINT_NAME, c.TABLE_SCHEMA, c.TABLE_NAME
-        ) AS f
-        -- LEFT JOIN with possible JSON_SCHEMA CHECK constraint for the given column
-        LEFT OUTER JOIN (
-            SELECT co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME, MAX(co.JSON_SCHEMA_DEF) AS json_schema_def
-            FROM (SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, TRIM('`' FROM TRIM(TRAILING ')' FROM
-                    REGEXP_SUBSTR(REGEXP_SUBSTR(cc.CHECK_CLAUSE, 'json_schema_valid\s*\\(.*,\s*`[^`]*`\s*\\)'), '`[^`]*`\\)')
-                    )) AS COLUMN_NAME,
-                    tc.ENFORCED, cc.CONSTRAINT_NAME,
-                    REPLACE(TRIM('\\''' FROM REGEXP_REPLACE(SUBSTRING(cc.CHECK_CLAUSE FROM LOCATE('{', cc.CHECK_CLAUSE)), '\s*,\s*`[^`]*`\\).*', '')), '\\\\n', '\n') AS JSON_SCHEMA_DEF
-                FROM `information_schema`.`TABLE_CONSTRAINTS` AS tc
-                    LEFT OUTER JOIN information_schema.CHECK_CONSTRAINTS AS cc
-                        ON cc.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
-                ) AS co
-            WHERE co.COLUMN_NAME IS NOT NULL AND co.ENFORCED = 'YES' AND JSON_VALID(co.JSON_SCHEMA_DEF) AND co.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND co.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
-            GROUP BY co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME) AS js
-        ON f.TABLE_SCHEMA = js.TABLE_SCHEMA AND f.TABLE_NAME = js.TABLE_NAME AND f.name = js.COLUMN_NAME
-    ORDER BY f.position;
+    IF NOT @@version LIKE '%MariaDB%' THEN
+        SELECT f.*, js.json_schema_def FROM (
+            -- Get the table columns
+            SELECT c.ORDINAL_POSITION AS position, c.COLUMN_NAME AS name,
+                NULL AS ref_column_names,
+                JSON_OBJECT(
+                    'name', c.COLUMN_NAME,
+                    'datatype', c.COLUMN_TYPE,
+                    'not_null', c.IS_NULLABLE = 'NO',
+                    'is_primary', c.COLUMN_KEY = 'PRI',
+                    'is_unique', c.COLUMN_KEY = 'UNI',
+                    'is_generated', c.GENERATION_EXPRESSION <> '',
+                    'id_generation', IF(c.EXTRA = 'auto_increment', 'auto_inc',
+                        IF(c.COLUMN_KEY = 'PRI' AND c.DATA_TYPE = 'binary' AND c.CHARACTER_MAXIMUM_LENGTH = 16,
+                            'rev_uuid', NULL)),
+                    'comment', c.COLUMN_COMMENT,
+                    'srid', c.SRS_ID,
+                    'column_default', c.COLUMN_DEFAULT,
+                    'charset', c.CHARACTER_SET_NAME,
+                    'collation', c.COLLATION_NAME
+                    ) AS db_column,
+                NULL AS reference_mapping,
+                c.TABLE_SCHEMA as table_schema, c.TABLE_NAME as table_name
+            FROM INFORMATION_SCHEMA.COLUMNS AS c
+                LEFT OUTER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                        AND NOT ISNULL(k.POSITION_IN_UNIQUE_CONSTRAINT)
+            WHERE c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            -- Union with the references that point from the table to other tables (n:1)
+            UNION
+            SELECT MAX(c.ORDINAL_POSITION) + 100 AS position, MAX(k.REFERENCED_TABLE_NAME) AS name,
+                GROUP_CONCAT(c.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+                NULL AS db_column,
+                JSON_MERGE_PRESERVE(
+                    JSON_OBJECT('kind', 'n:1'),
+                    JSON_OBJECT('constraint',
+                        CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+                    JSON_OBJECT('to_many', FALSE),
+                    JSON_OBJECT('referenced_schema', MAX(k.REFERENCED_TABLE_SCHEMA)),
+                    JSON_OBJECT('referenced_table', MAX(k.REFERENCED_TABLE_NAME)),
+                    JSON_OBJECT('column_mapping',
+                        JSON_ARRAYAGG(JSON_OBJECT(
+                            'base', c.COLUMN_NAME,
+                            'ref', k.REFERENCED_COLUMN_NAME)))
+                ) AS reference_mapping,
+                MAX(c.TABLE_SCHEMA) AS table_schema, MAX(c.TABLE_NAME) AS table_name
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                JOIN INFORMATION_SCHEMA.COLUMNS AS c
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                        AND c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            WHERE NOT ISNULL(k.REFERENCED_TABLE_NAME)
+            GROUP BY k.CONSTRAINT_NAME, k.table_schema, k.table_name
+            UNION
+            -- Union with the references that point from other tables to the table (1:1 and 1:n)
+            SELECT MAX(c.ORDINAL_POSITION) + 1000 AS position,
+                MAX(c.TABLE_NAME) AS name,
+                GROUP_CONCAT(k.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+                NULL AS db_column,
+                JSON_MERGE_PRESERVE(
+                    -- If the PKs of the table and the referred table are exactly the same,
+                    -- this is a 1:1 relationship, otherwise an 1:n
+                    JSON_OBJECT('kind', IF(JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 1,
+                        '1:1', '1:n')),
+                    JSON_OBJECT('constraint',
+                        CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+                    JSON_OBJECT('to_many', JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 0),
+                    JSON_OBJECT('referenced_schema', MAX(c.TABLE_SCHEMA)),
+                    JSON_OBJECT('referenced_table', MAX(c.TABLE_NAME)),
+                    JSON_OBJECT('column_mapping',
+                        JSON_ARRAYAGG(JSON_OBJECT(
+                            'base', k.REFERENCED_COLUMN_NAME,
+                            'ref', c.COLUMN_NAME)))
+                ) AS reference_mapping,
+                MAX(k.REFERENCED_TABLE_SCHEMA) AS table_schema,
+                MAX(k.REFERENCED_TABLE_NAME) AS table_name
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                JOIN INFORMATION_SCHEMA.COLUMNS AS c
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                -- The PK columns of the table, e.g. ['test_fk.product.id']
+                JOIN (SELECT JSON_ARRAYAGG(CONCAT(c2.TABLE_SCHEMA, '.',
+                            c2.TABLE_NAME, '.', c2.COLUMN_NAME)) AS PK,
+                        c2.TABLE_SCHEMA, c2.TABLE_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS AS c2
+                        WHERE c2.COLUMN_KEY = 'PRI'
+                        GROUP BY c2.COLUMN_KEY, c2.TABLE_SCHEMA, c2.TABLE_NAME) AS PK_TABLE
+                    ON PK_TABLE.TABLE_SCHEMA = k.REFERENCED_TABLE_SCHEMA
+                        AND PK_TABLE.TABLE_NAME = k.REFERENCED_TABLE_NAME
+                -- The PK columns of the referenced table,
+                -- e.g. ['test_fk.product_part.id', 'test_fk.product.id']
+                JOIN (SELECT JSON_ARRAYAGG(PK2.PK_COL) AS PK, PK2.TABLE_SCHEMA, PK2.TABLE_NAME
+                    FROM (SELECT IFNULL(
+                        CONCAT(MAX(k1.REFERENCED_TABLE_SCHEMA), '.',
+                            MAX(k1.REFERENCED_TABLE_NAME), '.', MAX(k1.REFERENCED_COLUMN_NAME)),
+                        CONCAT(c1.TABLE_SCHEMA, '.', c1.TABLE_NAME, '.', c1.COLUMN_NAME)) AS PK_COL,
+                        c1.TABLE_SCHEMA AS TABLE_SCHEMA, c1.TABLE_NAME AS TABLE_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS AS c1
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k1
+                                ON k1.TABLE_SCHEMA = c1.TABLE_SCHEMA
+                                    AND k1.TABLE_NAME = c1.TABLE_NAME
+                                    AND k1.COLUMN_NAME = c1.COLUMN_NAME
+                        WHERE c1.COLUMN_KEY = 'PRI'
+                        GROUP BY c1.COLUMN_NAME, c1.TABLE_SCHEMA, c1.TABLE_NAME) AS PK2
+                        GROUP BY PK2.TABLE_SCHEMA, PK2.TABLE_NAME) AS PK_REF
+                    ON PK_REF.TABLE_SCHEMA = k.TABLE_SCHEMA AND PK_REF.TABLE_NAME = k.TABLE_NAME
+            WHERE k.REFERENCED_TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND k.REFERENCED_TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            GROUP BY k.CONSTRAINT_NAME, c.TABLE_SCHEMA, c.TABLE_NAME
+            ) AS f
+            -- LEFT JOIN with possible JSON_SCHEMA CHECK constraint for the given column
+            LEFT OUTER JOIN (
+                SELECT co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME, MAX(co.JSON_SCHEMA_DEF) AS json_schema_def
+                FROM (SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, TRIM('`' FROM TRIM(TRAILING ')' FROM
+                        REGEXP_SUBSTR(REGEXP_SUBSTR(cc.CHECK_CLAUSE, 'json_schema_valid\s*\\(.*,\s*`[^`]*`\s*\\)'), '`[^`]*`\\)')
+                        )) AS COLUMN_NAME,
+                        tc.ENFORCED, cc.CONSTRAINT_NAME,
+                        REPLACE(TRIM('\\''' FROM REGEXP_REPLACE(SUBSTRING(cc.CHECK_CLAUSE FROM LOCATE('{', cc.CHECK_CLAUSE)), '\s*,\s*`[^`]*`\\).*', '')), '\\\\n', '\n') AS JSON_SCHEMA_DEF
+                    FROM `information_schema`.`TABLE_CONSTRAINTS` AS tc
+                        LEFT OUTER JOIN information_schema.CHECK_CONSTRAINTS AS cc
+                            ON cc.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                    ) AS co
+                WHERE co.COLUMN_NAME IS NOT NULL AND co.ENFORCED = 'YES' AND JSON_VALID(co.JSON_SCHEMA_DEF) AND co.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND co.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+                GROUP BY co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME) AS js
+            ON f.TABLE_SCHEMA = js.TABLE_SCHEMA AND f.TABLE_NAME = js.TABLE_NAME AND f.name = js.COLUMN_NAME
+        ORDER BY f.position;
+    ELSE
+        SELECT f.*, js.json_schema_def FROM (
+            -- Get the table columns
+            SELECT c.ORDINAL_POSITION AS position, c.COLUMN_NAME AS name,
+                NULL AS ref_column_names,
+                JSON_OBJECT(
+                    'name', c.COLUMN_NAME,
+                    'datatype', c.COLUMN_TYPE,
+                    'not_null', c.IS_NULLABLE = 'NO',
+                    'is_primary', c.COLUMN_KEY = 'PRI',
+                    'is_unique', c.COLUMN_KEY = 'UNI',
+                    'is_generated', c.GENERATION_EXPRESSION <> '',
+                    'id_generation', IF(c.EXTRA = 'auto_increment', 'auto_inc',
+                        IF(c.COLUMN_KEY = 'PRI' AND c.DATA_TYPE = 'binary' AND c.CHARACTER_MAXIMUM_LENGTH = 16,
+                            'rev_uuid', NULL)),
+                    'comment', c.COLUMN_COMMENT,
+                    'srid', NULL,
+                    'column_default', c.COLUMN_DEFAULT,
+                    'charset', c.CHARACTER_SET_NAME,
+                    'collation', c.COLLATION_NAME
+                    ) AS db_column,
+                NULL AS reference_mapping,
+                c.TABLE_SCHEMA as table_schema, c.TABLE_NAME as table_name
+            FROM INFORMATION_SCHEMA.COLUMNS AS c
+                LEFT OUTER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                        AND NOT ISNULL(k.POSITION_IN_UNIQUE_CONSTRAINT)
+            WHERE c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            -- Union with the references that point from the table to other tables (n:1)
+            UNION
+            SELECT MAX(c.ORDINAL_POSITION) + 100 AS position, MAX(k.REFERENCED_TABLE_NAME) AS name,
+                GROUP_CONCAT(c.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+                NULL AS db_column,
+                JSON_MERGE_PRESERVE(
+                    JSON_OBJECT('kind', 'n:1'),
+                    JSON_OBJECT('constraint',
+                        CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+                    JSON_OBJECT('to_many', FALSE),
+                    JSON_OBJECT('referenced_schema', MAX(k.REFERENCED_TABLE_SCHEMA)),
+                    JSON_OBJECT('referenced_table', MAX(k.REFERENCED_TABLE_NAME)),
+                    JSON_OBJECT('column_mapping',
+                        JSON_ARRAYAGG(JSON_OBJECT(
+                            'base', c.COLUMN_NAME,
+                            'ref', k.REFERENCED_COLUMN_NAME)))
+                ) AS reference_mapping,
+                MAX(c.TABLE_SCHEMA) AS table_schema, MAX(c.TABLE_NAME) AS table_name
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                JOIN INFORMATION_SCHEMA.COLUMNS AS c
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                        AND c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            WHERE NOT ISNULL(k.REFERENCED_TABLE_NAME)
+            GROUP BY k.CONSTRAINT_NAME, k.table_schema, k.table_name
+            UNION
+            -- Union with the references that point from other tables to the table (1:1 and 1:n)
+            SELECT MAX(c.ORDINAL_POSITION) + 1000 AS position,
+                MAX(c.TABLE_NAME) AS name,
+                GROUP_CONCAT(k.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+                NULL AS db_column,
+                JSON_MERGE_PRESERVE(
+                    -- If the PKs of the table and the referred table are exactly the same,
+                    -- this is a 1:1 relationship, otherwise an 1:n
+                    JSON_OBJECT('kind', IF(JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 1,
+                        '1:1', '1:n')),
+                    JSON_OBJECT('constraint',
+                        CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+                    JSON_OBJECT('to_many', JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 0),
+                    JSON_OBJECT('referenced_schema', MAX(c.TABLE_SCHEMA)),
+                    JSON_OBJECT('referenced_table', MAX(c.TABLE_NAME)),
+                    JSON_OBJECT('column_mapping',
+                        JSON_ARRAYAGG(JSON_OBJECT(
+                            'base', k.REFERENCED_COLUMN_NAME,
+                            'ref', c.COLUMN_NAME)))
+                ) AS reference_mapping,
+                MAX(k.REFERENCED_TABLE_SCHEMA) AS table_schema,
+                MAX(k.REFERENCED_TABLE_NAME) AS table_name
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                JOIN INFORMATION_SCHEMA.COLUMNS AS c
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                -- The PK columns of the table, e.g. ['test_fk.product.id']
+                JOIN (SELECT JSON_ARRAYAGG(CONCAT(c2.TABLE_SCHEMA, '.',
+                            c2.TABLE_NAME, '.', c2.COLUMN_NAME)) AS PK,
+                        c2.TABLE_SCHEMA, c2.TABLE_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS AS c2
+                        WHERE c2.COLUMN_KEY = 'PRI'
+                        GROUP BY c2.COLUMN_KEY, c2.TABLE_SCHEMA, c2.TABLE_NAME) AS PK_TABLE
+                    ON PK_TABLE.TABLE_SCHEMA = k.REFERENCED_TABLE_SCHEMA
+                        AND PK_TABLE.TABLE_NAME = k.REFERENCED_TABLE_NAME
+                -- The PK columns of the referenced table,
+                -- e.g. ['test_fk.product_part.id', 'test_fk.product.id']
+                JOIN (SELECT JSON_ARRAYAGG(PK2.PK_COL) AS PK, PK2.TABLE_SCHEMA, PK2.TABLE_NAME
+                    FROM (SELECT IFNULL(
+                        CONCAT(MAX(k1.REFERENCED_TABLE_SCHEMA), '.',
+                            MAX(k1.REFERENCED_TABLE_NAME), '.', MAX(k1.REFERENCED_COLUMN_NAME)),
+                        CONCAT(c1.TABLE_SCHEMA, '.', c1.TABLE_NAME, '.', c1.COLUMN_NAME)) AS PK_COL,
+                        c1.TABLE_SCHEMA AS TABLE_SCHEMA, c1.TABLE_NAME AS TABLE_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS AS c1
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k1
+                                ON k1.TABLE_SCHEMA = c1.TABLE_SCHEMA
+                                    AND k1.TABLE_NAME = c1.TABLE_NAME
+                                    AND k1.COLUMN_NAME = c1.COLUMN_NAME
+                        WHERE c1.COLUMN_KEY = 'PRI'
+                        GROUP BY c1.COLUMN_NAME, c1.TABLE_SCHEMA, c1.TABLE_NAME) AS PK2
+                        GROUP BY PK2.TABLE_SCHEMA, PK2.TABLE_NAME) AS PK_REF
+                    ON PK_REF.TABLE_SCHEMA = k.TABLE_SCHEMA AND PK_REF.TABLE_NAME = k.TABLE_NAME
+            WHERE k.REFERENCED_TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND k.REFERENCED_TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            GROUP BY k.CONSTRAINT_NAME, c.TABLE_SCHEMA, c.TABLE_NAME
+            ) AS f
+            -- LEFT JOIN with possible JSON_SCHEMA CHECK constraint for the given column
+            LEFT OUTER JOIN (
+                SELECT co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME, MAX(co.JSON_SCHEMA_DEF) AS json_schema_def
+                FROM (SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, TRIM('`' FROM TRIM(TRAILING ')' FROM
+                        REGEXP_SUBSTR(REGEXP_SUBSTR(cc.CHECK_CLAUSE, 'json_schema_valid\s*\\(.*,\s*`[^`]*`\s*\\)'), '`[^`]*`\\)')
+                        )) AS COLUMN_NAME,
+                        'YES' AS ENFORCED, cc.CONSTRAINT_NAME,
+                        REPLACE(TRIM('\\''' FROM REGEXP_REPLACE(SUBSTRING(cc.CHECK_CLAUSE FROM LOCATE('{', cc.CHECK_CLAUSE)), '\s*,\s*`[^`]*`\\).*', '')), '\\\\n', '\n') AS JSON_SCHEMA_DEF
+                    FROM `information_schema`.`TABLE_CONSTRAINTS` AS tc
+                        LEFT OUTER JOIN information_schema.CHECK_CONSTRAINTS AS cc
+                            ON cc.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                    ) AS co
+                WHERE co.COLUMN_NAME IS NOT NULL AND co.ENFORCED = 'YES' AND JSON_VALID(co.JSON_SCHEMA_DEF) AND co.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND co.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+                GROUP BY co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME) AS js
+            ON f.TABLE_SCHEMA = js.TABLE_SCHEMA AND f.TABLE_NAME = js.TABLE_NAME AND f.name = js.COLUMN_NAME
+        ORDER BY f.position;
+    END IF;
 END%%
 
 
@@ -1381,8 +1527,8 @@ END%%
 -- sub-daily data is kept for 7 days, then down-sampled to 1 day samples
 -- daily data is kept indefinitely
 
-DROP PROCEDURE IF EXISTS mysql_rest_service_metadata.router_status_downsample%%
-CREATE PROCEDURE mysql_rest_service_metadata.router_status_downsample(
+DROP PROCEDURE IF EXISTS `router_status_downsample`%%
+CREATE PROCEDURE `router_status_downsample`(
     time TIMESTAMP,
     router_version VARCHAR(12),
     status_variables JSON,
@@ -1409,21 +1555,21 @@ here:BEGIN
             )) vars;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
     DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN
-        DROP TABLE IF EXISTS `mysql_rest_service_metadata`.`aggregated`;
+        DROP TABLE IF EXISTS `aggregated`;
         RESIGNAL;
     END;
 
     -- target_interval must be either M (60s or 1min) H (60*60s or 1 hour) or D (24*60*60s or 1 day)
     IF target_interval = 'M' THEN
-        SET max_interval = 60;
+        SET max_interval = 60000;
         SET time_point_format = '%Y-%m-%d %H:%i:00';
         SET compress_older_than = DATE_SUB(time, INTERVAL 4 HOUR);
     ELSEIF target_interval = 'H' THEN
-        SET max_interval = 60*60;
+        SET max_interval = 60*60000;
         SET time_point_format = '%Y-%m-%d %H:00:00';
         SET compress_older_than = DATE_SUB(time, INTERVAL 24 HOUR);
     ELSEIF target_interval = 'D' THEN
-        SET max_interval = 24*60*60;
+        SET max_interval = 24*60*60000;
         SET time_point_format = '%Y-%m-%d 00:00:00';
         SET compress_older_than = DATE_SUB(time, INTERVAL 1 DAY);
     ELSE
@@ -1446,14 +1592,14 @@ here:BEGIN
                 SET direct_query = CONCAT(direct_query, 'MAX(', attr_column, ') as ', attr_column, ', ');
                 SET direct_columns = CONCAT(direct_columns, attr_column, ',');
             ELSE
-                SET details_query = CONCAT(details_query, quote(attr_name), ',MAX(details->''$.', attr_name, '''), ');
+                SET details_query = CONCAT(details_query, quote(attr_name), ',MAX(JSON_EXTRACT(details, ''$.', attr_name, ''')), ');
             END IF;
         ELSE
             IF attr_column IS NOT NULL THEN
                 SET direct_query = CONCAT(direct_query, 'SUM(', attr_column, ') as ', attr_column, ', ');
                 SET direct_columns = CONCAT(direct_columns, attr_column, ',');
             ELSE
-                SET details_query = CONCAT(details_query, quote(attr_name), ',SUM(details->''$.', attr_name, '''), ');
+                SET details_query = CONCAT(details_query, quote(attr_name), ',SUM(JSON_EXTRACT(details, ''$.', attr_name, ''')), ');
              END IF;
         END IF;
     END LOOP;
@@ -1485,8 +1631,8 @@ here:BEGIN
     COMMIT;
 END%%
 
-DROP PROCEDURE IF EXISTS mysql_rest_service_metadata.router_status_do_cleanup%%
-CREATE PROCEDURE mysql_rest_service_metadata.router_status_do_cleanup(time TIMESTAMP)
+DROP PROCEDURE IF EXISTS `router_status_do_cleanup`%%
+CREATE PROCEDURE `router_status_do_cleanup`(time TIMESTAMP)
     SQL SECURITY INVOKER
 BEGIN
     DECLARE version VARCHAR(12);
@@ -1559,6 +1705,202 @@ BEGIN
 END%%
 
 
+DROP PROCEDURE IF EXISTS `sdk_service_data`%%
+CREATE PROCEDURE `sdk_service_data`(IN service_id UUID)
+BEGIN
+    DECLARE service_res JSON;
+    DECLARE schema_id UUID;
+    DECLARE schema_res JSON;
+
+    -- Get all db_schemas of the given service, fetch the id to do the nested SELECTs and
+    -- the data as JSON
+    DECLARE schema_loop_done TINYINT DEFAULT FALSE;
+    DECLARE schema_cursor CURSOR FOR
+        SELECT s.id,
+            JSON_OBJECT(
+                'id', s.id,
+                'name', s.name,
+                'schema_type', s.schema_type,
+                'request_path', s.request_path,
+                'requires_auth', s.requires_auth,
+                'internal', s.internal,
+                'options', s.options
+            )
+        FROM mysql_rest_service_metadata.db_schema AS s
+        WHERE s.service_id = service_id AND s.enabled = 1;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET schema_loop_done = 1;
+
+    -- Get the service data as JSON
+    SELECT
+        JSON_OBJECT(
+            'id', s.id,
+            'url_context_root', s.url_context_root,
+            'name', s.name,
+            'enabled', s.enabled,
+            'published', s.published,
+            'options', s.options,
+            'auth_path', s.auth_path,
+            'auth_completed_url_validation', s.auth_completed_url_validation
+        )
+        INTO service_res
+    FROM mysql_rest_service_metadata.service AS s
+    WHERE s.id = service_id;
+
+    -- Initiate the list of db_schemas with an empty JSON array
+    SET service_res = JSON_SET(service_res, '$.db_schemas', json_array());
+
+    -- Loop over all db_schema of the given service
+    OPEN schema_cursor;
+    schema_loop: LOOP
+        -- Get the next db_schema of the service
+        FETCH NEXT FROM schema_cursor INTO schema_id, schema_res;
+
+        IF schema_loop_done THEN
+            LEAVE schema_loop;
+        ELSE schema_block: BEGIN
+            -- Get all db_objects of the given db_schema, fetch the id to do the nested SELECTs and
+            -- the data as JSON
+            DECLARE db_object_id UUID;
+            DECLARE db_object_res JSON;
+            DECLARE db_object_loop_done TINYINT DEFAULT FALSE;
+            DECLARE db_object_cursor CURSOR FOR
+                SELECT o.id,
+                    JSON_OBJECT(
+                        'id', o.id,
+                        'name', o.name,
+                        'request_path', o.request_path,
+                        'internal', o.internal,
+                        'object_type', o.object_type,
+                        'crud_operations', o.crud_operations,
+                        'format', o.format,
+                        'requires_auth', o.requires_auth,
+                        'options', o.options
+                    )
+                FROM mysql_rest_service_metadata.db_object AS o
+                WHERE o.db_schema_id = schema_id AND o.enabled = 1;
+            DECLARE CONTINUE HANDLER FOR NOT FOUND SET db_object_loop_done = 1;
+
+            -- Initiate the list of db_objects with an empty JSON array
+            SET schema_res = JSON_SET(schema_res, '$.db_objects', json_array());
+
+            -- Loop over all db_objects of the given db_schema
+            OPEN db_object_cursor;
+            db_object_loop: LOOP
+                FETCH NEXT FROM db_object_cursor INTO db_object_id, db_object_res;
+
+                IF db_object_loop_done THEN
+                    LEAVE db_object_loop;
+                ELSE db_object_block: BEGIN
+                    DECLARE object_id UUID;
+                    DECLARE object_res JSON;
+                    DECLARE object_loop_done TINYINT DEFAULT FALSE;
+                    DECLARE object_cursor CURSOR FOR
+                        SELECT o.id,
+                          JSON_OBJECT(
+                            'id', o.id,
+                            'db_object_id', o.db_object_id,
+                            'name', name,
+                            'kind', kind,
+                            'position', position,
+                            'row_ownership_field_id', row_ownership_field_id,
+                            'options', options,
+                            'sdk_options', sdk_options
+                          )
+                      FROM mysql_rest_service_metadata.object AS o
+                      WHERE o.db_object_id = db_object_id
+                      ORDER BY position;
+                    DECLARE CONTINUE HANDLER FOR NOT FOUND SET object_loop_done = 1;
+
+                    -- Initiate the list of objects with an empty JSON array
+                    SET db_object_res = JSON_SET(db_object_res, '$.objects', json_array());
+
+                    -- Loop over all SDK object instances of the given db_object
+                    OPEN object_cursor;
+                    object_loop: LOOP
+                        FETCH NEXT FROM object_cursor INTO object_id, object_res;
+
+                        IF object_loop_done THEN
+                            LEAVE object_loop;
+                        ELSE object_block: BEGIN
+                            DECLARE field_id UUID;
+                            DECLARE field_res JSON;
+                            DECLARE field_loop_done TINYINT DEFAULT FALSE;
+                            DECLARE field_cursor CURSOR FOR
+                                SELECT f.id,
+                                    JSON_OBJECT(
+                                        'caption', f.caption,
+                                        'lev', f.lev,
+                                        'position', f.position,
+                                        'id', f.id,
+                                        'represents_reference_id', f.represents_reference_id,
+                                        'parent_reference_id', f.parent_reference_id,
+                                        'object_id', f.object_id,
+                                        'name', f.name,
+                                        'db_column', f.db_column,
+                                        'enabled', f.enabled,
+                                        'allow_filtering', f.allow_filtering,
+                                        'allow_sorting', f.allow_sorting,
+                                        'no_check', f.no_check,
+                                        'no_update', f.no_update,
+                                        'options', f.options,
+                                        'sdk_options', f.sdk_options,
+                                        'object_reference', f.object_reference
+                                    )
+                                FROM mysql_rest_service_metadata.object_fields_with_references AS f
+                                WHERE f.object_id = object_id;
+                            DECLARE CONTINUE HANDLER FOR NOT FOUND SET field_loop_done = 1;
+
+                            -- Initiate the list of fields with an empty JSON array
+                            SET object_res = JSON_SET(object_res, '$.fields', json_array());
+
+                            -- Loop over all fields of the given SDK object
+                            OPEN field_cursor;
+                            field_loop: LOOP
+                                FETCH NEXT FROM field_cursor INTO field_id, field_res;
+
+                                IF field_loop_done THEN
+                                    LEAVE field_loop;
+                                ELSE field_block: BEGIN
+                                    -- Append the field JSON data to the object's fields array
+                                    SET object_res = JSON_ARRAY_APPEND(object_res, '$.fields', field_res);
+                                END field_block; END IF;
+                            END LOOP field_loop;
+
+                            -- Append the SDK object JSON data to the db_objects's objects array
+                            SET db_object_res = JSON_ARRAY_APPEND(db_object_res, '$.objects', object_res);
+                        END object_block; END IF;
+                    END LOOP object_loop;
+
+                    -- Append the db_object JSON data to the db_schema's db_objects array
+                    SET schema_res = JSON_ARRAY_APPEND(schema_res, '$.db_objects', db_object_res);
+
+                END db_object_block; END IF;
+            END LOOP db_object_loop;
+
+            -- Append the db_schema JSON data to the service's db_schemas array
+            SET service_res = JSON_ARRAY_APPEND(service_res, '$.db_schemas', schema_res);
+
+            CLOSE db_object_cursor;
+        END schema_block; END IF;
+    END LOOP schema_loop;
+
+    CLOSE schema_cursor;
+
+    -- Return the JSON data as a result set
+    SELECT service_res;
+END%%
+
+-- This is an implementation of the JSON_STORAGE_SIZE function in case it is not available as a system function
+DROP FUNCTION IF EXISTS `JSON_STORAGE_SIZE`%%
+CREATE FUNCTION `JSON_STORAGE_SIZE`(doc JSON)  RETURNS INT SQL SECURITY INVOKER DETERMINISTIC NO SQL
+BEGIN
+    IF NOT @@version LIKE '%MariaDB%' THEN
+        RETURN JSON_STORAGE_SIZE(doc);
+    ELSE
+        RETURN OCTET_LENGTH(doc);
+    END IF;
+END%%
+
 DELIMITER ;
 
 -- -----------------------------------------------------
@@ -1566,8 +1908,8 @@ DELIMITER ;
 
 DELIMITER %%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`router_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`router_AFTER_INSERT_AUDIT_LOG` AFTER INSERT ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `router_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `router_AFTER_INSERT_AUDIT_LOG` AFTER INSERT ON `router` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
@@ -1579,14 +1921,14 @@ BEGIN
             "id", NEW.id,
             "options", NEW.options),
         NULL,
-        UNHEX(LPAD(CONV(NEW.id, 10, 16), 32, '0')),
+        CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
         CURRENT_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`router_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`router_AFTER_UPDATE_AUDIT_LOG` AFTER UPDATE ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `router_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `router_AFTER_UPDATE_AUDIT_LOG` AFTER UPDATE ON `router` FOR EACH ROW
 BEGIN
     IF (COALESCE(OLD.options, '') <> COALESCE(NEW.options, '')) THEN
         INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -1600,36 +1942,36 @@ BEGIN
             JSON_OBJECT(
                 "id", NEW.id,
                 "options", NEW.options),
-            UNHEX(LPAD(CONV(OLD.id, 10, 16), 32, '0')),
-            UNHEX(LPAD(CONV(NEW.id, 10, 16), 32, '0')),
+            CAST(LPAD(HEX(OLD.id), 32, '0') AS UUID),
+            CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
             CURRENT_USER(),
             CURRENT_TIMESTAMP
         );
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`url_host_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`url_host_BEFORE_DELETE` BEFORE DELETE ON `url_host` FOR EACH ROW
+DROP TRIGGER IF EXISTS `url_host_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `url_host_BEFORE_DELETE` BEFORE DELETE ON `url_host` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`url_host_alias` WHERE `url_host_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`service_BEFORE_INSERT` BEFORE INSERT ON `service` FOR EACH ROW
+DROP TRIGGER IF EXISTS `service_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `service_BEFORE_INSERT` BEFORE INSERT ON `service` FOR EACH ROW
 BEGIN
     # Check if the full service request_path (including the optional developer setting) already exists
     IF NEW.enabled = TRUE THEN
         SET @host_name := (SELECT h.name FROM `mysql_rest_service_metadata`.url_host h WHERE h.id = NEW.url_host_id);
-        SET @request_path := CONCAT(COALESCE(NEW.in_development->>'$.developers', ''), @host_name, NEW.url_context_root);
+        SET @request_path := CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers')), ''), @host_name, NEW.url_context_root);
         SET @validPath := (SELECT `mysql_rest_service_metadata`.`valid_request_path`(@request_path));
 
         IF @validPath = 0 THEN
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
         END IF;
 
-        # Check if the same developer is already registered in the in_development->>'$.developers' of a service with the very same host_ctx
+        # Check if the same developer is already registered in the JSON_UNQUOTE(JSON_EXTRACT(in_development, '$.developers')) of a service with the very same host_ctx
         SET @validDeveloperList := (SELECT MAX(COALESCE(
-                JSON_OVERLAPS(s.in_development->>'$.developers', NEW.in_development->>'$.developers'), FALSE)) AS overlap
+                JSON_OVERLAPS(JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers'))), FALSE)) AS overlap
             FROM `mysql_rest_service_metadata`.`service` AS s JOIN
                 `mysql_rest_service_metadata`.`url_host` AS h ON s.url_host_id = h.id JOIN
                 `mysql_rest_service_metadata`.`url_host` AS h2 ON h2.id = NEW.url_host_id
@@ -1646,8 +1988,8 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`service_BEFORE_UPDATE` BEFORE UPDATE ON `service` FOR EACH ROW
+DROP TRIGGER IF EXISTS `service_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `service_BEFORE_UPDATE` BEFORE UPDATE ON `service` FOR EACH ROW
 BEGIN
     # Check if the full service request_path (including the optional developer setting) already exists,
     # but only when the service is enabled and either of those values was actually changed
@@ -1655,16 +1997,16 @@ BEGIN
 		OR NEW.url_host_id <> OLD.url_host_id OR NEW.url_context_root <> OLD.url_context_root) THEN
 
         SET @host_name := (SELECT h.name FROM `mysql_rest_service_metadata`.url_host h WHERE h.id = NEW.url_host_id);
-        SET @request_path := CONCAT(COALESCE(NEW.in_development->>'$.developers', ''), @host_name, NEW.url_context_root);
+        SET @request_path := CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers')), ''), @host_name, NEW.url_context_root);
         SET @validPath := (SELECT `mysql_rest_service_metadata`.`valid_request_path`(@request_path));
 
         IF @validPath = 0 THEN
             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
         END IF;
 
-        # Check if the same developer is already registered in the in_development->>'$.developers' of a service with the very same host_ctx
+        # Check if the same developer is already registered in the JSON_UNQUOTE(JSON_EXTRACT(in_development, '$.developers')) of a service with the very same host_ctx
         SET @validDeveloperList := (SELECT MAX(COALESCE(
-                JSON_OVERLAPS(s.in_development->>'$.developers', NEW.in_development->>'$.developers'), FALSE)) AS overlap
+                JSON_OVERLAPS(JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers'))), FALSE)) AS overlap
             FROM `mysql_rest_service_metadata`.`service` AS s JOIN
                 `mysql_rest_service_metadata`.`url_host` AS h ON s.url_host_id = h.id JOIN
                 `mysql_rest_service_metadata`.`url_host` AS h2 ON h2.id = NEW.url_host_id
@@ -1682,8 +2024,8 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`service_BEFORE_DELETE` BEFORE DELETE ON `service` FOR EACH ROW
+DROP TRIGGER IF EXISTS `service_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `service_BEFORE_DELETE` BEFORE DELETE ON `service` FOR EACH ROW
 BEGIN
 	# Since FKs do not fire the triggers on the related tables, manually trigger the DELETEs
 	DELETE FROM `mysql_rest_service_metadata`.`content_set` WHERE `service_id` = OLD.`id`;
@@ -1694,10 +2036,10 @@ BEGIN
     DELETE FROM `mysql_rest_service_metadata`.`mrs_user_group` WHERE `specific_to_service_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_schema_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`db_schema_BEFORE_INSERT` BEFORE INSERT ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `db_schema_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_INSERT` BEFORE INSERT ON `db_schema` FOR EACH ROW
 BEGIN
-	SET @service_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) AS path
+	SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 		FROM `mysql_rest_service_metadata`.service se
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
@@ -1709,11 +2051,11 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_schema_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`db_schema_BEFORE_UPDATE` BEFORE UPDATE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `db_schema_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_UPDATE` BEFORE UPDATE ON `db_schema` FOR EACH ROW
 BEGIN
 	IF (NEW.request_path <> OLD.request_path OR NEW.service_id <> OLD.service_id) THEN
-		SET @service_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) AS path
+		SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 			FROM `mysql_rest_service_metadata`.service se
 				LEFT JOIN `mysql_rest_service_metadata`.url_host h
 					ON se.url_host_id = h.id
@@ -1726,16 +2068,16 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_schema_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`db_schema_BEFORE_DELETE` BEFORE DELETE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `db_schema_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_DELETE` BEFORE DELETE ON `db_schema` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`db_object` WHERE `db_schema_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_object_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`db_object_BEFORE_INSERT` BEFORE INSERT ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `db_object_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_INSERT` BEFORE INSERT ON `db_object` FOR EACH ROW
 BEGIN
-    SET @schema_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root, sc.request_path) AS path
+    SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
         FROM `mysql_rest_service_metadata`.db_schema sc
             LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
                 ON se.id = sc.service_id
@@ -1749,11 +2091,11 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_object_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`db_object_BEFORE_UPDATE` BEFORE UPDATE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `db_object_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_UPDATE` BEFORE UPDATE ON `db_object` FOR EACH ROW
 BEGIN
     IF (NEW.request_path <> OLD.request_path OR NEW.db_schema_id <> OLD.db_schema_id) THEN
-        SET @schema_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root, sc.request_path) AS path
+        SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
             FROM `mysql_rest_service_metadata`.db_schema sc
                 LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
                     ON se.id = sc.service_id
@@ -1768,27 +2110,27 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_object_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`db_object_BEFORE_DELETE` BEFORE DELETE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `db_object_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_DELETE` BEFORE DELETE ON `db_object` FOR EACH ROW
 BEGIN
     DELETE FROM `mysql_rest_service_metadata`.`mrs_db_object_row_group_security` WHERE `db_object_id` = OLD.`id`;
     DELETE FROM `mysql_rest_service_metadata`.`object` WHERE `db_object_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`auth_vendor_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`auth_vendor_BEFORE_DELETE` BEFORE DELETE ON `auth_vendor` FOR EACH ROW
+DROP TRIGGER IF EXISTS `auth_vendor_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `auth_vendor_BEFORE_DELETE` BEFORE DELETE ON `auth_vendor` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`auth_app` WHERE `auth_vendor_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`auth_app_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`auth_app_BEFORE_DELETE` BEFORE DELETE ON `auth_app` FOR EACH ROW
+DROP TRIGGER IF EXISTS `auth_app_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `auth_app_BEFORE_DELETE` BEFORE DELETE ON `auth_app` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`mrs_user` WHERE `auth_app_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`mrs_user_BEFORE_INSERT` BEFORE INSERT ON `mrs_user` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_user_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_BEFORE_INSERT` BEFORE INSERT ON `mrs_user` FOR EACH ROW
 BEGIN
 	IF NEW.name IS NOT NULL AND (SELECT COUNT(*) FROM `mysql_rest_service_metadata`.`mrs_user` AS u
 		WHERE UPPER(u.name) = UPPER(NEW.name) AND u.auth_app_id = NEW.auth_app_id AND NEW.id <> u.id) > 0
@@ -1801,7 +2143,7 @@ BEGIN
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This email has already been used.";
     END IF;
     IF (NEW.auth_string IS NULL AND
-        (SELECT a.auth_vendor_id FROM `mysql_rest_service_metadata`.`auth_app` AS a WHERE a.id = NEW.auth_app_id) = 0x30000000000000000000000000000000)
+        (SELECT a.auth_vendor_id FROM `mysql_rest_service_metadata`.`auth_app` AS a WHERE a.id = NEW.auth_app_id) = '30000000-0000-0000-0000-000000000000')
     THEN
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "A this account requires a password to be set.";
     END IF;
@@ -1810,8 +2152,8 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`mrs_user_BEFORE_UPDATE` BEFORE UPDATE ON `mrs_user` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_user_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_BEFORE_UPDATE` BEFORE UPDATE ON `mrs_user` FOR EACH ROW
 BEGIN
 	IF NEW.name IS NOT NULL AND (SELECT COUNT(*) FROM `mysql_rest_service_metadata`.`mrs_user` AS u
 		WHERE UPPER(u.name) = UPPER(NEW.name) AND u.auth_app_id = NEW.auth_app_id AND NEW.id <> u.id) > 0
@@ -1824,7 +2166,7 @@ BEGIN
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This email has already been used.";
     END IF;
     IF (NEW.auth_string IS NULL AND
-        (SELECT a.auth_vendor_id FROM `mysql_rest_service_metadata`.`auth_app` AS a WHERE a.id = NEW.auth_app_id) = 0x30000000000000000000000000000000)
+        (SELECT a.auth_vendor_id FROM `mysql_rest_service_metadata`.`auth_app` AS a WHERE a.id = NEW.auth_app_id) = '30000000-0000-0000-0000-000000000000')
     THEN
 		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "A this account requires a password to be set.";
     END IF;
@@ -1833,18 +2175,18 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`mrs_user_BEFORE_DELETE` BEFORE DELETE ON `mrs_user` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_user_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_BEFORE_DELETE` BEFORE DELETE ON `mrs_user` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`mrs_user_hierarchy` WHERE `user_id` = OLD.`id` OR `reporting_to_user_id` = OLD.`id`;
     DELETE FROM `mysql_rest_service_metadata`.`mrs_user_has_role` WHERE `user_id` = OLD.`id`;
     DELETE FROM `mysql_rest_service_metadata`.`mrs_user_has_group` WHERE `user_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`content_set_BEFORE_INSERT` BEFORE INSERT ON `content_set` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_INSERT` BEFORE INSERT ON `content_set` FOR EACH ROW
 BEGIN
-	SET @service_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) AS path
+	SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 		FROM `mysql_rest_service_metadata`.service se
             LEFT JOIN `mysql_rest_service_metadata`.url_host h
                 ON se.url_host_id = h.id
@@ -1856,11 +2198,11 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`content_set_BEFORE_UPDATE` BEFORE UPDATE ON `content_set` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_UPDATE` BEFORE UPDATE ON `content_set` FOR EACH ROW
 BEGIN
 	IF (NEW.request_path <> OLD.request_path OR NEW.service_id <> OLD.service_id) THEN
-		SET @service_path := (SELECT CONCAT(COALESCE(se.in_development->>'$.developers', ''), h.name, se.url_context_root) AS path
+		SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 			FROM `mysql_rest_service_metadata`.service se
 				LEFT JOIN `mysql_rest_service_metadata`.url_host h
 					ON se.url_host_id = h.id
@@ -1873,8 +2215,8 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`content_set_BEFORE_DELETE` BEFORE DELETE ON `content_set` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_DELETE` BEFORE DELETE ON `content_set` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`content_file`
 	WHERE `content_set_id` = OLD.`id`;
@@ -1882,8 +2224,8 @@ BEGIN
 	WHERE `content_set_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_file_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`content_file_BEFORE_INSERT` BEFORE INSERT ON `content_file` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_file_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_file_BEFORE_INSERT` BEFORE INSERT ON `content_file` FOR EACH ROW
 BEGIN
     SET @content_set_path := (SELECT CONCAT(h.name, se.url_context_root, co.request_path) AS path
         FROM `mysql_rest_service_metadata`.content_set co
@@ -1899,8 +2241,8 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_file_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`content_file_BEFORE_UPDATE` BEFORE UPDATE ON `content_file` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_file_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_file_BEFORE_UPDATE` BEFORE UPDATE ON `content_file` FOR EACH ROW
 BEGIN
     IF (NEW.request_path <> OLD.request_path OR NEW.content_set_id <> OLD.content_set_id) THEN
         SET @content_set_path := (SELECT CONCAT(h.name, se.url_context_root, co.request_path) AS path
@@ -1918,8 +2260,8 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_role_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`mrs_role_BEFORE_DELETE` BEFORE DELETE ON `mrs_role` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_role_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_role_BEFORE_DELETE` BEFORE DELETE ON `mrs_role` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`mrs_user_has_role` WHERE `role_id` = OLD.`id`;
     -- Workaround to fix issue with recursive delete
@@ -1930,56 +2272,56 @@ BEGIN
     DELETE FROM `mysql_rest_service_metadata`.`mrs_user_group_has_role` WHERE `role_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy_type_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`mrs_user_hierarchy_type_BEFORE_DELETE` BEFORE DELETE ON `mrs_user_hierarchy_type` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_type_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_hierarchy_type_BEFORE_DELETE` BEFORE DELETE ON `mrs_user_hierarchy_type` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`mrs_user_hierarchy` WHERE `user_hierarchy_type_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_BEFORE_DELETE` BEFORE DELETE ON `mrs_user_group` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_user_group_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_group_BEFORE_DELETE` BEFORE DELETE ON `mrs_user_group` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`mrs_user_has_group` WHERE `user_group_id` = OLD.`id`;
     DELETE FROM `mysql_rest_service_metadata`.`mrs_user_group_hierarchy` WHERE `user_group_id` = OLD.`id` OR `parent_group_id` = OLD.`id`;
     DELETE FROM `mysql_rest_service_metadata`.`mrs_user_group_has_role` WHERE `user_group_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_group_hierarchy_type_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`mrs_group_hierarchy_type_BEFORE_DELETE` BEFORE DELETE ON `mrs_group_hierarchy_type` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_group_hierarchy_type_BEFORE_DELETE` BEFORE DELETE ON `mrs_group_hierarchy_type` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`mrs_user_group_hierarchy` WHERE `group_hierarchy_type_id` = OLD.`id`;
     DELETE FROM `mysql_rest_service_metadata`.`mrs_db_object_row_group_security` WHERE `group_hierarchy_type_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`router_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`router_BEFORE_DELETE` BEFORE DELETE ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `router_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `router_BEFORE_DELETE` BEFORE DELETE ON `router` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`router_status` WHERE `router_id` = OLD.`id`;
     DELETE FROM `mysql_rest_service_metadata`.`router_general_log` WHERE `router_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`router_session_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`router_session_BEFORE_DELETE` BEFORE DELETE ON `router_session` FOR EACH ROW
+DROP TRIGGER IF EXISTS `router_session_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `router_session_BEFORE_DELETE` BEFORE DELETE ON `router_session` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`router_general_log` WHERE `router_session_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`object_BEFORE_DELETE` BEFORE DELETE ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `object_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `object_BEFORE_DELETE` BEFORE DELETE ON `object` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`object_field` WHERE `object_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_field_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`object_field_BEFORE_DELETE` BEFORE DELETE ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `object_field_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `object_field_BEFORE_DELETE` BEFORE DELETE ON `object_field` FOR EACH ROW
 BEGIN
 	SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 	DELETE FROM `mysql_rest_service_metadata`.`object_reference` WHERE `id` = OLD.`represents_reference_id`;
     SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_has_obj_def_AFTER_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `mysql_rest_service_metadata`.`content_set_has_obj_def_AFTER_DELETE` AFTER DELETE ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_has_obj_def_AFTER_DELETE` AFTER DELETE ON `content_set_has_obj_def` FOR EACH ROW
 BEGIN
 	DELETE FROM `mysql_rest_service_metadata`.`db_object` dbo
     WHERE OLD.kind = "Script" AND dbo.id = OLD.db_object_id;
@@ -1992,8 +2334,8 @@ DELIMITER ;
 
 DELIMITER %%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_schema_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`db_schema_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `db_schema_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `db_schema_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `db_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2022,8 +2364,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_schema_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`db_schema_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `db_schema_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `db_schema_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `db_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2064,8 +2406,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_schema_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`db_schema_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `db_schema_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `db_schema_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `db_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2094,8 +2436,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`service_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `service_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `service_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `service` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2129,8 +2471,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`service_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `service_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `service_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `service` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2181,8 +2523,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`service_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `service_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `service_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `service` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2216,8 +2558,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_object_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`db_object_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `db_object_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `db_object_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `db_object` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2252,8 +2594,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_object_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`db_object_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `db_object_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `db_object_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `db_object` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2306,8 +2648,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`db_object_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`db_object_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `db_object_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `db_object_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `db_object` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2342,8 +2684,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_user` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2369,8 +2711,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_user` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2405,8 +2747,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_user` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2432,8 +2774,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`auth_vendor_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`auth_vendor_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `auth_vendor_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `auth_vendor_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `auth_vendor` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2456,8 +2798,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`auth_vendor_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`auth_vendor_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `auth_vendor_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `auth_vendor_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `auth_vendor` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2486,8 +2828,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`auth_vendor_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`auth_vendor_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `auth_vendor_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `auth_vendor_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `auth_vendor` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2510,8 +2852,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`auth_app_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`auth_app_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `auth_app_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `auth_app_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `auth_app` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2540,8 +2882,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`auth_app_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`auth_app_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `auth_app_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `auth_app_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `auth_app` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2582,8 +2924,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`auth_app_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`auth_app_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `auth_app_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `auth_app_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `auth_app` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2612,8 +2954,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`config_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`config_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `config_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `config_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `config` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2627,14 +2969,14 @@ BEGIN
             "service_enabled", NEW.service_enabled,
             "data", NEW.data),
         NULL,
-        NEW.id,
+        CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`config_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`config_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `config_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `config_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `config` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2650,15 +2992,15 @@ BEGIN
             "id", NEW.id,
             "service_enabled", NEW.service_enabled,
             "data", NEW.data),
-        OLD.id,
-        NEW.id,
+        CAST(LPAD(HEX(OLD.id), 32, '0') AS UUID),
+        CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`config_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`config_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `config_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `config_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `config` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2671,15 +3013,15 @@ BEGIN
             "service_enabled", OLD.service_enabled,
             "data", OLD.data),
         NULL,
-        OLD.id,
+        CAST(LPAD(HEX(OLD.id), 32, '0') AS UUID),
         NULL,
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`redirect_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`redirect_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `redirect_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `redirect_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `redirect` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2701,8 +3043,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`redirect_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`redirect_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `redirect_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `redirect_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `redirect` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2729,8 +3071,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`redirect_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`redirect_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `redirect_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `redirect_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `redirect` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2752,8 +3094,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`url_host_alias_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`url_host_alias_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `url_host_alias_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_alias_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `url_host_alias` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2773,8 +3115,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`url_host_alias_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`url_host_alias_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `url_host_alias_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_alias_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `url_host_alias` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2797,8 +3139,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`url_host_alias_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`url_host_alias_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `url_host_alias_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_alias_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `url_host_alias` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2818,8 +3160,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`url_host_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`url_host_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `url_host_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `url_host` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2839,8 +3181,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`url_host_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`url_host_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `url_host_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `url_host` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2863,8 +3205,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`url_host_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`url_host_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `url_host_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `url_host` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2884,8 +3226,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_file_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_file_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_file_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `content_file_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `content_file` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2909,8 +3251,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_file_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_file_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_file_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `content_file_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `content_file` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2941,8 +3283,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_file_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_file_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_file_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `content_file_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `content_file` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2966,8 +3308,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_set_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_set_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `content_set` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -2993,8 +3335,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_set_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_set_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `content_set` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3029,8 +3371,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_set_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_set_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `content_set` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3056,8 +3398,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_role_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_role_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_role_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_role_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3080,8 +3422,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_role_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_role_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_role_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_role_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3110,8 +3452,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_role_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_role_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_role_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_role_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3134,8 +3476,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_has_role_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_has_role_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_has_role_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_role_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_user_has_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3156,8 +3498,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_has_role_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_has_role_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_has_role_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_role_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_user_has_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3182,8 +3524,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_has_role_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_has_role_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_has_role_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_role_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_user_has_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3204,8 +3546,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_hierarchy_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_user_hierarchy` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3226,8 +3568,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_hierarchy_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_user_hierarchy` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3252,8 +3594,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_hierarchy_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_user_hierarchy` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3274,8 +3616,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy_type_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_hierarchy_type_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_type_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_type_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_user_hierarchy_type` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3297,8 +3639,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_user_hierarchy_type` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3325,8 +3667,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_hierarchy_type_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_hierarchy_type_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_type_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_type_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_user_hierarchy_type` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3348,8 +3690,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_privilege_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_privilege_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_privilege_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_privilege_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_privilege` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3373,8 +3715,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_privilege_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_privilege_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_privilege_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_privilege_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_privilege` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3405,8 +3747,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_privilege_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_privilege_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_privilege_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_privilege_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_privilege` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3430,8 +3772,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_user_group` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3453,8 +3795,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_user_group` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3481,8 +3823,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_user_group` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3504,8 +3846,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_has_role_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_has_role_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_has_role_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_has_role_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_user_group_has_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3525,8 +3867,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_has_role_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_has_role_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_has_role_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_has_role_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_user_group_has_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3549,8 +3891,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_has_role_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_has_role_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_has_role_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_has_role_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_user_group_has_role` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3570,8 +3912,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_has_group_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_has_group_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_has_group_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_group_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_user_has_group` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3592,8 +3934,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_has_group_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_has_group_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_has_group_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_group_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_user_has_group` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3618,8 +3960,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_has_group_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_has_group_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_has_group_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_group_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_user_has_group` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3640,8 +3982,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_group_hierarchy_type_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_group_hierarchy_type_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_group_hierarchy_type_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_group_hierarchy_type` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3662,8 +4004,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_group_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_group_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_group_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_group_hierarchy_type` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3688,8 +4030,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_group_hierarchy_type_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_group_hierarchy_type_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_group_hierarchy_type_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_group_hierarchy_type` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3710,8 +4052,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_hierarchy_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_hierarchy_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_hierarchy_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_hierarchy_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_user_group_hierarchy` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3733,8 +4075,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_hierarchy_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_hierarchy_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_hierarchy_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_hierarchy_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_user_group_hierarchy` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3761,8 +4103,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_user_group_hierarchy_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_user_group_hierarchy_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_user_group_hierarchy_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_hierarchy_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_user_group_hierarchy` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3784,8 +4126,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_db_object_row_group_security_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_db_object_row_group_security_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `mrs_db_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3808,8 +4150,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_db_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_db_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `mrs_db_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3838,8 +4180,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`mrs_db_object_row_group_security_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`mrs_db_object_row_group_security_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `mrs_db_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3862,8 +4204,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `object_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `object` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3889,8 +4231,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `object_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `object` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3925,8 +4267,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `object_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `object` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3952,8 +4294,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_field_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_field_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_field_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `object_field_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `object_field` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -3970,11 +4312,11 @@ BEGIN
             "name", NEW.name,
             "position", NEW.position,
             "db_column", NEW.db_column,
-            "enabled", NEW.enabled,
-            "allow_filtering", NEW.allow_filtering,
-            "allow_sorting", NEW.allow_sorting,
-            "no_check", NEW.no_check,
-            "no_update", NEW.no_update,
+            "enabled", IF(NEW.enabled, 1, 0),
+            "allow_filtering", IF(NEW.allow_filtering, 1, 0),
+            "allow_sorting", IF(NEW.allow_sorting, 1, 0),
+            "no_check", IF(NEW.no_check, 1, 0),
+            "no_update", IF(NEW.no_update, 1, 0),
             "json_schema", NEW.json_schema,
             "options", NEW.options,
             "sdk_options", NEW.sdk_options,
@@ -3986,8 +4328,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_field_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_field_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_field_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `object_field_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `object_field` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4003,11 +4345,11 @@ BEGIN
             "name", OLD.name,
             "position", OLD.position,
             "db_column", OLD.db_column,
-            "enabled", OLD.enabled,
-            "allow_filtering", OLD.allow_filtering,
-            "allow_sorting", OLD.allow_sorting,
-            "no_check", OLD.no_check,
-            "no_update", OLD.no_update,
+            "enabled", IF(OLD.enabled, 1, 0),
+            "allow_filtering", IF(OLD.allow_filtering, 1, 0),
+            "allow_sorting", IF(OLD.allow_sorting, 1, 0),
+            "no_check", IF(OLD.no_check, 1, 0),
+            "no_update", IF(OLD.no_update, 1, 0),
             "json_schema", OLD.json_schema,
             "options", OLD.options,
             "sdk_options", OLD.sdk_options,
@@ -4020,11 +4362,11 @@ BEGIN
             "name", NEW.name,
             "position", NEW.position,
             "db_column", NEW.db_column,
-            "enabled", NEW.enabled,
-            "allow_filtering", NEW.allow_filtering,
-            "allow_sorting", NEW.allow_sorting,
-            "no_check", NEW.no_check,
-            "no_update", NEW.no_update,
+            "enabled", IF(NEW.enabled, 1, 0),
+            "allow_filtering", IF(NEW.allow_filtering, 1, 0),
+            "allow_sorting", IF(NEW.allow_sorting, 1, 0),
+            "no_check", IF(NEW.no_check, 1, 0),
+            "no_update", IF(NEW.no_update, 1, 0),
             "json_schema", NEW.json_schema,
             "options", NEW.options,
             "sdk_options", NEW.sdk_options,
@@ -4036,8 +4378,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_field_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_field_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_field_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `object_field_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `object_field` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4053,11 +4395,11 @@ BEGIN
             "name", OLD.name,
             "position", OLD.position,
             "db_column", OLD.db_column,
-            "enabled", OLD.enabled,
-            "allow_filtering", OLD.allow_filtering,
-            "allow_sorting", OLD.allow_sorting,
-            "no_check", OLD.no_check,
-            "no_update", OLD.no_update,
+            "enabled", IF(OLD.enabled, 1, 0),
+            "allow_filtering", IF(OLD.allow_filtering, 1, 0),
+            "allow_sorting", IF(OLD.allow_sorting, 1, 0),
+            "no_check", IF(OLD.no_check, 1, 0),
+            "no_update", IF(OLD.no_update, 1, 0),
             "json_schema", OLD.json_schema,
             "options", OLD.options,
             "sdk_options", OLD.sdk_options,
@@ -4070,8 +4412,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_reference_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_reference_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_reference_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `object_reference_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `object_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4085,7 +4427,7 @@ BEGIN
             "reduce_to_value_of_field_id", NEW.reduce_to_value_of_field_id,
             "row_ownership_field_id", NEW.row_ownership_field_id,
             "reference_mapping", NEW.reference_mapping,
-            "unnest", NEW.unnest,
+            "unnest", IF(NEW.unnest, 1, 0),
             "options", NEW.options,
             "sdk_options", NEW.sdk_options,
             "comments", NEW.comments),
@@ -4096,8 +4438,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_reference_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_reference_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_reference_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `object_reference_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `object_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4110,7 +4452,7 @@ BEGIN
             "reduce_to_value_of_field_id", OLD.reduce_to_value_of_field_id,
             "row_ownership_field_id", OLD.row_ownership_field_id,
             "reference_mapping", OLD.reference_mapping,
-            "unnest", OLD.unnest,
+            "unnest", IF(OLD.unnest, 1, 0),
             "options", OLD.options,
             "sdk_options", OLD.sdk_options,
             "comments", OLD.comments),
@@ -4119,7 +4461,7 @@ BEGIN
             "reduce_to_value_of_field_id", NEW.reduce_to_value_of_field_id,
             "row_ownership_field_id", NEW.row_ownership_field_id,
             "reference_mapping", NEW.reference_mapping,
-            "unnest", NEW.unnest,
+            "unnest", IF(NEW.unnest, 1, 0),
             "options", NEW.options,
             "sdk_options", NEW.sdk_options,
             "comments", NEW.comments),
@@ -4130,8 +4472,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`object_reference_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`object_reference_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `object_reference_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `object_reference_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `object_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4144,7 +4486,7 @@ BEGIN
             "reduce_to_value_of_field_id", OLD.reduce_to_value_of_field_id,
             "row_ownership_field_id", OLD.row_ownership_field_id,
             "reference_mapping", OLD.reference_mapping,
-            "unnest", OLD.unnest,
+            "unnest", IF(OLD.unnest, 1, 0),
             "options", OLD.options,
             "sdk_options", OLD.sdk_options,
             "comments", OLD.comments),
@@ -4156,8 +4498,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_has_auth_app_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`service_has_auth_app_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `service_has_auth_app_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `service_has_auth_app_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `service_has_auth_app` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4177,8 +4519,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_has_auth_app_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`service_has_auth_app_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `service_has_auth_app_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `service_has_auth_app_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `service_has_auth_app` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4201,8 +4543,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`service_has_auth_app_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`service_has_auth_app_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `service_has_auth_app_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `service_has_auth_app_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `service_has_auth_app` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4222,8 +4564,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_has_obj_def_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_set_has_obj_def_AFTER_INSERT_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_obj_def_AFTER_INSERT_AUDIT_LOG`
     AFTER INSERT ON `content_set_has_obj_def` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4249,8 +4591,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_has_obj_def_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_set_has_obj_def_AFTER_UPDATE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_obj_def_AFTER_UPDATE_AUDIT_LOG`
     AFTER UPDATE ON `content_set_has_obj_def` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4285,8 +4627,8 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mysql_rest_service_metadata`.`content_set_has_obj_def_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mysql_rest_service_metadata`.`content_set_has_obj_def_AFTER_DELETE_AUDIT_LOG`
+DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_obj_def_AFTER_DELETE_AUDIT_LOG`
     AFTER DELETE ON `content_set_has_obj_def` FOR EACH ROW
 BEGIN
     INSERT INTO `mysql_rest_service_metadata`.`audit_log` (
@@ -4321,8 +4663,8 @@ DELIMITER %%
 
 -- Create an event to delete old audit_log entries that are older than 14 days
 
-DROP EVENT IF EXISTS `mysql_rest_service_metadata`.`delete_old_audit_log_entries`%%
-CREATE EVENT `mysql_rest_service_metadata`.`delete_old_audit_log_entries`
+DROP EVENT IF EXISTS `delete_old_audit_log_entries`%%
+CREATE EVENT `delete_old_audit_log_entries`
 ON SCHEDULE EVERY 1 DAY ENABLE
 DO BEGIN
     DELETE FROM `mysql_rest_service_metadata`.`audit_log`
@@ -4331,8 +4673,8 @@ END%%
 
 -- Create an event to dump the audit log every 15 minutes
 
-DROP EVENT IF EXISTS `mysql_rest_service_metadata`.`audit_log_dump_event`%%
-CREATE EVENT `mysql_rest_service_metadata`.`audit_log_dump_event`
+DROP EVENT IF EXISTS `audit_log_dump_event`%%
+CREATE EVENT `audit_log_dump_event`
 ON SCHEDULE EVERY 15 MINUTE
   STARTS '2025-01-01 00:00:00'
 ON COMPLETION PRESERVE DISABLE
@@ -4342,16 +4684,16 @@ END%%
 
 -- Periodically down-sample router_status rows to keep its size under control.
 
-DROP EVENT IF EXISTS `mysql_rest_service_metadata`.`router_status_cleanup`%%
-CREATE EVENT `mysql_rest_service_metadata`.`router_status_cleanup` ON SCHEDULE EVERY 1 HOUR
+DROP EVENT IF EXISTS `router_status_cleanup`%%
+CREATE EVENT `router_status_cleanup` ON SCHEDULE EVERY 1 HOUR
 ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Aggregate and clean up router_status entries' DO
     CALL mysql_rest_service_metadata.router_status_do_cleanup(NOW())%%
 
 
 -- Periodically delete the router_general_log
 
-DROP EVENT IF EXISTS `mysql_rest_service_metadata`.`router_log_cleanup`%%
-CREATE EVENT `mysql_rest_service_metadata`.`router_log_cleanup`
+DROP EVENT IF EXISTS `router_log_cleanup`%%
+CREATE EVENT `router_log_cleanup`
 ON SCHEDULE EVERY 1 HOUR
 ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Clean up router_general_log entries'
 DO
@@ -4360,11 +4702,364 @@ DO
 
 DELIMITER ;
 
+DELIMITER %%
+
+-- -----------------------------------------------------------------------------
+-- CREATE PROCEDURE `mysql_rest_service_metadata`.`restore_roles`
+-- -----------------------------------------------------------------------------
+
+DROP PROCEDURE IF EXISTS `mysql_rest_service_metadata`.`restore_roles`%%
+CREATE PROCEDURE `mysql_rest_service_metadata`.`restore_roles`()
+SQL SECURITY DEFINER
+COMMENT 'This procedure restores all the ROLEs required by the MySQL REST Service.'
+BEGIN
+    -- -----------------------------------------------------
+    -- Create roles for the MySQL REST Service
+
+    -- The mysql_rest_service_admin ROLE allows to fully manage the REST services
+    -- The mysql_rest_service_schema_admin ROLE allows to manage the database schemas assigned to REST services
+    -- The mysql_rest_service_dev ROLE allows to develop new REST objects for given REST services and upload static files
+    -- The mysql_rest_service_user ROLE can be assigned to MySQL users that are granted access via MySQL Internal authentication.
+    -- The mysql_rest_service_meta_provider ROLE is used by the MySQL Router to read the mrs metadata and make inserts into the auth_user table
+    -- The mysql_rest_service_data_provider ROLE is used by the MySQL Router to read the actual schema data that is exposed via REST
+    -- The mysql_task_user ROLE is defined as part of the mysql_tasks project. For compatibility reasons, a placeholder role is created here as well.
+
+    CREATE ROLE IF NOT EXISTS 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_user',
+        'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider', 'mysql_task_user';
+
+    -- Allow the 'mysql_rest_service_user' role to access the same data as 'mysql_rest_service_data_provider'
+    GRANT 'mysql_rest_service_data_provider' TO 'mysql_rest_service_user';
+
+    -- Allow the creation of temporary tables
+    GRANT CREATE TEMPORARY TABLES ON `mysql_rest_service_metadata`.*
+        TO 'mysql_rest_service_data_provider';
+
+    -- `mysql_rest_service_metadata`.`msm_schema_version`
+    GRANT SELECT ON `mysql_rest_service_metadata`.`msm_schema_version`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`audit_log`
+    GRANT SELECT ON `mysql_rest_service_metadata`.`audit_log`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- Config
+
+    -- `mysql_rest_service_metadata`.`config`
+    GRANT SELECT, UPDATE
+        ON `mysql_rest_service_metadata`.`config`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`config`
+        TO 'mysql_rest_service_meta_provider', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`redirect`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`redirect`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`redirect`
+        TO 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- Service
+
+    -- `mysql_rest_service_metadata`.`url_host`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`url_host`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`url_host`
+        TO 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`url_host_alias`
+    GRANT SELECT, INSERT, DELETE
+        ON `mysql_rest_service_metadata`.`url_host_alias`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`url_host_alias`
+        TO 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`service`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`service`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`service`
+        TO 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- Schema Objects
+
+    -- `mysql_rest_service_metadata`.`db_schema`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`db_schema`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`db_schema`
+        TO 'mysql_rest_service_meta_provider', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`db_object`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`db_object`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`db_object`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`mrs_db_object_row_group_security`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_db_object_row_group_security`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`mrs_db_object_row_group_security`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`object`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`object`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`object`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`object_field`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`object_field`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`object_field`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`object_reference`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`object_reference`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`object_reference`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- Static Content
+
+    -- `mysql_rest_service_metadata`.`content_set`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`content_set`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`content_set`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`content_file`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`content_file`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`content_file`
+        TO 'mysql_rest_service_meta_provider';
+
+
+    -- `mysql_rest_service_metadata`.`content_set_has_obj_def`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`content_set_has_obj_def`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`content_set_has_obj_def`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- User Authentication
+
+    -- `mysql_rest_service_metadata`.`auth_app`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`auth_app`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`auth_app`
+        TO 'mysql_rest_service_meta_provider', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`service_has_auth_app`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`service_has_auth_app`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`service_has_auth_app`
+        TO 'mysql_rest_service_meta_provider', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`auth_vendor`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`auth_vendor`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`auth_vendor`
+        TO 'mysql_rest_service_meta_provider', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`mrs_user`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_user`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT, UPDATE ON `mysql_rest_service_metadata`.`mrs_user`
+        TO 'mysql_rest_service_meta_provider';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`mrs_user`
+        TO 'mysql_rest_service_data_provider';
+
+    -- -----------------------------------------------------
+    -- User Hierarchy
+
+    -- `mysql_rest_service_metadata`.`mrs_user_hierarchy`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_user_hierarchy`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_user_hierarchy`
+        TO 'mysql_rest_service_meta_provider';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`mrs_user_hierarchy`
+        TO 'mysql_rest_service_data_provider';
+
+    -- `mysql_rest_service_metadata`.`mrs_user_hierarchy_type`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_user_hierarchy_type`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_user_hierarchy_type`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- User Roles
+
+    -- `mysql_rest_service_metadata`.`mrs_user_has_role`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_user_has_role`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_user_has_role`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`mrs_role`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_role`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_role`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`mrs_privilege`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_privilege`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_privilege`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- User Group Management
+
+    -- `mysql_rest_service_metadata`.`mrs_user_has_group`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_user_has_group`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_user_has_group`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`mrs_user_group`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_user_group`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_user_group`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`mrs_user_group_has_role`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_user_group_has_role`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_user_group_has_role`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`mrs_group_hierarchy_type`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_group_hierarchy_type`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_group_hierarchy_type`
+        TO 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`mrs_user_group_hierarchy`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`mrs_user_group_hierarchy`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`mrs_user_group_hierarchy`
+        TO 'mysql_rest_service_meta_provider';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`mrs_user_group_hierarchy`
+        TO 'mysql_rest_service_data_provider';
+
+    -- -----------------------------------------------------
+    -- Router Management
+
+    -- `mysql_rest_service_metadata`.`router`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`router`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT, UPDATE ON `mysql_rest_service_metadata`.`router`
+        TO 'mysql_rest_service_meta_provider';
+    GRANT SELECT
+        ON `mysql_rest_service_metadata`.`router`
+        TO 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`router_status`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`router_status`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT, UPDATE ON `mysql_rest_service_metadata`.`router_status`
+        TO 'mysql_rest_service_meta_provider';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`router_status`
+        TO 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`router_general_log`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`router_general_log`
+        TO 'mysql_rest_service_admin';
+    GRANT INSERT ON `mysql_rest_service_metadata`.`router_general_log`
+        TO 'mysql_rest_service_meta_provider';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`router_general_log`
+        TO 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`router_session`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mysql_rest_service_metadata`.`router_session`
+        TO 'mysql_rest_service_admin';
+    GRANT SELECT, INSERT ON `mysql_rest_service_metadata`.`router_session`
+        TO 'mysql_rest_service_meta_provider';
+    GRANT SELECT ON `mysql_rest_service_metadata`.`router_session`
+        TO 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev';
+
+    -- `mysql_rest_service_metadata`.`router_services`
+    GRANT SELECT ON `mysql_rest_service_metadata`.`router_services`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- Procedures and Functions
+
+    -- `mysql_rest_service_metadata`.`get_sequence_id`
+
+    GRANT EXECUTE ON FUNCTION `mysql_rest_service_metadata`.`get_sequence_id`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';
+
+    -- `mysql_rest_service_metadata`.`table_columns_with_references`
+    GRANT EXECUTE ON PROCEDURE `mysql_rest_service_metadata`.`table_columns_with_references`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`sdk_service_data`
+    GRANT EXECUTE ON PROCEDURE `mysql_rest_service_metadata`.`sdk_service_data`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`restore_roles`
+    GRANT EXECUTE ON PROCEDURE `mysql_rest_service_metadata`.`restore_roles`
+        TO 'mysql_rest_service_admin';
+
+
+    -- -----------------------------------------------------
+    -- Views
+
+    -- `mysql_rest_service_metadata`.`mrs_user_schema_version`
+    GRANT SELECT
+        ON `mysql_rest_service_metadata`.`mrs_user_schema_version`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- `mysql_rest_service_metadata`.`object_fields_with_references`
+    GRANT SELECT
+        ON `mysql_rest_service_metadata`.`object_fields_with_references`
+        TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+    -- -----------------------------------------------------
+    -- Grant the necessary mysql_tasks privileges to the MySQL REST Service roles
+    GRANT 'mysql_task_user' TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_user',
+        'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';
+END%%
+
+DELIMITER ;
+
 -- #############################################################################
 -- MSM Section 170: Authorization
 -- -----------------------------------------------------------------------------
 -- This section is used to define the ROLEs and GRANT statements.
--- -----------------------------------------------------------------------------
+-- #############################################################################
 
 -- -----------------------------------------------------
 -- Create roles for the MySQL REST Service
@@ -4375,9 +5070,10 @@ DELIMITER ;
 -- The mysql_rest_service_user ROLE can be assigned to MySQL users that are granted access via MySQL Internal authentication.
 -- The mysql_rest_service_meta_provider ROLE is used by the MySQL Router to read the mrs metadata and make inserts into the auth_user table
 -- The mysql_rest_service_data_provider ROLE is used by the MySQL Router to read the actual schema data that is exposed via REST
+-- The mysql_task_user ROLE is defined as part of the mysql_tasks project. For compatibility reasons, a placeholder role is created here as well.
 
 CREATE ROLE IF NOT EXISTS 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_user',
-    'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';
+    'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider', 'mysql_task_user';
 
 -- Allow the 'mysql_rest_service_user' role to access the same data as 'mysql_rest_service_data_provider'
 GRANT 'mysql_rest_service_data_provider' TO 'mysql_rest_service_user';
@@ -4666,7 +5362,7 @@ GRANT SELECT ON `mysql_rest_service_metadata`.`router_services`
     TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
 
 -- -----------------------------------------------------
--- Procedures
+-- Procedures and Functions
 
 -- `mysql_rest_service_metadata`.`get_sequence_id`
 
@@ -4674,9 +5370,16 @@ GRANT EXECUTE ON FUNCTION `mysql_rest_service_metadata`.`get_sequence_id`
     TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';
 
 -- `mysql_rest_service_metadata`.`table_columns_with_references`
-GRANT EXECUTE
-    ON PROCEDURE `mysql_rest_service_metadata`.`table_columns_with_references`
+GRANT EXECUTE ON PROCEDURE `mysql_rest_service_metadata`.`table_columns_with_references`
     TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+-- `mysql_rest_service_metadata`.`sdk_service_data`
+GRANT EXECUTE ON PROCEDURE `mysql_rest_service_metadata`.`sdk_service_data`
+    TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+
+-- `mysql_rest_service_metadata`.`restore_roles`
+GRANT EXECUTE ON PROCEDURE `mysql_rest_service_metadata`.`restore_roles`
+    TO 'mysql_rest_service_admin';
 
 
 -- -----------------------------------------------------
@@ -4684,8 +5387,8 @@ GRANT EXECUTE
 
 -- `mysql_rest_service_metadata`.`mrs_user_schema_version`
 GRANT SELECT
-  ON `mysql_rest_service_metadata`.`mrs_user_schema_version`
-  TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
+    ON `mysql_rest_service_metadata`.`mrs_user_schema_version`
+    TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_meta_provider';
 
 -- `mysql_rest_service_metadata`.`object_fields_with_references`
 GRANT SELECT
@@ -4695,24 +5398,24 @@ GRANT SELECT
 -- -----------------------------------------------------
 -- Grant the necessary mysql_tasks privileges to the MySQL REST Service roles
 GRANT 'mysql_task_user' TO 'mysql_rest_service_admin', 'mysql_rest_service_schema_admin', 'mysql_rest_service_dev', 'mysql_rest_service_user',
-	'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';
+    'mysql_rest_service_meta_provider', 'mysql_rest_service_data_provider';
 
 -- #############################################################################
 -- MSM Section 910: Database Schema Version
 -- -----------------------------------------------------------------------------
 -- Setting the correct database schema version.
--- -----------------------------------------------------------------------------
+-- #############################################################################
 
 CREATE OR REPLACE SQL SECURITY INVOKER
 VIEW `mysql_rest_service_metadata`.`msm_schema_version` (
     `major`,`minor`,`patch`) AS
-SELECT 4, 0, 3;
+SELECT 5, 0, 0;
 
 -- #############################################################################
 -- MSM Section 920: Server Variable Restoration
 -- -----------------------------------------------------------------------------
 -- Restore the modified server variables to their original state.
--- -----------------------------------------------------------------------------
+-- #############################################################################
 
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;

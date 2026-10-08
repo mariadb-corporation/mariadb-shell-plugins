@@ -201,7 +201,8 @@ def test_change_service(phone_book, table_contents):
             lib.services.update_services(
                 session=session, service_ids=[1000], value={"enabled": True}
             )
-        assert str(exc_info.value) == "'int' object has no attribute 'hex'"
+        # An integer is no id: the server refuses to compare it with a UUID.
+        assert "Illegal parameter data types uuid and int" in str(exc_info.value)
 
         with ServiceCT(session, "/service2") as service_id:
             value = {"comments": "This is the updated comment."}

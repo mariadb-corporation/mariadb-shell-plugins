@@ -33,8 +33,8 @@ from .interactive import (
 
 
 def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_binary(["user_id"], kwargs)
-    lib.core.try_convert_ids_to_binary(["user"], kwargs)
+    lib.core.convert_ids_to_uuid(["user_id"], kwargs)
+    lib.core.try_convert_ids_to_uuid(["user"], kwargs)
 
     include_all_objects = kwargs.get("include_all_objects", False)
     user_query = user_query_selection(**kwargs)
@@ -62,7 +62,7 @@ def get_users(**kwargs):
     Returns:
         None
     """
-    lib.core.convert_ids_to_binary(["service_id", "auth_app_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "auth_app_id"], kwargs)
     service_id = kwargs.get("service_id")
     auth_app_id = kwargs.get("auth_app_id")
 
@@ -92,7 +92,7 @@ def get_user(**kwargs):
     Returns:
         None
     """
-    lib.core.convert_ids_to_binary(["user_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["user_id"], kwargs)
 
     user_id = kwargs.get("user_id")
 
@@ -129,7 +129,7 @@ def add_user(**kwargs):
     Returns:
         None
     """
-    lib.core.convert_ids_to_binary(["auth_app_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["auth_app_id"], kwargs)
 
     auth_app_id = kwargs.get("auth_app_id")
     name = kwargs.get("name")
@@ -166,7 +166,7 @@ def add_user(**kwargs):
             user_roles = [
                 {
                     "user_id": user_id,
-                    "role_id": lib.core.id_to_binary(
+                    "role_id": lib.core.id_to_uuid(
                         user_role["role_id"], "user_role_id"
                     ),
                     "comments": None,
@@ -209,7 +209,7 @@ def delete_user(user_id=None, session=None):
     Returns:
         None
     """
-    user_id = lib.core.id_to_binary(user_id, "user_id")
+    user_id = lib.core.id_to_uuid(user_id, "user_id")
 
     if not user_id:
         raise Exception("The user_id is required to perform this operation.")
@@ -252,7 +252,7 @@ def update_user(**kwargs):
     Returns:
         None
     """
-    lib.core.convert_ids_to_binary(["user_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["user_id"], kwargs)
 
     user_id = kwargs.get("user_id")
 
@@ -261,12 +261,12 @@ def update_user(**kwargs):
 
     if user_roles:
         for user_role in user_roles:
-            lib.core.convert_ids_to_binary(["user_id", "role_id"], user_role)
+            lib.core.convert_ids_to_uuid(["user_id", "role_id"], user_role)
 
     if value.get("auth_string") == lib.users.STORED_PASSWORD_STRING:
         del value["auth_string"]
 
-    lib.core.convert_ids_to_binary(["auth_app_id"], value)
+    lib.core.convert_ids_to_uuid(["auth_app_id"], value)
 
     if "auth_string" in value and "auth_app_id" not in value:
         raise RuntimeError("The auth_app_id is required to set the auth_string.")
@@ -303,7 +303,7 @@ def get_user_roles(user_id=None, session=None):
         None
     """
     if user_id:
-        user_id = lib.core.id_to_binary(user_id, "user_id")
+        user_id = lib.core.id_to_uuid(user_id, "user_id")
 
     with lib.core.MrsDbSession(session=session) as session:
         return lib.users.get_user_roles(session, user_id)
@@ -323,9 +323,9 @@ def add_user_role(user_id=None, role_id=None, comments=None, session=None):
         None
     """
     if user_id:
-        user_id = lib.core.id_to_binary(user_id, "user_id")
+        user_id = lib.core.id_to_uuid(user_id, "user_id")
     if role_id:
-        role_id = lib.core.id_to_binary(role_id, "role_id")
+        role_id = lib.core.id_to_uuid(role_id, "role_id")
 
     with lib.core.MrsDbSession(session=session) as session:
         with lib.core.MrsDbTransaction(session):
@@ -345,9 +345,9 @@ def delete_user_roles(user_id=None, role_id=None, session=None):
         None
     """
     if user_id:
-        user_id = lib.core.id_to_binary(user_id, "user_id")
+        user_id = lib.core.id_to_uuid(user_id, "user_id")
     if role_id:
-        role_id = lib.core.id_to_binary(role_id, "role_id")
+        role_id = lib.core.id_to_uuid(role_id, "role_id")
 
     with lib.core.MrsDbSession(session=session) as session:
         with lib.core.MrsDbTransaction(session):

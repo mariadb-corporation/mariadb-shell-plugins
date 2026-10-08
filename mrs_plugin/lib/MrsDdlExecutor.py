@@ -677,7 +677,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
 
                 db_object_id, grants = lib.db_objects.add_db_object(
                     session=self.session,
-                    schema_id=lib.core.id_to_binary(schema_id, "schema_id"),
+                    schema_id=lib.core.id_to_uuid(schema_id, "schema_id"),
                     db_object_name=mrs_object.get("name"),
                     request_path=mrs_object.get("request_path"),
                     db_object_type=mrs_object.get("db_object_type"),
@@ -692,7 +692,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                     ),
                     auth_stored_procedure=mrs_object.get("auth_stored_procedure"),
                     options=mrs_object.get("options"),
-                    db_object_id=lib.core.id_to_binary(
+                    db_object_id=lib.core.id_to_uuid(
                         mrs_object.get("id"), "db_object_id"
                     ),
                     objects=mrs_object.get("objects"),
@@ -986,7 +986,7 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         )
                     default_role_id = role.get("id")
                 else:
-                    default_role_id = lib.core.id_to_binary(
+                    default_role_id = lib.core.id_to_uuid(
                         "0x31000000000000000000000000000000", ""
                     )
 
@@ -998,9 +998,9 @@ class MrsDdlExecutor(MrsDdlExecutorInterface):
                         f'The vendor `{mrs_object.get("vendor")}` was not found.'
                     )
                 # Check constraints for OAuth2 vender apps
-                if auth_vendor["id"] != lib.core.id_to_binary(
+                if auth_vendor["id"] != lib.core.id_to_uuid(
                     "0x30000000000000000000000000000000", ""
-                ) and auth_vendor["id"] != lib.core.id_to_binary(
+                ) and auth_vendor["id"] != lib.core.id_to_uuid(
                     "0x31000000000000000000000000000000", ""
                 ):
                     if mrs_object.get("url") is None:

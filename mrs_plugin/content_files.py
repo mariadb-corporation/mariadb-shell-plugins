@@ -31,7 +31,7 @@ from .interactive import resolve_content_file, resolve_overwrite_file, resolve_f
 
 
 def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_binary(
+    lib.core.convert_ids_to_uuid(
         ["service_id", "content_set_id", "content_file_id"], kwargs
     )
     service_id = kwargs.get("service_id")
@@ -67,7 +67,7 @@ def get_content_files(content_set_id, **kwargs):
         A list of dicts representing the files in the content set
     """
     if content_set_id is not None:
-        content_set_id = lib.core.id_to_binary(content_set_id, "content_set_id")
+        content_set_id = lib.core.id_to_uuid(content_set_id, "content_set_id")
 
     include_enable_state = kwargs.get("include_enable_state")
 

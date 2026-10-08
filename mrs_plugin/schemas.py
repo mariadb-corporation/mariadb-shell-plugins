@@ -224,8 +224,8 @@ def call_update_schema(**kwargs):
 
 
 def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
-    lib.core.try_convert_ids_to_binary(["service", "schema"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
+    lib.core.try_convert_ids_to_uuid(["service", "schema"], kwargs)
 
     include_database_endpoints = kwargs.get("include_database_endpoints", False)
     service_query = service_query_selection(**kwargs)
@@ -268,7 +268,7 @@ def add_schema(**kwargs):
     Returns:
         The schema_id of the created schema when not in interactive mode
     """
-    lib.core.convert_ids_to_binary(["service_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs)
 
     schema_name = kwargs.get("schema_name")
     request_path = kwargs.get("request_path")
@@ -373,7 +373,7 @@ def get_schema(**kwargs):
     Returns:
         The schema as dict or None on error in interactive mode
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     if kwargs.get("request_path") is not None:
         lib.core.Validations.request_path(kwargs["request_path"])
@@ -419,7 +419,7 @@ def get_schemas(service_id=None, **kwargs):
         of dicts representing the schemas
     """
     if service_id is not None:
-        service_id = lib.core.id_to_binary(service_id, "service_id")
+        service_id = lib.core.id_to_uuid(service_id, "service_id")
 
     include_enable_state = kwargs.get("include_enable_state")
 
@@ -458,7 +458,7 @@ def enable_schema(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     kwargs["value"] = {"enabled": True}
 
@@ -481,7 +481,7 @@ def disable_schema(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     kwargs["value"] = {"enabled": False}
 
@@ -504,7 +504,7 @@ def delete_schema(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
     schema_id = kwargs.get("schema_id")
     if schema_id:
         with lib.core.MrsDbSession(
@@ -535,7 +535,7 @@ def set_name(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     kwargs["value"] = {"name": kwargs.get("value")}
 
@@ -559,7 +559,7 @@ def set_request_path(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     kwargs["value"] = {"request_path": kwargs.get("value")}
 
@@ -583,7 +583,7 @@ def set_require_auth(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     kwargs["value"] = {"requires_auth": kwargs.get("value", True)}
     kwargs = resolve_requires_auth(**kwargs)
@@ -608,7 +608,7 @@ def set_items_per_page(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     kwargs["value"] = {"items_per_page": kwargs.get("value", 25)}
     kwargs = resolve_items_per_page(**kwargs)
@@ -633,7 +633,7 @@ def set_comments(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     kwargs["value"] = {"comments": kwargs.get("value")}
 
@@ -671,10 +671,10 @@ def update_schema(**kwargs):
     Returns:
         The result message as string
     """
-    lib.core.convert_ids_to_binary(["service_id", "schema_id"], kwargs)
+    lib.core.convert_ids_to_uuid(["service_id", "schema_id"], kwargs)
 
     kwargs["value"] = lib.core.convert_json(kwargs["value"])
-    lib.core.convert_ids_to_binary(["service_id"], kwargs["value"])
+    lib.core.convert_ids_to_uuid(["service_id"], kwargs["value"])
 
     if kwargs.get("request_path") is not None:
         lib.core.Validations.request_path(kwargs["request_path"])

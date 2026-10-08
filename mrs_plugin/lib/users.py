@@ -28,7 +28,7 @@ import base64
 import os
 import re
 
-MRS_VENDOR_ID = bytes.fromhex("30000000000000000000000000000000")
+MRS_VENDOR_ID = "30000000-0000-0000-0000-000000000000"
 STORED_PASSWORD_STRING = "[Stored Password]"
 
 
@@ -320,7 +320,7 @@ def get_user_roles(session, user_id):
     LEFT JOIN `mysql_rest_service_metadata`.mrs_role pr
             ON r.derived_from_role_id = pr.id
     LEFT JOIN `mysql_rest_service_metadata`.`service` s ON s.id = r.specific_to_service_id
-    WHERE ur.user_id = (_binary ?)
+    WHERE ur.user_id = ?
     """
     return core.MrsDbExec(sql, [user_id]).exec(session).items
 
@@ -383,7 +383,7 @@ def get_user_create_statement(session, user, include_all_objects) -> str:
     if not user["login_permitted"]:
         output.append("    ACCOUNT LOCK")
 
-    if user["auth_string"] is not None and user["auth_app_id"] != core.id_to_binary(
+    if user["auth_string"] is not None and user["auth_app_id"] != core.id_to_uuid(
         "0x31000000000000000000000000000000", "MySQL App"
     ):
         output.append(f'    IDENTIFIED BY {core.quote_text(user["auth_string"])}')

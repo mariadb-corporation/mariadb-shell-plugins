@@ -26,8 +26,8 @@ WITH RECURSIVE obj_fields (
         f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
         f.options, f.sdk_options, f.comments,
         IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
-            'reduce_to_value_of_field_id', TO_BASE64(r.reduce_to_value_of_field_id),
-            'row_ownership_field_id', TO_BASE64(r.row_ownership_field_id),
+            'reduce_to_value_of_field_id', r.reduce_to_value_of_field_id,
+            'row_ownership_field_id', r.row_ownership_field_id,
             'reference_mapping', r.reference_mapping,
             'unnest', (r.unnest = 1),
             'options', r.options,
@@ -44,8 +44,8 @@ WITH RECURSIVE obj_fields (
         f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
         f.options, f.sdk_options, f.comments,
         IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
-            'reduce_to_value_of_field_id', TO_BASE64(rc.reduce_to_value_of_field_id),
-            'row_ownership_field_id', TO_BASE64(rc.row_ownership_field_id),
+            'reduce_to_value_of_field_id', rc.reduce_to_value_of_field_id,
+            'row_ownership_field_id', rc.row_ownership_field_id,
             'reference_mapping', rc.reference_mapping,
             'unnest', (rc.unnest = 1),
             'options', rc.options,

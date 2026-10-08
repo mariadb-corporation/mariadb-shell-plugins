@@ -41,7 +41,7 @@ SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
     'NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,'
-    'NO_ENGINE_SUBSTITUTION';
+    'NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
 
 -- #############################################################################
 -- MSM Section 110: Database Schema Creation
@@ -173,7 +173,7 @@ SOURCE './sections/170_roles.sql'[89:]; -- Remove copyright
 CREATE OR REPLACE SQL SECURITY INVOKER
 VIEW `mysql_rest_service_metadata`.`msm_schema_version` (
     `major`,`minor`,`patch`) AS
-SELECT 4, 1, 6;
+SELECT 5, 0, 1;
 
 -- #############################################################################
 -- MSM Section 920: Server Variable Restoration

@@ -1260,7 +1260,7 @@ def get_reduced_field_interface_datatype(field, fields, sdk_language, class_name
         ref_field_id = obj_ref.get("reduce_to_value_of_field_id")
         if obj_ref and ref_field_id:
             # Convert id to binary
-            ref_field_id = lib.core.id_to_binary(
+            ref_field_id = lib.core.id_to_uuid(
                 ref_field_id, "reduce_to_value_of_field_id"
             )
 
