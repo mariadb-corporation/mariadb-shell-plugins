@@ -59,10 +59,10 @@ def query_schemas(
             sc.requires_auth, sc.enabled, sc.items_per_page, sc.comments, se.url_host_id,
             CONCAT(h.name, se.url_context_root) AS host_ctx,
             sc.options, sc.metadata, sc.schema_type, sc.internal
-        FROM `mysql_rest_service_metadata`.db_schema sc
-            LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
+        FROM <metadata>.db_schema sc
+            LEFT OUTER JOIN <metadata>.service se
                 ON se.id = sc.service_id
-            LEFT JOIN `mysql_rest_service_metadata`.url_host h
+            LEFT JOIN <metadata>.url_host h
                 ON se.url_host_id = h.id
         """
     params = []

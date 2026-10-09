@@ -109,10 +109,10 @@ def query_content_sets(
             cs.enabled, cs.comments, cs.options,
             CONCAT(h.name, se.url_context_root) AS host_ctx,
             cs.content_type
-        FROM `mysql_rest_service_metadata`.`content_set` cs
-            LEFT OUTER JOIN `mysql_rest_service_metadata`.`service` se
+        FROM <metadata>.`content_set` cs
+            LEFT OUTER JOIN <metadata>.`service` se
                 ON se.id = cs.service_id
-            LEFT JOIN `mysql_rest_service_metadata`.`url_host` h
+            LEFT JOIN <metadata>.`url_host` h
                 ON se.url_host_id = h.id
         """
     params = []

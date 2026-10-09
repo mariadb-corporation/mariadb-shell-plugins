@@ -68,16 +68,16 @@ def query_db_objects(
             al.changed_at,
             CONCAT(sc.name, '.', o.name) AS qualified_name,
             se.id AS service_id, sc.name AS schema_name
-        FROM mysql_rest_service_metadata.db_object o
-            LEFT OUTER JOIN mysql_rest_service_metadata.db_schema sc
+        FROM <metadata>.db_object o
+            LEFT OUTER JOIN <metadata>.db_schema sc
                 ON sc.id = o.db_schema_id
-            LEFT OUTER JOIN mysql_rest_service_metadata.service se
+            LEFT OUTER JOIN <metadata>.service se
                 ON se.id = sc.service_id
-            LEFT JOIN mysql_rest_service_metadata.url_host h
+            LEFT JOIN <metadata>.url_host h
                 ON se.url_host_id = h.id
             LEFT OUTER JOIN (
                 SELECT new_row_id AS id, MAX(changed_at) as changed_at
-                FROM mysql_rest_service_metadata.audit_log
+                FROM <metadata>.audit_log
                 WHERE table_name = 'db_object'
                 GROUP BY new_row_id) al
             ON al.id = o.id
@@ -169,7 +169,7 @@ def add_db_object(
         db_object_id = core.get_sequence_id(session)
 
     crud_operations = calculate_crud_operations(
-        db_object_type=db_object_type, objects=objects, options=options
+        db_object_type=db_object_type, objects=objects
     )
 
     values = {
@@ -227,7 +227,7 @@ def add_db_object(
 
     if db_object_type == "SCRIPT":
         return db_object_id, database.get_grant_statements_for_explicit_grants(
-            options.get("grants", None)
+            options.get("grants", None), core.metadata_role(session, "data_provider")
         )
     else:
         return db_object_id, database.get_grant_statements(
@@ -256,7 +256,7 @@ def set_objects(session, db_object_id, objects):
     if objects is None:
         objects = []
 
-    sql = "DELETE FROM mysql_rest_service_metadata.object WHERE db_object_id = ?"
+    sql = "DELETE FROM <metadata>.object WHERE db_object_id = ?"
     core.MrsDbExec(sql).exec(
         session, [core.id_to_uuid(db_object_id, "db_object_id")]
     ).items
@@ -415,14 +415,11 @@ def set_object_fields_with_references(session, db_object_id, obj):
             core.insert(table="object_field", values=values).exec(session)
 
 
-def calculate_crud_operations(db_object_type, objects=None, options=None):
+def calculate_crud_operations(db_object_type, objects=None):
     if db_object_type == "SCRIPT":
         return ["CREATE", "READ", "UPDATE"]
     if db_object_type == "PROCEDURE" or db_object_type == "FUNCTION":
-        if options is not None and options.get("mysqlTask", None) is not None:
-            return ["CREATE", "READ", "UPDATE", "DELETE"]
-        else:
-            return ["CREATE"]
+        return ["CREATE"]
 
     if objects is None:
         return ["READ"]

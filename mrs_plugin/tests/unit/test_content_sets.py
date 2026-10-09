@@ -26,6 +26,7 @@ import os
 import pytest
 import tempfile
 
+from mrs_plugin import lib
 from mrs_plugin.content_sets import load_content_set
 
 MRS_SCRIPT = """@Mrs.module({ name: "hello", requestPath: "/hello" })
@@ -47,13 +48,16 @@ def write_file(directory, relative_path, data):
 
 def file_contents(session, content_set_path):
     rows = session.run_sql(
-        """SELECT f.request_path, f.content, f.enabled
-        FROM mysql_rest_service_metadata.content_file f
-            JOIN mysql_rest_service_metadata.content_set cs
+        lib.core.metadata_sql(
+            session,
+            """SELECT f.request_path, f.content, f.enabled
+        FROM <metadata>.content_file f
+            JOIN <metadata>.content_set cs
                 ON cs.id = f.content_set_id
-            JOIN mysql_rest_service_metadata.service se ON se.id = cs.service_id
+            JOIN <metadata>.service se ON se.id = cs.service_id
         WHERE cs.request_path = ? AND se.url_context_root = '/test'
         ORDER BY f.request_path""",
+        ),
         [content_set_path],
     ).fetch_all()
     return {row[0]: (bytes(row[1]), row[2]) for row in rows}

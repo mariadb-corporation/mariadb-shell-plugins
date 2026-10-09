@@ -37,13 +37,6 @@ import {
     // --- importFunctionCallOnlyStart
     MrsBaseObjectFunctionCall,
     // --- importFunctionCallOnlyEnd
-    // --- importTaskRunOnlyStart
-    IMrsTaskRunOptions,
-    IMrsTaskStartOptions,
-    MrsBaseTaskStart,
-    MrsBaseTaskRun,
-    MrsTask,
-    // --- importTaskRunOnlyEnd
     // --- importUpdateOnlyStart
     IUpdateOptions,
     MrsBaseObjectUpdate,
@@ -190,24 +183,6 @@ class ${obj_class_name}Object extends MrsBaseObject {
         return response;
     };
     // --- crudProcedureCallOnlyEnd
-    // --- crudProcedureTaskRunOnlyStart
-    async start(${obj_name}Params?: I${obj_param_interface}, options?: IMrsTaskStartOptions): Promise<MrsTask<object, IMrsProcedureResult<I${obj_param_interface}Out, ${obj_meta_interface}>, [${obj_bigint_field_list}], [${obj_fixed_point_field_list}]>> {
-        const request = new MrsBaseTaskStart<I${obj_param_interface}, object, IMrsProcedureResult<I${obj_param_interface}Out, ${obj_meta_interface}>>(
-            this.schema, this.requestPath, ${obj_name}Params, options);
-        const response = await request.submit();
-
-        return new MrsTask(this.schema, this.requestPath, response.taskId, { ...options, routineType: "PROCEDURE", bigIntKeys: [${obj_bigint_field_list}], fixedPointKeys: [${obj_fixed_point_field_list}] });
-    }
-
-    async call(${obj_name}Params?: I${obj_param_interface}, options?: IMrsTaskRunOptions<object, IMrsProcedureResult<I${obj_param_interface}Out, ${obj_meta_interface}>>): Promise<IMrsProcedureResult<I${obj_param_interface}Out, ${obj_meta_interface}>> {
-        const task = await this.start(${obj_name}Params, options);
-        const poll = new MrsBaseTaskRun<object, IMrsProcedureResult<I${obj_param_interface}Out, ${obj_meta_interface}>, [${obj_bigint_field_list}], [${obj_fixed_point_field_list}]>(
-            this.schema, this.requestPath, task);
-        const response = await poll.execute();
-
-        return response;
-    };
-    // --- crudProcedureTaskRunOnlyEnd
     // --- crudFunctionCallOnlyStart
     public call = async (${obj_name}Params?: I${obj_param_interface}): Promise<${obj_function_result_datatype}> => {
         const request = new MrsBaseObjectFunctionCall<I${obj_param_interface}, ${obj_function_result_datatype}, [${obj_bigint_field_list}], [${obj_fixed_point_field_list}]>(
@@ -217,25 +192,6 @@ class ${obj_class_name}Object extends MrsBaseObject {
         return response.result;
     };
     // --- crudFunctionCallOnlyEnd
-    // --- crudFunctionTaskRunOnlyStart
-    async start(${obj_name}Params?: I${obj_param_interface}, options?: IMrsTaskStartOptions): Promise<MrsTask<object, IMrsFunctionResponse<${obj_function_result_datatype}>, [${obj_bigint_field_list}], [${obj_fixed_point_field_list}]>> {
-        const request = new MrsBaseTaskStart<I${obj_param_interface}, object, IMrsFunctionResponse<${obj_function_result_datatype}>>(
-            this.schema, this.requestPath, ${obj_name}Params, options);
-        const response = await request.submit();
-
-        return new MrsTask(this.schema, this.requestPath, response.taskId, { ...options, routineType: "FUNCTION", bigIntKeys: [${obj_bigint_field_list}], fixedPointKeys: [${obj_fixed_point_field_list}] });
-    }
-
-    async call(${obj_name}Params?: I${obj_param_interface}, options?: IMrsTaskRunOptions<object, ${obj_function_result_datatype}>): Promise<${obj_function_result_datatype}> {
-        const task = await this.start(${obj_name}Params, options);
-        const poll = new MrsBaseTaskRun<object, IMrsFunctionResponse<${obj_function_result_datatype}>, [${obj_bigint_field_list}], [${obj_fixed_point_field_list}]>(
-            this.schema, this.requestPath, task);
-        const response = await poll.execute();
-
-        return response.result;
-    };
-    // --- crudFunctionTaskRunOnlyEnd
-
 // --- MariaDB Shell for VS Code Extension Only --- Begin
     public edit = (): void => {
         mrsEditDbObject("${obj_id}");

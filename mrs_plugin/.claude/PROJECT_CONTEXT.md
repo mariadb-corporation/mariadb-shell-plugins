@@ -14,7 +14,8 @@ code, audit log, version, see
 [context/plugin-reduction.md](context/plugin-reduction.md)); the Python REST SQL parser is
 gone. The docs, the ANTLR reference grammar and their tools moved to the mariadb-shell repo
 (`docs-ref/content/mariadb-rest-service/`, `modules/mrs/antlr_grammar/`). The plugin also manages the
-`mysql_rest_service_metadata` schema (an MSM project under `db_schema/`) and generates the
+metadata schema (`mariadb_rest_service`, an MSM project maintained in mariadb-shell
+`modules/mrs/db_schema/` since 2026-10-09) and generates the
 client SDKs (`sdk/`). Plugin version `26.9.5`,
 metadata schema `5.0.0` (`lib/general.py` `VERSION`, `DB_VERSION`). Consumed by
 `mcp_plugin` (REST SQL through its `db.*` tools) and bundled into the shell release
@@ -36,13 +37,17 @@ packages with msm_plugin and mcp_plugin.
 - **Projects are not REST SQL** (2026-10-08): `DUMP/LOAD REST PROJECT` were dropped from
   both grammars, the Python listener/executor and the docs; `mrs.dump.serviceProject()` /
   `mrs.load.serviceProject()` do the same (same `lib.services` calls) and are the only way.
-- **Metadata schema = MSM project** `db_schema/mysql_rest_service_metadata.msm.project`.
-  Tables are designed in MySQL Workbench (`development/wb/*.mwb`, a zip of
-  `document.mwb.xml` + `@db/data.db` + `@scripts` + `lock`) and forward-engineered into
-  `development/sections/140-10_tables.sql`; the dev script pulls the sections in with
-  `SOURCE '...'[700:-115]` / `[89:]` (character slices: the export's header and footer, the
-  copyright). Releases, update and deployment scripts are generated with the msm plugin
-  functions, never by hand (process in `db_schema/README.md`).
+- **Metadata schema name is resolved, never hardcoded** (2026-10-09): the schema is
+  `mariadb_rest_service`, optionally with a customer prefix/postfix
+  (`acme_mariadb_rest_service_eu`, MSM substitutions `schema_prefix`/`schema_postfix`). SQL in
+  `lib/` and the tests uses the token `<metadata>` (`core.METADATA`); `MrsDbExec` and
+  `core.metadata_sql(session, sql)` replace it with the schema from the last column
+  `metadata_schema` of `SHOW REST METADATA STATUS` (cached per session object;
+  `core.forget_metadata_schema(session)` after `CONFIGURE REST METADATA SCHEMA` / `USE REST
+  METADATA SCHEMA`). Roles: `core.metadata_role(session, "data_provider")` = prefix +
+  `mariadb_rest_service_<role>` + postfix. The schema project (Workbench model, sections,
+  releases, `prepare_default_static_content.sh`) is the shell repo's
+  `modules/mrs/db_schema/mariadb_rest_service.msm.project`; this repo's copy was removed.
 - **Ids are UUIDs (5.0.0, 2026-10-08).** Every id/FK column is MariaDB `UUID`,
   single-column PKs `DEFAULT UUID_v7()` (time-ordered, index-friendly), `get_sequence_id()`
   returns `UUID_v7()`. In Python an id is the canonical lower-case hyphenated string;
@@ -57,8 +62,8 @@ packages with msm_plugin and mcp_plugin.
   BINARY); forward engineering emits the sqlDefinition. Assigned by the `UUID_Columns`
   plugin in `development/wb/Audit_Log_Triggers_grt.py` (switches every `BINARY(16)` column,
   adds the `UUID_v7()` default to single-column PKs, idempotent).
-- **MariaDB-only.** Releases before 4.1.6 (MySQL DDL: `VISIBLE`/`INVISIBLE` indexes etc.)
-  were deleted; 4.1.6 is the only version upgradable to 5.0.0. Queries must be valid under
+- **MariaDB-only.** 5.0.0 is the first release of `mariadb_rest_service` (4.1.6 and the
+  upgrade path were dropped with the rename; there are no installations). Queries must be valid under
   `ONLY_FULL_GROUP_BY` the MariaDB way (no functional dependency, no plain columns in
   HAVING) because MSM scripts set that mode; the test conftest sets it too.
 
@@ -75,6 +80,21 @@ packages with msm_plugin and mcp_plugin.
   their own sandbox), `da8fa01d` (5.0.0), `8e3d70c9` (shell option + context), `d1b5f1ee`
   (context), `71651e6f` (REST SQL moves to the shell's mrs module), then the daemon
   statements and this checkpoint; a rebase replaced the hashes earlier checkpoints named.
+- **2026-10-09, later rounds (committed with this checkpoint):**
+  - `as_path` rewrites only the dump's CREATE and USE statements; `core.quote_service_path`
+    for developer paths (`a24530a9`).
+  - Metadata schema renamed to `mariadb_rest_service` (prefix/postfix per customer, 5.0.0 is
+    its first release): `<metadata>` token + `core.metadata_schema/metadata_role`, plugin
+    `db_schema/` and the 4.1.6 upgrade test removed, `tests/unit/test_metadata_schema.py`.
+    msm_plugin got the substitutions feature (written by mariadb-shell-7e, committed here).
+  - Async-task support removed: generator/templates emit only direct `call()`, Python and
+    TypeScript base classes without task classes (SDK tests 136 -> 121 and 246 -> 202/122,
+    all removed tests covered tasks), routines are CREATE only.
+  - MySQL names removed: auth vendor `MariaDB Internal`, app `MariaDB`, `VENDOR MARIADB`
+    (same id `31000000-...`, the SDKs detect the vendor by id); SDK prose says MariaDB REST
+    Daemon/Service; mrs_notes example uses the `MariaDB` app (`btnMariaDB`).
+  - Tests: mrs_plugin 164 passed (the run also collects the Python SDK tests), mcp_plugin
+    596 passed / 3 skipped, Python SDK 121, TypeScript SDK 202 + 122.
 - **2026-10-09, committed and pushed** (`3566d1c1`, `dee429e7`; shell `0504c64ae`,
   `ced93ef43`): file-based REST SQL dropped, `LOAD SCRIPTS` registers MRS scripts in the
   shell, new `dump.service` / `load.service` / `load.contentSet`, `update.mrsScriptsFromContentSet`
@@ -134,13 +154,10 @@ packages with msm_plugin and mcp_plugin.
 - **Known issues / open:**
   - The MRS runtime (MySQL Router's MRS) expects `BINARY(16)` ids; a 5.0.0 schema implies a
     MariaDB-side runtime. Not addressed here.
-  - The two skips: `test_md_upgrade` (opt-in `--mdupgrade`) and a content-set test that
-    needs a built project.
+  - No skips left (179 passed on 2026-10-09 against the renamed schema).
   - CI (`.github/workflows/shell-plugins-ci.yml`) needs a shell build with the built-in mrs
     module now: without it no `MRS` handler exists and the
     REST SQL in the tests and the grammar test fails.
-  - The `db_schema/` MSM project is now maintained in the mariadb-shell repo
-    (`modules/mrs/db_schema/`); this copy is to be removed and the plugin pointed there.
   - `SHOW CREATE REST VIEW` drops `@DATATYPE` and `JSON SCHEMA` of fields below a reference
     (module, pre-existing): re-creating from the text loses them. Blocks code_ext saving
     views as generated REST SQL; offered to the user, not fixed.
@@ -158,19 +175,14 @@ packages with msm_plugin and mcp_plugin.
   (`id_to_uuid`, `convert_ids_to_uuid`, `try_convert_ids_to_uuid`, `NIL_UUID`)
 - `interactive.py` -> resolvers for service/schema/user/role/auth-app queries
 - `lib/general.py` -> `VERSION`, `DB_VERSION`, `configure()` (deploys the metadata via msm)
-- `db_schema/README.md` -> the schema change process (Workbench, plugins, msm release)
-- `db_schema/.../development/mysql_rest_service_metadata_next.sql` + `sections/*.sql`
-- `db_schema/.../development/wb/Audit_Log_Triggers_grt.py` -> WB plugins `Audit_Log_Triggers`
-  and `UUID_Columns`
-- `db_schema/.../releases/{versions,updates,deployment}/` -> 4.1.6 and 5.0.0 only
 - `run_tests.py`, `tests/conftest.py`, `tests/unit/helpers.py` -> test harness and sandbox
-- `scripts/run_md_upgrade_test.sh`, `tests/unit/test_md_upgrade.py` -> upgrade = fresh install check
+- `tests/unit/test_metadata_schema.py` -> prefixed/postfixed schema and role derivation
 
 ## Next steps
 
 1. Docs follow-ups (in the shell repo's context): new VS Code screenshots, verify the
-   open points of the conversion (daemon role activation, GTID read-your-writes, async
-   tasks, custom auth procedure id type).
+   open points of the conversion (daemon role activation, GTID read-your-writes, custom
+   auth procedure id type). Async tasks were dropped on 2026-10-09.
 2. Fix the `@DATATYPE` / `JSON SCHEMA` loss in `SHOW CREATE REST VIEW` (if the user agrees).
 - **Later (user's note):** a metadata schema version that renames the `router*` tables
   (`router`, `router_status`, `router_session`, `router_general_log`, the `router_services`
@@ -182,12 +194,22 @@ packages with msm_plugin and mcp_plugin.
   `SHOW REST SERVICES FOR DAEMON` will take a UUID instead of an integer (grammar:
   `daemonId`, bison `daemon_id`), and the audit triggers' `CAST(LPAD(HEX(id)...) AS UUID)`
   for router ids go away.
-3. Rename candidates for a later metadata version: `mysql_rest_service_*` roles, auth
-   vendor `MySQL Internal` / app `MySQL` / keyword `VENDOR MYSQL` (the docs keep them verbatim).
+3. (Done 2026-10-09 in 5.0.0: auth vendor `MariaDB Internal`, app `MariaDB`, keyword
+   `VENDOR MARIADB`; same ids. What the REST Daemon must change for 5.0.0 is in the shell
+   repo's `.claude/context/rest-daemon-5.0.md`.)
 4. Open a PR for `wip/mrs_schema_improvements` (title without `[bypass-ci]`: source changes).
 5. Run CI on a shell build with the built-in mrs module (the plugin has no SQL handler
    anymore).
-6. Remove `db_schema/` here and point the plugin at the shell's copy.
+6. **mrs_notes example: HTTPS certificate folder.** `examples/mrs_notes/vite.config.ts`
+   serves the dev server over HTTPS with the certificate of the old MySQL Shell for VS Code
+   extension: `<user config>/plugin_data/gui_plugin/web_certs/server.{key,crt}`, where the
+   user config is `~/.mysqlsh-gui` (Windows: `AppData/Roaming/MySQL/mysqlsh-gui`). Without
+   those files it falls back to plain HTTP. The MariaDB Shell for VS Code extension
+   (code_ext) does not create that folder, so the path has to follow whatever that
+   extension uses for its certificates (or the example creates its own); decision pending
+   from the extension's owner. Left unchanged in the MySQL-name cleanup of 2026-10-09,
+   together with the "generated by MySQL Workbench" header of
+   `examples/mrs_notes/db_schema/mrs_notes.sql`.
 7. Further schema improvements; each one goes model -> sections -> msm release, then all
    three suites.
 
@@ -246,15 +268,18 @@ packages with msm_plugin and mcp_plugin.
 Checked at this checkpoint (2026-10-09), before its commit:
 
 ```text
-$ git -C mrs_plugin branch --show-current
+$ git branch --show-current
 wip/mrs_schema_improvements   (tracks origin; no PR yet)
 
-$ git -C mrs_plugin status --short   (mrs_plugin part; committed with this checkpoint)
- M .claude/PROJECT_CONTEXT.md
+$ git status --short   (this session's part, committed with this checkpoint)
+ M mrs_plugin/{.gitignore,package.json,run_tests.py,lib/*,sdk/**,tests/**,examples/mrs_notes/**}
+ D mrs_plugin/db_schema/**, scripts/{default_heatwave_endpoints,prepare_default_static_content.sh,run_md_upgrade_test.sh}, tests/unit/test_md_upgrade.py
+?? mrs_plugin/tests/unit/test_metadata_schema.py
+ M mcp_plugin/lib/db_functions.py, mcp_plugin/tests/unit/test_rest_sql.py
+ M msm_plugin/{lib/core.py,lib/management.py,management.py,templates/scripts/*,tests/unit/test_management.py}
 ```
 
-- Last pushed commits: `3566d1c1` (file work to plugin functions), `dee429e7` (docs and
-  grammar moved to the shell repo), plus this checkpoint's commit.
-- Outside mrs_plugin the tree has uncommitted changes of other sessions that are NOT
-  committed with it (`code_ext`, `mcp_plugin`, `msm_plugin` context files,
-  `mcp_plugin/run_tests.py`, `mcp_plugin/tests/unit/helpers.py`).
+- Last pushed commit before this checkpoint: `a24530a9`.
+- Not committed with it (other sessions' uncommitted work): `code_ext/.claude/PROJECT_CONTEXT.md`,
+  `mcp_plugin/.claude/**`, `mcp_plugin/run_tests.py`, `mcp_plugin/tests/unit/helpers.py`,
+  `msm_plugin/.claude/PROJECT_CONTEXT.md`.

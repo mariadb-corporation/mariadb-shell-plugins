@@ -488,17 +488,62 @@ def _generate_where(where):
     return ""
 
 
+# Stands for the quoted metadata schema in SQL text; MrsDbExec and
+# metadata_sql() replace it with the schema the shell's mrs module resolves
+# for the session (mariadb_rest_service, possibly with a prefix and postfix).
+METADATA = "<metadata>"
+METADATA_BASE_NAME = "mariadb_rest_service"
+
+_metadata_schemas = {}
+
+
+def _session_key(session):
+    return (id(session), getattr(session, "uri", None))
+
+
+def metadata_schema(session) -> str:
+    """The name of the session's MRS metadata schema, as SHOW REST METADATA
+    STATUS reports it (cached per session object)."""
+    key = _session_key(session)
+    name = _metadata_schemas.get(key)
+    if name is None:
+        res = session.run_sql("SHOW REST METADATA STATUS")
+        name = res.fetch_one()[res.get_column_names().index("metadata_schema")]
+        _metadata_schemas[key] = name
+    return name
+
+
+def forget_metadata_schema(session):
+    """Drops the cached schema name, e.g. after CONFIGURE REST METADATA or
+    USE REST METADATA SCHEMA."""
+    _metadata_schemas.pop(_session_key(session), None)
+
+
+def metadata_sql(session, sql: str) -> str:
+    """The SQL text with METADATA replaced by the quoted metadata schema."""
+    if METADATA not in sql:
+        return sql
+    return sql.replace(METADATA, quote_ident(metadata_schema(session)))
+
+
+def metadata_role(session, role: str) -> str:
+    """The name of an MRS role (admin, schema_admin, dev, user, meta_provider,
+    data_provider), with the prefix and postfix of the metadata schema."""
+    prefix, _, postfix = metadata_schema(session).partition(METADATA_BASE_NAME)
+    return f"{prefix}{METADATA_BASE_NAME}_{role}{postfix}"
+
+
 def _generate_table(table):
     if "." in table:
         return table
-    return f"`mysql_rest_service_metadata`.`{table}`"
+    return f"{METADATA}.`{table}`"
 
 
 def _generate_qualified_name(name):
     if "." in name:
         return name
     parts = name.split("(")
-    result = f"`mysql_rest_service_metadata`.`{parts[0]}`"
+    result = f"{METADATA}.`{parts[0]}`"
     if len(parts) == 2:  # it's a function call so add the parameters
         result = f"{result}({parts[1]}"
 
@@ -530,6 +575,7 @@ class MrsDbExec:
             # convert lists and dicts to store in the database
             self._params = [self._convert_to_database(param) for param in self._params]
 
+            self._sql = metadata_sql(session, self._sql)
             self._result = session.run_sql(self._sql, self._params)
         except Exception as e:
             mysqlsh.globals.shell.log(

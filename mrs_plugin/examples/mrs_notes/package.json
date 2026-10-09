@@ -1,7 +1,7 @@
 {
   "name": "mrs-notes",
   "displayName": "MRS Notes Example",
-  "description": "MySQL REST Service - Note Example",
+  "description": "MariaDB REST Service - Note Example",
   "private": true,
   "version": "1.0.1",
   "type": "module",

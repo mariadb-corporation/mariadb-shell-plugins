@@ -268,15 +268,9 @@ def substitute_imports_in_template(
         "ReadUnique",
         "FunctionCall",
         "Authenticate",
-        "TaskRun",
     ]
 
     enabled_ops = enabled_crud_ops if enabled_crud_ops else set()
-    task_ops = {"FunctionTaskRun", "ProcedureTaskRun"}
-
-    if len(enabled_ops) - len(enabled_ops.difference(task_ops)) > 0:
-        enabled_ops = enabled_ops.difference(task_ops)
-        enabled_ops.add("TaskRun")
 
     if requires_auth:
         enabled_ops.add("Authenticate")
@@ -597,8 +591,6 @@ def substitute_objects_in_template(
         "ProcedureCall",
         "ReadUnique",
         "FunctionCall",
-        "FunctionTaskRun",
-        "ProcedureTaskRun",
     ]
 
     enabled_crud_ops = set()
@@ -756,11 +748,7 @@ def substitute_objects_in_template(
                 # If the database object is a FUNCTION a PROCEDURE or a SCRIPT, CRUD operations should not be enabled
                 elif object_is_routine(db_obj, of_type={"FUNCTION", "SCRIPT"}):
                     required_datatypes.add("IMrsFunctionResponse")
-                    options = db_obj.get("options")
-                    if options is not None and options.get("mysqlTask") is not None:
-                        db_object_crud_ops = ["FUNCTIONTASKRUN"]
-                    else:
-                        db_object_crud_ops = ["FUNCTIONCALL"]
+                    db_object_crud_ops = ["FUNCTIONCALL"]
                 else:
                     if sdk_language == "typescript":
                         required_datatypes.add("IMrsProcedureResult")
@@ -768,11 +756,7 @@ def substitute_objects_in_template(
                         required_datatypes.update(
                             {"MrsProcedureResultSet", "IMrsProcedureResponse"}
                         )
-                    options = db_obj.get("options")
-                    if options is not None and options.get("mysqlTask") is not None:
-                        db_object_crud_ops = ["PROCEDURETASKRUN"]
-                    else:
-                        db_object_crud_ops = ["PROCEDURECALL"]
+                    db_object_crud_ops = ["PROCEDURECALL"]
 
                 obj_interfaces_def, required_obj_datatypes = generate_interfaces(
                     db_obj,
@@ -2359,7 +2343,7 @@ class Mrs {
     if status["service_configured"] is False:
         status_output = {
             "configured": False,
-            "info": "The MySQL REST Service has not been configured on this MySQL instance yet. Switch to "
+            "info": "The MariaDB REST Service has not been configured on this server yet. Switch to "
             + "SQL mode and use the CONFIGURE REST METADATA command to configure the instance.",
             "services": [],
         }

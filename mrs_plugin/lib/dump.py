@@ -42,9 +42,10 @@ def export_audit_log(
     # Check if MRS is available
     sql = (
         "SELECT COUNT(*) AS mrs_available FROM information_schema.TABLES "
-        + "WHERE table_schema = 'mysql_rest_service_metadata' and table_name='audit_log'"
+        + "WHERE table_schema = ? and table_name='audit_log'"
     )
-    row = core.MrsDbExec(sql).exec(session).first
+    metadata_schema = core.metadata_schema(session)
+    row = core.MrsDbExec(sql, [metadata_schema]).exec(session).first
     if row["mrs_available"] == 0:
         return
 
@@ -76,7 +77,7 @@ def export_audit_log(
         audit_log_position = 0
 
     # Write the audit log to the file
-    sql = "SELECT *, @@server_uuid AS server_uuid FROM `mysql_rest_service_metadata`.`audit_log` WHERE `id` > ?"
+    sql = "SELECT *, @@server_uuid AS server_uuid FROM <metadata>.`audit_log` WHERE `id` > ?"
     if starting_from_today:
         sql += " AND `changed_at` >= CURDATE()"
     sql += " ORDER BY `id`"
@@ -86,7 +87,7 @@ def export_audit_log(
             for row in rows:
                 schema_name = row.get("schema_name")
                 if schema_name is None:
-                    schema_name = "mysql_rest_service_metadata"
+                    schema_name = metadata_schema
                 f.write(
                     f'{row.get("changed_at")} {row.get("id")} {row.get("changed_by")} '
                     + f'{row.get("server_uuid")} '

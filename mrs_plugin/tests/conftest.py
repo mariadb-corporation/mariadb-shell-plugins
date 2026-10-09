@@ -22,7 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-# cSpell:ignore mysqlsh mariadb mdupgrade
+# cSpell:ignore mysqlsh mariadb
 
 import os
 import shutil
@@ -40,16 +40,6 @@ PHONE_BOOKS = {}
 # The root password of the sandbox the suite deploys, unless MYSQL_PASSWORD
 # names another.
 SANDBOX_PASSWORD = "mrs_pytest_root"
-
-
-def pytest_addoption(parser):
-    parser.addoption(
-        "--mdupgrade",
-        action="store_true",
-        dest="mdupgrade",
-        default=False,
-        help="enable metadata upgrade tests (slow)",
-    )
 
 
 @pytest.fixture(scope="session", autouse=True)

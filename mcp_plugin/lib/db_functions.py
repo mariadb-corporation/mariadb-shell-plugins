@@ -175,12 +175,14 @@ _reaper_stop = threading.Event()
 # call anyway, which always reports CR_SERVER_GONE_ERROR.
 _CONNECTION_LOST_ERRORS = (2006, 2013, 2055)
 
-# Lists the schemas of a server, classified into system and user schemas.
+# Lists the schemas of a server, classified into system and user schemas. The
+# MRS metadata schema is mariadb_rest_service, optionally with a prefix and a
+# postfix (acme_mariadb_rest_service_eu).
 _LIST_SCHEMAS_SQL = """
     SELECT SCHEMA_NAME as schema_name,
         CASE
             WHEN SCHEMA_NAME = 'mysql'
-                OR SCHEMA_NAME = 'mysql_rest_service_metadata' THEN 'System Schema'
+                OR SCHEMA_NAME LIKE '%mariadb\\_rest\\_service%' THEN 'System Schema'
             WHEN SCHEMA_NAME = 'information_schema' THEN 'System Information Schema'
             ELSE 'User Schema'
         END AS schema_type,
