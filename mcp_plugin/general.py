@@ -128,7 +128,7 @@ def setup(**options) -> None:
             identities, and print their API key.
         name (str): The name to show for the user add_user adds.
         scopes (str): Comma-separated scopes the user add_user adds may be
-            granted: mcp:db, mcp:msm. Defaults to both.
+            granted: mcp:db. Defaults to mcp:db.
         remove_user (str): Comma-separated users to remove, together with
             their API keys and connections.
         user (str): The user add_connection, delete_connections, add_paths,
@@ -273,7 +273,7 @@ def setup_keycloak_realm(**options) -> None:
     Run once by a Keycloak administrator. Anything not given as an option is
     asked for, the administrator password with a password prompt. Safe to run
     again: what exists already is left alone. In the realm it creates the
-    client scopes mcp:db and mcp:msm, each putting this server's public URL
+    client scope mcp:db, putting this server's public URL
     into the token's audience, the realm role mcp-user a user needs to be
     created at first sign-in, and a public PKCE client for MCP clients. It then
     points this server at the realm, unless configure_server is false.

@@ -490,14 +490,15 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
   as they are, so that `--showApiKey` can show them again). **Run the server
   under an OS account of its own**, and on Linux note that the default
   `login-path` helper only obfuscates `~/.mylogin.cnf`.
-- **Only the `db` and `msm` groups** are served. The `sandbox` and `migrator`
-  tools run local servers and long jobs on the machine, and are not offered to
-  tenants; neither is `--gui`, and neither is stdio, which has no request to
-  carry a key. A user's token has to grant the scope of a tool's group
-  (`mcp:db`, `mcp:msm`; set with `--setScopes`).
-- **Paths** are a user's own. A path that is not allowed is refused, never
-  offered to the client to trust, and a tool given no path (the msm tools then
-  use the server's working directory) is checked like any other.
+- **Only the `db` group** is served. The `sandbox` and `migrator` tools run
+  local servers and long jobs on the machine, and the `msm` tools work on
+  schema project folders, which belong on the developer's own machine, not on
+  a remote server; none of them are offered to tenants. Neither is `--gui`,
+  and neither is stdio, which has no request to carry a key. A user's token
+  has to grant the scope of a tool's group (`mcp:db`; set with `--setScopes`).
+- **Paths** are a user's own: `db.execute_sql_script` only reads a script file
+  from the user's allowed paths. A path that is not allowed is refused, never
+  offered to the client to trust.
 - **Changes apply at once.** A user removed or disabled, or given a new key, is
   refused from their next request on, and their open connections are closed.
   Requests with refused keys are counted per address and user, and answered
@@ -526,7 +527,7 @@ issued for its own **public URL**, which has to be configured:
 mariadb-shell -- mcp setup-oauth --publicUrl=https://mcp.example.com/mcp
 ```
 
-The scopes are `mcp:db` and `mcp:msm`, one per tool group; a client is only
+The scope is `mcp:db`, one per tool group served; a client is only
 shown, and may only call, the tools its token grants. There are deliberately no
 read or write scopes: what a user can do in the database is what MariaDB's own
 grants let their account and its role do. A user's sessions run under the role
@@ -551,7 +552,7 @@ mariadb-shell -- mcp setup-keycloak-realm --server=https://kc.example.com --real
     --adminUser=admin --mcpUrl=https://mcp.example.com/mcp --grantRealmRoleTo=ada
 ```
 
-`setup-keycloak-realm` creates the client scopes `mcp:db` and `mcp:msm` with an Audience
+`setup-keycloak-realm` creates the client scope `mcp:db` with an Audience
 mapper putting the public URL into the token's `aud`, the realm role `mcp-user`,
 and a public PKCE client for MCP clients. Keycloak refuses anonymous dynamic
 client registration by default ("Trusted Hosts" policy); allow your clients'

@@ -89,7 +89,7 @@ def _context(user, scopes=tenants.SUPPORTED_SCOPES, grant=""):
 
 
 def test_tools_are_listed_by_scope(tenant_config):
-    """A token with mcp:db sees the db tools and no msm ones - and no one, none.
+    """A token with mcp:db sees the db tools, one without it none - and no one, none.
 
     Pins the SDK's private _handle_list_tools hook the scoped server overrides.
     """
@@ -98,7 +98,7 @@ def test_tools_are_listed_by_scope(tenant_config):
     tenants.set_multi_tenant(True)
     general.set_multi_tenant(True)
     ada = tenants.add_user([tenants.parse_identity("ada")])
-    mcp_server = server.build_mcp_server(["db", "msm"], auth=auth.build_auth(mode="none"))
+    mcp_server = server.build_mcp_server(["db"], auth=auth.build_auth(mode="none"))
 
     async def listed(scopes):
         ctx = _context(ada, scopes).request_context
@@ -106,7 +106,7 @@ def test_tools_are_listed_by_scope(tenant_config):
         return {tool.name.split(".")[0] for tool in result.tools}
 
     assert asyncio.run(listed(["mcp:db"])) == {"db"}
-    assert asyncio.run(listed(["mcp:db", "mcp:msm"])) == {"db", "msm"}
+    assert asyncio.run(listed(["openid"])) == set()
 
     async def anonymous():
         request = SimpleNamespace(scope={}, headers={}, client=None)
@@ -128,14 +128,14 @@ def test_a_token_granting_no_tool_gets_a_403():
 
     middleware = auth.InsufficientScopeMiddleware(app, "https://x/.well-known/prm")
     no_tools = SimpleNamespace(access_token=SimpleNamespace(scopes=["openid"]))
-    some = SimpleNamespace(access_token=SimpleNamespace(scopes=["mcp:msm"]))
+    some = SimpleNamespace(access_token=SimpleNamespace(scopes=["mcp:db"]))
 
     asyncio.run(middleware({"type": "http", "user": no_tools}, None, send))
     start = sent[0]
     assert start["status"] == 403
     challenge = dict(start["headers"])[b"www-authenticate"].decode()
     assert 'error="insufficient_scope"' in challenge
-    assert 'scope="mcp:db mcp:msm"' in challenge
+    assert 'scope="mcp:db"' in challenge
     assert "resource_metadata=" in challenge
 
     sent.clear()
@@ -366,6 +366,8 @@ class _Realm:
         claims = {
             "iss": self.issuer, "sub": "kc-sub-1", "aud": [PUBLIC_URL, "account"],
             "azp": "claude-code", "typ": "Bearer", "iat": now, "exp": now + 300,
+            # mcp:msm, which a realm prepared before multi-tenant mode dropped
+            # the msm group still grants, is a scope this server ignores.
             "scope": "openid mcp:db mcp:msm", "email": "ada@example.com",
             "email_verified": True, "realm_access": {"roles": ["mcp-user"]},
             "name": "Ada Lovelace",
@@ -403,7 +405,7 @@ def test_a_keycloak_token_creates_its_user_at_first_sign_in(tenant_config, realm
     ada = tenants.find_user("oauth:" + realm.issuer + "|kc-sub-1")
     assert token.claims[general.MCP_USER_ID_CLAIM] == ada
     assert tenants.find_user("ada@example.com") == ada
-    assert token.scopes == ["mcp:db", "mcp:msm"]
+    assert token.scopes == ["mcp:db"]
     assert token.resource == PUBLIC_URL
     assert token.client_id == "claude-code"
 
@@ -628,7 +630,7 @@ def test_a_sign_in_issues_tokens_for_the_accounts_user(tenant_config):
     access = provider.verify_access_token(tokens.access_token)
     user = tenants.find_user(f"mariadb:{LOGIN_SERVER}|ada@%")
     assert access.claims[general.MCP_USER_ID_CLAIM] == user
-    assert access.scopes == ["mcp:db", "mcp:msm"]
+    assert access.scopes == ["mcp:db"]
     grant = access.claims[general.GRANT_CLAIM]
     uri, password = provider.live_credentials(user, grant)
     assert password == "pw" and "ada@db.example.com" in uri and "ssl-mode=REQUIRED" in uri
@@ -740,7 +742,7 @@ def test_a_signed_in_user_has_the_scopes_they_may_have_now(tenant_config):
     # user may have one of them again: scopes filter, --revokeTokens revokes.
     only_db = _redeem(provider, client_id, _sign_in(provider, client_id, scopes=["mcp:db"]))
     grant = provider.verify_access_token(only_db.access_token).claims[general.GRANT_CLAIM]
-    tenants.set_scopes(ada, ["mcp:msm"])
+    tenants.set_scopes(ada, [])
     assert provider.verify_access_token(only_db.access_token).scopes == []
     assert provider.live_grant(ada, grant) is not None
     loaded = asyncio.run(provider.load_refresh_token(client, only_db.refresh_token))
@@ -1237,12 +1239,12 @@ def _authorization_code_flow(client, base, client_id, redirect, username, passwo
     login = client.get(metadata["authorization_endpoint"], params=dict(
         response_type="code", client_id=client_id, redirect_uri=redirect,
         code_challenge=challenge, code_challenge_method="S256", state="s",
-        scope="mcp:db mcp:msm session:role:all",
+        scope="mcp:db session:role:all",
     )).headers["location"]
     page = client.get(login)
     csrf = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
     signed_in = client.post(login, data=dict(csrf=csrf, username=username, password=password,
-                                             scope=["mcp:db", "mcp:msm"]))
+                                             scope=["mcp:db"]))
     if signed_in.status_code != 302:
         return signed_in, None
 
@@ -1419,7 +1421,7 @@ def test_setup_sets_every_keycloak_setting(tenant_config, monkeypatch):
         "introspection_secret_env": "MCP_TEST_INTROSPECTION",
         "client_ids": "claude-code,vscode", "link_by_verified_email": False,
         "required_realm_role": "", "auto_provision": False,
-        "default_scopes": "mcp:msm",
+        "default_scopes": "mcp:db",
     })
     keycloak = oauth_config.get_oauth_settings()["keycloak"]
 
@@ -1430,7 +1432,7 @@ def test_setup_sets_every_keycloak_setting(tenant_config, monkeypatch):
     assert keycloak["clientIds"] == ["claude-code", "vscode"]
     assert keycloak["linkByVerifiedEmail"] is False
     assert keycloak["autoProvision"] == {"enabled": False, "requiredRealmRole": "",
-                                         "defaultScopes": ["mcp:msm"]}
+                                         "defaultScopes": ["mcp:db"]}
     for bad in ({"verification": "guess"},
                 {"introspection_secret_env": "MCP_TEST_UNSET_VARIABLE"}):
         with pytest.raises(mysqlsh.Error):
@@ -1487,7 +1489,7 @@ def test_a_real_keycloak_token_is_accepted(tenant_config):
     answer = httpx2.post(discovery["token_endpoint"], data={
         "grant_type": "password", "client_id": os.environ["KEYCLOAK_CLIENT_ID"],
         "username": os.environ["KEYCLOAK_USERNAME"],
-        "password": os.environ["KEYCLOAK_PASSWORD"], "scope": "openid mcp:db mcp:msm",
+        "password": os.environ["KEYCLOAK_PASSWORD"], "scope": "openid mcp:db",
     }, timeout=30)
     assert answer.status_code == 200, answer.text
     token = answer.json()["access_token"]
@@ -1509,7 +1511,7 @@ def test_a_real_keycloak_token_is_accepted(tenant_config):
     access = verifier.verify_token_sync(token)
 
     assert access is not None, "see the REFUSED line on stderr for why"
-    assert access.scopes == ["mcp:db", "mcp:msm"]
+    assert access.scopes == ["mcp:db"]
     assert tenants.get_user(access.claims[general.MCP_USER_ID_CLAIM]) is not None
     if linked is not None:
         assert access.claims[general.MCP_USER_ID_CLAIM] == linked
@@ -1652,7 +1654,7 @@ def test_setup_keycloak_realm_prepares_the_realm_once(tenant_config, keycloak_ad
     setup_keycloak.run_setup_keycloak_realm(**options)
     setup_keycloak.run_setup_keycloak_realm(**options, direct_grant=True)
 
-    assert sorted(sc["name"] for sc in keycloak_admin.scopes) == ["mcp:db", "mcp:msm"]
+    assert sorted(sc["name"] for sc in keycloak_admin.scopes) == ["mcp:db"]
     for scope in keycloak_admin.scopes:
         (mapper,) = keycloak_admin.mappers[scope["id"]]
         assert mapper["config"]["included.custom.audience"] == PUBLIC_URL
@@ -1663,7 +1665,7 @@ def test_setup_keycloak_realm_prepares_the_realm_once(tenant_config, keycloak_ad
     assert client["clientId"] == "mariadb-mcp" and client["publicClient"] is True
     assert client["attributes"]["pkce.code.challenge.method"] == "S256"
     assert client["directAccessGrantsEnabled"] is True
-    assert keycloak_admin.optional["c0"] == {"s0", "s1"}
+    assert keycloak_admin.optional["c0"] == {"s0"}
 
     assert oauth_config.get_mode() == "keycloak"
     assert oauth_config.get_public_url() == PUBLIC_URL
@@ -1686,7 +1688,7 @@ def test_setup_keycloak_realm_asks_for_what_was_not_given(tenant_config, keycloa
 
     types = [(asked or {}).get("type") for _, asked in fake_shell.prompts]
     assert types[-1] == "password"
-    assert len(keycloak_admin.scopes) == 2
+    assert len(keycloak_admin.scopes) == 1
     assert oauth_config.get_mode() == "none"
 
 
@@ -1846,13 +1848,13 @@ def test_the_sign_in_checkboxes_are_ordinary_checkboxes(tenant_config):
     from starlette.responses import HTMLResponse
 
     provider = _provider()
-    pending = {"scopes": ["mcp:db", "mcp:msm"], "redirect_uri": "http://127.0.0.1:1/cb",
+    pending = {"scopes": ["mcp:db"], "redirect_uri": "http://127.0.0.1:1/cb",
                "client_name": "Test", "csrf": "x"}
     page = provider._form(HTMLResponse, "req", pending).body.decode()
 
     assert "input[name]" not in page
     assert "input[type=checkbox]{margin:0}" in page
-    assert page.count('type="checkbox"') == 2
+    assert page.count('type="checkbox"') == 1
 
 
 def test_the_sign_in_page_shows_the_seal_inline(tenant_config):

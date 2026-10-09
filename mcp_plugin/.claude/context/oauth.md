@@ -218,13 +218,16 @@ and reuses everything 2b proved. A server runs in ONE OAuth mode
   | Scope | Grants |
   | --- | --- |
   | `mcp:db` | the db tools (connect, browse, run SQL) |
-  | `mcp:msm` | the msm tools |
+
+  `mcp:msm` existed until 2026-10-09, when the msm group left multi-tenant mode (see
+  decision 5 in [multi-tenant.md](multi-tenant.md)). Older mentions of it below
+  describe the state at the time.
 
   - **There are no read/write/admin scopes on purpose.** What a user can do is
     decided by **the database's own privileges for the account and its default
     role**, which is Snowflake's "access to the server is not access to what it
     exposes". A tool scope only decides whether a tool group is offered.
-  - PRM `scopes_supported` = `["mcp:db", "mcp:msm"]`. `offline_access` is never
+  - PRM `scopes_supported` = `["mcp:db"]`. `offline_access` is never
     listed (spec).
 - **Default role.** When a user has a `defaultRole`, `_open_session` runs
   `SET ROLE <role>` right after opening, and again on every transparent reopen.
