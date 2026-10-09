@@ -80,6 +80,8 @@ export interface IDialogDefinition {
     ): preact.JSX.Element | null;
     /** The text of the OK button. */
     okLabel?: string;
+    /** What the progress bar says while the host saves. */
+    busyLabel?: string;
     /**
      * Other fields that follow from a change, merged into the values with
      * it: a service picked offers its own REST schemas.
@@ -96,6 +98,9 @@ const JSON_HINT = "Additional options in JSON format";
 const METADATA_HINT = "Metadata settings in JSON format";
 
 const configure: IDialogDefinition = {
+    // Deploying the metadata schema runs a script of its own, which takes
+    // a few seconds.
+    busyLabel: "Deploying the MariaDB REST Service metadata schema...",
     main: (ctx, extras) => {
         const context = extras.context as IConfigureContext;
 
@@ -618,6 +623,7 @@ const scriptErrors = (definitions: IMrsScriptDefinitions | undefined): string =>
 };
 
 const contentSet: IDialogDefinition = {
+    busyLabel: "Uploading the files...",
     main: (ctx, extras) => {
         const context = extras.context as IContentSetContext;
         const editing = context.existingPath !== undefined;
@@ -892,6 +898,7 @@ const sdkExport: IDialogDefinition = {
     fieldTabs: {},
     render: () => { return null; },
     okLabel: "Export",
+    busyLabel: "Writing the SDK files...",
     // A base class of one language is none of another's.
     onChange: (field, value, values, context) => {
         const classes = (context as { baseClasses: Record<string, string[]> })

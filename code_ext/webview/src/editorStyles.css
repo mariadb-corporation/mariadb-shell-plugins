@@ -470,3 +470,51 @@ button.primary:hover:not(:disabled) {
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* --- the progress bar while the host saves --------------------------- */
+
+.dialog-busy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.dialog-busy .message {
+    margin: 0;
+}
+
+.progress {
+    position: relative;
+    height: 2px;
+    overflow: hidden;
+    background: var(--vscode-progressBar-background, #0e70c0);
+    background: color-mix(in srgb,
+            var(--vscode-progressBar-background, #0e70c0) 25%, transparent);
+}
+
+.progress-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 25%;
+    height: 100%;
+    background: var(--vscode-progressBar-background, #0e70c0);
+    animation: dialog-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes dialog-progress {
+    from {
+        transform: translateX(-100%);
+    }
+
+    to {
+        transform: translateX(400%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .progress-bar {
+        width: 100%;
+        animation: none;
+    }
+}

@@ -421,6 +421,26 @@ describe("MrsDialog frame", () => {
         expect(messages()).not.toContain("Saving...");
     });
 
+    it("shows a progress bar while the metadata is deployed", async () => {
+        await load("configure", configureDefaults(INIT_STATUS),
+            configureContextOf(INIT_STATUS));
+        expect(document.querySelector("[role='progressbar']")).toBeNull();
+
+        await send({ type: "busy", busy: true });
+
+        const bar = document.querySelector("[role='progressbar']");
+        expect(bar?.getAttribute("aria-label")).toBe(
+            "Deploying the MariaDB REST Service metadata schema...");
+        expect(messages()).toContain(
+            "Deploying the MariaDB REST Service metadata schema...");
+        expect(buttonOf("Cancel").disabled).toBe(true);
+        expect(okButton().disabled).toBe(true);
+
+        await send({ type: "busy", busy: false });
+
+        expect(document.querySelector("[role='progressbar']")).toBeNull();
+    });
+
     it("shows a save error until a field is changed", async () => {
         await load("schema", schemaDefaults([], undefined, "sakila",
             "/myService"), { services: ["/myService"] });

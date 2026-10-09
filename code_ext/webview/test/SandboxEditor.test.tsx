@@ -482,10 +482,16 @@ describe("SandboxEditor", () => {
             await send({ type: "busy", busy: true });
 
             expect(host.textContent).toContain("Deploying the sandbox.");
+            expect(host.querySelector("[role='progressbar']")
+                ?.getAttribute("aria-label")).toMatch(/^Deploying the sandbox/);
             expect([...host.querySelectorAll("footer button")]
                 .every((button) => {
                     return (button as HTMLButtonElement).disabled;
                 })).toBe(true);
+
+            await send({ type: "busy", busy: false });
+
+            expect(host.querySelector("[role='progressbar']")).toBeNull();
         });
 
     it("shows why a deploy failed, until a field changes", async () => {

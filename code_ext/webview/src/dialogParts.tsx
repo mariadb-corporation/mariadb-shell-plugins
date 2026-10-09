@@ -362,3 +362,27 @@ export const Tooltips = (): preact.JSX.Element | null => {
         </div>
     );
 };
+
+/**
+ * An indeterminate progress bar, for a dialog whose host is at work - a
+ * deploy that takes seconds would otherwise look like nothing happening.
+ * VS Code's own: its colour, two pixels high.
+ *
+ * @param props What the work is, said under the bar and to a screen
+ *              reader.
+ *
+ * @returns The bar and its text.
+ */
+export const ProgressBar = (props: {
+    label: string;
+}): preact.JSX.Element => {
+    return (
+        <div class="dialog-busy">
+            {/* Indeterminate: the host cannot say how far it is. */}
+            <div class="progress" role="progressbar" aria-label={props.label}>
+                <div class="progress-bar" />
+            </div>
+            <p class="message">{props.label}</p>
+        </div>
+    );
+};

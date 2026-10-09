@@ -25,7 +25,7 @@ import type {
     MrsHostMessage,
     MrsWebviewMessage,
 } from "../../../src/mrs/mrsDialogProtocol.js";
-import { TabBody, TabStrip, Tooltips } from "../dialogParts.js";
+import { ProgressBar, TabBody, TabStrip, Tooltips } from "../dialogParts.js";
 import { post } from "../vscodeApi.js";
 import { resolveColumns } from "./DataMappingEditor.js";
 import { DIALOGS, type IDialogExtras } from "./dialogs.js";
@@ -211,7 +211,9 @@ export const MrsDialog = (): preact.JSX.Element => {
                 </>
             )}
 
-            {busy ? <p class="message">Saving...</p> : null}
+            {busy
+                ? <ProgressBar label={definition.busyLabel ?? "Saving..."} />
+                : null}
             {saveError === undefined
                 ? null : <p class="message error">{saveError}</p>}
             {attempted && problems.length > 0 && saveError === undefined ? (

@@ -16,3 +16,5 @@ webview/**
 **/*.ts
 !dist/**
 !images/**
+ui-test/**
+out/**

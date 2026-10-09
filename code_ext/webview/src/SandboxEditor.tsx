@@ -32,7 +32,7 @@ import type {
     SandboxHostMessage,
     SandboxWebviewMessage,
 } from "../../src/sandboxes/sandboxProtocol.js";
-import { Field, TabBody, TabStrip } from "./dialogParts.js";
+import { Field, ProgressBar, TabBody, TabStrip } from "./dialogParts.js";
 import { post } from "./vscodeApi.js";
 
 /**
@@ -350,11 +350,9 @@ export const SandboxEditor = (): preact.JSX.Element => {
             </TabBody>
 
             {busy ? (
-                <p class="message">
-                    Deploying the sandbox. A server version this machine does
-                    not have is downloaded first, which can take a few
-                    minutes.
-                </p>
+                <ProgressBar label={"Deploying the sandbox. A server version "
+                    + "this machine does not have is downloaded first, which "
+                    + "can take a few minutes."} />
             ) : null}
             {createError === undefined ? null : (
                 <p class="message error">{createError}</p>
