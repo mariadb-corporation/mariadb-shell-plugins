@@ -414,8 +414,8 @@
         <text x="412.629px" y="448.91px" style="font-family:'Helvetica';font-size:6.802px;">tracktheversionofthisschema.</text>
     </g>
     <g transform="matrix(2,0,0,2,0,0)">
-        <text x="15.871px" y="22.672px" style="font-family:'Helvetica';font-size:6.802px;">MySQL REST Service - Notes Example</text>
-        <text x="15.871px" y="40.813px" style="font-family:'Helvetica';font-size:6.802px;">This schema represents the database layer of a simple<tspan x="180.981px " y="40.813px "> </tspan>note taking application. After the database schema h<tspan x="341.199px " y="40.813px ">a</tspan>s been deployed and the MySQL REST</text>
+        <text x="15.871px" y="22.672px" style="font-family:'Helvetica';font-size:6.802px;">MariaDB REST Service - Notes Example</text>
+        <text x="15.871px" y="40.813px" style="font-family:'Helvetica';font-size:6.802px;">This schema represents the database layer of a simple note taking application. After the database schema has been deployed and the MariaDB REST</text>
         <g transform="matrix(6.8016,0,0,6.8016,102.768,47.6151)">
         </g>
         <g transform="matrix(6.8016,0,0,6.8016,104.657,47.6151)">
