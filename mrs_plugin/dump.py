@@ -38,10 +38,14 @@ def export_audit_log(file_path, **kwargs):
 
     Keyword Args:
         audit_log_position_file (str): The file containing the audit log position. If not provided, a
-            mrs_audit_log_position.json file next to the file_path will be created.
-        audit_log_position (int): The audit log position to export from. Defaults to 0.
+            mrs_audit_log_position.json file next to the file_path will be created. It also lists
+            the ids exported recently: audit log ids are not in commit order (concurrent writers,
+            Galera with several write nodes), so every export looks again at the last 1000 ids
+            below the position and writes the rows that committed late.
+        audit_log_position (int): The audit log position to export from, everything up to it
+            counts as exported. Defaults to the position in the position file, else 0.
         starting_from_today (bool): Whether to start exporting from today. Defaults to true.
-        when_server_is_writeable (bool): Whether to only write out the log when the MySQL server is writeable. Defaults to false.
+        when_server_is_writeable (bool): Whether to only write out the log when the server is not read only. Defaults to false.
         session (object): The database session to use.
 
     Returns:
