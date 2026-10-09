@@ -8,11 +8,12 @@ from Oracle's MySQL REST Service plugin (dual copyright: Oracle's line kept,
 shell's built-in C++ mrs module creates it; the plugin creates it itself only on a shell
 without that module). The REST SQL statements (`CREATE/ALTER/DROP/SHOW/GRANT ... REST
 ...`) are handled by the built-in module's `MRS` SQL handler; the plugin no longer registers
-one (2026-10-08). Since 2026-10-09 the plugin keeps only 13 functions (SDK generation,
-project dump/load, MRS script analysis, runtime management code, audit log, version, see
+one (2026-10-08). Since 2026-10-09 the plugin keeps 15 functions (SDK generation,
+project and service dump/load, `load.contentSet`, MRS script analysis, runtime management
+code, audit log, version, see
 [context/plugin-reduction.md](context/plugin-reduction.md)); the Python REST SQL parser is
-gone. The ANTLR grammar in `grammar/` stays the reference grammar of REST SQL (docs,
-railroad diagrams). The plugin also manages the
+gone. The docs, the ANTLR reference grammar and their tools moved to the mariadb-shell repo
+(`docs-ref/content/mariadb-rest-service/`, `modules/mrs/antlr_grammar/`). The plugin also manages the
 `mysql_rest_service_metadata` schema (an MSM project under `db_schema/`) and generates the
 client SDKs (`sdk/`). Plugin version `26.9.5`,
 metadata schema `5.0.0` (`lib/general.py` `VERSION`, `DB_VERSION`). Consumed by
@@ -24,11 +25,14 @@ packages with msm_plugin and mcp_plugin.
 - **Two layers**, as in msm_plugin: top-level `*.py` are the `@plugin_function` wrappers
   (`general`, `services`, `content_sets`, `dump`); `lib/*.py` does the work and holds only
   code those 13 functions reach (cleanup 2026-10-09).
-- **REST SQL has two grammars, kept rule for rule in step**: ANTLR here
-  (`grammar/MRS{Lexer,Parser}.g4`) and bison in the shell
-  (`mariadb-shell/modules/mrs/core/mrs_parser.yy`, keywords in `mrs_lexer.h`). A statement
-  change goes to both, then: the docs section
-  (`docs/sections/sql/*.md`), the railroad SVGs, both `grammar_test.sql` copies.
+- **REST SQL has two grammars, kept rule for rule in step**, both in the mariadb-shell repo
+  since 2026-10-09: ANTLR (`modules/mrs/antlr_grammar/MRS{Lexer,Parser}.g4`, docs only) and
+  bison (`modules/mrs/core/mrs_parser.yy`, keywords in `mrs_lexer.h`). A statement change
+  goes to both, then the GitBook reference page, `npm run docs-ref:mrs-grammar-docs` and
+  `docs-ref:mrs-diagrams`, and the shell's `unittest/data/mrs/grammar_test.sql`.
+- **No client files in REST SQL** (2026-10-09): the plugin does all file work
+  (`mrs.dump.service`, `mrs.load.service`, `mrs.load.contentSet`, project functions) and
+  sends REST SQL through `session.run_sql`.
 - **Projects are not REST SQL** (2026-10-08): `DUMP/LOAD REST PROJECT` were dropped from
   both grammars, the Python listener/executor and the docs; `mrs.dump.serviceProject()` /
   `mrs.load.serviceProject()` do the same (same `lib.services` calls) and are the only way.
@@ -71,7 +75,13 @@ packages with msm_plugin and mcp_plugin.
   their own sandbox), `da8fa01d` (5.0.0), `8e3d70c9` (shell option + context), `d1b5f1ee`
   (context), `71651e6f` (REST SQL moves to the shell's mrs module), then the daemon
   statements and this checkpoint; a rebase replaced the hashes earlier checkpoints named.
-- **Session 2026-10-08 (uncommitted, both repos):**
+- **2026-10-09, committed and pushed** (`3566d1c1`, `dee429e7`; shell `0504c64ae`,
+  `ced93ef43`): file-based REST SQL dropped, `LOAD SCRIPTS` registers MRS scripts in the
+  shell, new `dump.service` / `load.service` / `load.contentSet`, `update.mrsScriptsFromContentSet`
+  removed; docs + grammar + doc tools moved to the shell repo as GitBook pages, MySQL names
+  replaced by MariaDB (see [context/plugin-reduction.md](context/plugin-reduction.md)).
+  Plugin pytest: 177 passed, 1 skipped.
+- **Session 2026-10-08 (committed since):**
   - New REST SQL `SHOW REST USERS [(ON|FROM) [SERVICE] path] [FOR AUTH APP name]`,
     `SHOW REST AUTH VENDORS`, `SHOW REST SERVICES [FOR AUTH APP name]` (replace
     `mrs.list.users`, `mrs.get.authenticationVendors`, `mrs.list.authenticationAppServices`).
@@ -104,8 +114,6 @@ packages with msm_plugin and mcp_plugin.
     now also before the schema exists); project dump/load through REST SQL (see
     [context/plugin-reduction.md](context/plugin-reduction.md)).
   - Green: shell mrs filter 69 tests, plugin pytest 248/2 skipped, grammar test.
-  - The tree also holds another session's uncommitted grammar-parity work (scripts,
-    `generate_rrd_svg_files.py`, docs prose, SVGs); commit or untangle together.
 - **Tests, all green on the 2026-10-08 shell build with the built-in mrs module** (the
   REST SQL in the tests goes to its handler): pytest 248 passed / 2 skipped (~45s); grammar
   test passed. Earlier, on a shell started with the since removed `--disable-modules=mrs`
@@ -116,7 +124,8 @@ packages with msm_plugin and mcp_plugin.
   loads next to the shell's built-in module without "An SQL Handler named 'MRS' already
   exists".
 - **Both suites deploy their own sandbox** on a free port and remove it (also on a failed
-  setup): `tests/conftest.py` `init_mrs`; `scripts/run_grammar_test.sh`. Only `mariadbd`
+  setup): `tests/conftest.py` `init_mrs` (the grammar test now runs in the shell's
+  unit tests, `mrs_grammar_test_norecord.py`). Only `mariadbd`
   on PATH and a shell are needed.
 - **Fixed this session:** `CLONE REST SERVICE dev@/path` (looked up by path alone; cloned
   an empty developer list the CHECK rejects); the developer-list service lookup's HAVING
@@ -138,15 +147,15 @@ packages with msm_plugin and mcp_plugin.
 
 ## Files that matter
 
-- `init.py` -> the `mrs` sub-objects `get`, `dump`, `load`, `update`
-- `grammar/MRSLexer.g4`, `grammar/MRSParser.g4` -> REST SQL reference grammar (docs only)
-- `docs/sections/sql/*.md` -> REST SQL reference (one ```antlr block + `::=` SVG per rule);
-  `scripts/update_grammar_docs.py` -> syncs the rule blocks with the grammar;
-  `scripts/generate_rrd_svg_files.py` (npm `update-rrd-svg-files`) -> `docs/images/sql/*.svg`;
-  `scripts/generate_html_docs.sh` (npm `update-html-docs`) -> `docs/*.html`
+- `init.py` -> the `mrs` sub-objects `get`, `dump`, `load`
+- `services.py` / `lib/services.py` -> SDK, project and service dump/load
+  (`service_script`, `dump_service_script`, `load_service_script`, `endpoint_selection`)
+- `content_sets.py` / `lib/content_sets.py` -> MRS script analysis, `load_content_set`,
+  `content_file_statement` (also used by the test fixture)
+- Docs and grammar: mariadb-shell `docs-ref/content/mariadb-rest-service/`,
+  `modules/mrs/antlr_grammar/` (not in this repo any more)
 - `lib/core.py` -> `ConfigFile` (current service per connection), `MrsDbExec`, id helpers
   (`id_to_uuid`, `convert_ids_to_uuid`, `try_convert_ids_to_uuid`, `NIL_UUID`)
-- `lib/services.py`, `lib/MrsDdlExecutor.py`, `lib/MrsDdlListener.py` -> REST SQL to metadata
 - `interactive.py` -> resolvers for service/schema/user/role/auth-app queries
 - `lib/general.py` -> `VERSION`, `DB_VERSION`, `configure()` (deploys the metadata via msm)
 - `db_schema/README.md` -> the schema change process (Workbench, plugins, msm release)
@@ -155,13 +164,13 @@ packages with msm_plugin and mcp_plugin.
   and `UUID_Columns`
 - `db_schema/.../releases/{versions,updates,deployment}/` -> 4.1.6 and 5.0.0 only
 - `run_tests.py`, `tests/conftest.py`, `tests/unit/helpers.py` -> test harness and sandbox
-- `scripts/run_grammar_test.sh`, `grammar/test/{grammar_test,grammar_test_setup,sakila-schema}.sql`
 - `scripts/run_md_upgrade_test.sh`, `tests/unit/test_md_upgrade.py` -> upgrade = fresh install check
 
 ## Next steps
 
-1. Decide the plugin reduction with the user ([context/plugin-reduction.md](context/plugin-reduction.md)), then remove the functions,
-   their tests and the Python REST SQL stack.
+1. Docs follow-ups (in the shell repo's context): new VS Code screenshots, verify the
+   open points of the conversion (daemon role activation, GTID read-your-writes, async
+   tasks, custom auth procedure id type).
 2. Fix the `@DATATYPE` / `JSON SCHEMA` loss in `SHOW CREATE REST VIEW` (if the user agrees).
 - **Later (user's note):** a metadata schema version that renames the `router*` tables
   (`router`, `router_status`, `router_session`, `router_general_log`, the `router_services`
@@ -173,8 +182,8 @@ packages with msm_plugin and mcp_plugin.
   `SHOW REST SERVICES FOR DAEMON` will take a UUID instead of an integer (grammar:
   `daemonId`, bison `daemon_id`), and the audit triggers' `CAST(LPAD(HEX(id)...) AS UUID)`
   for router ids go away.
-3. Commit this session's work (plugin repo, and `wip/mrs_module` in mariadb-shell),
-   separating it from the other session's parity changes as the user wants.
+3. Rename candidates for a later metadata version: `mysql_rest_service_*` roles, auth
+   vendor `MySQL Internal` / app `MySQL` / keyword `VENDOR MYSQL` (the docs keep them verbatim).
 4. Open a PR for `wip/mrs_schema_improvements` (title without `[bypass-ci]`: source changes).
 5. Run CI on a shell build with the built-in mrs module (the plugin has no SQL handler
    anymore).
@@ -186,8 +195,7 @@ packages with msm_plugin and mcp_plugin.
 
 - **Run tests on a shell with the built-in mrs module** (the `--disable-modules` option
   is gone again):
-  `MARIADB_SHELL=<build>/bin/mariadb-shell <build>/bin/mariadb-shell --py -f run_tests.py`
-  and `MARIADB_SHELL=<build>/bin/mariadb-shell scripts/run_grammar_test.sh`. The REST SQL
+  `python3 run_tests.py` (finds `../mariadb-shell/build/bin/mariadb-shell`). The REST SQL
   goes to the built-in handler. The installed 26.9.2 release
   shell is no fallback: it bundles its own older mrs_plugin, which shadows the repo's
   (`ImportPathMismatchError` on the conftest).
@@ -214,13 +222,11 @@ packages with msm_plugin and mcp_plugin.
   write the full UUID.
 - **`service.name` is a DB DEFAULT EXPRESSION** (`REGEXP_REPLACE(url_context_root, ...)`),
   so `/test` is named `test`; `/mrs` is reserved.
-- `scripts/update_grammar_docs.py` must run with `python3` (under `mariadb-shell -f`,
-  `sys.argv[0]` is empty and its `chdir` fails). It rewrites rule blocks of every section
-  that differs from the grammar, not just the ones you touched.
-- **HTML docs:** the committed `docs/*.html` were prettified and year-bumped by hand after
-  generation, so `update-html-docs` churns every page and the templates put back
-  `2022, 2025, Oracle`. Rebuild only the page whose content changed and fix line 3.
-  The build needs `pandoc-include` (`pip install pandoc-include`, a venv works).
+- **REST SQL text from Python:** quote request paths with `core.quote_ident` (dots need
+  backticks); send file content as `CONTENT '...'` only for UTF-8 without NUL/backslash
+  (quotes doubled), else base64 `BINARY CONTENT` (independent of `NO_BACKSLASH_ESCAPES`).
+  `DROP REST CONTENT SET` takes `FROM SERVICE`, not `ON SERVICE`.
+- **pyflakes/black are not installed** globally or in the shell's Python; use a scratch venv.
 - Keywords used as names need quotes (`FOR AUTH APP app` fails: `APP` is a keyword); only
   `FILES` and `VENDORS` are allowed unquoted.
 - **A stored data mapping holds every column**: the ones left out of the mapping are
@@ -233,7 +239,7 @@ packages with msm_plugin and mcp_plugin.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-08), before its commit:
+Checked at this checkpoint (2026-10-09), before its commit:
 
 ```text
 $ git -C mrs_plugin branch --show-current
@@ -241,15 +247,10 @@ wip/mrs_schema_improvements   (tracks origin; no PR yet)
 
 $ git -C mrs_plugin status --short   (mrs_plugin part; committed with this checkpoint)
  M .claude/PROJECT_CONTEXT.md
-?? .claude/context/{plugin-reduction,metadata-schema-5.0.0}.md (split out of it)
- M docs/sections/sql/{Drop,UseAndShow}.md, docs/sql.html
- M grammar/MRSLexer.g4, grammar/MRSParser.g4, grammar/test/grammar_test.sql
- M lib/mrs_parser/* (regenerated)
- M/?? docs/images/sql/*.svg (3 modified; new dropRestDaemonStatement, showRestDaemonsStatement, daemonId)
 ```
 
-- Last pushed commit: `71651e6f`. Commits on top of `main`: `863f536e`, `da8fa01d`,
-  `8e3d70c9`, `d1b5f1ee`, `71651e6f`, plus this checkpoint's commit.
+- Last pushed commits: `3566d1c1` (file work to plugin functions), `dee429e7` (docs and
+  grammar moved to the shell repo), plus this checkpoint's commit.
 - Outside mrs_plugin the tree has uncommitted changes of other sessions that are NOT
   committed with it (`code_ext`, `mcp_plugin`, `msm_plugin` context files,
   `mcp_plugin/run_tests.py`, `mcp_plugin/tests/unit/helpers.py`).
