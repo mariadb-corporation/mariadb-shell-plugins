@@ -43,12 +43,12 @@ def map_crud_operations(crud_operations):
     return grant_privileges
 
 
-def query_db_objects(
+def query_rest_objects(
     session,
-    db_object_id=None,
+    rest_object_id=None,
     schema_id=None,
     request_path=None,
-    db_object_name=None,
+    rest_object_name=None,
     include_enable_state=None,
     object_types=None,
 ):
@@ -56,7 +56,7 @@ def query_db_objects(
     # Build SQL based on which input has been provided
 
     sql = """
-        SELECT o.id, o.db_schema_id, o.name, o.request_path,
+        SELECT o.id, o.rest_schema_id, o.name, o.request_path,
             o.requires_auth, o.enabled, o.object_type,
             o.items_per_page, o.comments,
             sc.request_path AS schema_request_path,
@@ -68,9 +68,9 @@ def query_db_objects(
             al.changed_at,
             CONCAT(sc.name, '.', o.name) AS qualified_name,
             se.id AS service_id, sc.name AS schema_name
-        FROM <metadata>.db_object o
-            LEFT OUTER JOIN <metadata>.db_schema sc
-                ON sc.id = o.db_schema_id
+        FROM <metadata>.rest_object o
+            LEFT OUTER JOIN <metadata>.rest_schema sc
+                ON sc.id = o.rest_schema_id
             LEFT OUTER JOIN <metadata>.service se
                 ON se.id = sc.service_id
             LEFT JOIN <metadata>.url_host h
@@ -78,26 +78,26 @@ def query_db_objects(
             LEFT OUTER JOIN (
                 SELECT new_row_id AS id, MAX(changed_at) as changed_at
                 FROM <metadata>.audit_log
-                WHERE table_name = 'db_object'
+                WHERE table_name = 'rest_object'
                 GROUP BY new_row_id) al
             ON al.id = o.id
         """
 
     params = []
     wheres = []
-    if db_object_id is not None:
+    if rest_object_id is not None:
         wheres.append("o.id = ?")
-        params.append(db_object_id)
+        params.append(rest_object_id)
     else:
         if schema_id is not None:
-            wheres.append("o.db_schema_id = ?")
+            wheres.append("o.rest_schema_id = ?")
             params.append(schema_id)
         if request_path is not None:
             wheres.append("o.request_path = ?")
             params.append(request_path)
-        if db_object_name is not None:
+        if rest_object_name is not None:
             wheres.append("o.name = ?")
-            params.append(db_object_name)
+            params.append(rest_object_name)
         if object_types is not None:
             if len(object_types) > 1:
                 s = "(" + ("o.object_type = ? OR " * len(object_types))
@@ -118,12 +118,12 @@ def query_db_objects(
     return core.MrsDbExec(sql, params).exec(session).items
 
 
-def add_db_object(
+def add_rest_object(
     session,
     schema_id,
-    db_object_name,
+    rest_object_name,
     request_path,
-    db_object_type,
+    rest_object_type,
     enabled,
     items_per_page,
     requires_auth,
@@ -133,20 +133,20 @@ def add_db_object(
     auto_detect_media_type,
     auth_stored_procedure,
     options,
-    objects,
+    data_mappings,
     metadata=None,
     internal=False,
-    db_object_id=None,
+    rest_object_id=None,
     reuse_ids=False,
     row_user_ownership_enforced=None,
     row_user_ownership_column=None,
 ):
-    if not isinstance(db_object_name, str):
+    if not isinstance(rest_object_name, str):
         raise Exception("Invalid object name.")
 
-    if db_object_type not in ["TABLE", "VIEW", "PROCEDURE", "FUNCTION", "SCRIPT"]:
+    if rest_object_type not in ["TABLE", "VIEW", "PROCEDURE", "FUNCTION", "SCRIPT"]:
         raise ValueError(
-            "Invalid db_object_type. Only valid types are TABLE, VIEW, PROCEDURE and FUNCTION."
+            "Invalid rest_object_type. Only valid types are TABLE, VIEW, PROCEDURE and FUNCTION."
         )
 
     if not crud_operation_format:
@@ -165,19 +165,19 @@ def add_db_object(
         session=session, schema_id=schema_id, auto_select_single=True
     )
 
-    if db_object_id is None:
-        db_object_id = core.get_sequence_id(session)
+    if rest_object_id is None:
+        rest_object_id = core.get_sequence_id(session)
 
     crud_operations = calculate_crud_operations(
-        db_object_type=db_object_type, objects=objects
+        rest_object_type=rest_object_type, data_mappings=data_mappings
     )
 
     values = {
-        "id": db_object_id,
-        "db_schema_id": schema_id,
-        "name": db_object_name,
+        "id": rest_object_id,
+        "rest_schema_id": schema_id,
+        "name": rest_object_name,
         "request_path": request_path,
-        "object_type": db_object_type,
+        "object_type": rest_object_type,
         "enabled": enabled,
         "items_per_page": items_per_page,
         "requires_auth": int(requires_auth),
@@ -194,14 +194,14 @@ def add_db_object(
         "internal": internal,
     }
 
-    # Remove row_user_ownership_enforced and row_user_ownership_column from db_object values as they are now
-    # passed in object and object_reference directly
+    # Remove row_user_ownership_enforced and row_user_ownership_column from rest_object values as they are now
+    # passed in object and data_mapping_reference directly
     values.pop("row_user_ownership_enforced", None)
     values.pop("row_user_ownership_column", None)
 
     # Update object.row_ownership_field_id when the old parameters are still used
     if row_user_ownership_enforced and row_user_ownership_column:
-        for obj in objects:
+        for obj in data_mappings:
             fields = obj.get("fields", [])
             for field in fields:
                 db_column = field.get("db_column", None)
@@ -209,11 +209,11 @@ def add_db_object(
                     if db_column.get("name") == row_user_ownership_column:
                         obj["row_ownership_field_id"] = field.get("id")
 
-    core.insert(table="db_object", values=values).exec(session)
+    core.insert(table="rest_object", values=values).exec(session)
 
-    set_objects(session, db_object_id, objects)
+    set_data_mappings(session, rest_object_id, data_mappings)
 
-    if db_object_type == "PROCEDURE" or db_object_type == "FUNCTION":
+    if rest_object_type == "PROCEDURE" or rest_object_type == "FUNCTION":
         grant_privileges = ["EXECUTE"]
     else:
         grant_privileges = map_crud_operations(crud_operations)
@@ -225,50 +225,50 @@ def add_db_object(
     if options is None:
         options = {}
 
-    if db_object_type == "SCRIPT":
-        return db_object_id, database.get_grant_statements_for_explicit_grants(
+    if rest_object_type == "SCRIPT":
+        return rest_object_id, database.get_grant_statements_for_explicit_grants(
             options.get("grants", None), core.metadata_role(session, "data_provider")
         )
     else:
-        return db_object_id, database.get_grant_statements(
+        return rest_object_id, database.get_grant_statements(
             session=session,
             schema_name=schema["name"],
-            db_object_name=db_object_name,
+            rest_object_name=rest_object_name,
             grant_privileges=grant_privileges,
-            objects=objects,
-            db_object_type=db_object_type,
+            data_mappings=data_mappings,
+            rest_object_type=rest_object_type,
             explicit_grants=options.get("grants", None),
             disable_automatic_grants=options.get("disableAutomaticGrants", False),
         )
 
 
-def get_objects(session, db_object_id):
-    return database.get_objects(session, db_object_id)
+def get_data_mappings(session, rest_object_id):
+    return database.get_data_mappings(session, rest_object_id)
 
 
-def get_object_fields_with_references(session, object_id, binary_formatter=None):
-    return database.get_object_fields_with_references(
-        session, object_id, binary_formatter=binary_formatter
+def get_data_mapping_fields_with_references(session, data_mapping_id, binary_formatter=None):
+    return database.get_data_mapping_fields_with_references(
+        session, data_mapping_id, binary_formatter=binary_formatter
     )
 
 
-def set_objects(session, db_object_id, objects):
-    if objects is None:
-        objects = []
+def set_data_mappings(session, rest_object_id, data_mappings):
+    if data_mappings is None:
+        data_mappings = []
 
-    sql = "DELETE FROM <metadata>.object WHERE db_object_id = ?"
+    sql = "DELETE FROM <metadata>.data_mapping WHERE rest_object_id = ?"
     core.MrsDbExec(sql).exec(
-        session, [core.id_to_uuid(db_object_id, "db_object_id")]
+        session, [core.id_to_uuid(rest_object_id, "rest_object_id")]
     ).items
 
-    for obj in objects:
-        set_object_fields_with_references(session, db_object_id, obj)
+    for obj in data_mappings:
+        set_data_mapping_fields_with_references(session, rest_object_id, obj)
 
 
-def set_object_fields_with_references(session, db_object_id, obj):
+def set_data_mapping_fields_with_references(session, rest_object_id, obj):
     values = {
         "id": core.id_to_uuid(obj.get("id"), "object.id"),
-        "db_object_id": core.id_to_uuid(db_object_id, "db_object_id"),
+        "rest_object_id": core.id_to_uuid(rest_object_id, "rest_object_id"),
         "name": obj.get("name"),
         "kind": obj.get("kind", "RESULT"),
         "position": obj.get("position"),
@@ -293,19 +293,19 @@ def set_object_fields_with_references(session, db_object_id, obj):
             row_ownership_field_id, "row_ownership_field_id"
         )
 
-    core.insert(table="object", values=values).exec(session)
+    core.insert(table="data_mapping", values=values).exec(session)
 
     fields = obj.get("fields", [])
 
-    # Insert object_references first
-    inserted_object_references_ids = []
+    # Insert data_mapping_references first
+    inserted_data_mapping_references_ids = []
     for field in fields:
-        obj_ref = field.get("object_reference")
+        obj_ref = field.get("data_mapping_reference")
 
         if obj_ref is not None and (
-            not (obj_ref.get("id") in inserted_object_references_ids)
+            not (obj_ref.get("id") in inserted_data_mapping_references_ids)
         ):
-            inserted_object_references_ids.append(obj_ref.get("id"))
+            inserted_data_mapping_references_ids.append(obj_ref.get("id"))
 
             # make sure to covert the sub Dict with dict()
             ref_map = obj_ref.get("reference_mapping")
@@ -372,19 +372,19 @@ def set_object_fields_with_references(session, db_object_id, obj):
                     row_ownership_field_id, "objectReference.row_ownership_field_id"
                 )
 
-            core.insert(table="object_reference", values=values).exec(session)
+            core.insert(table="data_mapping_reference", values=values).exec(session)
 
-    # Then insert object_fields
+    # Then insert data_mapping_fields
     inserted_field_ids = []
     for field in fields:
-        obj_ref = field.get("object_reference")
+        obj_ref = field.get("data_mapping_reference")
 
         if not (field.get("id") in inserted_field_ids):
             inserted_field_ids.append(field.get("id"))
 
             values = {
                 "id": core.id_to_uuid(field.get("id"), "field.id"),
-                "object_id": core.id_to_uuid(field.get("object_id"), "field.object_id"),
+                "data_mapping_id": core.id_to_uuid(field.get("data_mapping_id"), "field.data_mapping_id"),
                 "parent_reference_id": core.id_to_uuid(
                     field.get("parent_reference_id"), "field.parent_reference_id", True
                 ),
@@ -412,22 +412,22 @@ def set_object_fields_with_references(session, db_object_id, obj):
                 field.get("json_schema", None)
             )
 
-            core.insert(table="object_field", values=values).exec(session)
+            core.insert(table="data_mapping_field", values=values).exec(session)
 
 
-def calculate_crud_operations(db_object_type, objects=None):
-    if db_object_type == "SCRIPT":
+def calculate_crud_operations(rest_object_type, data_mappings=None):
+    if rest_object_type == "SCRIPT":
         return ["CREATE", "READ", "UPDATE"]
-    if db_object_type == "PROCEDURE" or db_object_type == "FUNCTION":
+    if rest_object_type == "PROCEDURE" or rest_object_type == "FUNCTION":
         return ["CREATE"]
 
-    if objects is None:
+    if data_mappings is None:
         return ["READ"]
 
-    if len(objects) == 0:
+    if len(data_mappings) == 0:
         raise Exception("No object result definition present.")
 
-    obj = objects[0]
+    obj = data_mappings[0]
     options = obj.get("options", {})
     if options is None:
         options = {}

@@ -120,9 +120,9 @@ packages with msm_plugin and mcp_plugin.
   - For code_ext's GUI (replaces the 8 GUI helpers): `FORMAT=JSON` (also `= json`,
     `='json'`, `TRADITIONAL` = default; else `Unknown REST format name: 'x'`) closing every
     `SHOW CREATE REST ...` statement -> one cell, pretty JSON of the object (metadata column
-    names as keys, UUID ids, options embedded; views/routines with `objects` -> `fields` ->
-    `object_reference`; service + `INCLUDING DATABASE ENDPOINTS` with `schemas` ->
-    `db_objects`; never secrets, password hashes or file bytes). New
+    names as keys, UUID ids, options embedded; views/routines with `data_mappings` -> `fields` ->
+    `data_mapping_reference`; service + `INCLUDING DATABASE ENDPOINTS` with `rest_schemas` ->
+    `rest_objects`; never secrets, password hashes or file bytes). New
     `SHOW REST COLUMNS FROM [TABLE|VIEW|PROCEDURE|FUNCTION] [schema.]name [FORMAT=JSON]`
     (columns + references in both directions, or parameters + return type; type detected,
     schema defaults to the current REST schema's, then `DATABASE()`). `SHOW REST METADATA
@@ -163,6 +163,22 @@ packages with msm_plugin and mcp_plugin.
     views as generated REST SQL; offered to the user, not fixed.
 
 - **Audit log export (`mrs.dump.auditLog`, `lib/dump.py`), 2026-10-09.** Audit log ids are not in commit order (concurrent writers, Galera with several write nodes), so every export re-reads the `AUDIT_LOG_ID_OVERLAP` (1000) ids below its position and skips those listed in the position file's new `exportedIds`; a file without that list, or an explicit `audit_log_position`, counts everything up to the position as exported. Also fixed for MariaDB: `@@server_uid` (written as `server_uid`) instead of `@@server_uuid`, `@@global.read_only` instead of `offline_mode` / `super_read_only` for `when_server_is_writeable`, and an explicit `audit_log_position` is no longer reset to 0. Test: `tests/unit/lib/test_dump.py`.
+
+- **Table renames (2026-10-09, still schema 5.0.0):** `db_schema` -> `rest_schema`,
+  `db_object` -> `rest_object`, `object` -> `data_mapping`, `object_field` ->
+  `data_mapping_field`, `object_reference` -> `data_mapping_reference`,
+  `mrs_db_object_row_group_security` -> `mrs_rest_object_row_group_security`,
+  `content_set_has_obj_def` -> `content_set_has_rest_object`, view
+  `object_fields_with_references` -> `data_mapping_fields_with_references`; columns
+  `rest_schema_id`, `rest_object_id`, `data_mapping_id`. `sdk_service_data` JSON keys:
+  `rest_schemas` -> `rest_objects` -> `data_mappings` -> `fields` (with `data_mapping_id`,
+  `data_mapping_reference`). The plugin's Python API follows: `lib/rest_objects.py`
+  (`query_rest_objects`, `add_rest_object(rest_object_name=, rest_object_type=,
+  data_mappings=)`, `get_data_mappings`, `set_data_mappings`,
+  `get_data_mapping_fields_with_references`), tests `test_rest_objects.py`, helpers
+  `RestObjectCT`, `get_default_rest_object_init`. Kept: `mrsEditDbObject` (a function the
+  generated TypeScript SDK calls in the VS Code notebook) and
+  `get_objects_used_in_view_including_required_grants` (real database objects).
 
 ## Files that matter
 

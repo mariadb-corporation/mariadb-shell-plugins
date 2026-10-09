@@ -11,8 +11,8 @@ Branch `wip/mrs_schema_improvements`, commit `58714069` (2026-10-08). Diffed aga
   default:
   - `url_host`: id*
   - `service`: id*, parent_id, url_host_id
-  - `db_schema`: id*, service_id
-  - `db_object`: id*, db_schema_id
+  - `rest_schema`: id*, service_id
+  - `rest_object`: id*, rest_schema_id
   - `auth_vendor`: id*
   - `auth_app`: id*, auth_vendor_id, default_role_id
   - `mrs_user`: id*, auth_app_id
@@ -31,20 +31,20 @@ Branch `wip/mrs_schema_improvements`, commit `58714069` (2026-10-08). Diffed aga
   - `mrs_user_has_group`: user_id, user_group_id
   - `mrs_group_hierarchy_type`: id*
   - `mrs_user_group_hierarchy`: user_group_id, parent_group_id, group_hierarchy_type_id
-  - `mrs_db_object_row_group_security`: db_object_id, group_hierarchy_type_id
+  - `mrs_rest_object_row_group_security`: rest_object_id, group_hierarchy_type_id
   - `rest_daemon_session` (was `router_session`): user_id, service_id
   - `rest_daemon` (was `router`): id* (2026-10-09); `rest_daemon_status` and
     `rest_daemon_general_log`: rest_daemon_id
-  - `object`: id*, db_object_id, row_ownership_field_id
-  - `object_reference`: id*, reduce_to_value_of_field_id, row_ownership_field_id
-  - `object_field`: id*, object_id, parent_reference_id, represents_reference_id
+  - `data_mapping`: id*, rest_object_id, row_ownership_field_id
+  - `data_mapping_reference`: id*, reduce_to_value_of_field_id, row_ownership_field_id
+  - `data_mapping_field`: id*, data_mapping_id, parent_reference_id, represents_reference_id
   - `service_has_auth_app`: service_id, auth_app_id
-  - `content_set_has_obj_def`: content_set_id, db_object_id
+  - `content_set_has_rest_object`: content_set_id, rest_object_id
 - Integer keys: `rest_daemon_status.id`, `rest_daemon_session.id`,
   `rest_daemon_general_log.id` (and its `rest_daemon_session_id`) and `audit_log.id` are
   `BIGINT UNSIGNED AUTO_INCREMENT` since 2026-10-09; `config` and `audit_log_status` keep
   their small integer keys.
-- `db_object.fk_db_objects_db_schema1_idx` was `INVISIBLE` in the model and hand-stripped
+- `rest_object.fk_rest_objects_rest_schema1_idx` was `INVISIBLE` in the model and hand-stripped
   in the SQL; it is now visible in the model, so the export carries `VISIBLE` like every
   other index. The only other text change is the export date line.
 - In the model only (no SQL effect): the `service.in_development` comment no longer uses
@@ -55,13 +55,13 @@ Branch `wip/mrs_schema_improvements`, commit `58714069` (2026-10-08). Diffed aga
 - `140-30_inserts.sql`: the 14 short binary literals (`0x30`..`0x35`, MariaDB rejects them
   as UUIDs) become full UUID literals: `0x31` -> `'31000000-0000-0000-0000-000000000000'`,
   etc. Same bytes, so upgraded rows keep their ids.
-- `150-10_views.sql`, `object_fields_with_references`: `reduce_to_value_of_field_id` and
-  `row_ownership_field_id` in the `object_reference` JSON are emitted as UUID strings
+- `150-10_views.sql`, `data_mapping_fields_with_references`: `reduce_to_value_of_field_id` and
+  `row_ownership_field_id` in the `data_mapping_reference` JSON are emitted as UUID strings
   instead of `TO_BASE64(...)` (4 places).
 - `150-20_procedures_functions.sql`: `UUID_TO_BIN_SWAP` and `BIN_TO_UUID_SWAP` removed;
   `get_sequence_id()` returns `UUID` and is `RETURN UUID_v7()` (was `UUID_TO_BIN(UUID(), 1)`
   with the swap fallback); `sdk_service_data(IN service_id UUID)` and its four cursor
-  variables (`schema_id`, `db_object_id`, `object_id`, `field_id`) are `UUID`.
+  variables (`schema_id`, `rest_object_id`, `data_mapping_id`, `field_id`) are `UUID`.
 - `150-30_triggers.sql`: the `router` audit triggers write the integer id as
   `CAST(LPAD(HEX(x.id), 32, '0') AS UUID)` (was `UNHEX(LPAD(CONV(x.id, 10, 16), 32, '0'))`,
   3 places); the two `mrs_user` checks compare `auth_vendor_id` with

@@ -343,7 +343,7 @@ def substitute_service_in_template(
         sdk_language=sdk_language,
         session=session,
         service_url=service_url,
-        schemas=None if service_data is None else service_data.get("db_schemas", []),
+        schemas=None if service_data is None else service_data.get("rest_schemas", []),
     )
 
     template = code.get("template")
@@ -408,7 +408,7 @@ def substitute_schemas_in_template(
     )
 
     # BUG#37926204 Get database schemas if they have not been retrieved beforehand
-    db_schemas = (
+    rest_schemas = (
         lib.schemas.query_schemas(session, service_id=service.get("id"))
         if schemas is None
         else schemas
@@ -426,7 +426,7 @@ def substitute_schemas_in_template(
         schema_template = loop.group(1)
 
         filled_temp = ""
-        for schema in db_schemas:
+        for schema in rest_schemas:
             # TODO: Implement support for MRS Scripts
             if schema.get("schema_type") == "SCRIPT_MODULE":
                 continue
@@ -444,7 +444,7 @@ def substitute_schemas_in_template(
                     sdk_language=sdk_language,
                     session=session,
                     service_url=service_url,
-                    db_objs=None if schemas is None else schema.get("db_objects", []),
+                    rest_objs=None if schemas is None else schema.get("rest_objects", []),
                 )
 
                 schema_template_with_obj_filled = code.get("template")
@@ -566,7 +566,7 @@ def generate_identifier(
 
 
 def substitute_objects_in_template(
-    service, schema, template, sdk_language, session, service_url, db_objs
+    service, schema, template, sdk_language, session, service_url, rest_objs
 ):
     delimiter = language_comment_delimiter(sdk_language)
     object_loops = re.finditer(
@@ -576,10 +576,10 @@ def substitute_objects_in_template(
     )
 
     # BUG#37926204 Get database objects if they have not been retrieved beforehand
-    db_objects = (
-        lib.db_objects.query_db_objects(session, schema_id=schema.get("id"))
-        if db_objs is None
-        else db_objs
+    rest_objects = (
+        lib.rest_objects.query_rest_objects(session, schema_id=schema.get("id"))
+        if rest_objs is None
+        else rest_objs
     )
 
     crud_ops = [
@@ -614,14 +614,14 @@ def substitute_objects_in_template(
         )
 
         filled_temp = ""
-        for db_obj in db_objects:
+        for rest_obj in rest_objects:
             name = generate_identifier(
-                value=db_obj.get("request_path"),
+                value=rest_obj.get("request_path"),
                 sdk_language=sdk_language,
                 existing_identifiers=existing_identifiers,
             )
             class_name = generate_identifier(
-                value=f"{schema_request_path}{db_obj.get("request_path")}",
+                value=f"{schema_request_path}{rest_obj.get("request_path")}",
                 primitive="class",
                 existing_identifiers=existing_identifiers,
             )
@@ -634,26 +634,26 @@ def substitute_objects_in_template(
             obj_quoted_pk_list = []
             obj_unique_list = []
             obj_meta_interfaces = []
-            db_object_crud_ops = ""
+            rest_object_crud_ops = ""
             obj_bigint_field_list = []
             obj_fixed_point_field_list = []
 
             # BUG#37926204 Get SDK objects if they have not been retrieved beforehand
-            objects = (
-                lib.db_objects.get_objects(session, db_object_id=db_obj.get("id"))
-                if db_obj.get("objects") is None
-                else db_obj.get("objects")
+            data_mappings = (
+                lib.rest_objects.get_data_mappings(session, rest_object_id=rest_obj.get("id"))
+                if rest_obj.get("data_mappings") is None
+                else rest_obj.get("data_mappings")
             )
 
             # Loop over all objects and build interfaces
-            for obj in objects:
+            for obj in data_mappings:
                 if requires_auth is False:
-                    requires_auth |= db_obj.get("requires_auth") == 1
+                    requires_auth |= rest_obj.get("requires_auth") == 1
 
                 # BUG#37926204 Get object fields if they have not been retrieved beforehand
                 fields = (
-                    lib.db_objects.get_object_fields_with_references(
-                        session=session, object_id=obj.get("id")
+                    lib.rest_objects.get_data_mapping_fields_with_references(
+                        session=session, data_mapping_id=obj.get("id")
                     )
                     if obj.get("fields") is None
                     else obj.get("fields")
@@ -662,7 +662,7 @@ def substitute_objects_in_template(
                 for field in fields:
                     if field.get("lev") == 1:
                         # Build Primary Key lists (only if "UPDATE" is allowed)
-                        if field_is_pk(field) and "UPDATE" in db_obj.get(
+                        if field_is_pk(field) and "UPDATE" in rest_obj.get(
                             "crud_operations", []
                         ):
                             obj_pk_list.append(field.get("name"))
@@ -717,38 +717,38 @@ def substitute_objects_in_template(
                 # Either take the custom interface_name or the default class_name
                 type_alias_name = sdk_lang_options.get(
                     "class_name",
-                    obj.get("name") if object_is_routine(db_obj) else class_name,
+                    obj.get("name") if object_is_routine(rest_obj) else class_name,
                 )
 
                 # For database objects other than PROCEDUREs and FUNCTIONS, if there are unique fields,
                 # the corresponding SDK commands should be enabled.
-                if not object_is_routine(db_obj):
+                if not object_is_routine(rest_obj):
                     # READ is always enabled
-                    db_object_crud_ops = db_obj.get("crud_operations", "READ")
-                    # If db_objects results from calling lib.db_objects.get_objects, the value of the "crud_operations"
+                    rest_object_crud_ops = rest_obj.get("crud_operations", "READ")
+                    # If rest_objects results from calling lib.rest_objects.get_data_mappings, the value of the "crud_operations"
                     # key is already a list, if it results from calling lib.services.get_service_sdk_data, the value
                     # is a comma-separated string (BUG#37926204)
-                    db_object_crud_ops = (
-                        db_object_crud_ops
-                        if isinstance(db_object_crud_ops, list)
-                        else db_object_crud_ops.split(",")
+                    rest_object_crud_ops = (
+                        rest_object_crud_ops
+                        if isinstance(rest_object_crud_ops, list)
+                        else rest_object_crud_ops.split(",")
                     )
                     # If this DB Object has unique columns (PK or UNIQUE) allow ReadUnique
                     if (
                         len(obj_unique_list) > 0
-                        and "READUNIQUE" not in db_object_crud_ops
+                        and "READUNIQUE" not in rest_object_crud_ops
                     ):
-                        db_object_crud_ops.append("READUNIQUE")
+                        rest_object_crud_ops.append("READUNIQUE")
                     if (
                         len(obj_unique_list) > 0
-                        and "DELETE" in db_object_crud_ops
-                        and "DELETEUNIQUE" not in db_object_crud_ops
+                        and "DELETE" in rest_object_crud_ops
+                        and "DELETEUNIQUE" not in rest_object_crud_ops
                     ):
-                        db_object_crud_ops.append("DELETEUNIQUE")
+                        rest_object_crud_ops.append("DELETEUNIQUE")
                 # If the database object is a FUNCTION a PROCEDURE or a SCRIPT, CRUD operations should not be enabled
-                elif object_is_routine(db_obj, of_type={"FUNCTION", "SCRIPT"}):
+                elif object_is_routine(rest_obj, of_type={"FUNCTION", "SCRIPT"}):
                     required_datatypes.add("IMrsFunctionResponse")
-                    db_object_crud_ops = ["FUNCTIONCALL"]
+                    rest_object_crud_ops = ["FUNCTIONCALL"]
                 else:
                     if sdk_language == "typescript":
                         required_datatypes.add("IMrsProcedureResult")
@@ -756,44 +756,44 @@ def substitute_objects_in_template(
                         required_datatypes.update(
                             {"MrsProcedureResultSet", "IMrsProcedureResponse"}
                         )
-                    db_object_crud_ops = ["PROCEDURECALL"]
+                    rest_object_crud_ops = ["PROCEDURECALL"]
 
                 obj_interfaces_def, required_obj_datatypes = generate_interfaces(
-                    db_obj,
+                    rest_obj,
                     obj,
                     fields,
                     type_alias_name,
                     sdk_language,
-                    db_object_crud_ops,
-                    obj_endpoint=f"{service_url}{schema.get('request_path')}{db_obj.get("request_path")}",
+                    rest_object_crud_ops,
+                    obj_endpoint=f"{service_url}{schema.get('request_path')}{rest_obj.get("request_path")}",
                 )
 
                 required_datatypes.update(required_obj_datatypes)
 
                 # Do not add obj_interfaces for FUNCTION results
                 if obj.get("kind") == "PARAMETERS" or not object_is_routine(
-                    db_obj, of_type={"FUNCTION"}
+                    rest_obj, of_type={"FUNCTION"}
                 ):
                     obj_interfaces += obj_interfaces_def
 
-                if obj.get("kind") == "PARAMETERS" and object_is_routine(db_obj):
+                if obj.get("kind") == "PARAMETERS" and object_is_routine(rest_obj):
                     obj_param_interface = type_alias_name
-                if obj.get("kind") != "PARAMETERS" and object_is_routine(db_obj):
+                if obj.get("kind") != "PARAMETERS" and object_is_routine(rest_obj):
                     obj_meta_interfaces.append(type_alias_name)
 
             # If the db object is a function, get the return datatype
             obj_function_result_datatype = None
-            if object_is_routine(db_obj, of_type={"FUNCTION"}):
+            if object_is_routine(rest_obj, of_type={"FUNCTION"}):
                 obj_function_result_datatype = "unknown"
-                if len(objects) > 1:
+                if len(data_mappings) > 1:
                     # The SDK object reference is always available, even if it does not contain any field.
                     result_obj = next(
-                        (obj for obj in objects if obj.get("kind") == "RESULT"), {}
+                        (obj for obj in data_mappings if obj.get("kind") == "RESULT"), {}
                     )
                     # BUG#37926204 Get object fields if they have not been retrieved beforehand
                     fields = (
-                        lib.db_objects.get_object_fields_with_references(
-                            session=session, object_id=result_obj.get("id")
+                        lib.rest_objects.get_data_mapping_fields_with_references(
+                            session=session, data_mapping_id=result_obj.get("id")
                         )
                         if result_obj.get("fields") is None
                         else result_obj.get("fields")
@@ -809,7 +809,7 @@ def substitute_objects_in_template(
 
             # If there are no typed result sets for a Procedure, all the result sets will be generic instances of JsonObject
             obj_procedure_result_set_datatype = None
-            if object_is_routine(db_obj, of_type={"PROCEDURE"}) and len(objects) == 1:
+            if object_is_routine(rest_obj, of_type={"PROCEDURE"}) and len(data_mappings) == 1:
                 required_datatypes.add("JsonObject")
                 if sdk_language != "python":
                     obj_interfaces += generate_union(
@@ -821,7 +821,7 @@ def substitute_objects_in_template(
                         ["MrsProcedureResultSet[str, JsonObject, JsonObject]"],
                         sdk_language,
                     )
-            elif object_is_routine(db_obj, of_type={"PROCEDURE"}):
+            elif object_is_routine(rest_obj, of_type={"PROCEDURE"}):
                 if sdk_language != "python":
                     # TypeScript tagged unions inherit from JsonObject
                     required_datatypes.add("JsonObject")
@@ -844,18 +844,18 @@ def substitute_objects_in_template(
 
             # Define the mappings
             mapping = {
-                "obj_id": lib.core.convert_id_to_string(db_obj.get("id")),
+                "obj_id": lib.core.convert_id_to_string(rest_obj.get("id")),
                 "obj_name": name,
                 "obj_class_name": class_name,
                 "obj_param_interface": obj_param_interface,  # empty if not FUNCTION/PROCEDURE
                 "obj_meta_interface": obj_meta_interface,
-                "obj_request_path": db_obj.get("request_path"),
+                "obj_request_path": rest_obj.get("request_path"),
                 "schema_class_name": schema_class_name,
                 "schema_request_path": schema.get("request_path"),
                 "obj_full_request_path": service.get("url_context_root")
                 + schema.get("request_path")
-                + db_obj.get("request_path"),
-                "obj_type": db_obj.get("object_type"),
+                + rest_obj.get("request_path"),
+                "obj_type": rest_obj.get("object_type"),
                 "obj_interfaces": obj_interfaces,
                 "obj_getters_setters": getters_setters,
                 "obj_pk_list": ", ".join(obj_pk_list),
@@ -880,7 +880,7 @@ def substitute_objects_in_template(
                 for crud_loop in crud_op_loops:
                     # If the CRUD operation is enabled for this DB Object, keep the identified code block
                     # if crud_op is "Update" and there is no primary key, update commands should not be available
-                    if crud_op.upper() in db_object_crud_ops and (
+                    if crud_op.upper() in rest_object_crud_ops and (
                         crud_op != "Update" or len(obj_pk_list) > 0
                     ):
                         enabled_crud_ops.add(crud_op)
@@ -1238,7 +1238,7 @@ def get_field_by_id(fields, identifier):
 
 def get_reduced_field_interface_datatype(field, fields, sdk_language, class_name):
     if field.get("represents_reference_id"):
-        obj_ref = field.get("object_reference")
+        obj_ref = field.get("data_mapping_reference")
 
         # Check if the field should be reduced to the value of another field
         ref_field_id = obj_ref.get("reduce_to_value_of_field_id")
@@ -1403,16 +1403,16 @@ def generate_data_class(
     name,
     fields,
     sdk_language,
-    db_object_crud_ops: list[str],
+    rest_object_crud_ops: list[str],
     parents: list[str] = [],
     obj_endpoint: Optional[str] = None,
     primary_key_fields: set[str] = set(),
 ):
     if sdk_language == "typescript":
         if len(primary_key_fields) > 0:
-            if "UPDATE" in db_object_crud_ops:
+            if "UPDATE" in rest_object_crud_ops:
                 fields.update({"update()": f"Promise<I{name}>"})
-            if "DELETE" in db_object_crud_ops:
+            if "DELETE" in rest_object_crud_ops:
                 fields.update({"delete()": f"Promise<void>"})
         return generate_type_declaration(
             name=name,
@@ -1453,11 +1453,11 @@ def generate_data_class(
 
         mixins = []
         if len(primary_key_fields) > 0:
-            if "UPDATE" in db_object_crud_ops:
+            if "UPDATE" in rest_object_crud_ops:
                 mixins.append(
                     f'\n\t_MrsDocumentUpdateMixin["I{name}Data", "I{name}", "I{name}Details"],'
                 )
-            if "DELETE" in db_object_crud_ops:
+            if "DELETE" in rest_object_crud_ops:
                 mixins.append(
                     f'\n\t_MrsDocumentDeleteMixin["I{name}Data", "I{name}Filterable"],'
                 )
@@ -1502,9 +1502,9 @@ def generate_data_class(
 
         mixins = parents
         if len(primary_key_fields) > 0:
-            if "UPDATE" in db_object_crud_ops:
+            if "UPDATE" in rest_object_crud_ops:
                 mixins.append("SelfUpdatable")
-            if "DELETE" in db_object_crud_ops:
+            if "DELETE" in rest_object_crud_ops:
                 mixins.append("SelfDeletable")
 
         if len(primary_key_fields) > 0:
@@ -1711,17 +1711,17 @@ def generate_tuple(
     return ""
 
 
-def object_is_routine(db_obj, of_type: set[str] = {"PROCEDURE", "FUNCTION", "SCRIPT"}):
-    return db_obj.get("object_type") in of_type
+def object_is_routine(rest_obj, of_type: set[str] = {"PROCEDURE", "FUNCTION", "SCRIPT"}):
+    return rest_obj.get("object_type") in of_type
 
 
 def generate_interfaces(
-    db_obj,
+    rest_obj,
     obj,
     fields,
     class_name,
     sdk_language,
-    db_object_crud_ops: list[str],
+    rest_object_crud_ops: list[str],
     obj_endpoint: Optional[str] = None,
 ):
     obj_interfaces: list[str] = []
@@ -1744,7 +1744,7 @@ def generate_interfaces(
         # The field needs to be on level 1 and enabled
         if field.get("lev") == 1 and field.get("enabled"):
             datatype = get_interface_datatype(field, sdk_language, class_name)
-            enhanced_fields = False if object_is_routine(db_obj) else True
+            enhanced_fields = False if object_is_routine(rest_obj) else True
             enhanced_datatype = get_interface_datatype(
                 field=field,
                 sdk_language=sdk_language,
@@ -1756,7 +1756,7 @@ def generate_interfaces(
                 # nested field type aliases are already top-level type aliases for other REST objects
                 # we want to re-use them instead of clone them into a new ones
                 nested_class_name = class_name.rstrip(
-                    lib.core.convert_path_to_pascal_case(db_obj.get("name"))
+                    lib.core.convert_path_to_pascal_case(rest_obj.get("name"))
                 )
                 datatype = get_interface_datatype(
                     field, sdk_language, nested_class_name
@@ -1771,13 +1771,13 @@ def generate_interfaces(
                         {field.get("name"): reduced_to_datatype}
                     )
                 else:
-                    obj_ref = field.get("object_reference")
+                    obj_ref = field.get("data_mapping_reference")
                     # Add field if the referred table is not unnested
                     if not obj_ref.get("unnest"):
                         # If this field represents an OUT parameter of a SP, add it to the
                         # out_params_interface_fields list
                         if obj.get("kind") == "PARAMETERS" and object_is_routine(
-                            db_obj
+                            rest_obj
                         ):
                             if db_column.get("in"):
                                 param_interface_fields.update(
@@ -1788,18 +1788,18 @@ def generate_interfaces(
                                     {field.get("name"): datatype}
                                 )
                         elif obj.get("kind") == "PARAMETERS" and not object_is_routine(
-                            db_obj
+                            rest_obj
                         ):
                             param_interface_fields.update(
                                 {field.get("name"): enhanced_datatype}
                             )
                         elif field.get("allow_filtering") and not object_is_routine(
-                            db_obj
+                            rest_obj
                         ):
                             # RESULT
                             nested_datatype = None
                             relationship = (
-                                field.get("object_reference")
+                                field.get("data_mapping_reference")
                                 .get("reference_mapping")
                                 .get("kind")
                             )
@@ -1833,7 +1833,7 @@ def generate_interfaces(
                         sdk_language=sdk_language,
                         nesting_fields=nesting_fields,
                         fully_qualified_parent_name=field.get("name"),
-                        allowed_crud_ops=set(db_object_crud_ops),
+                        allowed_crud_ops=set(rest_object_crud_ops),
                         reference_obj=obj,
                         generated_type_aliases=generated_type_aliases,
                         required_datatypes=required_datatypes,
@@ -1848,12 +1848,12 @@ def generate_interfaces(
             else:
                 interface_fields.update({field.get("name"): datatype})
                 # Add all table fields that have allow_filtering set and SP params to the param_interface_fields
-                if field.get("allow_filtering") and not object_is_routine(db_obj):
+                if field.get("allow_filtering") and not object_is_routine(rest_obj):
                     param_interface_fields.update(
                         {field.get("name"): enhanced_datatype}
                     )
 
-            if not object_is_routine(db_obj):
+            if not object_is_routine(rest_obj):
                 enhanced_datatype = get_interface_datatype(
                     field=field,
                     sdk_language=sdk_language,
@@ -1873,7 +1873,7 @@ def generate_interfaces(
                 if field_is_sortable(field):
                     obj_sortable_fields.add(field.get("name"))
 
-    if not object_is_routine(db_obj):
+    if not object_is_routine(rest_obj):
         # The object is a TABLE or a VIEW
         data_type_alias_name = f"{class_name}Data"
         creatable_type_alias_name = f"New{class_name}"
@@ -1910,7 +1910,7 @@ def generate_interfaces(
 
         # Do not generate type aliases that have already been created whilst processing nested fields.
         if (
-            "CREATE" in db_object_crud_ops
+            "CREATE" in rest_object_crud_ops
             and creatable_type_alias_name not in generated_type_aliases
         ):
             obj_non_mandatory_fields = set(
@@ -1939,7 +1939,7 @@ def generate_interfaces(
         # Do not generate type aliases that have already been created whilst processing nested fields.
         # Do not generate CRUD-specific type aliases for Swift because we cannot downcast to them.
         if (
-            "UPDATE" in db_object_crud_ops
+            "UPDATE" in rest_object_crud_ops
             and updatable_type_alias_name not in generated_type_aliases
             and sdk_language in ("typescript", "python")
         ):
@@ -1974,7 +1974,7 @@ def generate_interfaces(
                     name=class_name,
                     fields=interface_fields | reduced_to_datatype_fields,
                     sdk_language=sdk_language,
-                    db_object_crud_ops=db_object_crud_ops,
+                    rest_object_crud_ops=rest_object_crud_ops,
                     obj_endpoint=obj_endpoint,
                     primary_key_fields=set(primary_key_fields),
                     parents=["MrsDocument"] if sdk_language == "swift" else [],
@@ -2099,7 +2099,7 @@ def generate_interfaces(
                 # To avoid conditional logic in the template, we should generate a void type declaration.
                 # In this case, the placeholder is only needed for Procedures, because the type declaration
                 # is not used otherwise.
-                requires_placeholder=object_is_routine(db_obj, of_type={"PROCEDURE"}),
+                requires_placeholder=object_is_routine(rest_obj, of_type={"PROCEDURE"}),
             )
         )
 
@@ -2127,7 +2127,7 @@ def generate_nested_interfaces(
     interface_name = f"{class_name}{reference_class_name_suffix}"
 
     # Check if the reference has unnest set, and if so, use the parent_interface_fields
-    parent_obj_ref = parent_field.get("object_reference")
+    parent_obj_ref = parent_field.get("data_mapping_reference")
     interface_fields = (
         {} if not parent_obj_ref.get("unnest") else parent_interface_fields
     )
@@ -2148,7 +2148,7 @@ def generate_nested_interfaces(
                         {field.get("name"): reduced_to_datatype}
                     )
                 else:
-                    obj_ref = field.get("object_reference")
+                    obj_ref = field.get("data_mapping_reference")
                     field_interface_name = lib.core.convert_path_to_pascal_case(
                         field.get("name")
                     )
@@ -2261,7 +2261,7 @@ def generate_nested_interfaces(
                     name=interface_name,
                     fields=readable_type_alias_fields,
                     sdk_language=sdk_language,
-                    db_object_crud_ops=list(allowed_crud_ops),
+                    rest_object_crud_ops=list(allowed_crud_ops),
                 )
             )
             generated_type_aliases.add(interface_name)

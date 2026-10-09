@@ -41,7 +41,7 @@ CREATE OR REPLACE REST VIEW /Contacts
 
 def test_add_schema(phone_book, table_contents):
     session = phone_book["session"]
-    schemas_table = table_contents("db_schema")
+    schemas_table = table_contents("rest_schema")
 
     with SchemaCT(
         session, phone_book["service_id"], "PhoneBook", "/PhoneBook2"

@@ -36,8 +36,8 @@ from mrs_plugin.services import *
 from .helpers import (
     ServiceCT,
     SchemaCT,
-    DbObjectCT,
-    get_default_db_object_init,
+    RestObjectCT,
+    get_default_rest_object_init,
     create_test_db,
 )
 from mrs_plugin import lib
@@ -193,43 +193,43 @@ def test_service_as_project(phone_book, table_contents):
 
     service1 = ServiceCT(session, "/myService1")
     schema1 = SchemaCT(session, service1.id, "MyTestDb1", "/MyTestDb1")
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(session, schema1.id, "Contacts", "/Contacts"),
+        **get_default_rest_object_init(session, schema1.id, "Contacts", "/Contacts"),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(session, schema1.id, "Addresses", "/Addresses"),
+        **get_default_rest_object_init(session, schema1.id, "Addresses", "/Addresses"),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(
+        **get_default_rest_object_init(
             session,
             schema1.id,
             "GetAllContacts",
             "/GetAllContacts",
-            db_object_type="PROCEDURE",
+            rest_object_type="PROCEDURE",
         ),
     )
 
     service2 = ServiceCT(session, "/myService2")
     schema2 = SchemaCT(session, service2.id, "MyTestDb2", "/MyTestDb2")
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(session, schema2.id, "Contacts", "/Contacts"),
+        **get_default_rest_object_init(session, schema2.id, "Contacts", "/Contacts"),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(session, schema2.id, "Addresses", "/Addresses"),
+        **get_default_rest_object_init(session, schema2.id, "Addresses", "/Addresses"),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(
+        **get_default_rest_object_init(
             session,
             schema2.id,
             "GetAllContacts",
             "/GetAllContacts",
-            db_object_type="PROCEDURE",
+            rest_object_type="PROCEDURE",
         ),
     )
 

@@ -40,7 +40,7 @@ def query_schemas(
     if schema_id is None and auto_select_single:
         record = (
             core.select(
-                table="db_schema", cols=["count(*) as service_count", "min(id)"]
+                table="rest_schema", cols=["count(*) as service_count", "min(id)"]
             )
             .exec(session)
             .first
@@ -59,7 +59,7 @@ def query_schemas(
             sc.requires_auth, sc.enabled, sc.items_per_page, sc.comments, se.url_host_id,
             CONCAT(h.name, se.url_context_root) AS host_ctx,
             sc.options, sc.metadata, sc.schema_type, sc.internal
-        FROM <metadata>.db_schema sc
+        FROM <metadata>.rest_schema sc
             LEFT OUTER JOIN <metadata>.service se
                 ON se.id = sc.service_id
             LEFT JOIN <metadata>.url_host h
@@ -223,6 +223,6 @@ def add_schema(
         "internal": int(internal),
     }
 
-    core.insert(table="db_schema", values=values).exec(session)
+    core.insert(table="rest_schema", values=values).exec(session)
 
     return schema_id
