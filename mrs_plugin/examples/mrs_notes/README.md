@@ -30,7 +30,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 The MRS Notes example implements a simple note taking application as a [Progressive Web Apps (PWA)](https://en.wikipedia.org/wiki/Progressive_web_app) that allows for sharing notes between users.
 
-![mrsNotes App running on a Mobile](../../docs/images/mrs-notes-ss-phone.png "mrsNotes App running on a Mobile")
+![mrsNotes App running on a Mobile](images/mrs-notes-ss-phone.png "mrsNotes App running on a Mobile")
 
 ### MRS Notes Developer Showcase
 
@@ -86,7 +86,7 @@ To create the mrsNotes schema the corresponding SQL script file needs to be exec
 
 The following diagram shows all components of the mrsNotes schema.
 
-![mrsNotes MariaDB Database Schema](../../docs/images/examples-mrs_notes_schema.svg "mrsNotes MariaDB Database Schema")
+![mrsNotes MariaDB Database Schema](images/examples-mrs_notes_schema.svg "mrsNotes MariaDB Database Schema")
 
 The most important database table is the `note` table. It stores all notes that are created by the users.
 

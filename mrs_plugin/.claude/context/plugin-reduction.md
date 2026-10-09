@@ -119,3 +119,15 @@ Analysis of 2026-10-08; the user wants to discuss before anything is removed.
   `index_one_page.html` rebuilt with plain pandoc: the committed copies were formatted
   differently, so their diffs are mostly layout. The one-page build now also rewrites
   `href="index.html#` to in-page links (`scripts/generate_html_docs.sh`).
+
+## Docs and grammar moved to the shell repo (2026-10-09)
+
+- `docs/` (pandoc), `grammar/` (ANTLR g4 + test copy), `scripts/update_grammar_docs.py`,
+  `generate_rrd_svg_files.py`, `generate_html_docs.sh`, `run_grammar_test.sh` and their
+  npm scripts are removed. The docs are GitBook pages in mariadb-shell
+  `docs-ref/content/mariadb-rest-service/`, the grammar and both scripts in
+  `modules/mrs/antlr_grammar/` (npm `docs-ref:mrs-diagrams`, `docs-ref:mrs-grammar-docs`
+  at the shell repo root). The grammar test was an identical copy of the shell's
+  `unittest/data/mrs/grammar_test.sql` (run by `mrs_grammar_test_norecord.py`).
+- The two images of `examples/mrs_notes/README.md` moved to `examples/mrs_notes/images/`;
+  `tools/update_version/update_version.py` no longer bumps docs versions.
