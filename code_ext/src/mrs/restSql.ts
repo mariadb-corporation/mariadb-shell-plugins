@@ -649,6 +649,9 @@ export const alterUserSql = (name: string, values: IUserValues): string => {
  * @param user The user's name.
  * @param authApp The user's auth app.
  * @param grant Whether to grant or revoke it.
+ * @param servicePath The service the role is specific to; null or left
+ *        out for a role of any service, such as `Full Access` - the shell
+ *        looks a role up on the current service unless told otherwise.
  *
  * @returns `GRANT REST ROLE` or `REVOKE REST ROLE`.
  */
@@ -657,10 +660,15 @@ export const userRoleSql = (
     user: string,
     authApp: string,
     grant: boolean,
+    servicePath: string | null = null,
 ): string => {
+    const scope = servicePath === null
+        ? "ON ANY SERVICE" : `ON SERVICE ${quoteServicePath(servicePath)}`;
+
     return grant
-        ? `GRANT REST ROLE ${quoteText(role)} TO ${userRef(user, authApp)};`
-        : `REVOKE REST ROLE ${quoteText(role)} FROM `
+        ? `GRANT REST ROLE ${quoteText(role)} ${scope} TO `
+        + `${userRef(user, authApp)};`
+        : `REVOKE REST ROLE ${quoteText(role)} ${scope} FROM `
         + `${userRef(user, authApp)};`;
 };
 

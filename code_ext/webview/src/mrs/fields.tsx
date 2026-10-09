@@ -29,6 +29,13 @@ import { post } from "../vscodeApi.js";
 export interface IFieldContext {
     get(field: string): unknown;
     set(field: string, value: unknown): void;
+    /**
+     * Changes a field from its latest value, for a change that lands after
+     * a wait, when the value read before it may be out of date.
+     */
+    update(field: string, change: (current: unknown) => unknown): void;
+    /** Counts a field as edited, so its problem shows. */
+    touch(field: string): void;
     /** The problem to show under the field, if any. */
     problem(field: string): string | undefined;
     busy: boolean;
@@ -149,7 +156,7 @@ export const CheckBox = (props: {
     );
 };
 
-export const Select = <T extends string | number>(props: {
+export const Select = <T extends string | number | boolean>(props: {
     ctx: IFieldContext;
     field: string;
     caption: string;

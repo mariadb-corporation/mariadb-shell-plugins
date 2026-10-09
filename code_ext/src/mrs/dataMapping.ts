@@ -559,19 +559,26 @@ export const updateField = (
     key: string,
     change: (field: IMappingField) => IMappingField,
 ): IMappingField[] => {
-    return fields.map((field) => {
+    let changed = false;
+    const result = fields.map((field) => {
         if (field.key === key) {
+            changed = true;
+
             return change(field);
         }
         if (field.reference === undefined) {
             return field;
         }
         const children = updateField(field.reference.children, key, change);
+        if (children === field.reference.children) {
+            return field;
+        }
+        changed = true;
 
-        return children === field.reference.children
-            ? field
-            : { ...field, reference: { ...field.reference, children } };
+        return { ...field, reference: { ...field.reference, children } };
     });
+
+    return changed ? result : fields;
 };
 
 /**

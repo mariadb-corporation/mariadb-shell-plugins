@@ -36,6 +36,58 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.stopOnError.disable` / `.enable` | Stop on Error (on/off) | SQL editor toolbar, one shown at a time |
 | `mariadb.restartMcpServer` | Restart MCP Server | Command palette |
 | `mariadb.showMcpServerLog` | Show MCP Server Log | Command palette |
+| `mariadb.mrs.configure` | Configure MariaDB REST Service... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.showPrivateItems` | Show Private Items | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.hidePrivateItems` | Hide Private Items | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.docs` | Browse the MariaDB REST Service Documentation | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.addService` | Add REST Service... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.editService` | Edit REST Service... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deleteService` | Delete REST Service... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.setCurrentService` | Set as Current REST Service | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.linkAuthApp` | Link REST Authentication App... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.addAndLinkAuthApp` | Add and Link REST Authentication App... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.unlinkAuthApp` | Unlink REST Authentication App... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyCreateServiceSql` | Copy CREATE REST SERVICE Statement | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyCreateServiceSqlIncludeDatabaseEndpoints` | Copy CREATE REST SERVICE Statement Including Database Objects | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.dumpCreateServiceSql` | Dump REST SERVICE SQL Script... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.exportServiceSdk` | Dump REST Client SDK Files... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.dumpServiceAsProject` | Dump REST Service as REST Project... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.loadProjectFromDisk` | Load REST Project from Disk... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.loadServiceFromDisk` | Load REST SERVICE SQL Script... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.addSchema` | Add Schema to REST Service... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.editSchema` | Edit REST Schema... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deleteSchema` | Delete REST Schema... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyCreateSchemaSql` | Copy CREATE REST SCHEMA Statement | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.dumpCreateSchemaSql` | Dump CREATE REST SCHEMA Statement... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.addDbObject` | Add Database Object to REST Service... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.editDbObject` | Edit REST Object... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deleteDbObject` | Delete REST Object... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyDbObjectRequestPath` | Copy REST Object Request Path | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.openDbObjectRequestPath` | Open REST Object Request Path in Web Browser | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyCreateDbObjectSql` | Copy CREATE REST OBJECT Statement | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.dumpCreateDbObjectSql` | Dump CREATE REST OBJECT Statement... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.addContentSet` | Add New REST Content Set... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.addFolderAsContentSet` | Upload Folder to MariaDB REST Service... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.editContentSet` | Edit REST Content Set... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deleteContentSet` | Delete REST Content Set... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.openContentSetRequestPath` | Open Content Set Request Path in Web Browser | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyCreateContentSetSql` | Copy CREATE REST CONTENT SET Statement | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.dumpCreateContentSetSql` | Dump CREATE REST CONTENT SET Statement... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.openContentFileRequestPath` | Open Content File Request Path in Web Browser | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyCreateContentFileSql` | Copy CREATE REST CONTENT FILE Statement | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deleteContentFile` | Delete REST Content File... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.addAuthApp` | Add New Authentication App... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.editAuthApp` | Edit Authentication App... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deleteAuthApp` | Delete Authentication App... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyCreateAuthAppSql` | Copy CREATE REST AUTH APP Statement | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.dumpCreateAuthAppSql` | Dump CREATE REST AUTH APP Statement... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.addUser` | Add User... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.editUser` | Edit User... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deleteUser` | Delete User... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.copyCreateUserSql` | Copy CREATE REST USER Statement | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.dumpCreateUserSql` | Dump CREATE REST USER Statement... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deleteDaemon` | Delete REST Daemon... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.rebuildMrsSdk` | Rebuild MRS SDK | REST Service rows (see [mrs.md](mrs.md)) |
 
 **The Connections view's toolbar has commands of its own.** VS Code runs a
 tree view's toolbar commands with the tree's FOCUSED row as their argument

@@ -80,6 +80,16 @@ export interface IDialogDefinition {
     ): preact.JSX.Element | null;
     /** The text of the OK button. */
     okLabel?: string;
+    /**
+     * Other fields that follow from a change, merged into the values with
+     * it: a service picked offers its own REST schemas.
+     */
+    onChange?(
+        field: string,
+        value: unknown,
+        values: Record<string, unknown>,
+        context: unknown,
+    ): Record<string, unknown> | undefined;
 }
 
 const JSON_HINT = "Additional options in JSON format";
@@ -98,8 +108,8 @@ const configure: IDialogDefinition = {
                     hint={"If set to disabled, all MariaDB REST Service "
                         + "endpoints will be disabled."}
                     choices={[
-                        { value: "true", label: "Enabled" },
-                        { value: "false", label: "Disabled" },
+                        { value: true, label: "Enabled" },
+                        { value: false, label: "Disabled" },
                     ]}
                 />
                 {context.init ? (
@@ -508,6 +518,14 @@ const object: IDialogDefinition = {
     tabs: () => {
         return ["Data Mapping", "Settings", "Authorization", "Options"];
     },
+    onChange: (field, value, _values, context) => {
+        return field === "servicePath"
+            ? {
+                schemaPath: (context as IObjectContext).schemas[
+                    String(value)]?.[0] ?? "",
+            }
+            : undefined;
+    },
     fieldTabs: {
         className: "Data Mapping",
         itemsPerPage: "Settings",
@@ -874,6 +892,15 @@ const sdkExport: IDialogDefinition = {
     fieldTabs: {},
     render: () => { return null; },
     okLabel: "Export",
+    // A base class of one language is none of another's.
+    onChange: (field, value, values, context) => {
+        const classes = (context as { baseClasses: Record<string, string[]> })
+            .baseClasses[String(value)] ?? [];
+
+        return field === "sdkLanguage"
+            && !classes.includes(String(values.addAppBaseClass))
+            ? { addAppBaseClass: "" } : undefined;
+    },
 };
 
 /** Every dialog, by kind. */

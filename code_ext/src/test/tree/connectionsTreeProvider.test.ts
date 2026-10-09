@@ -32,14 +32,19 @@ import {
     CONNECTIONS_VIEW_ID,
 } from "../../tree/connectionsTreeProvider.js";
 import type { IconResolver } from "../../tree/treeItems.js";
+import { MrsApi } from "../../mrs/mrsApi.js";
+import { MrsModel } from "../../tree/mrsModel.js";
+import { MrsTreeItem } from "../../tree/mrsTreeItems.js";
 import type {
     IServerStatus,
     ServerPhase,
 } from "../../mcp/serverStarter.js";
 import {
     createFakeApi,
+    createFakeRestSql,
     createFakeSettings,
     createRecordingLog,
+    mrsStatus,
 } from "../helpers.js";
 import {
     contextKeys,
@@ -910,5 +915,89 @@ describe("ConnectionsTreeProvider", () => {
         await connections.connect("dba@localhost:3310", UI_BACKEND_SESSION);
 
         expect(fired).toEqual([]);
+    });
+});
+
+describe("ConnectionsTreeProvider with the REST Service", () => {
+    beforeEach(() => {
+        resetVscodeMock();
+    });
+
+    /**
+     * @param answers What the server answers REST SQL with.
+     *
+     * @returns A provider with REST Service rows over a fake server.
+     */
+    const createMrsProvider = (answers: Record<string, unknown> = {}) => {
+        const api = createFakeRestSql({
+            answers,
+            connections: ["dba@localhost:3310"],
+            connectionIds: { "dba@localhost:3310": "uuid-dba" },
+            schemas: [{
+                schema_name: "world",
+                schema_type: "User Schema",
+                schema_comment: "",
+            }],
+        });
+        const connections = new ConnectionManager(
+            () => { return Promise.resolve(api); },
+            createFakeSettings(),
+        );
+        const mrs = new MrsModel(new MrsApi(async () => {
+            return await connections.api();
+        }), (uri) => {
+            return connections.connectionIdFor(uri, UI_BACKEND_SESSION);
+        });
+        const log = createRecordingLog();
+        const provider = new ConnectionsTreeProvider(connections, resolveIcon,
+            log, () => { return false; }, undefined, undefined, undefined,
+            mrs);
+
+        return { api, connections, log, provider };
+    };
+
+    it("draws the REST Service root first, as an MrsTreeItem", async () => {
+        const { connections, provider } = createMrsProvider({
+            "SHOW REST METADATA SCHEMAS FORMAT=JSON": [{
+                schema_name: "mariadb_rest_service",
+                version: "5.0.0",
+                current: true,
+            }],
+            "SHOW REST METADATA STATUS FORMAT=JSON": mrsStatus(),
+        });
+        await connections.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+        const [root] = await provider.getChildren();
+
+        const children = await provider.getChildren(root);
+        const item = provider.getTreeItem(children[0]!);
+
+        expect(item).toBeInstanceOf(MrsTreeItem);
+        expect(item.label).toBe("MariaDB REST Service");
+        expect(provider.getTreeItem(children[1]!).label).toBe("world");
+
+        provider.dispose();
+    });
+
+    it("reports a REST Service row that cannot be read, the view still "
+        + "listed", async () => {
+        const { api, connections, log, provider } = createMrsProvider();
+        api.errors["SHOW REST SERVICES FORMAT=JSON"] = "Access denied";
+        await connections.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+        await provider.getChildren();
+
+        await expect(provider.getChildren({
+            kind: "mrsRoot",
+            uri: "dba@localhost:3310",
+            status: mrsStatus(),
+            showPrivate: false,
+        })).resolves.toEqual([]);
+
+        expect(errorMessages).toEqual(["MariaDB: Access denied"]);
+        expect(log.lines.join("\n"))
+            .toContain("Failed to read the REST Service: Access denied");
+        expect(contextKeys.get(CONNECTIONS_VIEW_STATE_CONTEXT_KEY))
+            .not.toBe("failed");
+
+        provider.dispose();
     });
 });

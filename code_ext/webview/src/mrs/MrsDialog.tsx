@@ -141,12 +141,24 @@ export const MrsDialog = (): preact.JSX.Element => {
     const ctx: IFieldContext = {
         get: (field) => { return values[field]; },
         set: (field, value) => {
-            // The selects hand booleans over as text.
-            const next = value === "true" ? true : value === "false" ? false
-                : value;
-            setValues((current) => { return { ...current, [field]: next }; });
+            setValues((current) => {
+                return {
+                    ...current,
+                    [field]: value,
+                    ...definition.onChange?.(field, value, current,
+                        loaded.context),
+                };
+            });
             setTouched((current) => { return new Set(current).add(field); });
             setSaveError(undefined);
+        },
+        update: (field, change) => {
+            setValues((current) => {
+                return { ...current, [field]: change(current[field]) };
+            });
+        },
+        touch: (field) => {
+            setTouched((current) => { return new Set(current).add(field); });
         },
         problem: (field) => {
             if (!attempted && !touched.has(field)) {

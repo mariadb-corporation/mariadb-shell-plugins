@@ -261,6 +261,34 @@ let warningMessageAnswer: string | undefined;
 export const setWarningMessageAnswer = (answer: string | undefined): void => {
     warningMessageAnswer = answer;
 };
+/** Every `showWarningMessage` call, with its options and buttons. */
+export const warningMessageCalls: Array<{
+    message: string;
+    items: unknown[];
+}> = [];
+/** Every `showInformationMessage` call, with its options and buttons. */
+export const informationMessageCalls: Array<{
+    message: string;
+    items: unknown[];
+}> = [];
+
+/** What the next `showInformationMessage` answers with. */
+let informationMessageAnswer: string | undefined;
+
+/**
+ * Makes the next information message answer with the given button.
+ *
+ * @param answer The button to press, or undefined to dismiss it.
+ *
+ * @returns Nothing.
+ */
+export const setInformationMessageAnswer = (
+    answer: string | undefined,
+): void => {
+    informationMessageAnswer = answer;
+};
+/** Every URI `env.openExternal` was asked to open. */
+export const openedExternally: Uri[] = [];
 export const errorMessages: string[] = [];
 export const outputChannels: MockOutputChannel[] = [];
 export const statusBarItems: MockStatusBarItem[] = [];
@@ -320,8 +348,13 @@ export const statusBarMessages: string[] = [];
 
 /** The next answer `showQuickPick` should give, as a label. */
 export const quickPickAnswers: string[] = [];
-/** Every set of items `showQuickPick` was offered. */
+/**
+ * Every set of items `showQuickPick` was offered; a plain string item is
+ * recorded as an item with that label.
+ */
 export const quickPickCalls: Array<Array<{ label: string }>> = [];
+/** The options every `showQuickPick` call was given. */
+export const quickPickOptions: unknown[] = [];
 
 /** What `showInputBox` answers with, in order; undefined is a cancel. */
 export const inputBoxAnswers: Array<string | undefined> = [];
@@ -856,10 +889,16 @@ export const window = {
         return panel;
     },
 
-    showInformationMessage: (message: string): Promise<undefined> => {
+    showInformationMessage: (
+        message: string,
+        ...items: unknown[]
+    ): Promise<string | undefined> => {
         informationMessages.push(message);
+        informationMessageCalls.push({ message, items });
+        const answer = informationMessageAnswer;
+        informationMessageAnswer = undefined;
 
-        return Promise.resolve(undefined);
+        return Promise.resolve(answer);
     },
 
     showWarningMessage: (
@@ -867,6 +906,7 @@ export const window = {
         ...rest: unknown[]
     ): Promise<string | undefined> => {
         warningMessages.push(message);
+        warningMessageCalls.push({ message, items: rest });
 
         // A modal warning is a question with buttons, and the caller branches
         // on which was pressed. Tests set the answer with
@@ -903,14 +943,19 @@ export const window = {
         return Promise.resolve(inputBoxAnswers.shift());
     },
 
-    showQuickPick: <T extends { label: string }>(
+    showQuickPick: <T extends { label: string } | string>(
         items: T[],
+        options?: unknown,
     ): Promise<T | undefined> => {
-        quickPickCalls.push(items);
+        quickPickCalls.push(items.map((item): { label: string } => {
+            return typeof item === "string"
+                ? { label: item } : item as { label: string };
+        }));
+        quickPickOptions.push(options);
         const wanted = quickPickAnswers.shift();
 
         return Promise.resolve(items.find((item) => {
-            return item.label === wanted;
+            return (typeof item === "string" ? item : item.label) === wanted;
         }));
     },
 
@@ -1018,8 +1063,13 @@ export const workspace = {
 
     getConfiguration: (section: string) => {
         return {
-            get: <T>(key: string): T | undefined => {
-                return configuration.get(`${section}.${key}`) as T | undefined;
+            // A default stands in for an unset key, as VS Code's does.
+            get: <T>(key: string, defaultValue?: T): T | undefined => {
+                const full = `${section}.${key}`;
+
+                return configuration.has(full)
+                    ? configuration.get(full) as T
+                    : defaultValue;
             },
 
             update: (
@@ -1140,6 +1190,12 @@ export const commands = {
 };
 
 export const env = {
+    openExternal: (uri: Uri): Promise<boolean> => {
+        openedExternally.push(uri);
+
+        return Promise.resolve(true);
+    },
+
     clipboard: {
         text: "",
         writeText: (value: string): Promise<void> => {
@@ -1190,7 +1246,12 @@ export const resetVscodeMock = (): void => {
     withProgressCalls.length = 0;
     informationMessages.length = 0;
     warningMessages.length = 0;
+    warningMessageCalls.length = 0;
     warningMessageAnswer = undefined;
+    informationMessageCalls.length = 0;
+    informationMessageAnswer = undefined;
+    openedExternally.length = 0;
+    quickPickOptions.length = 0;
     errorMessages.length = 0;
     outputChannels.length = 0;
     statusBarItems.length = 0;

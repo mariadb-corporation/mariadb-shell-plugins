@@ -388,6 +388,11 @@ export const validateConfigure = (
                         + "option to skip the creation of the default REST "
                         + "authentication app.",
                 });
+            } else if (values.authAppUser.trim() === "") {
+                problems.push({
+                    field: "authAppUser",
+                    message: "Please specify a REST user name.",
+                });
             } else if (values.authAppPassword === "") {
                 problems.push({
                     field: "authAppPassword",
@@ -1210,6 +1215,11 @@ export interface IUserContext {
     authAppVendorId: string;
     /** Every role's caption. */
     allRoles: string[];
+    /**
+     * The service each role is specific to, by caption; a role missing
+     * here, or null, is one of any service.
+     */
+    roleServices?: Record<string, string | null>;
     /** The user's name, when it is edited. */
     existingName?: string;
     /** The roles it held when the dialog opened. */
@@ -1301,10 +1311,12 @@ export const userStatements = (
         context.existingName === undefined
             ? createUserSql(user) : alterUserSql(context.existingName, user),
         ...revoked.map((role) => {
-            return userRoleSql(role, user.name, context.authApp, false);
+            return userRoleSql(role, user.name, context.authApp, false,
+                context.roleServices?.[role] ?? null);
         }),
         ...granted.map((role) => {
-            return userRoleSql(role, user.name, context.authApp, true);
+            return userRoleSql(role, user.name, context.authApp, true,
+                context.roleServices?.[role] ?? null);
         }),
     ];
 };

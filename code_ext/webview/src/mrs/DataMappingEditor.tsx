@@ -257,10 +257,21 @@ export const DataMappingEditor = (props: {
                     field.reference.mapping.referenced_schema,
                     field.reference.mapping.referenced_table);
                 setLoadError(undefined);
-                change(field.key, (current) => {
+                // From the document as it is now, not as it was when the
+                // load started: the user may have edited it meanwhile.
+                // References are only ever in a view's own fields.
+                props.ctx.update("document", (latest) => {
+                    const doc = latest as IMappingDocument;
+
                     return {
-                        ...loadReference(current, columns.columns ?? [], [], tables),
-                        enabled: true,
+                        ...doc,
+                        fields: updateField(doc.fields, field.key, (current) => {
+                            return {
+                                ...loadReference(current, columns.columns ?? [],
+                                    [], tables),
+                                enabled: true,
+                            };
+                        }),
                     };
                 });
             } catch (error) {
@@ -645,6 +656,7 @@ export const DataMappingEditor = (props: {
                                         ...document,
                                         className: (event.target as HTMLInputElement).value,
                                     });
+                                    props.ctx.touch("className");
                                 }}
                             />
                         </label>

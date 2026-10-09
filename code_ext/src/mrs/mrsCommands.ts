@@ -1436,6 +1436,9 @@ export class MrsCommands {
             authApp: app.name,
             authAppVendorId: app.auth_vendor_id,
             allRoles: roles.map((role) => { return role.caption; }),
+            roleServices: Object.fromEntries(roles.map((role) => {
+                return [role.caption, role.specific_to_service ?? null];
+            })),
             existingRoles: user === undefined ? [] : values.roles,
             hasPassword: full?.has_password ?? false,
             ...(user?.name === undefined || user.name === null
@@ -1524,7 +1527,7 @@ export class MrsCommands {
             return;
         }
         const connected = this.host.connections.openConnections;
-        const uri = connected.length === 1 ? connected[0]
+        const uri = connected.length <= 1 ? connected[0]
             : await vscode.window.showQuickPick(connected, {
                 title: "Select the connection the REST service is on",
             });

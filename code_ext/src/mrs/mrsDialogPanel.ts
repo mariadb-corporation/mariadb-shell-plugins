@@ -93,16 +93,18 @@ export class MrsDialogPanel {
 
     #panel: vscode.WebviewPanel;
     #spec: IMrsDialogSpec;
+    #host: IMrsDialogHost;
     #disposed = false;
     #disposables: vscode.Disposable[] = [];
 
     private constructor(
         panel: vscode.WebviewPanel,
         spec: IMrsDialogSpec,
-        private readonly host: IMrsDialogHost,
+        host: IMrsDialogHost,
     ) {
         this.#panel = panel;
         this.#spec = spec;
+        this.#host = host;
     }
 
     /**
@@ -121,7 +123,9 @@ export class MrsDialogPanel {
     ): void {
         const open = MrsDialogPanel.#current.get(spec.dialog);
         if (open !== undefined) {
+            // What it shows and who hears of its save are the new caller's.
             open.#spec = spec;
+            open.#host = host;
             open.#panel.title = spec.title;
             open.#panel.webview.html = buildMrsDialogHtml(
                 open.#panel.webview, extensionUri, spec.title);
@@ -244,11 +248,11 @@ export class MrsDialogPanel {
         this.#post({ type: "busy", busy: true });
         try {
             const result = await this.#spec.save(values);
-            this.host.onSaved(result);
+            this.#host.onSaved(result);
             this.#panel.dispose();
         } catch (error) {
             const text = errorText(error);
-            this.host.log(`Failed to save the ${this.#spec.title}: ${text}`);
+            this.#host.log(`Failed to save the ${this.#spec.title}: ${text}`);
             if (this.#disposed) {
                 void showErrorWithLog(text);
             } else {
