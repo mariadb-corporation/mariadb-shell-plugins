@@ -21,7 +21,6 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 from mrs_plugin.lib import core, content_sets
-from mrs_plugin.lib.MrsDdlExecutor import MrsDdlExecutor
 import os
 import re
 import pathlib
@@ -170,7 +169,6 @@ def get_content_files(
 
     if include_enable_state is not None:
         sql += "AND f.enabled = " f"{'TRUE' if include_enable_state else 'FALSE'} "
-
 
     return core.MrsDbExec(sql, [content_set_id]).exec(session).items
 

@@ -55,92 +55,30 @@ class mrs:
         automatically register all decorated functions in the sub-modules
         """
         # Import all sub-modules to register the decorated functions there
-        from mrs_plugin import general, services, schemas, auth_apps
-        from mrs_plugin import db_objects, content_sets, content_files
-        from mrs_plugin import dump, users, roles, routers, script
-
-    class enable:
-        """Used to enable MRS services, schemas and schema objects.
-
-        A collection of functions to enable MRS services, schemas and
-        schema objects.
-        """
-
-    class disable:
-        """Used to disable MRS services, schemas and schema objects.
-
-        A collection of functions to disable MRS services, schemas and
-        schema objects.
-        """
+        from mrs_plugin import general, services, content_sets, dump
 
     class get:
-        """Used to get MRS objects.
+        """Used to get MRS SDK code and MRS script definitions.
 
-        A collection of functions to get MRS objects
+        A collection of functions to get MRS SDK code and MRS script
+        definitions
         """
-
-    class set:
-        """Used to set MRS object properties.
-
-        A collection of functions to set MRS object properties
-        """
-
-        class service:
-            """Used to work with MRS services.
-
-            A collection of functions to work with MRS services
-            """
-
-        class schema:
-            """Used to work with MRS schemas.
-
-            A collection of functions to work with MRS schemas
-            """
-
-        class dbObject:
-            """Used to work with MRS DB objects.
-
-            A collection of functions to work with MRS DB objects
-            """
 
     class update:
-        """Used to update MRS object properties.
+        """Used to update MRS objects from MRS scripts.
 
-        A collection of functions to update MRS object properties
-        """
-
-    class list:
-        """Used to list MRS objects.
-
-        A collection of functions to list MRS objects
-        """
-
-    class add:
-        """Used to add MRS objects.
-
-        A collection of functions to get MRS objects
-        """
-
-    class delete:
-        """Used to delete MRS objects.
-
-        A collection of functions to delete MRS objects
+        A collection of functions to update MRS objects from MRS scripts
         """
 
     class dump:
-        """Used to dump MRS metadata to JSON files
+        """Used to dump MRS SDK files, projects and the audit log.
 
-        A collection of functions to dump MRS metadata to JSON files
+        A collection of functions to dump MRS SDK files, MRS projects and
+        the audit log
         """
 
     class load:
-        """Used to load MRS metadata from JSON files
+        """Used to load MRS projects.
 
-        A collection of functions to load MRS metadata from JSON files
-        """
-
-    class run:
-        """Used to run MRS scripts
-
-        A collection of functions to run MRS scripts
+        A collection of functions to load MRS projects
         """

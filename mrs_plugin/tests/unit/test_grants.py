@@ -24,7 +24,6 @@
 import pytest
 import random
 
-from ...roles import *
 from mrs_plugin import lib
 from .helpers import ServiceCT, SchemaCT, QueryResults, TableContents
 

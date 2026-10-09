@@ -70,8 +70,8 @@ ALTER USER 'user_account'@'%' DEFAULT ROLE 'mysql_rest_service_admin';
 A new REST service can be added in one of the following ways:
 
 - MariaDB Shell for VS Code provides a GUI dialog to create the REST service.
-- MariaDB Shell offers the MRS plugin that can be used to create a REST service interactively or with scripts in a terminal.
-- When writing a script or plugin for MariaDB Shell, the MRS plugin can be used to script the creation in Python or JavaScript.
+- MariaDB Shell runs the [MRS SQL](sql.html) statements, e.g. `CREATE REST SERVICE`, in SQL mode on the command line.
+- Scripts and plugins for MariaDB Shell run the same statements in Python or JavaScript with `session.run_sql()`.
 
 ### Adding a REST Service Using MariaDB Shell for VS Code
 
@@ -85,32 +85,17 @@ After configuring the MySQL REST Service on the target MySQL instance, the DB Co
 
 ### Adding a REST Service Using MariaDB Shell
 
-For MariaDB Shell, the `mrs` plugin is used to work with the MySQL REST Service. The `mrs.add.service()` function adds a new REST service.
+MariaDB Shell runs the [CREATE REST SERVICE](sql.html#create-rest-service) statement in SQL mode, like any SQL statement. For example:
 
-When started without parameters, an interactive wizard prompt you for the required parameters. For example:
-
-```bash
-MySQL > localhost:33060+ > Py > mrs.add.service()
-Please enter the context path for this service [/mrs]: /myservice
-Please enter the host name for this service (e.g. None or localhost) [None]:
-   1 HTTP
-   2 HTTPS
-
-Please select the protocol(s) the service should support [HTTP,HTTPS]: 2
-Comments:
-   1 Default Service Options for Development
-   2 No options
-   3 Custom options
-
-Please select how to initialize the options [Default Service Options for Development]:
-
-Service /myservice created successfully.
+```sql
+CREATE REST SERVICE /myService
+    COMMENT "My first REST service";
 ```
 
-Execute the following command to get detailed help information about the `mrs.add.service()` function.
+In Python or JavaScript, scripts run the same statement with `session.run_sql()`:
 
-```js
-\? mrs.add.service
+```py
+session.run_sql("CREATE REST SERVICE /myService COMMENT 'My first REST service'")
 ```
 
 ### REST Service Definitions
@@ -196,39 +181,6 @@ To add a database schema to a REST service:
 
 ![Adding a Database Schema](../../images/vsc-mrs-add-schema.png "Adding a Database Schema")
 
-### Adding a REST Schema with a MariaDB Shell Script
-
-To add a database schema to a REST service, call the `mrs.add.schema()` function.
-
-When started without parameters, an interactive wizard prompts you for the required parameters.
-
-```bash
- MySQL > localhost:33060+ > JS > mrs.add.schema()
-   1 information_schema
-   2 performance_schema
-   3 sys
-   4 sakila
-   5 test
-   6 forum
-   7 ortho
-   8 mrs_notes
-
-Please enter the name or index of a schema: 4
-Please enter the request path for this schema [/sakila]: /sakila
-Should the schema require authentication? [y/N]:
-How many items should be listed per page? [Schema Default]:
-Comments:
-Options:
-
-Service with path /sakila created successfully.
-```
-
-Execute the following command to get detailed help information about the `mrs.add.schema()` function.
-
-```js
-\? mrs.add.schema
-```
-
 ## Adding a Schema Table, View or Procedure
 
 Adding database schema objects (tables, views, or procedures) to a MySQL REST Service (MRS) allows them to be accessed through RESTful Web services. Before database schema object can be added as REST objects, the database schema containing those objects has to be added as a REST schema.
@@ -293,63 +245,3 @@ To add a database schema object to a REST schema:
 
 ![Adding a Database Object](../../images/vsc-mrs-add-db-object.png "Adding a Database Object")
 
-### Adding a Database Object with MariaDB Shell
-
-To add a database schema to a REST service call the `mrs.add.dbObject()` function.
-
-When started without parameters, an interactive wizard prompts you for the required parameters.
-
-```bash
-MySQL > localhost:33060+ > JS > mrs.add.dbObject()
-   1 mrs_notes
-   2 sakila
-
-Please enter the name or index of a schema: 2
-   1 TABLE
-   2 VIEW
-   3 PROCEDURE
-
-Please enter the name or index of a database object type [TABLE]:
-   1 actor
-   2 address
-   3 category
-   4 city
-   5 country
-   6 customer
-   7 film
-   8 film_actor
-   9 film_category
-  10 film_text
-  11 inventory
-  12 language
-  13 payment
-  14 rental
-  15 staff
-  16 store
-
-Please enter the name or index of an database object: 4
-Please enter the request path for this object [/city]:
-   1 CREATE
-   2 READ
-   3 UPDATE
-   4 DELETE
-
-Please select the CRUD operations that should be supported, '*' for all [READ]:
-   1 FEED
-   2 ITEM
-   3 MEDIA
-
-Please select the CRUD operation format [FEED]:
-Should the db_object require authentication? [y/N]:
-Should row ownership be required when querying the object? [y/N]:
-How many items should be listed per page? [Schema Default]:
-Comments:
-
-Object added successfully.
-```
-
-Execute the following command to get detailed help information about the `mrs.add.dbObject()` function.
-
-```js
-\? mrs.add.dbObject
-```

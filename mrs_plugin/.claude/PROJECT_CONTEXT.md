@@ -8,9 +8,11 @@ from Oracle's MySQL REST Service plugin (dual copyright: Oracle's line kept,
 shell's built-in C++ mrs module creates it; the plugin creates it itself only on a shell
 without that module). The REST SQL statements (`CREATE/ALTER/DROP/SHOW/GRANT ... REST
 ...`) are handled by the built-in module's `MRS` SQL handler; the plugin no longer registers
-one (2026-10-08). The ANTLR grammar in `grammar/` stays the reference grammar of REST SQL
-(docs, railroad diagrams) and drives the generated parser in `lib/mrs_parser/`, which only
-`mrs.run.script` and `lib.script.run_mrs_script` still use. The plugin also manages the
+one (2026-10-08). Since 2026-10-09 the plugin keeps only 13 functions (SDK generation,
+project dump/load, MRS script analysis, runtime management code, audit log, version, see
+[context/plugin-reduction.md](context/plugin-reduction.md)); the Python REST SQL parser is
+gone. The ANTLR grammar in `grammar/` stays the reference grammar of REST SQL (docs,
+railroad diagrams). The plugin also manages the
 `mysql_rest_service_metadata` schema (an MSM project under `db_schema/`) and generates the
 client SDKs (`sdk/`). Plugin version `26.9.5`,
 metadata schema `5.0.0` (`lib/general.py` `VERSION`, `DB_VERSION`). Consumed by
@@ -20,13 +22,12 @@ packages with msm_plugin and mcp_plugin.
 ## Architecture / key decisions
 
 - **Two layers**, as in msm_plugin: top-level `*.py` are the `@plugin_function` wrappers
-  (prompting, printing); `lib/*.py` does the work; `lib/MrsDdlListener.py` +
-  `lib/MrsDdlExecutor.py` turn the REST SQL into `lib` calls (only for `mrs.run.script`
-  now); `script.py` holds `mrs.run.script`.
+  (`general`, `services`, `content_sets`, `dump`); `lib/*.py` does the work. Much of `lib`
+  only served the removed wrappers and is kept for now (the SDK and the tests use parts).
 - **REST SQL has two grammars, kept rule for rule in step**: ANTLR here
   (`grammar/MRS{Lexer,Parser}.g4`) and bison in the shell
   (`mariadb-shell/modules/mrs/core/mrs_parser.yy`, keywords in `mrs_lexer.h`). A statement
-  change goes to both, then: regenerate `lib/mrs_parser/`, the docs section
+  change goes to both, then: the docs section
   (`docs/sections/sql/*.md`), the railroad SVGs, both `grammar_test.sql` copies.
 - **Projects are not REST SQL** (2026-10-08): `DUMP/LOAD REST PROJECT` were dropped from
   both grammars, the Python listener/executor and the docs; `mrs.dump.serviceProject()` /
@@ -61,7 +62,7 @@ packages with msm_plugin and mcp_plugin.
 
 | File | What is in it |
 | --- | --- |
-| [`context/plugin-reduction.md`](context/plugin-reduction.md) | Which `mrs.*` plugin functions REST SQL in the shell's mrs module covers, which stay (and why), the undecided ones, and what removing `run.script` takes |
+| [`context/plugin-reduction.md`](context/plugin-reduction.md) | Which `mrs.*` plugin functions REST SQL in the shell's mrs module covers, which stay (and why), and what the removal of the other 105 (done 2026-10-09) changed |
 | [`context/metadata-schema-5.0.0.md`](context/metadata-schema-5.0.0.md) | The exact changes of metadata schema 4.1.6 -> 5.0.0 (UUID ids): tables, data, views, routines, triggers, the update script, releases, plugin code |
 
 ## Current state
@@ -109,7 +110,7 @@ packages with msm_plugin and mcp_plugin.
   test passed. Earlier, on a shell started with the since removed `--disable-modules=mrs`
   and with the plugin's own handler:
   `--mdupgrade` 4.1.6 -> 5.0.0 passed; mcp_plugin 596 passed.
-- **SQL handler removed (2026-10-08, uncommitted):** `script.py` keeps `mrs.run.script`;
+- **SQL handler removed (2026-10-08):** `script.py` kept `mrs.run.script` (removed with it on 2026-10-09);
   the `@sql_handler("MRS")`, `MRS_PREFIXES` and `get_shell_result` are gone, so the plugin
   loads next to the shell's built-in module without "An SQL Handler named 'MRS' already
   exists".
@@ -136,9 +137,8 @@ packages with msm_plugin and mcp_plugin.
 
 ## Files that matter
 
-- `init.py` -> the `mrs` global and its sub-objects; `script.py` -> `mrs.run.script`
-- `grammar/MRSLexer.g4`, `grammar/MRSParser.g4` -> REST SQL reference grammar;
-  `scripts/generate_mrs_parser.sh` (npm `update-mrs-parser`) -> `lib/mrs_parser/`
+- `init.py` -> the `mrs` sub-objects `get`, `dump`, `load`, `update`
+- `grammar/MRSLexer.g4`, `grammar/MRSParser.g4` -> REST SQL reference grammar (docs only)
 - `docs/sections/sql/*.md` -> REST SQL reference (one ```antlr block + `::=` SVG per rule);
   `scripts/update_grammar_docs.py` -> syncs the rule blocks with the grammar;
   `scripts/generate_rrd_svg_files.py` (npm `update-rrd-svg-files`) -> `docs/images/sql/*.svg`;
@@ -213,11 +213,6 @@ packages with msm_plugin and mcp_plugin.
   write the full UUID.
 - **`service.name` is a DB DEFAULT EXPRESSION** (`REGEXP_REPLACE(url_context_root, ...)`),
   so `/test` is named `test`; `/mrs` is reserved.
-- **Regenerating `lib/mrs_parser/`:** `npm install` (antlr4ng-cli 1.0.2, ANTLR 4.13.1,
-  matches the shell's runtime), but the script's `-lib ../../../gui/frontend/...` dir does
-  not exist here: antlr4ng then fails yet still writes files. Run it without `-lib`, then
-  format the generated `.py` files with black (the committed ones are black-formatted).
-  A bare `MRSLexer`/`MRSParser` needs an `isSqlModeActive` attribute (see `lib/script.py`).
 - `scripts/update_grammar_docs.py` must run with `python3` (under `mariadb-shell -f`,
   `sys.argv[0]` is empty and its `chdir` fails). It rewrites rule blocks of every section
   that differs from the grammar, not just the ones you touched.

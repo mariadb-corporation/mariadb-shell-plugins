@@ -23,7 +23,6 @@
 
 import pytest
 
-from ...roles import *
 from mrs_plugin import lib
 from .helpers import get_default_role_init, RoleCT, QueryResults, TableContents
 

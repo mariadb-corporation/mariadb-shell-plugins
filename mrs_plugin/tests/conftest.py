@@ -35,7 +35,6 @@ from mysqlsh.globals import sandbox
 
 from mrs_plugin import lib
 import mrs_plugin.tests.unit.helpers as helpers
-from mrs_plugin import general
 
 PHONE_BOOKS = {}
 
@@ -131,7 +130,8 @@ def init_mrs():
         for db in phone_book_dbs:
             helpers.create_test_db(session, db)
 
-        general.configure(session=session)
+        # The shell's mrs module deploys the metadata schema
+        session.run_sql("CONFIGURE REST METADATA")
 
         for db in phone_book_dbs:
             temp_dir = tempfile.TemporaryDirectory()

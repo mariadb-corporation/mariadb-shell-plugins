@@ -29,7 +29,6 @@ from mrs_plugin.lib import (
     content_sets,
     auth_apps,
     database,
-    script,
 )
 
 import re
@@ -964,30 +963,11 @@ def store_project(
         shutil.rmtree(temp_dir)
 
 
-def run_sql_script(session, sql_script, is_mrs: bool = False):
-    commands = mysqlsh.mysql.split_script(sql_script)
-
-    sql_mode = session.run_sql("select @@session.sql_mode").fetch_one()[0]
-    for command in commands:
+def run_sql_script(session, sql_script):
+    for command in mysqlsh.mysql.split_script(sql_script):
         command = command.strip()
-
-        if not command:
-            continue
-
-        if is_mrs:
-            script.run_mrs_script(
-                command,
-                **{"session": session, "sql_mode": sql_mode, "state_data": {}},
-            )
-        else:
+        if command:
             session.run_sql(command)
-
-
-def load_service(session, path: str):
-    with open(path, "r") as f:
-        sql_script = f.read()
-
-    run_sql_script(session, sql_script=sql_script, is_mrs=True)
 
 
 def is_url(url) -> bool:
