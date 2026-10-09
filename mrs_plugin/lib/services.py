@@ -799,6 +799,39 @@ def auto_detect_project_dependencies(session, service_id):
     return result
 
 
+def dump_service_script(
+    session,
+    service_path: str,
+    file_path: str,
+    include_database_endpoints: bool,
+    include_static_endpoints: bool,
+    include_dynamic_endpoints: bool,
+):
+    """Writes the REST SQL script of a service to a file.
+
+    The statements come from the shell's mrs module through session.run_sql:
+    SHOW CREATE REST SERVICE for the service and its database endpoints,
+    DUMP REST SERVICE when content sets are included. As in DUMP REST
+    SERVICE, the dynamic endpoints include the static ones and those the
+    database ones.
+    """
+    path = core.quote_ident(service_path)
+    if include_static_endpoints or include_dynamic_endpoints:
+        endpoints = "ALL" if include_dynamic_endpoints else "DATABASE AND STATIC"
+        session.run_sql(
+            f"DUMP REST SERVICE {path} AS SCRIPT INCLUDING {endpoints} ENDPOINTS "
+            f"TO {core.squote_str(file_path)}"
+        )
+        return
+
+    including = " INCLUDING DATABASE ENDPOINTS" if include_database_endpoints else ""
+    script = session.run_sql(f"SHOW CREATE REST SERVICE {path}{including}").fetch_one()[
+        0
+    ]
+    with open(file_path, "w") as f:
+        f.write(script)
+
+
 def store_project(
     session,
     destination: str,
@@ -854,11 +887,10 @@ def store_project(
         target_file_name = f"{service_data["name"][1:]}.service.mrs.sql"
         file_path = os.path.join(temp_dir, target_file_name)
 
-        store_service_create_statement(
+        dump_service_script(
             session,
-            service,
+            service_data["name"],
             file_path,
-            False,
             service_data["include_database_endpoints"],
             service_data["include_static_endpoints"],
             service_data["include_dynamic_endpoints"],
@@ -1090,9 +1122,11 @@ def load_project(session, path: str):
                         f"The service '{service["serviceName"]}' already exists."
                     )
 
-                with open(os.path.join(base_directory, service["fileName"])) as f:
-                    content = f.read()
-                    run_sql_script(session, content)
+                # The shell's mrs module runs the service script
+                service_file = os.path.join(base_directory, service["fileName"])
+                session.run_sql(
+                    f"LOAD REST SERVICE FROM {core.squote_str(service_file)}"
+                )
 
 
 def get_service_sdk_data(session, service_id, binary_formatter=None):

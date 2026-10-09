@@ -74,7 +74,7 @@ The `SHOW REST STATUS` statement is used to get basic information about the curr
 
 ```antlr
 showRestMetadataStatusStatement:
-    SHOW REST METADATA? STATUS
+    SHOW REST METADATA? STATUS formatClause?
 ;
 ```
 
@@ -85,12 +85,20 @@ The result reports whether the metadata schema is configured and enabled, the nu
 
 The `metadata_version` column holds the id of the last entry in the metadata's audit log. It changes whenever the REST metadata changes, so a client can poll it and refresh its view of the REST services only when the value has changed.
 
+With `FORMAT=JSON`, the result is a single JSON document with the same values, plus `available_metadata_versions`, the released versions of the metadata schema that the MariaDB Shell can deploy, and `configuration_options`, the options set with `CONFIGURE REST METADATA OPTIONS`.
+
 **_Examples_**
 
 The following example shows the status of the MariaDB REST Service.
 
 ```sql
 SHOW REST STATUS;
+```
+
+The following example returns the status as a JSON document.
+
+```sql
+SHOW REST METADATA STATUS FORMAT=JSON;
 ```
 
 ## SHOW REST SERVICES
