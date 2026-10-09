@@ -762,6 +762,13 @@ def quote_ident(s):
     return mysqlsh.mysql.quote_identifier(s)
 
 
+def quote_service_path(path):
+    """A service path for REST SQL: the request path quoted, a developer
+    list (mike,alfredo@/path) kept as it is."""
+    developers, at, request_path = path.rpartition("@")
+    return developers + at + quote_ident(request_path)
+
+
 def squote_str(s):
     return "'" + escape_str(s) + "'"
 
