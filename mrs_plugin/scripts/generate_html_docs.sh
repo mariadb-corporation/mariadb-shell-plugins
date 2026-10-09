@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2026, Oracle and/or its affiliates.
 
 if [ $# -eq 0 ]
 then
@@ -45,3 +45,4 @@ sed -i '' 's# ([[:upper:]]*)</h3>#</h3>#g' $ROOTPATH/docs/sdk.html
 sed -i '' 's/sql\.html//g' $ROOTPATH/docs/index_one_page.html
 sed -i '' 's/sdk\.html//g' $ROOTPATH/docs/index_one_page.html
 sed -i '' 's/quickstart\.html//g' $ROOTPATH/docs/index_one_page.html
+sed -i '' 's/href="index\.html#/href="#/g' $ROOTPATH/docs/index_one_page.html

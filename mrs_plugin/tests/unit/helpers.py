@@ -272,16 +272,24 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
         session, service_id=service["id"], request_path="/test_content_set"
     )
     if not content_set:
-        with open(os.path.join(temp_dir.name, "somebinaryfile.bin"), "w+") as f:
-            f.write("\0\1\2\3\4\5\6\7")
-        with open(os.path.join(temp_dir.name, "readme.txt"), "w+") as f:
-            f.write("Line '1'\nLine \"2\"\nLine \\3\\")
         session.run_sql(
             f"CREATE REST CONTENT SET /test_content_set "
             f"ON SERVICE {rest_path(service_context_root)} "
-            f"FROM {lib.core.squote_str(temp_dir.name)} "
             "COMMENT 'Content Set' OPTIONS {} AUTHENTICATION NOT REQUIRED"
         )
+        for request_path, data in (
+            ("/readme.txt", b"Line '1'\nLine \"2\"\nLine \\3\\"),
+            ("/somebinaryfile.bin", b"\0\1\2\3\4\5\6\7"),
+        ):
+            session.run_sql(
+                lib.content_sets.content_file_statement(
+                    request_path,
+                    service_context_root,
+                    "/test_content_set",
+                    data,
+                    {},
+                )
+            )
         content_set = lib.content_sets.get_content_set(
             session, service_id=service["id"], request_path="/test_content_set"
         )

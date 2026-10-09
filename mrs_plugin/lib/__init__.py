@@ -25,7 +25,6 @@ from mrs_plugin.lib import core
 from mrs_plugin.lib import services
 from mrs_plugin.lib import schemas
 from mrs_plugin.lib import db_objects
-from mrs_plugin.lib import content_files
 from mrs_plugin.lib import content_sets
 from mrs_plugin.lib import general
 from mrs_plugin.lib import dump

@@ -45,11 +45,11 @@ Analysis of 2026-10-08; the user wants to discuss before anything is removed.
   105 remove.
 - **Kept functions and REST SQL (2026-10-09):** every kept function that uses the
   database takes `session` and runs its SQL through `session.run_sql`.
-  `load.serviceProject` loads each service file with `LOAD REST SERVICE FROM '<file>'`;
-  `dump.serviceProject` writes them with `SHOW CREATE REST SERVICE ... [INCLUDING
-  DATABASE ENDPOINTS]` or `DUMP REST SERVICE ... INCLUDING DATABASE AND STATIC | ALL
-  ENDPOINTS TO '<file>'` (`lib.services.dump_service_script`), not the Python
-  `get_service_create_statement` any more. `get.sdkOptions`, the three script analysis
+  `load.serviceProject` runs each service file statement by statement
+  (`lib.services.load_service_script`, `mysqlsh.mysql.split_script`);
+  `dump.serviceProject` writes them with `SHOW CREATE REST SERVICE ... INCLUDING
+  <endpoints> ENDPOINTS` (`lib.services.dump_service_script`, flags mapped by
+  `endpoint_selection`), not the Python `get_service_create_statement` any more. `get.sdkOptions`, the three script analysis
   functions and `version` have no session (no database access); the user was offered
   an unused one for a uniform signature.
 - **Done 2026-10-09:** the 105 functions are removed (files `schemas`, `db_objects`,
@@ -75,3 +75,47 @@ Analysis of 2026-10-08; the user wants to discuss before anything is removed.
   `create_mrs_phonebook_schema`); 174 tests pass.
 - Nothing outside the plugin calls `mrs.*` by name (code_ext, mcp_plugin, msm_plugin
   checked); mcp_plugin only sends REST SQL.
+
+## File-based REST SQL moved to the plugin (2026-10-09)
+
+- Reason: a MariaDB server plugin (or any client sending REST SQL) cannot read the
+  developer's files, so the shell module dropped every form that reads or writes client
+  files: `CREATE REST CONTENT SET ... FROM '<dir>' [IGNORE ...]`, `CREATE REST CONTENT FILE
+  ... FROM '<file>'`, `DUMP REST SERVICE ... TO`, `LOAD REST SERVICE FROM`. Files are sent
+  inline (`[BINARY] CONTENT '<text|base64>'`); `SHOW CREATE REST SERVICE ... INCLUDING
+  DATABASE [AND STATIC [AND DYNAMIC]] | ALL ENDPOINTS` is the dump.
+- `LOAD [TYPESCRIPT] SCRIPTS` is ALTER-only (`alterRestContentSetOptions`/`loadScripts`):
+  the module analyses the stored files and registers the MRS scripts itself (C++ port in
+  the shell's `mrs_scripts.cc`). Only static folders stay public; sources and build
+  output become private (enabled = 2). SHOW CREATE writes set, files, then `ALTER ... LOAD
+  TYPESCRIPT SCRIPTS`.
+- Plugin: `update.mrsScriptsFromContentSet` removed with its lib code (`lib/content_files.py`
+  deleted; `init.py` has no `update` sub-object any more). New, REST SQL through
+  `session.run_sql` only:
+  - `mrs.dump.service(service_path, file_path, endpoints="DATABASE", overwrite)`.
+  - `mrs.load.service(file_path, as_path)`: `as_path` rewrites the path token of the
+    first statement (must be `CREATE ... REST SERVICE`) and the first `SERVICE <path>` of
+    every statement.
+  - `mrs.load.contentSet(directory, content_set_path, service_path, ignore_list,
+    load_scripts, replace)`: ignore list matched against the path relative to the
+    directory (`/node_modules/...`), default `*node_modules/*, */.*`; UTF-8 text without
+    NUL or backslash is sent as `CONTENT` (quotes doubled), all else base64 `BINARY
+    CONTENT`, so it works with and without `NO_BACKSLASH_ESCAPES`; each file gets
+    `OPTIONS {"last_modification": ...}`; `load_scripts=None` auto-detects
+    (`get_folder_mrs_scripts_language`).
+- The test fixture's `/test_content_set` (`tests/unit/helpers.py`) is created with inline
+  files via `lib.content_sets.content_file_statement`. New tests:
+  `tests/unit/test_content_sets.py`, `test_services.py::test_dump_and_load_service`.
+  177 passed.
+- `DROP REST CONTENT SET` takes `FROM SERVICE`, not `ON SERVICE`.
+- Private rule kept as ported (user decision, option a): in a scripts set only static
+  folders stay public, `dist/` etc. stays private (server code). A PWA goes into its own
+  content set (no LOAD SCRIPTS = all public) or a static folder such as `web/`.
+- Docs lead with the plugin functions: new devGuide sections `StaticContent.md` ("Static
+  Content and MRS Scripts") and `DeployingRESTServices.md`, included from `index.md` and
+  `index_one_page.md`; tips with `mrs.load.content_set()` at the top of CREATE REST
+  CONTENT SET/FILE and ALTER REST CONTENT SET. Python names are snake_case
+  (`mrs.load.content_set`, `mrs.dump.service`, `mrs.load.service`). `index.html` and
+  `index_one_page.html` rebuilt with plain pandoc: the committed copies were formatted
+  differently, so their diffs are mostly layout. The one-page build now also rewrites
+  `href="index.html#` to in-page links (`scripts/generate_html_docs.sh`).

@@ -321,37 +321,103 @@ def auto_detect_project_dependencies(session, service_id):
     return result
 
 
-def dump_service_script(
-    session,
-    service_path: str,
-    file_path: str,
+# The endpoint selections of SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS,
+# each one a superset of the former
+ENDPOINT_SELECTIONS = (
+    "DATABASE",
+    "DATABASE AND STATIC",
+    "DATABASE AND STATIC AND DYNAMIC",
+    "ALL",
+)
+
+
+def endpoint_selection(
     include_database_endpoints: bool,
     include_static_endpoints: bool,
     include_dynamic_endpoints: bool,
 ):
-    """Writes the REST SQL script of a service to a file.
+    """Returns the endpoint selection for the given flags, None for none.
 
-    The statements come from the shell's mrs module through session.run_sql:
-    SHOW CREATE REST SERVICE for the service and its database endpoints,
-    DUMP REST SERVICE when content sets are included. As in DUMP REST
-    SERVICE, the dynamic endpoints include the static ones and those the
-    database ones.
+    The dynamic endpoints include the static ones and those the database ones.
     """
-    path = core.quote_ident(service_path)
-    if include_static_endpoints or include_dynamic_endpoints:
-        endpoints = "ALL" if include_dynamic_endpoints else "DATABASE AND STATIC"
-        session.run_sql(
-            f"DUMP REST SERVICE {path} AS SCRIPT INCLUDING {endpoints} ENDPOINTS "
-            f"TO {core.squote_str(file_path)}"
-        )
-        return
+    if include_dynamic_endpoints:
+        return "ALL"
+    if include_static_endpoints:
+        return "DATABASE AND STATIC"
+    if include_database_endpoints:
+        return "DATABASE"
+    return None
 
-    including = " INCLUDING DATABASE ENDPOINTS" if include_database_endpoints else ""
-    script = session.run_sql(f"SHOW CREATE REST SERVICE {path}{including}").fetch_one()[
-        0
-    ]
+
+def service_script(session, service_path: str, endpoints: str | None = None) -> str:
+    """Returns the REST SQL script that recreates a service.
+
+    The script comes from the shell's mrs module through session.run_sql:
+    SHOW CREATE REST SERVICE with INCLUDING <endpoints> ENDPOINTS.
+    """
+    including = ""
+    if endpoints:
+        endpoints = " ".join(endpoints.upper().split())
+        if endpoints not in ENDPOINT_SELECTIONS:
+            raise ValueError(
+                f"Invalid endpoints '{endpoints}', use one of "
+                + ", ".join(ENDPOINT_SELECTIONS)
+                + "."
+            )
+        including = f" INCLUDING {endpoints} ENDPOINTS"
+    return session.run_sql(
+        f"SHOW CREATE REST SERVICE {core.quote_ident(service_path)}{including}"
+    ).fetch_one()[0]
+
+
+def dump_service_script(
+    session, service_path: str, file_path: str, endpoints: str | None = None
+):
+    """Writes the REST SQL script of a service to a file."""
+    script = service_script(session, service_path, endpoints)
     with open(file_path, "w") as f:
         f.write(script)
+        if not script.endswith("\n"):
+            f.write("\n")
+
+
+SERVICE_CREATE_REGEX = re.compile(
+    r"^CREATE\s+(?:OR\s+REPLACE\s+)?REST\s+SERVICE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+    r"(`(?:[^`]|``)*`|[^\s;]+)",
+    re.IGNORECASE,
+)
+
+
+def load_service_script(session, script: str, as_path: str | None = None):
+    """Runs the REST SQL script of a service.
+
+    With as_path, the service is created under that request path: the script
+    starts with the CREATE REST SERVICE statement, and its path is replaced in
+    that statement and in the ON SERVICE clause of the others.
+    """
+    statements = [
+        command.strip()
+        for command in mysqlsh.mysql.split_script(script)
+        if command.strip()
+    ]
+
+    if as_path:
+        match = SERVICE_CREATE_REGEX.match(statements[0]) if statements else None
+        if match is None:
+            raise ValueError(
+                "The script does not start with a CREATE REST SERVICE statement."
+            )
+        service_ref = re.compile(
+            r"(\bSERVICE\s+)" + re.escape(match.group(1)) + r"(?=\s|;|$)", re.IGNORECASE
+        )
+        new_path = core.quote_ident(as_path)
+        statements = [
+            service_ref.sub(lambda m: m.group(1) + new_path, statement, count=1)
+            for statement in statements
+        ]
+
+    for statement in statements:
+        session.run_sql(statement)
 
 
 def store_project(
@@ -413,9 +479,11 @@ def store_project(
             session,
             service_data["name"],
             file_path,
-            service_data["include_database_endpoints"],
-            service_data["include_static_endpoints"],
-            service_data["include_dynamic_endpoints"],
+            endpoint_selection(
+                service_data["include_database_endpoints"],
+                service_data["include_static_endpoints"],
+                service_data["include_dynamic_endpoints"],
+            ),
         )
 
         config["restServices"].append(
@@ -625,11 +693,9 @@ def load_project(session, path: str):
                         f"The service '{service["serviceName"]}' already exists."
                     )
 
-                # The shell's mrs module runs the service script
                 service_file = os.path.join(base_directory, service["fileName"])
-                session.run_sql(
-                    f"LOAD REST SERVICE FROM {core.squote_str(service_file)}"
-                )
+                with open(service_file) as f:
+                    load_service_script(session, f.read())
 
 
 def get_service_sdk_data(session, service_id, binary_formatter=None):

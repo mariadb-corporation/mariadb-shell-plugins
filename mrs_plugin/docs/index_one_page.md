@@ -92,6 +92,10 @@ This document explains how to work with the MRS Software Development Kit and dis
 
 !include sections/devGuide/RestViews.md
 
+!include sections/devGuide/StaticContent.md
+
+!include sections/devGuide/DeployingRESTServices.md
+
 !include sections/devGuide/DialogReference.md
 
 !include sections/devGuide/Auth.md

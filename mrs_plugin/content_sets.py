@@ -30,62 +30,6 @@ import mrs_plugin.lib as lib
 
 import json
 
-# TODO (miguel): replace this with the one in interactive module
-
-
-def resolve_content_set_ids(**kwargs):
-    include_enable_state = None
-    session = kwargs.get("session")
-
-    content_set_id = kwargs.pop("content_set_id", None)
-    request_path = kwargs.pop("request_path", None)
-    service_id = kwargs.pop("service_id", None)
-
-    kwargs["content_set_ids"] = [content_set_id] if content_set_id else []
-
-    if not content_set_id:
-        # Check if given service_id exists or use the current service
-        service = lib.services.get_service(service_id=service_id, session=session)
-
-        if not request_path and lib.core.get_interactive_default():
-            content_sets = lib.content_sets.get_content_sets(
-                service_id=service.get("id"),
-                include_enable_state=include_enable_state,
-                session=session,
-            )
-            caption = (
-                "Please select an index, type "
-                "the request_path or type '*' "
-                "to select all: "
-            )
-            selection = lib.core.prompt_for_list_item(
-                item_list=content_sets,
-                prompt_caption=caption,
-                item_name_property="request_path",
-                given_value=None,
-                print_list=True,
-                allow_multi_select=True,
-            )
-            if not selection:
-                raise ValueError("Operation cancelled.")
-
-            kwargs["content_set_ids"] = [item["id"] for item in selection]
-
-        if request_path:
-            # Lookup the content_set name
-            res = session.run_sql(
-                """
-                SELECT id FROM `mysql_rest_service_metadata`.`content_set`
-                WHERE request_path = ? AND service_id = ?
-                """,
-                [request_path, service.get("id")],
-            )
-            row = res.fetch_one()
-            if row:
-                kwargs["content_set_ids"].append(row.get_field("id"))
-
-    return kwargs
-
 
 @plugin_function("mrs.get.fileMrsScriptDefinitions", shell=True, cli=True, web=True)
 def get_file_mrs_script_definitions(path, **kwargs):
@@ -184,41 +128,56 @@ def get_folder_mrs_script_definitions(path, **kwargs):
         return script_def
 
 
-@plugin_function("mrs.update.mrsScriptsFromContentSet", shell=True, cli=True, web=True)
-def update_scripts_from_content_set(**kwargs):
-    """Updates db_schemas and db_objects based on script definitions of the content set
+@plugin_function("mrs.load.contentSet", shell=True, cli=True, web=True)
+def load_content_set(directory, content_set_path, **kwargs):
+    """Uploads the files of a directory to a new REST content set.
+
+    Sends a CREATE REST CONTENT SET statement and one CREATE REST CONTENT
+    FILE statement per file, and registers the MRS scripts of the files with
+    ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS.
 
     Args:
+        directory (str): The directory holding the files.
+        content_set_path (str): The request path of the content set.
         **kwargs: Additional options
 
     Keyword Args:
-        content_set_id (str): The id of the content_set
-        ignore_list (str): The list of file patterns to ignore, separated by comma
-        language (str): The MRS Scripting language used
+        service_path (str): The request path of the REST service, by default
+            the current one.
+        ignore_list (str): The list of file patterns to ignore, separated by
+            comma, matched against the path relative to the directory.
+            Default "*node_modules/*, */.*".
+        load_scripts (bool): Register the MRS scripts of the files. By default
+            they are registered if the directory holds any.
+        replace (bool): Replace the content set, if it already exists.
         session (object): The database session to use.
-        send_gui_message (object): The function to send a message to he GUI.
+        send_gui_message (object): The function to send a message to the GUI.
 
     Returns:
-        The result message as string
+        A dict with the request paths of the uploaded files and the result
+        message
     """
-    lib.core.convert_ids_to_uuid(["content_set_id"], kwargs)
-
-    language = kwargs.get("language")
-    send_gui_message = kwargs.get("send_gui_message")
-
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
     ) as session:
-        kwargs["session"] = session
-        kwargs = resolve_content_set_ids(**kwargs)
-
-        if len(kwargs["content_set_ids"]) >= 1:
-            content_set_id = kwargs["content_set_ids"][0]
-
         with lib.core.MrsDbTransaction(session):
-            lib.content_sets.update_scripts_from_content_set(
-                session=session,
-                content_set_id=content_set_id,
-                language=language,
-                send_gui_message=send_gui_message,
+            result = lib.content_sets.load_content_set(
+                session,
+                directory,
+                content_set_path,
+                service_path=kwargs.get("service_path"),
+                ignore_list=kwargs.get("ignore_list"),
+                load_scripts=kwargs.get("load_scripts"),
+                replace=kwargs.get("replace", False),
+                send_gui_message=kwargs.get("send_gui_message"),
             )
+
+        if lib.core.get_interactive_default():
+            print(
+                f"{len(result['files'])} file(s) uploaded to the REST content set "
+                f"{content_set_path}."
+            )
+            if result["message"]:
+                print(result["message"])
+        else:
+            return result
