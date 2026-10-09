@@ -39,6 +39,10 @@ Please also see
 
 !include sections/devGuide/RestViews.md
 
+!include sections/devGuide/StaticContent.md
+
+!include sections/devGuide/DeployingRESTServices.md
+
 !include sections/devGuide/DialogReference.md
 
 !include sections/devGuide/Auth.md

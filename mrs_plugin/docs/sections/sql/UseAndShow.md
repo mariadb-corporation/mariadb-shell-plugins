@@ -524,7 +524,16 @@ The `SHOW CREATE REST SERVICE` statement shows the corresponding DDL statement f
 ```antlr
 showCreateRestServiceStatement:
     SHOW CREATE REST SERVICE serviceRequestPath? (
-        INCLUDING SCHEMA ENDPOINTS
+        INCLUDING (
+            (
+                SCHEMA (
+                    AND STATIC (
+                        AND DYNAMIC
+                    )?
+                )?
+            )
+            | ALL
+        ) ENDPOINTS
     )? formatClause?
 ;
 ```
@@ -534,10 +543,27 @@ showCreateRestServiceStatement ::=
 
 **_Examples_**
 
+Without `INCLUDING ... ENDPOINTS`, only the `CREATE REST SERVICE` statement is shown. The `INCLUDING` clause adds the statements of the service's endpoints:
+
+- `DATABASE`: the REST schemas and their REST objects like TABLE, VIEW, PROCEDURE and FUNCTION
+- `DATABASE AND STATIC`: also the content sets that do not hold MRS scripts, with their files
+- `DATABASE AND STATIC AND DYNAMIC`: also the content sets holding MRS scripts, with their files and an `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS` statement
+- `ALL`: short for `DATABASE AND STATIC AND DYNAMIC`
+
+The result is a REST SQL script that recreates the service when run. See [Dumping and Loading REST Services](#dumping-and-loading-rest-services).
+
+**_Examples_**
+
 The following example shows the DDL statement for the REST service with request path `/myService`.
 
 ```sql
 SHOW CREATE REST SERVICE /myService;
+```
+
+The following example shows the statements to recreate the service with all its endpoints.
+
+```sql
+SHOW CREATE REST SERVICE /myService INCLUDING ALL ENDPOINTS;
 ```
 
 ## SHOW CREATE REST SCHEMA

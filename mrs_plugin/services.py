@@ -470,3 +470,75 @@ def load_service_project(**kwargs):
         exception_handler=lib.core.print_exception, **kwargs
     ) as session:
         lib.services.load_project(session, source)
+
+
+@plugin_function("mrs.dump.service", shell=True, cli=True, web=True)
+def dump_service(service_path, file_path, **kwargs):
+    """Writes the REST SQL script that recreates a REST service to a file.
+
+    The script is the result of SHOW CREATE REST SERVICE ... INCLUDING
+    <endpoints> ENDPOINTS. It does not include the database schemas the
+    service is based on.
+
+    Args:
+        service_path (str): The request path of the REST service.
+        file_path (str): The path of the file to write.
+        **kwargs: Additional options
+
+    Keyword Args:
+        endpoints (str): The endpoints to include: DATABASE, DATABASE AND
+            STATIC, DATABASE AND STATIC AND DYNAMIC or ALL. Default DATABASE.
+            An empty string includes only the CREATE REST SERVICE statement.
+        overwrite (bool): Overwrite the file, if it already exists.
+        session (object): The database session to use.
+
+    Returns:
+        None
+    """
+    lib.core.validate_path_for_filesystem(file_path)
+    file_path = os.path.expanduser(file_path)
+    if os.path.exists(file_path) and not kwargs.get("overwrite"):
+        raise ValueError(f"The file '{file_path}' already exists.")
+
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, **kwargs
+    ) as session:
+        lib.services.dump_service_script(
+            session, service_path, file_path, kwargs.get("endpoints", "DATABASE")
+        )
+
+        if lib.core.get_interactive_default():
+            print(f"REST service {service_path} dumped to {file_path}.")
+
+
+@plugin_function("mrs.load.service", shell=True, cli=True, web=True)
+def load_service(file_path, **kwargs):
+    """Runs the REST SQL script of a REST service written by mrs.dump.service.
+
+    Args:
+        file_path (str): The path of the REST SQL script.
+        **kwargs: Additional options
+
+    Keyword Args:
+        as_path (str): Create the REST service under this request path
+            instead of the one in the script.
+        session (object): The database session to use.
+
+    Returns:
+        None
+    """
+    file_path = os.path.expanduser(file_path)
+    if not os.path.isfile(file_path):
+        raise ValueError(f"The file '{file_path}' does not exist.")
+
+    with open(file_path) as f:
+        script = f.read()
+
+    with lib.core.MrsDbSession(
+        exception_handler=lib.core.print_exception, **kwargs
+    ) as session:
+        with lib.core.MrsDbTransaction(session):
+            lib.services.load_service_script(session, script, kwargs.get("as_path"))
+
+        if lib.core.get_interactive_default():
+            print(f"REST service loaded from {file_path}.")

@@ -296,6 +296,13 @@ restObjectOptions ::=
 
 The `ALTER REST CONTENT SET` statement is used to alter REST content sets.
 
+> Tip: `mrs.load.contentSet()` of the mrs plugin (`mrs.load.content_set()` in Python mode) uploads an MRS scripts project directory and runs `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS` for it in one call. See [MRS Scripts](index.html#mrs-scripts).
+>
+> ```py
+> mrs.load.content_set(directory="~/myScripts", content_set_path="/scripts",
+>                      service_path="/myService")
+> ```
+
 **_SYNTAX_**
 
 ```antlr
@@ -304,16 +311,46 @@ alterRestContentSetStatement:
         ON SERVICE? serviceRequestPath
     )? (
         NEW REQUEST PATH newContentSetRequestPath
-    )? restContentSetOptions?
+    )? alterRestContentSetOptions?
 ;
 
 newContentSetRequestPath:
     requestPathIdentifier
 ;
+
+alterRestContentSetOptions: (
+        enabledDisabledPrivate
+        | authenticationRequired
+        | jsonOptions
+        | comments
+        | loadScripts
+    )+
+;
+
+loadScripts:
+    LOAD TYPESCRIPT? SCRIPTS
+;
 ```
 
 alterRestContentSetStatement ::=
 ![alterRestContentSetStatement](../../images/sql/alterRestContentSetStatement.svg "alterRestContentSetStatement")
+
+alterRestContentSetOptions ::=
+![alterRestContentSetOptions](../../images/sql/alterRestContentSetOptions.svg "alterRestContentSetOptions")
+
+loadScripts ::=
+![loadScripts](../../images/sql/loadScripts.svg "loadScripts")
+
+`LOAD SCRIPTS` registers the MRS scripts held by the files of the content set as REST endpoints. The files have to be added to the content set first. The statement analyzes the stored TypeScript files for the `@Mrs.module`, `@Mrs.script` and `@Mrs.trigger` decorators, and creates a REST schema for each MRS module and a REST endpoint for each MRS script. Scripts registered by an earlier `LOAD SCRIPTS` on the same content set are replaced. Only the files in static folders (`static`, `assets`, `media`, `web`, `js`, `css` or `images`) stay public; the sources and the build output are made private, the MariaDB REST Daemon still reads them. A web app should therefore be uploaded as its own content set, or be built into a static folder, not into the build output folder of the scripts project. `LOAD TYPESCRIPT SCRIPTS` also records TypeScript as the scripting language of the content set.
+
+`SHOW CREATE REST CONTENT SET` and `SHOW CREATE REST SERVICE` write an `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS` statement after the files of a content set holding MRS scripts, so the scripts are registered again when the script is run.
+
+**_Examples_**
+
+```sql
+ALTER REST CONTENT SET /scripts ON SERVICE /myService
+    LOAD TYPESCRIPT SCRIPTS;
+```
 
 ## ALTER REST USER
 

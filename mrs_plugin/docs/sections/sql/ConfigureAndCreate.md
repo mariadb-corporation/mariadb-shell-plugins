@@ -1275,6 +1275,13 @@ See [JSON Options](#json-options-for-views)
 
 The `CREATE REST CONTENT SET` statement is used to add REST endpoints for static content.
 
+> Tip: To upload all files of a directory, use the `mrs.load.contentSet()` function of the mrs plugin (`mrs.load.content_set()` in Python mode). It creates the content set, sends one `CREATE REST CONTENT FILE` statement per file and registers the MRS scripts of the files. See [Static Content and MRS Scripts](index.html#static-content-and-mrs-scripts).
+>
+> ```py
+> mrs.load.content_set(directory="~/myApp/dist", content_set_path="/app",
+>                      service_path="/myService")
+> ```
+
 **_SYNTAX_**
 
 ```antlr
@@ -1285,7 +1292,7 @@ createRestContentSetStatement:    (
         )?
     ) contentSetRequestPath (
         ON SERVICE? serviceRequestPath
-    )? (FROM directoryFilePath)? restContentSetOptions?
+    )? restContentSetOptions?
 ;
 
 restContentSetOptions: (
@@ -1293,8 +1300,6 @@ restContentSetOptions: (
         | authenticationRequired
         | jsonOptions
         | comments
-        | fileIgnoreList
-        | loadScripts
     )+
 ;
 ```
@@ -1305,11 +1310,27 @@ createRestContentSetStatement ::=
 restContentSetOptions ::=
 ![restContentSetOptions](../../images/sql/restContentSetOptions.svg "restContentSetOptions")
 
-> Note: With `LOAD SCRIPTS` or `LOAD TYPESCRIPT SCRIPTS`, the content set is marked as holding MRS scripts, but the MRS module of the MariaDB Shell does not analyze the scripts yet, so no REST endpoints are created from them.
+The statement creates an empty content set. Its files are added with [CREATE REST CONTENT FILE](#create-rest-content-file).
+
+If the files hold MRS scripts, they are registered as REST endpoints with [ALTER REST CONTENT SET ... LOAD SCRIPTS](#alter-rest-content-set) once the files have been added.
+
+**_Examples_**
+
+```sql
+CREATE REST CONTENT SET /web ON SERVICE /myService
+    COMMENT "Static web content";
+```
 
 ## CREATE REST CONTENT FILE
 
 Adds a file to a content set.
+
+> Tip: To upload all files of a directory, use the `mrs.load.contentSet()` function of the mrs plugin (`mrs.load.content_set()` in Python mode). It creates the content set, sends one `CREATE REST CONTENT FILE` statement per file and registers the MRS scripts of the files. See [Static Content and MRS Scripts](index.html#static-content-and-mrs-scripts).
+>
+> ```py
+> mrs.load.content_set(directory="~/myApp/dist", content_set_path="/app",
+>                      service_path="/myService")
+> ```
 
 **_SYNTAX_**
 
@@ -1321,10 +1342,8 @@ createRestContentFileStatement:    (
         )?
     ) contentFileRequestPath ON (
         SERVICE? serviceRequestPath
-    )? CONTENT SET contentSetRequestPath (
-        (FROM directoryFilePath)
-        | (BINARY? CONTENT textStringLiteral)
-    ) restContentFileOptions?
+    )? CONTENT SET contentSetRequestPath BINARY? CONTENT textStringLiteral
+        restContentFileOptions?
 ;
 
 restContentFileOptions: (
@@ -1333,10 +1352,6 @@ restContentFileOptions: (
         | jsonOptions
     )+
 ;
-
-directoryFilePath:
-    textStringLiteral
-;
 ```
 
 createRestContentFileStatement ::=
@@ -1344,6 +1359,20 @@ createRestContentFileStatement ::=
 
 restContentFileOptions ::=
 ![restContentFileOptions](../../images/sql/restContentFileOptions.svg "restContentFileOptions")
+
+The content of the file is given inline as a string. With `BINARY CONTENT`, the string holds the base64 encoded bytes of the file. As the statement does not read files from disk, it works the same way from any client that sends it to the MariaDB Shell.
+
+**_Examples_**
+
+```sql
+CREATE REST CONTENT FILE `/index.html` ON SERVICE /myService CONTENT SET /web
+    CONTENT '<html><body>Hello</body></html>';
+
+CREATE REST CONTENT FILE `/logo.png` ON SERVICE /myService CONTENT SET /web
+    BINARY CONTENT 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+```
+
+Request paths containing dots must be quoted with backticks.
 
 
 ## CREATE REST AUTH APP

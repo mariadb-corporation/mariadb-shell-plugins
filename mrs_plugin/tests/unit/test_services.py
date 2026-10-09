@@ -23,6 +23,9 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 import json
+import os
+import re
+import pytest
 import zipfile
 import filecmp
 import datetime
@@ -428,3 +431,43 @@ def test_service_as_project(phone_book, table_contents):
         session.run_sql(
             f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
         )
+
+
+def test_dump_and_load_service(phone_book):
+    session = phone_book["session"]
+
+    script = session.run_sql(
+        "SHOW CREATE REST SERVICE /test INCLUDING DATABASE ENDPOINTS"
+    ).fetch_one()[0]
+
+    with tempfile.TemporaryDirectory() as directory:
+        file_path = os.path.join(directory, "test.mrs.sql")
+
+        dump_service("/test", file_path, endpoints="database", session=session)
+        with open(file_path) as f:
+            assert f.read() == script + "\n"
+
+        with pytest.raises(Exception, match="already exists"):
+            dump_service("/test", file_path, session=session)
+
+        with pytest.raises(Exception, match="Invalid endpoints"):
+            dump_service(
+                "/test", file_path, endpoints="STATIC", overwrite=True, session=session
+            )
+
+        # Only the CREATE REST SERVICE statement
+        dump_service("/test", file_path, endpoints="", overwrite=True, session=session)
+        with open(file_path) as f:
+            assert f.read().startswith("CREATE OR REPLACE REST SERVICE /test\n")
+
+        # Loaded under another request path
+        dump_service("/test", file_path, overwrite=True, session=session)
+        load_service(file_path, as_path="/testCopy", session=session)
+        try:
+            copy = session.run_sql(
+                "SHOW CREATE REST SERVICE /testCopy INCLUDING DATABASE ENDPOINTS"
+            ).fetch_one()[0]
+            assert copy == re.sub(r"(SERVICE )/test(?=[\s;])", r"\1/testCopy", script)
+            assert copy != script
+        finally:
+            session.run_sql("DROP REST SERVICE /testCopy")

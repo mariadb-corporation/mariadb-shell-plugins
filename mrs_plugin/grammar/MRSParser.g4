@@ -72,10 +72,8 @@ mrsStatement:
     | dropRestUserStatement
     | dropRestRoleStatement
     | dropRestDaemonStatement
-    | dumpRestServiceStatement
     | grantRestRoleStatement
     | grantRestPrivilegeStatement
-    | loadRestServiceStatement
     | revokeRestPrivilegeStatement
     | revokeRestRoleStatement
     | useStatement
@@ -370,11 +368,7 @@ createRestContentSetStatement:
         )?
     ) contentSetRequestPath (
         ON_SYMBOL SERVICE_SYMBOL? serviceRequestPath
-    )? (FROM_SYMBOL directoryFilePath)? restContentSetOptions?
-;
-
-directoryFilePath:
-    textStringLiteral
+    )? restContentSetOptions?
 ;
 
 restContentSetOptions: (
@@ -382,13 +376,7 @@ restContentSetOptions: (
         | authenticationRequired
         | jsonOptions
         | comments
-        | fileIgnoreList
-        | loadScripts
     )+
-;
-
-fileIgnoreList:
-    IGNORE_SYMBOL textStringLiteral
 ;
 
 loadScripts:
@@ -405,10 +393,8 @@ createRestContentFileStatement:
         )?
     ) contentFileRequestPath ON_SYMBOL (
         SERVICE_SYMBOL? serviceRequestPath
-    )? CONTENT_SYMBOL SET_SYMBOL contentSetRequestPath (
-        (FROM_SYMBOL directoryFilePath)
-        | (BINARY_SYMBOL? CONTENT_SYMBOL textStringLiteral)
-    ) restContentFileOptions?
+    )? CONTENT_SYMBOL SET_SYMBOL contentSetRequestPath BINARY_SYMBOL? CONTENT_SYMBOL textStringLiteral
+        restContentFileOptions?
 ;
 
 restContentFileOptions: (
@@ -597,7 +583,18 @@ alterRestContentSetStatement:
         ON_SYMBOL SERVICE_SYMBOL? serviceRequestPath
     )? (
         NEW_SYMBOL REQUEST_SYMBOL PATH_SYMBOL newContentSetRequestPath
-    )? restContentSetOptions?
+    )? alterRestContentSetOptions?
+;
+
+// ALTER takes LOAD [TYPESCRIPT] SCRIPTS as well: the stored files are
+// analysed and their MRS scripts registered as REST endpoints
+alterRestContentSetOptions: (
+        enabledDisabledPrivate
+        | authenticationRequired
+        | jsonOptions
+        | comments
+        | loadScripts
+    )+
 ;
 
 // - ALTER REST AUTH APP ----------------------------------------------------
@@ -858,7 +855,16 @@ showRestGrantsStatement:
 
 showCreateRestServiceStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL SERVICE_SYMBOL serviceRequestPath? (
-        INCLUDING_SYMBOL DATABASE_SYMBOL ENDPOINTS_SYMBOL
+        INCLUDING_SYMBOL (
+            (
+                DATABASE_SYMBOL (
+                    AND_SYMBOL STATIC_SYMBOL (
+                        AND_SYMBOL DYNAMIC_SYMBOL
+                    )?
+                )?
+            )
+            | ALL_SYMBOL
+        ) ENDPOINTS_SYMBOL
     )? formatClause?
 ;
 
@@ -909,27 +915,6 @@ showCreateRestRoleStatement:
 
 showCreateRestUserStatement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL USER_SYMBOL userName AT_SIGN_SYMBOL authAppName formatClause?
-;
-
-dumpRestServiceStatement:
-    DUMP_SYMBOL REST_SYMBOL SERVICE_SYMBOL serviceRequestPath AS_SYMBOL (
-        SQL_SYMBOL
-    )? SCRIPT_SYMBOL INCLUDING_SYMBOL (
-        (
-            DATABASE_SYMBOL (
-                AND_SYMBOL STATIC_SYMBOL (
-                    AND_SYMBOL DYNAMIC_SYMBOL
-                )?
-            )?
-        )
-        | ALL_SYMBOL
-    ) ENDPOINTS_SYMBOL TO_SYMBOL (ZIP_SYMBOL)? directoryFilePath
-;
-
-loadRestServiceStatement:
-    LOAD_SYMBOL REST_SYMBOL SERVICE_SYMBOL (
-        AS_SYMBOL serviceRequestPath
-    )? FROM_SYMBOL directoryFilePath
 ;
 
 // Named identifiers ========================================================

@@ -82,7 +82,8 @@ packages with msm_plugin and mcp_plugin.
     `ICON`, `PUBLISHER`, `DESCRIPTION`); `mrs.dump.serviceProject()` gained the statement's
     `~` expansion + path validation for destination, icon and schema files.
   - The shell module's `mrs.runScript()` removed (`\source`, `--sql -f`,
-    `LOAD REST SERVICE FROM` cover it; the `mrs` object has only `help`).
+    `SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS` + running the script cover
+    it; the `mrs` object has only `help`).
   - `lib/mrs_parser/` regenerated (it also lagged the earlier `FILES` parity change), docs
     updated (`UseAndShow.md`, `Dump.md` "REST Projects", `Introduction.md`), RRD SVGs
     regenerated with pruning, `docs/sql.html` rebuilt (other HTML pages left as committed).

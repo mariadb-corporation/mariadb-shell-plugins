@@ -273,8 +273,35 @@ SHOW CREATE REST PROCEDURE /filmInStock;
 
 CREATE REST CONTENT SET /testContent
 ON SERVICE /myTestService
-FROM "./grammar/test"
-IGNORE "*.txt";
+COMMENT "Inline content";
+
+CREATE REST CONTENT FILE `/index.html`
+ON SERVICE /myTestService CONTENT SET /testContent
+CONTENT "<!doctype html><html><body>Test</body></html>";
+
+CREATE REST CONTENT SET /scripts
+ON SERVICE /myTestService;
+
+CREATE REST CONTENT FILE `/src/hello.mts`
+ON SERVICE /myTestService CONTENT SET /scripts
+CONTENT '@Mrs.module({ name: "hello", requestPath: "/hello" })
+class Hello {
+    @Mrs.script({ name: "greet", requiresAuth: false })
+    public static async greet(name: string): Promise<string> {
+        return "Hello " + name;
+    }
+}';
+
+CREATE REST CONTENT FILE `/dist/hello.mjs`
+ON SERVICE /myTestService CONTENT SET /scripts
+CONTENT 'export class Hello {}';
+
+ALTER REST CONTENT SET /scripts
+ON SERVICE /myTestService
+LOAD TYPESCRIPT SCRIPTS;
+
+SHOW CREATE REST CONTENT SET /scripts
+ON SERVICE /myTestService;
 
 SHOW REST CONTENT SETS;
 
@@ -597,11 +624,11 @@ BINARY CONTENT "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
 CREATE REST CONTENT FILE `/binaryFile4`
 ON SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet
-FROM "grammar/test/binary_test_file";
+BINARY CONTENT "AAECAwQFBgcICQo=";
 
 CREATE REST CONTENT FILE `/binaryFile5`
 ON SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet
-FROM "grammar/test/text_test_file.sql";
+CONTENT "SELECT 1;";
 
 
 DROP REST CONTENT FILE `/textFile`

@@ -64,21 +64,16 @@ class mrs:
         definitions
         """
 
-    class update:
-        """Used to update MRS objects from MRS scripts.
-
-        A collection of functions to update MRS objects from MRS scripts
-        """
-
     class dump:
-        """Used to dump MRS SDK files, projects and the audit log.
+        """Used to dump MRS SDK files, services, projects and the audit log.
 
-        A collection of functions to dump MRS SDK files, MRS projects and
-        the audit log
+        A collection of functions to dump MRS SDK files, REST services, MRS
+        projects and the audit log
         """
 
     class load:
-        """Used to load MRS projects.
+        """Used to load REST services, content sets and MRS projects.
 
-        A collection of functions to load MRS projects
+        A collection of functions to load REST services, upload directories
+        to REST content sets and load MRS projects
         """

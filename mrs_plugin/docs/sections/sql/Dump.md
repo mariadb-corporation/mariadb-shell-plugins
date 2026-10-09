@@ -75,49 +75,42 @@ mrs.dump.service_project(
 mrs.load.service_project(source="~/myServiceProject.zip")
 ```
 
-## DUMP REST SERVICE
+## Dumping and Loading REST Services
 
-An existing REST service can be dumped to disk by using the `DUMP REST SERVICE` statement. This dump does not include the database schema that it is based on. To create a fully consistent dump that also includes the database schema, dump a [REST project](#rest-projects) instead.
+A single REST service is dumped as a REST SQL script, which recreates the service when run. The script is the result of [SHOW CREATE REST SERVICE](#show-create-rest-service) with an `INCLUDING ... ENDPOINTS` clause. The dump does not include the database schemas the service is based on. To create a fully consistent dump that also includes them, dump a [REST project](#rest-projects) instead.
 
-> Note: Dumping a REST service to a ZIP file (`TO ZIP`) is not supported by the MRS module of the MariaDB Shell yet; such a statement reports an error.
-
-```antlr
-dumpRestServiceStatement:
-    DUMP REST SERVICE serviceRequestPath AS (
-        SQL
-    )? SCRIPT INCLUDING (
-        (
-            SCHEMA (
-                AND STATIC (
-                    AND DYNAMIC
-                )?
-            )?
-        )
-        | ALL
-    ) ENDPOINTS TO (ZIP)? directoryFilePath
-;
+```sql
+SHOW CREATE REST SERVICE /myService INCLUDING ALL ENDPOINTS;
 ```
 
-dumpRestServiceStatement ::=
-![dumpRestServiceStatement](../../images/sql/dumpRestServiceStatement.svg "dumpRestServiceStatement")
+From the service, you choose which endpoints to include:
+
+- `DATABASE`: REST objects like TABLE, VIEW, PROCEDURE and FUNCTION
+- `DATABASE AND STATIC`: also the content sets that do not hold MRS scripts
+- `DATABASE AND STATIC AND DYNAMIC`: also the content sets that hold MRS scripts
+- `ALL`: short for `DATABASE AND STATIC AND DYNAMIC`
+
+Each of these settings is a superset of the former.
+
+Reading and writing files on the client machine is not part of REST SQL. The mrs plugin of MariaDB Shell provides functions for this, see [Deploying REST Services](index.html#deploying-rest-services) for a guide:
+
+- `mrs.dump.service()` writes the script of a service to a file.
+- `mrs.load.service()` runs such a script, optionally creating the service under another request path.
+- `mrs.load.contentSet()` uploads the files of a directory to a content set, sending one `CREATE REST CONTENT FILE` statement per file, and registers the MRS scripts held by the files with `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS`. By default, the scripts are registered if the directory holds any; `load_scripts` turns this on or off. Files matching the `ignore_list` patterns, by default `*node_modules/*, */.*`, are skipped.
 
 **_Examples_**
 
-The following example dumps the REST service with the request path `/myService`.
+The following example dumps the REST service with the request path `/myService` and loads it again as `/myCopy`.
 
-```sql
-DUMP REST SERVICE /myService AS SQL SCRIPT INCLUDING DATABASE AND STATIC AND DYNAMIC ENDPOINTS TO '~/myService.sql'
+```py
+mrs.dump.service(service_path="/myService", file_path="~/myService.mrs.sql",
+                 endpoints="ALL")
+mrs.load.service(file_path="~/myService.mrs.sql", as_path="/myCopy")
 ```
-```sql
-DUMP REST SERVICE /myService AS SQL SCRIPT INCLUDING ALL ENDPOINTS TO ZIP '~/myService.zip';
+
+The following example uploads a directory to a new content set and registers its MRS scripts.
+
+```py
+mrs.load.content_set(directory="~/myScripts", content_set_path="/scripts",
+                     service_path="/myService")
 ```
-
-The service request path is referring to the service required on the project and you are able to include multiple services in the project. This statements will create a REST SQL file containing all the REST SQL commands to recreate the service. From that service, you choose what to include:
-- ```DATABASE``` include REST objects like TABLE, VIEW, PROCEDURE, FUNCTION and SCRIPT
-- ```STATIC``` include content sets that are not of SCRIPT type
-- ```DYNAMIC``` include content sets that are of SCRIPT type
-- ```ALL``` short for ```DATABASE AND STATIC AND DYNAMIC```
-
-Each of these settings are a superset of the former.
-
-The destination file is defined with the ```TO``` or ```TO ZIP``` expression when the created file is a REST SQL script or a zipped REST SQL file.
