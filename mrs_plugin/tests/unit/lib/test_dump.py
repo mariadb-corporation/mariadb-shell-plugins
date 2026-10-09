@@ -109,3 +109,14 @@ def test_export_audit_log_writes_rows_committed_late(init_mrs):
             session.run_sql(
                 f"DELETE FROM `{schema}`.audit_log WHERE table_name = 'test_dump'"
             )
+
+
+def test_the_plugin_function_takes_a_session(init_mrs):
+    """mrs.dump.auditLog with session= must not pass it on twice."""
+    from mrs_plugin import dump
+
+    with tempfile.TemporaryDirectory() as directory:
+        file_path = os.path.join(directory, "audit.log")
+        dump.export_audit_log(file_path, session=init_mrs, starting_from_today=False)
+
+        assert os.path.exists(os.path.join(directory, "mrs_audit_log_position.json"))

@@ -26,7 +26,41 @@
 Module that deals with the "real" database schema instead of the MRS objects
 """
 
+import json
+import re
+
 from mrs_plugin.lib import core
+
+
+# A BIT(1) value as JSON_OBJECT writes it on MariaDB: the raw byte, which a
+# nesting level further down reads as the escape "\u0001".
+_BIT_VALUE = re.compile(r"(:\s*)(?:\\u000([01])|([\x00\x01]))(?=\s*[,}])")
+
+
+def _json_document(value):
+    """Returns a JSON document with its nested documents decoded.
+
+    MariaDB's JSON is a LONGTEXT: the document arrives as text, and the
+    JSON_OBJECTs the procedure aggregates into arrays arrive as strings in
+    them, at every level. Its BIT(1) columns are written as the raw byte
+    (MySQL wrote them as "type16:" base64), which is no JSON value at all.
+    """
+    if isinstance(value, str) and value[:1] in ("{", "["):
+        value = _BIT_VALUE.sub(
+            lambda match: match.group(1)
+            + ("true" if (match.group(2) or match.group(3)) in ("1", "\x01") else "false"),
+            value,
+        )
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return value
+    if isinstance(value, dict):
+        return {key: _json_document(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_document(item) for item in value]
+
+    return value
 
 
 def quote_identifier(identifier):
@@ -351,10 +385,14 @@ def get_sdk_service_data(session, service_id, binary_formatter=None):
             CALL <metadata>.`sdk_service_data`(?)
         """
 
-        return (
+        row = (
             core.MrsDbExec(sql, binary_formatter=binary_formatter)
             .exec(session, [service_id])
             .first
         )
+        if row is not None:
+            row["service_res"] = _json_document(row.get("service_res"))
+
+        return row
     else:
         return None
