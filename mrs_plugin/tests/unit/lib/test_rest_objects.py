@@ -22,27 +22,27 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 import pytest
-from ..helpers import DbObjectCT, get_default_db_object_init
+from ..helpers import RestObjectCT, get_default_rest_object_init
 
 
 @pytest.mark.usefixtures("phone_book")
-def test_add_db_object(phone_book, table_contents):
-    db_object_table = table_contents("db_object")
+def test_add_rest_object(phone_book, table_contents):
+    rest_object_table = table_contents("rest_object")
     session = phone_book["session"]
     schema_id = phone_book["schema_id"]
-    db_object_init = get_default_db_object_init(session, schema_id)
+    rest_object_init = get_default_rest_object_init(session, schema_id)
 
-    with DbObjectCT(session, **db_object_init) as db_object_id:
-        assert db_object_table.get("id", db_object_id) == {
+    with RestObjectCT(session, **rest_object_init) as rest_object_id:
+        assert rest_object_table.get("id", rest_object_id) == {
             "auth_stored_procedure": None,
             "auto_detect_media_type": 1,
             "comments": "Object that will be removed",
             "crud_operations": ["CREATE", "READ", "UPDATE", "DELETE"],
-            "db_schema_id": schema_id,
+            "rest_schema_id": schema_id,
             "details": None,
             "enabled": 1,
             "format": "FEED",
-            "id": db_object_id,
+            "id": rest_object_id,
             "items_per_page": 10,
             "media_type": "application/json",
             "name": "ContactBasicInfo",
@@ -54,4 +54,4 @@ def test_add_db_object(phone_book, table_contents):
             "internal": 0,
         }
 
-    assert db_object_table.same_as_snapshot
+    assert rest_object_table.same_as_snapshot

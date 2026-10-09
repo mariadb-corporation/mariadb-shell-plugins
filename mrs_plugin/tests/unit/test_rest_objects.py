@@ -25,9 +25,9 @@
 
 from mrs_plugin import lib
 
-from .helpers import TableContents, SchemaCT, DbObjectCT, get_default_db_object_init
+from .helpers import TableContents, SchemaCT, RestObjectCT, get_default_rest_object_init
 
-db_object_create_statement = """CREATE OR REPLACE REST VIEW /Contacts
+rest_object_create_statement = """CREATE OR REPLACE REST VIEW /Contacts
     ON SERVICE /test SCHEMA /PhoneBook
     AS `PhoneBook`.`Contacts` CLASS MyServiceAnalogPhoneBookContacts {
         id: id @KEY @SORTABLE,
@@ -39,73 +39,73 @@ db_object_create_statement = """CREATE OR REPLACE REST VIEW /Contacts
     AUTHENTICATION REQUIRED;"""
 
 
-def crud_operations(session, db_object_id):
+def crud_operations(session, rest_object_id):
     row = session.run_sql(
         lib.core.metadata_sql(
-            session, "SELECT crud_operations FROM <metadata>.db_object WHERE id = ?"
+            session, "SELECT crud_operations FROM <metadata>.rest_object WHERE id = ?"
         ),
-        [db_object_id],
+        [rest_object_id],
     ).fetch_one()
     return row[0].split(",") if row and row[0] else []
 
 
 def test_set_crud_operations(phone_book, table_contents):
     session = phone_book["session"]
-    db_object_table: TableContents = table_contents("db_object")
-    db_object = get_default_db_object_init(session, phone_book["schema_id"])
+    rest_object_table: TableContents = table_contents("rest_object")
+    rest_object = get_default_rest_object_init(session, phone_book["schema_id"])
 
-    db_object["objects"][0]["options"] = {
+    rest_object["data_mappings"][0]["options"] = {
         "dataMappingViewInsert": True,
         "dataMappingViewUpdate": True,
         "dataMappingViewDelete": True,
     }
 
-    with DbObjectCT(session, **db_object) as db_object_id:
-        result = crud_operations(session, db_object_id)
+    with RestObjectCT(session, **rest_object) as rest_object_id:
+        result = crud_operations(session, rest_object_id)
 
         assert result == ["CREATE", "READ", "UPDATE", "DELETE"]
 
-    db_object["objects"][0]["options"] = {
+    rest_object["data_mappings"][0]["options"] = {
         "dataMappingViewInsert": False,
         "dataMappingViewUpdate": True,
         "dataMappingViewDelete": True,
     }
 
-    with DbObjectCT(session, **db_object) as db_object_id:
-        result = crud_operations(session, db_object_id)
+    with RestObjectCT(session, **rest_object) as rest_object_id:
+        result = crud_operations(session, rest_object_id)
 
         assert result == ["READ", "UPDATE", "DELETE"]
 
-    db_object["objects"][0]["options"] = {
+    rest_object["data_mappings"][0]["options"] = {
         "dataMappingViewInsert": False,
         "dataMappingViewUpdate": False,
         "dataMappingViewDelete": True,
     }
 
-    with DbObjectCT(session, **db_object) as db_object_id:
-        result = crud_operations(session, db_object_id)
+    with RestObjectCT(session, **rest_object) as rest_object_id:
+        result = crud_operations(session, rest_object_id)
 
         assert result == ["READ", "DELETE"]
 
-    db_object["objects"][0]["options"] = {
+    rest_object["data_mappings"][0]["options"] = {
         "dataMappingViewInsert": False,
         "dataMappingViewUpdate": False,
         "dataMappingViewDelete": False,
     }
 
-    with DbObjectCT(session, **db_object) as db_object_id:
-        result = crud_operations(session, db_object_id)
+    with RestObjectCT(session, **rest_object) as rest_object_id:
+        result = crud_operations(session, rest_object_id)
 
         assert result == ["READ"]
 
-    db_object["objects"][0]["fields"][0]["options"] = {
+    rest_object["data_mappings"][0]["fields"][0]["options"] = {
         "dataMappingViewInsert": True,
         "dataMappingViewUpdate": True,
         "dataMappingViewDelete": True,
     }
 
-    with DbObjectCT(session, **db_object) as db_object_id:
-        result = crud_operations(session, db_object_id)
+    with RestObjectCT(session, **rest_object) as rest_object_id:
+        result = crud_operations(session, rest_object_id)
 
         assert result == ["READ", "UPDATE"]
 
@@ -120,22 +120,22 @@ def test_special_schemas(phone_book, mobile_phone_book, table_contents):
         session, phone_book["service_id"], "information_schema", "/information_schema"
     ) as schema_id:
 
-        db_object_init = get_default_db_object_init(
+        rest_object_init = get_default_rest_object_init(
             session, schema_id, "CHARACTER_SETS", "/character_sets"
         )
 
-        with DbObjectCT(session, **db_object_init) as db_object_id:
+        with RestObjectCT(session, **rest_object_init) as rest_object_id:
             assert information_schema_grants.same_as_snapshot
 
     with SchemaCT(
         session, phone_book["service_id"], "performance_schema", "/performance_schema"
     ) as schema_id:
 
-        db_object_init = get_default_db_object_init(
+        rest_object_init = get_default_rest_object_init(
             session, schema_id, "accounts", "/accounts" "TABLE"
         )
 
-        with DbObjectCT(session, **db_object_init) as db_object_id:
+        with RestObjectCT(session, **rest_object_init) as rest_object_id:
             assert not information_schema_grants.same_as_snapshot
 
             filtered = information_schema_grants.filter(

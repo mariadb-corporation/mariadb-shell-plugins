@@ -48,18 +48,18 @@ def add_test_schema(session, service_id, schema_name, request_path=None, **kwarg
         )
 
 
-def add_test_db_object(session, **kwargs):
+def add_test_rest_object(session, **kwargs):
     """Adds a REST object with its grants the way the former
     mrs.add.dbObject() did."""
     kwargs.pop("session", None)
     with lib.core.MrsDbTransaction(session):
-        db_object_id, grants = lib.db_objects.add_db_object(
+        rest_object_id, grants = lib.rest_objects.add_rest_object(
             session=session,
             schema_id=lib.core.id_to_uuid(kwargs["schema_id"], "schema_id"),
-            db_object_name=kwargs["db_object_name"],
+            rest_object_name=kwargs["rest_object_name"],
             request_path=kwargs["request_path"],
             enabled=kwargs.get("enabled", True),
-            db_object_type=kwargs["db_object_type"],
+            rest_object_type=kwargs["rest_object_type"],
             items_per_page=kwargs.get("items_per_page"),
             requires_auth=kwargs.get("requires_auth"),
             row_user_ownership_enforced=kwargs.get("row_user_ownership_enforced"),
@@ -71,26 +71,26 @@ def add_test_db_object(session, **kwargs):
             auth_stored_procedure=kwargs.get("auth_stored_procedure"),
             options=kwargs.get("options"),
             metadata=kwargs.get("metadata"),
-            objects=kwargs.get("objects"),
+            data_mappings=kwargs.get("data_mappings"),
         )
         for grant in grants:
             lib.core.MrsDbExec(grant).exec(session)
-    return db_object_id
+    return rest_object_id
 
 
-def get_default_db_object_init(
+def get_default_rest_object_init(
     session,
     schema_id,
     name=None,
     request_path=None,
-    db_object_type=None,
+    rest_object_type=None,
     object_options=None,
 ):
-    object_id = lib.core.get_sequence_id(session)
+    data_mapping_id = lib.core.get_sequence_id(session)
     return {
         "schema_id": schema_id,
-        "db_object_name": name or "ContactBasicInfo",
-        "db_object_type": db_object_type or "VIEW",
+        "rest_object_name": name or "ContactBasicInfo",
+        "rest_object_type": rest_object_type or "VIEW",
         "request_path": request_path or "/view_contact_basic_info",
         "crud_operation_format": "FEED",
         "requires_auth": False,
@@ -102,9 +102,9 @@ def get_default_db_object_init(
         "auth_stored_procedure": None,
         "options": {"aaa": "val aaa", "bbb": "val bbb"},
         "metadata": None,
-        "objects": [
+        "data_mappings": [
             {
-                "id": object_id,
+                "id": data_mapping_id,
                 "name": "MyServicePhoneBookContactsWithEmail",
                 "position": 0,
                 "kind": "RESULT",
@@ -122,7 +122,7 @@ def get_default_db_object_init(
                 "fields": [
                     {
                         "id": lib.core.get_sequence_id(session),
-                        "object_id": object_id,
+                        "data_mapping_id": data_mapping_id,
                         "name": "id",
                         "position": 1,
                         "db_column": {
@@ -154,18 +154,18 @@ def rest_path(path):
     return lib.core.quote_ident(path)
 
 
-def drop_rest_db_object(session, db_object_id):
+def drop_rest_rest_object(session, rest_object_id):
     """Drops a REST object with REST SQL, which also revokes its grants."""
     row = session.run_sql(
         lib.core.metadata_sql(
             session,
             """SELECT o.request_path, o.object_type, s.request_path, se.url_context_root
-        FROM <metadata>.db_object o
-            JOIN <metadata>.db_schema s ON s.id = o.db_schema_id
+        FROM <metadata>.rest_object o
+            JOIN <metadata>.rest_schema s ON s.id = o.rest_schema_id
             JOIN <metadata>.service se ON se.id = s.service_id
         WHERE o.id = ?""",
         ),
-        [db_object_id],
+        [rest_object_id],
     ).fetch_one()
     if row:
         kind = "VIEW" if row[1] in ("TABLE", "VIEW") else row[1]
@@ -180,7 +180,7 @@ def drop_rest_schema(session, schema_id):
         lib.core.metadata_sql(
             session,
             """SELECT s.request_path, se.url_context_root
-        FROM <metadata>.db_schema s
+        FROM <metadata>.rest_schema s
             JOIN <metadata>.service se ON se.id = s.service_id
         WHERE s.id = ?""",
         ),
@@ -240,16 +240,16 @@ class ServiceCT(object):
         return self._service_id
 
 
-class DbObjectCT:
+class RestObjectCT:
     def __init__(self, session, **kwargs) -> None:
         self._session = session
-        self._db_object_id = add_test_db_object(session, **kwargs)
+        self._rest_object_id = add_test_rest_object(session, **kwargs)
 
     def __enter__(self):
-        return self._db_object_id
+        return self._rest_object_id
 
     def __exit__(self, type, value, traceback):
-        drop_rest_db_object(self._session, self._db_object_id)
+        drop_rest_rest_object(self._session, self._rest_object_id)
 
 
 def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp_dir):
@@ -301,9 +301,9 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
         )
 
     object_key = lib.core.convert_id_to_string(lib.core.get_sequence_id(session))
-    db_object = {
-        "db_object_name": "Contacts",
-        "db_object_type": "TABLE",
+    rest_object = {
+        "rest_object_name": "Contacts",
+        "rest_object_type": "TABLE",
         "schema_id": schema_id,
         "auto_add_schema": False,
         "request_path": "/Contacts",
@@ -316,10 +316,10 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
         "auto_detect_media_type": False,
         "auth_stored_procedure": "",
         "options": None,
-        "objects": [
+        "data_mappings": [
             {
                 "id": object_key,
-                "db_object_id": "",
+                "rest_object_id": "",
                 "name": "MyServiceAnalogPhoneBookContacts",
                 "position": 0,
                 "kind": "RESULT",
@@ -328,7 +328,7 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
                         "id": lib.core.convert_id_to_string(
                             lib.core.get_sequence_id(session)
                         ),
-                        "object_id": object_key,
+                        "data_mapping_id": object_key,
                         "name": "id",
                         "position": 1,
                         "db_column": {
@@ -352,7 +352,7 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
                         "id": lib.core.convert_id_to_string(
                             lib.core.get_sequence_id(session)
                         ),
-                        "object_id": object_key,
+                        "data_mapping_id": object_key,
                         "name": "fName",
                         "position": 2,
                         "db_column": {
@@ -376,7 +376,7 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
                         "id": lib.core.convert_id_to_string(
                             lib.core.get_sequence_id(session)
                         ),
-                        "object_id": object_key,
+                        "data_mapping_id": object_key,
                         "name": "lName",
                         "position": 3,
                         "db_column": {
@@ -400,7 +400,7 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
                         "id": lib.core.convert_id_to_string(
                             lib.core.get_sequence_id(session)
                         ),
-                        "object_id": object_key,
+                        "data_mapping_id": object_key,
                         "name": "number",
                         "position": 4,
                         "db_column": {
@@ -424,7 +424,7 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
                         "id": lib.core.convert_id_to_string(
                             lib.core.get_sequence_id(session)
                         ),
-                        "object_id": object_key,
+                        "data_mapping_id": object_key,
                         "name": "email",
                         "position": 5,
                         "db_column": {
@@ -449,14 +449,14 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
         ],
     }
 
-    db_object_id = add_test_db_object(session, **db_object)
-    assert db_object_id is not None
+    rest_object_id = add_test_rest_object(session, **rest_object)
+    assert rest_object_id is not None
 
     return {
         "session": session,
         "service_id": service["id"],
         "schema_id": schema_id,
-        "db_object_id": db_object_id,
+        "rest_object_id": rest_object_id,
         "content_set_id": content_set["id"],
         "temp_dir": temp_dir.name,
     }
@@ -710,13 +710,13 @@ def create_test_db(session, schema_name):
                         JOIN `Notes` t2 ON t1.`id` = t2.`contact_id`;""")
 
 
-def get_db_object_privileges(session, schema_name, db_object_name):
+def get_rest_object_privileges(session, schema_name, rest_object_name):
     # 1. Fetch table privileges
     raw_table_grants = lib.core.MrsDbExec(f"""
         SELECT PRIVILEGE_TYPE
         FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
         WHERE TABLE_SCHEMA = '{schema_name}'
-            AND TABLE_NAME = '{db_object_name}'
+            AND TABLE_NAME = '{rest_object_name}'
         """).exec(session).items
 
     table_grants = [g["PRIVILEGE_TYPE"].upper() for g in raw_table_grants]
@@ -727,7 +727,7 @@ def get_db_object_privileges(session, schema_name, db_object_name):
         FROM mysql.procs_priv
         WHERE LOWER(Db) = LOWER(?)
             AND LOWER(Routine_name) = LOWER(?)
-        """).exec(session, [schema_name, db_object_name]).items
+        """).exec(session, [schema_name, rest_object_name]).items
 
     proc_grants = []
     for row in raw_proc_grants:

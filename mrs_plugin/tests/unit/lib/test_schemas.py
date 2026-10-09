@@ -26,7 +26,7 @@ from mrs_plugin import lib
 
 
 def test_add_schema(phone_book, table_contents):
-    schema_table = table_contents("db_schema")
+    schema_table = table_contents("rest_schema")
     args = {
         "schema_name": "PhoneBook",
         "service_id": phone_book["service_id"],
