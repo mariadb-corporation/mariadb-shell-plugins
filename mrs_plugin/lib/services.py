@@ -366,7 +366,7 @@ def service_script(session, service_path: str, endpoints: str | None = None) -> 
             )
         including = f" INCLUDING {endpoints} ENDPOINTS"
     return session.run_sql(
-        f"SHOW CREATE REST SERVICE {core.quote_ident(service_path)}{including}"
+        f"SHOW CREATE REST SERVICE {core.quote_service_path(service_path)}{including}"
     ).fetch_one()[0]
 
 
@@ -381,36 +381,47 @@ def dump_service_script(
             f.write("\n")
 
 
-SERVICE_CREATE_REGEX = re.compile(
-    r"^CREATE\s+(?:OR\s+REPLACE\s+)?REST\s+SERVICE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
-    r"(`(?:[^`]|``)*`|[^\s;]+)",
-    re.IGNORECASE,
+# The service path of the two statements a service script starts with: the
+# path may carry a developer list (`dev`@/path) and backtick-quoted parts.
+SERVICE_PATH = r"((?:`(?:[^`]|``)*`|[^\s;`])+)"
+SERVICE_SCRIPT_START = (
+    re.compile(
+        r"^CREATE\s+(?:OR\s+REPLACE\s+)?REST\s+SERVICE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+        + SERVICE_PATH,
+        re.IGNORECASE,
+    ),
+    re.compile(r"^USE\s+REST\s+SERVICE\s+" + SERVICE_PATH, re.IGNORECASE),
 )
 
 
 def load_service_script(session, script: str, as_path: str | None = None):
     """Runs the REST SQL script of a service.
 
-    With as_path, the service is created under that request path: the script
-    starts with the CREATE REST SERVICE statement, and its path is replaced in
-    that statement and in the ON SERVICE clause of the others.
+    With as_path, the service is created under that request path. The script
+    (SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS) names the service
+    only in its first two statements, CREATE REST SERVICE and USE REST
+    SERVICE; the other statements act on the current service. as_path
+    replaces the whole service path there, a developer list included.
     """
     statements = split_sql_script(script)
 
     if as_path:
-        match = SERVICE_CREATE_REGEX.match(statements[0]) if statements else None
-        if match is None:
-            raise ValueError(
-                "The script does not start with a CREATE REST SERVICE statement."
+        new_path = core.quote_service_path(as_path)
+        for i, pattern in enumerate(SERVICE_SCRIPT_START):
+            if i >= len(statements):
+                break
+            match = pattern.match(statements[i])
+            if match is None:
+                if i == 0:
+                    raise ValueError(
+                        "The script does not start with a CREATE REST SERVICE statement."
+                    )
+                break
+            statements[i] = (
+                statements[i][: match.start(1)]
+                + new_path
+                + statements[i][match.end(1) :]
             )
-        service_ref = re.compile(
-            r"(\bSERVICE\s+)" + re.escape(match.group(1)) + r"(?=\s|;|$)", re.IGNORECASE
-        )
-        new_path = core.quote_ident(as_path)
-        statements = [
-            service_ref.sub(lambda m: m.group(1) + new_path, statement, count=1)
-            for statement in statements
-        ]
 
     for statement in statements:
         session.run_sql(statement)

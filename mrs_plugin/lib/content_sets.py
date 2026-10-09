@@ -950,7 +950,7 @@ def content_file_statement(
 
     return (
         f"CREATE OR REPLACE REST CONTENT FILE {core.quote_ident(request_path)} ON"
-        + (f" SERVICE {core.quote_ident(service_path)}" if service_path else "")
+        + (f" SERVICE {core.quote_service_path(service_path)}" if service_path else "")
         + f" CONTENT SET {core.quote_ident(content_set_path)}\n    {content}\n"
         f"    OPTIONS {json.dumps(options)}"
     )
@@ -984,7 +984,9 @@ def load_content_set(
         ignore_list = DEFAULT_IGNORE_LIST
 
     content_set_ref = core.quote_ident(content_set_path)
-    on_service = f" ON SERVICE {core.quote_ident(service_path)}" if service_path else ""
+    on_service = (
+        f" ON SERVICE {core.quote_service_path(service_path)}" if service_path else ""
+    )
 
     create = "CREATE OR REPLACE" if replace else "CREATE"
     session.run_sql(f"{create} REST CONTENT SET {content_set_ref}{on_service}")

@@ -467,7 +467,35 @@ def test_dump_and_load_service(phone_book):
             copy = session.run_sql(
                 "SHOW CREATE REST SERVICE /testCopy INCLUDING DATABASE ENDPOINTS"
             ).fetch_one()[0]
-            assert copy == re.sub(r"(SERVICE )/test(?=[\s;])", r"\1/testCopy", script)
-            assert copy != script
+            # Only the CREATE and USE statements name the service
+            assert copy.count("/testCopy") == 2
+            assert copy == script.replace(
+                "REST SERVICE /test\n", "REST SERVICE /testCopy\n", 1
+            ).replace("USE REST SERVICE /test;", "USE REST SERVICE /testCopy;", 1)
         finally:
             session.run_sql("DROP REST SERVICE /testCopy")
+
+
+def test_load_service_in_development_as_path(phone_book):
+    session = phone_book["session"]
+
+    # The script of a service in development names it with its developers;
+    # as_path replaces that, and the endpoints follow
+    session.run_sql("CREATE REST SERVICE mike@/devSvc")
+    session.run_sql(
+        "CREATE REST SCHEMA /phoneBook ON SERVICE mike@/devSvc FROM `PhoneBook`"
+    )
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            file_path = os.path.join(directory, "devSvc.mrs.sql")
+            dump_service("mike@/devSvc", file_path, session=session)
+            load_service(file_path, as_path="/devCopy", session=session)
+        try:
+            schemas = session.run_sql(
+                "SHOW REST SCHEMAS FROM SERVICE /devCopy"
+            ).fetch_all()
+            assert [row[0] for row in schemas] == ["/phoneBook"]
+        finally:
+            session.run_sql("DROP REST SERVICE /devCopy")
+    finally:
+        session.run_sql("DROP REST SERVICE mike@/devSvc")

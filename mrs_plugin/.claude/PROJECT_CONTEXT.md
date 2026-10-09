@@ -227,6 +227,10 @@ packages with msm_plugin and mcp_plugin.
   (quotes doubled), else base64 `BINARY CONTENT` (independent of `NO_BACKSLASH_ESCAPES`).
   `DROP REST CONTENT SET` takes `FROM SERVICE`, not `ON SERVICE`.
 - **pyflakes/black are not installed** globally or in the shell's Python; use a scratch venv.
+- **Service paths in REST SQL from Python:** use `core.quote_service_path()` (quotes the
+  request path, keeps a developer list `mike@/path` unquoted); `quote_ident` on a developer
+  path breaks it. `load_service_script(as_path=...)` relies on the dump naming the service
+  only in its CREATE and USE statements (since 2026-10-09).
 - Keywords used as names need quotes (`FOR AUTH APP app` fails: `APP` is a keyword); only
   `FILES` and `VENDORS` are allowed unquoted.
 - **A stored data mapping holds every column**: the ones left out of the mapping are
