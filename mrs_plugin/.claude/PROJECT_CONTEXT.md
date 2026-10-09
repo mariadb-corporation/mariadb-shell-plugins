@@ -97,7 +97,11 @@ packages with msm_plugin and mcp_plugin.
     STATUS` gained `metadata_version` (max `audit_log.id`, for polling). New keywords
     `COLUMNS` (usable as a name) and `TABLE` (only as a data-mapping key: after `FROM` it
     would be ambiguous). FORMAT at the END was the user's choice (the server puts it first).
-  - Green: shell mrs filter 66 tests, plugin pytest 248/2 skipped, grammar test.
+  - 2026-10-09: `SHOW REST [METADATA] STATUS FORMAT=JSON` (with
+    `available_metadata_versions`, `configuration_options`; available/required versions
+    now also before the schema exists); project dump/load through REST SQL (see
+    [context/plugin-reduction.md](context/plugin-reduction.md)).
+  - Green: shell mrs filter 69 tests, plugin pytest 248/2 skipped, grammar test.
   - The tree also holds another session's uncommitted grammar-parity work (scripts,
     `generate_rrd_svg_files.py`, docs prose, SVGs); commit or untangle together.
 - **Tests, all green on the 2026-10-08 shell build with the built-in mrs module** (the

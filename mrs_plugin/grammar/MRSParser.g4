@@ -754,7 +754,7 @@ serviceAndSchemaRequestPaths:
 // SHOW statements ==========================================================
 
 showRestMetadataStatusStatement:
-    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL? STATUS_SYMBOL
+    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL? STATUS_SYMBOL formatClause?
 ;
 
 showRestServicesStatement:

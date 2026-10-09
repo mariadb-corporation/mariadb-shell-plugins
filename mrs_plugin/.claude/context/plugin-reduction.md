@@ -38,12 +38,24 @@ Analysis of 2026-10-08; the user wants to discuss before anything is removed.
 - **OCI support is dropped:** `get.ociDomainAppSecret` goes; the `OCI OAuth2` auth vendor
   row could go in a later schema version. `ignoreVersionUpgrade` is covered by
   `CONFIGURE REST METADATA MERGE OPTIONS {"ignore_service_upgrades_till": "<version>"}`.
-- **Undecided:** `get.availableMetadataVersions`, `get.configurationOptions` -> maybe
-  `SHOW REST METADATA STATUS`.
+- **Metadata info, now covered (2026-10-09):** `get.availableMetadataVersions` and
+  `get.configurationOptions` -> `SHOW REST [METADATA] STATUS FORMAT=JSON`
+  (`available_metadata_versions` from the bundled project's `releases/versions`,
+  `configuration_options` = `config.data`). Nothing is undecided any more: 13 keep,
+  105 remove.
+- **Kept functions and REST SQL (2026-10-09):** every kept function that uses the
+  database takes `session` and runs its SQL through `session.run_sql`.
+  `load.serviceProject` loads each service file with `LOAD REST SERVICE FROM '<file>'`;
+  `dump.serviceProject` writes them with `SHOW CREATE REST SERVICE ... [INCLUDING
+  DATABASE ENDPOINTS]` or `DUMP REST SERVICE ... INCLUDING DATABASE AND STATIC | ALL
+  ENDPOINTS TO '<file>'` (`lib.services.dump_service_script`), not the Python
+  `get_service_create_statement` any more. `get.sdkOptions`, the three script analysis
+  functions and `version` have no session (no database access); the user was offered
+  an unused one for a uniform signature.
 - Removing `run.script` lets `grammar/`'s Python use, `lib/mrs_parser/`,
-  `MrsDdlListener/Executor*.py`, `lib/script.py` go; first move
-  `lib/services.run_sql_script` (used by `load.serviceProject`) to `session.run_sql` (the
-  shell's MRS handler catches it) and drop `lib/content_files.py`'s `MrsDdlExecutor`
+  `MrsDdlListener/Executor*.py`, `lib/script.py` go. `load.serviceProject` no longer
+  needs them (2026-10-09); left: `lib/services.run_sql_script(is_mrs=True)` (only used by
+  `load.serviceSqlScript`, which goes too) and `lib/content_files.py`'s `MrsDdlExecutor`
   import. The ANTLR grammar stays as the docs grammar.
 - Nothing outside the plugin calls `mrs.*` by name (code_ext, mcp_plugin, msm_plugin
   checked); mcp_plugin only sends REST SQL.
