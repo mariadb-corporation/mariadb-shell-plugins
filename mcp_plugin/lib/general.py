@@ -107,6 +107,7 @@ _multi_tenant = False
 # MCP function groups that can be loaded independently
 FUNCTION_GROUP_DB = "db"
 FUNCTION_GROUP_MSM = "msm"
+FUNCTION_GROUP_MRS = "mrs"
 FUNCTION_GROUP_SANDBOX = "sandbox"
 # The migrator group is supported wherever the group list is concerned, but its
 # tools register only where the migration tooling is actually installed - see
@@ -115,6 +116,7 @@ FUNCTION_GROUP_MIGRATOR = "migrator"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
+    FUNCTION_GROUP_MRS,
     FUNCTION_GROUP_SANDBOX,
     FUNCTION_GROUP_MIGRATOR,
 )

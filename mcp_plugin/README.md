@@ -219,7 +219,7 @@ primitives in `lib/setup_prompts.py`).
 ## Exposed MCP tools
 
 The tools are grouped into function groups that can be loaded independently via the
-`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migrator`;
+`function_groups` option of `mcp.start_server` (`db`, `msm`, `mrs`, `sandbox`, `migrator`;
 defaults to all):
 
 ```bash
@@ -284,6 +284,37 @@ prompting for input.
 `msm.deploy_schema` deploys onto a connection opened with `db.connect`, so it is only
 registered when the `db` function group is served as well. All other `msm` tools work
 on a schema project on disk and are always available.
+
+### REST service tools (`mrs`)
+
+The MariaDB REST Service itself is managed with REST SQL (`CREATE REST SERVICE ...`,
+`SHOW REST SERVICES`, `SHOW CREATE REST SERVICE ... FORMAT=JSON`), which the shell's
+built-in `mrs` module handles: send it through `db.execute_sql` like any other
+statement. The `mrs` tools wrap the functions of the `mrs` plugin that work with the
+client's files, which REST SQL cannot:
+
+| MCP tool | Wraps (`mrs_plugin`) |
+| --- | --- |
+| `mrs.version` | `mrs.version` |
+| `mrs.get_sdk_base_classes` | `mrs.get.sdkBaseClasses` |
+| `mrs.get_sdk_options` | `mrs.get.sdkOptions` |
+| `mrs.get_folder_mrs_script_language` | `mrs.get.folderMrsScriptLanguage` |
+| `mrs.get_folder_mrs_script_definitions` | `mrs.get.folderMrsScriptDefinitions` |
+| `mrs.get_file_mrs_script_definitions` | `mrs.get.fileMrsScriptDefinitions` |
+| `mrs.get_sdk_service_classes` | `mrs.get.sdkServiceClasses` |
+| `mrs.dump_sdk_service_files` | `mrs.dump.sdkServiceFiles` |
+| `mrs.get_runtime_management_code` | `mrs.get.runtimeManagementCode` |
+| `mrs.dump_service` | `mrs.dump.service` |
+| `mrs.load_service` | `mrs.load.service` |
+| `mrs.dump_service_project` | `mrs.dump.serviceProject` |
+| `mrs.load_service_project` | `mrs.load.serviceProject` |
+| `mrs.load_content_set` | `mrs.load.contentSet` |
+| `mrs.dump_audit_log` | `mrs.dump.auditLog` |
+
+The tools from `mrs.get_sdk_service_classes` on work on a REST service through a
+connection opened with `db.connect`, so they are only registered when the `db` group
+is served as well. Every file and directory they take is checked against the allowed
+paths. A multi-tenant server does not serve the `mrs` group.
 
 ### Sandbox tools (`sandbox`)
 

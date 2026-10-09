@@ -53,8 +53,8 @@ def start_server(**options) -> None:
             "stdio". Defaults to streamable-http.
         function_groups (list): The function groups to expose, allowing them to
             be loaded independently. Supported groups are "db", "msm",
-            "sandbox" and "migrator". Defaults to all groups, or to "db" in
-            multi-tenant mode, which serves no other. The "migrator"
+            "mrs", "sandbox" and "migrator". Defaults to all groups, or to
+            "db" in multi-tenant mode, which serves no other. The "migrator"
             group registers its tools only where the MySQL-to-MariaDB
             migration tooling is installed (see mcp.setup).
         gui (bool): Serve for the MariaDB VS Code extension. The extension is

@@ -36,6 +36,7 @@
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -214,7 +215,7 @@ def main() -> int:
     )
     env["MCP_COVERAGE_RC"] = str(plugin_dir / ".coveragerc")
 
-    pattern = f"-k {args.only}" if args.only else ""
+    pattern = f"-k {shlex.quote(args.only)}" if args.only else ""
     e2e = "--e2e" if args.e2e else ""
     keycloak = "--keycloak" if args.keycloak else ""
     # Install the test dependencies into the shell's Python. Driven off
