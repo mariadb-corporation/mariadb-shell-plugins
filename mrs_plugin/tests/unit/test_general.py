@@ -22,11 +22,8 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-import pytest
 from ...general import *
 import mrs_plugin.lib as lib
-import mysqlsh
-import mrs_plugin.tests.unit.helpers as helpers
 
 
 def test_version():

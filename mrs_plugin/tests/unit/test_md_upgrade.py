@@ -28,7 +28,6 @@ import os
 import re
 
 from mrs_plugin import lib, general
-from .helpers import ServiceCT, SchemaCT, QueryResults, TableContents
 import mrs_plugin.tests.unit.helpers as helpers
 
 # pass --mdupgrade to run this test

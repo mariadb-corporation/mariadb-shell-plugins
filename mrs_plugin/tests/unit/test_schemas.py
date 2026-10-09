@@ -21,11 +21,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-import pytest
-import os
-from pathlib import Path
-import mysqlsh
-from .helpers import SchemaCT, DbObjectCT, get_default_db_object_init
+from .helpers import SchemaCT
 
 schema_create_statement = """CREATE OR REPLACE REST SCHEMA /PhoneBook ON SERVICE /test
     FROM `PhoneBook`

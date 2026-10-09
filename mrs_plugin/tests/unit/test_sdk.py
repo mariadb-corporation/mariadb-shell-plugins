@@ -1013,14 +1013,6 @@ def test_generate_union():
     assert union == "Foo: TypeAlias = Bar | Baz\n\n\n"
 
 
-def test_generate_sequence_constant():
-    constant = generate_sequence_constant("Foo", ["Bar", "Baz"], "typescript")
-    assert constant == 'const Foo = ["Bar", "Baz"] as const;\n'
-
-    constant = generate_sequence_constant("Foo", ["Bar", "Baz"], "python")
-    assert constant == 'Foo: Sequence = ["Bar", "Baz"]\n\n'
-
-
 def test_field_is_required():
     obj = {"row_ownership_field_id": None}
     field = {

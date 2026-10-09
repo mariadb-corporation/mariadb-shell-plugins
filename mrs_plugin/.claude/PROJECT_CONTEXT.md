@@ -22,8 +22,8 @@ packages with msm_plugin and mcp_plugin.
 ## Architecture / key decisions
 
 - **Two layers**, as in msm_plugin: top-level `*.py` are the `@plugin_function` wrappers
-  (`general`, `services`, `content_sets`, `dump`); `lib/*.py` does the work. Much of `lib`
-  only served the removed wrappers and is kept for now (the SDK and the tests use parts).
+  (`general`, `services`, `content_sets`, `dump`); `lib/*.py` does the work and holds only
+  code those 13 functions reach (cleanup 2026-10-09).
 - **REST SQL has two grammars, kept rule for rule in step**: ANTLR here
   (`grammar/MRS{Lexer,Parser}.g4`) and bison in the shell
   (`mariadb-shell/modules/mrs/core/mrs_parser.yy`, keywords in `mrs_lexer.h`). A statement

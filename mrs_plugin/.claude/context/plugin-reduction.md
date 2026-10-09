@@ -60,6 +60,18 @@ Analysis of 2026-10-08; the user wants to discuss before anything is removed.
   functions are gone (`test_content_files.py`, `test_routers.py` entirely); the fixtures
   (`tests/conftest.py`, `tests/unit/helpers.py`) use `lib` and `CONFIGURE REST METADATA`
   instead of the wrappers. 203 tests pass. The dev guide's `mrs.add.*` sections are
-  replaced by REST SQL. Not done: pruning `lib` of code only the removed wrappers used.
+  replaced by REST SQL.
+- **`lib` cleanup (2026-10-09):** only code reachable from the 13 kept functions remains
+  (static call graph from them, iterated to a fixed point): `lib/auth_apps`, `roles`,
+  `routers`, `users` deleted, 211+ unused functions, classes and constants removed,
+  the metadata version branches (`current_version[0] <= 2` ...) reduced to the 5.x path,
+  `lib.general.get_status` is now `SHOW REST METADATA STATUS FORMAT=JSON` through
+  `session.run_sql`, `DB_VERSION` / `REQUIRED_ROUTER_VERSION` gone (the shell module's
+  `k_schema_version` is the source; `db_schema/README.md` points there). Plugin Python code
+  13.9k -> 7.6k lines. Tests of removed code and the REST SQL behaviour tests (`test_roles`,
+  `test_users`, `test_grants`, service `test_sql_*`; the shell repo tests REST SQL) are
+  gone; the fixtures create services and content sets and drop objects with REST SQL
+  (`tests/unit/helpers.py`: `ServiceCT`, `SchemaCT`, `DbObjectCT`,
+  `create_mrs_phonebook_schema`); 174 tests pass.
 - Nothing outside the plugin calls `mrs.*` by name (code_ext, mcp_plugin, msm_plugin
   checked); mcp_plugin only sends REST SQL.

@@ -22,19 +22,8 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-import pytest
-from pathlib import Path
-import os
 
-from mrs_plugin.lib.services import get_current_service_id, set_current_service_id
-from mrs_plugin import lib
-from .helpers import (
-    get_db_object_privileges,
-    TableContents,
-    SchemaCT,
-    DbObjectCT,
-    get_default_db_object_init,
-)
+from .helpers import TableContents, SchemaCT, DbObjectCT, get_default_db_object_init
 
 db_object_create_statement = """CREATE OR REPLACE REST VIEW /Contacts
     ON SERVICE /test SCHEMA /PhoneBook
@@ -46,6 +35,15 @@ db_object_create_statement = """CREATE OR REPLACE REST VIEW /Contacts
         email: email
     }
     AUTHENTICATION REQUIRED;"""
+
+
+def crud_operations(session, db_object_id):
+    row = session.run_sql(
+        "SELECT crud_operations FROM mysql_rest_service_metadata.db_object "
+        "WHERE id = ?",
+        [db_object_id],
+    ).fetch_one()
+    return row[0].split(",") if row and row[0] else []
 
 
 def test_set_crud_operations(phone_book, table_contents):
@@ -60,10 +58,9 @@ def test_set_crud_operations(phone_book, table_contents):
     }
 
     with DbObjectCT(session, **db_object) as db_object_id:
-        result = lib.db_objects.get_db_object(session, db_object_id)
-        assert result is not None
+        result = crud_operations(session, db_object_id)
 
-        assert result["crud_operations"] == ["CREATE", "READ", "UPDATE", "DELETE"]
+        assert result == ["CREATE", "READ", "UPDATE", "DELETE"]
 
     db_object["objects"][0]["options"] = {
         "dataMappingViewInsert": False,
@@ -72,10 +69,9 @@ def test_set_crud_operations(phone_book, table_contents):
     }
 
     with DbObjectCT(session, **db_object) as db_object_id:
-        result = lib.db_objects.get_db_object(session, db_object_id)
-        assert result is not None
+        result = crud_operations(session, db_object_id)
 
-        assert result["crud_operations"] == ["READ", "UPDATE", "DELETE"]
+        assert result == ["READ", "UPDATE", "DELETE"]
 
     db_object["objects"][0]["options"] = {
         "dataMappingViewInsert": False,
@@ -84,10 +80,9 @@ def test_set_crud_operations(phone_book, table_contents):
     }
 
     with DbObjectCT(session, **db_object) as db_object_id:
-        result = lib.db_objects.get_db_object(session, db_object_id)
-        assert result is not None
+        result = crud_operations(session, db_object_id)
 
-        assert result["crud_operations"] == ["READ", "DELETE"]
+        assert result == ["READ", "DELETE"]
 
     db_object["objects"][0]["options"] = {
         "dataMappingViewInsert": False,
@@ -96,10 +91,9 @@ def test_set_crud_operations(phone_book, table_contents):
     }
 
     with DbObjectCT(session, **db_object) as db_object_id:
-        result = lib.db_objects.get_db_object(session, db_object_id)
-        assert result is not None
+        result = crud_operations(session, db_object_id)
 
-        assert result["crud_operations"] == ["READ"]
+        assert result == ["READ"]
 
     db_object["objects"][0]["fields"][0]["options"] = {
         "dataMappingViewInsert": True,
@@ -108,10 +102,9 @@ def test_set_crud_operations(phone_book, table_contents):
     }
 
     with DbObjectCT(session, **db_object) as db_object_id:
-        result = lib.db_objects.get_db_object(session, db_object_id)
-        assert result is not None
+        result = crud_operations(session, db_object_id)
 
-        assert result["crud_operations"] == ["READ", "UPDATE"]
+        assert result == ["READ", "UPDATE"]
 
 
 def test_special_schemas(phone_book, mobile_phone_book, table_contents):

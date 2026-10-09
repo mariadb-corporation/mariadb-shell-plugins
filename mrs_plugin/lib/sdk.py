@@ -1710,14 +1710,6 @@ def generate_union(name, types, sdk_language):
     return ""
 
 
-def generate_sequence_constant(name, values, sdk_language):
-    if sdk_language == "typescript":
-        return f"const {name} = {json.dumps(values)} as const;\n"
-    if sdk_language == "python":
-        return f"{name}: Sequence = {json.dumps(values)}\n\n"
-    return ""
-
-
 def generate_tuple(
     name: str,
     values: set[str] = set(),
@@ -2407,10 +2399,6 @@ const mrs = new Mrs();
 """
 
     return s
-
-
-def replace_group_1_match_only(m):
-    return "" if m.group(1) is not None else m.group(0)
 
 
 def remove_js_whitespace_and_comments(code):
