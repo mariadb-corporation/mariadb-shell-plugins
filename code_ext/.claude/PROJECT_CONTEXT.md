@@ -147,7 +147,8 @@ $ git status --short   (one repository: every project's lines)
 
 - Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
   sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
-  the `--disable-modules=mrs` / `MARIADB_SHELL_OPTIONS` support for the new shell build.
+  the `MARIADB_SHELL_OPTIONS` support for the new shell build (made for the since removed
+  `--disable-modules=mrs`).
 - **code_ext: no work this session**, nothing open. PR #38 merged as `86ee7f24`.
 - Still NOT looked at in a running VS Code - the next step: everything PR #34 listed
   (connection editor layout, radio buttons, tooltip placement, the result set's auto-hide,

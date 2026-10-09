@@ -248,17 +248,16 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   session died instantly on `can't open file '.../run_tests.py'` because the cwd was the
   repo root; without homebrew on PATH the sandbox deploy finds no `mariadbd`.
 
-- **A shell with the BUILT-IN `mrs` module breaks every plugin load** (2026-10-08): the
-  local `build/bin` shell (26.10.0, rebuilt with a native `mrs` global) registers its own
-  `MRS` SQL handler, so loading `mrs_plugin` fails with `An SQL Handler named 'MRS'
-  already exists` and nothing runs. Start such a shell with `--disable-modules=mrs`.
+- **A shell with the BUILT-IN `mrs` module** (2026-10-08): it registers the `MRS` SQL
+  handler itself. An mrs_plugin that still registers one fails to load (`An SQL Handler
+  named 'MRS' already exists`); the current mrs_plugin no longer does, so no option is
+  needed (the shell's `--disable-modules=mrs` workaround was removed again).
   `run_tests.py -M/--shell-options` (default: `MARIADB_SHELL_OPTIONS`) passes options to
   the pip/pytest shells and exports `MARIADB_SHELL_OPTIONS`; `helpers.shell_options()` /
   `shell_command()` add them to EVERY shell the tests start (stdio and HTTP MCP servers,
-  the OAuth server, the migrator probe, `mcp setup` in the e2e test). Full command:
-  `mariadb-shell --disable-modules=mrs --py -f run_tests.py -M="--disable-modules=mrs"`
-  -> 596 passed, 3 skipped. A new shell spawn in a test must go through
-  `helpers.shell_command()`, or it fails on such a build. CI does not pass the option yet.
+  the OAuth server, the migrator probe, `mcp setup` in the e2e test); a new shell spawn
+  in a test must go through `helpers.shell_command()` to get them. With the workaround the
+  suite gave 596 passed, 3 skipped.
 
 - **Filtering tests with `-k` breaks the db/msm/sandbox tests** — they depend on
   `test_sandbox_deploy` running first (conftest ordering hook + `sandbox.deployed` flag),

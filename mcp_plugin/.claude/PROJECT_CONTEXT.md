@@ -99,11 +99,12 @@ $ git status --short   (one repository: every project's lines)
 
 - Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
   sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
-  the `--disable-modules=mrs` / `MARIADB_SHELL_OPTIONS` support for the new shell build.
+  the `MARIADB_SHELL_OPTIONS` support for the new shell build (made for the since removed
+  `--disable-modules=mrs`).
 - **mcp_plugin this session:** only the test harness - `run_tests.py -M/--shell-options`
   and `helpers.shell_command()` for every shell the tests start (see
   [`context/testing.md`](context/testing.md) Gotchas). 596 passed, 3 skipped on the new
-  shell with `--disable-modules=mrs`. The mrs_plugin work is in
+  shell with the since removed `--disable-modules=mrs`. The mrs_plugin work is in
   [`context/siblings.md`](context/siblings.md).
 - Earlier: PR #37 (multi-tenant mode and OAuth2) merged as `a5ad8bdf` on 2026-10-07,
   branch deleted; Rene's review fixes are `fe4dbfe6` (see "Review round" in
