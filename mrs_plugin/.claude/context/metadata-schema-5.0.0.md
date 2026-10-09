@@ -32,14 +32,18 @@ Branch `wip/mrs_schema_improvements`, commit `58714069` (2026-10-08). Diffed aga
   - `mrs_group_hierarchy_type`: id*
   - `mrs_user_group_hierarchy`: user_group_id, parent_group_id, group_hierarchy_type_id
   - `mrs_db_object_row_group_security`: db_object_id, group_hierarchy_type_id
-  - `router_session`: user_id, service_id
+  - `rest_daemon_session` (was `router_session`): user_id, service_id
+  - `rest_daemon` (was `router`): id* (2026-10-09); `rest_daemon_status` and
+    `rest_daemon_general_log`: rest_daemon_id
   - `object`: id*, db_object_id, row_ownership_field_id
   - `object_reference`: id*, reduce_to_value_of_field_id, row_ownership_field_id
   - `object_field`: id*, object_id, parent_reference_id, represents_reference_id
   - `service_has_auth_app`: service_id, auth_app_id
   - `content_set_has_obj_def`: content_set_id, db_object_id
-- Unchanged: the integer keys of `router`, `router_status`, `router_session.id`,
-  `router_general_log`, `audit_log.id`, `config`, `audit_log_status`.
+- Integer keys: `rest_daemon_status.id`, `rest_daemon_session.id`,
+  `rest_daemon_general_log.id` (and its `rest_daemon_session_id`) and `audit_log.id` are
+  `BIGINT UNSIGNED AUTO_INCREMENT` since 2026-10-09; `config` and `audit_log_status` keep
+  their small integer keys.
 - `db_object.fk_db_objects_db_schema1_idx` was `INVISIBLE` in the model and hand-stripped
   in the SQL; it is now visible in the model, so the export carries `VISIBLE` like every
   other index. The only other text change is the export date line.

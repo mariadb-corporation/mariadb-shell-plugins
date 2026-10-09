@@ -26,6 +26,37 @@ import os
 import json
 import time
 
+# How far below the highest exported id an export looks again. Audit log ids
+# follow the order the rows were inserted in, not the order their
+# transactions committed: with concurrent writers, and much more so on a
+# Galera cluster with several write nodes, a row with a lower id can become
+# visible after a higher one was exported. Each export re-reads this many ids
+# below its position and skips the ids it has already written, which the
+# position file keeps.
+AUDIT_LOG_ID_OVERLAP = 1000
+
+
+def read_audit_log_position(audit_log_position_file):
+    """Reads the position and the recently exported ids from the position file
+
+    Returns:
+        (position, exported_ids): the highest exported id (0 without a file)
+        and the ids exported in the overlap window below it, or None when the
+        file does not list them.
+    """
+    if not os.path.isfile(audit_log_position_file):
+        return 0, []
+    with open(audit_log_position_file, "r") as f:
+        try:
+            data = json.loads(f.read())
+        except json.JSONDecodeError:
+            data = None
+    if not isinstance(data, dict) or not isinstance(data.get("position"), int):
+        raise ValueError(
+            f"Invalid audit log position in file {audit_log_position_file}"
+        )
+    return data["position"], data.get("exportedIds")
+
 
 def export_audit_log(
     file_path,
@@ -50,10 +81,10 @@ def export_audit_log(
         return
 
     if when_server_is_writeable:
-        # Check if the server is in offline mode or super read only, if so, do not write the log
-        sql = "SELECT @@global.offline_mode as offline_mode, @@global.super_read_only as super_read_only"
+        # Check if the server is read only, if so, do not write the log
+        sql = "SELECT @@global.read_only AS read_only"
         row = core.MrsDbExec(sql).exec(session).first
-        if row["offline_mode"] == 1 or row["super_read_only"] == 1:
+        if row["read_only"] == 1:
             return
 
     if audit_log_position_file is None:
@@ -61,27 +92,41 @@ def export_audit_log(
             os.path.dirname(file_path), "mrs_audit_log_position.json"
         )
 
-    # Read the audit_log_position from the audit_log_position_file if it has not been given explicitly
-    # and the audit_log_position_file already exists
-    if audit_log_position is None and os.path.isfile(audit_log_position_file):
-        with open(audit_log_position_file, "r") as f:
-            try:
-                audit_log_position = json.loads(f.read()).get("position", None)
-                if audit_log_position is None:
-                    raise ValueError(f"Invalid audit log position in file {
-                        audit_log_position}")
-            except json.JSONDecodeError:
-                raise ValueError(f"Invalid audit log position in file {
-                    audit_log_position}")
+    # Read the audit_log_position from the audit_log_position_file if it has
+    # not been given explicitly. Without the list of the recently exported ids
+    # (an explicit position, or a file without it), everything up to the
+    # position counts as exported.
+    if audit_log_position is None:
+        audit_log_position, exported_ids = read_audit_log_position(
+            audit_log_position_file
+        )
     else:
-        audit_log_position = 0
+        exported_ids = None
+    window_start = max(0, audit_log_position - AUDIT_LOG_ID_OVERLAP)
 
-    # Write the audit log to the file
-    sql = "SELECT *, @@server_uuid AS server_uuid FROM <metadata>.`audit_log` WHERE `id` > ?"
+    # Write the audit log to the file, re-reading the overlap window for rows
+    # committed after higher ids were exported
+    sql = "SELECT *, @@server_uid AS server_uid FROM <metadata>.`audit_log` WHERE `id` > ?"
     if starting_from_today:
         sql += " AND `changed_at` >= CURDATE()"
     sql += " ORDER BY `id`"
-    rows = core.MrsDbExec(sql).exec(session, [audit_log_position]).items
+    read = core.MrsDbExec(sql).exec(session, [window_start]).items
+    if exported_ids is None:
+        rows = [row for row in read if row["id"] > audit_log_position]
+        exported_ids = []
+    else:
+        already_exported = set(exported_ids)
+        rows = [row for row in read if row["id"] not in already_exported]
+
+    # After this export, every id read is exported; keep those in the overlap
+    # window below the new position
+    new_position = max([audit_log_position] + [row["id"] for row in rows])
+    exported_ids = sorted(
+        id
+        for id in set(exported_ids) | {row["id"] for row in read}
+        if id > new_position - AUDIT_LOG_ID_OVERLAP
+    )
+
     if len(rows) > 0:
         with open(file_path, "a") as f:
             for row in rows:
@@ -90,22 +135,22 @@ def export_audit_log(
                     schema_name = metadata_schema
                 f.write(
                     f'{row.get("changed_at")} {row.get("id")} {row.get("changed_by")} '
-                    + f'{row.get("server_uuid")} '
+                    + f'{row.get("server_uid")} '
                     + f'{schema_name}.{row.get("table_name")} {row.get("dml_type")} '
                     + json.dumps(row.get("old_row_data", {}))
                     + " "
                     + json.dumps(row.get("new_row_data", {}))
                     + "\n"
                 )
-        audit_log_position = rows[-1]["id"]
 
     # Write the new audit log position to the audit_log_position_path file
-    if audit_log_position_file is not None and audit_log_position > 0:
+    if audit_log_position_file is not None and new_position > 0:
         with open(audit_log_position_file, "w") as f:
             f.write(
                 json.dumps(
                     {
-                        "position": audit_log_position,
+                        "position": new_position,
+                        "exportedIds": exported_ids,
                         "updateTime": time.strftime("%Y-%m-%d %H:%M:%S"),
                     },
                     indent=4,

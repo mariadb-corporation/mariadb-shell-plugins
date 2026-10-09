@@ -162,6 +162,8 @@ packages with msm_plugin and mcp_plugin.
     (module, pre-existing): re-creating from the text loses them. Blocks code_ext saving
     views as generated REST SQL; offered to the user, not fixed.
 
+- **Audit log export (`mrs.dump.auditLog`, `lib/dump.py`), 2026-10-09.** Audit log ids are not in commit order (concurrent writers, Galera with several write nodes), so every export re-reads the `AUDIT_LOG_ID_OVERLAP` (1000) ids below its position and skips those listed in the position file's new `exportedIds`; a file without that list, or an explicit `audit_log_position`, counts everything up to the position as exported. Also fixed for MariaDB: `@@server_uid` (written as `server_uid`) instead of `@@server_uuid`, `@@global.read_only` instead of `offline_mode` / `super_read_only` for `when_server_is_writeable`, and an explicit `audit_log_position` is no longer reset to 0. Test: `tests/unit/lib/test_dump.py`.
+
 ## Files that matter
 
 - `init.py` -> the `mrs` sub-objects `get`, `dump`, `load`
@@ -184,16 +186,12 @@ packages with msm_plugin and mcp_plugin.
    open points of the conversion (daemon role activation, GTID read-your-writes, custom
    auth procedure id type). Async tasks were dropped on 2026-10-09.
 2. Fix the `@DATATYPE` / `JSON SCHEMA` loss in `SHOW CREATE REST VIEW` (if the user agrees).
-- **Later (user's note):** a metadata schema version that renames the `router*` tables
-  (`router`, `router_status`, `router_session`, `router_general_log`, the `router_services`
-  view) to `daemon*`, with the daemon fork, the module's queries and
-  `required_router_version` following. In the same version the ids of these tables
-  (`router.id`, `router_status.id`, `router_session.id`, `router_general_log.id` and their
-  `router_id` / `router_session_id` references, INT UNSIGNED AUTO_INCREMENT today) become
-  `UUID` like every other id (`DEFAULT UUID_v7()`), so `DROP REST DAEMON` and
-  `SHOW REST SERVICES FOR DAEMON` will take a UUID instead of an integer (grammar:
-  `daemonId`, bison `daemon_id`), and the audit triggers' `CAST(LPAD(HEX(id)...) AS UUID)`
-  for router ids go away.
+- (Done 2026-10-09, in 5.0.0 itself: the `router*` tables, the `router_services` view,
+  procedures and events are `rest_daemon*`; `rest_daemon.id` is a `UUID`, the ids of
+  `rest_daemon_status`, `rest_daemon_session` and `rest_daemon_general_log` are
+  `BIGINT UNSIGNED`; `DROP REST DAEMON` / `SHOW REST SERVICES FOR DAEMON` take the UUID as a
+  string. The plugin has no code on these tables. Details for the daemon: the shell repo's
+  `.claude/context/rest-daemon-5.0.md`, section 1a.)
 3. (Done 2026-10-09 in 5.0.0: auth vendor `MariaDB Internal`, app `MariaDB`, keyword
    `VENDOR MARIADB`; same ids. What the REST Daemon must change for 5.0.0 is in the shell
    repo's `.claude/context/rest-daemon-5.0.md`.)
@@ -269,17 +267,15 @@ Checked at this checkpoint (2026-10-09), before its commit:
 
 ```text
 $ git branch --show-current
-wip/mrs_schema_improvements   (tracks origin; no PR yet)
+wip/mrs_schema_improvements   (tracks origin; PR to main opened with this checkpoint)
 
-$ git status --short   (this session's part, committed with this checkpoint)
- M mrs_plugin/{.gitignore,package.json,run_tests.py,lib/*,sdk/**,tests/**,examples/mrs_notes/**}
- D mrs_plugin/db_schema/**, scripts/{default_heatwave_endpoints,prepare_default_static_content.sh,run_md_upgrade_test.sh}, tests/unit/test_md_upgrade.py
-?? mrs_plugin/tests/unit/test_metadata_schema.py
- M mcp_plugin/lib/db_functions.py, mcp_plugin/tests/unit/test_rest_sql.py
- M msm_plugin/{lib/core.py,lib/management.py,management.py,templates/scripts/*,tests/unit/test_management.py}
+$ git status --short   (all of this session, committed with this checkpoint)
+ M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M mrs_plugin/.claude/context/metadata-schema-5.0.0.md
+ M mrs_plugin/dump.py
+ M mrs_plugin/lib/dump.py
+?? mrs_plugin/tests/unit/lib/test_dump.py
 ```
 
-- Last pushed commit before this checkpoint: `a24530a9`.
-- Not committed with it (other sessions' uncommitted work): `code_ext/.claude/PROJECT_CONTEXT.md`,
-  `mcp_plugin/.claude/**`, `mcp_plugin/run_tests.py`, `mcp_plugin/tests/unit/helpers.py`,
-  `msm_plugin/.claude/PROJECT_CONTEXT.md`.
+- Last pushed commit before this checkpoint: `800bdf34`.
+- No other session's uncommitted work in the tree.
