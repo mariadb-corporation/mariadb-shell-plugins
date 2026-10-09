@@ -263,44 +263,53 @@ def convert_ignore_list_to_regex_pattern(ignore_list):
     return None
 
 
-def get_folder_mrs_scripts_language(path, ignore_list):
-    full_ignore_pattern = convert_ignore_list_to_regex_pattern(ignore_list)
+def iter_directory_files(path, ignore_list):
+    """Yields (full name, request path) of the files below path, sorted.
 
+    The request path is the path relative to the directory with a leading
+    "/", which is also what the ignore list patterns are matched against.
+    """
+    ignore_pattern = (
+        convert_ignore_list_to_regex_pattern(ignore_list) if ignore_list else None
+    )
     path = os.path.expanduser(path)
 
     for root, dirs, files in os.walk(path):
-        for file in files:
-            fullname = os.path.join(root, file)
+        dirs.sort()
+        for file in sorted(files):
+            full_name = os.path.join(root, file)
+            request_path = "/" + os.path.relpath(full_name, path).replace("\\", "/")
+            if ignore_pattern is None or not re.match(ignore_pattern, request_path):
+                yield full_name, request_path
 
-            # If the filename matches the ignore list, ignore the file
-            if full_ignore_pattern is not None and re.match(
-                full_ignore_pattern, fullname.replace("\\", "/")
-            ):
-                continue
 
-            # Detect TypeScript
-            if (fullname.endswith(".mts") or fullname.endswith(".ts")) and not (
-                fullname.endswith(".spec.mts")
-                or fullname.endswith(".spec.ts")
-                or fullname.endswith(".d.ts")
-            ):
+def is_mrs_script_file(path):
+    """TypeScript files that may hold MRS scripts (no specs, no declarations)"""
+    return path.endswith((".mts", ".ts")) and not path.endswith(
+        (".spec.mts", ".spec.ts", ".d.ts")
+    )
 
-                # Read the file content
-                with open(fullname, "r") as f:
-                    code = f.read()
 
-                    # Clear TypeScript comments and strings for regex matching
-                    code_cleared = blank_quoted_js_strings(blank_js_comments(code))
+def defines_mrs_module(code):
+    code_cleared = blank_quoted_js_strings(blank_js_comments(code))
+    return (
+        re.search(TS_SCHEMA_DECORATOR_REGEX, code_cleared, re.MULTILINE | re.DOTALL)
+        is not None
+    )
 
-                    # Search for SCHEMA_DECORATOR
-                    match = re.search(
-                        TS_SCHEMA_DECORATOR_REGEX,
-                        code_cleared,
-                        re.MULTILINE | re.DOTALL,
-                    )
 
-                    if match is not None:
-                        return "TypeScript"
+def file_last_modification(path):
+    return datetime.datetime.fromtimestamp(
+        pathlib.Path(path).stat().st_mtime, tz=datetime.timezone.utc
+    ).strftime("%F %T.%f")[:-3]
+
+
+def get_folder_mrs_scripts_language(path, ignore_list):
+    for full_name, _ in iter_directory_files(path, ignore_list):
+        if is_mrs_script_file(full_name):
+            with open(full_name, "r") as f:
+                if defines_mrs_module(f.read()):
+                    return "TypeScript"
 
     return None
 
@@ -648,14 +657,6 @@ def is_simple_typescript_type(typeName):
     return typeName == "boolean" or typeName == "number" or typeName == "string"
 
 
-def get_typescript_interface_from_list(type_name, interface_list):
-    for interface_def in interface_list:
-        if interface_def["name"] == type_name:
-            return interface_def
-
-    return None
-
-
 def add_typescript_interface_to_list(type_name, interface_list, interfaces_def):
     # If the name of the type matches a simple type, do not add it
     if is_simple_typescript_type(type_name):
@@ -784,9 +785,7 @@ def get_file_mrs_script_definitions(path, language):
             "full_file_name": path,
             "relative_file_name": path,
             "file_name": os.path.basename(path),
-            "last_modification": datetime.datetime.fromtimestamp(
-                pathlib.Path(path).stat().st_mtime, tz=datetime.timezone.utc
-            ).strftime("%F %T.%f")[:-3],
+            "last_modification": file_last_modification(path),
             "code": code,
             "code_cleared": code_cleared,
         }
@@ -863,60 +862,36 @@ def is_common_static_content_folder(dir):
 
 
 def get_code_files_from_folder(path, ignore_list, language):
-    full_ignore_pattern = convert_ignore_list_to_regex_pattern(ignore_list)
     path = os.path.expanduser(path)
 
-    code_files = []
+    # A build directory and static folders with a common name in the root dir
     build_folder = None
     static_content_folders = []
+    for dir in sorted(os.listdir(path)):
+        if os.path.isdir(os.path.join(path, dir)):
+            if is_common_build_folder(dir):
+                build_folder = dir
+            if is_common_static_content_folder(dir):
+                static_content_folders.append(dir)
 
-    for root, dirs, files in os.walk(path):
-        # Check if there is a build directory with a common name in the root dir
-        if path == root:
-            for dir in dirs:
-                if is_common_build_folder(dir):
-                    build_folder = dir
-                if is_common_static_content_folder(dir):
-                    static_content_folders.append(dir)
-
-        for file in files:
-            fullname = os.path.join(root, file)
-
-            # If the filename matches the ignore list, ignore the file
-            if full_ignore_pattern is not None and re.match(
-                full_ignore_pattern, fullname.replace("\\", "/")
-            ):
+    code_files = []
+    if language == "TypeScript":
+        for full_name, request_path in iter_directory_files(path, ignore_list):
+            if not is_mrs_script_file(full_name):
                 continue
-
-            # Progress TypeScript
-            if language == "TypeScript" and (
-                (fullname.endswith(".mts") or fullname.endswith(".ts"))
-                and not (
-                    fullname.endswith(".spec.mts")
-                    or fullname.endswith(".spec.ts")
-                    or fullname.endswith(".d.ts")
-                )
-            ):
-
-                # Read the file content
-                with open(fullname, "r") as f:
-                    code = f.read()
-                    # Clear TypeScript comments and strings for regex matching
-                    code_cleared = blank_quoted_js_strings(blank_js_comments(code))
-
-                    code_files.append(
-                        {
-                            "full_file_name": fullname,
-                            "relative_file_name": fullname[len(path) :],
-                            "file_name": os.path.basename(fullname),
-                            "last_modification": datetime.datetime.fromtimestamp(
-                                pathlib.Path(fullname).stat().st_mtime,
-                                tz=datetime.timezone.utc,
-                            ).strftime("%F %T.%f")[:-3],
-                            "code": code,
-                            "code_cleared": code_cleared,
-                        }
-                    )
+            with open(full_name, "r") as f:
+                code = f.read()
+            code_files.append(
+                {
+                    "full_file_name": full_name,
+                    "relative_file_name": request_path,
+                    "file_name": os.path.basename(full_name),
+                    "last_modification": file_last_modification(full_name),
+                    "code": code,
+                    # Comments and strings blanked for regex matching
+                    "code_cleared": blank_quoted_js_strings(blank_js_comments(code)),
+                }
+            )
 
     return code_files, build_folder, static_content_folders
 
@@ -1007,57 +982,41 @@ def load_content_set(
         raise ValueError(f"The given directory '{directory}' does not exist.")
     if ignore_list is None:
         ignore_list = DEFAULT_IGNORE_LIST
-    ignore_pattern = (
-        convert_ignore_list_to_regex_pattern(ignore_list) if ignore_list else None
-    )
-    if load_scripts is None:
-        load_scripts = (
-            get_folder_mrs_scripts_language(directory, ignore_list) is not None
-        )
 
     content_set_ref = core.quote_ident(content_set_path)
     on_service = f" ON SERVICE {core.quote_ident(service_path)}" if service_path else ""
 
     create = "CREATE OR REPLACE" if replace else "CREATE"
-    res = session.run_sql(f"{create} REST CONTENT SET {content_set_ref}{on_service}")
-    message = res.get_info() if hasattr(res, "get_info") else None
+    session.run_sql(f"{create} REST CONTENT SET {content_set_ref}{on_service}")
 
     files = []
-    for root, dirs, file_names in os.walk(directory):
-        dirs.sort()
-        for file_name in sorted(file_names):
-            full_name = os.path.join(root, file_name)
-            request_path = "/" + os.path.relpath(full_name, directory).replace(
-                "\\", "/"
+    holds_scripts = False
+    for full_name, request_path in iter_directory_files(directory, ignore_list):
+        with open(full_name, "rb") as f:
+            data = f.read()
+
+        if load_scripts is None and not holds_scripts and is_mrs_script_file(full_name):
+            holds_scripts = defines_mrs_module(data.decode("utf-8", errors="replace"))
+
+        if send_gui_message is not None:
+            send_gui_message("info", f"Adding file {request_path} ...")
+
+        session.run_sql(
+            content_file_statement(
+                request_path,
+                service_path,
+                content_set_path,
+                data,
+                {"last_modification": file_last_modification(full_name)},
             )
+        )
+        files.append(request_path)
 
-            # The ignore list matches the path relative to the directory
-            if ignore_pattern is not None and re.match(ignore_pattern, request_path):
-                continue
-
-            with open(full_name, "rb") as f:
-                data = f.read()
-
-            if send_gui_message is not None:
-                send_gui_message("info", f"Adding file {request_path} ...")
-
-            options = {
-                "last_modification": datetime.datetime.fromtimestamp(
-                    pathlib.Path(full_name).stat().st_mtime, tz=datetime.timezone.utc
-                ).strftime("%F %T.%f")[:-3],
-            }
-            session.run_sql(
-                content_file_statement(
-                    request_path, service_path, content_set_path, data, options
-                )
-            )
-            files.append(request_path)
-
-    if load_scripts:
-        res = session.run_sql(
+    message = None
+    if load_scripts or (load_scripts is None and holds_scripts):
+        message = session.run_sql(
             f"ALTER REST CONTENT SET {content_set_ref}{on_service} "
             "LOAD TYPESCRIPT SCRIPTS"
-        )
-        message = res.get_info() if hasattr(res, "get_info") else None
+        ).get_info()
 
     return {"files": files, "message": message}

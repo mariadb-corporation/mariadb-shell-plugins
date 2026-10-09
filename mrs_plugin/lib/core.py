@@ -766,28 +766,6 @@ def squote_str(s):
     return "'" + escape_str(s) + "'"
 
 
-def is_text(data: bytes) -> bool:
-    if isinstance(data, str):
-        data = data.encode()
-
-    valid_text__chars = "".join(list(map(chr, range(32, 127))) + list("\n\r\t\b"))
-
-    data_without_text = data.translate(None, valid_text__chars.encode())
-
-    # If there's a null character, then it's not a text string
-    if 0 in data_without_text:
-        return False
-
-    # Check how many bytes are available after removing the ones that
-    # are considered as text.
-    if len(data_without_text) >= len(data) * 0.3:
-        # if more then 30% if the characters are binary, then
-        # take the data as binary
-        return False
-
-    return True
-
-
 def is_number(s):
     try:
         float(s)

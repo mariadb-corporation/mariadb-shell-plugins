@@ -395,11 +395,7 @@ def load_service_script(session, script: str, as_path: str | None = None):
     starts with the CREATE REST SERVICE statement, and its path is replaced in
     that statement and in the ON SERVICE clause of the others.
     """
-    statements = [
-        command.strip()
-        for command in mysqlsh.mysql.split_script(script)
-        if command.strip()
-    ]
+    statements = split_sql_script(script)
 
     if as_path:
         match = SERVICE_CREATE_REGEX.match(statements[0]) if statements else None
@@ -554,11 +550,15 @@ def store_project(
         shutil.rmtree(temp_dir)
 
 
+def split_sql_script(sql_script):
+    """The statements of a script, without empty ones"""
+    commands = (command.strip() for command in mysqlsh.mysql.split_script(sql_script))
+    return [command for command in commands if command]
+
+
 def run_sql_script(session, sql_script):
-    for command in mysqlsh.mysql.split_script(sql_script):
-        command = command.strip()
-        if command:
-            session.run_sql(command)
+    for command in split_sql_script(sql_script):
+        session.run_sql(command)
 
 
 def is_url(url) -> bool:
