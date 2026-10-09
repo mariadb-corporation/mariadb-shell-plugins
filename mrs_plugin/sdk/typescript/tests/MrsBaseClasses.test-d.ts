@@ -30,8 +30,7 @@ import {
     type MrsDownstreamDocumentListData, type MaybeNull, type Point, type MultiPoint, type LineString,
     type MultiLineString, type Polygon, type MultiPolygon, type Geometry, type GeometryCollection,
     type HighOrderFilter, type ComparisonOpExpr, type MrsDownstreamDocumentData, type Cursor, type IDeleteOptions,
-    type IMrsProcedureResponse, type IMrsProcedureResult, type IMrsFunctionResponse, type IMrsTaskReport,
-    type IMrsRunningTaskReport, type IMrsTaskRunOptions, type IMrsTaskStartOptions, type Vector
+    type IMrsProcedureResponse, type IMrsProcedureResult, type IMrsFunctionResponse, type Vector
 } from "../MrsBaseClasses";
 
 describe("MRS SDK base types", () => {
@@ -780,115 +779,6 @@ describe("MRS SDK base types", () => {
 
         it("does not allow any kind of metadata", () => {
             expectTypeOf<IMrsProcedureResult<unknown, unknown>>().not.toHaveProperty("_metadata");
-        });
-    });
-
-    describe("IMrsTaskStartOptions", () => {
-        it("allows to optionally set a numeric refresh rate", () => {
-            expectTypeOf<IMrsTaskRunOptions<unknown, unknown>>().toHaveProperty("refreshRate")
-                .toEqualTypeOf<number | undefined>();
-        });
-
-        it("allows to optionally set a numeric timeout", () => {
-            expectTypeOf<IMrsTaskRunOptions<unknown, unknown>>().toHaveProperty("timeout")
-                .toEqualTypeOf<number | undefined>();
-        });
-
-        it("can be empty", () => {
-            expectTypeOf({}).toMatchTypeOf<IMrsTaskStartOptions>();
-        });
-    });
-
-    describe("IMrsTaskRunOptions", () => {
-        it("allows to set a numeric refresh rate", () => {
-            it("allows to optionally set a numeric refresh rate", () => {
-                expectTypeOf<IMrsTaskRunOptions<unknown, unknown>>().toHaveProperty("refreshRate")
-                    .toEqualTypeOf<number | undefined>();
-            });
-
-            it("allows to optionally set an asynchronous progress callback function with a proper parameter", () => {
-                interface ICallbackInput {
-                    foo: string
-                }
-
-                expectTypeOf<IMrsTaskRunOptions<ICallbackInput, unknown>>()
-                    .toHaveProperty("progress")
-                    .returns
-                    .resolves
-                    .toBeVoid();
-
-                expectTypeOf<IMrsTaskRunOptions<ICallbackInput, unknown>>()
-                    .toHaveProperty("progress")
-                    .parameter(0)
-                    .toEqualTypeOf<IMrsRunningTaskReport<ICallbackInput, unknown>>();
-            });
-
-            it("can be empty", () => {
-                expectTypeOf({}).toMatchTypeOf<IMrsTaskRunOptions<unknown, unknown>>();
-            });
-        });
-    });
-
-    describe("IMrsTaskReport", () => {
-        it("includes the details of a running task", () => {
-            interface IStatusUpdate {
-                foo: string
-            }
-
-            interface IStatusUpdateReport {
-                data: IStatusUpdate,
-                status: "RUNNING",
-                progress: number,
-                message: string
-            }
-
-            expectTypeOf<IMrsTaskReport<IStatusUpdate, unknown>>().extract<{ status: "RUNNING" }>()
-                .toEqualTypeOf<IStatusUpdateReport>();
-        });
-
-        it("includes the details of a cancelled task", () => {
-            interface IStatusUpdateReport {
-                status: "CANCELLED",
-                message: string
-            }
-
-            expectTypeOf<IMrsTaskReport<unknown, unknown>>().extract<{ status: "CANCELLED" }>()
-                .toEqualTypeOf<IStatusUpdateReport>();
-        });
-
-        it("includes the details of a completed task", () => {
-            interface IProcResult {
-                foo: string
-            }
-
-            interface IStatusUpdateReport {
-                status: "COMPLETED",
-                data: IProcResult,
-                message: string
-            }
-
-            expectTypeOf<IMrsTaskReport<unknown, IProcResult>>().extract<{ status: "COMPLETED" }>()
-                .toEqualTypeOf<IStatusUpdateReport>();
-        });
-
-        it("includes the details of a task that produced an error", () => {
-            interface IStatusUpdateReport {
-                status: "ERROR",
-                message: string
-            }
-
-            expectTypeOf<IMrsTaskReport<unknown, unknown>>().extract<{ status: "ERROR" }>()
-                .toEqualTypeOf<IStatusUpdateReport>();
-        });
-
-        it("includes the details of a task that timed out", () => {
-            interface IStatusUpdateReport {
-                status: "TIMEOUT",
-                message: string
-            }
-
-            expectTypeOf<IMrsTaskReport<unknown, unknown>>().extract<{ status: "TIMEOUT" }>()
-                .toEqualTypeOf<IStatusUpdateReport>();
         });
     });
 

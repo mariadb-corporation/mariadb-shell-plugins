@@ -34,7 +34,7 @@
 # The suite deploys its own MariaDB sandbox (see tests/conftest.py), so a
 # mariadbd binary has to be on the PATH; no running server is needed.
 
-# cSpell:ignore mysqlsh mariadb userhome mdupgrade
+# cSpell:ignore mysqlsh mariadb userhome
 
 import argparse
 import os
@@ -123,16 +123,6 @@ def main() -> int:
         default=None,
         help="Additional options to pass to pytest",
     )
-    parser.add_argument(
-        "--mdupgrade",
-        action="store_true",
-        default=False,
-        help=(
-            "Also run the metadata upgrade test. It is skipped otherwise: it "
-            "deploys a second sandbox and installs every released metadata "
-            "version, which is slow."
-        ),
-    )
     # Anything else (a test file, say) is handed to pytest as given.
     args, pytest_arguments = parser.parse_known_args()
 
@@ -178,8 +168,6 @@ def main() -> int:
     if args.only:
         # Quoted, so a pattern with "or" / "and" stays one argument.
         pytest_options.append(f"-k {shlex.quote(args.only)}")
-    if args.mdupgrade:
-        pytest_options.append("--mdupgrade")
     pytest_options.extend(pytest_arguments)
     # A test file or directory given on the command line replaces the whole
     # plugin as the thing to run.

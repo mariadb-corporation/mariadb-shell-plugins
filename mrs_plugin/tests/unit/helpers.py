@@ -157,11 +157,14 @@ def rest_path(path):
 def drop_rest_db_object(session, db_object_id):
     """Drops a REST object with REST SQL, which also revokes its grants."""
     row = session.run_sql(
-        """SELECT o.request_path, o.object_type, s.request_path, se.url_context_root
-        FROM mysql_rest_service_metadata.db_object o
-            JOIN mysql_rest_service_metadata.db_schema s ON s.id = o.db_schema_id
-            JOIN mysql_rest_service_metadata.service se ON se.id = s.service_id
+        lib.core.metadata_sql(
+            session,
+            """SELECT o.request_path, o.object_type, s.request_path, se.url_context_root
+        FROM <metadata>.db_object o
+            JOIN <metadata>.db_schema s ON s.id = o.db_schema_id
+            JOIN <metadata>.service se ON se.id = s.service_id
         WHERE o.id = ?""",
+        ),
         [db_object_id],
     ).fetch_one()
     if row:
@@ -174,10 +177,13 @@ def drop_rest_db_object(session, db_object_id):
 
 def drop_rest_schema(session, schema_id):
     row = session.run_sql(
-        """SELECT s.request_path, se.url_context_root
-        FROM mysql_rest_service_metadata.db_schema s
-            JOIN mysql_rest_service_metadata.service se ON se.id = s.service_id
+        lib.core.metadata_sql(
+            session,
+            """SELECT s.request_path, se.url_context_root
+        FROM <metadata>.db_schema s
+            JOIN <metadata>.service se ON se.id = s.service_id
         WHERE s.id = ?""",
+        ),
         [schema_id],
     ).fetch_one()
     if row:

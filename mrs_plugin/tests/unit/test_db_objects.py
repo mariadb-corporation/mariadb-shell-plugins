@@ -23,6 +23,8 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 
+from mrs_plugin import lib
+
 from .helpers import TableContents, SchemaCT, DbObjectCT, get_default_db_object_init
 
 db_object_create_statement = """CREATE OR REPLACE REST VIEW /Contacts
@@ -39,8 +41,9 @@ db_object_create_statement = """CREATE OR REPLACE REST VIEW /Contacts
 
 def crud_operations(session, db_object_id):
     row = session.run_sql(
-        "SELECT crud_operations FROM mysql_rest_service_metadata.db_object "
-        "WHERE id = ?",
+        lib.core.metadata_sql(
+            session, "SELECT crud_operations FROM <metadata>.db_object WHERE id = ?"
+        ),
         [db_object_id],
     ).fetch_one()
     return row[0].split(",") if row and row[0] else []
@@ -143,12 +146,15 @@ def test_special_schemas(phone_book, mobile_phone_book, table_contents):
 
             row = filtered[0]
             assert row["TABLE_NAME"] == "accounts"
-            assert row["GRANTEE"] == "'mysql_rest_service_user'@''"
+            assert row["GRANTEE"] == f"'{lib.core.metadata_role(session, 'user')}'@''"
             assert row["PRIVILEGE_TYPE"] == "SELECT"
 
             row = filtered[1]
             assert row["TABLE_NAME"] == "accounts"
-            assert row["GRANTEE"] == "'mysql_rest_service_data_provider'@''"
+            assert (
+                row["GRANTEE"]
+                == f"'{lib.core.metadata_role(session, 'data_provider')}'@''"
+            )
             assert row["PRIVILEGE_TYPE"] == "SELECT"
 
     assert information_schema_grants.same_as_snapshot

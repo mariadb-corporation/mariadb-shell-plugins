@@ -18,10 +18,10 @@
 Executes the MySQL REST Service SQL statement ``CONFIGURE REST METADATA`` against
 the shared sandbox (deployed by ``test_sandbox_deploy``) over a single db MCP
 stdio session. The statement is not plain server SQL: it is intercepted by the
-REST SQL handler that ``mrs_plugin`` registers with the shell (see
-``mrs_plugin/script.py``), so it exercises the path where ``db.execute_sql``
-routes a statement through a shell SQL handler. A successful run provisions the
-``mysql_rest_service_metadata`` schema on the target server.
+REST SQL handler of the shell's built-in ``mrs`` module, so it exercises the
+path where ``db.execute_sql`` routes a statement through a shell SQL handler. A
+successful run provisions the ``mariadb_rest_service`` schema on the target
+server.
 """
 
 # cSpell:ignore mysqlsh MariaDB mcpserver mrs
@@ -36,7 +36,7 @@ pytest.importorskip("mcp")
 import mcp_plugin.tests.unit.helpers as helpers
 
 # The schema that CONFIGURE REST METADATA provisions on the target server.
-_METADATA_SCHEMA = "mysql_rest_service_metadata"
+_METADATA_SCHEMA = "mariadb_rest_service"
 
 
 async def _rest_sql_flow(uri):

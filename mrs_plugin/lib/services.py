@@ -96,18 +96,18 @@ def query_services(
                 JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
                 ) AS jt) AS sorted_developers,
             se.name,
-            (SELECT JSON_ARRAYAGG(aa.name) FROM `mysql_rest_service_metadata`.`service_has_auth_app` sa2
-                JOIN `mysql_rest_service_metadata`.`auth_app` AS aa ON
+            (SELECT JSON_ARRAYAGG(aa.name) FROM <metadata>.`service_has_auth_app` sa2
+                JOIN <metadata>.`auth_app` AS aa ON
                     sa2.auth_app_id = aa.id
             WHERE sa2.service_id = se.id) AS auth_apps
-        FROM `mysql_rest_service_metadata`.`service` se
-            LEFT JOIN `mysql_rest_service_metadata`.url_host h
+        FROM <metadata>.`service` se
+            LEFT JOIN <metadata>.url_host h
                 ON se.url_host_id = h.id
         """
 
     if auth_app_id is not None:
         sql += """
-            JOIN `mysql_rest_service_metadata`.`service_has_auth_app` sa
+            JOIN <metadata>.`service_has_auth_app` sa
                 ON se.id = sa.service_id AND sa.auth_app_id = ?
             """
         params.append(auth_app_id)

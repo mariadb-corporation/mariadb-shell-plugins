@@ -174,7 +174,7 @@ def get_normalized_grant_privileges(privileges):
     return norm_privileges
 
 
-def get_grant_statements_for_explicit_grants(grants):
+def get_grant_statements_for_explicit_grants(grants, role):
     if grants is None:
         return []
 
@@ -227,7 +227,7 @@ def get_grant_statements_for_explicit_grants(grants):
         grant_statements.append(
             f"GRANT {privileges} ON {object_type}"
             f"{quote_identifier(grant['schema'])}.{quote_identifier(grant['object'])} "
-            + "TO 'mysql_rest_service_data_provider'"
+            + f"TO {quote_identifier(role)}"
         )
 
     return grant_statements
@@ -246,6 +246,8 @@ def get_grant_statements(
     # We can not grant/revoke the information_schema
     if schema_name.lower() == "information_schema":
         return []
+
+    role = core.metadata_role(session, "data_provider")
 
     if grant_privileges and not disable_automatic_grants:
         # We can only grant select on the performance_schema
@@ -275,7 +277,7 @@ def get_grant_statements(
             f"""GRANT {','.join(obj_grants)}
             ON {obj_type if obj_type == "PROCEDURE" or obj_type == "FUNCTION" else ''}
             {quote_identifier(schema_name)}.{quote_identifier(obj_name)}
-            TO 'mysql_rest_service_data_provider'"""
+            TO {quote_identifier(role)}"""
             for obj_name, obj_type, obj_grants in db_objects
         ]
 
@@ -296,12 +298,12 @@ def get_grant_statements(
                         )
                         grants.append(f"""GRANT {','.join(grant_privileges)}
                             ON {ref_table}
-                            TO 'mysql_rest_service_data_provider'""")
+                            TO {quote_identifier(role)}""")
     else:
         grants = []
 
     if explicit_grants is not None:
-        grants.extend(get_grant_statements_for_explicit_grants(explicit_grants))
+        grants.extend(get_grant_statements_for_explicit_grants(explicit_grants, role))
 
     return grants
 
@@ -309,7 +311,7 @@ def get_grant_statements(
 def get_objects(session, db_object_id):
     sql = """
         SELECT *
-        FROM `mysql_rest_service_metadata`.`object`
+        FROM <metadata>.`object`
         WHERE db_object_id = ?
         ORDER BY position
     """
@@ -320,7 +322,7 @@ def get_objects(session, db_object_id):
 def get_object_fields_with_references(session, object_id, binary_formatter=None):
     sql = """
         SELECT *
-        FROM `mysql_rest_service_metadata`.`object_fields_with_references`
+        FROM <metadata>.`object_fields_with_references`
         WHERE object_id = ?
     """
 
@@ -337,12 +339,16 @@ def get_sdk_service_data(session, service_id, binary_formatter=None):
         FROM information_schema.routines
         WHERE routine_name = 'sdk_service_data'
             AND routine_type = 'PROCEDURE'
-            AND routine_schema = 'mysql_rest_service_metadata'
+            AND routine_schema = ?
     """
 
-    if core.MrsDbExec(sql).exec(session).first["available"]:
+    if (
+        core.MrsDbExec(sql, [core.metadata_schema(session)])
+        .exec(session)
+        .first["available"]
+    ):
         sql = """
-            CALL `mysql_rest_service_metadata`.`sdk_service_data`(?)
+            CALL <metadata>.`sdk_service_data`(?)
         """
 
         return (
