@@ -67,8 +67,7 @@ def shell_options() -> list:
     """Returns the extra options every shell the tests start is given.
 
     Taken from MARIADB_SHELL_OPTIONS, which run_tests.py sets from its
-    --shell-options. A shell build with a built-in module that clashes with a
-    plugin under test, for example, needs ``--disable-modules=mrs``.
+    --shell-options, for example ``--log-level=debug3``.
     """
     return shlex.split(os.environ.get("MARIADB_SHELL_OPTIONS", ""))
 

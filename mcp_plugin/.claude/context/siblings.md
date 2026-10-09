@@ -64,7 +64,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     accepts UUID / `0x` / base64 / bytes), `convert_ids_to_uuid`, `NIL_UUID`;
     `interactive.py` resolvers detect ids by value (`_as_id`). `DB_VERSION = [5, 0, 0]`.
     The mcp REST SQL tests pass against it unchanged.
-  - Results (new shell, `--disable-modules=mrs`): mrs 248 passed / 2 skipped, grammar
+  - Results (new shell, with the since removed `--disable-modules=mrs`): mrs 248 passed / 2 skipped, grammar
     test passed, `--mdupgrade` 4.1.6 -> 5.0.0 passed, mcp 596 passed.
   - Workbench: UUID is set via a `db.UserDatatype` and the new `UUID_Columns` plugin in
     `development/wb/Audit_Log_Triggers_grt.py` (the table editor's grammar rejects UUID).
@@ -73,8 +73,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 - **msm_plugin / mrs_plugin suites**: run each as `mariadb-shell --py -f run_tests.py` from
   ITS OWN plugin dir, with `/opt/homebrew/bin` on PATH for `mariadbd`.
-  On a shell with the built-in `mrs` module add `--disable-modules=mrs` to the shell AND
-  `-M="--disable-modules=mrs"` to `run_tests.py`. `-s <path>` is no
+  On a shell with the built-in `mrs` module no extra option is needed: the mrs_plugin
+  registers no `MRS` SQL handler anymore. `-s <path>` is no
   longer needed now that the runners default from `MARIADB_SHELL` or
   `shutil.which("mariadb-shell")`.
 

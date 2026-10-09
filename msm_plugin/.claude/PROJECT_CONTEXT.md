@@ -103,7 +103,8 @@ $ git status --short   (one repository: every project's lines)
 
 - Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
   sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
-  the `--disable-modules=mrs` / `MARIADB_SHELL_OPTIONS` support for the new shell build.
+  the `MARIADB_SHELL_OPTIONS` support for the new shell build (made for the since removed
+  `--disable-modules=mrs`).
 - **msm_plugin itself: unchanged this session.** Its functions produced the MRS metadata
   5.0.0 release (`prepare_release`, `set_section_sql_content`, `generate_deployment_script`).
 - PR #36 merged as `4bdf0ece`; `git push origin --delete wip/msm_mrs_fixes` is still the one

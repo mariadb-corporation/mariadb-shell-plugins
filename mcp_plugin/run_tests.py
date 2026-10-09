@@ -23,8 +23,7 @@
 # MARIADB_SHELL_USER_CONFIG_HOME to a temporary directory
 #
 # MARIADB_SHELL_OPTIONS (or --shell-options) holds extra options for every
-# shell the run starts, for example --disable-modules=mrs on a shell build
-# whose built-in mrs module clashes with the mrs_plugin under test.
+# shell the run starts, for example --log-level=debug3.
 #
 # Either way the run keeps its secrets in that home, with the shell's
 # plaintext credential helper, never in the OS secret store: the tests store,
@@ -139,7 +138,7 @@ def main() -> int:
         default=os.environ.get("MARIADB_SHELL_OPTIONS", ""),
         help=(
             "Extra options for every shell the run starts, the MCP servers "
-            "the tests launch included, e.g. --disable-modules=mrs"
+            "the tests launch included, e.g. --log-level=debug3"
         ),
     )
     parser.add_argument(
