@@ -27,81 +27,10 @@
 
 from mysqlsh.plugin_manager import plugin_function
 import mrs_plugin.lib as lib
-from .interactive import resolve_content_set
 
 import json
 
 # TODO (miguel): replace this with the one in interactive module
-
-
-def resolve_content_set_id(**kwargs):
-    request_path = kwargs.get("request_path")
-    session = kwargs.get("session")
-    content_set_id = kwargs.get("content_set_id")
-
-    service_id = kwargs.pop("service_id", None)
-    auto_select_single = kwargs.pop("auto_select_single", False)
-
-    # if the supplied content set id is valid...
-    if content_set_id:
-        return kwargs
-
-    # check if there is a current content set from the config
-    mrs_config = lib.core.get_current_config()
-    content_set_id = mrs_config.get("current_content_set_id")
-
-    # if the current content set was found, return it
-    if content_set_id:
-        kwargs["content_set_id"] = content_set_id
-        return kwargs
-
-    # last choice is to use the request path
-    lib.core.Validations.request_path(request_path)
-
-    # get the service object specified by the service id or the default one
-    service = lib.services.get_service(
-        service_id=service_id, session=session, get_default=True
-    )
-
-    service_id = service.get("id")
-
-    # get the list of existing content sets
-    content_sets = lib.content_sets.get_content_sets(
-        session=session, service_id=service_id, request_path=request_path
-    )
-
-    # if no content sets were found, this will cancel the call
-    if not content_sets:
-        raise ValueError("Unable to determine a unique content set for the operation.")
-
-    # If there is exactly one service, set id to its id
-    if len(content_sets) == 1 and auto_select_single:
-        kwargs["content_set_id"] = content_sets[0]["id"]
-        return kwargs
-
-    if not lib.core.get_interactive_default():
-        raise ValueError("Operation cancelled.")
-
-    # allow the user to select from a list of content sets
-    print(
-        f"Content Set Listing for Service "
-        f"{service.get('url_host_name')}"
-        f"{service.get('url_context_root')}"
-    )
-
-    selected_item = lib.core.prompt_for_list_item(
-        item_list=content_sets,
-        prompt_caption=("Please select an index or type " "the content set name: "),
-        item_name_property="request_path",
-        given_value=None,
-        print_list=True,
-    )
-
-    if not selected_item:
-        raise ValueError("Operation cancelled.")
-
-    kwargs["content_set_id"] = selected_item
-    return kwargs
 
 
 def resolve_content_set_ids(**kwargs):
@@ -156,22 +85,6 @@ def resolve_content_set_ids(**kwargs):
                 kwargs["content_set_ids"].append(row.get_field("id"))
 
     return kwargs
-
-
-def generate_create_statement(**kwargs) -> str:
-    lib.core.convert_ids_to_uuid(["service_id", "content_set_id"], kwargs)
-    service_id = kwargs.get("service_id")
-    content_set_id = kwargs.get("content_set_id")
-    allow_load_scripts = kwargs.get("allow_load_scripts", False)
-
-    with lib.core.MrsDbSession(
-        exception_handler=lib.core.print_exception, **kwargs
-    ) as session:
-        content_set = resolve_content_set(session, content_set_id, service_id)
-
-        return lib.content_sets.get_content_set_create_statement(
-            session, content_set, allow_load_scripts
-        )
 
 
 @plugin_function("mrs.get.fileMrsScriptDefinitions", shell=True, cli=True, web=True)

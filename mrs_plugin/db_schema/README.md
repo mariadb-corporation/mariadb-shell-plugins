@@ -68,4 +68,4 @@ $ brew link --force gettext
 8. In VS Code, right click on the `./mysql_rest_service_metadata.msm.project` folder and select `MySQL Schema Management > Prepare Release`. This will create the release file and in the `./mysql_rest_service_metadata.msm.project/releases/versions/` folder, as well as an update script in the `./mysql_rest_service_metadata.msm.project/releases/updates/` folder. The new files will be opened in VS Code for review.
 9. Update the content of the new update file in the `./mysql_rest_service_metadata.msm.project/releases/updates/` folder.
 10. In VS Code, right click on the `./mysql_rest_service_metadata.msm.project` folder and select `MySQL Schema Management > Generate Deployment Script`. This will create the final deployment script file and in the `./mysql_rest_service_metadata.msm.project/releases/deployment/` folder.
-11. The `DB_VERSION` constant in the `mrs_plugin/lib/general.py` needs to be updated to reflect the new version.
+11. The `k_schema_version` constant of the MariaDB Shell's mrs module (`modules/mrs/core/mrs_metadata.h` in the mariadb-shell repository) needs to be updated to reflect the new version.

@@ -33,7 +33,6 @@ import pytest
 import mysqlsh
 from mysqlsh.globals import sandbox
 
-from mrs_plugin import lib
 import mrs_plugin.tests.unit.helpers as helpers
 
 PHONE_BOOKS = {}
@@ -139,10 +138,6 @@ def init_mrs():
             PHONE_BOOKS[db] = helpers.create_mrs_phonebook_schema(
                 session, "/test", db, temp_dir
             )
-
-        lib.services.set_current_service_id(
-            session, PHONE_BOOKS["PhoneBook"]["service_id"]
-        )
 
         yield session
     finally:

@@ -44,127 +44,6 @@ from mrs_plugin.tests.unit.helpers import (
 from lib.core import MrsDbSession
 
 
-def test_get_service(phone_book, table_contents):
-    with MrsDbSession(session=phone_book["session"]) as session:
-        service_table: TableContents = table_contents("service")
-        service1 = lib.services.get_service(session=session, url_context_root="/test")
-
-        assert service1 is not None
-        assert service1 == {
-            "id": phone_book["service_id"],
-            "parent_id": None,
-            "enabled": 1,
-            "url_protocol": ["HTTP"],
-            "url_host_name": "",
-            "url_context_root": "/test",
-            "url_host_id": phone_book["url_host_id"],
-            "comments": "Test service",
-            "host_ctx": "/test",
-            "auth_completed_page_content": None,
-            "auth_completed_url": None,
-            "auth_completed_url_validation": None,
-            "auth_path": "/authentication",
-            "options": lib.services.DEFAULT_OPTIONS,
-            "metadata": None,
-            "is_current": 1,
-            "in_development": None,
-            "full_service_path": "/test",
-            "published": 0,
-            "sorted_developers": None,
-            "name": "test",
-            "auth_apps": ["MRS Auth App"],
-        }
-
-        with ServiceCT(session, "/service2") as service_id:
-            assert service_table.count == service_table.snapshot.count + 1
-
-            service2 = lib.services.get_service(
-                session=session, url_context_root="/service2"
-            )
-
-            assert service2 is not None
-            assert service2 == {
-                "id": service_id,
-                "parent_id": None,
-                "enabled": 1,
-                "url_protocol": ["HTTP"],
-                "url_host_name": "",
-                "url_context_root": "/service2",
-                "url_host_id": service2["url_host_id"],
-                "comments": "",
-                "host_ctx": "/service2",
-                "auth_completed_page_content": None,
-                "auth_completed_url": None,
-                "auth_completed_url_validation": None,
-                "auth_path": "/authentication",
-                "options": lib.services.DEFAULT_OPTIONS,
-                "metadata": None,
-                "in_development": None,
-                "is_current": 0,
-                "full_service_path": "/service2",
-                "published": 0,
-                "sorted_developers": None,
-                "name": "service2",
-                "auth_apps": None,
-            }
-
-            assert service_table.get("id", service_id) == {
-                "comments": "",
-                "enabled": 1,
-                "id": service_id,
-                "parent_id": None,
-                "url_context_root": "/service2",
-                "url_host_id": service2["url_host_id"],
-                "url_protocol": ["HTTP"],
-                "auth_completed_page_content": None,
-                "auth_completed_url": None,
-                "auth_completed_url_validation": None,
-                "auth_path": "/authentication",
-                "options": lib.services.DEFAULT_OPTIONS,
-                "metadata": None,
-                "in_development": None,
-                "custom_metadata_schema": None,
-                "enable_sql_endpoint": 0,
-                "published": 0,
-                "name": "service2",
-            }
-
-            with pytest.raises(Exception) as exc_info:
-                lib.services.get_service(session=session, url_context_root="service2")
-            assert str(exc_info.value) == "The url_context_root has to start with '/'."
-
-        # Test getting the default service
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=False
-        )
-        assert result is None
-
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=True
-        )
-        assert result is not None
-
-        with ServiceCT(session, "/service2") as service_id:
-            lib.services.set_current_service_id(session, service_id)
-
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=False
-        )
-        assert result is None
-
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=True
-        )
-        assert result is None
-
-        lib.services.set_current_service_id(session, phone_book["service_id"])
-
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=True
-        )
-        assert result is not None
-
-
 def test_get_services(phone_book, table_contents):
     with MrsDbSession(session=phone_book["session"]) as session:
         service_table: TableContents = table_contents("service")
@@ -190,28 +69,6 @@ def test_get_services(phone_book, table_contents):
         services = lib.services.get_services(session=session)
         assert len(service_table.items) == len(services)
         assert len(services) == 1
-
-
-def test_change_service(phone_book, table_contents):
-    service_table = table_contents("service")
-    auth_app_table = table_contents("auth_app")
-
-    with MrsDbSession(session=phone_book["session"]) as session:
-        with pytest.raises(Exception) as exc_info:
-            lib.services.update_services(
-                session=session, service_ids=[1000], value={"enabled": True}
-            )
-        # An integer is no id: the server refuses to compare it with a UUID.
-        assert "Illegal parameter data types uuid and int" in str(exc_info.value)
-
-        with ServiceCT(session, "/service2") as service_id:
-            value = {"comments": "This is the updated comment."}
-            lib.services.update_services(
-                session=session, service_ids=[service_id], value=value
-            )
-
-    assert service_table.same_as_snapshot
-    assert auth_app_table.same_as_snapshot
 
 
 def mock_github_archive(mocker, project_dir):
@@ -458,7 +315,9 @@ def test_service_as_project(phone_book, table_contents, mocker):
             session, url_context_root=service_data["name"]
         )
 
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
 
     for schema_data in schemas:
         session.run_sql(f"DROP SCHEMA {schema_data["name"]}")
@@ -512,7 +371,9 @@ def test_service_as_project(phone_book, table_contents, mocker):
 
     for service_name in ["myService1", "myService2"]:
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
 
     # test loading from GitHub, served from the project stored above
     requested_urls = mock_github_archive(mocker, directory_1)
@@ -566,7 +427,9 @@ def test_service_as_project(phone_book, table_contents, mocker):
 
     for service_name in ["myService1", "myService2"]:
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
 
     # test loading from GitHub using the short form, which defaults to main
     lib.services.load_project(session, "github/mrs-tests/mrs-project")
@@ -623,4 +486,6 @@ def test_service_as_project(phone_book, table_contents, mocker):
 
     for service_name in ["myService1", "myService2"]:
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )

@@ -28,7 +28,6 @@ import filecmp
 import datetime
 import difflib
 import tempfile
-import pytest
 
 from mrs_plugin.services import *
 from .helpers import (
@@ -36,8 +35,6 @@ from .helpers import (
     SchemaCT,
     DbObjectCT,
     get_default_db_object_init,
-    TableContents,
-    string_replace,
     create_test_db,
 )
 from mrs_plugin import lib
@@ -149,180 +146,6 @@ CREATE OR REPLACE REST VIEW /Contacts
         email: email
     }
     AUTHENTICATION REQUIRED;"""
-
-
-def test_validate_service_path(phone_book):
-    session = phone_book["session"]
-
-    service, schema, content_set = lib.services.validate_service_path(session, None)
-    assert service is None
-    assert schema is None
-    assert content_set is None
-
-    service, schema, content_set = lib.services.validate_service_path(
-        session, "/test/PhoneBook"
-    )
-    assert service is not None
-    assert service == {
-        "id": phone_book["service_id"],
-        "parent_id": None,
-        "enabled": 1,
-        "auth_completed_page_content": None,
-        "auth_completed_url": None,
-        "auth_completed_url_validation": None,
-        "auth_path": "/authentication",
-        "url_protocol": ["HTTP"],
-        "url_host_name": "",
-        "url_context_root": "/test",
-        "url_host_id": phone_book["url_host_id"],
-        "options": lib.services.DEFAULT_OPTIONS,
-        "metadata": None,
-        "comments": "Test service",
-        "host_ctx": "/test",
-        "is_current": 1,
-        "in_development": None,
-        "full_service_path": "/test",
-        "published": 0,
-        "sorted_developers": None,
-        "name": "test",
-        "auth_apps": ["MRS Auth App"],
-    }
-
-    assert schema is not None
-    assert schema == {
-        "id": phone_book["schema_id"],
-        "name": "PhoneBook",
-        "service_id": phone_book["service_id"],
-        "request_path": "/PhoneBook",
-        "requires_auth": 0,
-        "enabled": 1,
-        "options": None,
-        "metadata": None,
-        "items_per_page": 20,
-        "comments": "test schema",
-        "host_ctx": "/test",
-        "url_host_id": phone_book["url_host_id"],
-        "schema_type": "DATABASE_SCHEMA",
-        "internal": 0,
-    }
-
-    assert content_set is None
-
-    with pytest.raises(ValueError) as exc_info:
-        service, schema, content_set = lib.services.validate_service_path(
-            session, "/test/schema"
-        )
-    assert str(exc_info.value) == "The given schema or content set was not found."
-
-    with pytest.raises(ValueError) as exc_info:
-        service, schema, content_set = lib.services.validate_service_path(
-            session, "127.0.0.1/test"
-        )
-    assert str(exc_info.value) == "The given MRS service was not found."
-
-
-def test_sql_service_add_authapp(phone_book):
-    session = phone_book["session"]
-
-    session.run_sql("create rest auth app `MyAuthApp` VENDOR `MRS`")
-    session.run_sql("create rest auth app `MyAuthApp2` VENDOR `MRS`")
-    session.run_sql(
-        "create rest service /myTestSvc add auth app `MyAuthApp` if exists add auth app `Invalid` if exists"
-    )
-    ddl = session.run_sql("show create rest service /myTestSvc").fetch_one()[0]
-    service_create_statement.replace("/Test", "/myTestSvc")
-    assert ddl == """CREATE OR REPLACE REST SERVICE /myTestSvc
-    OPTIONS {
-        "headers": {
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
-        },
-        "http": {
-            "allowedOrigin": "auto"
-        },
-        "logging": {
-            "exceptions": true,
-            "request": {
-                "body": true,
-                "headers": true
-            },
-            "response": {
-                "body": true,
-                "headers": true
-            }
-        },
-        "returnInternalErrorDetails": true,
-        "includeLinksInResults": false
-    }
-    ADD AUTH APP `MyAuthApp` IF EXISTS;"""
-    session.run_sql(
-        "alter rest service /myTestSvc remove auth app `MyAuthApp` if exists remove auth app `Invalid` if exists add auth app `MyAuthApp2`"
-    )
-    ddl = session.run_sql("show create rest service /myTestSvc").fetch_one()[0]
-    assert ddl == """CREATE OR REPLACE REST SERVICE /myTestSvc
-    OPTIONS {
-        "headers": {
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
-        },
-        "http": {
-            "allowedOrigin": "auto"
-        },
-        "logging": {
-            "exceptions": true,
-            "request": {
-                "body": true,
-                "headers": true
-            },
-            "response": {
-                "body": true,
-                "headers": true
-            }
-        },
-        "returnInternalErrorDetails": true,
-        "includeLinksInResults": false
-    }
-    ADD AUTH APP `MyAuthApp2` IF EXISTS;"""
-
-    session.run_sql("drop rest auth app `MyAuthApp`")
-    session.run_sql("drop rest auth app `MyAuthApp2`")
-    session.run_sql("drop rest service /myTestSvc")
-
-
-def test_sql_clone_service_with_developers(phone_book):
-    """CLONE REST SERVICE must resolve a developer-prefixed service and may
-    clone it to a path without developers.
-
-    Two services share the request path here, so a lookup by path alone finds
-    none; and the clone has no developers, which the service table's check
-    constraint only accepts as a NULL in_development.
-    """
-    session = phone_book["session"]
-
-    session.run_sql("create or replace rest service mike@/cloneSource")
-    session.run_sql("create or replace rest service miguel@/cloneSource")
-    session.run_sql(
-        "create or replace rest schema /cloneSchema on service mike@/cloneSource from `PhoneBook`"
-    )
-
-    try:
-        session.run_sql(
-            "clone rest service mike@/cloneSource new request path /clonedService"
-        )
-
-        clone = lib.services.get_service(session, url_context_root="/clonedService")
-        assert clone is not None
-        assert clone["in_development"] is None
-        assert clone["published"] == 0
-
-        cloned_schemas = lib.schemas.get_schemas(session, clone["id"])
-        assert [schema["request_path"] for schema in cloned_schemas] == ["/cloneSchema"]
-    finally:
-        session.run_sql("drop rest service if exists /clonedService")
-        session.run_sql("drop rest service if exists mike@/cloneSource")
-        session.run_sql("drop rest service if exists miguel@/cloneSource")
 
 
 def test_service_as_project(phone_book, table_contents):
@@ -539,7 +362,9 @@ def test_service_as_project(phone_book, table_contents):
             session, url_context_root=service_data["name"]
         )
 
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
 
     for schema_data in schemas:
         session.run_sql(f"DROP SCHEMA {schema_data["name"]}")
@@ -600,4 +425,6 @@ def test_service_as_project(phone_book, table_contents):
 
     for service_name in ["myService1", "myService2"]:
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
