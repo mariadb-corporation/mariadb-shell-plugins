@@ -304,7 +304,7 @@ def store_project_validations(
 
                 raise Exception(f"The given schema '{file_path}' was not found")
 
-    if project_settings["icon_path"]:
+    if project_settings.get("icon_path"):
         if not os.path.isfile(project_settings["icon_path"]):
             raise Exception("The icon path is not valid.")
 
@@ -447,10 +447,10 @@ def store_project(
         "creationDate": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-    if project_settings["publisher"]:
+    if project_settings.get("publisher"):
         config["publisher"] = project_settings["publisher"]
 
-    if project_settings["description"]:
+    if project_settings.get("description"):
         config["description"] = project_settings["description"]
 
     # remove the ".zip" from the destination to create the temp directory
@@ -461,7 +461,7 @@ def store_project(
     os.makedirs(temp_dir, exist_ok=True)
 
     # copy icon if set to do so
-    if project_settings["icon_path"]:
+    if project_settings.get("icon_path"):
         config["icon"] = f"appIcon{os.path.splitext(project_settings["icon_path"])[1]}"
         icon_target_path = os.path.join(temp_dir, config["icon"])
         shutil.copy(project_settings["icon_path"], icon_target_path)

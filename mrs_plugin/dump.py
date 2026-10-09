@@ -51,7 +51,7 @@ def export_audit_log(file_path, **kwargs):
     Returns:
         None
     """
-    session = kwargs.get("session", None)
+    session = kwargs.pop("session", None)
 
     try:
         with lib.core.MrsDbSession(session=session) as session:
