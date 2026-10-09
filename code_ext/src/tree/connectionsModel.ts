@@ -32,6 +32,13 @@ import {
     type ConnectionKind,
     type ObjectType,
 } from "../mcp/types.js";
+import {
+    isMrsNode,
+    type IMrsMessageNode,
+    type IMrsRootNode,
+    type MrsModel,
+    type MrsNode,
+} from "./mrsModel.js";
 
 /**
  * A folder of connections. Folders exist as the paths connections are filed
@@ -136,7 +143,8 @@ export type ConnectionsNode =
     | IConnectionStatusNode
     | ISchemaNode
     | IObjectGroupNode
-    | IObjectNode;
+    | IObjectNode
+    | MrsNode;
 
 /**
  * The folder a row stands for: a folder row is its own, a connection row
@@ -196,6 +204,8 @@ export class ConnectionsModel {
      *   going, by URI; undefined where none is under way or failed.
      * @param customFolders The folders the user made that the connections
      *   may not imply yet. Read on every call.
+     * @param mrs The REST Service rows; left out, a connection shows its
+     *   schemas only.
      */
     public constructor(
         private readonly connections: ConnectionManager,
@@ -205,6 +215,7 @@ export class ConnectionsModel {
                 return undefined;
             },
         private readonly customFolders: () => string[] = () => { return []; },
+        private readonly mrs?: MrsModel,
     ) { }
 
     /**
@@ -348,7 +359,9 @@ export class ConnectionsModel {
             }
 
             default: {
-                return [];
+                return this.mrs !== undefined && isMrsNode(node)
+                    ? await this.mrs.getChildren(node)
+                    : [];
             }
         }
     }
@@ -363,7 +376,8 @@ export class ConnectionsModel {
      */
     async #schemasOf(
         node: IConnectionNode,
-    ): Promise<Array<ISchemaNode | IConnectionStatusNode>> {
+    ): Promise<Array<
+        ISchemaNode | IConnectionStatusNode | IMrsRootNode | IMrsMessageNode>> {
         const connectionId = this.connections.connectionIdFor(
             node.uri, UI_BACKEND_SESSION);
         if (connectionId === undefined) {
@@ -383,9 +397,13 @@ export class ConnectionsModel {
         }
 
         const api = await this.connections.api();
+        // The REST Service comes first, as in the MySQL Shell's tree: it
+        // is one row, and the schemas can be many.
+        const roots = this.mrs === undefined
+            ? [] : await this.mrs.rootsOf(node.uri);
         const schemas = await api.listSchemas(connectionId);
 
-        return schemas.map((schema) => {
+        return [...roots, ...schemas.map((schema): ISchemaNode => {
             return {
                 kind: "schema",
                 uri: node.uri,
@@ -393,7 +411,7 @@ export class ConnectionsModel {
                 schemaType: schema.schema_type,
                 comment: schema.schema_comment,
             };
-        });
+        })];
     }
 
     /**

@@ -234,6 +234,12 @@ vi.mock("../mcp/sdkConnector.js", async () => {
 
 const { activate, deactivate } = await import("../extension.js");
 
+/** The manifest, for what it contributes. */
+const packageJson = JSON.parse(readFileSync(
+    new URL("../../package.json", import.meta.url), "utf8")) as {
+    contributes: { commands: unknown[] };
+};
+
 const versionLine = (version: string): string => {
     return `mariadb-shell   Ver ${version} for osx10.21 on arm64 `
         + "- for MariaDB 13.1.0-MariaDB (Source distribution)";
@@ -284,7 +290,21 @@ describe("activate", () => {
         })).toEqual(["mariadb.connections", "mariadb.sandboxes"]);
         // What draws a connection's color on its row.
         expect(fileDecorationProviders).toHaveLength(1);
-        expect([...registeredCommands.keys()].sort()).toEqual([
+        const registered = [...registeredCommands.keys()].sort();
+        // The REST Service commands are checked against what the package
+        // contributes, both ways: one registered and not contributed is
+        // unreachable, one contributed and not registered fails when used.
+        const contributedMrs = (packageJson.contributes.commands as
+            Array<{ command: string }>).map((entry) => {
+            return entry.command;
+        }).filter((id) => { return id.startsWith("mariadb.mrs."); }).sort();
+        expect(registered.filter((id) => {
+            return id.startsWith("mariadb.mrs.");
+        })).toEqual(contributedMrs);
+        expect(contributedMrs.length).toBeGreaterThan(40);
+        expect(registered.filter((id) => {
+            return !id.startsWith("mariadb.mrs.");
+        })).toEqual([
             "mariadb.addConnection",
             "mariadb.addSandbox",
             "mariadb.clearDefaultConnection",

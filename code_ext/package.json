@@ -193,6 +193,11 @@
             "No shortcut"
           ],
           "markdownDescription": "The shortcut that runs only the statement the cursor is in. Any shortcut outside this list can be set in the Keyboard Shortcuts editor against `mariadb.runSqlStatement`."
+        },
+        "mariadb.mrs.restDaemonUrl": {
+          "type": "string",
+          "default": "https://localhost:8443",
+          "markdownDescription": "Where the MariaDB REST Daemon serves REST requests. The **Open ... Request Path in Web Browser** commands and the client SDK's default service URL start with it."
         }
       }
     },
@@ -398,6 +403,273 @@
         "command": "mariadb.showMcpServerLog",
         "title": "Show MCP Server Log",
         "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.configure",
+        "title": "Configure MariaDB REST Service...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.showPrivateItems",
+        "title": "Show Private Items",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.hidePrivateItems",
+        "title": "Hide Private Items",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.docs",
+        "title": "Browse the MariaDB REST Service Documentation",
+        "category": "MariaDB",
+        "icon": {
+          "light": "images/light/docs.svg",
+          "dark": "images/dark/docs.svg"
+        }
+      },
+      {
+        "command": "mariadb.mrs.addService",
+        "title": "Add REST Service...",
+        "category": "MariaDB",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mariadb.mrs.editService",
+        "title": "Edit REST Service...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.deleteService",
+        "title": "Delete REST Service...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.setCurrentService",
+        "title": "Set as Current REST Service",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.linkAuthApp",
+        "title": "Link REST Authentication App...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.addAndLinkAuthApp",
+        "title": "Add and Link REST Authentication App...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.unlinkAuthApp",
+        "title": "Unlink REST Authentication App...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyCreateServiceSql",
+        "title": "Copy CREATE REST SERVICE Statement",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyCreateServiceSqlIncludeDatabaseEndpoints",
+        "title": "Copy CREATE REST SERVICE Statement Including Database Objects",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.dumpCreateServiceSql",
+        "title": "Dump REST SERVICE SQL Script...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.exportServiceSdk",
+        "title": "Dump REST Client SDK Files...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.dumpServiceAsProject",
+        "title": "Dump REST Service as REST Project...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.loadProjectFromDisk",
+        "title": "Load REST Project from Disk...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.loadServiceFromDisk",
+        "title": "Load REST SERVICE SQL Script...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.addSchema",
+        "title": "Add Schema to REST Service...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.editSchema",
+        "title": "Edit REST Schema...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.deleteSchema",
+        "title": "Delete REST Schema...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyCreateSchemaSql",
+        "title": "Copy CREATE REST SCHEMA Statement",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.dumpCreateSchemaSql",
+        "title": "Dump CREATE REST SCHEMA Statement...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.addDbObject",
+        "title": "Add Database Object to REST Service...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.editDbObject",
+        "title": "Edit REST Object...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.deleteDbObject",
+        "title": "Delete REST Object...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyDbObjectRequestPath",
+        "title": "Copy REST Object Request Path",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.openDbObjectRequestPath",
+        "title": "Open REST Object Request Path in Web Browser",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyCreateDbObjectSql",
+        "title": "Copy CREATE REST OBJECT Statement",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.dumpCreateDbObjectSql",
+        "title": "Dump CREATE REST OBJECT Statement...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.addContentSet",
+        "title": "Add New REST Content Set...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.addFolderAsContentSet",
+        "title": "Upload Folder to MariaDB REST Service...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.editContentSet",
+        "title": "Edit REST Content Set...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.deleteContentSet",
+        "title": "Delete REST Content Set...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.openContentSetRequestPath",
+        "title": "Open Content Set Request Path in Web Browser",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyCreateContentSetSql",
+        "title": "Copy CREATE REST CONTENT SET Statement",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.dumpCreateContentSetSql",
+        "title": "Dump CREATE REST CONTENT SET Statement...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.openContentFileRequestPath",
+        "title": "Open Content File Request Path in Web Browser",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyCreateContentFileSql",
+        "title": "Copy CREATE REST CONTENT FILE Statement",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.deleteContentFile",
+        "title": "Delete REST Content File...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.addAuthApp",
+        "title": "Add New Authentication App...",
+        "category": "MariaDB",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mariadb.mrs.editAuthApp",
+        "title": "Edit Authentication App...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.deleteAuthApp",
+        "title": "Delete Authentication App...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyCreateAuthAppSql",
+        "title": "Copy CREATE REST AUTH APP Statement",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.dumpCreateAuthAppSql",
+        "title": "Dump CREATE REST AUTH APP Statement...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.addUser",
+        "title": "Add User...",
+        "category": "MariaDB",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mariadb.mrs.editUser",
+        "title": "Edit User...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.deleteUser",
+        "title": "Delete User...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.copyCreateUserSql",
+        "title": "Copy CREATE REST USER Statement",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.dumpCreateUserSql",
+        "title": "Dump CREATE REST USER Statement...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.deleteDaemon",
+        "title": "Delete REST Daemon...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.mrs.rebuildMrsSdk",
+        "title": "Rebuild MRS SDK",
+        "category": "MariaDB"
       }
     ],
     "menus": {
@@ -568,6 +840,211 @@
           "command": "mariadb.deleteSandbox",
           "when": "view == mariadb.sandboxes && viewItem =~ /^mariadbSandbox\\.(running|stopped)$/",
           "group": "2_manage@1"
+        },
+        {
+          "command": "mariadb.mrs.configure",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.connected/",
+          "group": "7_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.docs",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\.connected/",
+          "group": "7_mrs@2"
+        },
+        {
+          "command": "mariadb.mrs.configure",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsRoot\\./",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.addService",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsRoot\\./",
+          "group": "2_mrs@1"
+        },
+        {
+          "submenu": "mariadb.mrs.loadFromDisk",
+          "when": "view == mariadb.connections && (viewItem =~ /^mariadbMrsRoot\\./ || viewItem =~ /^mariadbMrsService\\./)",
+          "group": "3_disk@1"
+        },
+        {
+          "command": "mariadb.mrs.showPrivateItems",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsRoot.noPrivate",
+          "group": "6_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.hidePrivateItems",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsRoot.private",
+          "group": "6_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.docs",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsRoot\\./",
+          "group": "9_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.docs",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsRoot\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.mrs.addService",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsRoot\\./",
+          "group": "inline@2"
+        },
+        {
+          "command": "mariadb.mrs.editService",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.setCurrentService",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsService.notCurrent",
+          "group": "1_mrs@2"
+        },
+        {
+          "command": "mariadb.mrs.addAndLinkAuthApp",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "3_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.linkAuthApp",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "3_mrs@2"
+        },
+        {
+          "command": "mariadb.mrs.addContentSet",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "4_mrs@1"
+        },
+        {
+          "submenu": "mariadb.mrs.dumpToDisk",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrs(Service\\.|ServiceAuthApp$|Schema$|Object\\.|ContentSet$|AuthApp$|User$)/",
+          "group": "5_disk@1"
+        },
+        {
+          "submenu": "mariadb.mrs.copyToClipboard",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrs(Service\\.|ServiceAuthApp$|Schema$|Object\\.|ContentSet$|ContentFile$|AuthApp$|User$)/",
+          "group": "5_disk@2"
+        },
+        {
+          "command": "mariadb.mrs.deleteService",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "8_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.unlinkAuthApp",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsServiceAuthApp",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.editAuthApp",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsServiceAuthApp",
+          "group": "1_mrs@2"
+        },
+        {
+          "command": "mariadb.mrs.editSchema",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsSchema",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.deleteSchema",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsSchema",
+          "group": "8_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.editDbObject",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsObject\\.(table|view|procedure|function)$/",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.openDbObjectRequestPath",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsObject\\./",
+          "group": "2_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.deleteDbObject",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsObject\\./",
+          "group": "8_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.editContentSet",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsContentSet",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.openContentSetRequestPath",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsContentSet",
+          "group": "2_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.deleteContentSet",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsContentSet",
+          "group": "8_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.openContentFileRequestPath",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsContentFile",
+          "group": "2_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.deleteContentFile",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsContentFile",
+          "group": "8_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.addAuthApp",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsAuthAppGroup",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.addAuthApp",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsAuthAppGroup",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.mrs.editAuthApp",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsAuthApp",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.addUser",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsAuthApp",
+          "group": "2_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.addUser",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsAuthApp",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.mrs.deleteAuthApp",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsAuthApp",
+          "group": "8_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.editUser",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsUser",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.deleteUser",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsUser",
+          "group": "8_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.deleteDaemon",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsDaemon",
+          "group": "8_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.addSchema",
+          "when": "view == mariadb.connections && viewItem == mariadbSchema",
+          "group": "5_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.addDbObject",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbObject\\.(table|view|procedure|function)$/",
+          "group": "5_mrs@1"
         }
       ],
       "editor/title": [
@@ -709,6 +1186,330 @@
         {
           "command": "mariadb.refreshSandboxes",
           "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.configure",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.showPrivateItems",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.hidePrivateItems",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.addService",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.editService",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deleteService",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.setCurrentService",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.linkAuthApp",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.addAndLinkAuthApp",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.unlinkAuthApp",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateServiceSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateServiceSqlIncludeDatabaseEndpoints",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateServiceSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.exportServiceSdk",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.dumpServiceAsProject",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.loadProjectFromDisk",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.loadServiceFromDisk",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.addSchema",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.editSchema",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deleteSchema",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateSchemaSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateSchemaSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.addDbObject",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.editDbObject",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deleteDbObject",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyDbObjectRequestPath",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.openDbObjectRequestPath",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateDbObjectSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateDbObjectSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.addContentSet",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.addFolderAsContentSet",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.editContentSet",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deleteContentSet",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.openContentSetRequestPath",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateContentSetSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateContentSetSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.openContentFileRequestPath",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateContentFileSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deleteContentFile",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.addAuthApp",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.editAuthApp",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deleteAuthApp",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateAuthAppSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateAuthAppSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.addUser",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.editUser",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deleteUser",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateUserSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateUserSql",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deleteDaemon",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.rebuildMrsSdk",
+          "when": "false"
+        }
+      ],
+      "mariadb.mrs.copyToClipboard": [
+        {
+          "command": "mariadb.mrs.copyCreateServiceSql",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateServiceSqlIncludeDatabaseEndpoints",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "1_sql@2"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateSchemaSql",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsSchema",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.copyDbObjectRequestPath",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsObject\\./",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateDbObjectSql",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsObject\\.(table|view|procedure|function)$/",
+          "group": "1_sql@2"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateContentSetSql",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsContentSet",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateContentFileSql",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsContentFile",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateAuthAppSql",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrs(Service)?AuthApp$/",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.copyCreateUserSql",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsUser",
+          "group": "1_sql@1"
+        }
+      ],
+      "mariadb.mrs.dumpToDisk": [
+        {
+          "command": "mariadb.mrs.exportServiceSdk",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateServiceSql",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "1_sql@2"
+        },
+        {
+          "command": "mariadb.mrs.dumpServiceAsProject",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "1_sql@3"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateSchemaSql",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsSchema",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateDbObjectSql",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsObject\\.(table|view|procedure|function)$/",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateContentSetSql",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsContentSet",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateAuthAppSql",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrs(Service)?AuthApp$/",
+          "group": "1_sql@1"
+        },
+        {
+          "command": "mariadb.mrs.dumpCreateUserSql",
+          "when": "view == mariadb.connections && viewItem == mariadbMrsUser",
+          "group": "1_sql@1"
+        }
+      ],
+      "mariadb.mrs.loadFromDisk": [
+        {
+          "command": "mariadb.mrs.loadServiceFromDisk",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsRoot\\./",
+          "group": "1_load@1"
+        },
+        {
+          "command": "mariadb.mrs.loadProjectFromDisk",
+          "when": "view == mariadb.connections && (viewItem =~ /^mariadbMrsRoot\\./ || viewItem =~ /^mariadbMrsService\\./)",
+          "group": "1_load@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "submenu": "mariadb.mrs.explorer",
+          "when": "explorerResourceIsFolder",
+          "group": "7_mariadb@1"
+        }
+      ],
+      "mariadb.mrs.explorer": [
+        {
+          "command": "mariadb.mrs.addFolderAsContentSet",
+          "when": "explorerResourceIsFolder",
+          "group": "1_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.rebuildMrsSdk",
+          "when": "explorerResourceIsFolder && resourceFilename =~ /\\.mrs\\.sdk$/",
+          "group": "1_mrs@2"
         }
       ]
     },
@@ -777,6 +1578,24 @@
         "key": "f8",
         "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'f8'"
       }
+    ],
+    "submenus": [
+      {
+        "id": "mariadb.mrs.copyToClipboard",
+        "label": "Copy to Clipboard"
+      },
+      {
+        "id": "mariadb.mrs.dumpToDisk",
+        "label": "Dump to Disk"
+      },
+      {
+        "id": "mariadb.mrs.loadFromDisk",
+        "label": "Load from Disk"
+      },
+      {
+        "id": "mariadb.mrs.explorer",
+        "label": "MariaDB REST Service"
+      }
     ]
   },
   "scripts": {
@@ -790,7 +1609,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "build:extension": "vite build",
-    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts && vite build --config vite.sandbox.config.ts",
+    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts && vite build --config vite.sandbox.config.ts && vite build --config vite.mrs.config.ts",
     "watch:webview": "vite build --config vite.webview.config.ts --watch",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
   },

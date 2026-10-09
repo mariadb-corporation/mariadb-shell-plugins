@@ -20,6 +20,8 @@ import * as vscode from "vscode";
 import { connectionLabel, schemeOf } from "../connections/connectionUri.js";
 import type { ObjectType } from "../mcp/types.js";
 import { colorUriOf } from "./connectionColors.js";
+import { isMrsNode } from "./mrsModel.js";
+import { MrsTreeItem } from "./mrsTreeItems.js";
 import {
     OBJECT_GROUP_LABELS,
     type ConnectionsNode,
@@ -319,6 +321,10 @@ export const createTreeItem = (
     node: ConnectionsNode,
     resolveIcon: IconResolver,
 ): vscode.TreeItem => {
+    if (isMrsNode(node)) {
+        return new MrsTreeItem(node, resolveIcon);
+    }
+
     switch (node.kind) {
         case "folder": {
             return new FolderTreeItem(node);

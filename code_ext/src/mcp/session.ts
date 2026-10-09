@@ -17,6 +17,7 @@
 
 import type { McpServerCommand } from "../shell/mcpServer.js";
 import { MariaDbApi, type IToolCaller } from "./mariaDbApi.js";
+import { MrsToolsApi } from "../mrs/mrsApi.js";
 import { SandboxApi, type ISandboxApi } from "./sandboxApi.js";
 import type { IMariaDbApi } from "./types.js";
 import { errorText } from "../text.js";
@@ -59,6 +60,7 @@ export class McpSession {
     #starting?: Promise<IMariaDbApi>;
     #api?: IMariaDbApi;
     #sandboxApi?: ISandboxApi;
+    #mrsTools?: MrsToolsApi;
 
     public constructor(
         private readonly connector: IMcpConnector,
@@ -86,6 +88,14 @@ export class McpSession {
      */
     public get sandboxApi(): ISandboxApi | undefined {
         return this.#sandboxApi;
+    }
+
+    /**
+     * @returns The `mrs.*` tools on the same server, if one is already
+     *          running, else undefined.
+     */
+    public get mrsTools(): MrsToolsApi | undefined {
+        return this.#mrsTools;
     }
 
     /**
@@ -119,6 +129,7 @@ export class McpSession {
         this.#connection = undefined;
         this.#api = undefined;
         this.#sandboxApi = undefined;
+        this.#mrsTools = undefined;
         if (!connection) {
             return;
         }
@@ -149,6 +160,7 @@ export class McpSession {
         this.#connection = connection;
         this.#api = new MariaDbApi(connection);
         this.#sandboxApi = new SandboxApi(connection);
+        this.#mrsTools = new MrsToolsApi(connection);
         this.log("MCP server ready.");
 
         return this.#api;

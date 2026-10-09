@@ -65,6 +65,10 @@ import type { ISandboxApi } from "./mcp/sandboxApi.js";
 import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
 import { SandboxStore } from "./sandboxes/sandboxStore.js";
 import { SandboxEditorPanel } from "./sandboxes/sandboxEditorPanel.js";
+import { MrsApi } from "./mrs/mrsApi.js";
+import { MrsCommands } from "./mrs/mrsCommands.js";
+import { MrsDialogPanel } from "./mrs/mrsDialogPanel.js";
+import { MrsModel } from "./tree/mrsModel.js";
 import { sandboxConnectionUri } from "./sandboxes/sandboxFields.js";
 import {
     SandboxesTreeProvider,
@@ -232,6 +236,13 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // Which folders were left closed, so a restart comes back as it was.
     const collapsedFolders =
         new FolderSet(context.globalState, COLLAPSED_FOLDERS_KEY);
+    // The REST Service rows read REST SQL on the session the tree browses
+    // with, through the connection manager's API, so every call is a row of
+    // that connection's output like the tree's other queries.
+    const mrsApi = new MrsApi(async () => { return await connections.api(); });
+    const mrsModel = new MrsModel(mrsApi, (uri) => {
+        return connections.connectionIdFor(uri, UI_BACKEND_SESSION);
+    }, log);
     const tree = new ConnectionsTreeProvider(
         connections,
         createIconResolver(context.extensionUri),
@@ -240,7 +251,27 @@ export const activate = (context: vscode.ExtensionContext): void => {
         starter,
         customFolders,
         collapsedFolders,
+        mrsModel,
     );
+    const mrsCommands = new MrsCommands({
+        extensionUri: context.extensionUri,
+        api: mrsApi,
+        tools: async () => {
+            if (session.mrsTools === undefined) {
+                await starter.start();
+            }
+            const tools = session.mrsTools;
+            if (tools === undefined) {
+                throw new Error("The MCP server is not running.");
+            }
+
+            return tools;
+        },
+        model: mrsModel,
+        connections,
+        refresh: () => { tree.refresh(); },
+        log,
+    });
     // The sandbox tools come with the server, so asking for them is asking
     // for the server. Every call is a General Action: none is made on an
     // open connection.
@@ -337,6 +368,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         treeDataProvider: sandboxes,
     });
 
+    context.subscriptions.push(...mrsCommands.register());
     context.subscriptions.push(
         // Draws a connection's color on its row (see connectionColors.ts).
         vscode.window.registerFileDecorationProvider(
@@ -988,6 +1020,7 @@ export const deactivate = async (): Promise<void> => {
     // one left open across a reload would be bound to a server that is gone.
     ConnectionEditorPanel.disposeCurrent();
     SandboxEditorPanel.disposeCurrent();
+    MrsDialogPanel.disposeAll();
 
     await current.connections.disconnectAll();
     await current.session.stop();

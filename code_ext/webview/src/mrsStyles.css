@@ -1,0 +1,212 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/*
+ * The MRS dialogs. Built on the connection editor's stylesheet; what is
+ * here is theirs alone: the access flags beside the paths, JSON fields
+ * in the editor font, and the data mapping table.
+ */
+
+.mrs-dialog .editor-header {
+    margin-bottom: 0.75rem;
+}
+
+/* The main fields above the tabs keep away from the tab strip. */
+.mrs-dialog > .grid {
+    margin-bottom: 1rem;
+}
+
+.mrs-object .editor,
+.mrs-dialog.mrs-object {
+    max-width: 72rem;
+}
+
+.mrs-flags {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.mrs-check {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.mrs-check-cell {
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 0.35rem;
+}
+
+.mrs-version {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.mrs-problem {
+    color: var(--vscode-errorForeground);
+}
+
+input.invalid,
+textarea.invalid {
+    border-color: var(--vscode-inputValidation-errorBorder);
+}
+
+.mrs-code,
+textarea.mrs-code {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--vscode-input-border, transparent);
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: var(--vscode-editor-font-size, 12px);
+}
+
+.mrs-readonly {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 22rem;
+    overflow: auto;
+}
+
+/* --- the data mapping editor -------------------------------------- */
+
+.mrs-mapping {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.mrs-mapping-toolbar {
+    align-items: center;
+}
+
+.mrs-mapping-rows {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--vscode-panel-border,
+            var(--vscode-editorWidget-border));
+}
+
+.mrs-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.15rem 0.5rem;
+}
+
+.mrs-row:nth-child(even) {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.mrs-row.disabled .mrs-relational {
+    opacity: 0.6;
+}
+
+.mrs-json,
+.mrs-relational {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.mrs-twistie {
+    flex: none;
+    width: 1.25rem;
+}
+
+input.mrs-name {
+    width: auto;
+    min-width: 6rem;
+    max-width: 14rem;
+    padding: 0.15rem 0.35rem;
+}
+
+input.mrs-type,
+.mrs-type {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+}
+
+input.mrs-type {
+    width: 9rem;
+    padding: 0.15rem 0.35rem;
+}
+
+.mrs-flags-row {
+    display: inline-flex;
+    gap: 0.1rem;
+}
+
+.mrs-flag {
+    opacity: 0.35;
+}
+
+.mrs-flag.on {
+    opacity: 1;
+    color: var(--vscode-textLink-foreground);
+}
+
+.mrs-pills {
+    display: inline-flex;
+    gap: 0.2rem;
+}
+
+.mrs-pill {
+    padding: 0 0.4rem;
+    border-radius: 0.6rem;
+    border: 1px solid var(--vscode-input-border,
+            var(--vscode-editorWidget-border));
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.8em;
+}
+
+.mrs-pill.on {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border-color: var(--vscode-button-background);
+}
+
+.mrs-kind,
+.mrs-mode {
+    padding: 0 0.3rem;
+    border-radius: 0.3rem;
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    font-size: 0.75em;
+}
+
+.mrs-missing {
+    color: var(--vscode-errorForeground);
+    font-size: 0.85em;
+}
+
+.mrs-reduce {
+    width: auto;
+}
+
+.mrs-preview {
+    max-height: 30rem;
+}
