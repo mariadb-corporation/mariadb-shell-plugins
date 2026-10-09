@@ -30,9 +30,53 @@ import socket
 
 import mysqlsh
 from mrs_plugin import lib
-from mrs_plugin.schemas import add_schema, delete_schema
-from mrs_plugin.services import add_service, delete_service, get_service
-from mrs_plugin.db_objects import add_db_object, delete_db_object
+
+
+def add_test_schema(session, service_id, schema_name, request_path=None, **kwargs):
+    """Adds a REST schema the way the former mrs.add.schema() did."""
+    with lib.core.MrsDbTransaction(session):
+        return lib.schemas.add_schema(
+            session=session,
+            schema_name=schema_name,
+            service_id=lib.core.id_to_uuid(service_id, "service_id"),
+            request_path=request_path or f"/{schema_name}",
+            requires_auth=kwargs.get("requires_auth"),
+            enabled=kwargs.get("enabled", 1),
+            items_per_page=kwargs.get("items_per_page"),
+            comments=kwargs.get("comments"),
+            options=kwargs.get("options"),
+            metadata=kwargs.get("metadata"),
+        )
+
+
+def add_test_db_object(session, **kwargs):
+    """Adds a REST object with its grants the way the former
+    mrs.add.dbObject() did."""
+    kwargs.pop("session", None)
+    with lib.core.MrsDbTransaction(session):
+        db_object_id, grants = lib.db_objects.add_db_object(
+            session=session,
+            schema_id=lib.core.id_to_uuid(kwargs["schema_id"], "schema_id"),
+            db_object_name=kwargs["db_object_name"],
+            request_path=kwargs["request_path"],
+            enabled=kwargs.get("enabled", True),
+            db_object_type=kwargs["db_object_type"],
+            items_per_page=kwargs.get("items_per_page"),
+            requires_auth=kwargs.get("requires_auth"),
+            row_user_ownership_enforced=kwargs.get("row_user_ownership_enforced"),
+            row_user_ownership_column=kwargs.get("row_user_ownership_column"),
+            crud_operation_format=kwargs.get("crud_operation_format"),
+            comments=kwargs.get("comments") or "",
+            media_type=kwargs.get("media_type"),
+            auto_detect_media_type=kwargs.get("auto_detect_media_type", True),
+            auth_stored_procedure=kwargs.get("auth_stored_procedure"),
+            options=kwargs.get("options"),
+            metadata=kwargs.get("metadata"),
+            objects=kwargs.get("objects"),
+        )
+        for grant in grants:
+            lib.core.MrsDbExec(grant).exec(session)
+    return db_object_id
 
 
 def get_default_db_object_init(
@@ -167,9 +211,7 @@ def get_default_auth_app_init(**kwargs):
     return {
         "service_id": kwargs.get("service_id"),
         "auth_vendor_id": kwargs.get("auth_vendor_id")
-        or lib.core.id_to_uuid(
-            "0x31000000000000000000000000000000", "auth:vendor_id"
-        ),
+        or lib.core.id_to_uuid("0x31000000000000000000000000000000", "auth:vendor_id"),
         "name": name,
         "description": kwargs.get("description"),
         "url": kwargs.get("url", "/test_auth"),
@@ -184,7 +226,8 @@ def get_default_auth_app_init(**kwargs):
 class SchemaCT(object):
     def __init__(self, session, service_id, schema_name, request_path, **kwargs):
         self._session = session
-        self._schema_id = add_schema(
+        self._schema_id = add_test_schema(
+            session,
             service_id=service_id,
             schema_name=schema_name,
             request_path=request_path,
@@ -197,7 +240,7 @@ class SchemaCT(object):
         return self._schema_id
 
     def __exit__(self, type, value, traceback):
-        delete_schema(session=self._session, schema_id=self._schema_id)
+        lib.schemas.delete_schema(self._session, self._schema_id)
 
     @property
     def id(self):
@@ -221,9 +264,7 @@ class ServiceCT(object):
         return self._service_id
 
     def __exit__(self, type, value, traceback):
-        assert (
-            delete_service(session=self._session, service_id=self._service_id) == True
-        )
+        lib.services.delete_service(self._session, self._service_id)
 
     @property
     def id(self):
@@ -704,9 +745,7 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
         "comments": "test schema",
         "session": session,
     }
-    from ...schemas import add_schema
-
-    schema_id = add_schema(**schema_data)
+    schema_id = add_test_schema(**schema_data)
     schema = lib.schemas.get_schema(
         session, schema_id=lib.core.id_to_uuid(schema_id, "schema_id")
     )
@@ -721,20 +760,20 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
             f.write("\0\1\2\3\4\5\6\7")
         with open(os.path.join(tmpdir_path, "readme.txt"), "w+") as f:
             f.write("Line '1'\nLine \"2\"\nLine \\3\\")
-        content_set = {
-            "request_path": "/test_content_set",
-            "requires_auth": False,
-            "comments": "Content Set",
-            "content_dir": tmpdir_path,
-            "session": session,
-        }
-
-        from ...content_sets import add_content_set
-
-        content_set_result = add_content_set(service["id"], **content_set)
+        with lib.core.MrsDbTransaction(session):
+            content_set_id, _ = lib.content_sets.add_content_set(
+                session,
+                service["id"],
+                "/test_content_set",
+                requires_auth=False,
+                comments="Content Set",
+                options={},
+                content_dir=tmpdir_path,
+                service=service,
+            )
 
         content_set = lib.content_sets.get_content_set(
-            session, content_set_id=content_set_result["content_set_id"]
+            session, content_set_id=content_set_id
         )
 
     object_key = lib.core.convert_id_to_string(lib.core.get_sequence_id(session))
@@ -886,9 +925,7 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
         ],
     }
 
-    from ...db_objects import add_db_object
-
-    db_object_id = add_db_object(**db_object)
+    db_object_id = add_test_db_object(session, **db_object)
     assert id is not None
 
     db_object = lib.db_objects.get_db_object(session, db_object_id)
@@ -924,15 +961,23 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
     auth_apps = lib.auth_apps.get_auth_apps(session, service["id"])
 
     if not auth_apps:
-        from ...auth_apps import add_auth_app
+        with lib.core.MrsDbTransaction(session):
+            auth_app_id = lib.auth_apps.add_auth_app(
+                session,
+                service["id"],
+                lib.core.id_to_uuid(args["auth_vendor_id"], "auth_vendor_id"),
+                "MRS Auth App",
+                args["description"],
+                args["url"],
+                None,
+                args["access_token"],
+                args["app_id"],
+                args["limit_to_registered_users"],
+                lib.auth_apps.DEFAULT_ROLE_ID,
+            )
+        assert auth_app_id is not None
 
-        auth_app = add_auth_app(
-            app_name="MRS Auth App", service_id=service["id"], **args
-        )
-        assert auth_app is not None
-        assert "auth_app_id" in auth_app
-
-        auth_app = lib.auth_apps.get_auth_app(session, auth_app["auth_app_id"])
+        auth_app = lib.auth_apps.get_auth_app(session, auth_app_id)
 
         auth_apps = [auth_app]
 
@@ -948,14 +993,14 @@ def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp
             "vendor_user_id": None,
             "login_permitted": True,
             "mapped_user_id": None,
+            "options": None,
             "app_options": {},
             "auth_string": "MySQLR0cks!",
-            "session": session,
         }
 
-        from ...users import update_user, add_user
-
-        user = add_user(**user)
+        with lib.core.MrsDbTransaction(session):
+            user_id = lib.users.add_user(session=session, **user)
+        user = lib.users.get_user(session, user_id)
         assert user is not None
 
         users = [user]
@@ -1022,16 +1067,18 @@ def get_db_object_privileges(session, schema_name, db_object_name):
         priv = row.get("PROC_PRIV")
         if not priv:
             continue
-        
+
         # Handle string ('Execute,Alter Routine') or set/list ({'Execute', 'Alter Routine'})
         if isinstance(priv, str):
-            proc_grants.extend([p.strip().upper() for p in priv.split(',') if p.strip()])
+            proc_grants.extend(
+                [p.strip().upper() for p in priv.split(",") if p.strip()]
+            )
         elif isinstance(priv, (set, list, tuple)):
             proc_grants.extend([p.strip().upper() for p in priv])
 
     # 3. Combine and deduplicate preserving insertion order
     all_grants = table_grants + proc_grants
-    
+
     # dict.fromkeys removes duplicates while keeping original list order
     return list(dict.fromkeys(all_grants))
 

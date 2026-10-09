@@ -93,57 +93,6 @@ def dump(path, **kwargs):
             file.write(json.dumps(export, indent=4))
 
 
-@plugin_function("mrs.dump.service", shell=True, cli=True, web=True)
-def dump_service(path, **kwargs):
-    """Dumps the data for REST Service into a JSON file.
-    Args:
-        path (str): The path to the file where the dump will be stored.
-        **kwargs: Options to determine what should be exported.
-
-    Keyword Args:
-        service_id (str): The ID of the service to be exported.
-        service_name (str): The name of the service to be exported.
-        session (object): The database session to use.
-    """
-    dump(path, **kwargs)
-
-
-@plugin_function("mrs.dump.schema", shell=True, cli=True, web=True)
-def dump_schema(path, **kwargs):
-    """Exports the data for REST Schema into a JSON file.
-    Args:
-        path (str): The path to the file where the export will be stored.
-        **kwargs: Options to determine what should be exported.
-
-    Keyword Args:
-        service_id (str): The ID of the service to be exported.
-        service_name (str): The name of the service to be exported.
-        schema_id (str): The ID of the schema to be exported.
-        schema_name (str): The name of the schema to be exported.
-        session (object): The database session to use.
-    """
-    dump(path, **kwargs)
-
-
-@plugin_function("mrs.dump.object", shell=True, cli=True, web=True)
-def dump_object(path, **kwargs):
-    """Exports the data for a REST Database Object into a JSON file.
-    Args:
-        path (str): The path to the file where the export will be stored.
-        **kwargs: Options to determine what should be exported.
-
-    Keyword Args:
-        service_id (str): The ID of the service to be exported.
-        service_name (str): The name of the service to be exported.
-        schema_id (str): The ID of the schema to be exported.
-        schema_name (str): The name of the schema to be exported.
-        object_id (str): The ID of the object to be exported.
-        object_name (str): The name of the object to be exported.
-        session (object): The database session to use.
-    """
-    dump(path, **kwargs)
-
-
 def load(path, **kwargs):
     """Loads data for a REST component from a JSON file into a target REST component
     Args:
@@ -249,40 +198,6 @@ def load(path, **kwargs):
         for grants in grantList:
             for grant in grants:
                 lib.core.MrsDbExec(grant).exec(session)
-
-
-@plugin_function("mrs.load.schema", shell=True, cli=True, web=True)
-def load_schema(path, **kwargs):
-    """Loads data for a REST Schema from a JSON file into the target REST service
-    Args:
-        path (str): The path of the file containing a REST schema dump.
-        **kwargs: Options to determine the target object where the import will occur.
-
-    Keyword Args:
-        service_id (str): The ID of target service.
-        service_name (str): The name of the target service.
-        reuse_ids (bool): Indicates whether the existing ids should be reused.
-        session (object): The database session to use during the import.
-    """
-    load(path, **kwargs)
-
-
-@plugin_function("mrs.load.object", shell=True, cli=True, web=True)
-def load_object(path, **kwargs):
-    """Loads data for a REST Database Object from a JSON file into the target REST Schema
-    Args:
-        path (str): The path of the file containing a REST schema dump.
-        **kwargs: Options to determine the target object where the import will occur.
-
-    Keyword Args:
-        service_id (str): The ID of target service.
-        service_name (str): The name of the target service.
-        schema_id (str): The ID of the target schema.
-        schema_name (str): The name of the target schema.
-        reuse_ids (bool): Indicates whether the existing ids should be reused.
-        session (object): The database session to use during the import.
-    """
-    load(path, **kwargs)
 
 
 @plugin_function("mrs.dump.auditLog", shell=True, cli=True, web=True)

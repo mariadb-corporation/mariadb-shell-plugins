@@ -3,7 +3,6 @@
     "version": "1.0.0",
     "description": "MySQL REST Service plugin for MariaDB Shell",
     "scripts": {
-        "update-mrs-parser": "scripts/generate_mrs_parser.sh",
         "update-rrd-svg-files": "python3 scripts/generate_rrd_svg_files.py",
         "update-grammar-docs": "mariadb-shell -f scripts/update_grammar_docs.py",
         "update-html-docs": "scripts/generate_html_docs.sh",
@@ -12,8 +11,5 @@
         "prepare-static-content": "scripts/prepare_default_static_content.sh",
         "run-pytest": "clear; mariadb-shell --log-level=debug3 --verbose=4 --py -f run_tests.py #-k test_auth_app_grant_options"
     },
-    "publisher": "Oracle",
-    "devDependencies": {
-        "antlr4ng-cli": "1.0.2"
-    }
+    "publisher": "Oracle"
 }

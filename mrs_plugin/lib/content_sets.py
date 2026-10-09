@@ -23,7 +23,6 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 from mrs_plugin.lib import core, content_files, services, schemas, db_objects
-from mrs_plugin.lib.MrsDdlExecutor import MrsDdlExecutor
 
 import os
 import re

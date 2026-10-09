@@ -52,10 +52,14 @@ Analysis of 2026-10-08; the user wants to discuss before anything is removed.
   `get_service_create_statement` any more. `get.sdkOptions`, the three script analysis
   functions and `version` have no session (no database access); the user was offered
   an unused one for a uniform signature.
-- Removing `run.script` lets `grammar/`'s Python use, `lib/mrs_parser/`,
-  `MrsDdlListener/Executor*.py`, `lib/script.py` go. `load.serviceProject` no longer
-  needs them (2026-10-09); left: `lib/services.run_sql_script(is_mrs=True)` (only used by
-  `load.serviceSqlScript`, which goes too) and `lib/content_files.py`'s `MrsDdlExecutor`
-  import. The ANTLR grammar stays as the docs grammar.
+- **Done 2026-10-09:** the 105 functions are removed (files `schemas`, `db_objects`,
+  `content_files`, `auth_apps`, `users`, `roles`, `routers`, `script` deleted; `init.py`
+  keeps the sub-objects `get`, `dump`, `load`, `update`), with the Python REST SQL stack
+  (`lib/mrs_parser/`, `MrsDdl*.py`, `lib/script.py`, `lib/grants.py`,
+  `scripts/generate_mrs_parser.sh`, npm `update-mrs-parser`). 45 tests of removed
+  functions are gone (`test_content_files.py`, `test_routers.py` entirely); the fixtures
+  (`tests/conftest.py`, `tests/unit/helpers.py`) use `lib` and `CONFIGURE REST METADATA`
+  instead of the wrappers. 203 tests pass. The dev guide's `mrs.add.*` sections are
+  replaced by REST SQL. Not done: pruning `lib` of code only the removed wrappers used.
 - Nothing outside the plugin calls `mrs.*` by name (code_ext, mcp_plugin, msm_plugin
   checked); mcp_plugin only sends REST SQL.
