@@ -33,7 +33,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.dumpSchemas` / `copySchemas` | Dump Schema to Disk... / Copy Schema to Another Server... | Dump and Load submenu of a schema; every selected schema of the connection. Hidden from the palette |
 | `mariadb.dumpTables` / `copyTables` | Dump Table to Disk... / Copy Table to Another Server... | Dump and Load submenu of a table or view; every selected one of the schema. Hidden from the palette |
 | `mariadb.exportTable` / `importTable` | Export Table Data to File... / Import Data from File... | Dump and Load submenu of a table. Hidden from the palette |
-| `mariadb.cancelTask` / `removeTask` | Cancel Task / Remove from List | Inline on, and context menu of, a running / finished task in the Tasks view. Hidden from the palette |
+| `mariadb.cancelTask` / `removeTask` | Cancel Task / Remove from List | Inline on, and context menu of, a running / finished (or interrupted) task in the Tasks view. Hidden from the palette |
+| `mariadb.resumeTask` | Resume Load | Inline on, and context menu of, a load in the Tasks view that did not complete (`mariadbTask.finished.resumable`). Hidden from the palette |
 | `mariadb.showTaskOutput` / `clearFinishedTasks` | Show Task Output / Clear Finished Tasks | The Tasks view's title bar; Show Task Output also on a task's click and menu |
 | `mariadb.clearResultView` | Clear Actions | Result view toolbar |
 | `mariadb.selectEditorConnection` | Select Connection for this SQL File | SQL editor toolbar, status bar |

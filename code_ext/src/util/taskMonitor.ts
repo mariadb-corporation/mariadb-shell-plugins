@@ -25,7 +25,20 @@ import {
     type IUtilTaskMessage,
     type IUtilTaskStarted,
     type IUtilTaskState,
+    type UtilOptions,
 } from "../mcp/utilApi.js";
+
+/**
+ * How to start a load again: a load that stopped resumes where it stopped,
+ * from the progress file it keeps in the dump folder.
+ */
+export interface IResumeLoad {
+    operation: "loadDump";
+    /** The connection, by address. */
+    uri: string;
+    url: string;
+    options: UtilOptions;
+}
 
 /** A task the extension started, as the Tasks view and the commands see it. */
 export interface ITrackedTask {
@@ -34,14 +47,53 @@ export interface ITrackedTask {
     connection: string;
     /** Whether Cancel was asked for and not answered yet. */
     cancelling: boolean;
+    /**
+     * Whether it was still running when the window closed or reloaded. The
+     * server runs in the window's extension host, so the task ended with it.
+     */
+    interrupted?: boolean;
+    /** How to start it again, for a load. */
+    resume?: IResumeLoad;
 }
 
 export interface IFollowOptions {
     title: string;
     connection: string;
+    resume?: IResumeLoad;
     /** Called once it ended, whichever way. */
     onDone?(state: IUtilTaskState): void;
 }
+
+/** Where the task list is kept across window reloads: the workspace state. */
+export interface ITaskStore {
+    get<T>(key: string): T | undefined;
+    update(key: string, value: unknown): Thenable<void>;
+}
+
+/** The workspace state key of the task list. */
+export const TASKS_KEY = "mariadb.tasks";
+
+/** How many tasks are kept across reloads, the newest. */
+export const MAX_KEPT_TASKS = 50;
+
+/**
+ * @param tracked A task.
+ *
+ * @returns Whether it is over: it ended, or the window it ran in closed.
+ */
+export const isOver = (tracked: ITrackedTask): boolean => {
+    return tracked.interrupted === true || isFinished(tracked.state.status);
+};
+
+/**
+ * @param tracked A task.
+ *
+ * @returns Whether it can be started again: a load that did not complete.
+ */
+export const canResume = (tracked: ITrackedTask): boolean => {
+    return tracked.resume !== undefined && isOver(tracked)
+        && tracked.state.status !== "completed";
+};
 
 /** Where messages of the tasks go, and the notifications about them. */
 export interface ITaskOutput {
@@ -67,13 +119,34 @@ export class TaskMonitor {
         private readonly api: () => Promise<IUtilApi>,
         private readonly output: ITaskOutput,
         private readonly log: (message: string) => void,
-    ) { }
+        private readonly store?: ITaskStore,
+    ) {
+        // The tasks of the last window: one that had not ended ended with
+        // it, since the server ran in that window's extension host.
+        for (const kept of store?.get<ITrackedTask[]>(TASKS_KEY) ?? []) {
+            const over = kept.interrupted === true
+                || isFinished(kept.state.status);
+            this.#tasks.set(kept.state.task_id, {
+                ...kept, cancelling: false, ...(over ? {} : { interrupted: true }),
+            });
+        }
+        this.#changed.event(() => { this.#save(); });
+    }
 
     /**
-     * @returns The tasks started in this window, the newest first.
+     * @returns The tasks started in this window and the ones before it,
+     *          the newest first.
      */
     public get tasks(): ITrackedTask[] {
         return [...this.#tasks.values()].reverse();
+    }
+
+    /**
+     * @returns How many tasks are running.
+     */
+    public get running(): number {
+        return this.tasks.filter((tracked) => { return !isOver(tracked); })
+            .length;
     }
 
     public task(taskId: string): ITrackedTask | undefined {
@@ -96,6 +169,7 @@ export class TaskMonitor {
         const tracked: ITrackedTask = {
             connection: options.connection,
             cancelling: false,
+            ...(options.resume === undefined ? {} : { resume: options.resume }),
             state: {
                 task_id: started.task_id, kind: "dump_instance",
                 title: options.title, connection_id: null,
@@ -156,7 +230,7 @@ export class TaskMonitor {
      */
     public async cancel(taskId: string): Promise<void> {
         const tracked = this.#tasks.get(taskId);
-        if (tracked === undefined || isFinished(tracked.state.status)) {
+        if (tracked === undefined || isOver(tracked)) {
             return;
         }
 
@@ -180,7 +254,7 @@ export class TaskMonitor {
      */
     public remove(taskId: string): void {
         const tracked = this.#tasks.get(taskId);
-        if (tracked !== undefined && isFinished(tracked.state.status)) {
+        if (tracked !== undefined && isOver(tracked)) {
             this.#tasks.delete(taskId);
             this.#changed.fire(undefined);
         }
@@ -189,7 +263,7 @@ export class TaskMonitor {
     /** Takes every finished task off the list. */
     public clearFinished(): void {
         for (const [taskId, tracked] of this.#tasks) {
-            if (isFinished(tracked.state.status)) {
+            if (isOver(tracked)) {
                 this.#tasks.delete(taskId);
             }
         }
@@ -198,6 +272,18 @@ export class TaskMonitor {
 
     public showOutput(): void {
         this.output.show(true);
+    }
+
+    /** Keeps the list for the next window, without the messages. */
+    #save(): void {
+        if (this.store === undefined) {
+            return;
+        }
+        const kept = this.tasks.slice(0, MAX_KEPT_TASKS).reverse()
+            .map((tracked) => {
+                return { ...tracked, state: { ...tracked.state, messages: [] } };
+            });
+        void this.store.update(TASKS_KEY, kept);
     }
 
     async #poll(

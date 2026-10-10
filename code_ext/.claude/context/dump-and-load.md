@@ -15,7 +15,7 @@ mariadb-shell #73.
 | `src/util/utilProtocol.ts`, `utilDialogPanel.ts` | The dialog's messages and panel. Browse opens the folder or file picker. Start checks the values again, calls the host's `start` and closes once the task runs; a failed start stays in the dialog with the reason. One dialog at a time; a new one replaces it. |
 | `webview/src/UtilDialog.tsx`, `util.tsx`, `utilStyles.css`, `vite.util.config.ts` | The dialog: path with Browse, or the copy's target; Basic and Advanced tabs; a progress bar and disabled buttons while the start call runs. Its own bundle (`build:webview` builds four now). |
 | `src/util/taskMonitor.ts` | `TaskMonitor.follow`: polls `getTask` until the task ends, writes its messages to the *MariaDB Tasks* channel, and drives a cancellable notification (Cancel calls `util.cancel_task`). The bar only moves for stages that carry `items` (bytes or rows); counting stages show just their name. A task the server forgot (restart) ends as failed, "Lost track of the task". |
-| `src/util/tasksTreeProvider.ts` | The Tasks view (`mariadb.tasks`, third in the MariaDB container): newest first, state or stage plus percent, the stages in the tooltip; Cancel inline on running rows, Remove on finished ones, Show Output and Clear Finished on the title bar. |
+| `src/util/tasksTreeProvider.ts` | The Tasks view (`mariadb.tasks`, third in the MariaDB container): newest first, state or stage plus percent, the stages in the tooltip; Cancel inline on running rows, Resume on resumable ones, Remove on finished ones, Show Output and Clear Finished on the title bar. `showRunningTasks` sets the view's message ("Closing or reloading this window stops the running tasks...") and a badge with the count while tasks run. |
 | `src/util/utilCommands.ts` | The nine commands and the four task commands. The connection id is the tree's own session (`UI_BACKEND_SESSION`). The server opens a separate session per task, so the tree keeps working while it runs. Multi-select: the schemas or tables of the selection on the same connection (and schema); the selection is matched by row, not object. Load, import and copy refresh the tree once done, unless they failed. |
 
 Notes:
@@ -24,10 +24,28 @@ Notes:
   need it.
 - Copy targets are the configured connections other than the source; the
   target is connected (tree session) only when Start is pressed.
-- Not done: copying between connections from the palette, a Tasks view that
-  survives a window reload (the server keeps tasks for an hour;
-  `util.list_tasks` could repopulate it), and ExTester UI tests (main has no
-  `ui-test/`; they are on `wip/mrs_code_ext`).
+- **Tasks end with the window.**
+  - The MCP server is a stdio child of the extension host, and a task is a
+    thread in that server, so a reload or close stops every running task: a
+    dump is left incomplete, a load partway (resumable), and a copy cannot
+    resume.
+  - The server's one-hour retention only helps a server that keeps running
+    (HTTP).
+  - VS Code gives no chance to warn before a window closes, so the view
+    says it while tasks run.
+- **The task list survives a reload.**
+  - `TaskMonitor` keeps it in `workspaceState` (`TASKS_KEY`, the newest 50,
+    without messages) on every change.
+  - On activation, a task that had not ended is marked `interrupted` (icon
+    `debug-disconnect`) and counts as over: Remove, Clear Finished.
+- **Resume Load** (`mariadb.resumeTask`):
+  - offered for a load that did not complete (interrupted, failed or
+    cancelled; context `mariadbTask.finished.resumable`);
+  - starts `util.load_dump` again with the same folder and options, minus
+    `resetProgress`, so the shell resumes from the dump's progress file;
+  - the new task takes the old row's place.
+- Not done: copying between connections from the palette, and ExTester UI
+  tests (main has no `ui-test/`; they are on `wip/mrs_code_ext`).
 - Tests:
   - `src/test/util/` (fields, monitor + view, commands driven through the
     dialog panel);
