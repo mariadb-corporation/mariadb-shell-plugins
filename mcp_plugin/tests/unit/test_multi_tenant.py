@@ -596,7 +596,7 @@ def test_a_single_tenant_server_is_unchanged(tenant_config, monkeypatch):
 
 
 def test_a_multi_tenant_server_refuses_what_it_cannot_serve(tenant_config):
-    """stdio, --gui, the msm, sandbox and migrator groups, and no users at all."""
+    """stdio, --gui, the msm, sandbox, migrator and util groups, and no users."""
     tenants.set_multi_tenant(True)
 
     with pytest.raises(mysqlsh.Error, match="no enabled user"):
@@ -609,9 +609,9 @@ def test_a_multi_tenant_server_refuses_what_it_cannot_serve(tenant_config):
         server._check_multi_tenant("stdio", ["db"], False)
     with pytest.raises(mysqlsh.Error, match="--gui"):
         server._check_multi_tenant("streamable-http", ["db"], True)
-    with pytest.raises(mysqlsh.Error, match="msm, sandbox, migrator"):
+    with pytest.raises(mysqlsh.Error, match="msm, sandbox, migrator, util"):
         server._check_multi_tenant(
-            "streamable-http", ["db", "msm", "sandbox", "migrator"], False
+            "streamable-http", ["db", "msm", "sandbox", "migrator", "util"], False
         )
 
 
