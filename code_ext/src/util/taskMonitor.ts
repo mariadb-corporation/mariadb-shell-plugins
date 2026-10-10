@@ -320,7 +320,9 @@ export class TaskMonitor {
             }
             since = state.next_since;
 
-            tracked.state = { ...state, messages: [] };
+            // The server's title names the path; the list keeps the
+            // dialog's, which the notification and the output use too.
+            tracked.state = { ...state, title, messages: [] };
             if (state.cancel_requested || isFinished(state.status)) {
                 tracked.cancelling = !isFinished(state.status);
             }
