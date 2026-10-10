@@ -2128,12 +2128,6 @@ def deploy_schema(
 
         os.makedirs(backup_directory, exist_ok=True)
 
-        # Set the mysqlsh session to the one that was given
-        if "shell.Object" in str(type(session)):
-            mysqlsh.globals.shell.set_session(session)
-        else:
-            mysqlsh.globals.shell.set_session(session.session)
-
         # Ensure that the dump can be read back in case of a failure by setting
         # local_infile to 1
         # cSpell:ignore infile
@@ -2163,10 +2157,13 @@ def deploy_schema(
         lib.core.write_to_msm_schema_update_log(
             "INFO", f"Creating dump of `{schema_name}` version {schema_version} ..."
         )
-        mysqlsh.globals.util.dump_schemas(
+        # On the given session; see lib.core.run_util.
+        lib.core.run_util(
+            session,
+            "dump_schemas",
             [schema_name],
             f"file://{backup_directory}",
-            {
+            options={
                 "skipUpgradeChecks": True,
                 "showProgress": False,
             },
@@ -2229,9 +2226,11 @@ def deploy_schema(
         # Restore the backup if available
         if backup_available:
             try:
-                mysqlsh.globals.util.load_dump(
+                lib.core.run_util(
+                    session,
+                    "load_dump",
                     f"file://{backup_directory}",
-                    {
+                    options={
                         "showMetadata": False,
                         "showProgress": False,
                         "ignoreVersion": True,

@@ -20,6 +20,8 @@ import type { EditorWebviewMessage }
 import type { MrsWebviewMessage } from "../../src/mrs/mrsDialogProtocol.js";
 import type { SandboxWebviewMessage }
     from "../../src/sandboxes/sandboxProtocol.js";
+import type { UtilWebviewMessage }
+    from "../../src/util/utilProtocol.js";
 import type { WebviewMessage } from "../../src/webview/protocol.js";
 
 /** The bridge VS Code injects into every webview. */
@@ -50,7 +52,7 @@ const api = acquireVsCodeApi();
  */
 export const post = <
     T extends WebviewMessage | EditorWebviewMessage | SandboxWebviewMessage
-    | MrsWebviewMessage,
+    | MrsWebviewMessage | UtilWebviewMessage,
 >(
     message: T,
 ): void => {

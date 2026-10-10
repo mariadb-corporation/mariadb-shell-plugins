@@ -69,6 +69,28 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   - Workbench: UUID is set via a `db.UserDatatype` and the new `UUID_Columns` plugin in
     `development/wb/Audit_Log_Triggers_grt.py` (the table editor's grammar rejects UUID).
 
+- **The shell's global session (2026-10-10, `wip/mcp_dump_load`).**
+  - `msm.deploy_schema`'s backup ran `util.dump_schemas` / `util.load_dump`.
+    It switched the global session to the given one with `shell.set_session`
+    first, without a lock and without switching back, so two deployments at
+    once on an MCP server could run on each other's session.
+  - msm now calls `lib.core.run_util(session, function, *args, options=)`:
+    - On a shell with mariadb-shell #73 it passes the session in the
+      utility's `session` option and never touches the global session.
+    - On an older shell it switches the global session under a lock and
+      switches it back.
+    - The lock lives in a module object in `sys.modules`
+      (`_mariadb_shell_plugins_global_session`), so another plugin can share
+      it.
+    - `shell.set_session(None)` clears it again without closing anything.
+  - **mrs_plugin has the same pattern** (project dump/load in
+    `lib/services.py`), but it is left alone on this branch: PR #41
+    (`wip/mrs_schema_improvements`) rewrites that code. Apply the same
+    `run_util` there once #41 is merged.
+  - Tests: `msm_plugin/tests/unit/test_run_util.py` (6, fakes for
+    `mysqlsh`). The full msm suite passes (22), its backup restore test
+    included.
+
 ## Gotchas / things not to repeat
 
 - **msm_plugin / mrs_plugin suites**: run each as `mariadb-shell --py -f run_tests.py` from
