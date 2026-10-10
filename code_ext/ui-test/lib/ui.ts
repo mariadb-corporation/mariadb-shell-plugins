@@ -58,6 +58,9 @@ export const TIMEOUT = 10_000;
 /** The port the run reserved for the sandbox the tests deploy. */
 export const SANDBOX_PORT = Number(process.env.UI_TEST_PORT ?? "3399");
 
+/** A second port, for a sandbox to copy to. */
+export const SECOND_PORT = Number(process.env.UI_TEST_PORT2 ?? "3398");
+
 /** A directory the tests may write files into. */
 export const FILES = process.env.UI_TEST_FILES ?? "/tmp";
 
@@ -168,7 +171,7 @@ export const VIEW_CONTAINER = "MariaDB";
 /**
  * Opens one of the MariaDB views.
  *
- * @param title `Connections` or `Sandboxes`.
+ * @param title `Connections`, `Sandboxes` or `Tasks`.
  *
  * @returns Its tree.
  */
@@ -178,9 +181,22 @@ export const openSection = async (title: string): Promise<CustomTreeSection> => 
     }, "the MariaDB activity bar entry");
     const view = await control.openView();
 
-    return await waitFor(async () => {
+    const section = await waitFor(async () => {
         return await view.getContent().getSection(title) as CustomTreeSection;
     }, `the ${title} view`);
+    // ExTester sees only the rows drawn, so the view asked for gets the
+    // whole side bar: the others share its height otherwise, and deep rows
+    // end up out of sight.
+    for (const other of await view.getContent().getSections()) {
+        if (await other.getTitle() !== title && await other.isExpanded()) {
+            await other.collapse();
+        }
+    }
+    if (!await section.isExpanded()) {
+        await section.expand();
+    }
+
+    return section;
 };
 
 /** A visible row, read once: its label and how deep it is. */

@@ -64,10 +64,17 @@ picks the files, e.g. `UI_TEST_GLOB=out/ui-test/tests/0[01]*.test.js`.
   - `03-connections`
   - `04-sql-results`
   - `05-lifecycle`: sandbox stop/start, MCP restart and log
+  - `06-dump-load`: Dump and Load (see dump-and-load.md); a second
+    sandbox on `UI_TEST_PORT2` to copy to, deleted again. It checks the
+    server's state with the shell on the command line, outside the UI.
   - `99-cleanup`: drops the sandbox
 
   `.mocharc.json` has `bail`.
-- Helpers live in `ui-test/lib/ui.ts`. Timeouts are short on purpose
+- Helpers live in `ui-test/lib/ui.ts`. `openSection` collapses the
+  other MariaDB views and expands the one asked for: with three views
+  sharing the side bar, deep Connections rows were out of sight (and
+  collapsing only one view gives its height to the next, not to
+  Connections). Timeouts are short on purpose
   (TIMEOUT 10 s, SERVER_TIMEOUT 15 s, DEPLOY_TIMEOUT 90 s), and dialogs
   fail at once on an in-dialog `.message.error` or an error
   notification. Screenshots go to `.vscode-test/extest/screenshots`.
@@ -93,6 +100,12 @@ picks the files, e.g. `UI_TEST_GLOB=out/ui-test/tests/0[01]*.test.js`.
     found" once inside the frame. Use `findWebElements`.
   - A connection closed while its row is expanded keeps the row expanded
     and empty. `treeItem` collapses and expands it again to reconnect.
+  - ExTester cannot read the rows of an empty tree: `getVisibleItems`
+    throws "element not interactable". Wait for a row to be gone with
+    `hasTreeItem` instead.
+  - The palette has two "MariaDB: Refresh" (Connections and Sandboxes),
+    and `runCommand` may pick either. Press the view's own Refresh button
+    (`section.getAction("Refresh")`).
   - Quick work can close a dialog before its progress bar is seen;
     `submitDialog` accepts that, but a dialog still open must show the bar.
 

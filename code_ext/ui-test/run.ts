@@ -112,9 +112,10 @@ const main = async (): Promise<number> => {
         // And should anything still start the shell another way, it is the
         // run's configuration it gets.
         MARIADB_SHELL_USER_CONFIG_HOME: home,
-        // What the tests read: a port for the sandbox they deploy, and a
+        // What the tests read: ports for the sandboxes they deploy, and a
         // directory for the files they write and upload.
         UI_TEST_PORT: String(await freePort()),
+        UI_TEST_PORT2: String(await freePort()),
         UI_TEST_FILES: files,
         UI_TEST_SCREENSHOTS: join(storage, "screenshots"),
         UI_TEST_STORAGE: storage,
