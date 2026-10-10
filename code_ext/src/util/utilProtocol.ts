@@ -27,8 +27,16 @@ export interface IUtilLoadMessage {
     type: "load";
     spec: IUtilOperationSpec;
     values: UtilValues;
-    /** The connections a copy can go to, by address. */
-    targets: string[];
+    /** The connections a copy can go to. */
+    targets: IUtilTarget[];
+}
+
+/** A connection a copy can go to. */
+export interface IUtilTarget {
+    /** Its URI, which is what is sent back. */
+    uri: string;
+    /** What it is shown as: the address, without the scheme. */
+    label: string;
 }
 
 /** A path picked with Browse. */

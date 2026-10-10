@@ -15,12 +15,20 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { IUtilApi, IUtilTaskState } from "../../mcp/utilApi.js";
 import type { IObjectNode, ISchemaNode } from "../../tree/connectionsModel.js";
 import { TaskMonitor } from "../../util/taskMonitor.js";
-import { UtilCommands, dumpFolderName } from "../../util/utilCommands.js";
+import {
+    UtilCommands,
+    dumpFolderName,
+    dumpFolderProblem,
+} from "../../util/utilCommands.js";
 import { UTIL_DIALOG_VIEW_TYPE } from "../../util/utilDialogPanel.js";
 import type {
     IUtilLoadMessage,
@@ -119,8 +127,9 @@ const posted = (): UtilHostMessage[] => {
 };
 
 const settle = async (): Promise<void> => {
-    for (let i = 0; i < 5; i++) {
-        await new Promise((resolve) => { setTimeout(resolve, 0); });
+    // Long enough for a real look at a dump folder on disk, too.
+    for (let i = 0; i < 20; i++) {
+        await new Promise((resolve) => { setTimeout(resolve, 1); });
     }
 };
 
@@ -230,7 +239,9 @@ describe("the dump and load commands", () => {
             [table("orders"), table("items"), table("x", "other")]);
         const load = await loaded();
         // the source is not offered as the target
-        expect(load.targets).toEqual(["root@other:3306"]);
+        expect(load.targets).toEqual([
+            { uri: "root@other:3306", label: "root@other:3306" },
+        ]);
 
         await receive({ type: "start", values: { ...load.values,
             target: "root@other:3306" } });
@@ -287,6 +298,24 @@ describe("the dump and load commands", () => {
             expect(recorded.logs.at(-1)).toContain("did not start");
         });
 
+    it("keeps the dialog open when the dump folder is not empty",
+        async () => {
+            const folder = mkdtempSync(join(tmpdir(), "util-test-"));
+            writeFileSync(join(folder, "@.json"), "{}");
+            const recorded = setUp();
+            await run("mariadb.dumpSchemas", schema("shop"));
+            const load = await loaded();
+
+            await receive({ type: "start", values: { ...load.values,
+                path: folder } });
+
+            expect(recorded.started).toEqual([]);
+            expect(panel().disposed).toBe(false);
+            expect(posted()).toContainEqual({ type: "startError",
+                field: "path", message: expect.stringContaining(
+                    "not empty") as string });
+        });
+
     it("refuses values the dialog should not have sent", async () => {
         const recorded = setUp();
         await run("mariadb.dumpSchemas", schema("shop"));
@@ -311,6 +340,19 @@ describe("the dump and load commands", () => {
 });
 
 describe("dumpFolderName", () => {
+    it("tells a dump folder that would be refused", async () => {
+        const empty = mkdtempSync(join(tmpdir(), "util-test-"));
+        const full = mkdtempSync(join(tmpdir(), "util-test-"));
+        writeFileSync(join(full, "x"), "");
+
+        expect(await dumpFolderProblem(empty)).toBeUndefined();
+        expect(await dumpFolderProblem(join(empty, "new"))).toBeUndefined();
+        expect((await dumpFolderProblem(full))?.message)
+            .toContain("not empty");
+        expect((await dumpFolderProblem(join(full, "x")))?.message)
+            .toContain("not a folder");
+    });
+
     it("names the folder by what is dumped and when", () => {
         expect(dumpFolderName("shop/x y", new Date(2026, 9, 10, 9, 5)))
             .toBe("shop_x_y-2026-10-10-0905");
