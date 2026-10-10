@@ -38,6 +38,18 @@ which exposes the backend functions over the Model Context Protocol.
 - **Expanding a connection opens it**, so browsing a database takes one
   click. Set `mariadb.connections.connectMode` to `explicit` to go back to
   connecting with the button on the row.
+- **Dump and Load**, on the context menu of a connection, a schema or a
+  table:
+  - dump the whole server, schemas or tables to a folder, and load such a
+    dump back;
+  - export a table to a file, and import files into a table;
+  - copy the server, schemas or tables to another connection.
+
+  A dialog asks for the folder and the options. The work then runs in the
+  background, with a notification that shows its progress and can cancel
+  it. The **Tasks** view lists what ran, and the *MariaDB Tasks* output
+  channel shows what each task printed. Needs a MariaDB Shell with
+  mariadb-shell #73.
 
 ## Requirements
 
