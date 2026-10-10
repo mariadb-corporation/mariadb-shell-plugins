@@ -37,6 +37,65 @@ so a test calls it (`as unknown as () => HTMLElement`) and reads
 `textContent`; and `formatValue` / `formatCell` return elements, so
 their tests read `textContent` rather than comparing strings.
 
+## UI tests (ExTester)
+
+`MARIADB_SHELL=<path to mariadb-shell> npm run ui-test` drives a real
+VS Code through WebDriver. It uses vscode-extension-tester 8.28.1 and
+Mocha, on the newest VS Code (`--code_version max`). `UI_TEST_GLOB`
+picks the files, e.g. `UI_TEST_GLOB=out/ui-test/tests/0[01]*.test.js`.
+`mariadbd` must be on the PATH.
+
+- `ui-test/run.ts` builds a temporary work dir, which is removed at the
+  end, also after a failure. Sandboxes left running are pkill'ed first.
+  - A shell home with this repo's plugins linked in and options.json
+    `sandboxDir` + `credentialStore.helper: plaintext`. The keychain is
+    the whole user's, so without the plaintext helper the test VS Code
+    would show the user's own connections.
+  - A `mariadb-shell` wrapper first on the PATH, setting
+    `MARIADB_SHELL_USER_CONFIG_HOME`.
+  - `VSCODE_CLI=1`. Without it, VS Code on macOS takes the login shell's
+    PATH and finds the user's shell.
+  - All `VSCODE_*` / `ELECTRON_*` variables are stripped. An inherited
+    `ELECTRON_RUN_AS_NODE` makes the test VS Code exit at once.
+- The files run in order and lean on each other:
+  - `00-startup`
+  - `01-sandbox`: New Sandbox dialog, test schema
+  - `02-mrs`: MRS end to end
+  - `03-connections`
+  - `04-sql-results`
+  - `05-lifecycle`: sandbox stop/start, MCP restart and log
+  - `99-cleanup`: drops the sandbox
+
+  `.mocharc.json` has `bail`.
+- Helpers live in `ui-test/lib/ui.ts`. Timeouts are short on purpose
+  (TIMEOUT 10 s, SERVER_TIMEOUT 15 s, DEPLOY_TIMEOUT 90 s), and dialogs
+  fail at once on an in-dialog `.message.error` or an error
+  notification. Screenshots go to `.vscode-test/extest/screenshots`.
+- ExTester traps:
+  - Tree rows are virtualized and their DOM is reused. Re-find a row by
+    label and `aria-level` (`treeItem`); never hold on to one.
+  - Context-menu clicks are sometimes lost when a tree refresh closes the
+    menu. `menuAction`, `openDialog` and `menuConfirm` retry 3×.
+  - A webview that has closed answers lookups with nothing, so
+    `submitDialog` checks the editor tab from outside.
+  - Palette commands do not reach a focused webview: bring an editor
+    tab to the front first.
+  - Tabulator rebuilds its cell editor right after the click. Type into
+    `switchTo().activeElement()`, not into an element found earlier.
+  - Untitled SQL editors would ask "Save changes?" when VS Code closes.
+    Use "View: Revert and Close Editor".
+  - Elements hidden until hover (the data mapping flags) need
+    `driver().actions().move({origin})` first.
+  - VS Code ignores a context-menu pick that comes right after the menu
+    opened; `contextMenu` waits 200 ms before selecting.
+  - `WebView.findElements` is Selenium's element method. It searches under
+    the frame's element in the workbench and fails with "element not
+    found" once inside the frame. Use `findWebElements`.
+  - A connection closed while its row is expanded keeps the row expanded
+    and empty. `treeItem` collapses and expands it again to reconnect.
+  - Quick work can close a dialog before its progress bar is seen;
+    `submitDialog` accepts that, but a dialog still open must show the bar.
+
 ## Debugging in VS Code
 
 `code_ext/.vscode/launch.json` is folder scoped, so its `${workspaceFolder}`

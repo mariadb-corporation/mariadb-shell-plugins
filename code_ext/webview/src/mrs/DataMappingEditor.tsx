@@ -15,7 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 
 import {
     isRoutine,
@@ -39,17 +39,48 @@ import {
     type IObjectDialogValues,
 } from "../../../src/mrs/mrsDialogs.js";
 import type { IMrsColumns } from "../../../src/mrs/mrsTypes.js";
+import addIcon from "../assets/mrs/add.svg";
+import allowSortingIcon from "../assets/mrs/allowSorting.svg";
+import arrowIcon from "../assets/mrs/arrow.svg";
+import checkAllIcon from "../assets/mrs/checkAll.svg";
+import checkNoneIcon from "../assets/mrs/checkNone.svg";
+import closeIcon from "../assets/mrs/close.svg";
+import inIcon from "../assets/mrs/in.svg";
+import inOutIcon from "../assets/mrs/inOut.svg";
+import isKeyIcon from "../assets/mrs/isKey.svg";
+import dbObjectIcon from "../assets/mrs/mrsDbObject.svg";
+import noCheckIcon from "../assets/mrs/noCheck.svg";
+import noFilterIcon from "../assets/mrs/noFilter.svg";
+import noUpdateIcon from "../assets/mrs/noUpdate.svg";
+import outIcon from "../assets/mrs/out.svg";
+import rowOwnershipIcon from "../assets/mrs/rowOwnership.svg";
+import functionIcon from "../assets/mrs/schemaFunction.svg";
+import procedureIcon from "../assets/mrs/schemaProcedure.svg";
+import tableIcon from "../assets/mrs/schemaTable.svg";
+import columnIcon from "../assets/mrs/schemaTableColumn.svg";
+import columnNotNullIcon from "../assets/mrs/schemaTableColumnNN.svg";
+import columnPkIcon from "../assets/mrs/schemaTableColumnPK.svg";
+import foreignKey11Icon from "../assets/mrs/schemaTableForeignKey11.svg";
+import foreignKey1NIcon from "../assets/mrs/schemaTableForeignKey1N.svg";
+import viewIcon from "../assets/mrs/schemaView.svg";
+import unnestIcon from "../assets/mrs/unnest.svg";
 import { post } from "../vscodeApi.js";
 import type { IFieldContext } from "./fields.js";
 
 /**
- * The Data Mapping tab of the REST Object dialog: the MySQL Shell's object
- * field editor, as a table of two columns - the JSON side, with the field
- * names and their flags, and the relational side, with the columns and
- * the tables references lead to.
+ * The Data Mapping tab of the REST Object dialog: the MySQL Shell's
+ * object field editor, row for row. Two columns - the JSON side, with
+ * the field names and their flags, and the relational side, with the
+ * columns and the tables references lead to - over a tree whose lists
+ * open with `{` and close with `}`.
  *
- * A reference's table is loaded when it is first opened, from the host,
- * which runs `SHOW REST COLUMNS` for it.
+ * As there: the flags of a field are monochrome icons that show only
+ * while the pointer is over its JSON cell - those that are on always -
+ * with `…` standing in for them otherwise; a name is edited with a double
+ * click, Enter keeping and Escape dropping the edit; a single click on a
+ * reference opens or closes it; an unnested reference shows its fields as
+ * copies at its own level. A reference's table is loaded when it is first
+ * opened, from the host, which runs `SHOW REST COLUMNS` for it.
  */
 
 let nextRequest = 0;
@@ -94,88 +125,184 @@ export const requestColumns = async (
     });
 };
 
-/** A toggle drawn as a small labelled pill. */
-const Pill = (props: {
-    label: string;
-    on: boolean;
-    tooltip: string;
-    disabled?: boolean;
-    onToggle: () => void;
-}): preact.JSX.Element => {
-    return (
-        <button
-            type="button"
-            class={props.on ? "mrs-pill on" : "mrs-pill"}
-            aria-pressed={props.on}
-            data-tooltip={props.tooltip}
-            disabled={props.disabled === true}
-            onClick={props.onToggle}
-        >
-            {props.label}
-        </button>
-    );
+/** How long a click waits to see whether it is the first of a double click. */
+const DOUBLE_CLICK_MS = 200;
+
+/** Keeps a click or double click on a control off the row under it. */
+const stop = (event: Event): void => {
+    event.stopPropagation();
 };
 
-/** A flag of a column field, drawn as a codicon that is on or off. */
-const Flag = (props: {
-    icon: string;
-    on: boolean;
-    tooltip: string;
-    onToggle: () => void;
+/**
+ * An icon as the MySQL Shell draws them: the SVG as a mask over the
+ * theme's icon colour, so it takes the colour of the theme.
+ */
+const Icon = (props: {
+    src: string;
+    class?: string;
+    tooltip?: string;
+    size?: number;
+    pressed?: boolean;
+    onClick?: () => void;
 }): preact.JSX.Element => {
+    const size = `${props.size ?? 16}px`;
+    const onClick = props.onClick;
+
     return (
-        <button
-            type="button"
-            class={`icon-button mrs-flag codicon codicon-${props.icon}${
-                props.on ? " on" : ""}`}
-            aria-pressed={props.on}
+        <div
+            class={`mrs-icon${props.class === undefined ? "" : ` ${props.class}`}`}
+            style={{
+                maskImage: `url("${props.src}")`,
+                WebkitMaskImage: `url("${props.src}")`,
+                width: size,
+                height: size,
+                minWidth: size,
+            }}
+            role={onClick === undefined ? undefined : "button"}
             aria-label={props.tooltip}
+            aria-pressed={props.pressed}
             data-tooltip={props.tooltip}
-            onClick={props.onToggle}
+            onClick={onClick === undefined ? undefined : (event) => {
+                // Kept off the row: a click on a reference row opens it.
+                event.stopPropagation();
+                onClick();
+            }}
+            onDblClick={stop}
         />
     );
 };
 
+/** A flag of a field: shown when on, else only on hover and faint. */
+const Flag = (props: {
+    src: string;
+    on: boolean;
+    tooltip: string;
+    onToggle?: () => void;
+}): preact.JSX.Element => {
+    return (
+        <Icon
+            src={props.src}
+            class={props.on ? "selected" : "notSelected"}
+            tooltip={props.tooltip}
+            pressed={props.on}
+            {...(props.onToggle === undefined ? {} : { onClick: props.onToggle })}
+        />
+    );
+};
+
+/** The checkbox of a field, the MySQL Shell's: checked, unchecked or neither. */
+const CheckBox = (props: {
+    state: "checked" | "unchecked" | "indeterminate";
+    disabled?: boolean;
+    label: string;
+    onClick: () => void;
+}): preact.JSX.Element => {
+    const disabled = props.disabled === true;
+
+    return (
+        <span
+            class={`mrs-checkbox ${props.state}${disabled ? " disabled" : ""}`}
+            role="checkbox"
+            aria-checked={props.state === "indeterminate" ? "mixed"
+                : props.state === "checked"}
+            aria-disabled={disabled}
+            aria-label={props.label}
+            tabIndex={disabled ? -1 : 0}
+            onClick={(event) => {
+                event.stopPropagation();
+                if (!disabled) {
+                    props.onClick();
+                }
+            }}
+            onKeyDown={(event) => {
+                if ((event.key === " " || event.key === "Enter") && !disabled) {
+                    event.preventDefault();
+                    props.onClick();
+                }
+            }}
+            onDblClick={stop}
+        >
+            <span class="checkMark" />
+        </span>
+    );
+};
+
+/** The INSERT / UPDATE / DELETE switches of a list, as one segmented pill. */
 const CrudPills = (props: {
     crud: ICrudFlags;
     kind?: string;
     short?: boolean;
+    locked?: boolean;
     onChange: (crud: ICrudFlags) => void;
 }): preact.JSX.Element => {
-    const label = (word: string): string => {
-        return props.short === true ? word.slice(0, 3) : word;
-    };
     // An n:1 reference can only be updated through.
-    const updateOnly = props.kind === "n:1";
+    const operations: Array<"insert" | "update" | "delete"> =
+        props.kind === "n:1" ? ["update"] : ["insert", "update", "delete"];
 
     return (
-        <span class="mrs-pills">
-            {updateOnly ? null : (
-                <Pill label={label("INSERT")} on={props.crud.insert}
-                    tooltip="Allow INSERT operations on this object"
-                    onToggle={() => {
-                        props.onChange({ ...props.crud, insert: !props.crud.insert });
-                    }} />
-            )}
-            <Pill label={label("UPDATE")} on={props.crud.update}
-                tooltip="Allow UPDATE operations on this object"
-                onToggle={() => {
-                    props.onChange({ ...props.crud, update: !props.crud.update });
-                }} />
-            {updateOnly ? null : (
-                <Pill label={label("DELETE")} on={props.crud.delete}
-                    tooltip="Allow DELETE operations on this object"
-                    onToggle={() => {
-                        props.onChange({ ...props.crud, delete: !props.crud.delete });
-                    }} />
-            )}
-            <Pill label="NOCHECK" on={props.crud.noCheck}
-                tooltip="Disable ETAG calculations for this table."
-                onToggle={() => {
-                    props.onChange({ ...props.crud, noCheck: !props.crud.noCheck });
-                }} />
-        </span>
+        <div class={`crudDiv${operations.length > 1 ? " multiItems" : ""}`}>
+            {operations.map((operation) => {
+                const name = operation.toUpperCase();
+                const on = props.crud[operation];
+
+                return (
+                    <div
+                        key={operation}
+                        class={on ? "activated" : "deactivated"}
+                        role="switch"
+                        aria-checked={on}
+                        aria-label={name}
+                        data-tooltip={`Allow ${name} operations on this object`}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            if (props.locked !== true) {
+                                props.onChange({ ...props.crud, [operation]: !on });
+                            }
+                        }}
+                        onDblClick={stop}
+                    >
+                        {props.short === true && operations.length > 1
+                            ? name.slice(0, 3) : name}
+                    </div>
+                );
+            })}
+        </div>
     );
+};
+
+/** One line of the tree, as it is drawn. */
+interface ITreeRow {
+    kind: "top" | "open" | "field" | "copy" | "close" | "loading";
+    key: string;
+    depth: number;
+    field?: IMappingField;
+    /** The reference whose list the row is in; undefined at the top. */
+    owner?: IMappingField;
+    toMany?: boolean;
+}
+
+/** An edit in progress: a field's name, or a result column's `name: type`. */
+interface IEdit {
+    key: string;
+    side: "json" | "relational";
+    text: string;
+}
+
+/**
+ * Whether a reference's fields are merged into its parent object. A 1:n
+ * reference reduced to one field is unnested too, in the model, but stays
+ * a list: its other fields are shown, disabled.
+ */
+const merged = (field: IMappingField): boolean => {
+    return field.reference?.unnest === true
+        && field.reference.reduceTo === undefined;
+};
+
+const removed = <T,>(set: Set<T>, item: T): Set<T> => {
+    const next = new Set(set);
+    next.delete(item);
+
+    return next;
 };
 
 export const DataMappingEditor = (props: {
@@ -185,6 +312,7 @@ export const DataMappingEditor = (props: {
 }): preact.JSX.Element => {
     const document = props.values.document;
     const routine = isRoutine(document.objectType);
+    const procedure = document.objectType === "PROCEDURE";
     const [preview, setPreview] = useState(false);
     const [mapping, setMapping] = useState<string>("parameters");
     const [expanded, setExpanded] = useState<Set<string>>(() => {
@@ -192,7 +320,8 @@ export const DataMappingEditor = (props: {
         const open = new Set<string>();
         const walk = (fields: IMappingField[]): void => {
             for (const field of fields) {
-                if (field.reference?.loaded === true && field.enabled) {
+                if (field.reference?.loaded === true && field.enabled
+                    && !merged(field)) {
                     open.add(field.key);
                     walk(field.reference.children);
                 }
@@ -202,7 +331,11 @@ export const DataMappingEditor = (props: {
 
         return open;
     });
+    const [loading, setLoading] = useState<Set<string>>(new Set());
+    const [editing, setEditing] = useState<IEdit | undefined>(undefined);
     const [loadError, setLoadError] = useState<string | undefined>(undefined);
+    const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+        undefined);
 
     const setDocument = (next: IMappingDocument): void => {
         props.ctx.set("document", next);
@@ -216,6 +349,7 @@ export const DataMappingEditor = (props: {
             }) ?? document.parameters;
     const fields = current?.fields ?? document.fields;
     const isResult = routine && current !== document.parameters;
+    const tableOrView = !routine;
 
     const setFields = (next: IMappingField[]): void => {
         if (!routine) {
@@ -240,311 +374,720 @@ export const DataMappingEditor = (props: {
         setFields(updateField(fields, key, update));
     };
 
-    const toggleExpanded = async (
-        field: IMappingField,
-        tables: string[],
-    ): Promise<void> => {
+    /** Changes a field of a view in the document as it is by then. */
+    const changeLatest = (key: string,
+        update: (field: IMappingField) => IMappingField): void => {
+        props.ctx.update("document", (latest) => {
+            const doc = latest as IMappingDocument;
+
+            return { ...doc, fields: updateField(doc.fields, key, update) };
+        });
+    };
+
+    /**
+     * Loads a reference's table and includes it. The columns are put into
+     * the document as it is when they arrive: the user may have edited it
+     * meanwhile. References are only ever in a view's own fields.
+     */
+    const load = async (field: IMappingField, tables: string[]): Promise<boolean> => {
+        setLoading((now) => { return new Set(now).add(field.key); });
+        try {
+            const columns = await requestColumns(
+                field.reference!.mapping.referenced_schema,
+                field.reference!.mapping.referenced_table);
+            setLoadError(undefined);
+            changeLatest(field.key, (now) => {
+                return {
+                    ...loadReference(now, columns.columns ?? [], [], tables),
+                    enabled: true,
+                };
+            });
+
+            return true;
+        } catch (error) {
+            setLoadError(error instanceof Error ? error.message : String(error));
+
+            return false;
+        } finally {
+            setLoading((now) => { return removed(now, field.key); });
+        }
+    };
+
+    /** Opens or closes a reference; the first opening loads and includes it. */
+    const toggle = async (field: IMappingField, tables: string[]): Promise<void> => {
+        const reference = field.reference;
+        if (reference === undefined || merged(field) || loading.has(field.key)) {
+            return;
+        }
         if (expanded.has(field.key)) {
-            const next = new Set(expanded);
-            next.delete(field.key);
-            setExpanded(next);
+            setExpanded((now) => { return removed(now, field.key); });
 
             return;
         }
-        if (field.reference?.loaded === false) {
-            try {
-                const columns = await requestColumns(
-                    field.reference.mapping.referenced_schema,
-                    field.reference.mapping.referenced_table);
-                setLoadError(undefined);
-                // From the document as it is now, not as it was when the
-                // load started: the user may have edited it meanwhile.
-                // References are only ever in a view's own fields.
-                props.ctx.update("document", (latest) => {
-                    const doc = latest as IMappingDocument;
-
-                    return {
-                        ...doc,
-                        fields: updateField(doc.fields, field.key, (current) => {
-                            return {
-                                ...loadReference(current, columns.columns ?? [],
-                                    [], tables),
-                                enabled: true,
-                            };
-                        }),
-                    };
-                });
-            } catch (error) {
-                setLoadError(error instanceof Error ? error.message : String(error));
-
-                return;
+        setExpanded((now) => { return new Set(now).add(field.key); });
+        if (!reference.loaded) {
+            if (!await load(field, tables)) {
+                setExpanded((now) => { return removed(now, field.key); });
             }
+        } else if (!field.enabled) {
+            change(field.key, (now) => { return { ...now, enabled: true }; });
         }
-        setExpanded(new Set(expanded).add(field.key));
     };
 
-    const sql = objectStatements(props.values, props.context)[0];
-
-    const row = (
-        field: IMappingField,
-        depth: number,
-        tables: string[],
-        owner: IMappingField | undefined,
-    ): preact.JSX.Element[] => {
+    /**
+     * The checkbox. As the MySQL Shell's: on a closed reference it opens
+     * it; unchecked, a reference closes and forgets its table.
+     */
+    const check = async (field: IMappingField, tables: string[]): Promise<void> => {
         const reference = field.reference;
-        const open = expanded.has(field.key) && reference?.loaded === true;
-        const target = reference === undefined ? undefined
-            : `${reference.mapping.referenced_schema}.${reference.mapping.referenced_table}`;
-        const reducedAway = owner?.reference?.reduceTo !== undefined
-            && owner.reference.reduceTo !== field.key;
-        const viewField = !routine && reference === undefined;
+        if (reference !== undefined && !field.enabled) {
+            if (expanded.has(field.key) && reference.loaded) {
+                change(field.key, (now) => { return { ...now, enabled: true }; });
+            } else {
+                await toggle(field, tables);
+            }
 
-        const jsonSide = (
-            <div class="mrs-json" style={{ paddingLeft: `${depth * 1.25}rem` }}>
-                {reference === undefined ? <span class="mrs-twistie" /> : (
-                    <button
-                        type="button"
-                        class={`icon-button mrs-twistie codicon codicon-${
-                            open ? "chevron-down" : "chevron-right"}`}
-                        aria-label={open ? "Collapse" : "Expand"}
-                        onClick={() => { void toggleExpanded(field, tables); }}
-                    />
-                )}
-                <input
-                    type="checkbox"
-                    aria-label={`Include ${field.name}`}
-                    checked={field.enabled}
-                    disabled={reducedAway || field.missing === true}
-                    onChange={() => {
-                        if (reference !== undefined && !field.enabled
-                            && !reference.loaded) {
-                            void toggleExpanded(field, tables);
+            return;
+        }
+        if (reference !== undefined) {
+            setExpanded((now) => { return removed(now, field.key); });
+            change(field.key, (now) => {
+                return {
+                    ...now,
+                    enabled: false,
+                    reference: {
+                        ...now.reference!, loaded: false, children: [],
+                        reduceTo: undefined,
+                    },
+                };
+            });
 
-                            return;
-                        }
-                        change(field.key, (current) => {
-                            return { ...current, enabled: !current.enabled };
+            return;
+        }
+        change(field.key, (now) => { return { ...now, enabled: !now.enabled }; });
+    };
+
+    /** The Unnest switch of a 1:1 or n:1 reference. */
+    const unnest = async (field: IMappingField, tables: string[]): Promise<void> => {
+        const reference = field.reference!;
+        if (reference.unnest) {
+            change(field.key, (now) => {
+                return { ...now, reference: { ...now.reference!, unnest: false } };
+            });
+            setExpanded((now) => { return new Set(now).add(field.key); });
+
+            return;
+        }
+        if (!reference.loaded && !await load(field, tables)) {
+            return;
+        }
+        changeLatest(field.key, (now) => {
+            return {
+                ...now,
+                enabled: true,
+                reference: { ...now.reference!, unnest: true },
+            };
+        });
+        setExpanded((now) => { return removed(now, field.key); });
+    };
+
+    /** A single click on a reference row opens or closes it, unless doubled. */
+    const rowClicked = (field: IMappingField, tables: string[]): void => {
+        if (field.reference === undefined) {
+            return;
+        }
+        clearTimeout(clickTimer.current);
+        clickTimer.current = setTimeout(() => {
+            void toggle(field, tables);
+        }, DOUBLE_CLICK_MS);
+    };
+
+    const startEdit = (edit: IEdit): void => {
+        clearTimeout(clickTimer.current);
+        setEditing(edit);
+    };
+
+    /** Keeps an edit: a name, or a result column's `name: type`. */
+    const commit = (edit: IEdit): void => {
+        setEditing(undefined);
+        const text = edit.text.trim();
+        if (edit.key === "top") {
+            // Kept also when empty: the dialog says what is missing.
+            if (!routine) {
+                setDocument({ ...document, className: text });
+                props.ctx.touch("className");
+            } else if (current === document.parameters) {
+                setDocument({
+                    ...document, parameters: { ...document.parameters!, name: text },
+                });
+            } else {
+                setDocument({
+                    ...document,
+                    results: (document.results ?? []).map((result) => {
+                        return result.key === current!.key
+                            ? { ...result, name: text } : result;
+                    }),
+                });
+            }
+
+            return;
+        }
+        if (edit.side === "json") {
+            if (text !== "") {
+                change(edit.key, (field) => { return { ...field, name: text }; });
+            }
+
+            return;
+        }
+        const colon = text.indexOf(":");
+        const name = (colon < 0 ? text : text.slice(0, colon)).trim();
+        const datatype = colon < 0 ? "" : text.slice(colon + 1).trim();
+        change(edit.key, (field) => {
+            return {
+                ...field,
+                column: {
+                    ...field.column!,
+                    ...(name === "" ? {} : { name }),
+                    ...(datatype === "" ? {} : { datatype }),
+                },
+            };
+        });
+    };
+
+    /** The inline editor of a name, as the MySQL Shell's. */
+    const editor = (edit: IEdit, label: string): preact.JSX.Element => {
+        return (
+            <input
+                type="text"
+                class="fieldEditor"
+                aria-label={label}
+                value={edit.text}
+                spellcheck={false}
+                ref={(element) => {
+                    if (element === null
+                        || globalThis.document.activeElement === element) {
+                        return;
+                    }
+                    element.focus();
+                    // All of a new field's name; else the caret before the
+                    // `:` of `name: type`, or at the end.
+                    const colon = element.value.indexOf(":");
+                    if (element.value === "newField") {
+                        element.select();
+                    } else if (colon >= 0) {
+                        element.setSelectionRange(colon, colon);
+                    } else {
+                        element.setSelectionRange(element.value.length,
+                            element.value.length);
+                    }
+                }}
+                onInput={(event) => {
+                    setEditing({
+                        ...edit, text: (event.target as HTMLInputElement).value,
+                    });
+                }}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        commit({
+                            ...edit, text: (event.target as HTMLInputElement).value,
                         });
-                    }}
-                />
-                <input
-                    type="text"
-                    class="mrs-name"
-                    aria-label="JSON field name"
-                    value={field.name}
-                    spellcheck={false}
-                    onInput={(event) => {
-                        const name = (event.target as HTMLInputElement).value;
-                        change(field.key, (current) => {
-                            return { ...current, name };
-                        });
-                    }}
-                />
-                {field.missing === true
-                    ? <span class="mrs-missing">column dropped</span> : null}
-                {viewField ? (
-                    <span class="mrs-flags-row">
-                        <Flag icon="key" on={field.isKey}
-                            tooltip="Include field in object composite key"
-                            onToggle={() => {
-                                change(field.key, (current) => {
-                                    return { ...current, isKey: !current.isKey };
-                                });
-                            }} />
-                        <Flag icon="list-ordered" on={field.allowSorting}
-                            tooltip="Allow sorting operations using this field"
-                            onToggle={() => {
-                                change(field.key, (current) => {
-                                    return { ...current, allowSorting: !current.allowSorting };
-                                });
-                            }} />
-                        <Flag icon="filter" on={!field.allowFiltering}
-                            tooltip="Prevent filtering operations on this field"
-                            onToggle={() => {
-                                change(field.key, (current) => {
-                                    return {
-                                        ...current, allowFiltering: !current.allowFiltering,
-                                    };
-                                });
-                            }} />
-                        <Flag icon="lock" on={field.noUpdate}
-                            tooltip="Prevent updates on this field"
-                            onToggle={() => {
-                                change(field.key, (current) => {
-                                    return { ...current, noUpdate: !current.noUpdate };
-                                });
-                            }} />
-                        <Flag icon="eye-closed" on={field.noCheck}
-                            tooltip="Exclude this field from ETAG calculations"
-                            onToggle={() => {
-                                change(field.key, (current) => {
-                                    return { ...current, noCheck: !current.noCheck };
-                                });
-                            }} />
-                        <Flag icon="person" on={field.rowOwnership}
-                            tooltip="Set as row ownership field"
-                            onToggle={() => {
-                                setFields(toggleRowOwnership(fields, field.key));
-                            }} />
-                    </span>
-                ) : null}
-                {isResult && document.objectType === "PROCEDURE" ? (
-                    <button
-                        type="button"
-                        class="icon-button codicon codicon-trash"
-                        aria-label="Delete field"
-                        data-tooltip="Delete field"
-                        onClick={() => {
-                            setFields(fields.filter((candidate) => {
-                                return candidate.key !== field.key;
-                            }));
-                        }}
-                    />
-                ) : null}
-            </div>
+                    } else if (event.key === "Escape") {
+                        // Drops the edit, not the dialog.
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setEditing(undefined);
+                    }
+                }}
+                onBlur={() => { setEditing(undefined); }}
+                onClick={stop}
+                onDblClick={stop}
+            />
         );
+    };
 
-        const relationalSide = reference === undefined ? (
-            <div class="mrs-relational">
-                <span class={`codicon codicon-${field.column?.is_primary === true
-                    ? "key" : "symbol-field"}`}
-                data-tooltip={field.column?.is_primary === true
-                    ? "Primary key column"
-                    : field.column?.not_null === true
-                        ? "Table column that must not be NULL" : "Table column"} />
-                {routine && (field.column?.in === true || field.column?.out === true) ? (
-                    <span class="mrs-mode">
-                        {field.column?.in === true && field.column.out === true
-                            ? "INOUT" : field.column?.in === true ? "IN" : "OUT"}
+    // --- the rows ----------------------------------------------------------
+
+    const rows: ITreeRow[] = [{ kind: "top", key: "top", depth: 0 }];
+    const tablesOf = new Map<string, string[]>();
+    const walk = (
+        level: IMappingField[],
+        depth: number,
+        owner: IMappingField | undefined,
+        tables: string[],
+    ): void => {
+        for (const field of level) {
+            tablesOf.set(field.key, tables);
+            rows.push({
+                kind: "field", key: field.key, depth, field,
+                ...(owner === undefined ? {} : { owner }),
+            });
+            const reference = field.reference;
+            if (reference === undefined) {
+                continue;
+            }
+            if (merged(field)) {
+                // Its columns, merged into this object, show here as copies.
+                for (const child of reference.children) {
+                    if (child.reference === undefined && child.enabled) {
+                        rows.push({
+                            kind: "copy", key: `copy-${child.key}`, depth,
+                            field: child, owner: field,
+                        });
+                    }
+                }
+                continue;
+            }
+            if (!expanded.has(field.key)) {
+                continue;
+            }
+            if (!reference.loaded) {
+                rows.push({
+                    kind: "loading", key: `loading-${field.key}`,
+                    depth: depth + 1, owner: field,
+                });
+                continue;
+            }
+            const toMany = reference.mapping.to_many;
+            const target = `${reference.mapping.referenced_schema}.`
+                + reference.mapping.referenced_table;
+            rows.push({
+                kind: "open", key: `open-${field.key}`, depth, owner: field, toMany,
+            });
+            walk(reference.children, depth + 1, field, [...tables, target]);
+            rows.push({
+                kind: "close", key: `close-${field.key}`, depth, owner: field, toMany,
+            });
+        }
+    };
+    walk(fields, 1, undefined, [`${document.dbSchema}.${document.dbObject}`]);
+    rows.push({ kind: "close", key: "close-top", depth: 0 });
+
+    const mappingName = current?.name ?? document.className;
+
+    const newField = (): IMappingField => {
+        return {
+            key: newKey(),
+            name: "newField",
+            column: { name: snakeCase("newField"), datatype: "VARCHAR(255)" },
+            enabled: true,
+            allowFiltering: true,
+            allowSorting: false,
+            noCheck: false,
+            noUpdate: false,
+            isKey: false,
+            rowOwnership: false,
+        };
+    };
+
+    /** The `… ` that stands in for the flags until the pointer is there. */
+    const more = <span class="label">…</span>;
+
+    /** The flags of a column or parameter field. */
+    const fieldFlags = (field: IMappingField): preact.JSX.Element[] => {
+        const flags = [(
+            <Flag key="rowOwnership" src={rowOwnershipIcon} on={field.rowOwnership}
+                tooltip="Set as row ownership field"
+                onToggle={() => { setFields(toggleRowOwnership(fields, field.key)); }} />
+        )];
+        if (tableOrView) {
+            const toggleFlag = (name: "isKey" | "allowSorting" | "allowFiltering"
+                | "noUpdate" | "noCheck"): () => void => {
+                return () => {
+                    change(field.key, (now) => { return { ...now, [name]: !now[name] }; });
+                };
+            };
+            flags.push(
+                <Flag key="isKey" src={isKeyIcon} on={field.isKey}
+                    tooltip="Include field in object composite key"
+                    onToggle={toggleFlag("isKey")} />,
+                <Flag key="allowSorting" src={allowSortingIcon} on={field.allowSorting}
+                    tooltip="Allow sorting operations using this field"
+                    onToggle={toggleFlag("allowSorting")} />,
+                <Flag key="noFilter" src={noFilterIcon} on={!field.allowFiltering}
+                    tooltip="Prevent filtering operations on this field"
+                    onToggle={toggleFlag("allowFiltering")} />,
+                <Flag key="noUpdate" src={noUpdateIcon} on={field.noUpdate}
+                    tooltip="Prevent updates on this field"
+                    onToggle={toggleFlag("noUpdate")} />,
+                <Flag key="noCheck" src={noCheckIcon} on={field.noCheck}
+                    tooltip="Exclude this field from ETAG calculations"
+                    onToggle={toggleFlag("noCheck")} />,
+            );
+        }
+        const column = field.column;
+        if (routine && !isResult && document.objectType !== "FUNCTION"
+            && (column?.in === true || column?.out === true)) {
+            const both = column.in === true && column.out === true;
+            flags.push(
+                <Icon key="mode" class="selected"
+                    src={both ? inOutIcon : column.out === true ? outIcon : inIcon}
+                    tooltip={both ? "INOUT parameter"
+                        : column.out === true ? "OUT parameter" : "IN parameter"} />,
+            );
+        }
+
+        return flags;
+    };
+
+    /** The JSON side of a row. */
+    const jsonCell = (row: ITreeRow): preact.JSX.Element => {
+        if (row.kind === "top") {
+            const edit = editing?.key === "top" ? editing : undefined;
+
+            return (
+                <div class="mrsObjectJsonFieldDiv">
+                    <div class="fieldInfo">
+                        <Icon src={dbObjectIcon} class="tableIcon" />
+                        {edit === undefined ? (
+                            <span class="tableName mrsObjectName"
+                                data-tooltip="Double click to edit"
+                                onDblClick={() => {
+                                    startEdit({ key: "top", side: "json", text: mappingName });
+                                }}>
+                                {mappingName}
+                            </span>
+                        ) : editor(edit, routine ? "Data mapping name" : "Class name")}
+                        <span class="bracket">{"{"}</span>
+                    </div>
+                    {isResult ? null : (
+                        <div class="fieldOptions">
+                            {tableOrView ? (
+                                <Flag src={noCheckIcon} on={document.crud.noCheck}
+                                    tooltip="Disable ETAG calculations for this table."
+                                    onToggle={() => {
+                                        setDocument({
+                                            ...document,
+                                            crud: {
+                                                ...document.crud,
+                                                noCheck: !document.crud.noCheck,
+                                            },
+                                        });
+                                    }} />
+                            ) : null}
+                            <Icon src={checkAllIcon} class="action" tooltip="Select all fields"
+                                onClick={() => {
+                                    setFields(setAllEnabled(fields, undefined, true));
+                                }} />
+                            <Icon src={checkNoneIcon} class="action"
+                                tooltip="Deselect all fields"
+                                onClick={() => {
+                                    setFields(setAllEnabled(fields, undefined, false));
+                                }} />
+                            {more}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        if (row.kind === "open" || row.kind === "close") {
+            const addHere = row.key === "close-top" && isResult && procedure;
+
+            return (
+                <div class="mrsObjectJsonFieldDiv">
+                    <span class="bracket">
+                        {row.kind === "open"
+                            ? (row.toMany === true ? "[ {" : "{")
+                            : (row.toMany === true ? "}, ... ]" : "}")}
                     </span>
-                ) : null}
-                {isResult ? (
-                    <>
-                        <input
-                            type="text"
-                            class="mrs-name"
-                            aria-label="Column name"
-                            value={field.column?.name ?? ""}
-                            onInput={(event) => {
-                                const name = (event.target as HTMLInputElement).value;
-                                change(field.key, (current) => {
-                                    return { ...current, column: { ...current.column!, name } };
-                                });
-                            }}
-                        />
-                        <input
-                            type="text"
-                            class="mrs-type"
-                            aria-label="Datatype"
-                            value={field.column?.datatype ?? ""}
-                            onInput={(event) => {
-                                const datatype = (event.target as HTMLInputElement).value;
-                                change(field.key, (current) => {
-                                    return {
-                                        ...current, column: { ...current.column!, datatype },
-                                    };
-                                });
-                            }}
-                        />
-                    </>
-                ) : (
-                    <>
-                        <span>{field.column?.name}</span>
-                        <span class="mrs-type">{field.column?.datatype}</span>
-                    </>
-                )}
-            </div>
-        ) : (
-            <div class="mrs-relational">
-                <span class="codicon codicon-references"
-                    data-tooltip={`Table with a ${reference.mapping.kind} relationship`} />
-                <span class="mrs-kind">{reference.mapping.kind}</span>
-                <span>{target}</span>
-                {field.enabled ? (
-                    <CrudPills crud={reference.crud} kind={reference.mapping.kind}
-                        short={depth > 0}
-                        onChange={(crud) => {
-                            change(field.key, (current) => {
-                                return { ...current, reference: { ...current.reference!, crud } };
-                            });
-                        }} />
-                ) : null}
-                {field.enabled && reference.mapping.kind !== "1:n" ? (
-                    <Pill label="UNNEST" on={reference.unnest}
-                        tooltip="Merge columns of the referenced table into this JSON object"
+                    {addHere ? (
+                        <Icon src={addIcon} class="addField" size={11}
+                            tooltip="Add Field"
+                            onClick={() => {
+                                const field = newField();
+                                setFields([...fields, field]);
+                                startEdit({ key: field.key, side: "json", text: field.name });
+                            }} />
+                    ) : null}
+                </div>
+            );
+        }
+
+        if (row.kind === "loading") {
+            return (
+                <div class="mrsObjectJsonFieldDiv">
+                    <span class="jsonFieldDisabled loading">Loading...</span>
+                </div>
+            );
+        }
+
+        const field = row.field!;
+        const tables = tablesOf.get(field.key) ?? [];
+        const reference = field.reference;
+        const copy = row.kind === "copy";
+        const reducedAway = row.owner?.reference?.reduceTo !== undefined
+            && row.owner.reference.reduceTo !== field.key;
+        const state = merged(field) ? "indeterminate"
+            : field.enabled ? "checked" : "unchecked";
+        const edit = !copy && editing?.side === "json" && editing.key === field.key
+            ? editing : undefined;
+        const open = expanded.has(field.key);
+
+        let options: preact.JSX.Element | null = null;
+        if (reference !== undefined) {
+            options = (
+                <div class="fieldOptions">
+                    <Flag src={noCheckIcon} on={reference.crud.noCheck}
+                        tooltip="Disable ETAG calculations for this table."
                         onToggle={() => {
-                            change(field.key, (current) => {
+                            change(field.key, (now) => {
+                                const crud = now.reference!.crud;
+
                                 return {
-                                    ...current,
+                                    ...now,
                                     reference: {
-                                        ...current.reference!,
-                                        unnest: !current.reference!.unnest,
+                                        ...now.reference!,
+                                        crud: { ...crud, noCheck: !crud.noCheck },
                                     },
                                 };
                             });
                         }} />
-                ) : null}
-                {field.enabled && reference.mapping.kind === "1:n" && reference.loaded ? (
-                    <select
-                        class="mrs-reduce"
-                        aria-label="Reduce to field"
-                        data-tooltip={"Display selected field instead of the "
-                            + "object. Updates will be disabled"}
-                        onChange={(event) => {
-                            const key = (event.target as HTMLSelectElement).value;
-                            setFields(reduceReference(fields, field.key,
-                                key === "" ? undefined : key));
+                    {reference.loaded && !merged(field) ? (
+                        <>
+                            <Icon src={checkAllIcon} class="action"
+                                tooltip="Select all fields"
+                                onClick={() => {
+                                    setFields(setAllEnabled(fields, field.key, true));
+                                }} />
+                            <Icon src={checkNoneIcon} class="action"
+                                tooltip="Deselect all fields"
+                                onClick={() => {
+                                    setFields(setAllEnabled(fields, field.key, false));
+                                }} />
+                        </>
+                    ) : null}
+                    {more}
+                </div>
+            );
+        } else if (!copy && isResult) {
+            options = procedure ? (
+                <div class="fieldOptions">
+                    <Icon src={closeIcon} class="action" tooltip="Delete field"
+                        onClick={() => {
+                            setFields(fields.filter((candidate) => {
+                                return candidate.key !== field.key;
+                            }));
+                        }} />
+                    {more}
+                </div>
+            ) : null;
+        } else if (!copy) {
+            options = <div class="fieldOptions">{fieldFlags(field)}{more}</div>;
+        }
+
+        return (
+            <div class={`mrsObjectJsonFieldDiv ${reference === undefined
+                ? "withoutChildren" : "withChildren"}`}>
+                <div class="fieldInfo">
+                    {reference === undefined || copy ? null : (
+                        <span
+                            class={`treeToggle codicon codicon-${open && !merged(field)
+                                ? "chevron-down" : "chevron-right"}${merged(field)
+                                ? " disabled" : ""}`}
+                            role="button"
+                            aria-label={open ? "Collapse" : "Expand"}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                clearTimeout(clickTimer.current);
+                                void toggle(field, tables);
+                            }}
+                            onDblClick={stop}
+                        />
+                    )}
+                    {copy ? null : (
+                        <CheckBox
+                            state={state}
+                            disabled={merged(field) || reducedAway
+                                || field.missing === true || loading.has(field.key)}
+                            label={`Include ${field.name}`}
+                            onClick={() => { void check(field, tables); }}
+                        />
+                    )}
+                    {edit === undefined ? (
+                        <span
+                            class={`fieldName ${field.enabled && !merged(field)
+                                && !reducedAway ? "jsonField" : "jsonFieldDisabled"}`}
+                            onDblClick={(event) => {
+                                event.stopPropagation();
+                                if (!copy) {
+                                    startEdit({ key: field.key, side: "json", text: field.name });
+                                }
+                            }}
+                        >
+                            {field.name}
+                        </span>
+                    ) : editor(edit, "JSON field name")}
+                    {copy ? (
+                        <span class="unnestedFrom"
+                            data-tooltip={`Unnested from ${row.owner!.name}`}>
+                            (
+                            <Icon src={unnestIcon} class="unnestedIcon" size={12} />
+                            {` ${row.owner!.name} )`}
+                        </span>
+                    ) : null}
+                    {field.missing === true
+                        ? <span class="mrs-missing">column dropped</span> : null}
+                    {reference !== undefined && !copy && reference.mapping.kind !== "1:n"
+                        && reference.reduceTo === undefined ? (
+                            <div
+                                class={`unnestDiv ${reference.unnest ? "activated" : "deactivated"}`}
+                                role="switch"
+                                aria-checked={reference.unnest}
+                                aria-label="Unnest"
+                                data-tooltip="Merge columns of the referenced table into this JSON object"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    clearTimeout(clickTimer.current);
+                                    void unnest(field, tables);
+                                }}
+                                onDblClick={stop}
+                            >
+                                <Icon src={unnestIcon} size={12} />
+                                <span>Unnest</span>
+                            </div>
+                        ) : null}
+                </div>
+                {options}
+            </div>
+        );
+    };
+
+    /** The relational side of a row. */
+    const relationalCell = (row: ITreeRow): preact.JSX.Element | null => {
+        if (row.kind === "top") {
+            const icon = document.objectType === "VIEW" ? viewIcon
+                : procedure ? procedureIcon
+                    : document.objectType === "FUNCTION" ? functionIcon : tableIcon;
+
+            return (
+                <div class="mrsObjectDbColumnFieldDiv">
+                    <Icon src={icon} class="tableIcon" />
+                    <span class="tableName">{`${document.dbSchema}.${document.dbObject}`}</span>
+                    {tableOrView ? (
+                        <CrudPills crud={document.crud} onChange={(crud) => {
+                            setDocument({ ...document, crud });
+                        }} />
+                    ) : null}
+                </div>
+            );
+        }
+        const field = row.field;
+        if (field === undefined || row.kind !== "field" && row.kind !== "copy") {
+            return null;
+        }
+
+        const reference = field.reference;
+        if (reference !== undefined) {
+            const kind = reference.mapping.kind;
+
+            return (
+                <div class="mrsObjectDbColumnFieldDiv">
+                    <Icon src={arrowIcon} class="arrow" />
+                    <Icon src={kind === "1:n" ? foreignKey1NIcon : foreignKey11Icon}
+                        tooltip={`Table with a ${kind} relationship`} />
+                    <Icon src={tableIcon} />
+                    <span class="tableName">
+                        {`${reference.mapping.referenced_schema}.`
+                            + reference.mapping.referenced_table}
+                    </span>
+                    {field.enabled && !merged(field) ? (
+                        <CrudPills crud={reference.crud} kind={kind}
+                            short={row.depth > 1}
+                            locked={reference.reduceTo !== undefined}
+                            onChange={(crud) => {
+                                change(field.key, (now) => {
+                                    return { ...now, reference: { ...now.reference!, crud } };
+                                });
+                            }} />
+                    ) : null}
+                    {field.enabled && kind === "1:n" && reference.loaded ? (
+                        <select
+                            class="reduceToDropdown"
+                            aria-label="Reduce to field"
+                            data-tooltip={"Display selected field instead of the "
+                                + "object. Updates will be disabled"}
+                            onClick={stop}
+                            onDblClick={stop}
+                            onChange={(event) => {
+                                const key = (event.target as HTMLSelectElement).value;
+                                setFields(reduceReference(fields, field.key,
+                                    key === "" ? undefined : key));
+                            }}
+                        >
+                            <option value="" selected={reference.reduceTo === undefined}>
+                                Unnest field ...
+                            </option>
+                            {reference.children.filter((child) => {
+                                return child.reference === undefined;
+                            }).map((child) => {
+                                return (
+                                    <option key={child.key} value={child.key}
+                                        selected={child.key === reference.reduceTo}>
+                                        {child.column?.name ?? child.name}
+                                    </option>
+                                );
+                            })}
+                        </select>
+                    ) : null}
+                </div>
+            );
+        }
+
+        const column = field.column;
+        const columnIconOf = column?.is_primary === true
+            ? { src: columnPkIcon, tooltip: "Primary key column" }
+            : column?.not_null === true
+                ? { src: columnNotNullIcon, tooltip: "Table column that must not be NULL" }
+                : { src: columnIcon, tooltip: "Table column" };
+        const edit = editing?.side === "relational" && editing.key === field.key
+            ? editing : undefined;
+        const editable = isResult && row.kind === "field";
+        const text = isResult
+            ? `${column?.name ?? ""}: ${column?.datatype ?? ""}` : column?.name ?? "";
+
+        return (
+            <div class="mrsObjectDbColumnFieldDiv">
+                <Icon src={arrowIcon} class="arrow" />
+                <Icon src={columnIconOf.src} tooltip={columnIconOf.tooltip} />
+                {edit === undefined ? (
+                    <span
+                        class="columnName"
+                        onDblClick={(event) => {
+                            event.stopPropagation();
+                            if (editable) {
+                                startEdit({ key: field.key, side: "relational", text });
+                            }
                         }}
                     >
-                        <option value="" selected={reference.reduceTo === undefined}>
-                            Unnest field ...
-                        </option>
-                        {reference.children.filter((child) => {
-                            return child.reference === undefined;
-                        }).map((child) => {
-                            return (
-                                <option key={child.key} value={child.key}
-                                    selected={child.key === reference.reduceTo}>
-                                    {child.name}
-                                </option>
-                            );
-                        })}
-                    </select>
+                        {text}
+                    </span>
+                ) : editor(edit, "Column name and datatype")}
+                {!isResult && routine && column?.datatype !== undefined ? (
+                    <span class="datatype">{column.datatype}</span>
                 ) : null}
             </div>
         );
-
-        const rows = [(
-            <div
-                key={field.key}
-                class={`mrs-row${reference === undefined ? "" : " reference"}${
-                    field.enabled ? "" : " disabled"}`}
-                data-field={field.name}
-            >
-                {jsonSide}
-                {relationalSide}
-            </div>
-        )];
-        if (open) {
-            rows.push(...reference!.children.flatMap((child) => {
-                return row(child, depth + 1, [...tables, target!], field);
-            }));
-        }
-
-        return rows;
     };
 
-    const tables = [`${document.dbSchema}.${document.dbObject}`];
-    const procedure = document.objectType === "PROCEDURE";
+    const sql = objectStatements(props.values, props.context)[0];
 
     return (
-        <div class="mrs-mapping">
-            <div class="mrs-mapping-toolbar row wrap">
+        <div class="mrsObjectFieldEditor">
+            <div class="settings">
+                <label class="labelWithInput">
+                    <span>DB Object:</span>
+                    <input type="text" class="dbObjectInput" aria-label="DB Object"
+                        value={`${document.dbSchema}.${document.dbObject}`} readOnly />
+                </label>
                 {routine ? (
                     <>
                         <select
+                            class="mrsObjectSelect"
                             aria-label="Data mapping"
                             onChange={(event) => {
+                                setEditing(undefined);
                                 setMapping((event.target as HTMLSelectElement).value);
                             }}
                         >
@@ -560,128 +1103,62 @@ export const DataMappingEditor = (props: {
                                 );
                             })}
                         </select>
-                        <input
-                            type="text"
-                            class="mrs-name"
-                            aria-label="Data mapping name"
-                            value={current?.name ?? ""}
-                            onInput={(event) => {
-                                const name = (event.target as HTMLInputElement).value;
-                                if (current === document.parameters) {
+                        {procedure && isResult ? (
+                            <button type="button" class="settingsButton"
+                                aria-label="Remove Result"
+                                data-tooltip="Remove the current result set definition"
+                                onClick={() => {
                                     setDocument({
                                         ...document,
-                                        parameters: { ...document.parameters!, name },
-                                    });
-                                } else {
-                                    setDocument({
-                                        ...document,
-                                        results: (document.results ?? []).map((result) => {
-                                            return result.key === current!.key
-                                                ? { ...result, name } : result;
+                                        results: (document.results ?? []).filter((result) => {
+                                            return result.key !== current!.key;
                                         }),
                                     });
-                                }
-                            }}
-                        />
-                        {procedure ? (
-                            <>
-                                <button type="button"
-                                    data-tooltip="Add a result set definition returned by this stored procedure"
-                                    onClick={() => {
-                                        const results = document.results ?? [];
-                                        const key = newKey();
-                                        setDocument({
-                                            ...document,
-                                            results: [...results, {
-                                                key,
-                                                name: `${document.className}${
-                                                    results.length === 0 ? "" : results.length + 1}`,
-                                                fields: [],
-                                            }],
-                                        });
-                                        setMapping(key);
-                                    }}>
-                                    Add Result
-                                </button>
-                                {isResult ? (
-                                    <button type="button"
-                                        data-tooltip="Remove the current result set definition"
-                                        onClick={() => {
-                                            setDocument({
-                                                ...document,
-                                                results: (document.results ?? []).filter((result) => {
-                                                    return result.key !== current!.key;
-                                                }),
-                                            });
-                                            setMapping("parameters");
-                                        }}>
-                                        Remove Result
-                                    </button>
-                                ) : null}
-                            </>
+                                    setMapping("parameters");
+                                }}>
+                                <span class="codicon codicon-remove" />
+                            </button>
                         ) : null}
-                        {isResult && procedure ? (
-                            <button type="button" onClick={() => {
-                                setFields([...fields, {
-                                    key: newKey(),
-                                    name: "newField",
-                                    column: {
-                                        name: snakeCase("newField"),
-                                        datatype: "VARCHAR(255)",
-                                    },
-                                    enabled: true,
-                                    allowFiltering: true,
-                                    allowSorting: false,
-                                    noCheck: false,
-                                    noUpdate: false,
-                                    isKey: false,
-                                    rowOwnership: false,
-                                }]);
-                            }}>
-                                Add Field
+                        {procedure ? (
+                            <button type="button" class="settingsButton"
+                                data-tooltip="Add a result set definition returned by this stored procedure"
+                                onClick={() => {
+                                    const results = document.results ?? [];
+                                    const key = newKey();
+                                    setDocument({
+                                        ...document,
+                                        results: [...results, {
+                                            key,
+                                            name: `${document.className}${
+                                                results.length === 0 ? "" : results.length + 1}`,
+                                            fields: [],
+                                        }],
+                                    });
+                                    setMapping(key);
+                                }}>
+                                <span class="codicon codicon-add" />
+                                <span>Add Result</span>
                             </button>
                         ) : null}
                     </>
-                ) : (
-                    <>
-                        <label class="row">
-                            <span class="field-caption">Class</span>
-                            <input
-                                type="text"
-                                class="mrs-name"
-                                aria-label="Class name"
-                                value={document.className}
-                                onInput={(event) => {
-                                    setDocument({
-                                        ...document,
-                                        className: (event.target as HTMLInputElement).value,
-                                    });
-                                    props.ctx.touch("className");
-                                }}
-                            />
-                        </label>
-                        <CrudPills crud={document.crud} onChange={(crud) => {
-                            setDocument({ ...document, crud });
-                        }} />
-                        <button type="button" class="icon-button codicon codicon-check-all"
-                            aria-label="Select all fields" data-tooltip="Select all fields"
-                            onClick={() => { setFields(setAllEnabled(fields, undefined, true)); }} />
-                        <button type="button" class="icon-button codicon codicon-close-all"
-                            aria-label="Deselect all fields" data-tooltip="Deselect all fields"
-                            onClick={() => { setFields(setAllEnabled(fields, undefined, false)); }} />
-                    </>
-                )}
+                ) : null}
                 <span class="spacer" />
-                <label class="checkbox">
-                    <input type="checkbox" checked={preview}
-                        onChange={() => { setPreview(!preview); }} />
+                <div class="divider" />
+                <button type="button"
+                    class={`settingsButton${preview ? " activated" : ""}`}
+                    aria-pressed={preview}
+                    data-tooltip="Toggle MRS SQL Preview"
+                    onClick={() => { setPreview(!preview); }}>
+                    <span class="codicon codicon-search" />
                     <span>SQL Preview</span>
-                </label>
-                <button type="button" class="icon-button codicon codicon-copy"
+                </button>
+                <button type="button" class="settingsButton"
                     aria-label="Copy SQL to Clipboard" data-tooltip="Copy SQL to Clipboard"
                     onClick={() => {
                         post<MrsWebviewMessage>({ type: "copy", text: sql });
-                    }} />
+                    }}>
+                    <span class="codicon codicon-copy" />
+                </button>
             </div>
             {props.ctx.problem("className") === undefined ? null
                 : <p class="message error">{props.ctx.problem("className")}</p>}
@@ -689,12 +1166,44 @@ export const DataMappingEditor = (props: {
             {preview ? (
                 <pre class="mrs-code mrs-readonly mrs-preview">{sql}</pre>
             ) : (
-                <div class="mrs-mapping-rows" role="tree">
-                    {fields.length === 0
-                        ? <p class="note">No fields.</p>
-                        : fields.flatMap((field) => {
-                            return row(field, 0, tables, undefined);
-                        })}
+                <div class="mrsObjectTreeGrid" role="tree">
+                    {rows.map((row) => {
+                        const field = row.field;
+                        const reference = row.kind === "field" ? field?.reference : undefined;
+
+                        return (
+                            <div
+                                key={row.key}
+                                class={[
+                                    "mrs-row",
+                                    row.kind === "top" ? "topRow" : "",
+                                    row.kind === "copy" ? "unnestedCopy" : "",
+                                    reference === undefined ? "" : "reference",
+                                    field === undefined || field.enabled ? "" : "disabled",
+                                    field?.missing === true ? "deleted" : "",
+                                ].filter(Boolean).join(" ")}
+                                role="treeitem"
+                                aria-level={row.depth + 1}
+                                aria-expanded={reference === undefined ? undefined
+                                    : expanded.has(field!.key)}
+                                data-field={row.kind === "field" ? field!.name : undefined}
+                                data-copy={row.kind === "copy" ? field!.name : undefined}
+                                onClick={reference === undefined ? undefined : () => {
+                                    rowClicked(field!, tablesOf.get(field!.key) ?? []);
+                                }}
+                                onDblClick={reference === undefined ? undefined : () => {
+                                    // The second click of a double click: no toggle.
+                                    clearTimeout(clickTimer.current);
+                                }}
+                            >
+                                <div class="jsonCell"
+                                    style={{ paddingLeft: `${row.depth * 24 + 4}px` }}>
+                                    {jsonCell(row)}
+                                </div>
+                                <div class="relationalCell">{relationalCell(row)}</div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>

@@ -260,6 +260,8 @@ export const treeItem = async (
     path: string[],
     timeout = SERVER_TIMEOUT,
 ): Promise<CustomTreeItem> => {
+    let emptyPolls = 0;
+
     return await waitFor(async () => {
         const found = locate(await visibleRows(section), path);
         if (found.length === path.length) {
@@ -267,8 +269,19 @@ export const treeItem = async (
         }
         // The deepest row found is collapsed, or still loading: open it.
         const last = found.at(-1);
-        if (last !== undefined && !await last.item.isExpanded()) {
+        if (last === undefined) {
+            return undefined;
+        }
+        if (!await last.item.isExpanded()) {
             await last.item.expand();
+        } else if ((await last.item.getChildren()).length === 0) {
+            // A connection closed while its row was open stays open and
+            // empty; opening it again is what connects it.
+            emptyPolls += 1;
+            if (emptyPolls % 5 === 0) {
+                await last.item.collapse();
+                await last.item.expand();
+            }
         }
 
         return undefined;
@@ -359,6 +372,9 @@ export const contextMenu = async (
     ...path: string[]
 ): Promise<void> => {
     const menu = await item.openContextMenu();
+    // VS Code ignores a pick that comes right after the menu opened, as a
+    // guard against the mouse-up of the right click picking an entry.
+    await sleep(200);
     await menu.select(...path);
 };
 
@@ -575,12 +591,25 @@ export const submitDialog = async (
     if (expectProgress !== undefined) {
         // While the host works: a progress bar saying what it does, and
         // nothing that could start it a second time.
+        // Work that is done quickly can close the dialog before the bar is
+        // seen; a dialog still open has to show it.
         const bar = await waitFor(async () => {
             const bars = await view.findWebElements(
                 By.css("[role='progressbar']"));
+            if (bars.length > 0) {
+                return bars[0];
+            }
+            await view.switchBack();
+            const closed = title !== undefined && !await isDialogOpen(title);
+            if (!closed) {
+                await view.switchToFrame(2000);
+            }
 
-            return bars[0];
+            return closed ? "closed" : undefined;
         }, "the progress bar", 5000);
+        if (bar === "closed") {
+            return;
+        }
         const label = await bar.getAttribute("aria-label");
         if (label !== expectProgress) {
             throw new Error(`The progress bar says "${label}"`);
@@ -657,7 +686,7 @@ export const setFieldByCaption = async (
 };
 
 /** Replaces what an input holds, firing the events Preact listens to. */
-const typeInto = async (field: WebElement, text: string): Promise<void> => {
+export const typeInto = async (field: WebElement, text: string): Promise<void> => {
     await field.click();
     const selectAll = process.platform === "darwin" ? Key.COMMAND : Key.CONTROL;
     await field.sendKeys(Key.chord(selectAll, "a"), Key.BACK_SPACE);
@@ -771,7 +800,16 @@ export const clickLabelled = async (
     label: string,
     index = 0,
 ): Promise<void> => {
-    const buttons = await view.findElements(By.css(`[aria-label="${label}"]`));
+    // A WebView's own findElements looks under its frame's element in the
+    // workbench, which is out of reach once switched into the frame.
+    const locator = By.css(`[aria-label="${label}"]`);
+    const buttons = await waitFor(async () => {
+        const found = view instanceof WebView
+            ? await view.findWebElements(locator)
+            : await view.findElements(locator);
+
+        return found.length > index ? found : undefined;
+    }, `the ${label} button`);
     await buttons[index].click();
 };
 

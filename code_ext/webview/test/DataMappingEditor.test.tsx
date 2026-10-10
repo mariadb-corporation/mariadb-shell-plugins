@@ -184,25 +184,40 @@ const rowOf = (name: string): HTMLElement => {
     const row = host.querySelector<HTMLElement>(
         `.mrs-row[data-field='${name}']`);
     if (!row) {
-        const have = [...host.querySelectorAll<HTMLElement>(".mrs-row")]
-            .map((node) => { return node.dataset.field; });
-        throw new Error(`No row '${name}'. Have: ${have.join(", ")}`);
+        throw new Error(`No row '${name}'. Have: ${rowNames().join(", ")}`);
     }
 
     return row;
 };
 
+/** The field rows, by their JSON names; not the brackets, not the copies. */
 const rowNames = (): string[] => {
-    return [...host.querySelectorAll<HTMLElement>(".mrs-row")].map((node) => {
-        return node.dataset.field ?? "";
-    });
+    return [...host.querySelectorAll<HTMLElement>(".mrs-row[data-field]")]
+        .map((node) => { return node.dataset.field ?? ""; });
+};
+
+/** The copies an unnested reference shows of its fields. */
+const copyNames = (): string[] => {
+    return [...host.querySelectorAll<HTMLElement>(".mrs-row[data-copy]")]
+        .map((node) => { return node.dataset.copy ?? ""; });
+};
+
+const topRow = (): HTMLElement => {
+    return host.querySelector<HTMLElement>(".mrs-row.topRow")!;
+};
+
+const query = <T extends HTMLElement>(
+    label: string,
+    within: ParentNode = host,
+): T | null => {
+    return within.querySelector<T>(`[aria-label='${label}']`);
 };
 
 const byLabel = <T extends HTMLElement>(
     label: string,
     within: ParentNode = host,
 ): T => {
-    const element = within.querySelector<T>(`[aria-label='${label}']`);
+    const element = query<T>(label, within);
     if (!element) {
         throw new Error(`Nothing labelled '${label}'.`);
     }
@@ -212,6 +227,19 @@ const byLabel = <T extends HTMLElement>(
 
 const clickOn = async (element: HTMLElement): Promise<void> => {
     await act0(() => { element.click(); });
+};
+
+const doubleClick = async (element: HTMLElement): Promise<void> => {
+    await act0(() => {
+        element.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+};
+
+const press = async (element: HTMLElement, key: string): Promise<void> => {
+    await act0(() => {
+        element.dispatchEvent(new KeyboardEvent("keydown",
+            { key, bubbles: true, cancelable: true }));
+    });
 };
 
 const typeInto = async (
@@ -234,6 +262,37 @@ const pick = async (
     });
 };
 
+/** Waits out the wait of a single click on a reference row. */
+const clickWait = async (): Promise<void> => {
+    await act(async () => {
+        await new Promise((resolve) => { setTimeout(resolve, 250); });
+        await tick();
+    });
+};
+
+/**
+ * Edits a name as the user does: a double click on it opens the inline
+ * editor, the text is typed, Enter keeps it.
+ */
+const rename = async (
+    target: HTMLElement,
+    label: string,
+    value: string,
+): Promise<void> => {
+    await doubleClick(target);
+    const input = byLabel<HTMLInputElement>(label);
+    await typeInto(input, value);
+    await press(byLabel(label), "Enter");
+};
+
+const fieldName = (name: string): HTMLElement => {
+    return rowOf(name).querySelector<HTMLElement>(".fieldName")!;
+};
+
+const className = (): HTMLElement => {
+    return topRow().querySelector<HTMLElement>(".mrsObjectName")!;
+};
+
 const buttonOf = (label: string, within: ParentNode = host):
 HTMLButtonElement | undefined => {
     return [...within.querySelectorAll("button")].find((node) => {
@@ -241,30 +300,31 @@ HTMLButtonElement | undefined => {
     });
 };
 
-const pill = (label: string, within: ParentNode): HTMLButtonElement => {
-    const button = [...within.querySelectorAll<HTMLButtonElement>(
-        ".mrs-pill")].find((node) => {
-        return node.textContent === label;
-    });
-    if (!button) {
-        throw new Error(`No pill '${label}'.`);
-    }
-
-    return button;
-};
-
+/** The switches of a row: its CRUD pills and its Unnest. */
 const pills = (within: ParentNode): string[] => {
-    return [...within.querySelectorAll(".mrs-pill")].map((node) => {
+    return [...within.querySelectorAll("[role='switch']")].map((node) => {
         return node.textContent ?? "";
     });
 };
 
-const flag = (name: string, tooltip: string): HTMLButtonElement => {
-    return byLabel<HTMLButtonElement>(tooltip, rowOf(name));
+const pill = (label: string, within: ParentNode): HTMLElement => {
+    const found = [...within.querySelectorAll<HTMLElement>(
+        "[role='switch']")].find((node) => {
+        return node.textContent === label;
+    });
+    if (!found) {
+        throw new Error(`No pill '${label}'. Have: ${pills(within).join(", ")}`);
+    }
+
+    return found;
 };
 
-const toolbar = (): HTMLElement => {
-    return host.querySelector<HTMLElement>(".mrs-mapping-toolbar")!;
+const flag = (name: string, tooltip: string): HTMLElement => {
+    return byLabel<HTMLElement>(tooltip, rowOf(name));
+};
+
+const checkbox = (name: string): HTMLElement => {
+    return byLabel<HTMLElement>(`Include ${name}`, rowOf(name));
 };
 
 const postedOf = (kind: string): Array<Record<string, unknown>> => {
@@ -311,16 +371,21 @@ const fieldNamed = (
     return found;
 };
 
+/** Answers the last `loadColumns` request. */
+const answer = async (columns: IMrsColumns): Promise<void> => {
+    const request = postedOf("loadColumns").at(-1)!;
+    await send({
+        type: "columns", requestId: request.requestId as number, columns,
+    });
+};
+
 /** Opens a reference and answers its `loadColumns` with the columns. */
 const openReference = async (
     name: string,
     columns: IMrsColumns,
 ): Promise<void> => {
     await clickOn(byLabel("Expand", rowOf(name)));
-    const request = postedOf("loadColumns").at(-1)!;
-    await send({
-        type: "columns", requestId: request.requestId as number, columns,
-    });
+    await answer(columns);
 };
 
 beforeEach(() => {
@@ -335,40 +400,110 @@ afterEach(() => {
 });
 
 describe("DataMappingEditor of a table", () => {
-    it("lists the columns and references", async () => {
+    it("lists the columns and references under the class", async () => {
         await load(tableValues());
 
         expect(rowNames()).toEqual(["cityId", "city", "countryId", "country",
             "address"]);
-        expect(rowOf("cityId").textContent).toContain("smallint");
+        expect(className().textContent).toBe("MyServiceSakilaCity");
+        expect(topRow().textContent).toContain("sakila.city");
+        expect([...host.querySelectorAll(".bracket")].map((node) => {
+            return node.textContent;
+        })).toEqual(["{", "}"]);
+        expect(rowOf("cityId").textContent).toContain("city_id");
+        expect(byLabel("Primary key column", rowOf("cityId"))).toBeDefined();
+        expect(byLabel("Table column", rowOf("city"))).toBeDefined();
         expect(rowOf("country").textContent).toContain("sakila.country");
-        expect(rowOf("country").textContent).toContain("n:1");
+        expect(byLabel("Table with a n:1 relationship", rowOf("country")))
+            .toBeDefined();
         expect(rowOf("country").className).toContain("disabled");
-        expect(byLabel<HTMLInputElement>("Class name").value)
-            .toBe("MyServiceSakilaCity");
+        expect(checkbox("country").getAttribute("aria-checked")).toBe("false");
+    });
+
+    it("draws the icons as masks, not as buttons", async () => {
+        await load(tableValues());
+
+        const icon = flag("city", "Allow sorting operations using this field");
+        expect(icon.tagName).toBe("DIV");
+        expect(icon.className).toContain("mrs-icon");
+        expect(icon.style.maskImage).toContain("url(");
+        expect(rowOf("city").querySelector(".fieldOptions button")).toBeNull();
+    });
+
+    it("shows the flags that are on, the others only on hover", async () => {
+        await load(tableValues());
+
+        // The primary key is the object's key, so that flag is on.
+        expect(flag("cityId", "Include field in object composite key")
+            .className).toContain("selected");
+        const off = flag("city", "Include field in object composite key");
+        expect(off.className).toContain("notSelected");
+        // The … stands in for them until the pointer is over the cell.
+        expect(rowOf("city").querySelector(".fieldOptions .label")
+            ?.textContent).toBe("…");
+        // Select and deselect all are actions, shown on hover only.
+        expect(byLabel("Select all fields", topRow()).className)
+            .toContain("action");
     });
 
     it("toggles a field with its checkbox", async () => {
         await load(tableValues());
 
-        await clickOn(byLabel("Include city", rowOf("city")));
+        await clickOn(checkbox("city"));
 
         expect(rowOf("city").className).toContain("disabled");
+        expect(checkbox("city").getAttribute("aria-checked")).toBe("false");
+        expect(rowOf("city").querySelector(".jsonFieldDisabled")).not.toBeNull();
         expect(fieldNamed((await saved()).fields, "city").enabled).toBe(false);
 
-        await clickOn(byLabel("Include city", rowOf("city")));
+        await press(checkbox("city"), " ");
         expect(fieldNamed((await saved()).fields, "city").enabled).toBe(true);
     });
 
-    it("renames a field", async () => {
+    it("renames a field with a double click and Enter", async () => {
         await load(tableValues());
 
-        await typeInto(byLabel("JSON field name", rowOf("city")), "cityName");
+        await doubleClick(fieldName("city"));
+        const input = byLabel<HTMLInputElement>("JSON field name");
+        expect(input.value).toBe("city");
+        expect(globalThis.document.activeElement).toBe(input);
+        // No inputs until then: the name is text.
+        expect(rowOf("cityId").querySelector("input")).toBeNull();
 
+        await typeInto(input, "cityName");
+        await press(byLabel("JSON field name"), "Enter");
+
+        expect(query("JSON field name")).toBeNull();
         expect(rowNames()).toContain("cityName");
         const document = await saved();
         expect(fieldNamed(document.fields, "cityName").column?.name)
             .toBe("city");
+    });
+
+    it("drops an edit on Escape or when the focus leaves", async () => {
+        await load(tableValues());
+
+        await doubleClick(fieldName("city"));
+        await typeInto(byLabel("JSON field name"), "gone");
+        await press(byLabel("JSON field name"), "Escape");
+        expect(query("JSON field name")).toBeNull();
+        expect(rowNames()).toContain("city");
+
+        await doubleClick(fieldName("city"));
+        await typeInto(byLabel("JSON field name"), "gone");
+        await act0(() => {
+            byLabel("JSON field name").dispatchEvent(new FocusEvent("blur"));
+        });
+        expect(query("JSON field name")).toBeNull();
+        expect(rowNames()).not.toContain("gone");
+    });
+
+    it("keeps an emptied field name", async () => {
+        await load(tableValues());
+
+        await rename(fieldName("city"), "JSON field name", "  ");
+
+        expect(rowNames()).toContain("city");
     });
 
     it("toggles the flags of a field", async () => {
@@ -379,6 +514,8 @@ describe("DataMappingEditor of a table", () => {
         await clickOn(key);
         expect(flag("city", "Include field in object composite key")
             .getAttribute("aria-pressed")).toBe("true");
+        expect(flag("city", "Include field in object composite key")
+            .className).toContain("selected");
         await clickOn(flag("city",
             "Allow sorting operations using this field"));
         await clickOn(flag("city",
@@ -416,49 +553,52 @@ describe("DataMappingEditor of a table", () => {
         })).toBe(false);
     });
 
-    it("toggles the object's CRUD pills", async () => {
+    it("toggles the object's CRUD pills and its ETAG check", async () => {
         await load(tableValues());
 
-        expect(pills(toolbar())).toEqual(["INSERT", "UPDATE", "DELETE",
-            "NOCHECK"]);
-        await clickOn(pill("INSERT", toolbar()));
-        await clickOn(pill("DELETE", toolbar()));
-        await clickOn(pill("NOCHECK", toolbar()));
+        expect(pills(topRow())).toEqual(["INSERT", "UPDATE", "DELETE"]);
+        await clickOn(pill("INSERT", topRow()));
+        await clickOn(pill("DELETE", topRow()));
+        await clickOn(byLabel("Disable ETAG calculations for this table.",
+            topRow()));
 
-        expect(pill("INSERT", toolbar()).getAttribute("aria-pressed"))
+        expect(pill("INSERT", topRow()).getAttribute("aria-checked"))
             .toBe("true");
+        expect(pill("INSERT", topRow()).className).toBe("activated");
+        expect(pill("UPDATE", topRow()).className).toBe("deactivated");
         expect((await saved()).crud).toEqual({
             insert: true, update: false, delete: true, noCheck: true,
         });
     });
 
-    it("edits the class name", async () => {
+    it("edits the class name with a double click", async () => {
         await load(tableValues());
 
-        await typeInto(byLabel("Class name"), "City");
+        await rename(className(), "Class name", "City");
 
+        expect(className().textContent).toBe("City");
         expect((await saved()).className).toBe("City");
     });
 
     it("shows the class name problem once it was cleared", async () => {
         await load(tableValues());
 
-        await typeInto(byLabel("Class name"), "");
+        await rename(className(), "Class name", "");
 
-        expect(host.querySelector(".mrs-mapping .message.error")?.textContent)
-            .toBe("The object name must not be empty.");
+        expect(host.querySelector(".mrsObjectFieldEditor .message.error")
+            ?.textContent).toBe("The object name must not be empty.");
     });
 
     it("selects and deselects all fields but the references", async () => {
         await load(tableValues());
 
-        await clickOn(byLabel("Deselect all fields"));
+        await clickOn(byLabel("Deselect all fields", topRow()));
         let document = await saved();
         expect(document.fields.map((field) => { return field.enabled; }))
             .toEqual([false, false, false, false, false]);
 
         await openReference("country", COUNTRY);
-        await clickOn(byLabel("Select all fields"));
+        await clickOn(byLabel("Select all fields", topRow()));
         document = await saved();
         expect(document.fields.map((field) => { return field.enabled; }))
             .toEqual([true, true, true, true, false]);
@@ -471,21 +611,27 @@ describe("DataMappingEditor of a table", () => {
         expect(postedOf("loadColumns").at(-1)).toMatchObject({
             type: "loadColumns", schema: "sakila", table: "country",
         });
-        expect(rowNames()).not.toContain("countryId2");
+        expect(host.textContent).toContain("Loading...");
+        expect(checkbox("country").getAttribute("aria-disabled")).toBe("true");
 
-        const request = postedOf("loadColumns").at(-1)!;
-        await send({
-            type: "columns", requestId: request.requestId as number,
-            columns: COUNTRY,
-        });
+        await answer(COUNTRY);
 
         // The back reference to city is left out.
         expect(rowNames()).toEqual(["cityId", "city", "countryId", "country",
             "countryId", "country", "address"]);
+        expect(host.textContent).not.toContain("Loading...");
         expect(rowOf("country").className).not.toContain("disabled");
+        expect(rowOf("country").getAttribute("aria-expanded")).toBe("true");
         expect(byLabel("Collapse", rowOf("country"))).toBeDefined();
-        const children = host.querySelectorAll<HTMLElement>(".mrs-json");
-        expect(children[4].style.paddingLeft).toBe("1.25rem");
+        // A list of its own, one level in.
+        expect([...host.querySelectorAll(".bracket")].map((node) => {
+            return node.textContent;
+        })).toEqual(["{", "{", "}", "}"]);
+        const levels = [...host.querySelectorAll<HTMLElement>(
+            ".mrs-row[data-field]")].map((node) => {
+            return node.getAttribute("aria-level");
+        });
+        expect(levels).toEqual(["2", "2", "2", "2", "3", "3", "2"]);
 
         const document = await saved();
         const country = fieldNamed(document.fields, "country");
@@ -495,6 +641,45 @@ describe("DataMappingEditor of a table", () => {
             return child.name;
         })).toEqual(["countryId", "country"]);
     });
+
+    it("opens and closes a reference with a single click on its row",
+        async () => {
+            await load(tableValues());
+
+            await clickOn(rowOf("country"));
+            // Not at once: it might be the first click of a double click.
+            expect(postedOf("loadColumns")).toHaveLength(0);
+            await clickWait();
+            expect(postedOf("loadColumns")).toHaveLength(1);
+            await answer(COUNTRY);
+            expect(rowNames()).toHaveLength(7);
+
+            await clickOn(rowOf("country"));
+            await clickWait();
+            expect(rowNames()).toHaveLength(5);
+        });
+
+    it("does not open a reference on a double click", async () => {
+        await load(tableValues());
+
+        await clickOn(rowOf("country"));
+        await doubleClick(rowOf("country"));
+        await clickWait();
+
+        expect(postedOf("loadColumns")).toHaveLength(0);
+    });
+
+    it("renames a reference with a double click, without opening it",
+        async () => {
+            await load(tableValues());
+
+            await clickOn(fieldName("country"));
+            await rename(fieldName("country"), "JSON field name", "nation");
+            await clickWait();
+
+            expect(rowNames()).toContain("nation");
+            expect(postedOf("loadColumns")).toHaveLength(0);
+        });
 
     it("collapses and reopens a loaded reference without loading again",
         async () => {
@@ -513,16 +698,28 @@ describe("DataMappingEditor of a table", () => {
     it("loads a reference when its checkbox is ticked", async () => {
         await load(tableValues());
 
-        await clickOn(byLabel("Include country", rowOf("country")));
+        await clickOn(checkbox("country"));
 
-        const request = postedOf("loadColumns").at(-1)!;
-        expect(request.table).toBe("country");
-        await send({
-            type: "columns", requestId: request.requestId as number,
-            columns: COUNTRY,
-        });
+        expect(postedOf("loadColumns").at(-1)?.table).toBe("country");
+        await answer(COUNTRY);
         expect(rowNames()).toHaveLength(7);
+        expect(checkbox("country").getAttribute("aria-checked")).toBe("true");
     });
+
+    it("closes a reference and forgets its table when it is unticked",
+        async () => {
+            await load(tableValues());
+            await openReference("country", COUNTRY);
+
+            await clickOn(checkbox("country"));
+
+            expect(rowNames()).toHaveLength(5);
+            const country = fieldNamed((await saved()).fields, "country");
+            expect(country.enabled).toBe(false);
+            expect(country.reference).toMatchObject({
+                loaded: false, children: [],
+            });
+        });
 
     it("shows why a reference's columns could not be loaded", async () => {
         await load(tableValues());
@@ -534,9 +731,10 @@ describe("DataMappingEditor of a table", () => {
             error: "Table not found.",
         });
 
-        expect(host.querySelector(".mrs-mapping .message.error")?.textContent)
-            .toBe("Table not found.");
+        expect(host.querySelector(".mrsObjectFieldEditor .message.error")
+            ?.textContent).toBe("Table not found.");
         expect(rowNames()).toHaveLength(5);
+        expect(host.textContent).not.toContain("Loading...");
         expect(fieldNamed((await saved()).fields, "country").enabled)
             .toBe(false);
     });
@@ -545,50 +743,95 @@ describe("DataMappingEditor of a table", () => {
         await load(tableValues());
 
         await clickOn(byLabel("Expand", rowOf("country")));
-        await typeInto(byLabel("JSON field name", rowOf("city")), "cityName");
-        const request = postedOf("loadColumns").at(-1)!;
-        await send({
-            type: "columns", requestId: request.requestId as number,
-            columns: COUNTRY,
-        });
+        await rename(fieldName("city"), "JSON field name", "cityName");
+        await answer(COUNTRY);
 
         expect(rowNames()).toContain("cityName");
     });
 
-    it("offers UPDATE and NOCHECK only on an n:1 reference", async () => {
+    it("offers Unnest and UPDATE only on an n:1 reference", async () => {
         await load(tableValues());
-        expect(pills(rowOf("country"))).toEqual([]);
+        expect(pills(rowOf("country"))).toEqual(["Unnest"]);
 
         await openReference("country", COUNTRY);
 
         const row = rowOf("country");
-        expect(pills(row)).toEqual(["UPDATE", "NOCHECK", "UNNEST"]);
+        expect(pills(row)).toEqual(["Unnest", "UPDATE"]);
         await clickOn(pill("UPDATE", rowOf("country")));
-        await clickOn(pill("NOCHECK", rowOf("country")));
-        await clickOn(pill("UNNEST", rowOf("country")));
+        await clickOn(byLabel("Disable ETAG calculations for this table.",
+            rowOf("country")));
 
         const country = fieldNamed((await saved()).fields, "country");
         expect(country.reference?.crud).toEqual({
             insert: false, update: true, delete: false, noCheck: true,
         });
-        expect(country.reference?.unnest).toBe(true);
+    });
+
+    it("unnests a reference into copies of its fields, and back",
+        async () => {
+            await load(tableValues());
+            await openReference("country", COUNTRY);
+
+            await clickOn(pill("Unnest", rowOf("country")));
+
+            expect(pill("Unnest", rowOf("country")).getAttribute("aria-checked"))
+                .toBe("true");
+            expect(checkbox("country").getAttribute("aria-checked"))
+                .toBe("mixed");
+            expect(checkbox("country").getAttribute("aria-disabled"))
+                .toBe("true");
+            // No list of its own any more: its fields, marked, at its level.
+            expect(rowNames()).toEqual(["cityId", "city", "countryId",
+                "country", "address"]);
+            expect(copyNames()).toEqual(["countryId", "country"]);
+            expect(host.querySelector(".unnestedCopy")?.textContent)
+                .toContain("country )");
+            expect(byLabel("Expand", rowOf("country")).className)
+                .toContain("disabled");
+            expect(fieldNamed((await saved()).fields, "country").reference
+                ?.unnest).toBe(true);
+
+            // A click on the row does not open it now.
+            await clickOn(rowOf("country"));
+            await clickWait();
+            expect(copyNames()).toHaveLength(2);
+
+            await clickOn(pill("Unnest", rowOf("country")));
+            expect(copyNames()).toEqual([]);
+            expect(rowNames()).toHaveLength(7);
+            expect(checkbox("country").getAttribute("aria-checked"))
+                .toBe("true");
+        });
+
+    it("loads a closed reference to unnest it", async () => {
+        await load(tableValues());
+
+        await clickOn(pill("Unnest", rowOf("country")));
+        expect(postedOf("loadColumns").at(-1)?.table).toBe("country");
+        await answer(COUNTRY);
+
+        expect(copyNames()).toEqual(["countryId", "country"]);
+        const country = fieldNamed((await saved()).fields, "country");
+        expect(country).toMatchObject({
+            enabled: true, reference: { unnest: true, loaded: true },
+        });
     });
 
     it("offers all CRUD pills and reduce-to on a 1:n reference",
         async () => {
             await load(tableValues());
+            expect(query("Reduce to field", rowOf("address"))).toBeNull();
             await openReference("address", ADDRESS);
 
             const row = rowOf("address");
-            expect(pills(row)).toEqual(["INSERT", "UPDATE", "DELETE",
-                "NOCHECK"]);
+            expect(pills(row)).toEqual(["INSERT", "UPDATE", "DELETE"]);
             await clickOn(pill("INSERT", row));
             const reduce = byLabel<HTMLSelectElement>("Reduce to field",
                 rowOf("address"));
             expect([...reduce.options].map((option) => {
-                return option.textContent;
-            })).toEqual(["Unnest field ...", "addressId", "address",
-                "postalCode"]);
+                return option.textContent?.trim();
+            })).toEqual(["Unnest field ...", "address_id", "address",
+                "postal_code"]);
 
             let document = await saved();
             const target = fieldNamed(document.fields, "postalCode").key;
@@ -606,10 +849,19 @@ describe("DataMappingEditor of a table", () => {
             expect(address.reference?.children.map((child) => {
                 return child.enabled;
             })).toEqual([false, false, true]);
-            // The others are reduced away and cannot be ticked.
-            const boxes = [...host.querySelectorAll<HTMLInputElement>(
-                "[aria-label='Include addressId']")];
-            expect(boxes.at(-1)?.disabled).toBe(true);
+            // Still a list, its other fields reduced away and locked.
+            expect(rowNames()).toContain("postalCode");
+            expect(copyNames()).toEqual([]);
+            expect(byLabel("Include addressId").getAttribute("aria-disabled"))
+                .toBe("true");
+            await clickOn(byLabel("Include addressId"));
+            await clickOn(pill("DELETE", rowOf("address")));
+            document = await saved();
+            expect(fieldNamed(document.fields, "addressId").enabled).toBe(false);
+            expect(findField(document.fields, address.key)?.reference?.crud
+                .delete).toBe(false);
+            // There is no unnesting a list.
+            expect(pills(rowOf("address"))).not.toContain("Unnest");
 
             await pick(byLabel<HTMLSelectElement>("Reduce to field",
                 rowOf("address")), "");
@@ -623,20 +875,19 @@ describe("DataMappingEditor of a table", () => {
         const values = tableValues();
         await load(values);
 
-        const preview = [...host.querySelectorAll("label.checkbox")]
-            .find((node) => {
-                return node.textContent === "SQL Preview";
-            })!.querySelector("input")!;
+        const preview = buttonOf("SQL Preview")!;
+        expect(preview.getAttribute("aria-pressed")).toBe("false");
         await clickOn(preview);
 
         const sql = objectStatements(values, CONTEXT)[0];
+        expect(buttonOf("SQL Preview")?.className).toContain("activated");
         expect(host.querySelector(".mrs-preview")?.textContent).toBe(sql);
-        expect(host.querySelector(".mrs-mapping-rows")).toBeNull();
+        expect(host.querySelector(".mrsObjectTreeGrid")).toBeNull();
 
         await clickOn(byLabel("Copy SQL to Clipboard"));
         expect(postedOf("copy")).toEqual([{ type: "copy", text: sql }]);
 
-        await clickOn(preview);
+        await clickOn(buttonOf("SQL Preview")!);
         expect(host.querySelector(".mrs-preview")).toBeNull();
         expect(rowNames()).toHaveLength(5);
     });
@@ -644,8 +895,8 @@ describe("DataMappingEditor of a table", () => {
     it("previews the edits made", async () => {
         await load(tableValues());
 
-        await typeInto(byLabel("Class name"), "Town");
-        await clickOn(byLabel("Include city", rowOf("city")));
+        await rename(className(), "Class name", "Town");
+        await clickOn(checkbox("city"));
         await clickOn(byLabel("Copy SQL to Clipboard"));
 
         const sql = String(postedOf("copy").at(-1)?.text);
@@ -653,14 +904,24 @@ describe("DataMappingEditor of a table", () => {
         expect(sql).not.toContain("`city`: `city`");
     });
 
-    it("says when there are no fields", async () => {
+    it("shows the database object it maps, read only", async () => {
+        await load(tableValues());
+
+        const input = byLabel<HTMLInputElement>("DB Object");
+        expect(input.value).toBe("sakila.city");
+        expect(input.readOnly).toBe(true);
+    });
+
+    it("shows the brackets alone when there are no fields", async () => {
         await load({
             ...tableValues(),
             document: { ...tableValues().document, fields: [] },
         });
 
-        expect(host.querySelector(".mrs-mapping-rows")?.textContent)
-            .toBe("No fields.");
+        expect(rowNames()).toEqual([]);
+        expect([...host.querySelectorAll(".bracket")].map((node) => {
+            return node.textContent;
+        })).toEqual(["{", "}"]);
     });
 
     it("opens what is stored, and marks a dropped column", async () => {
@@ -695,44 +956,48 @@ describe("DataMappingEditor of a table", () => {
         expect(rowNames()).toEqual(["cityId", "city", "countryId", "country",
             "id", "oldName"]);
         expect(rowOf("oldName").textContent).toContain("column dropped");
-        expect(byLabel<HTMLInputElement>("Include oldName").disabled)
-            .toBe(true);
+        expect(rowOf("oldName").className).toContain("deleted");
+        expect(checkbox("oldName").getAttribute("aria-disabled")).toBe("true");
     });
 });
 
 describe("DataMappingEditor of a procedure", () => {
     const mappings = (): string[] => {
         return [...byLabel<HTMLSelectElement>("Data mapping").options]
-            .map((option) => { return option.textContent ?? ""; });
+            .map((option) => { return option.textContent?.trim() ?? ""; });
     };
 
-    const mappingName = (): HTMLInputElement => {
-        return byLabel<HTMLInputElement>("Data mapping name");
+    /** Adds a field to the result shown; it opens with its name to type. */
+    const addField = async (): Promise<void> => {
+        await clickOn(byLabel("Add Field"));
+        await press(byLabel("JSON field name"), "Escape");
     };
 
     it("shows the parameters with their modes", async () => {
         await load(routineValues("PROCEDURE"));
 
         expect(mappings()).toEqual(["Parameters"]);
-        expect(mappingName().value).toBe("FilmInStockParams");
+        expect(className().textContent).toBe("FilmInStockParams");
         expect(rowNames()).toEqual(["pFilmId", "pFilmCount", "pNote"]);
-        expect(rowOf("pFilmId").querySelector(".mrs-mode")?.textContent)
-            .toBe("IN");
-        expect(rowOf("pFilmCount").querySelector(".mrs-mode")?.textContent)
-            .toBe("OUT");
-        expect(rowOf("pNote").querySelector(".mrs-mode")?.textContent)
-            .toBe("INOUT");
-        expect(host.querySelector("[aria-label='Class name']")).toBeNull();
-        expect(host.querySelector(".mrs-flag")).toBeNull();
-        expect(host.querySelector("[aria-label='Delete field']")).toBeNull();
-        expect(buttonOf("Remove Result")).toBeUndefined();
-        expect(buttonOf("Add Field")).toBeUndefined();
+        expect(byLabel("IN parameter", rowOf("pFilmId")).className)
+            .toContain("selected");
+        expect(query("OUT parameter", rowOf("pFilmCount"))).not.toBeNull();
+        expect(query("INOUT parameter", rowOf("pNote"))).not.toBeNull();
+        expect(rowOf("pNote").textContent).toContain("text");
+        // Only what a parameter can have.
+        expect(query("Set as row ownership field", rowOf("pFilmId")))
+            .not.toBeNull();
+        expect(query("Include field in object composite key")).toBeNull();
+        expect(query("Delete field")).toBeNull();
+        expect(query("Remove Result")).toBeNull();
+        expect(query("Add Field")).toBeNull();
+        expect(pills(topRow())).toEqual([]);
     });
 
     it("renames the parameters mapping", async () => {
         await load(routineValues("PROCEDURE"));
 
-        await typeInto(mappingName(), "StockParams");
+        await rename(className(), "Data mapping name", "StockParams");
 
         expect((await saved()).parameters?.name).toBe("StockParams");
     });
@@ -745,71 +1010,110 @@ describe("DataMappingEditor of a procedure", () => {
         expect(mappings()).toEqual(["Parameters", "Result 1"]);
         expect(byLabel<HTMLSelectElement>("Data mapping").value)
             .not.toBe("parameters");
-        expect(mappingName().value).toBe("FilmInStock");
-        expect(host.querySelector(".mrs-mapping-rows")?.textContent)
-            .toBe("No fields.");
+        expect(className().textContent).toBe("FilmInStock");
+        expect(rowNames()).toEqual([]);
 
-        await clickOn(buttonOf("Add Field")!);
-        expect(rowNames()).toEqual(["newField"]);
-        const row = rowOf("newField");
-        expect(byLabel<HTMLInputElement>("Column name", row).value)
-            .toBe("new_field");
-        expect(byLabel<HTMLInputElement>("Datatype", row).value)
-            .toBe("VARCHAR(255)");
+        // A new field opens with all of its name selected, to type over.
+        await clickOn(byLabel("Add Field"));
+        const name = byLabel<HTMLInputElement>("JSON field name");
+        expect(name.value).toBe("newField");
+        expect(document.activeElement).toBe(name);
+        expect([name.selectionStart, name.selectionEnd]).toEqual([0, 8]);
+        await typeInto(name, "total");
+        await press(byLabel("JSON field name"), "Enter");
 
-        await typeInto(byLabel("Datatype", rowOf("newField")), "INT");
-        await typeInto(byLabel("Column name", rowOf("newField")), "total");
-        await typeInto(byLabel("JSON field name", rowOf("newField")), "total");
-        await typeInto(mappingName(), "Totals");
+        const row = rowOf("total");
+        const column = row.querySelector<HTMLElement>(".columnName")!;
+        expect(column.textContent).toBe("new_field: VARCHAR(255)");
 
-        let document = await saved();
-        expect(document.results).toHaveLength(1);
-        expect(document.results![0].name).toBe("Totals");
-        expect(document.results![0].fields[0]).toMatchObject({
+        // The column's `name: type`, the caret put before the colon.
+        await doubleClick(column);
+        const edit = byLabel<HTMLInputElement>("Column name and datatype");
+        expect(edit.value).toBe("new_field: VARCHAR(255)");
+        expect(edit.selectionStart).toBe(9);
+        await typeInto(edit, "total: INT");
+        await press(byLabel("Column name and datatype"), "Enter");
+        expect(rowOf("total").querySelector(".columnName")?.textContent)
+            .toBe("total: INT");
+
+        await rename(className(), "Data mapping name", "Totals");
+
+        let saved1 = await saved();
+        expect(saved1.results).toHaveLength(1);
+        expect(saved1.results![0].name).toBe("Totals");
+        expect(saved1.results![0].fields[0]).toMatchObject({
             name: "total",
             column: { name: "total", datatype: "INT" },
         });
 
         await clickOn(buttonOf("Add Result")!);
         expect(mappings()).toEqual(["Parameters", "Result 1", "Result 2"]);
-        expect(mappingName().value).toBe("FilmInStock2");
+        expect(className().textContent).toBe("FilmInStock2");
 
-        await clickOn(buttonOf("Remove Result")!);
+        await clickOn(byLabel("Remove Result"));
         expect(mappings()).toEqual(["Parameters", "Result 1"]);
-        expect(mappingName().value).toBe("FilmInStockParams");
-        expect(buttonOf("Remove Result")).toBeUndefined();
+        expect(className().textContent).toBe("FilmInStockParams");
+        expect(query("Remove Result")).toBeNull();
 
-        document = await saved();
-        expect(document.results?.map((result) => {
+        saved1 = await saved();
+        expect(saved1.results?.map((result) => {
             return result.name;
         })).toEqual(["Totals"]);
+    });
+
+    it("keeps a column's name or type when only the other is given",
+        async () => {
+            await load(routineValues("PROCEDURE"));
+            await clickOn(buttonOf("Add Result")!);
+            await addField();
+
+            const column = (): HTMLElement => {
+                return rowOf("newField").querySelector<HTMLElement>(
+                    ".columnName")!;
+            };
+            await rename(column(), "Column name and datatype", "amount");
+            expect(column().textContent).toBe("amount: VARCHAR(255)");
+            await rename(column(), "Column name and datatype", ": DECIMAL(8,2)");
+            expect(column().textContent).toBe("amount: DECIMAL(8,2)");
+        });
+
+    it("does not edit a parameter's column", async () => {
+        await load(routineValues("PROCEDURE"));
+
+        await doubleClick(rowOf("pFilmId").querySelector<HTMLElement>(
+            ".columnName")!);
+
+        expect(query("Column name and datatype")).toBeNull();
     });
 
     it("switches between the parameters and a result", async () => {
         await load(routineValues("PROCEDURE"));
         await clickOn(buttonOf("Add Result")!);
-        await clickOn(buttonOf("Add Field")!);
+        await addField();
         const select = byLabel<HTMLSelectElement>("Data mapping");
         const resultKey = select.value;
 
         await pick(byLabel("Data mapping"), "parameters");
         expect(rowNames()).toEqual(["pFilmId", "pFilmCount", "pNote"]);
-        expect(buttonOf("Remove Result")).toBeUndefined();
+        expect(query("Remove Result")).toBeNull();
 
         await pick(byLabel("Data mapping"), resultKey);
         expect(rowNames()).toEqual(["newField"]);
-        expect(buttonOf("Remove Result")).toBeDefined();
+        expect(query("Remove Result")).not.toBeNull();
     });
 
     it("deletes a result field", async () => {
         await load(routineValues("PROCEDURE"));
         await clickOn(buttonOf("Add Result")!);
-        await clickOn(buttonOf("Add Field")!);
-        await clickOn(buttonOf("Add Field")!);
+        await addField();
+        await addField();
         expect(rowNames()).toEqual(["newField", "newField"]);
 
-        await clickOn(byLabel("Delete field",
-            host.querySelectorAll(".mrs-row")[0] as HTMLElement));
+        const first = host.querySelectorAll<HTMLElement>(
+            ".mrs-row[data-field]")[0];
+        const remove = byLabel("Delete field", first);
+        expect(remove.className).toContain("action");
+        await clickOn(remove);
 
         expect(rowNames()).toEqual(["newField"]);
         expect((await saved()).results![0].fields).toHaveLength(1);
@@ -819,7 +1123,7 @@ describe("DataMappingEditor of a procedure", () => {
         const values = routineValues("PROCEDURE");
         await load(values);
         await clickOn(buttonOf("Add Result")!);
-        await clickOn(buttonOf("Add Field")!);
+        await addField();
         await clickOn(byLabel("Copy SQL to Clipboard"));
 
         const sql = String(postedOf("copy").at(-1)?.text);
@@ -836,24 +1140,29 @@ describe("DataMappingEditor of a function", () => {
 
         const select = byLabel<HTMLSelectElement>("Data mapping");
         expect([...select.options].map((option) => {
-            return option.textContent;
+            return option.textContent?.trim();
         })).toEqual(["Parameters", "Result 1"]);
         expect(buttonOf("Add Result")).toBeUndefined();
+        // A function's parameters are all IN: no mode shown.
+        expect(query("IN parameter")).toBeNull();
 
         await pick(select, select.options[1].value);
 
         expect(rowNames()).toEqual(["result"]);
-        expect(byLabel<HTMLInputElement>("Data mapping name").value)
-            .toBe("FilmInStockResult");
+        expect(className().textContent).toBe("FilmInStockResult");
         expect(buttonOf("Add Result")).toBeUndefined();
-        expect(buttonOf("Remove Result")).toBeUndefined();
-        expect(buttonOf("Add Field")).toBeUndefined();
-        expect(host.querySelector("[aria-label='Delete field']")).toBeNull();
-        const datatype = byLabel<HTMLInputElement>("Datatype", rowOf("result"));
-        expect(datatype.value).toBe("decimal(5,2)");
+        expect(query("Remove Result")).toBeNull();
+        expect(query("Add Field")).toBeNull();
+        expect(query("Delete field")).toBeNull();
+        const column = rowOf("result").querySelector<HTMLElement>(
+            ".columnName")!;
+        expect(column.textContent).toContain(": decimal(5,2)");
 
-        await typeInto(datatype, "decimal(10,2)");
-        await typeInto(byLabel("Data mapping name"), "Balance");
+        await doubleClick(column);
+        const edit = byLabel<HTMLInputElement>("Column name and datatype");
+        await typeInto(edit, edit.value.replace(/:.*/, ": decimal(10,2)"));
+        await press(byLabel("Column name and datatype"), "Enter");
+        await rename(className(), "Data mapping name", "Balance");
 
         const document = await saved();
         expect(document.results![0].name).toBe("Balance");

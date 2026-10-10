@@ -90,121 +90,397 @@ textarea.mrs-code {
 
 /* --- the data mapping editor -------------------------------------- */
 
-.mrs-mapping {
+/* The MySQL Shell's object field editor: a borderless two column tree,
+   whose controls are drawn, not the dialog's buttons and checkboxes. */
+
+.mrsObjectFieldEditor {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    --mrs-field-name: #9cdcfe;
 }
 
-.mrs-mapping-toolbar {
-    align-items: center;
+body.vscode-light .mrsObjectFieldEditor,
+body.vscode-high-contrast-light .mrsObjectFieldEditor {
+    --mrs-field-name: #001080;
 }
 
-.mrs-mapping-rows {
+.mrsObjectFieldEditor .settings {
     display: flex;
-    flex-direction: column;
-    border: 1px solid var(--vscode-panel-border,
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.mrsObjectFieldEditor .labelWithInput {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.mrsObjectFieldEditor .dbObjectInput {
+    width: 16rem;
+    padding: 2px 6px;
+}
+
+.mrsObjectFieldEditor .mrsObjectSelect {
+    width: auto;
+    padding: 2px 6px;
+}
+
+.mrsObjectFieldEditor .spacer {
+    flex: 1;
+}
+
+.mrsObjectFieldEditor .divider {
+    width: 1px;
+    height: 18px;
+    background: var(--vscode-input-border,
             var(--vscode-editorWidget-border));
 }
 
-.mrs-row {
+/* Flat, as the editor's own toolbar has them. */
+.mrsObjectFieldEditor button.settingsButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--vscode-foreground);
+}
+
+.mrsObjectFieldEditor button.settingsButton:hover:not(:disabled) {
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
+.mrsObjectFieldEditor button.settingsButton.activated {
+    background: var(--vscode-inputOption-activeBackground);
+    border-color: var(--vscode-inputOption-activeBorder, transparent);
+    color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+}
+
+.mrsObjectTreeGrid {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 0;
+    border: 1px solid var(--vscode-input-border,
+            var(--vscode-editorWidget-border));
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 13px;
+    overflow: auto;
+    max-height: 30rem;
+    user-select: none;
+}
+
+body.vscode-light .mrsObjectTreeGrid {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.mrsObjectTreeGrid .mrs-row {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.15rem 0.5rem;
+    min-height: 24px;
 }
 
-.mrs-row:nth-child(even) {
-    background: var(--vscode-list-hoverBackground);
+.mrsObjectTreeGrid .mrs-row.reference {
+    cursor: pointer;
 }
 
-.mrs-row.disabled .mrs-relational {
+.mrsObjectTreeGrid .mrs-row.topRow {
+    background: rgba(0, 157, 255, 0.2);
+}
+
+.mrsObjectTreeGrid .mrs-row.deleted {
+    background: var(--vscode-editorGutter-deletedBackground);
+}
+
+.mrsObjectTreeGrid .jsonCell,
+.mrsObjectTreeGrid .relationalCell {
+    min-width: 0;
+    padding-right: 4px;
+}
+
+.mrsObjectJsonFieldDiv,
+.mrsObjectDbColumnFieldDiv,
+.mrsObjectJsonFieldDiv .fieldInfo {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.mrsObjectJsonFieldDiv {
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.mrsObjectJsonFieldDiv .fieldInfo {
+    overflow: hidden;
+}
+
+/* --- icons: SVG masks in the theme's icon colour, no frames */
+
+.mrs-icon {
+    flex: none;
+    background-color: var(--vscode-icon-foreground, var(--vscode-foreground));
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    -webkit-mask-size: contain;
+    cursor: default;
+}
+
+.mrs-icon[role="button"] {
+    cursor: pointer;
+}
+
+.mrs-icon.tableIcon {
+    background-color: var(--vscode-symbolIcon-classForeground,
+            var(--vscode-icon-foreground));
+}
+
+.mrs-icon.arrow {
     opacity: 0.6;
 }
 
-.mrs-json,
-.mrs-relational {
+/* --- the flags: those that are on show always, the others and the
+       actions only while the pointer is over the cell, in place of the … */
+
+.fieldOptions {
     display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    min-width: 0;
-}
-
-.mrs-twistie {
     flex: none;
-    width: 1.25rem;
+    align-items: center;
+    gap: 5px;
+    min-height: 20px;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: var(--vscode-input-background);
 }
 
-input.mrs-name {
-    width: auto;
-    min-width: 6rem;
-    max-width: 14rem;
-    padding: 0.15rem 0.35rem;
+.fieldOptions:empty {
+    display: none;
 }
 
-input.mrs-type,
-.mrs-type {
+.fieldOptions .notSelected,
+.fieldOptions .action {
+    display: none;
+}
+
+.fieldOptions .label {
+    font-size: 10px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.jsonCell:hover .fieldOptions .notSelected {
+    display: block;
+    opacity: 0.2;
+}
+
+.jsonCell:hover .fieldOptions .notSelected:hover {
+    opacity: 0.6;
+}
+
+.jsonCell:hover .fieldOptions .action {
+    display: block;
+}
+
+.jsonCell:hover .fieldOptions .label {
+    display: none;
+}
+
+/* --- names, brackets and the inline editor */
+
+.mrsObjectJsonFieldDiv .jsonField {
+    color: var(--mrs-field-name);
+}
+
+.mrsObjectJsonFieldDiv .jsonFieldDisabled {
+    color: var(--vscode-badge-background);
+}
+
+.mrsObjectJsonFieldDiv .loading {
+    font-style: italic;
+}
+
+.mrsObjectTreeGrid .tableName {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mrsObjectDbColumnFieldDiv .tableName {
+    font-style: italic;
+}
+
+.mrsObjectTreeGrid .bracket {
+    color: var(--vscode-descriptionForeground);
+}
+
+.mrsObjectDbColumnFieldDiv .columnName {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mrsObjectDbColumnFieldDiv .datatype {
     color: var(--vscode-descriptionForeground);
     font-size: 0.9em;
 }
 
-input.mrs-type {
-    width: 9rem;
-    padding: 0.15rem 0.35rem;
+.mrsObjectTreeGrid input.fieldEditor {
+    width: 12rem;
+    min-width: 0;
+    padding: 0 4px;
+    font-size: 13px;
 }
 
-.mrs-flags-row {
+.mrsObjectTreeGrid .unnestedFrom {
     display: inline-flex;
-    gap: 0.1rem;
+    align-items: center;
+    gap: 2px;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
 }
 
-.mrs-flag {
-    opacity: 0.35;
+.mrsObjectTreeGrid .treeToggle {
+    flex: none;
+    cursor: pointer;
 }
 
-.mrs-flag.on {
-    opacity: 1;
-    color: var(--vscode-textLink-foreground);
+.mrsObjectTreeGrid .treeToggle.disabled {
+    opacity: 0.3;
+    cursor: default;
 }
 
-.mrs-pills {
+.mrsObjectTreeGrid .mrs-row:not(.reference) .fieldInfo {
+    /* Where a reference has its chevron. */
+    padding-left: 20px;
+}
+
+.mrsObjectTreeGrid .mrs-row.topRow .fieldInfo,
+.mrsObjectTreeGrid .mrs-row.unnestedCopy .fieldInfo {
+    padding-left: 0;
+}
+
+.mrsObjectTreeGrid .mrs-row.unnestedCopy .fieldInfo {
+    padding-left: 40px;
+}
+
+/* --- the checkbox */
+
+.mrs-checkbox {
+    flex: none;
     display: inline-flex;
-    gap: 0.2rem;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--vscode-checkbox-border,
+            var(--vscode-input-border, var(--vscode-foreground)));
+    border-radius: 3px;
+    background: var(--vscode-checkbox-background,
+            var(--vscode-input-background));
+    cursor: pointer;
 }
 
-.mrs-pill {
-    padding: 0 0.4rem;
-    border-radius: 0.6rem;
+.mrs-checkbox:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
+}
+
+.mrs-checkbox.checked .checkMark::before {
+    content: "\eab2";
+    font-family: "codicon";
+    font-size: 12px;
+    color: var(--vscode-checkbox-foreground, var(--vscode-foreground));
+}
+
+.mrs-checkbox.indeterminate .checkMark {
+    display: block;
+    width: 8px;
+    height: 2px;
+    background: var(--vscode-checkbox-foreground, var(--vscode-foreground));
+}
+
+.mrs-checkbox.disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* --- the segmented pills: INSERT / UPDATE / DELETE, and Unnest */
+
+.crudDiv,
+.unnestDiv {
+    display: inline-flex;
+    flex: none;
+    align-items: stretch;
+    height: 18px;
     border: 1px solid var(--vscode-input-border,
             var(--vscode-editorWidget-border));
-    background: transparent;
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 16px;
+    cursor: pointer;
+}
+
+.crudDiv {
+    margin-left: 6px;
+}
+
+.crudDiv > div {
+    padding: 0 6px;
+}
+
+.crudDiv.multiItems > div + div {
+    border-left: 1px solid var(--vscode-input-border,
+            var(--vscode-editorWidget-border));
+}
+
+.crudDiv > .activated,
+.unnestDiv.activated {
+    background: var(--vscode-list-activeSelectionBackground,
+            var(--vscode-button-background));
+    color: var(--vscode-list-activeSelectionForeground,
+            var(--vscode-button-foreground));
+}
+
+.crudDiv > .deactivated,
+.unnestDiv.deactivated {
+    background: var(--vscode-input-background);
     color: var(--vscode-descriptionForeground);
-    font-size: 0.8em;
 }
 
-.mrs-pill.on {
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-    border-color: var(--vscode-button-background);
+.unnestDiv {
+    align-items: center;
+    gap: 3px;
+    margin-left: 6px;
+    padding: 0 6px;
 }
 
-.mrs-kind,
-.mrs-mode {
-    padding: 0 0.3rem;
-    border-radius: 0.3rem;
-    background: var(--vscode-badge-background);
-    color: var(--vscode-badge-foreground);
-    font-size: 0.75em;
+.unnestDiv .mrs-icon {
+    background-color: currentColor;
+}
+
+/* The flat dropdown of a 1:n reference. */
+.mrsObjectDbColumnFieldDiv select.reduceToDropdown {
+    width: auto;
+    max-width: 10rem;
+    margin-left: 6px;
+    padding: 0 4px;
+    height: 18px;
+    border-radius: 8px;
+    font-size: 11px;
 }
 
 .mrs-missing {
     color: var(--vscode-errorForeground);
     font-size: 0.85em;
-}
-
-.mrs-reduce {
-    width: auto;
 }
 
 .mrs-preview {

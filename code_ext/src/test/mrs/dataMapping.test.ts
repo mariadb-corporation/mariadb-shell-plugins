@@ -15,7 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
     buildDocument,
@@ -53,7 +53,7 @@ import {
 } from "../../mrs/mrsTypes.js";
 import type { IObjectSettings } from "../../mrs/restSql.js";
 
-const NEW_KEY = /^new-\d+$/;
+const NEW_KEY = /^new-[a-z0-9]+-\d+$/;
 
 const NO_CRUD: ICrudFlags = {
     insert: false, update: false, delete: false, noCheck: false,
@@ -257,6 +257,18 @@ describe("names", () => {
         expect(first).toMatch(NEW_KEY);
         expect(second).toMatch(NEW_KEY);
         expect(first).not.toBe(second);
+    });
+
+    it("makes keys that do not clash with another copy's", async () => {
+        // The extension builds a table's fields and the dialog a
+        // reference's, each with its own copy of the module.
+        const mine = newKey();
+        vi.resetModules();
+        const other = await import("../../mrs/dataMapping.js");
+        const theirs = other.newKey();
+        expect(theirs).toMatch(NEW_KEY);
+        expect(theirs).not.toBe(mine);
+        expect(theirs.replace(/\d+$/, "")).not.toBe(mine.replace(/\d+$/, ""));
     });
 
     it("tells routines apart", () => {

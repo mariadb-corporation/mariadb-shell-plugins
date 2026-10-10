@@ -30,6 +30,7 @@ import { applyKeybindings } from "./editor/keybindings.js";
 import { SqlEditorBinding } from "./editor/sqlEditorBinding.js";
 import { StatementDecorator } from "./editor/statementDecorations.js";
 import { reportError } from "./errorMessages.js";
+import { errorText } from "./text.js";
 import { createSdkConnector } from "./mcp/sdkConnector.js";
 import {
     ServerStarter,
@@ -201,7 +202,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
     context.subscriptions.push(output);
 
     const log = (message: string): void => {
-        output.appendLine(`[${new Date().toISOString()}] ${message}`);
+        try {
+            output.appendLine(`[${new Date().toISOString()}] ${message}`);
+        } catch {
+            // The channel is closed while the extension shuts down, before
+            // the MCP server's last words.
+        }
     };
 
     const packageJson = context.extension?.packageJSON as
@@ -712,6 +718,11 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 }
 
                 await guard(log, async () => {
+                    // Closed first: the server drops what is open on a
+                    // connection it deletes, and the sessions here go by
+                    // URI, which another list's connection may share - left
+                    // in place, they would hold ids the server forgot.
+                    await connections.disconnect(node.uri);
                     await deleteConnection(await connections.api(), {
                         uri: node.uri,
                         kind: node.connectionKind,
@@ -981,6 +992,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
             "mariadb.restartMcpServer",
             async () => {
                 await guard(log, async () => {
+                    // What the tree had open is opened again afterwards: its
+                    // rows stay expanded across the restart, and an expanded
+                    // connection with no session shows nothing at all.
+                    const browsed = connections.openConnections.filter(
+                        (uri) => {
+                            return connections.isConnected(uri,
+                                UI_BACKEND_SESSION);
+                        });
                     await connections.disconnectAll();
                     await session.stop();
                     starter.stopped();
@@ -988,6 +1007,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     // its roots, and that would start a second attempt.
                     // The view says the start failed without it.
                     await starter.start();
+                    for (const uri of browsed) {
+                        try {
+                            await connections.connect(uri, UI_BACKEND_SESSION);
+                        } catch (error) {
+                            log(`Could not open ${uri} again after the `
+                                + `restart: ${errorText(error)}`);
+                        }
+                    }
                     tree.refresh();
                 });
             },

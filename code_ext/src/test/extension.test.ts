@@ -927,6 +927,31 @@ describe("activate", () => {
         expect(errorMessages).toEqual([]);
     });
 
+    it("closes what is open on a connection before deleting it",
+        async () => {
+            activate(createContext() as never);
+            setWarningMessageAnswer("Delete");
+            const node = {
+                kind: "connection",
+                uri: "dba@localhost:3310",
+                connected: true,
+                isDefault: false,
+                connectionKind: "gui",
+            };
+            await mockCommands.executeCommand("mariadb.connect", node);
+
+            await mockCommands.executeCommand("mariadb.deleteConnection", node);
+
+            await vi.waitFor(() => {
+                const names = toolCalls().map((call) => { return call.name; });
+                expect(names).toContain("db.delete_connection");
+                expect(names.indexOf("db.close")).toBeGreaterThanOrEqual(0);
+                expect(names.indexOf("db.close"))
+                    .toBeLessThan(names.indexOf("db.delete_connection"));
+            });
+            expect(errorMessages).toEqual([]);
+        });
+
     describe("sandboxes", () => {
         /** The Sandboxes view's provider, as activation registered it. */
         const sandboxesProvider = (): {
@@ -1507,6 +1532,22 @@ describe("activate", () => {
 
         expect(runtime.connector?.commands).toHaveLength(2);
         expect(runtime.connector?.connections[0].closed).toBe(true);
+    });
+
+    it("opens what the tree had open again after a restart", async () => {
+        activate(createContext() as never);
+        await mockCommands.executeCommand("mariadb.connect", {
+            kind: "connection",
+            uri: "dba@localhost:3310",
+        });
+
+        await mockCommands.executeCommand("mariadb.restartMcpServer");
+
+        const restarted = runtime.connector?.connections[1];
+        expect(restarted?.calls.some((call) => {
+            return call.name === "db.connect"
+                && JSON.stringify(call.args).includes("dba@localhost:3310");
+        })).toBe(true);
     });
 
     it("shows the log on request", async () => {

@@ -123,11 +123,16 @@ export interface IMappingDocument {
 
 let nextKey = 0;
 
+// This module runs twice, in the extension, which builds a table's fields,
+// and in the dialog, which loads a reference's: each copy counts on its own,
+// so a prefix of its own keeps their keys apart.
+const keyPrefix = Math.random().toString(36).slice(2, 8);
+
 /** @returns A key for a field or mapping that has none stored. */
 export const newKey = (): string => {
     nextKey += 1;
 
-    return `new-${nextKey}`;
+    return `new-${keyPrefix}-${nextKey}`;
 };
 
 /**

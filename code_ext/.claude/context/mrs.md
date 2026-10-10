@@ -61,6 +61,44 @@ Private (enabled = 2) rows are hidden unless Show Private Items. A server
 without metadata shows no root; "Configure MariaDB REST Service..." on a
 connection deploys it. Context values: `mariadbMrs<Kind>[.<state>]`.
 
+## Data mapping editor
+
+`webview/src/mrs/DataMappingEditor.tsx` follows the old
+`MrsObjectFieldEditor` row for row. Only its look and interactions
+differ from a plain form, so keep them when changing it:
+
+- The tree draws the class row first, then `{` / `[ {` and `}` /
+  `}, ... ]` bracket rows around each opened reference's list, and a
+  closing `}`.
+- Icons are the old SVGs (`webview/src/assets/mrs/`), drawn as CSS masks
+  on `<div>`s in `--vscode-icon-foreground`. Vite inlines them as `data:`
+  URIs, which the CSP allows for images. Never use `<button>`: the
+  dialog's button styles give them the blue boxes.
+- Flags (`.fieldOptions`): those that are on (`.selected`) always show.
+  `.notSelected` flags and `.action` icons (select/deselect all, delete
+  field) show only on `.jsonCell:hover`; the `…` label stands in for them
+  until then.
+- Names are text. A double click opens an inline input: Enter keeps,
+  Escape or blur drops. A new field's `newField` is all selected; a result
+  column is edited as `name: type`, with the caret before the colon.
+- A single click on a reference row toggles it after 200 ms; a double
+  click cancels that. The checkbox opens and includes a closed reference.
+  Unticking a reference closes it and drops its loaded children.
+- Unnest (1:1, n:1) shows the reference's enabled fields as copies at its
+  level, marked "(⤵ ref)", with the reference's checkbox indeterminate.
+  A 1:n reduced to one field is `unnest` in the model, but stays a list
+  with the other fields disabled.
+- The DB Object input is read-only: renaming the database object is not
+  in the model.
+- Tests find things by `data-field` / `data-copy`, `aria-label` and
+  `role="switch"`/`"checkbox"`. Keep those attributes.
+
+- `newKey()` in `src/mrs/dataMapping.ts` runs in two module copies: the
+  extension builds a table's fields, the dialog a reference's. Keys carry a
+  random prefix per copy. With a bare counter, `city.name` and `country.name`
+  both got `new-2`, one edit rendered two inputs, and the blur of one dropped
+  the edit.
+
 ## Decisions
 
 - Old features left out: MySQL Router bootstrap/start/stop/kill and service
@@ -89,6 +127,10 @@ connection deploys it. Context values: `mariadbMrs<Kind>[.<state>]`.
 
 - Unit tests under `src/test/mrs/`, `src/test/tree/mrs*.test.ts`,
   `webview/test/MrsDialog.test.tsx`, `DataMappingEditor.test.tsx`.
+- UI tests: `ui-test/tests/02-mrs.test.ts` (ExTester, see
+  testing-and-debugging). It runs against a sandbox that `01-sandbox`
+  deploys and `99-cleanup` drops. It hovers before clicking a flag,
+  since flags that are off are not displayed otherwise.
 - **Opt-in end-to-end**: `src/test/mrs/mrsShell.e2e.test.ts` deploys a
   sandbox through the real MCP server and runs the dialogs' statements:
   `MARIADB_SHELL_E2E=<path to mariadb-shell> npx vitest run mrsShell` with
@@ -99,10 +141,8 @@ connection deploys it. Context values: `mariadbMrs<Kind>[.<state>]`.
 
 ## Known gaps / next steps
 
-- Not tried in a running VS Code yet.
 - The `mrs.*` tools and REST SQL FORMAT=JSON need a shell carrying
   mcp_plugin's mrs group and the module of mariadb-shell PR #71; raise
   `MINIMUM_SHELL_VERSION` once a release has them.
 - The data mapping editor has no SDK language mode (the old one showed
-  per-language class names and datatypes) and no unnested-field copies
-  (it writes `@UNNEST` on the reference instead).
+  per-language class names and datatypes).

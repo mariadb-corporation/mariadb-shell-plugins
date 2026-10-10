@@ -20,7 +20,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync }
     from "node:fs";
 import { join } from "node:path";
 
-import { By, CustomTreeSection } from "vscode-extension-tester";
+import { By, CustomTreeSection, Key, WebElement }
+    from "vscode-extension-tester";
 
 import {
     menuConfirm,
@@ -35,6 +36,7 @@ import {
     contextMenuEntries,
     CONNECTION,
     DEPLOY_TIMEOUT,
+    driver,
     dialogErrors,
     FILES,
     hasTreeItem,
@@ -48,6 +50,7 @@ import {
     selectTab,
     setChecked,
     setField,
+    sleep,
     tabNames,
     treeItem,
     waitDialogClosed,
@@ -69,6 +72,21 @@ const SCHEMA = [...SERVICE, "/uitest (uitest)"];
 const AUTH_APPS = [...ROOT, "REST Authentication Apps"];
 
 let connections: CustomTreeSection;
+
+/** Moves the pointer over an element, as the user does before a click. */
+const hover = async (element: WebElement): Promise<void> => {
+    await driver().actions().move({ origin: element }).perform();
+};
+
+/** The data mapping's field rows, by their JSON names. */
+const mappingFields = async (view: { findWebElements: (by: By)
+    => Promise<WebElement[]> }): Promise<string[]> => {
+    const rows = await view.findWebElements(By.css(".mrs-row[data-field]"));
+
+    return Promise.all(rows.map(async (row) => {
+        return await row.getAttribute("data-field") ?? "";
+    }));
+};
 
 /** Waits for a row, redrawing the tree while it is not there yet. */
 const appears = async (path: string[]): Promise<void> => {
@@ -214,27 +232,63 @@ describe("MariaDB REST Service", () => {
             assert.deepEqual(await tabNames(view),
                 ["Data Mapping", "Settings", "Authorization", "Options"]);
             const fields = async (): Promise<string[]> => {
-                const rows = await view.findWebElements(By.css(".mrs-row"));
-
-                return Promise.all(rows.map(async (row) => {
-                    return await row.getAttribute("data-field") ?? "";
-                }));
+                return await mappingFields(view);
             };
             assert.deepEqual(await fields(), ["id", "name", "countryId",
                 "country"]);
-            // Opening the reference loads the country table.
-            const country = await view.findWebElement(
-                By.css(".mrs-row[data-field='country']"));
-            await clickLabelled(country, "Expand");
+            // A single click on the reference's row opens it, which loads
+            // the country table.
+            await (await view.findWebElement(By.css(
+                ".mrs-row[data-field='country'] .relationalCell .tableName")))
+                .click();
             await waitFor(async () => {
                 return (await fields()).length > 4;
             }, "the referenced table's fields");
+
+            // A flag that is off shows only while the pointer is over
+            // the field; there is no frame around it.
+            const row = async (): Promise<WebElement> => {
+                return await view.findWebElement(
+                    By.css(".mrs-row[data-field='name']"));
+            };
+            const sorting = async (): Promise<WebElement> => {
+                return await (await row()).findElement(By.css(
+                    "[aria-label='Allow sorting operations using this field']"));
+            };
+            await hover(await view.findWebElement(By.css(".mrs-row.topRow")));
+            assert.equal(await (await sorting()).isDisplayed(), false);
+            await hover(await (await row()).findElement(By.css(".jsonCell")));
+            await waitFor(async () => {
+                return await (await sorting()).isDisplayed();
+            }, "the flags on hover");
+            assert.equal(await (await sorting()).getCssValue("border-top-width"),
+                "0px");
             // Sorting by name is allowed.
-            const name = await view.findWebElement(
-                By.css(".mrs-row[data-field='name']"));
-            await clickLabelled(name,
-                "Allow sorting operations using this field");
+            await (await sorting()).click();
+            await waitFor(async () => {
+                return await (await sorting()).getAttribute("aria-pressed")
+                    === "true";
+            }, "the sorting flag to be on");
             await screenshot("02-data-mapping");
+            // Shown also without the pointer, now that it is on.
+            await hover(await view.findWebElement(By.css(".mrs-row.topRow")));
+            assert.equal(await (await sorting()).isDisplayed(), true);
+
+            // A double click edits a name; Escape drops the edit.
+            await driver().actions().doubleClick(await (await row())
+                .findElement(By.css(".fieldName"))).perform();
+            const input = await waitFor(async () => {
+                const inputs = await (await row()).findElements(
+                    By.css("[aria-label='JSON field name']"));
+
+                return inputs[0];
+            }, "the field name's editor");
+            await input.sendKeys("Typo", Key.ESCAPE);
+            await waitFor(async () => {
+                return (await (await row()).findElements(
+                    By.css("input"))).length === 0;
+            }, "the edit to be dropped");
+            assert.ok((await fields()).includes("name"));
             // The preview shows what OK will run.
             await submitDialog(view);
         });
@@ -249,8 +303,7 @@ describe("MariaDB REST Service", () => {
             ["Edit REST Object..."], title);
         await inDialog(title, async (view) => {
             const preview = await view.findWebElement(
-                By.xpath("//label[span[normalize-space()='SQL Preview']]"
-                    + "//input"));
+                By.xpath("//button[normalize-space()='SQL Preview']"));
             await preview.click();
             const sql = await (await view.findWebElement(
                 By.css(".mrs-preview"))).getText();
@@ -293,14 +346,20 @@ describe("MariaDB REST Service", () => {
             ["Add Database Object to REST Service..."], title);
         await inDialog(title, async (view) => {
             await setField(view, "requestPath", "/citiesProc");
-            const modes = await view.findWebElements(By.css(".mrs-mode"));
+            const modes = await view.findWebElements(
+                By.css("[aria-label$=' parameter']"));
             assert.deepEqual(await Promise.all(modes.map(async (mode) => {
-                return await mode.getText();
-            })), ["IN", "OUT"]);
+                return await mode.getAttribute("aria-label");
+            })), ["IN parameter", "OUT parameter"]);
             await clickButton(view, "Add Result");
-            await clickButton(view, "Add Field");
-            assert.equal((await view.findWebElements(By.css(".mrs-row")))
-                .length, 1);
+            // The new field opens with its name selected, to be typed over.
+            await clickLabelled(view, "Add Field");
+            await sleep(200);
+            await driver().switchTo().activeElement().sendKeys("total",
+                Key.ENTER);
+            await waitFor(async () => {
+                return (await mappingFields(view)).join() === "total";
+            }, "the new result field");
             await submitDialog(view);
         });
         await appears([...SCHEMA, "/citiesProc"]);

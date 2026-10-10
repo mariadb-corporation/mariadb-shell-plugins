@@ -884,9 +884,19 @@ describe("object dialog", () => {
 
     it("jumps to the Data Mapping tab for an empty class name", async () => {
         await load("object", tableObject(), OBJECT_CONTEXT);
-        const name = host.querySelector<HTMLInputElement>(
-            "[aria-label='Class name']")!;
-        await typeInto(name, "");
+        // Edited as there: a double click on it, Enter to keep it.
+        await act(async () => {
+            host.querySelector(".mrsObjectName")!.dispatchEvent(
+                new MouseEvent("dblclick", { bubbles: true }));
+            await Promise.resolve();
+        });
+        await typeInto(host.querySelector<HTMLInputElement>(
+            "[aria-label='Class name']")!, "");
+        await act(async () => {
+            host.querySelector("[aria-label='Class name']")!.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+            await Promise.resolve();
+        });
         await selectTab("Options");
 
         await pressOk();
