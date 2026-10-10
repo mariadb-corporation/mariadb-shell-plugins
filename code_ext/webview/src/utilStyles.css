@@ -1,0 +1,94 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/*
+ * The dump, load, copy, export and import dialog, on top of the editor's
+ * own styles.
+ */
+
+.util-where {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.util-where .row input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.util-where .row button {
+    flex: none;
+}
+
+/* The options that are boxes to tick, in columns of their own. */
+.util-flags {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.5rem 1rem;
+}
+
+.util-problem {
+    color: var(--vscode-errorForeground, #f14c4c);
+}
+
+input.invalid + .field-hint,
+select.invalid + .field-hint,
+.row:has(input.invalid) + .field-hint {
+    color: var(--vscode-errorForeground, #f14c4c);
+}
+
+/* --- while the work starts ---------------------------------------------- */
+
+.dialog-busy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.progress {
+    position: relative;
+    height: 2px;
+    overflow: hidden;
+    background: color-mix(in srgb,
+            var(--vscode-progressBar-background, #0e70c0) 25%, transparent);
+}
+
+.progress-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 25%;
+    height: 100%;
+    background: var(--vscode-progressBar-background, #0e70c0);
+    animation: util-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes util-progress {
+    from {
+        transform: translateX(-100%);
+    }
+
+    to {
+        transform: translateX(400%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .progress-bar {
+        width: 100%;
+        animation: none;
+    }
+}

@@ -274,35 +274,49 @@ describe("activate", () => {
         expect(fileSystemProviders.has("mariadb-value")).toBe(true);
     });
 
-    it("registers the Connections and Sandboxes views and every command", () => {
+    it("registers the Connections, Sandboxes and Tasks views and every command", () => {
         const context = createContext();
 
         activate(context as never);
 
         expect(treeViews.map((view) => {
             return view.id;
-        })).toEqual(["mariadb.connections", "mariadb.sandboxes"]);
+        })).toEqual(["mariadb.connections", "mariadb.sandboxes",
+            "mariadb.tasks"]);
         // What draws a connection's color on its row.
         expect(fileDecorationProviders).toHaveLength(1);
         expect([...registeredCommands.keys()].sort()).toEqual([
             "mariadb.addConnection",
             "mariadb.addSandbox",
+            "mariadb.cancelTask",
             "mariadb.clearDefaultConnection",
+            "mariadb.clearFinishedTasks",
             "mariadb.clearResultView",
             "mariadb.connect",
             "mariadb.copyConnectionUri",
+            "mariadb.copyInstance",
+            "mariadb.copySchemas",
+            "mariadb.copyTables",
             "mariadb.deleteConnection",
             "mariadb.deleteSandbox",
             "mariadb.disconnect",
+            "mariadb.dumpInstance",
+            "mariadb.dumpSchemas",
+            "mariadb.dumpTables",
             "mariadb.editConnection",
+            "mariadb.exportTable",
+            "mariadb.importTable",
+            "mariadb.loadDump",
             "mariadb.newFolder",
             "mariadb.newFolderWithSelection",
             "mariadb.newSqlEditor",
             "mariadb.refreshConnections",
             "mariadb.refreshSandboxes",
             "mariadb.removeFolder",
+            "mariadb.removeTask",
             "mariadb.renameFolder",
             "mariadb.restartMcpServer",
+            "mariadb.resumeTask",
             "mariadb.retryConnection",
             "mariadb.runSqlFile",
             "mariadb.runSqlStatement",
@@ -310,6 +324,7 @@ describe("activate", () => {
             "mariadb.selectRows",
             "mariadb.setDefaultConnection",
             "mariadb.showMcpServerLog",
+            "mariadb.showTaskOutput",
             "mariadb.startSandbox",
             "mariadb.stopOnError.disable",
             "mariadb.stopOnError.enable",
