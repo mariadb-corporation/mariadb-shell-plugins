@@ -14,7 +14,7 @@ mariadb-shell #73.
 | `src/util/utilFields.ts` | Per operation: the dialog's title, path or target, and the utility's options with the shell's own defaults. `buildUtilOptions` sends only what differs from a default, so the shell stays the one deciding defaults. Pure, shared with the webview. |
 | `src/util/utilProtocol.ts`, `utilDialogPanel.ts` | The dialog's messages and panel. Browse opens the folder or file picker. Start checks the values again, calls the host's `start` and closes once the task runs; a failed start stays in the dialog with the reason. One dialog at a time; a new one replaces it. |
 | `webview/src/UtilDialog.tsx`, `util.tsx`, `utilStyles.css`, `vite.util.config.ts` | The dialog: path with Browse, or the copy's target; Basic and Advanced tabs; a progress bar and disabled buttons while the start call runs. Its own bundle (`build:webview` builds four now). |
-| `src/util/taskMonitor.ts` | `TaskMonitor.follow`: polls `getTask` until the task ends, writes its messages to the *MariaDB Tasks* channel, and drives a cancellable notification (Cancel calls `util.cancel_task`). The bar only moves for stages that carry `items` (bytes or rows); counting stages show just their name. A task the server forgot (restart) ends as failed, "Lost track of the task". |
+| `src/util/taskMonitor.ts` | `TaskMonitor.follow`: polls `getTask` until the task ends, writes its messages to the *MariaDB Tasks* channel, and drives a cancellable notification (Cancel calls `util.cancel_task`). The server answers as soon as a task changes, and a dump reports progress many times a second, so the monitor waits out the rest of `POLL_INTERVAL_MS` (1 s) after a quicker answer: asking again at once redrew the Tasks view so often that a click on a row's Cancel was lost (found by the UI test). A task keeps its dialog's title; the server's names the path. The bar only moves for stages that carry `items` (bytes or rows); counting stages show just their name. A task the server forgot (restart) ends as failed, "Lost track of the task". |
 | `src/util/tasksTreeProvider.ts` | The Tasks view (`mariadb.tasks`, third in the MariaDB container): newest first, state or stage plus percent, the stages in the tooltip; Cancel inline on running rows, Resume on resumable ones, Remove on finished ones, Show Output and Clear Finished on the title bar. `showRunningTasks` sets the view's message ("Closing or reloading this window stops the running tasks...") and a badge with the count while tasks run. |
 | `src/util/utilCommands.ts` | The nine commands and the four task commands. The connection id is the tree's own session (`UI_BACKEND_SESSION`). The server opens a separate session per task, so the tree keeps working while it runs. Multi-select: the schemas or tables of the selection on the same connection (and schema); the selection is matched by row, not object. Load, import and copy refresh the tree once done, unless they failed. |
 
@@ -44,8 +44,14 @@ Notes:
   - starts `util.load_dump` again with the same folder and options, minus
     `resetProgress`, so the shell resumes from the dump's progress file;
   - the new task takes the old row's place.
-- Not done: copying between connections from the palette, and ExTester UI
-  tests (main has no `ui-test/`; they are on `wip/mrs_code_ext`).
+- Not done: copying between connections from the palette.
+- **UI tests live on `wip/mrs_code_ext`** (main has no `ui-test/`), which
+  has this branch merged in: `ui-test/tests/06-dump-load.test.ts`. Fixes
+  they find are made here and merged there again. They cover dump, load
+  into another schema, export, import, cancelling a slow dump from the
+  Tasks view, a dump into a folder that is not empty, a copy to a second
+  sandbox, and Clear Finished Tasks. They need a shell with mariadb-shell
+  #73 (and #71 for the MRS tests of the same run).
 - Tests:
   - `src/test/util/` (fields, monitor + view, commands driven through the
     dialog panel);
