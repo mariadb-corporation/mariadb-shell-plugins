@@ -73,6 +73,14 @@ export interface ITaskStore {
 /** The workspace state key of the task list. */
 export const TASKS_KEY = "mariadb.tasks";
 
+/**
+ * The least time between two looks at a task. The server answers as soon
+ * as a task changes, and a dump reports progress many times a second;
+ * looking that often would redraw the Tasks view so often that a click on
+ * a row, or its context menu, is lost under the redraw.
+ */
+export const POLL_INTERVAL_MS = 1000;
+
 /** How many tasks are kept across reloads, the newest. */
 export const MAX_KEPT_TASKS = 50;
 
@@ -120,6 +128,7 @@ export class TaskMonitor {
         private readonly output: ITaskOutput,
         private readonly log: (message: string) => void,
         private readonly store?: ITaskStore,
+        private readonly pollIntervalMs = POLL_INTERVAL_MS,
     ) {
         // The tasks of the last window: one that had not ended ended with
         // it, since the server ran in that window's extension host.
@@ -294,6 +303,7 @@ export class TaskMonitor {
         let since = 0;
 
         for (;;) {
+            const asked = Date.now();
             let state: IUtilTaskState;
             try {
                 state = await (await this.api()).getTask(
@@ -331,6 +341,10 @@ export class TaskMonitor {
 
             if (isFinished(state.status)) {
                 return state;
+            }
+            const rest = asked + this.pollIntervalMs - Date.now();
+            if (rest > 0) {
+                await new Promise((done) => { setTimeout(done, rest); });
             }
         }
     }

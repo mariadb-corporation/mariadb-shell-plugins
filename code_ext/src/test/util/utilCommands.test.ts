@@ -83,7 +83,7 @@ const setUp = (failStart?: string): IRecorded => {
     const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
         new MockOutputChannel("MariaDB Tasks"), (message) => {
             recorded.logs.push(message);
-        });
+        }, undefined, 0);
 
     recorded.monitor = monitor;
     new UtilCommands({
