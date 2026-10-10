@@ -106,7 +106,7 @@ export const taskSummary = (tracked: ITrackedTask): string => {
         }
 
         case "failed": {
-            return `Failed: ${state.error ?? "no reason given"}`;
+            return "Failed";
         }
 
         default: {
@@ -162,6 +162,14 @@ export const taskActionRow = (
         children: children.map((row) => {
             return { ...row, connectionLabel: label };
         }),
+        // A failure points at its error, as a failed SQL run does.
+        ...(kind === "error" && children.some((row) => {
+            return row.kind === "error";
+        })
+            ? { jumpToRowId: [...children].reverse().find((row) => {
+                return row.kind === "error";
+            })!.id }
+            : {}),
         ...(Number.isNaN(started) || Number.isNaN(ended)
             ? {} : { elapsedMs: Math.max(0, ended - started) }),
     };
@@ -208,6 +216,21 @@ export class TaskActionLog {
             this.#children.set(taskId, children);
         }
         children.push(...taskMessageRows(tracked, messages));
+        // A failure ends with its error as a row of its own, as a SQL
+        // script's run does - unless the shell's last word already was it.
+        const { status, error } = tracked.state;
+        if (status === "failed" && error !== null
+            && children.at(-1)?.message !== error) {
+            children.push({
+                id: `task-${taskId}-error`,
+                time: timeOf(tracked.state.finished_at),
+                connection: tracked.connection,
+                role: "statement",
+                statement: "",
+                message: error,
+                kind: "error",
+            });
+        }
         if (children.length > MAX_TASK_ACTION_CHILDREN) {
             children.splice(0, children.length - MAX_TASK_ACTION_CHILDREN);
         }

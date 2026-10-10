@@ -116,20 +116,36 @@ describe("tasks in the Actions tab", () => {
                 .toBe("Total duration: 00:00:05s");
         });
 
-    it("shows a failure with its reason", () => {
+    it("shows a failure with its reason as the row under it", () => {
         const { log, put } = recordingLog();
         log.report({ tracked: tracked(), messages: [], first: true });
         log.report({
             tracked: tracked({ status: "failed", error: "Access denied",
                 finished_at: "2026-10-10T10:00:01Z" }),
+            messages: [message(1, "Writing DDL...")],
+            first: false,
+        });
+
+        expect(put[1]).toMatchObject({ kind: "error", summary: "Failed",
+            jumpToRowId: "task-t1-error" });
+        expect(put[1].children?.at(-1)).toMatchObject({
+            id: "task-t1-error", message: "Access denied", kind: "error",
+        });
+    });
+
+    it("does not repeat an error the shell already reported last", () => {
+        const { log, put } = recordingLog();
+        log.report({ tracked: tracked(), messages: [], first: true });
+        log.report({
+            tracked: tracked({ status: "failed", error: "Access denied" }),
             messages: [message(1, "Access denied", "error")],
             first: false,
         });
 
-        expect(put[1]).toMatchObject({ kind: "error",
-            summary: "Failed: Access denied" });
-        expect(put[1].children?.at(-1)).toMatchObject({ role: "warning",
-            statement: "Error", kind: "error" });
+        expect(put[1].children?.filter((row) => {
+            return row.message === "Access denied";
+        })).toHaveLength(1);
+        expect(put[1].jumpToRowId).toBe("task-t1-1");
     });
 
     it("keeps the newest messages of a long task", () => {
