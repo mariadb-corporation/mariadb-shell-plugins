@@ -251,6 +251,29 @@ describe("TaskMonitor", () => {
             expect(monitor.tasks[0].call).toBe("util.dump_instance(/d)");
         });
 
+    it("drops the colours a copy gives its messages for a terminal",
+        async () => {
+            const { api } = fakeApi([
+                state({ next_since: 1, messages: [{ seq: 1, time: "t",
+                    level: "status",
+                    text: "\u001b[32mSRC:\u001b[0m Rows written: 4" }] }),
+                finished("completed", { next_since: 1 }),
+            ]);
+            const monitor = monitorWith(api);
+            const texts: string[] = [];
+            monitor.onDidReport((report) => {
+                texts.push(...report.messages.map((message) => {
+                    return message.text;
+                }));
+            });
+
+            await monitor.follow({ task_id: "t1", status: "running" },
+                { title: "Copy", connection: "root@h" });
+
+            expect(texts).toEqual(["SRC: Rows written: 4"]);
+            expect(output.lines).toContain("[Copy] SRC: Rows written: 4");
+        });
+
     it("gives up on a task the server no longer knows", async () => {
         const { api } = fakeApi([new Error("There is no task with the id 't1'.")]);
 

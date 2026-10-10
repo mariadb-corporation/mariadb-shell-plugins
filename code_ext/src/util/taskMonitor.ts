@@ -17,7 +17,7 @@
 
 import * as vscode from "vscode";
 
-import { errorText } from "../text.js";
+import { errorText, stripAnsi } from "../text.js";
 import {
     isFinished,
     WAIT_MS,
@@ -348,6 +348,13 @@ export class TaskMonitor {
                 };
             }
 
+            // A copy colours its SRC: and TGT: prefixes for a terminal.
+            state = {
+                ...state,
+                messages: (state.messages ?? []).map((message) => {
+                    return { ...message, text: stripAnsi(message.text) };
+                }),
+            };
             for (const message of state.messages ?? []) {
                 this.output.appendLine(this.#line(title, message));
             }
