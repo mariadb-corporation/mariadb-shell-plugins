@@ -108,6 +108,12 @@ const setUp = (failStart?: string): IRecorded => {
         monitor,
         refresh: () => { recorded.refreshed += 1; },
         defaultFolder: () => { return "/home/me"; },
+        // The real look at the disk has its own test below.
+        checkDumpFolder: (folder) => {
+            return Promise.resolve(folder === "/home/me/full"
+                ? { field: "path", message: "This folder is not empty." }
+                : undefined);
+        },
         log: (message) => { recorded.logs.push(message); },
     }).register();
 
@@ -127,9 +133,8 @@ const posted = (): UtilHostMessage[] => {
 };
 
 const settle = async (): Promise<void> => {
-    // Long enough for a real look at a dump folder on disk, too.
-    for (let i = 0; i < 20; i++) {
-        await new Promise((resolve) => { setTimeout(resolve, 1); });
+    for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
     }
 };
 
@@ -300,8 +305,7 @@ describe("the dump and load commands", () => {
 
     it("keeps the dialog open when the dump folder is not empty",
         async () => {
-            const folder = mkdtempSync(join(tmpdir(), "util-test-"));
-            writeFileSync(join(folder, "@.json"), "{}");
+            const folder = "/home/me/full";
             const recorded = setUp();
             await run("mariadb.dumpSchemas", schema("shop"));
             const load = await loaded();

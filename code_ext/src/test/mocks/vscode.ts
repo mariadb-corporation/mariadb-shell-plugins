@@ -262,6 +262,20 @@ export const setWarningMessageAnswer = (answer: string | undefined): void => {
     warningMessageAnswer = answer;
 };
 export const errorMessages: string[] = [];
+
+/** What the next `showErrorMessage` answers with: a button, or nothing. */
+let errorMessageAnswer: string | undefined;
+
+/**
+ * Makes the next error notification answer with the given button.
+ *
+ * @param answer The button to press, or undefined to dismiss it.
+ *
+ * @returns Nothing.
+ */
+export const setErrorMessageAnswer = (answer: string | undefined): void => {
+    errorMessageAnswer = answer;
+};
 export const outputChannels: MockOutputChannel[] = [];
 export const statusBarItems: MockStatusBarItem[] = [];
 export const treeViews: Array<{
@@ -879,10 +893,12 @@ export const window = {
         return Promise.resolve(answer);
     },
 
-    showErrorMessage: (message: string): Promise<undefined> => {
+    showErrorMessage: (message: string): Promise<string | undefined> => {
         errorMessages.push(message);
+        const answer = errorMessageAnswer;
+        errorMessageAnswer = undefined;
 
-        return Promise.resolve(undefined);
+        return Promise.resolve(answer);
     },
 
     setStatusBarMessage: (
@@ -1191,6 +1207,7 @@ export const resetVscodeMock = (): void => {
     informationMessages.length = 0;
     warningMessages.length = 0;
     warningMessageAnswer = undefined;
+    errorMessageAnswer = undefined;
     errorMessages.length = 0;
     outputChannels.length = 0;
     statusBarItems.length = 0;

@@ -59,6 +59,9 @@ export interface IUtilCommandsHost {
     refresh(): void;
     /** Where a new dump goes, unless the user picks another place. */
     defaultFolder(): string;
+    /** Checks a dump folder; {@link dumpFolderProblem} where not given. */
+    checkDumpFolder?(folder: string | undefined):
+        Promise<IUtilProblem | undefined>;
     log(message: string): void;
 }
 
@@ -168,6 +171,11 @@ export class UtilCommands {
             },
             "mariadb.clearFinishedTasks": () => {
                 this.host.monitor.clearFinished();
+            },
+            "mariadb.showTaskLog": (item?: ITrackedTask) => {
+                if (item !== undefined) {
+                    this.host.monitor.openLog?.(item);
+                }
             },
             "mariadb.showTaskOutput": () => {
                 this.host.monitor.showOutput();
@@ -342,6 +350,7 @@ export class UtilCommands {
             void this.host.monitor.follow(started, {
                 title: tracked.state.title,
                 connection: resume.uri,
+                call: utilCall("loadDump", {}, [resume.url], resume.options),
                 resume,
                 onDone: (state) => {
                     if (state.status !== "failed") {
@@ -377,7 +386,8 @@ export class UtilCommands {
                 log: this.host.log,
                 ...(DUMPS.has(start.operation)
                     ? { check: async (paths: string[]) => {
-                        return await dumpFolderProblem(paths[0]);
+                        return await (this.host.checkDumpFolder
+                            ?? dumpFolderProblem)(paths[0]);
                     } }
                     : {}),
                 start: async (options, paths, target) => {
@@ -394,6 +404,9 @@ export class UtilCommands {
                     void this.host.monitor.follow(started, {
                         title: spec.title,
                         connection: start.uri,
+                        call: utilCall(start.operation, start,
+                            target === undefined ? paths
+                                : [connectionLabel(target)], options),
                         ...(start.resume === undefined ? {}
                             : { resume: start.resume(options, paths) }),
                         onDone: (state) => {
@@ -407,6 +420,53 @@ export class UtilCommands {
         })();
     }
 }
+
+/** The `util.*` tool behind each operation. */
+const TOOLS: Record<UtilOperation, string> = {
+    dumpInstance: "util.dump_instance",
+    dumpSchemas: "util.dump_schemas",
+    dumpTables: "util.dump_tables",
+    exportTable: "util.export_table",
+    loadDump: "util.load_dump",
+    importTable: "util.import_table",
+    copyInstance: "util.copy_instance",
+    copySchemas: "util.copy_schemas",
+    copyTables: "util.copy_tables",
+};
+
+/**
+ * The call a task was started with, as the Actions tab and the task's log
+ * name it: the tool, what it works on, where to, and the options that
+ * differ from the shell's defaults.
+ *
+ * @param operation What was started.
+ * @param names The schemas and tables it works on.
+ * @param where The paths, or the target connection's address.
+ * @param options The options sent.
+ *
+ * @returns `util.dump_schemas(shop, crm, /home/me/dump, {"threads":8})`.
+ */
+export const utilCall = (
+    operation: UtilOperation,
+    names: { schemas?: string[]; tables?: string[] },
+    where: string[],
+    options: UtilOptions,
+): string => {
+    const subject = operation === "dumpInstance" || operation === "loadDump"
+        || operation === "importTable" || operation === "copyInstance"
+        ? []
+        : operation === "exportTable"
+            ? [`${names.schemas?.[0] ?? ""}.${names.tables?.[0] ?? ""}`]
+            : operation === "dumpTables" || operation === "copyTables"
+                ? [names.schemas?.[0] ?? "", ...(names.tables ?? [])]
+                : names.schemas ?? [];
+    const args = [...subject, ...where];
+    if (Object.keys(options).length > 0) {
+        args.push(JSON.stringify(options));
+    }
+
+    return `${TOOLS[operation]}(${args.join(", ")})`;
+};
 
 /** The operations that write a dump folder. */
 const DUMPS: ReadonlySet<UtilOperation> = new Set<UtilOperation>([

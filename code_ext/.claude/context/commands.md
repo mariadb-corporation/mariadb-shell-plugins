@@ -35,7 +35,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.exportTable` / `importTable` | Export Table Data to File... / Import Data from File... | Dump and Load submenu of a table. Hidden from the palette |
 | `mariadb.cancelTask` / `removeTask` | Cancel Task / Remove from List | Inline on, and context menu of, a running / finished (or interrupted) task in the Tasks view. Hidden from the palette |
 | `mariadb.resumeTask` | Resume Load | Inline on, and context menu of, a load in the Tasks view that did not complete (`mariadbTask.finished.resumable`). Hidden from the palette |
-| `mariadb.showTaskOutput` / `clearFinishedTasks` | Show Task Output / Clear Finished Tasks | The Tasks view's title bar; Show Task Output also on a task's click and menu |
+| `mariadb.showTaskLog` | Show Log | A task's click and context menu: that task's own log file |
+| `mariadb.showTaskOutput` / `clearFinishedTasks` | Show Task Output / Clear Finished Tasks | The Tasks view's title bar; Show Task Output (every task's messages, in one channel) also on a task's menu |
 | `mariadb.clearResultView` | Clear Actions | Result view toolbar |
 | `mariadb.selectEditorConnection` | Select Connection for this SQL File | SQL editor toolbar, status bar |
 | `mariadb.runSqlFile` | Run SQL Script | SQL editor toolbar, `Ctrl`/`Cmd`+`Enter` |

@@ -45,6 +45,8 @@ export interface ITrackedTask {
     state: IUtilTaskState;
     /** The connection it works on, by address. */
     connection: string;
+    /** The `util.*` call that started it, as the Actions tab shows it. */
+    call?: string;
     /** Whether Cancel was asked for and not answered yet. */
     cancelling: boolean;
     /**
@@ -59,9 +61,22 @@ export interface ITrackedTask {
 export interface IFollowOptions {
     title: string;
     connection: string;
+    /** The `util.*` call that started it, as the Actions tab shows it. */
+    call?: string;
     resume?: IResumeLoad;
     /** Called once it ended, whichever way. */
     onDone?(state: IUtilTaskState): void;
+}
+
+/**
+ * What a look at a task brought: its state, and the messages that came
+ * with it. Reported once when it starts, with none, and after every look.
+ */
+export interface ITaskReport {
+    tracked: ITrackedTask;
+    messages: IUtilTaskMessage[];
+    /** Whether this is the report of its start. */
+    first: boolean;
 }
 
 /** Where the task list is kept across window reloads: the workspace state. */
@@ -120,8 +135,18 @@ export interface ITaskOutput {
 export class TaskMonitor {
     #tasks = new Map<string, ITrackedTask>();
     #changed = new vscode.EventEmitter<ITrackedTask | undefined>();
+    #reported = new vscode.EventEmitter<ITaskReport>();
 
     public readonly onDidChange = this.#changed.event;
+
+    /** Every look at a task, with the messages it brought. */
+    public readonly onDidReport = this.#reported.event;
+
+    /**
+     * Opens one task's own log, where there is one: what the failure
+     * notification's button does. The whole output channel otherwise.
+     */
+    public openLog?: (tracked: ITrackedTask) => void;
 
     public constructor(
         private readonly api: () => Promise<IUtilApi>,
@@ -177,6 +202,7 @@ export class TaskMonitor {
     ): Promise<IUtilTaskState> {
         const tracked: ITrackedTask = {
             connection: options.connection,
+            ...(options.call === undefined ? {} : { call: options.call }),
             cancelling: false,
             ...(options.resume === undefined ? {} : { resume: options.resume }),
             state: {
@@ -190,6 +216,7 @@ export class TaskMonitor {
         };
         this.#tasks.set(started.task_id, tracked);
         this.#changed.fire(tracked);
+        this.#reported.fire({ tracked, messages: [], first: true });
         this.output.appendLine(`[${options.title}] Started.`);
 
         const state = await vscode.window.withProgress({
@@ -226,7 +253,7 @@ export class TaskMonitor {
             });
         });
 
-        this.#report(state, options.title);
+        this.#report(tracked, options.title);
         options.onDone?.(state);
 
         return state;
@@ -337,6 +364,9 @@ export class TaskMonitor {
                 tracked.cancelling = !isFinished(state.status);
             }
             this.#changed.fire(tracked);
+            this.#reported.fire({
+                tracked, messages: state.messages ?? [], first: false,
+            });
             onUpdate(state);
 
             if (isFinished(state.status)) {
@@ -356,7 +386,8 @@ export class TaskMonitor {
         return `[${title}] ${level}${message.text}`;
     }
 
-    #report(state: IUtilTaskState, title: string): void {
+    #report(tracked: ITrackedTask, title: string): void {
+        const { state } = tracked;
         switch (state.status) {
             case "completed": {
                 this.output.appendLine(`[${title}] Completed.`);
@@ -374,11 +405,20 @@ export class TaskMonitor {
             default: {
                 this.output.appendLine(`[${title}] Failed: ${String(
                     state.error)}`);
+                // The task's own log, where there is one: the reason with
+                // what led up to it, and nothing of the other tasks.
+                const button = this.openLog === undefined
+                    ? "Show Output" : "Show Log";
                 void vscode.window.showErrorMessage(
-                    `${title} failed: ${String(state.error)}`, "Show Output")
+                    `${title} failed: ${String(state.error)}`, button)
                     .then((answer) => {
-                        if (answer === "Show Output") {
+                        if (answer !== button) {
+                            return;
+                        }
+                        if (this.openLog === undefined) {
                             this.output.show(true);
+                        } else {
+                            this.openLog(tracked);
                         }
                     });
             }
@@ -387,5 +427,6 @@ export class TaskMonitor {
 
     public dispose(): void {
         this.#changed.dispose();
+        this.#reported.dispose();
     }
 }

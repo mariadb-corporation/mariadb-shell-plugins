@@ -482,6 +482,29 @@ export class ResultViewProvider
     }
 
     /**
+     * Puts up a row with the rows under it, or replaces the row with its
+     * id: what something that goes on for a while reports itself with,
+     * such as a dump running as a task - its row is put up when it starts
+     * and replaced as it goes, with what it reported so far under it.
+     *
+     * Like an event, it goes to the top and does not reveal the view.
+     *
+     * @param connection The connection it happened on.
+     * @param row The row.
+     *
+     * @returns Nothing.
+     */
+    public async putAction(connection: string, row: IActionRow): Promise<void> {
+        const results = this.#resultsFor(connection);
+        this.#mergeActions(results, [row]);
+        this.#claimIfUnset(connection);
+
+        if (connection === this.#active) {
+            await this.#sendState();
+        }
+    }
+
+    /**
      * Shows another connection's actions and results.
      *
      * @param connection The connection to show.
