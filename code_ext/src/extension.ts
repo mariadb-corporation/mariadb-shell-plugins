@@ -27,9 +27,12 @@ import {
     publishConnectMode,
 } from "./connections/settings.js";
 import * as os from "node:os";
+import * as path from "node:path";
 
 import { applyKeybindings } from "./editor/keybindings.js";
 import type { IUtilApi } from "./mcp/utilApi.js";
+import { TaskActionLog } from "./util/taskActions.js";
+import { TaskLogs } from "./util/taskLogs.js";
 import { TaskMonitor } from "./util/taskMonitor.js";
 import {
     showRunningTasks,
@@ -411,6 +414,39 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // the view says it while tasks run.
     showRunningTasks(tasksView, taskMonitor);
     taskMonitor.onDidChange(() => { showRunningTasks(tasksView, taskMonitor); });
+    // Each task is a row of its connection's Actions in the panel, with
+    // what it reported under it, and has a log file of its own that
+    // outlives the window and goes when its row leaves the Tasks view.
+    const taskActions = new TaskActionLog((connection, row) => {
+        void resultView.putAction(connection, row);
+    }, UI_BACKEND_SESSION);
+    const taskLogs = new TaskLogs(
+        path.join(context.globalStorageUri.fsPath, "task-logs"), log);
+    taskMonitor.onDidReport((report) => {
+        taskActions.report(report);
+        void taskLogs.report(report);
+    });
+    const pruneTaskLogs = (): void => {
+        void taskLogs.prune(taskMonitor.tasks.map((tracked) => {
+            return tracked.state.task_id;
+        }));
+    };
+    pruneTaskLogs();
+    taskMonitor.onDidChange(pruneTaskLogs);
+    taskMonitor.openLog = (tracked): void => {
+        const file = taskLogs.pathOf(tracked.state.task_id);
+        void (async () => {
+            try {
+                const document = await vscode.workspace.openTextDocument(
+                    vscode.Uri.file(file));
+                await vscode.window.showTextDocument(document,
+                    { preview: true });
+            } catch {
+                void vscode.window.showInformationMessage(
+                    `No log was kept for ${tracked.state.title}.`);
+            }
+        })();
+    };
     const utilCommands = new UtilCommands({
         extensionUri: context.extensionUri,
         connect: async (uri) => {

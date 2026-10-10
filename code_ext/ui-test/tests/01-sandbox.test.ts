@@ -115,7 +115,7 @@ describe("A sandbox to test with", () => {
         await runCommand("View: Revert and Close Editor");
 
         await waitFor(async () => {
-            await runCommand("MariaDB: Refresh");
+            await runCommand("MariaDB: Refresh Connections");
 
             return (await childLabels(connections, CONNECTION))
                 .includes("uitest");

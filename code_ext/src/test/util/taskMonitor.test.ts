@@ -42,6 +42,7 @@ import {
     informationMessages,
     MockOutputChannel,
     resetVscodeMock,
+    setErrorMessageAnswer,
     warningMessages,
     withProgressCalls,
 } from "../mocks/vscode.js";
@@ -204,6 +205,51 @@ describe("TaskMonitor", () => {
         expect(output.lines.at(-1)).toBe("[Load] Failed: Access denied");
         expect(done).toEqual(["failed"]);
     });
+
+    it("opens the task's own log from the failure notification",
+        async () => {
+            const { api } = fakeApi([finished("failed", { error: "Denied" })]);
+            const monitor = monitorWith(api);
+            const opened: string[] = [];
+            monitor.openLog = (tracked) => {
+                opened.push(tracked.state.task_id);
+            };
+            setErrorMessageAnswer("Show Log");
+
+            await monitor.follow({ task_id: "t1", status: "running" },
+                { title: "Load", connection: "root@h" });
+            await Promise.resolve();
+
+            expect(opened).toEqual(["t1"]);
+        });
+
+    it("reports every look at a task, with the messages it brought",
+        async () => {
+            const { api } = fakeApi([
+                state({ next_since: 1, messages: [
+                    { seq: 1, time: "t", level: "status", text: "One" }] }),
+                finished("completed", { next_since: 1 }),
+            ]);
+            const monitor = monitorWith(api);
+            const reports: Array<[boolean, string, string[]]> = [];
+            monitor.onDidReport((report) => {
+                reports.push([report.first, report.tracked.state.status,
+                    report.messages.map((message) => {
+                        return message.text;
+                    })]);
+            });
+
+            await monitor.follow({ task_id: "t1", status: "running" },
+                { title: "Dump", connection: "root@h",
+                    call: "util.dump_instance(/d)" });
+
+            expect(reports).toEqual([
+                [true, "running", []],
+                [false, "running", ["One"]],
+                [false, "completed", []],
+            ]);
+            expect(monitor.tasks[0].call).toBe("util.dump_instance(/d)");
+        });
 
     it("gives up on a task the server no longer knows", async () => {
         const { api } = fakeApi([new Error("There is no task with the id 't1'.")]);

@@ -103,9 +103,6 @@ picks the files, e.g. `UI_TEST_GLOB=out/ui-test/tests/0[01]*.test.js`.
   - ExTester cannot read the rows of an empty tree: `getVisibleItems`
     throws "element not interactable". Wait for a row to be gone with
     `hasTreeItem` instead.
-  - The palette has two "MariaDB: Refresh" (Connections and Sandboxes),
-    and `runCommand` may pick either. Press the view's own Refresh button
-    (`section.getAction("Refresh")`).
   - Quick work can close a dialog before its progress bar is seen;
     `submitDialog` accepts that, but a dialog still open must show the bar.
 

@@ -1534,6 +1534,46 @@ describe("ResultViewProvider", () => {
                 }]);
             });
 
+        it("puts a task's row up and replaces it as the task goes on",
+            async () => {
+                const { provider, view } = createWithSessions();
+                const row = (summary: string, children: number) => {
+                    return {
+                        id: "task-t1", time: "12:00:00.000",
+                        connection: "dba@localhost:3310",
+                        connectionLabel: "UI Backend", role: "run" as const,
+                        statement: "", message: "Dump shop to Disk", summary,
+                        kind: "pending" as const,
+                        children: Array.from({ length: children }, (_, i) => {
+                            return {
+                                id: `task-t1-${String(i)}`, time: "",
+                                connection: "dba@localhost:3310",
+                                role: "statement" as const, statement: "",
+                                message: `line ${String(i)}`,
+                                kind: "info" as const,
+                            };
+                        }),
+                    };
+                };
+
+                await provider.putAction("dba@localhost:3310",
+                    row("Starting\u2026", 1));
+                await provider.appendEvent(anEvent());
+                await provider.putAction("dba@localhost:3310",
+                    row("Dumping data 40%\u2026", 3));
+
+                // One row for the task, in its place, with what came so far.
+                const actions = lastState(view)?.actions ?? [];
+                expect(actions.map((action) => { return action.id; }))
+                    .toEqual(["event1", "task-t1"]);
+                expect(actions[1]).toMatchObject({
+                    summary: "Dumping data 40%\u2026",
+                });
+                expect(actions[1].children).toHaveLength(3);
+                // Nothing threw the panel open for it.
+                expect(view.shown).toBeFalsy();
+            });
+
         it("keeps General Actions on show once it was picked", async () => {
             const { provider, view } = createWithSessions();
             await provider.appendEvent(anEvent({

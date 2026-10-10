@@ -106,9 +106,11 @@ export class TaskTreeItem extends vscode.TreeItem {
         this.contextValue = !isOver(tracked) ? "mariadbTask.running"
             : canResume(tracked) ? "mariadbTask.finished.resumable"
                 : "mariadbTask.finished";
+        // Its own log, from the call to how it ended.
         this.command = {
-            command: "mariadb.showTaskOutput",
-            title: "Show Task Output",
+            command: "mariadb.showTaskLog",
+            title: "Show Log",
+            arguments: [tracked],
         };
     }
 }

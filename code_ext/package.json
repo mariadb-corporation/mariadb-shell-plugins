@@ -208,7 +208,7 @@
     "commands": [
       {
         "command": "mariadb.refreshConnections",
-        "title": "Refresh",
+        "title": "Refresh Connections",
         "category": "MariaDB",
         "icon": "$(refresh)"
       },
@@ -319,7 +319,7 @@
       },
       {
         "command": "mariadb.refreshSandboxes",
-        "title": "Refresh",
+        "title": "Refresh Sandboxes",
         "category": "MariaDB",
         "icon": "$(refresh)"
       },
@@ -737,6 +737,12 @@
         "title": "Clear Finished Tasks",
         "category": "MariaDB",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "mariadb.showTaskLog",
+        "title": "Show Log",
+        "category": "MariaDB",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "mariadb.showTaskOutput",
@@ -1171,9 +1177,14 @@
           "group": "1_task@1"
         },
         {
+          "command": "mariadb.showTaskLog",
+          "when": "view == mariadb.tasks && viewItem =~ /^mariadbTask\\./",
+          "group": "1_task@2"
+        },
+        {
           "command": "mariadb.showTaskOutput",
           "when": "view == mariadb.tasks",
-          "group": "1_task@2"
+          "group": "1_task@3"
         }
       ],
       "editor/title": [
@@ -1686,6 +1697,10 @@
         },
         {
           "command": "mariadb.resumeTask",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.showTaskLog",
           "when": "false"
         }
       ],

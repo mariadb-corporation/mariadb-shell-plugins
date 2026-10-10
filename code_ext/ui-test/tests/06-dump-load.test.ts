@@ -105,10 +105,8 @@ let connections: CustomTreeSection;
  */
 const waitForTable = async (table: string): Promise<void> => {
     await waitFor(async () => {
-        // The view's own button: the palette has two "MariaDB: Refresh",
-        // the Sandboxes view's as well.
         connections = await openSection("Connections");
-        await (await connections.getAction("Refresh"))?.click();
+        await (await connections.getAction("Refresh Connections"))?.click();
 
         return (await childLabels(connections,
             [...CONNECTION, ...SCHEMA, "Tables"])).includes(table);

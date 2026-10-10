@@ -15,6 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { readdir } from "node:fs/promises";
 import * as path from "node:path";
 
 import * as vscode from "vscode";
@@ -39,7 +40,11 @@ import {
     type TaskMonitor,
 } from "./taskMonitor.js";
 import { UtilDialogPanel } from "./utilDialogPanel.js";
-import { utilOperationSpec, type UtilOperation } from "./utilFields.js";
+import {
+    utilOperationSpec,
+    type IUtilProblem,
+    type UtilOperation,
+} from "./utilFields.js";
 
 /** What the dump, load, copy, export and import commands need. */
 export interface IUtilCommandsHost {
@@ -54,6 +59,9 @@ export interface IUtilCommandsHost {
     refresh(): void;
     /** Where a new dump goes, unless the user picks another place. */
     defaultFolder(): string;
+    /** Checks a dump folder; {@link dumpFolderProblem} where not given. */
+    checkDumpFolder?(folder: string | undefined):
+        Promise<IUtilProblem | undefined>;
     log(message: string): void;
 }
 
@@ -163,6 +171,11 @@ export class UtilCommands {
             },
             "mariadb.clearFinishedTasks": () => {
                 this.host.monitor.clearFinished();
+            },
+            "mariadb.showTaskLog": (item?: ITrackedTask) => {
+                if (item !== undefined) {
+                    this.host.monitor.openLog?.(item);
+                }
             },
             "mariadb.showTaskOutput": () => {
                 this.host.monitor.showOutput();
@@ -337,6 +350,7 @@ export class UtilCommands {
             void this.host.monitor.follow(started, {
                 title: tracked.state.title,
                 connection: resume.uri,
+                call: utilCall("loadDump", {}, [resume.url], resume.options),
                 resume,
                 onDone: (state) => {
                     if (state.status !== "failed") {
@@ -370,6 +384,12 @@ export class UtilCommands {
                 initialPath: start.initialPath,
                 targets,
                 log: this.host.log,
+                ...(DUMPS.has(start.operation)
+                    ? { check: async (paths: string[]) => {
+                        return await (this.host.checkDumpFolder
+                            ?? dumpFolderProblem)(paths[0]);
+                    } }
+                    : {}),
                 start: async (options, paths, target) => {
                     const id = await this.host.connect(start.uri);
                     const targetId = target === undefined ? undefined
@@ -384,6 +404,9 @@ export class UtilCommands {
                     void this.host.monitor.follow(started, {
                         title: spec.title,
                         connection: start.uri,
+                        call: utilCall(start.operation, start,
+                            target === undefined ? paths
+                                : [connectionLabel(target)], options),
                         ...(start.resume === undefined ? {}
                             : { resume: start.resume(options, paths) }),
                         onDone: (state) => {
@@ -397,6 +420,93 @@ export class UtilCommands {
         })();
     }
 }
+
+/** The `util.*` tool behind each operation. */
+const TOOLS: Record<UtilOperation, string> = {
+    dumpInstance: "util.dump_instance",
+    dumpSchemas: "util.dump_schemas",
+    dumpTables: "util.dump_tables",
+    exportTable: "util.export_table",
+    loadDump: "util.load_dump",
+    importTable: "util.import_table",
+    copyInstance: "util.copy_instance",
+    copySchemas: "util.copy_schemas",
+    copyTables: "util.copy_tables",
+};
+
+/**
+ * The call a task was started with, as the Actions tab and the task's log
+ * name it: the tool, what it works on, where to, and the options that
+ * differ from the shell's defaults.
+ *
+ * @param operation What was started.
+ * @param names The schemas and tables it works on.
+ * @param where The paths, or the target connection's address.
+ * @param options The options sent.
+ *
+ * @returns `util.dump_schemas(shop, crm, /home/me/dump, {"threads":8})`.
+ */
+export const utilCall = (
+    operation: UtilOperation,
+    names: { schemas?: string[]; tables?: string[] },
+    where: string[],
+    options: UtilOptions,
+): string => {
+    const subject = operation === "dumpInstance" || operation === "loadDump"
+        || operation === "importTable" || operation === "copyInstance"
+        ? []
+        : operation === "exportTable"
+            ? [`${names.schemas?.[0] ?? ""}.${names.tables?.[0] ?? ""}`]
+            : operation === "dumpTables" || operation === "copyTables"
+                ? [names.schemas?.[0] ?? "", ...(names.tables ?? [])]
+                : names.schemas ?? [];
+    const args = [...subject, ...where];
+    if (Object.keys(options).length > 0) {
+        args.push(JSON.stringify(options));
+    }
+
+    return `${TOOLS[operation]}(${args.join(", ")})`;
+};
+
+/** The operations that write a dump folder. */
+const DUMPS: ReadonlySet<UtilOperation> = new Set<UtilOperation>([
+    "dumpInstance", "dumpSchemas", "dumpTables",
+]);
+
+/**
+ * Says what the shell would refuse about a dump folder, before the dump is
+ * started: one that holds something already, or a file in its place. The
+ * server runs on this machine, so the extension sees the same folder.
+ *
+ * @param folder The folder the dump is to go to.
+ *
+ * @returns The problem, or undefined where the folder is new or empty.
+ */
+export const dumpFolderProblem = async (
+    folder: string | undefined,
+): Promise<IUtilProblem | undefined> => {
+    if (folder === undefined) {
+        return undefined;
+    }
+    try {
+        const entries = await readdir(folder);
+        if (entries.length > 0) {
+            return {
+                field: "path",
+                message: "This folder is not empty. Pick a new or an empty "
+                    + "one: a dump never writes over another.",
+            };
+        }
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOTDIR") {
+            return { field: "path", message: "This is a file, not a folder." };
+        }
+        // ENOENT: the dump makes it. Anything else, the shell reports.
+    }
+
+    return undefined;
+};
 
 /** A name for util.export_table's `schema.table`, quoted where it must be. */
 

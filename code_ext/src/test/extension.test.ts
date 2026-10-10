@@ -248,13 +248,18 @@ const versionLine = (version: string): string => {
 interface FakeContext {
     subscriptions: { dispose(): unknown }[];
     extensionUri: unknown;
+    globalStorageUri: unknown;
 }
 
 /**
  * @returns The slice of the extension context the extension uses.
  */
 const createContext = (): FakeContext => {
-    return { subscriptions: [], extensionUri: Uri.file("/ext") };
+    return {
+        subscriptions: [], extensionUri: Uri.file("/ext"),
+        // Nowhere real: no task runs here, so no log is written.
+        globalStorageUri: Uri.file("/nonexistent/mariadb-test-storage"),
+    };
 };
 
 describe("activate", () => {
@@ -344,6 +349,7 @@ describe("activate", () => {
             "mariadb.selectRows",
             "mariadb.setDefaultConnection",
             "mariadb.showMcpServerLog",
+            "mariadb.showTaskLog",
             "mariadb.showTaskOutput",
             "mariadb.startSandbox",
             "mariadb.stopOnError.disable",
