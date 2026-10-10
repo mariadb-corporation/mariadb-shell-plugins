@@ -79,7 +79,6 @@ import type { ISandboxApi } from "./mcp/sandboxApi.js";
 import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
 import { SandboxStore } from "./sandboxes/sandboxStore.js";
 import { SandboxEditorPanel } from "./sandboxes/sandboxEditorPanel.js";
-import type { IActivityEvent } from "./connections/connectionActivity.js";
 import type { IActionRow } from "./webview/protocol.js";
 import { reportMrsAction } from "./mrs/mrsActivity.js";
 import { MrsApi } from "./mrs/mrsApi.js";
@@ -263,23 +262,25 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // db.execute_sql through unreported (a SQL run reports itself), so
     // MrsApi reports its REST SQL itself, and the mrs.* tools theirs, to the
     // connection's Actions in the panel.
+    const logAllCalls = (): boolean => {
+        return settings.logAllCalls?.() ?? false;
+    };
     const mrsActivity = {
         sessionOf: (connectionId: string) => {
             return connections.sessionOf(connectionId);
         },
-        report: (event: IActivityEvent) => {
-            void resultView.appendEvent(event);
-        },
         put: (connection: string, row: IActionRow) => {
             void resultView.putAction(connection, row);
         },
-        logAllCalls: () => { return settings.logAllCalls?.() ?? false; },
+        logAllCalls,
     };
     session.onMrsAction = (action) => {
         reportMrsAction(mrsActivity, action);
     };
+    // Where every call is logged, the listings and reads are too, and the
+    // REST SQL of each action is the rows under it.
     const mrsApi = new MrsApi(async () => { return await connections.api(); },
-        (action) => { reportMrsAction(mrsActivity, action); });
+        (action) => { reportMrsAction(mrsActivity, action); }, logAllCalls);
     const mrsModel = new MrsModel(mrsApi, (uri) => {
         return connections.connectionIdFor(uri, UI_BACKEND_SESSION);
     }, log);

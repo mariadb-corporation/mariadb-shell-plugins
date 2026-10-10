@@ -26,7 +26,7 @@ import {
     MrsToolsApi,
     type IMrsScope,
 } from "../../mrs/mrsApi.js";
-import type { IMrsAction } from "../../mrs/mrsActions.js";
+import { type IMrsAction, words } from "../../mrs/mrsActions.js";
 import {
     createFakeRestSql,
     mrsObject,
@@ -617,38 +617,69 @@ describe("MrsToolsApi", () => {
 });
 
 describe("reporting what MRS does, for the Actions tab", () => {
-    const reporting = (fake: FakeRestSql) => {
+    const reporting = (fake: FakeRestSql, verbose = false) => {
         const actions: IMrsAction[] = [];
         const api = new MrsApi(() => { return Promise.resolve(fake); },
-            (action) => { actions.push(action); });
+            (action) => { actions.push(action); }, () => { return verbose; });
 
         return { api, actions };
     };
 
-    it("says what a change did, in plain words", async () => {
+    it("reports a change as it starts, then as it ended, by one id",
+        async () => {
+            const { api, actions } = reporting(createFakeRestSql());
+
+            await api.run(named, ["CREATE REST SERVICE /myService/v1"]);
+
+            expect(actions).toHaveLength(2);
+            expect(actions[0]).toMatchObject({
+                connectionId: "uuid-1", pending: true,
+                message: "Creating REST Service '/myService/v1'\u2026",
+            });
+            expect(actions[1]).toMatchObject({
+                id: actions[0].id,
+                message: "Created REST Service '/myService/v1'",
+            });
+            expect(actions[1]).not.toHaveProperty("pending");
+            expect(actions[1]).not.toHaveProperty("error");
+            // the statements only where every call is logged
+            expect(actions[1]).not.toHaveProperty("statements");
+        });
+
+    it("says so for every kind of change", async () => {
         const { api, actions } = reporting(createFakeRestSql());
 
-        await api.run(named, ["CREATE REST SERVICE /myService/v1"]);
+        for (const statement of ["ALTER REST SERVICE /a NEW COMMENTS 'x'",
+            "DROP REST SCHEMA /s ON SERVICE /a",
+            "CREATE OR REPLACE REST VIEW /v ON SERVICE /a SCHEMA /s AS s.v",
+            "CONFIGURE REST METADATA"]) {
+            await api.run(scope, [statement]);
+        }
 
-        expect(actions).toMatchObject([{
-            connectionId: "uuid-1",
-            message: "Created REST Service '/myService/v1'",
-        }]);
-        expect(actions[0]).not.toHaveProperty("error");
+        expect(actions.filter((action) => {
+            return action.pending === true;
+        }).map((action) => { return action.message; })).toEqual([
+            "Changing REST Service '/a'\u2026",
+            "Deleting REST Schema '/s'\u2026",
+            "Saving REST View '/v'\u2026",
+            "Configuring REST Metadata\u2026",
+        ]);
     });
 
     it("leaves out a read made on its own, unless it failed", async () => {
         const { api, actions } = reporting(createFakeRestSql({
             answers: { "SHOW REST SERVICES FORMAT=JSON": [mrsService()] },
-            errors: { "SHOW REST ROLES ON ANY SERVICE FORMAT=JSON": "No access" },
+            errors: { "SHOW REST ROLES ON ANY SERVICE FORMAT=JSON":
+                "No access" },
         }));
 
         await api.services(scope);
         await expect(api.roles(scope)).rejects.toThrow("No access");
 
-        expect(actions).toMatchObject([{
+        expect(actions).toHaveLength(1);
+        expect(actions[0]).toMatchObject({
             message: "Read REST Roles", error: "No access",
-        }]);
+        });
     });
 
     it("makes the calls of a group one action, with what it came to",
@@ -656,7 +687,7 @@ describe("reporting what MRS does, for the Actions tab", () => {
             const { api, actions } = reporting(createFakeRestSql());
 
             const found = await api.group("uuid-1",
-                "Listed REST Service '/a'",
+                words("Listing REST Service '/a'", "Listed REST Service '/a'"),
                 async () => {
                     await api.run(scope, ["SHOW REST SCHEMAS FORMAT=JSON"]);
                     await api.run(scope, ["SHOW REST AUTH APPS FORMAT=JSON"]);
@@ -666,10 +697,10 @@ describe("reporting what MRS does, for the Actions tab", () => {
                 (count) => { return `${String(count)} things`; });
 
             expect(found).toBe(3);
-            expect(actions).toMatchObject([{
-                connectionId: "uuid-1", message: "Listed REST Service '/a'",
-                detail: "3 things",
-            }]);
+            expect(actions.map((action) => { return action.message; }))
+                .toEqual(["Listing REST Service '/a'\u2026",
+                    "Listed REST Service '/a'"]);
+            expect(actions[1].detail).toBe("3 things");
         });
 
     it("reports a failed group with the error of the call that failed",
@@ -678,33 +709,77 @@ describe("reporting what MRS does, for the Actions tab", () => {
                 errors: { "SHOW REST SCHEMAS FORMAT=JSON": "Lost connection" },
             }));
 
-            await expect(api.group("uuid-1", "Listed REST Services",
+            await expect(api.group("uuid-1",
+                words("Listing REST Services", "Listed REST Services"),
                 async () => {
                     await api.run(scope, ["SHOW REST SCHEMAS FORMAT=JSON"]);
                 })).rejects.toThrow("Lost connection");
 
-            expect(actions).toMatchObject([{
+            expect(actions.at(-1)).toMatchObject({
                 message: "Listed REST Services", error: "Lost connection",
-            }]);
+            });
         });
 
-    it("reports a tool call by what it did, without the tool's name",
+    it("shows browsing, and each statement, where every call is logged",
         async () => {
-            const actions: IMrsAction[] = [];
-            const caller: IToolCaller = {
-                callTool: () => { return Promise.resolve({ content: [] }); },
-            };
-            const tools = new MrsToolsApi(caller,
-                (action) => { actions.push(action); });
+            const { api, actions } = reporting(createFakeRestSql({
+                answers: { "SHOW REST SERVICES FORMAT=JSON": [mrsService()] },
+            }), true);
 
-            await tools.dumpService("uuid-1", "/myService", "/tmp/s.sql",
-                "all");
+            await api.group("uuid-1",
+                words("Listing REST Services", "Listed REST Services"),
+                async () => { return await api.services(named); },
+                undefined, true);
+            await api.run(scope, ["CREATE REST SERVICE /b"]);
 
-            expect(actions).toMatchObject([{
-                connectionId: "uuid-1",
-                message: "Dumped REST Service '/myService' to /tmp/s.sql",
+            expect(actions.map((action) => { return action.message; }))
+                .toEqual(["Listing REST Services\u2026",
+                    "Listed REST Services",
+                    "Creating REST Service '/b'\u2026",
+                    "Created REST Service '/b'"]);
+            expect(actions[1].statements?.map((statement) => {
+                return statement.sql;
+            })).toEqual([USE, "SHOW REST SERVICES FORMAT=JSON;"]);
+            expect(actions[3].statements).toMatchObject([{
+                sql: "CREATE REST SERVICE /b;",
+                message: "Query OK, 0 rows affected",
             }]);
         });
+
+    it("names the statement that failed, where every call is logged",
+        async () => {
+            const { api, actions } = reporting(createFakeRestSql({
+                errors: { "CREATE REST SCHEMA /s": "Duplicate" },
+            }), true);
+
+            await expect(api.run(named, ["CREATE REST SCHEMA /s"]))
+                .rejects.toThrow("Duplicate");
+
+            expect(actions[1]).toMatchObject({ error: "Duplicate" });
+            expect(actions[1].statements).toMatchObject([
+                { sql: USE }, { sql: "CREATE REST SCHEMA /s;",
+                    error: "Duplicate" },
+            ]);
+        });
+
+    it("reports a tool call as it starts and as it ended", async () => {
+        const actions: IMrsAction[] = [];
+        const caller: IToolCaller = {
+            callTool: () => { return Promise.resolve({ content: [] }); },
+        };
+        const tools = new MrsToolsApi(caller,
+            (action) => { actions.push(action); });
+
+        await tools.dumpService("uuid-1", "/myService", "/tmp/s.sql", "all");
+
+        expect(actions).toMatchObject([{
+            connectionId: "uuid-1", pending: true,
+            message: "Dumping REST Service '/myService' to /tmp/s.sql\u2026",
+        }, {
+            message: "Dumped REST Service '/myService' to /tmp/s.sql",
+        }]);
+        expect(actions[1].id).toBe(actions[0].id);
+    });
 
     it("reports a tool call that failed, as well as raising it",
         async () => {
@@ -720,9 +795,9 @@ describe("reporting what MRS does, for the Actions tab", () => {
             await expect(tools.loadServiceProject("uuid-1", "/nope"))
                 .rejects.toThrow("No such folder");
 
-            expect(actions).toMatchObject([{
+            expect(actions.at(-1)).toMatchObject({
                 message: "Loaded the REST Project /nope",
                 error: "No such folder",
-            }]);
+            });
         });
 });

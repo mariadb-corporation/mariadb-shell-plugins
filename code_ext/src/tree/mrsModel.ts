@@ -15,6 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { type IMrsWords, words } from "../mrs/mrsActions.js";
 import { MrsApi, type IMrsScope } from "../mrs/mrsApi.js";
 import {
     ENABLED_STATE,
@@ -278,7 +279,8 @@ export class MrsModel {
             // Part of opening the connection, which reports itself: only a
             // failure is worth a row of its own.
             return await this.api.group(connectionId,
-                "Read the MariaDB REST Service",
+                words("Reading the MariaDB REST Service",
+                    "Read the MariaDB REST Service"),
                 async () => { return await this.#rootsOf(uri, connectionId); },
                 undefined, true);
         } catch (error) {
@@ -513,42 +515,46 @@ export class MrsModel {
  *
  * @returns What opening it is called in the Actions tab.
  */
-export const listingOf = (node: MrsNode): string => {
+export const listingOf = (node: MrsNode): IMrsWords => {
+    const listing = (what: string): IMrsWords => {
+        return words(`Listing ${what}`, `Listed ${what}`);
+    };
+
     switch (node.kind) {
         case "mrsRoot": {
-            return "Listed REST Services";
+            return listing("REST Services");
         }
 
         case "mrsService": {
-            return `Listed REST Service '${node.service.full_service_path}'`;
+            return listing(`REST Service '${node.service.full_service_path}'`);
         }
 
         case "mrsSchema": {
-            return `Listed REST Schema '${node.schema.request_path}'`;
+            return listing(`REST Schema '${node.schema.request_path}'`);
         }
 
         case "mrsContentSet": {
-            return `Listed REST Content Set '${node.contentSet.request_path}'`;
+            return listing(`REST Content Set '${node.contentSet.request_path}'`);
         }
 
         case "mrsAuthAppGroup": {
-            return "Listed REST Authentication Apps";
+            return listing("REST Authentication Apps");
         }
 
         case "mrsAuthApp": {
-            return `Listed REST Authentication App '${node.authApp.name}'`;
+            return listing(`REST Authentication App '${node.authApp.name}'`);
         }
 
         case "mrsDaemonGroup": {
-            return "Listed REST Daemons";
+            return listing("REST Daemons");
         }
 
         case "mrsDaemon": {
-            return `Listed REST Daemon '${node.daemon.name}'`;
+            return listing(`REST Daemon '${node.daemon.name}'`);
         }
 
         default: {
-            return "Listed REST objects";
+            return listing("REST objects");
         }
     }
 };

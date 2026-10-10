@@ -16,41 +16,39 @@
  */
 
 import {
-    type ActivityReporter,
     GENERAL_ACTIONS,
     type SessionLookup,
 } from "../connections/connectionActivity.js";
 import { formatTime } from "../sql/executionService.js";
+import { counted } from "../text.js";
 import type { IActionRow } from "../webview/protocol.js";
 import type { IMrsAction } from "./mrsActions.js";
 
 /**
  * What the MariaDB REST Service does, in the Actions of the connection it
- * was done on: one row per action, saying what was done and, where it
- * says more, what it came to. Work on files only, made on no connection,
- * goes under General Actions where that log is kept.
+ * is done on: a row per action, put up as it starts - "Creating REST
+ * Service '/myService'…", with the spinner a running SQL script has - and
+ * replaced once it ended, by what was done or why it failed. Where every
+ * call is logged, the REST SQL it ran is the rows under it. Work on files
+ * only, made on no connection, goes under General Actions where that log
+ * is kept.
  */
 
 /** Where the MRS actions go. */
 export interface IMrsActivityTarget {
     /** Resolves a connection's id to what it is called. */
     sessionOf: SessionLookup;
-    /** Puts up a row. */
-    report: ActivityReporter;
-    /** Puts up a row with rows under it: a failed action and its error. */
+    /** Puts up a row, or replaces the one with its id. */
     put(connection: string, row: IActionRow): void;
-    /** Whether the work made on no connection is reported. */
+    /** Whether every call is logged, the work on no connection with it. */
     logAllCalls(): boolean;
 }
 
-/** Makes the ids of failed actions' rows unique. */
-let failures = 0;
-
 /**
- * Reports one MRS action as a row of the Actions tab.
+ * Reports one MRS action, as it starts or as it ended.
  *
  * @param target Where it goes.
- * @param action What was done.
+ * @param action What is being done, or was.
  */
 export const reportMrsAction = (
     target: IMrsActivityTarget,
@@ -67,37 +65,80 @@ export const reportMrsAction = (
     }
 
     const connection = session?.uri ?? GENERAL_ACTIONS;
-    const label = session?.label ?? "";
-    if (action.error !== undefined) {
-        // What was being done stays the row's message, marked as failed,
-        // and the error is the row under it - where the error bar and a
-        // reader both look for it.
-        failures += 1;
-        const id = `mrs-failed-${String(failures)}`;
-        const time = formatTime(action.when);
-        target.put(connection, {
-            id, time, connection, connectionLabel: label,
-            role: "run", statement: "", message: action.message,
-            // As a SQL script's run says it, and pointing at its error.
-            summary: "Finished with 1 error", kind: "error",
-            elapsedMs: action.elapsedMs, jumpToRowId: `${id}-error`,
-            children: [{
-                id: `${id}-error`, time, connection, connectionLabel: label,
-                role: "statement", statement: "", message: action.error,
-                kind: "error",
-            }],
-        });
+    target.put(connection, mrsActionRow(action, connection,
+        session?.label ?? ""));
+};
 
-        return;
+/**
+ * Builds an action's row.
+ *
+ * @param action The action, as it starts or as it ended.
+ * @param connection Where it is filed.
+ * @param label Which connection open there it was done on.
+ *
+ * @returns The row.
+ */
+export const mrsActionRow = (
+    action: IMrsAction,
+    connection: string,
+    label: string,
+): IActionRow => {
+    const time = formatTime(action.when);
+    const base = {
+        id: action.id, time, connection, connectionLabel: label,
+        message: action.message,
+    };
+
+    // Still running: the spinner, as a running SQL script has.
+    if (action.pending === true) {
+        return { ...base, role: "event", statement: "", kind: "pending" };
     }
 
-    target.report({
-        connection,
-        label,
+    const children: IActionRow[] = (action.statements ?? []).map(
+        (statement, index): IActionRow => {
+            return {
+                id: `${action.id}-${String(index)}`, time, connection,
+                connectionLabel: label, role: "statement",
+                statement: statement.sql, message: statement.message,
+                kind: statement.error === undefined ? "info" : "error",
+                ...(statement.elapsedMs === undefined
+                    ? {} : { elapsedMs: statement.elapsedMs }),
+            };
+        });
+
+    if (action.error !== undefined) {
+        // What was being done stays the message, and the error is the row
+        // under it, as a failed SQL script shows it - the failed statement
+        // itself where the statements are logged.
+        const failed = children.find((row) => { return row.kind === "error"; });
+        const errorRow: IActionRow = failed ?? {
+            id: `${action.id}-error`, time, connection,
+            connectionLabel: label, role: "statement", statement: "",
+            message: action.error, kind: "error",
+        };
+
+        return {
+            ...base, role: "run", statement: "",
+            summary: "Finished with 1 error", kind: "error",
+            elapsedMs: action.elapsedMs, jumpToRowId: errorRow.id,
+            children: failed === undefined ? [...children, errorRow]
+                : children,
+        };
+    }
+
+    if (children.length > 0) {
+        return {
+            ...base, role: "run", statement: "",
+            summary: action.detail ?? `Finished ${counted(children.length,
+                "statement")} successfully`,
+            kind: "info", elapsedMs: action.elapsedMs, children,
+        };
+    }
+
+    return {
+        ...base, role: "event",
         // The Information column, where an event names its call.
-        call: action.detail ?? "",
-        when: action.when,
-        elapsedMs: action.elapsedMs,
-        message: action.message,
-    });
+        statement: action.detail ?? "",
+        kind: "info", elapsedMs: action.elapsedMs,
+    };
 };

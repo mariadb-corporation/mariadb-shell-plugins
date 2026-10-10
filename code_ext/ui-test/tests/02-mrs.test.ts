@@ -20,8 +20,14 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync }
     from "node:fs";
 import { join } from "node:path";
 
-import { By, CustomTreeSection, Key, WebElement }
-    from "vscode-extension-tester";
+import {
+    By,
+    CustomTreeSection,
+    EditorView,
+    Key,
+    WebElement,
+    Workbench,
+} from "vscode-extension-tester";
 
 import {
     menuConfirm,
@@ -96,6 +102,22 @@ const appears = async (path: string[]): Promise<void> => {
     await waitFor(async () => {
         return await hasTreeItem(connections, path);
     }, `the row ${path.join(" > ")}`);
+};
+
+/**
+ * Sets whether every call is logged in the Actions tab, with the Settings
+ * editor, and closes it again.
+ *
+ * @param on Whether it is to be.
+ *
+ * @returns Nothing.
+ */
+const setLogAllCalls = async (on: boolean): Promise<void> => {
+    const settings = await new Workbench().openSettings();
+    const setting = await settings.findSettingByID(
+        "mariadb.actions.logAllCalls");
+    await setting.setValue(on);
+    await new EditorView().closeAllEditors();
 };
 
 describe("MariaDB REST Service", () => {
@@ -189,6 +211,25 @@ describe("MariaDB REST Service", () => {
             return row.startsWith("Listed REST");
         }).length, 0);
         await screenshot("02-actions");
+    });
+
+    it("logs the listings and each REST SQL statement where every call is "
+        + "logged", async () => {
+        await setLogAllCalls(true);
+        try {
+            connections = await openSection("Connections");
+            // Read again: VS Code keeps a row's children once listed.
+            await (await connections.getAction("Refresh Connections"))
+                ?.click();
+            await treeItem(connections, SERVICE);
+            // The listing is a row now, with its REST SQL under it.
+            await waitForAction(/Listed REST Service '\/uitest'.*3 statements/);
+            // The newest one is open: its statement shows.
+            await waitForAction(/row in set.*SHOW REST /);
+            await screenshot("02-verbose");
+        } finally {
+            await setLogAllCalls(false);
+        }
     });
 
     it("publishes the service with the edit dialog", async () => {

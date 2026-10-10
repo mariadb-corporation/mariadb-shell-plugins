@@ -17,7 +17,13 @@
 
 import * as assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import {
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -170,6 +176,19 @@ const waitCompleted = async (title: string): Promise<void> => {
 };
 
 /**
+ * @returns The text of the task log open in the editor, once one is.
+ */
+const logText = async (): Promise<string> => {
+    return await waitFor(async () => {
+        const title = await (await new EditorView().getActiveTab())
+            ?.getTitle();
+
+        return title?.endsWith(".log") === true
+            ? await new TextEditor().getText() : undefined;
+    }, "a task's log in the editor");
+};
+
+/**
  * @param title A task's title.
  *
  * @returns Its row's description in the Tasks view: its state or stage.
@@ -309,11 +328,65 @@ describe("Dump and Load", () => {
             return /^Dumping data \d+%$/.test(await taskState(title));
         }, "the row to show the dump's percent", SERVER_TIMEOUT);
         await screenshot("06-running");
+
+        // Its log can be watched while it runs: a click on its row.
+        await (await treeItem(tasks, [title])).click();
+        const running = await logText();
+        assert.match(running, /^Dump big to Disk\n/u);
+        assert.match(running, /Running data dump/u);
+        assert.doesNotMatch(running, /Cancelled\.\n$/u);
+
         // One click, as a user's: the list redraws at most once a second
         // while the dump runs, so the click is not lost under a redraw.
-        await inlineAction(await treeItem(tasks, [title]), "Cancel Task");
+        await inlineAction(await treeItem(await openSection("Tasks"),
+            [title]), "Cancel Task");
         await waitForNotification(`${title} was cancelled.`, SERVER_TIMEOUT);
         assert.equal(await taskState(title), "cancelled");
+        // The open log followed it to its end.
+        await waitFor(async () => {
+            return /Cancelled\.\n$/u.test(await logText());
+        }, "the open log to say it was cancelled");
+        await new EditorView().closeAllEditors();
+    });
+
+    it("opens a failed task's log from its notification, and shows the "
+        + "error under its row", async () => {
+        const notADump = join(FILES, "not-a-dump");
+        mkdirSync(notADump, { recursive: true });
+        writeFileSync(join(notADump, "readme.txt"), "no dump here");
+        const title = `Load a Dump into ${CONNECTION_LABEL}`;
+        connections = await openSection("Connections");
+        await openDialog(connections, CONNECTION,
+            [SUBMENU, "Load Dump from Disk..."], title);
+        await inDialog(title, async (view) => {
+            await setField(view, "path", notADump);
+            await submitDialog(view, "Load", SERVER_TIMEOUT * 2);
+        });
+
+        const failure = await waitFor(async () => {
+            for (const notification of await new Workbench()
+                .getNotifications()) {
+                if ((await notification.getMessage())
+                    .startsWith(`${title} failed`)) {
+                    return notification;
+                }
+            }
+
+            return undefined;
+        }, "the failure notification", DEPLOY_TIMEOUT);
+        await screenshot("06-failed");
+        await failure.takeAction("Show Log");
+        const log = await logText();
+        assert.match(log, /^Load a Dump into /u);
+        assert.match(log, /\nCall: util\.load_dump\(/u);
+        assert.match(log, /FAILED: .+\n$/u);
+        await new EditorView().closeAllEditors();
+
+        // In the Actions tab: the row says it failed, the error is under it.
+        const failed = log.match(/FAILED: (.+)\n$/u)?.[1] ?? "";
+        await waitForAction(/^Load a Dump into .*\| Failed/u);
+        await waitForAction(new RegExp(failed.slice(0, 40)
+            .replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")));
     });
 
     it("keeps the dialog open when the dump folder is not empty",
@@ -388,7 +461,8 @@ describe("Dump and Load", () => {
         // tree ("element not interactable").
         for (const title of ["Dump uitest to Disk", "Dump big to Disk",
             "Export uitest.country to a File",
-            "Copy uitest to Another Server"]) {
+            "Copy uitest to Another Server",
+            `Load a Dump into ${CONNECTION_LABEL}`]) {
             await waitFor(async () => {
                 return !await hasTreeItem(tasks, [title]);
             }, `${title} to leave the Tasks view`);

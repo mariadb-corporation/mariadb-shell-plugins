@@ -153,27 +153,34 @@ What the REST Service does is a row of the connection's Actions in the
 panel (2026-10-10), in plain words, after the user found the first take
 far too verbose:
 
-- `src/mrs/mrsActions.ts`: `IMrsAction` (message, optional detail,
-  error) and `describeRestSql()`, which names a call's REST SQL by the
-  statement that matters (the first that is not a USE): "Created REST
-  Service '/myService/v1'", "Changed ...", "Deleted ...", "Configured REST
-  Metadata". Title Case object, name in single quotes - the user's form.
-  No REST SQL text ever reaches the panel.
-- `MrsApi` reports each `run()` as one action. A read on its own (a dialog
-  filling its choices, a copied CREATE statement) is reported only where it
-  failed. `MrsApi.group()` (AsyncLocalStorage) folds every call inside it
-  into one action; `MrsModel` uses it for opening a tree row and for the
-  roots, both with `onlyFailures`: browsing is not something done to the
-  service, and listings drowned the real actions.
-- `MrsToolsApi` reports each `mrs.*` call as an action in words ("Dumped
-  the REST Client SDK to ...", "Loaded REST Content Set '/web' from ...",
-  detail "12 files"), never the tool's name or arguments. Calls on no
-  connection go under General Actions, with `logAllCalls` only.
-- `src/mrs/mrsActivity.ts` `reportMrsAction()`: an action that worked is
-  an event row (detail in the Information column); one that failed is a
-  run row with the same message, "Finished with 1 error", and the error as
-  its child, pointed at by `jumpToRowId` - as a failed SQL script shows.
-- Wired in `extension.ts`; `McpSession.onMrsAction` passes the tool calls
-  on. UI tests in `02-mrs` check the rows ("Created REST Service
-  '/uitest'", "Configured REST Metadata", no "Listed REST" row, the SDK
-  dump).
+- `src/mrs/mrsActions.ts`: `IMrsAction` (id, message, pending, detail,
+  error, statements) and `describeRestSql()`, which names a call's REST
+  SQL by the statement that matters (the first that is not a USE) in both
+  forms (`IMrsWords`): "Creating REST Service '/myService/v1'…" while it
+  runs, "Created REST Service '/myService/v1'" once done; also Saving,
+  Changing, Deleting, Configuring, Granting, Revoking, Reading. Title Case
+  object, name in single quotes - the user's form.
+- Every action is reported TWICE under one id: as it starts (`pending`,
+  the spinner a running SQL script has) and as it ended; the panel
+  replaces the row (`putAction`). `MrsApi.#act` does it for a `run()` on
+  its own and for a `group()` (AsyncLocalStorage: every call inside is
+  part of the group's action); `MrsToolsApi.#tool` for each `mrs.*` call
+  ("Dumping the REST Client SDK to ..." / "Dumped ...").
+- Not shown unless they fail: a read on its own (a dialog filling its
+  choices) and the tree's listings (`onlyFailures`) - they drowned the
+  real actions.
+- **Verbose** (`mariadb.actions.logAllCalls`, read on every call as
+  `MrsApi`'s `verbose`): the listings and reads are shown too, and every
+  action carries its REST SQL (`IMrsStatement`: one line, what it came to,
+  its error, its time), which become the rows under it.
+- `src/mrs/mrsActivity.ts` `mrsActionRow()`: pending - an event row with
+  the spinner; done - an event row (detail in the Information column), or
+  a run row with a child per statement in verbose; failed - a run row with
+  the done message, "Finished with 1 error", and the error as its child
+  (the failed statement itself in verbose), pointed at by `jumpToRowId`, as
+  a failed SQL script shows. Work on no connection goes under General
+  Actions, with `logAllCalls` only.
+- UI tests in `02-mrs`: "Created REST Service '/uitest'", "Configured REST
+  Metadata", no "Listed REST" row by default, the SDK dump, and with the
+  setting switched on in the Settings editor the listings with their REST
+  SQL under them.

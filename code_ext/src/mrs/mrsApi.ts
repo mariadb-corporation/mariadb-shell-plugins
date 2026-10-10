@@ -27,7 +27,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import type { IMariaDbApi, IStatementResult } from "../mcp/types.js";
 import { counted, errorText } from "../text.js";
-import { describeRestSql, type IMrsAction } from "./mrsActions.js";
+import { describeResult } from "../sql/executionService.js";
+import {
+    describeRestSql,
+    type IMrsAction,
+    type IMrsStatement,
+    type IMrsWords,
+    words,
+} from "./mrsActions.js";
 import type {
     IMrsAuthApp,
     IMrsAuthVendor,
@@ -116,6 +123,35 @@ const parseCell = <T>(value: unknown): T => {
     return JSON.parse(value) as T;
 };
 
+/**
+ * @param statements The statements sent.
+ * @param results What came back, one per statement that ran.
+ * @param elapsedMs How long the call took, where the server did not say.
+ *
+ * @returns Each statement as the verbose log shows it.
+ */
+const statementsOf = (
+    statements: string[],
+    results: IStatementResult[],
+    elapsedMs: number,
+): IMrsStatement[] => {
+    return statements.map((statement, index): IMrsStatement => {
+        const result = results[index];
+        const sql = statement.replace(/\s+/gu, " ").trim();
+        if (result === undefined) {
+            return { sql, message: "Not run" };
+        }
+        const took = result.execution_time === undefined
+            ? (statements.length === 1 ? elapsedMs : undefined)
+            : Math.round(result.execution_time * 1000);
+        const timed = took === undefined ? {} : { elapsedMs: took };
+
+        return result.error === undefined
+            ? { sql, message: describeResult(result), ...timed }
+            : { sql, message: result.error, error: result.error, ...timed };
+    });
+};
+
 /** What `listObjects` merges: every list statement of REST objects. */
 const OBJECT_LISTS = ["VIEWS", "PROCEDURES", "FUNCTIONS", "SCRIPTS"] as const;
 
@@ -124,16 +160,23 @@ export class MrsApi {
     /**
      * @param api The database API; asked for on each call, since the MCP
      *            server can be restarted and hand out a new one.
-     * @param report Where what was done is reported, for the Actions
-     *               tab: each call, or each {@link group} of calls.
+     * @param report Where what is done is reported, for the Actions tab:
+     *               each call, or each {@link group} of calls, once as it
+     *               starts and once as it ended.
+     * @param verbose Whether every call is logged: the listings and reads,
+     *                and each REST SQL statement of an action.
      */
     public constructor(
         private readonly api: () => Promise<IMariaDbApi>,
         private readonly report?: (action: IMrsAction) => void,
+        private readonly verbose: () => boolean = () => { return false; },
     ) { }
 
-    /** Whether the calls being made belong to a {@link group}. */
-    readonly #grouped = new AsyncLocalStorage<true>();
+    /** The action the calls being made belong to: their statements. */
+    readonly #action = new AsyncLocalStorage<IMrsStatement[]>();
+
+    /** Makes the actions' ids unique. */
+    #actions = 0;
 
     /**
      * Makes the calls of one piece of work one action: listing a tree row
@@ -141,45 +184,28 @@ export class MrsApi {
      * Groups inside a group are part of it.
      *
      * @param connectionId The connection the work is done on.
-     * @param message What it is: "Listed REST Service '/myService'".
+     * @param said What it is called while it runs and once done.
      * @param work The work.
      * @param detail What it came to, from its result.
-     * @param onlyFailures Whether it is reported only where it failed: work
-     *                     the user did not ask for as such.
+     * @param onlyFailures Whether it is reported only where it failed or
+     *                     every call is logged: work the user did not ask
+     *                     for as such, such as browsing.
      *
      * @returns What the work returned.
      */
     public async group<T>(
         connectionId: string,
-        message: string,
+        said: IMrsWords,
         work: () => Promise<T>,
         detail?: (value: T) => string | undefined,
         onlyFailures = false,
     ): Promise<T> {
-        if (this.#grouped.getStore() === true) {
+        if (this.#action.getStore() !== undefined) {
             return await work();
         }
-        const when = new Date();
-        try {
-            const value = await this.#grouped.run(true, work);
-            if (onlyFailures) {
-                return value;
-            }
-            const said = detail?.(value);
-            this.report?.({
-                connectionId, message, when,
-                elapsedMs: Date.now() - when.getTime(),
-                ...(said === undefined ? {} : { detail: said }),
-            });
 
-            return value;
-        } catch (error) {
-            this.report?.({
-                connectionId, message, when, error: errorText(error),
-                elapsedMs: Date.now() - when.getTime(),
-            });
-            throw error;
-        }
+        return await this.#act(connectionId, said, work, detail,
+            onlyFailures);
     }
 
     /**
@@ -207,63 +233,90 @@ export class MrsApi {
             return [];
         }
         const run = async (): Promise<IStatementResult[]> => {
-            return all.length === 1
+            const startedMs = Date.now();
+            const results = all.length === 1
                 ? [await api.executeSql(scope.connectionId, all[0])]
-                : await api.executeScript(scope.connectionId, all.join("\n"),
-                    true);
+                : await api.executeScript(scope.connectionId,
+                    all.join("\n"), true);
+            this.#action.getStore()?.push(...statementsOf(all, results,
+                Date.now() - startedMs));
+            const failed = results.find((result) => {
+                return result.error !== undefined;
+            });
+            if (failed !== undefined) {
+                throw new MrsError(failed.error!);
+            }
+
+            return results;
         };
+
         // A call on its own is an action of its own; inside a group, the
         // group is the action. A read on its own - a dialog filling in its
         // choices - is not something the user did, and is reported only
-        // where it failed.
-        const message = describeRestSql(all);
-        const results = this.#grouped.getStore() === true
+        // where it failed, or every call is logged.
+        const said = describeRestSql(all);
+        const results = this.#action.getStore() !== undefined
             ? await run()
-            : await this.#reported(scope.connectionId, message, run,
-                message.startsWith("Read "));
-        const failed = results.find((result) => {
-            return result.error !== undefined;
-        });
-        if (failed !== undefined) {
-            throw new MrsError(failed.error!);
-        }
+            : await this.#act(scope.connectionId, said, run, undefined,
+                said.done.startsWith("Read "));
 
         return results.slice(use.length);
     }
 
     /**
-     * Runs REST SQL as an action of its own, reported once it is done. A
-     * statement that failed is the action's error, as the call is.
+     * Does one action, reporting it as it starts and as it ended: what is
+     * being done, then what was done or why it failed, and, where every
+     * call is logged, the REST SQL it ran.
+     *
+     * @param connectionId The connection it is done on.
+     * @param said What it is called.
+     * @param work The work.
+     * @param detail What it came to, from its result.
+     * @param onlyFailures Whether it is reported only where it failed or
+     *                     every call is logged.
+     *
+     * @returns What the work returned.
      */
-    async #reported(
+    async #act<T>(
         connectionId: string,
-        message: string,
-        run: () => Promise<IStatementResult[]>,
+        said: IMrsWords,
+        work: () => Promise<T>,
+        detail: ((value: T) => string | undefined) | undefined,
         onlyFailures: boolean,
-    ): Promise<IStatementResult[]> {
+    ): Promise<T> {
+        const verbose = this.verbose();
+        const shown = !onlyFailures || verbose;
+        this.#actions += 1;
+        const id = `mrs-sql-${String(this.#actions)}`;
         const when = new Date();
-        let results: IStatementResult[];
-        try {
-            results = await run();
-        } catch (error) {
-            this.report?.({
-                connectionId, message, when, error: errorText(error),
+        const statements: IMrsStatement[] = [];
+        const ended = (): Pick<IMrsAction, "elapsedMs" | "statements"> => {
+            return {
                 elapsedMs: Date.now() - when.getTime(),
-            });
-            throw error;
-        }
-        const failed = results.find((result) => {
-            return result.error !== undefined;
-        });
-        if (failed !== undefined || !onlyFailures) {
-            this.report?.({
-                connectionId, message, when,
-                elapsedMs: Date.now() - when.getTime(),
-                ...(failed === undefined ? {} : { error: failed.error }),
-            });
+                ...(verbose ? { statements } : {}),
+            };
+        };
+        if (shown) {
+            this.report?.({ id, connectionId, message: said.doing,
+                pending: true, when, elapsedMs: 0 });
         }
 
-        return results;
+        try {
+            const value = await this.#action.run(statements, work);
+            if (shown) {
+                const said2 = detail?.(value);
+                this.report?.({
+                    id, connectionId, message: said.done, when, ...ended(),
+                    ...(said2 === undefined ? {} : { detail: said2 }),
+                });
+            }
+
+            return value;
+        } catch (error) {
+            this.report?.({ id, connectionId, message: said.done, when,
+                error: errorText(error), ...ended() });
+            throw error;
+        }
     }
 
     /**
@@ -520,13 +573,17 @@ export class MrsToolsApi {
         private readonly report?: (action: IMrsAction) => void,
     ) { }
 
+    /** Makes the calls' ids unique. */
+    #calls = 0;
+
     public async getSdkOptions(directory: string): Promise<IMrsSdkOptions> {
         return await this.#tool("mrs.get_sdk_options", undefined,
             { directory },
             (name, result) => {
                 return decodeList<IMrsSdkOptions>(name, result)[0] ?? {};
             },
-            `Read the REST Client SDK options in ${directory}`);
+            words(`Reading the REST Client SDK options in ${directory}`,
+                `Read the REST Client SDK options in ${directory}`));
     }
 
     public async dumpSdkServiceFiles(
@@ -536,7 +593,8 @@ export class MrsToolsApi {
     ): Promise<void> {
         await this.#tool("mrs.dump_sdk_service_files", connectionId,
             { directory, options }, decodeVoid,
-            `Dumped the REST Client SDK to ${directory}`,
+            words(`Dumping the REST Client SDK to ${directory}`,
+                `Dumped the REST Client SDK to ${directory}`),
             undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
@@ -552,7 +610,8 @@ export class MrsToolsApi {
             endpoints,
             overwrite: true,
         }, decodeVoid,
-        `Dumped REST Service '${servicePath}' to ${filePath}`,
+        words(`Dumping REST Service '${servicePath}' to ${filePath}`,
+            `Dumped REST Service '${servicePath}' to ${filePath}`),
         undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
@@ -565,8 +624,10 @@ export class MrsToolsApi {
             file_path: filePath,
             ...(asPath === undefined ? {} : { as_path: asPath }),
         }, decodeVoid,
+        words((asPath === undefined ? "Loading a REST Service"
+            : `Loading REST Service '${asPath}'`) + ` from ${filePath}`,
         (asPath === undefined ? "Loaded a REST Service"
-            : `Loaded REST Service '${asPath}'`) + ` from ${filePath}`,
+            : `Loaded REST Service '${asPath}'`) + ` from ${filePath}`),
         undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
@@ -593,8 +654,10 @@ export class MrsToolsApi {
             overwrite: true,
             zip: options.zip,
         }, decodeVoid,
+        words(`Dumping REST Service '${options.servicePath}' as a REST `
+            + `Project to ${options.destination}`,
         `Dumped REST Service '${options.servicePath}' as a REST Project to `
-            + options.destination,
+            + options.destination),
         undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
@@ -603,7 +666,8 @@ export class MrsToolsApi {
         source: string,
     ): Promise<void> {
         await this.#tool("mrs.load_service_project", connectionId, { source },
-            decodeVoid, `Loaded the REST Project ${source}`,
+            decodeVoid, words(`Loading the REST Project ${source}`,
+                `Loaded the REST Project ${source}`),
             undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
@@ -623,7 +687,8 @@ export class MrsToolsApi {
             ...(loadScripts === undefined ? {} : { load_scripts: loadScripts }),
             replace: true,
         }, decodeObject<IContentSetUpload>,
-        `Loaded REST Content Set '${contentSetPath}' from ${directory}`,
+        words(`Loading REST Content Set '${contentSetPath}' from ${directory}`,
+            `Loaded REST Content Set '${contentSetPath}' from ${directory}`),
         (upload) => { return counted(upload.files.length, "file"); },
         MRS_TOOL_TIMEOUT_MS);
     }
@@ -640,7 +705,8 @@ export class MrsToolsApi {
                 return typeof language === "string" && language !== ""
                     && language !== "null" ? language : undefined;
             },
-            `Looked for MRS scripts in ${path}`,
+            words(`Looking for MRS scripts in ${path}`,
+                `Looked for MRS scripts in ${path}`),
             (language) => { return language ?? "none"; });
     }
 
@@ -651,13 +717,15 @@ export class MrsToolsApi {
         return await this.#tool("mrs.get_folder_mrs_script_definitions",
             undefined, { path, ignore_list: ignoreList },
             decodeObject<IMrsScriptDefinitions>,
-            `Read the MRS scripts in ${path}`, undefined,
+            words(`Reading the MRS scripts in ${path}`,
+                `Read the MRS scripts in ${path}`), undefined,
             MRS_TOOL_TIMEOUT_MS);
     }
 
     public async version(): Promise<string> {
         return await this.#tool("mrs.version", undefined, {}, decodeScalar,
-            "Read the MRS plugin version", (version) => { return version; });
+            words("Reading the MRS plugin version",
+                "Read the MRS plugin version"), (version) => { return version; });
     }
 
     /**
@@ -667,7 +735,7 @@ export class MrsToolsApi {
      * @param connectionId The connection it works on, if it takes one.
      * @param args Its other arguments.
      * @param decode Reads its answer.
-     * @param message What it does, in the words of the Actions tab.
+     * @param said What it is called while it runs and once done.
      * @param detail What it came to, from the answer, where that says more.
      * @param timeout How long it may take, where longer than the default.
      *
@@ -678,15 +746,19 @@ export class MrsToolsApi {
         connectionId: string | undefined,
         args: Record<string, unknown>,
         decode: (name: string, result: IToolResult) => T,
-        message: string,
+        said: IMrsWords,
         detail?: (value: T) => string,
         timeout?: number,
     ): Promise<T> {
         const when = new Date();
+        this.#calls += 1;
         const action = {
+            id: `mrs-tool-${String(this.#calls)}`,
             ...(connectionId === undefined ? {} : { connectionId }),
-            message, when,
+            when,
         };
+        this.report?.({ ...action, message: said.doing, pending: true,
+            elapsedMs: 0 });
         try {
             const value = decode(name, await this.caller.callTool(name, {
                 ...(connectionId === undefined
@@ -694,14 +766,15 @@ export class MrsToolsApi {
                 ...args,
             }, timeout));
             this.report?.({
-                ...action, elapsedMs: Date.now() - when.getTime(),
+                ...action, message: said.done,
+                elapsedMs: Date.now() - when.getTime(),
                 ...(detail === undefined ? {} : { detail: detail(value) }),
             });
 
             return value;
         } catch (error) {
             this.report?.({
-                ...action, error: errorText(error),
+                ...action, message: said.done, error: errorText(error),
                 elapsedMs: Date.now() - when.getTime(),
             });
             throw error;

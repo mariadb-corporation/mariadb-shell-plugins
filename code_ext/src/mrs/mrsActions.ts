@@ -22,10 +22,25 @@
  * calls it took. No REST SQL appears in it.
  */
 export interface IMrsAction {
+    /**
+     * Which action it is: an action is reported when it starts and again
+     * when it ended, and the second replaces the first.
+     */
+    id: string;
     /** The connection it was done on; none for work on files only. */
     connectionId?: string;
-    /** What was done: "Created REST Service '/myService'". */
+    /**
+     * What is being done while it runs, "Creating REST Service
+     * '/myService'…", and what was done once it ended, "Created ...".
+     */
     message: string;
+    /** Whether it is still running. */
+    pending?: boolean;
+    /**
+     * The REST SQL it ran, a statement each, where every call is logged
+     * (`mariadb.actions.logAllCalls`).
+     */
+    statements?: IMrsStatement[];
     /** What it came to, where that says more: "2 schemas, 1 auth app". */
     detail?: string;
     /** What went wrong, where it failed. */
@@ -34,17 +49,49 @@ export interface IMrsAction {
     elapsedMs: number;
 }
 
-/** What each verb of REST SQL did, in the past tense. */
-const VERBS: Record<string, string> = {
-    "CREATE": "Created",
-    "CREATE OR REPLACE": "Saved",
-    "ALTER": "Changed",
-    "DROP": "Deleted",
-    "SHOW CREATE": "Read the definition of",
-    "CONFIGURE": "Configured",
-    "GRANT": "Granted",
-    "REVOKE": "Revoked",
+/** One REST SQL statement an action ran, for the verbose log. */
+export interface IMrsStatement {
+    /** The statement, on one line. */
+    sql: string;
+    /** What it came to: "Query OK, 1 row affected", "Not run". */
+    message: string;
+    error?: string;
+    elapsedMs?: number;
+}
+
+/** What an action is called while it runs, and once it is done. */
+export interface IMrsWords {
+    /** "Creating REST Service '/myService'…" */
+    doing: string;
+    /** "Created REST Service '/myService'" */
+    done: string;
+}
+
+/**
+ * @param doing What is being done, without the ellipsis.
+ * @param done What was done.
+ *
+ * @returns Both, the first ending as running work does.
+ */
+export const words = (doing: string, done: string): IMrsWords => {
+    return { doing: `${doing}\u2026`, done };
 };
+
+/** What each verb of REST SQL does, while running and once done. */
+const VERBS: Record<string, [string, string]> = {
+    "CREATE": ["Creating", "Created"],
+    "CREATE OR REPLACE": ["Saving", "Saved"],
+    "ALTER": ["Changing", "Changed"],
+    "DROP": ["Deleting", "Deleted"],
+    "SHOW": ["Reading", "Read"],
+    "SHOW CREATE": ["Reading the definition of", "Read the definition of"],
+    "CONFIGURE": ["Configuring", "Configured"],
+    "GRANT": ["Granting", "Granted"],
+    "REVOKE": ["Revoking", "Revoked"],
+};
+
+/** What a statement that says nothing more is called. */
+const UNKNOWN = words("Running a REST statement", "Ran a REST statement");
 
 /** The REST objects a statement can be about, longest first. */
 const OBJECTS = [
@@ -86,42 +133,43 @@ const titleCase = (words: string): string => {
  *
  * @param statements The statements of the call.
  *
- * @returns "Created REST Service '/myService'", "Read REST Services".
+ * @returns "Creating REST Service '/myService'…" while it runs, then
+ *          "Created REST Service '/myService'".
  */
-export const describeRestSql = (statements: string[]): string => {
+export const describeRestSql = (statements: string[]): IMrsWords => {
     const main = statements.find((statement) => {
         return !/^\s*USE\s/iu.test(statement);
     }) ?? statements[0] ?? "";
-    const words = main.trim().split(/\s+/u);
+    const tokens = main.trim().split(/\s+/u);
 
     let at = 0;
-    let verb = (words[at] ?? "").toUpperCase();
+    let verb = (tokens[at] ?? "").toUpperCase();
     at += 1;
-    if (verb === "CREATE" && /^OR$/iu.test(words[at] ?? "")) {
+    if (verb === "CREATE" && /^OR$/iu.test(tokens[at] ?? "")) {
         verb = "CREATE OR REPLACE";
         at += 2;
-    } else if (verb === "SHOW" && /^CREATE$/iu.test(words[at] ?? "")) {
+    } else if (verb === "SHOW" && /^CREATE$/iu.test(tokens[at] ?? "")) {
         verb = "SHOW CREATE";
         at += 1;
     }
-    if (!/^REST$/iu.test(words[at] ?? "")) {
-        return "Ran a REST statement";
+    if (!/^REST$/iu.test(tokens[at] ?? "")) {
+        return UNKNOWN;
     }
     at += 1;
 
-    const rest = words.slice(at).join(" ").toUpperCase();
+    const rest = tokens.slice(at).join(" ").toUpperCase();
     const object = OBJECTS.find((candidate) => {
         return rest === candidate || rest.startsWith(`${candidate} `)
             || rest.startsWith(`${candidate};`);
     });
     if (object === undefined) {
-        return "Ran a REST statement";
+        return UNKNOWN;
     }
     at += object.split(" ").length;
-    if (/^IF$/iu.test(words[at] ?? "")) {
+    if (/^IF$/iu.test(tokens[at] ?? "")) {
         at += 3;
     }
-    const token = object === "METADATA" ? undefined : words[at];
+    const token = object === "METADATA" ? undefined : tokens[at];
     const name = token === undefined
         || NOT_A_NAME.test(token.split("=")[0].replace(/;$/u, ""))
         ? "" : ` '${unquote(token)}'`;
@@ -129,10 +177,8 @@ export const describeRestSql = (statements: string[]): string => {
         .replace("METADATA STATUS", "SERVICE STATUS")
         .replace("AUTH", "AUTHENTICATION"))}`;
 
-    if (verb === "SHOW") {
-        return `Read ${what}${name}`;
-    }
-    const done = VERBS[verb];
+    const verbs = VERBS[verb];
 
-    return done === undefined ? "Ran a REST statement" : `${done} ${what}${name}`;
+    return verbs === undefined ? UNKNOWN
+        : words(`${verbs[0]} ${what}${name}`, `${verbs[1]} ${what}${name}`);
 };
