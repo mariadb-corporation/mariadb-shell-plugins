@@ -115,9 +115,12 @@ describe("tasks in the Actions tab", () => {
         // time is the extension's own, to the millisecond
         expect(put[2]).toMatchObject({ summary: "Completed",
             kind: "warning", elapsedMs: 2000 });
-        expect(put[2].children?.map((row) => { return row.message; }))
-            .toEqual(["Table t has no PK", "Total duration: 00:00:05s",
-                "Rows written: 4"]);
+        // the totals are one row, as tall as its lines
+        expect(put[2].children).toMatchObject([
+            { message: "Table t has no PK", kind: "warning" },
+            { id: "task-t1-results", kind: "info", multiline: true,
+                message: "Total duration: 00:00:05s\nRows written: 4" },
+        ]);
     });
 
     it("tells a total from a step, a copy's halves included", () => {
@@ -145,7 +148,21 @@ describe("tasks in the Actions tab", () => {
             first: false,
         });
 
-        expect(put[1].children).toHaveLength(1);
+        expect(put[1].children?.[0].message)
+            .toBe("Total duration: 00:00:00s");
+    });
+
+    it("adds to the totals as they come over several looks", () => {
+        const { log, put } = recordingLog();
+        log.report({ tracked: tracked(), messages: [], first: true });
+        log.report({ tracked: tracked(),
+            messages: [message(1, "Schemas dumped: 1")], first: false });
+        log.report({ tracked: tracked({ status: "completed" }),
+            messages: [message(2, "Rows written: 4")], first: false });
+
+        expect(put[2].children).toHaveLength(1);
+        expect(put[2].children?.[0].message)
+            .toBe("Schemas dumped: 1\nRows written: 4");
     });
 
     it("shows a failure with its reason as the row under it", () => {

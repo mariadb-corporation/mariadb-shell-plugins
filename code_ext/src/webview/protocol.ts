@@ -200,6 +200,11 @@ export interface IActionRow {
      */
     jumpToRowId?: string;
     /**
+     * Whether the message runs to several lines and is shown in full, the
+     * row growing to hold it, as an error's is: what a task came to.
+     */
+    multiline?: boolean;
+    /**
      * The result set this statement produced. The tab may since have
      * been replaced by a later run, which is why the grid checks before
      * offering to jump to it.

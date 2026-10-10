@@ -29,9 +29,9 @@ import type { ITaskReport, ITrackedTask } from "./taskMonitor.js";
  */
 
 /**
- * The most messages kept under one task's row; the newest are kept. The
- * panel keeps 2000 rows per connection in all, and the whole of a task's
- * messages is in its log file.
+ * The most warnings and errors kept under one task's row; the newest are
+ * kept. The panel keeps 2000 rows per connection in all, and the whole of
+ * a task's messages is in its log file.
  */
 export const MAX_TASK_ACTION_CHILDREN = 200;
 
@@ -68,43 +68,44 @@ export const resultText = (message: IUtilTaskMessage): string | undefined => {
 };
 
 /**
- * Turns messages of a task into the rows under its own.
- *
- * A warning or an error says so where a statement row shows its SQL, as a
- * statement's warnings do; everything else leaves that column empty.
+ * Sorts messages of a task into what goes under its row: each warning and
+ * error a row of its own, and the totals gathered into one.
  *
  * @param tracked The task.
  * @param messages Its messages.
+ * @param time When they came.
  *
- * @returns One row each.
+ * @returns The warnings' and errors' rows, and the totals' lines.
  */
-export const taskMessageRows = (
+export const sortMessages = (
     tracked: ITrackedTask,
     messages: IUtilTaskMessage[],
     time: string,
-): IActionRow[] => {
-    const rows: IActionRow[] = [];
+): { issues: IActionRow[]; results: string[] } => {
+    const issues: IActionRow[] = [];
+    const results: string[] = [];
     for (const message of messages) {
         const text = resultText(message);
-        // A copy's two halves each end with a total duration.
-        if (text === undefined || rows.some((row) => {
-            return row.message === text;
-        })) {
+        if (text === undefined) {
             continue;
         }
         const kind = severityOf(message);
-        rows.push({
-            id: `task-${tracked.state.task_id}-${String(message.seq)}`,
-            time,
-            connection: tracked.connection,
-            role: "statement",
-            statement: "",
-            message: text,
-            kind,
-        });
+        if (kind === "info") {
+            results.push(text);
+        } else {
+            issues.push({
+                id: `task-${tracked.state.task_id}-${String(message.seq)}`,
+                time,
+                connection: tracked.connection,
+                role: "statement",
+                statement: "",
+                message: text,
+                kind,
+            });
+        }
     }
 
-    return rows;
+    return { issues, results };
 };
 
 /**
@@ -198,7 +199,12 @@ export const taskActionRow = (
  * whole row on after every look at the task, to replace the one before.
  */
 export class TaskActionLog {
-    #tasks = new Map<string, { children: IActionRow[]; started: Date }>();
+    #tasks = new Map<string, {
+        issues: IActionRow[];
+        results: string[];
+        resultsTime?: string;
+        started: Date;
+    }>();
 
     /**
      * @param put Puts a row up, or replaces the one with its id.
@@ -223,22 +229,49 @@ export class TaskActionLog {
         const now = this.now();
         let task = this.#tasks.get(taskId);
         if (task === undefined) {
-            task = { children: [], started: now };
+            task = { issues: [], results: [], started: now };
             this.#tasks.set(taskId, task);
         }
-        const { children } = task;
         const time = formatTime(now);
-        children.push(...taskMessageRows(tracked, messages, time).filter(
-            (row) => {
-                return !children.some((kept) => {
-                    return kept.message === row.message;
-                });
-            }));
+        const sorted = sortMessages(tracked, messages, time);
+        for (const issue of sorted.issues) {
+            if (!task.issues.some((kept) => {
+                return kept.message === issue.message;
+            })) {
+                task.issues.push(issue);
+            }
+        }
+        // A copy's two halves each end with a total duration.
+        for (const line of sorted.results) {
+            if (!task.results.includes(line)) {
+                task.results.push(line);
+                task.resultsTime ??= time;
+            }
+        }
+        if (task.issues.length > MAX_TASK_ACTION_CHILDREN) {
+            task.issues.splice(0,
+                task.issues.length - MAX_TASK_ACTION_CHILDREN);
+        }
+
+        const children = [...task.issues];
+        // What it came to is one row, as tall as its lines.
+        if (task.results.length > 0) {
+            children.push({
+                id: `task-${taskId}-results`,
+                time: task.resultsTime ?? time,
+                connection: tracked.connection,
+                role: "statement",
+                statement: "",
+                message: task.results.join("\n"),
+                kind: "info",
+                multiline: true,
+            });
+        }
         // A failure ends with its error as a row of its own, as a SQL
-        // script's run does - unless the shell's last word already was it.
+        // script's run does - unless the shell already reported it.
         const { status, error } = tracked.state;
         if (status === "failed" && error !== null
-            && children.at(-1)?.message !== error) {
+            && !task.issues.some((row) => { return row.message === error; })) {
             children.push({
                 id: `task-${taskId}-error`,
                 time,
@@ -249,12 +282,9 @@ export class TaskActionLog {
                 kind: "error",
             });
         }
-        if (children.length > MAX_TASK_ACTION_CHILDREN) {
-            children.splice(0, children.length - MAX_TASK_ACTION_CHILDREN);
-        }
 
         const finished = isFinished(status);
-        this.put(tracked.connection, taskActionRow(tracked, [...children],
+        this.put(tracked.connection, taskActionRow(tracked, children,
             this.label, {
                 started: task.started,
                 ...(finished
