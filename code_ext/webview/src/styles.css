@@ -866,7 +866,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 /*
- * An error is the one message that is not cut off. A server error runs
+ * An error is a message that is not cut off (and what a task came to,
+ * `multiline`: `.fullRow` is both). A server error runs
  * to a sentence or two and is the thing the reader came for, so the row
  * grows to hold all of it (the column is `variableHeight`) rather than
  * ending in an ellipsis that has to be hovered to be read.
@@ -874,7 +875,7 @@ button.toolbarMenuItem:hover:not(:disabled) {
  * Long words - a generated identifier, a path - break rather than push
  * the column wider.
  */
-.tabulator .tabulator-row.errorRow .actionMessageContent {
+.tabulator .tabulator-row.fullRow .actionMessageContent {
     overflow: visible;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -893,8 +894,8 @@ button.toolbarMenuItem:hover:not(:disabled) {
  * alternative is dropping `vertAlign`, which every single-line row
  * needs.
  */
-.tabulator .tabulator-row.errorRow .actionMessageCell,
-.tabulator .tabulator-row.errorRow .tabulator-cell.actionMessage {
+.tabulator .tabulator-row.fullRow .actionMessageCell,
+.tabulator .tabulator-row.fullRow .tabulator-cell.actionMessage {
     align-items: flex-start;
 }
 

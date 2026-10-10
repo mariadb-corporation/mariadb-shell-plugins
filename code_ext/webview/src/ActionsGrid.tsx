@@ -225,7 +225,7 @@ export const formatMessageCell = (
     content.textContent = row.message;
     // An error wraps instead - the whole of it is already on screen, and
     // there is nothing for a popup to add.
-    if (row.kind !== "error") {
+    if (row.kind !== "error" && row.multiline !== true) {
         attachOverflowPopup(content, { text: row.message, onCopy });
     }
     host.appendChild(content);
@@ -662,6 +662,9 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
                 // Only the text colour and the marker icon vary; every
                 // row shares one background.
                 element.classList.toggle("errorRow", data.kind === "error");
+                // Shown in full, the row growing to hold it.
+                element.classList.toggle("fullRow",
+                    data.kind === "error" || data.multiline === true);
                 element.classList.toggle(
                     "warningRow", data.kind === "warning");
                 element.classList.toggle("runRow", data.role === "run");
