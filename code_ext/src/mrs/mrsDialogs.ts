@@ -583,8 +583,9 @@ export const serviceDefaults = (
             return allAuthApps.includes(name);
         });
 
+        // Versioned from the start, so a later clone can be /myService/v2.
         return {
-            path: "/myService",
+            path: "/myService/v1",
             enabled: true,
             published: false,
             makeCurrent: true,

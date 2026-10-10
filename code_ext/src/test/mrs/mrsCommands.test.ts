@@ -653,7 +653,7 @@ describe("services", () => {
                 allAuthApps: ["MRS", "Google"], linkedAuthApps: [],
             });
             const values = spec.values as IServiceDialogValues;
-            expect(values.path).toBe("/myService");
+            expect(values.path).toBe("/myService/v1");
             expect(values.authApps).toEqual(["MRS"]);
             expect(webviewPanels).toHaveLength(1);
 

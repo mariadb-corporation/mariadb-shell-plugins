@@ -164,7 +164,8 @@ describe("MariaDB REST Service", () => {
             ["Add REST Service..."], title);
         await inDialog(title, async (view) => {
             assert.equal(await (await view.findWebElement(
-                By.css("[name='path']"))).getAttribute("value"), "/myService");
+                By.css("[name='path']"))).getAttribute("value"),
+            "/myService/v1");
             await setField(view, "path", "/uitest");
             await selectTab(view, "Settings");
             // The built-in app is linked to a new service by default.

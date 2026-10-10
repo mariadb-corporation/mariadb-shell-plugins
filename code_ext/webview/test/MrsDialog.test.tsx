@@ -649,7 +649,7 @@ describe("service dialog", () => {
         await loadNew();
 
         expect(title()).toBe("New REST Service");
-        expect(inputOf("REST Service Path").value).toBe("/myService");
+        expect(inputOf("REST Service Path").value).toBe("/myService/v1");
         expect(checkboxOf("Enabled").checked).toBe(true);
         expect(checkboxOf("Default").checked).toBe(true);
         expect(checkboxOf("Published").checked).toBe(false);

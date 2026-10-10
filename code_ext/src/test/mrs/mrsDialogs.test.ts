@@ -604,7 +604,7 @@ describe("the service dialog", () => {
     it("starts a new service with the built-in app", () => {
         expect(serviceDefaults(undefined, ["x"], ["Google", "MariaDB", "MRS"]))
             .toEqual({
-                path: "/myService",
+                path: "/myService/v1",
                 enabled: true,
                 published: false,
                 makeCurrent: true,
