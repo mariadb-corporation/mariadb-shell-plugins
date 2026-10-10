@@ -47,9 +47,11 @@ which exposes the backend functions over the Model Context Protocol.
 
   A dialog asks for the folder and the options. The work then runs in the
   background, with a notification that shows its progress and can cancel
-  it. The **Tasks** view lists what ran, and the *MariaDB Tasks* output
-  channel shows what each task printed. Needs a MariaDB Shell with
-  mariadb-shell #73.
+  it. The **Tasks** view lists what ran; click a task for its own log,
+  which can be watched while it runs and is kept after it ended, failed
+  or not. Each task is also a row of its connection's **Actions** in the
+  MariaDB panel, with what it reported under it. Needs a MariaDB Shell
+  with mariadb-shell #73.
 
 ## Requirements
 
