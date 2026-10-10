@@ -496,7 +496,7 @@ def test_a_tool_needs_the_scope_of_its_group(multi_tenant, monkeypatch):
     tools = _db_tools(monkeypatch)
 
     with pytest.raises(ToolError, match="mcp:db"):
-        tools["db.list_connections"](_context(ada, scopes=["mcp:msm"]))
+        tools["db.list_connections"](_context(ada, scopes=["openid"]))
 
 
 def test_a_user_has_a_connection_limit_of_their_own(multi_tenant, monkeypatch):
@@ -572,7 +572,7 @@ def test_a_path_is_never_offered_to_the_client_to_trust(multi_tenant, tmp_path):
 
 def test_no_path_means_the_working_directory_and_is_checked(multi_tenant, tmp_path,
                                                             monkeypatch):
-    """The msm tools read None as the cwd; a tenant may not get it for free."""
+    """None is read as the cwd; a tenant may not get it for free."""
     ada = _add("ada")
     monkeypatch.chdir(tmp_path)
 
@@ -596,22 +596,22 @@ def test_a_single_tenant_server_is_unchanged(tenant_config, monkeypatch):
 
 
 def test_a_multi_tenant_server_refuses_what_it_cannot_serve(tenant_config):
-    """stdio, --gui, the sandbox and migrator groups, and no users at all."""
+    """stdio, --gui, the msm, sandbox and migrator groups, and no users at all."""
     tenants.set_multi_tenant(True)
 
     with pytest.raises(mysqlsh.Error, match="no enabled user"):
         server._check_multi_tenant("streamable-http", ["db"], False)
 
     _add("ada")
-    server._check_multi_tenant("streamable-http", ["db", "msm"], False)
+    server._check_multi_tenant("streamable-http", ["db"], False)
 
     with pytest.raises(mysqlsh.Error, match="stdio"):
         server._check_multi_tenant("stdio", ["db"], False)
     with pytest.raises(mysqlsh.Error, match="--gui"):
         server._check_multi_tenant("streamable-http", ["db"], True)
-    with pytest.raises(mysqlsh.Error, match="sandbox, migrator"):
+    with pytest.raises(mysqlsh.Error, match="msm, sandbox, migrator"):
         server._check_multi_tenant(
-            "streamable-http", ["db", "sandbox", "migrator"], False
+            "streamable-http", ["db", "msm", "sandbox", "migrator"], False
         )
 
 
@@ -719,8 +719,10 @@ def test_setup_rotates_shows_disables_and_removes(tenant_config, capsys):
     setup_cli.apply({"enable_user": "ada"})
     assert tenants.is_active_user(ada)
 
-    setup_cli.apply({"user": "ada", "set_scopes": "mcp:msm"})
-    assert tenants.get_scopes(ada) == ["mcp:msm"]
+    with pytest.raises(mysqlsh.Error, match="Unknown scope"):
+        setup_cli.apply({"user": "ada", "set_scopes": "mcp:msm"})
+    setup_cli.apply({"user": "ada", "set_scopes": "mcp:db"})
+    assert tenants.get_scopes(ada) == ["mcp:db"]
 
     setup_cli.apply({"remove_user": "ada"})
     assert tenants.find_user("ada") is None
@@ -762,7 +764,7 @@ def test_a_real_server_serves_each_user_their_own(tenant_config, sandbox):
     config.store_connection(sandbox.uri, sandbox.password, mcp_user_id=ada)
 
     async def scenario():
-        async with helpers.http_server(["db", "msm"]) as url:
+        async with helpers.http_server(["db"]) as url:
             async with httpx2.AsyncClient() as raw:
                 for headers in ({}, _bearer("mdbmcp_nope"), _bearer(ada_key + "x")):
                     response = await raw.post(

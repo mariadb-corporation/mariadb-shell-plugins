@@ -21,8 +21,8 @@ unless ``--nonInteractive`` forbids it. Everything it creates is left alone if
 it exists already, so it is safe to run again. Through Keycloak's admin REST
 API, in the given realm, it creates:
 
-* the client scopes ``mcp:db`` and ``mcp:msm`` (included in the token's
-  ``scope``), each with an ``Audience`` mapper that puts this server's public
+* the client scope ``mcp:db`` (included in the token's
+  ``scope``), with an ``Audience`` mapper that puts this server's public
   URL into the access token's ``aud`` - which the server requires, as the MCP
   specification forbids accepting tokens issued for anything else;
 * the realm role ``mcp-user``, which a token must carry for its user to be
@@ -30,7 +30,7 @@ API, in the given realm, it creates:
   names;
 * a public client for MCP clients that do not register themselves (Claude
   Code, VS Code, ...): PKCE S256 required, loopback redirect URIs on any port,
-  the two scopes as optional scopes. ``--directGrant`` also allows the password
+  the scope as an optional scope. ``--directGrant`` also allows the password
   grant, for the opt-in live test only - never on a production client.
 
 Unless ``--configureServer=false``, it then points this server at the realm:

@@ -123,8 +123,10 @@ DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 # The groups a multi-tenant server serves, and the only ones it may. The
 # sandbox and migrator groups run local server processes and long jobs that
 # write to the server's disk - resources one user would take from all the
-# others - so they are not offered to tenants at all.
-MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB, FUNCTION_GROUP_MSM)
+# others - and the msm group works on schema project folders, which live on
+# the developer's own machine, not on a remote server. None of them are
+# offered to tenants.
+MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB,)
 
 def utc_timestamp() -> str:
     """Returns the current time as the files record it: ISO 8601, UTC, seconds."""
@@ -936,8 +938,8 @@ async def require_allowed_path(ctx, path) -> None:
     paths, and two things change. A path that is not allowed is refused
     outright, never offered to the client to trust: the client is the party
     the list restricts, and an administrator grants paths with ``mcp.setup``.
-    And ``None`` is not left alone: the msm tools take it to mean the server's
-    working directory, which is a path like any other and has to be allowed.
+    And ``None`` is not left alone: it is checked as the server's working
+    directory, which is a path like any other and has to be allowed.
 
     Args:
         ctx: The MCP request context, used to elicit confirmation from the

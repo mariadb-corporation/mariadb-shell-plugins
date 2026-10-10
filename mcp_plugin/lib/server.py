@@ -63,7 +63,7 @@ Multi-tenant mode is not an option of this function but part of the
 configuration (``mcp setup --multiTenant=true``, see
 :mod:`mcp_plugin.lib.tenants`), read here and recorded with
 :func:`mcp_plugin.lib.general.set_multi_tenant` before the tools are built. A
-multi-tenant server only serves over HTTP, only the ``db`` and ``msm`` groups,
+multi-tenant server only serves over HTTP, only the ``db`` group,
 never ``--gui``, and only to requests carrying a user's bearer token, which the
 SDK checks before any tool runs (see :mod:`mcp_plugin.lib.auth`).
 """
@@ -362,7 +362,8 @@ def _check_multi_tenant(transport: str, function_groups, gui: bool) -> None:
         raise mysqlsh.Error(
             f"The function group(s) {', '.join(refused)} are not available in "
             "multi-tenant mode, as they run local servers and long jobs on this "
-            "machine. Available groups: "
+            "machine, or work on files on the developer's own machine. "
+            "Available groups: "
             f"{', '.join(general.MULTI_TENANT_FUNCTION_GROUPS)}."
         )
 

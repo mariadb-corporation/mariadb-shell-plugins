@@ -78,8 +78,7 @@ API_KEY_PREFIX = "mdbmcp_"
 # The scopes a user can be granted: one per function group a multi-tenant
 # server serves. A tool is only callable with the scope of its group.
 SCOPE_DB = "mcp:db"
-SCOPE_MSM = "mcp:msm"
-SUPPORTED_SCOPES = (SCOPE_DB, SCOPE_MSM)
+SUPPORTED_SCOPES = (SCOPE_DB,)
 
 # The scopes a new user gets unless told otherwise.
 DEFAULT_SCOPES = SUPPORTED_SCOPES

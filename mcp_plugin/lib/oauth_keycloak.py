@@ -28,8 +28,7 @@ there, and :class:`KeycloakVerifier` checks every token a client brings back:
 2. The issuer, exactly; the expiry, with 30s of leeway; and that it is an
    access token (``typ`` ``Bearer``) and not an ID token.
 3. **The audience must include this server's public URL.** Keycloak puts it
-   there through an ``Audience`` mapper on the client scopes ``mcp:db`` and
-   ``mcp:msm``, or from the ``resource`` parameter once its resource indicators
+   there through an ``Audience`` mapper on the client scope ``mcp:db``, or from the ``resource`` parameter once its resource indicators
    are turned on. A token issued for anything else is refused: the MCP
    specification forbids accepting tokens meant for another resource.
 4. Optionally the client (``azp``), against an allow list.

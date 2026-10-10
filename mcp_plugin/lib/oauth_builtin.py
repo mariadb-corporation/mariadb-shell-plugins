@@ -1522,7 +1522,6 @@ def _grant_scopes(record, user) -> list:
 
 _SCOPE_DESCRIPTIONS = {
     tenants.SCOPE_DB: "work with your databases (connect, browse, run SQL)",
-    tenants.SCOPE_MSM: "manage schema projects (MariaDB Schema Management)",
 }
 
 # The page follows the MySQL REST Service's sign-in page (mrs_plugin's
