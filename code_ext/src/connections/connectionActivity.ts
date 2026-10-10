@@ -235,7 +235,10 @@ export const createLoggingApi = (
 
         try {
             const value = await work();
-            if (session) {
+            // Browsing is not something done to the connection, and the
+            // Actions tab is for what was done: it is reported only where
+            // every call is asked for, or where it failed.
+            if (session && logAllCalls()) {
                 report({
                     connection: session.uri,
                     label: session.label,
@@ -256,7 +259,7 @@ export const createLoggingApi = (
                 ? `No ${error.objectType} `
                 + `${error.schemaName}.${error.objectName}`
                 : undefined;
-            if (session) {
+            if (session && (answer === undefined || logAllCalls())) {
                 report({
                     connection: session.uri,
                     label: session.label,
