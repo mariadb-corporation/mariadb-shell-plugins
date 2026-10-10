@@ -22,6 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -821,5 +822,171 @@ def test_grant_to_missing_role_creates_no_user(sandbox_session, temp_dir):
         with pytest.raises(Exception):
             deploy_schema(schema_project_path=project, version="1.1.0")
         assert accounts_named_role() == 0
+    finally:
+        cleanup()
+
+
+def test_substitution_helpers():
+    settings = {
+        "schemaName": "/*<msm:schema_prefix>*/my_schema/*<msm:schema_postfix>*/",
+        "substitutions": {
+            "schema_prefix": {},
+            "schema_postfix": {"default": "_x", "pattern": "(_[a-z0-9]+)?"},
+        },
+    }
+    resolve = lib.management.resolve_substitutions
+    effective = lib.management.get_effective_schema_name
+
+    # Defaults, and given values overriding them
+    assert resolve(settings) == {"schema_prefix": "", "schema_postfix": "_x"}
+    assert resolve(settings, {"schema_prefix": "acme_"}) == {
+        "schema_prefix": "acme_",
+        "schema_postfix": "_x",
+    }
+    assert effective(settings) == "my_schema_x"
+    assert (
+        effective(settings, {"schema_prefix": "acme_", "schema_postfix": "_eu"})
+        == "acme_my_schema_eu"
+    )
+
+    # Undeclared names, values outside the identifier characters and values
+    # not matching the declared pattern are rejected
+    with pytest.raises(ValueError, match="not declared"):
+        resolve(settings, {"other": "x"})
+    with pytest.raises(ValueError, match="only letters, digits and _"):
+        resolve(settings, {"schema_prefix": "a`; DROP SCHEMA x; --"})
+    with pytest.raises(ValueError, match="has to match"):
+        resolve(settings, {"schema_postfix": "EU"})
+    with pytest.raises(ValueError, match="longer than 64"):
+        effective(settings, {"schema_prefix": "p" * 60})
+
+    # A script may only use declared placeholders
+    apply = lib.management.apply_substitutions
+    assert (
+        apply("USE /*<msm:schema_prefix>*/s/*<msm:schema_postfix>*/;", resolve(settings))
+        == "USE s_x;"
+    )
+    with pytest.raises(ValueError, match="does not declare"):
+        apply("USE /*<msm:typo>*/s;", resolve(settings))
+
+    # Names with placeholders are written unquoted, others are quoted
+    identifier = lib.management.get_schema_identifier
+    assert identifier("plain") == "`plain`"
+    assert identifier(settings["schemaName"]) == settings["schemaName"]
+    with pytest.raises(ValueError, match="only contain letters"):
+        identifier("/*<msm:schema_prefix>*/my-schema")
+
+
+def test_deployment_with_substitutions(sandbox_session, temp_dir):
+    # The schema name and the role carry the placeholders. Run without
+    # substitutions the comments are whitespace, so the plain names are
+    # deployed; with them, the prefixed and postfixed ones.
+    base = "msm_subst"
+    template = f"/*<msm:schema_prefix>*/{base}/*<msm:schema_postfix>*/"
+    role = f"/*<msm:schema_prefix>*/{base}_role/*<msm:schema_postfix>*/"
+    project = create_new_project_folder(
+        schema_name=base,
+        target_path=temp_dir,
+        copyright_holder=COPYRIGHT_HOLDER,
+        overwrite_existing=True,
+    )
+
+    settings_file = os.path.join(project, "msm.project.json")
+    with open(settings_file) as f:
+        settings = json.load(f)
+    settings["schemaName"] = template
+    settings["substitutions"] = {
+        "schema_prefix": {"default": ""},
+        "schema_postfix": {"default": "", "pattern": "(_[a-z0-9]+)?"},
+    }
+    with open(settings_file, "w") as f:
+        json.dump(settings, f, indent=4)
+
+    dev_file = os.path.join(project, "development", f"{base}_next.sql")
+    with open(dev_file) as f:
+        script = f.read()
+    with open(dev_file, "w") as f:
+        f.write(script.replace(f"`{base}`", template))
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="140",
+        sql_content="CREATE TABLE `t`(`id` INT PRIMARY KEY);",
+    )
+    set_section_sql_content(
+        file_path=dev_file,
+        section_id="170",
+        sql_content=(
+            f"CREATE ROLE IF NOT EXISTS {role};\n" f"GRANT SELECT ON `t` TO {role};"
+        ),
+    )
+    # A single release is deployed with a copy of its version script, which
+    # carries the development version (0.0.1) the project was created with
+    prepare_release(schema_project_path=project, version="0.0.1", next_version="0.0.2")
+    generate_deployment_script(schema_project_path=project, version="0.0.1")
+
+    schemas = [base, f"acme_{base}_eu"]
+    roles = [f"{base}_role", f"acme_{base}_role_eu"]
+
+    def cleanup():
+        for schema in schemas:
+            lib.core.MsmDbExec(
+                f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(schema)}"
+            ).exec(sandbox_session)
+        for r in roles:
+            lib.core.MsmDbExec(f"DROP ROLE IF EXISTS {lib.core.quote_ident(r)}").exec(
+                sandbox_session
+            )
+
+    def table_exists(schema):
+        return (
+            lib.core.MsmDbExec(
+                "SELECT COUNT(*) AS n FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 't'"
+            )
+            .exec(sandbox_session, [schema])
+            .first["n"]
+            == 1
+        )
+
+    def grants_of(r):
+        return [
+            list(row.values())[0]
+            for row in lib.core.MsmDbExec(f"SHOW GRANTS FOR {lib.core.quote_ident(r)}")
+            .exec(sandbox_session)
+            .items
+        ]
+
+    cleanup()
+    try:
+        values = {"schema_prefix": "acme_", "schema_postfix": "_eu"}
+        assert deploy_schema(
+            schema_project_path=project, substitutions=values
+        ) == (f"Deployment of `acme_{base}_eu` version 0.0.1 completed successfully.")
+        assert table_exists(f"acme_{base}_eu")
+        assert not table_exists(base)
+        assert f"GRANT SELECT ON `acme_{base}_eu`.`t` TO `acme_{base}_role_eu`" in (
+            grants_of(f"acme_{base}_role_eu")
+        )
+
+        # The same values find the deployed schema again
+        assert "already on the requested version" in deploy_schema(
+            schema_project_path=project, substitutions=values
+        )
+
+        # Without values, the defaults give the plain names
+        assert deploy_schema(schema_project_path=project) == (
+            f"Deployment of `{base}` version 0.0.1 completed successfully."
+        )
+        assert table_exists(base)
+        assert f"GRANT SELECT ON `{base}`.`t` TO `{base}_role`" in grants_of(
+            f"{base}_role"
+        )
+
+        with pytest.raises(ValueError, match="not declared"):
+            deploy_schema(schema_project_path=project, substitutions={"prefix": "x"})
+        with pytest.raises(ValueError, match="has to match"):
+            deploy_schema(
+                schema_project_path=project, substitutions={"schema_postfix": "EU"}
+            )
     finally:
         cleanup()

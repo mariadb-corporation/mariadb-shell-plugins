@@ -142,7 +142,7 @@ def test_loading_the_plugin_imports_no_mcp_sdk_module():
         "print('LOADED:' + ','.join(loaded))"
     )
     completed = subprocess.run(
-        [helpers.shell_binary(), "--quiet-start=2", "--py", "-e", probe],
+        [*helpers.shell_command(), "--quiet-start=2", "--py", "-e", probe],
         capture_output=True,
         text=True,
         timeout=120,

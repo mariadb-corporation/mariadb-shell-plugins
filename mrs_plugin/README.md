@@ -2,6 +2,13 @@
 
 This folder contains the code for the MariaDB REST Service (short: MRS) Plugin. It is part of the [MariaDB Shell Plugins](../README.md) repository.
 
+The MRS documentation, the ANTLR reference grammar of REST SQL and the tools
+that keep the two in step live in the MariaDB Shell repository: the GitBook
+source in `docs-ref/content/mariadb-rest-service/`, the grammar in
+`modules/mrs/antlr_grammar/`. REST SQL itself is implemented by the shell's
+built-in `mrs` module; this plugin adds the SDK generation, project, service and
+content set functions.
+
 # Contributing to MariaDB REST Service Plugin
 
 No installation is necessary for this plugin, beside the setup of Visual Studio Code to be able to work on the code.
@@ -21,6 +28,10 @@ After the dependencies are installed, the test script can execute as follows:
 ```sh
 $ mariadb-shell --py -f run_tests.py
 ```
+
+The suite deploys its own MariaDB sandbox on a free port and removes it again
+at the end, so no database server needs to be set up; a `mariadbd` binary has
+to be on the `PATH`, though.
 
 To run a single test or test suite, the script provides a `-k` option that allows to specify a test name or a file name.
 

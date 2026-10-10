@@ -25,7 +25,7 @@
  */
 
 /**
- * Plain JSON error responses sent by the MySQL Router.
+ * Plain JSON error responses sent by the MariaDB REST Daemon.
  * Always include the status code, can include a message and additional information about the root cause.
  */
 interface IMrsErrorResponse {
@@ -59,7 +59,7 @@ export interface IMrsAuthStatus {
 }
 
 /**
- * If the authentication is successful, the MySQL Router sends back an HTTP response with an empty JSON object in the
+ * If the authentication is successful, the MariaDB REST Daemon sends back an HTTP response with an empty JSON object in the
  * body and the "Set-Cookie" header if the session type is "cookie".
  * If the session type is "bearer" the "Set-Cookie" header is not set and the JSON object contains an "accessToken"
  * field with the corresponding bearer token.
@@ -172,7 +172,7 @@ export class MrsBaseSession {
                 }
                 if (e.name === "TypeError" && e.message.includes("Failed to fetch")) {
                     throw new Error(`${errorMsg}\n\nNetwork error during request to endpoint ` +
-                        `${this.serviceUrl}${input}.\nPlease check if MySQL Router is running and its SSL ` +
+                        `${this.serviceUrl}${input}.\nPlease check if the MariaDB REST Daemon is running and its SSL ` +
                         `certificates are valid.\n\n${e.message}`);
                 }
             }
@@ -467,7 +467,7 @@ export interface IMrsOperator {
 }
 
 /**
- * A collection of MRS resources is represented by a JSON object returned by the MySQL Router, which includes the list
+ * A collection of MRS resources is represented by a JSON object returned by the MariaDB REST Daemon, which includes the list
  * of underlying resource objects and additional hypermedia-related properties with pagination state and the
  * relationships with additional resources.
  *
@@ -485,7 +485,7 @@ export type MrsDownstreamDocumentListData<C> = {
 } & JsonObject;
 
 /**
- * A single MRS resource object is represented by JSON object returned by the MySQL Router, which includes the
+ * A single MRS resource object is represented by JSON object returned by the MariaDB REST Daemon, which includes the
  * corresponding fields and values alongside additional hypermedia-related properties.
  *
  * @see IMrsResourceDetails
@@ -777,12 +777,6 @@ export interface MultiPolygon {
 export type Cursor<EligibleFields> = {
     [Key in keyof EligibleFields]: EligibleFields[Key]
 };
-
-interface IMrsTaskOptions<MrsTaskStatusUpdate, MrsTaskResult, BigIntParameterNames extends string[],
-    FixedPointParameterNames extends string[]> extends IMrsObjectMetadata<BigIntParameterNames,
-        FixedPointParameterNames>, IMrsTaskRunOptions<MrsTaskStatusUpdate, MrsTaskResult> {
-    routineType?: "FUNCTION" | "PROCEDURE";
-}
 
 interface IMrsObjectMetadata<BigIntFieldNames extends string[] = never, FixedPointFieldNames extends string[] = never> {
     bigIntKeys?: BigIntFieldNames;
@@ -1590,7 +1584,7 @@ export class MrsAuthenticate {
             return this.authenticateUsingMrsNative();
         }
 
-        return this.authenticateUsingMysqlInternal();
+        return this.authenticateUsingMariadbInternal();
     };
 
     private lookupVendorId = async (): Promise<string> => {
@@ -1614,7 +1608,7 @@ export class MrsAuthenticate {
         return authenticationResponse;
     };
 
-    private authenticateUsingMysqlInternal = async (): Promise<IMrsLoginResult> => {
+    private authenticateUsingMariadbInternal = async (): Promise<IMrsLoginResult> => {
         const authenticationResponse = await this.service.session.verifyCredentials({
             username: this.username,
             password: this.password,
@@ -1662,7 +1656,7 @@ export class MrsBaseService {
                 // Ignore the exception
             }
             const errorDesc = "Failed to fetch Authentication Apps.\n\n" +
-                "Please ensure MySQL Router is running and the REST endpoint " +
+                "Please ensure the MariaDB REST Daemon is running and the REST endpoint " +
                 `${String(this.serviceUrl)}${this.authPath}/authApps is accessible. `;
 
             throw new Error(errorDesc + `(${response.status}:${response.statusText})` +
@@ -1721,241 +1715,5 @@ export class MrsBaseObject {
         const metadata = await response.json() as JsonObject;
 
         return metadata;
-    }
-}
-
-export interface IMrsTaskStartOptions {
-    refreshRate?: number;
-    timeout?: number;
-}
-
-export interface IMrsTaskRunOptions<MrsTaskStatusUpdate, MrsTaskResult> extends IMrsTaskStartOptions {
-    progress?(this: void, report: IMrsRunningTaskReport<MrsTaskStatusUpdate, MrsTaskResult>): Promise<void>;
-}
-
-interface IMrsTaskStartResponse {
-    taskId: string
-    message: string
-    statusUrl: string
-}
-
-type MrsTaskStatusUpdateStage = "SCHEDULED" | "RUNNING" | "COMPLETED" | "ERROR" | "CANCELLED";
-
-interface IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult> {
-    data: MrsTaskStatusUpdate | MrsTaskResult
-    status: MrsTaskStatusUpdateStage
-    message: string
-    progress: number
-}
-
-interface IMrsScheduledTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    extends Omit<IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult>, "data" | "progress"> {
-    status: "SCHEDULED"
-}
-
-export interface IMrsRunningTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    extends IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult> {
-    data: MrsTaskStatusUpdate
-    status: "RUNNING"
-}
-
-export interface IMrsCompletedTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    extends Omit<IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult>, "progress" | "status"> {
-    data: MrsTaskResult
-    status: "COMPLETED"
-}
-
-interface IMrsCancelledTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    extends Omit<IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult>, "data" | "progress"> {
-    status: "CANCELLED"
-}
-
-interface IMrsErrorTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    extends Omit<IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult>, "data" | "progress"> {
-    status: "ERROR"
-}
-
-interface IMrsTimedOutTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    extends Omit<IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult>, "data" | "progress" | "status"> {
-    status: "TIMEOUT"
-}
-
-export type IMrsTaskReport<MrsTaskStatusUpdate, MrsTaskResult> =
-    IMrsScheduledTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsRunningTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsCompletedTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsCancelledTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsErrorTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsTimedOutTaskReport<MrsTaskStatusUpdate, MrsTaskResult>;
-
-export class MrsBaseTaskStart<MrsTaskInputParameters, MrsTaskStatusUpdate, MrsTaskResult> {
-    public constructor(
-        private readonly schema: MrsBaseSchema,
-        private readonly requestPath: string,
-        private readonly params?: MrsTaskInputParameters,
-        private readonly options: IMrsTaskRunOptions<MrsTaskStatusUpdate, MrsTaskResult> = { refreshRate: 2000 }) {
-        const { refreshRate = 2000 } = this.options;
-        if (typeof refreshRate !== "number" || refreshRate < 500) {
-            throw new Error("Refresh rate needs to be a number greater than or equal to 500ms.");
-        }
-    }
-
-    public async submit(): Promise<IMrsTaskStartResponse> {
-        const input = `${this.schema.requestPath}${this.requestPath}`;
-        // If there are no input parameters and/or values, we need to still send a non-zero Content-Length
-        // payload that is valid from the mime type standpoint (default: application/json).
-        const body = MrsJSON.stringify(this.params ?? {});
-
-        const response = await this.schema.service.session.doFetch({
-            input,
-            method: "POST",
-            body,
-            errorMsg: "Failed to start task.",
-        });
-
-        const responseBody = await response.json() as IMrsTaskStartResponse;
-
-        return responseBody;
-    }
-}
-
-export class MrsBaseTaskWatch<MrsTaskStatusUpdate, MrsTaskResult, BigIntParameterNames extends string[] = never,
-    FixedPointParameterNames extends string[] = never> {
-    public constructor(
-        private readonly schema: MrsBaseSchema,
-        private readonly requestPath: string,
-        protected readonly task: MrsTask<MrsTaskStatusUpdate, MrsTaskResult, BigIntParameterNames,
-            FixedPointParameterNames>) {
-    }
-
-    async #getStatus(): Promise<IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult>> {
-        const input = `${this.schema.requestPath}${this.requestPath}/${this.task.id}`;
-        const response = await this.schema.service.session.doFetch({
-            input,
-            method: "GET",
-            errorMsg: "Failed to retrieve the task status report.",
-        });
-
-        const responseBody = await response.text();
-        const json = MrsJSON.parse<IMrsTaskStatusUpdateResponse<MrsTaskStatusUpdate, MrsTaskResult>,
-            BigIntParameterNames, FixedPointParameterNames>(responseBody, this.task.options);
-
-        return json;
-    }
-
-    public async* submit(): AsyncGenerator<IMrsTaskReport<MrsTaskStatusUpdate, MrsTaskResult>, void, void> {
-        const startedAt = Date.now();
-        const { refreshRate = 2000, progress, timeout } = this.task.options;
-        // the timeout event should be produced only once
-        let timeoutReached = false;
-
-        while (true) {
-            if (timeout !== undefined && Date.now() - startedAt > timeout && !timeoutReached) {
-                timeoutReached = true;
-                // a client-side timeout should not close the producer
-                yield { message: `The timeout of ${timeout} ms has been exceeded.`, status: "TIMEOUT" };
-            }
-
-            const statusUpdate = await this.#getStatus();
-
-            if (statusUpdate.status === "ERROR" || statusUpdate.status === "CANCELLED") {
-                // these are both final status reports so they should close the producer
-                const { message, status } = statusUpdate;
-
-                return yield { message, status };
-            }
-
-            if (statusUpdate.status === "COMPLETED") {
-                // TODO: add support for temporal value conversion
-                // also a final status report that should close the producer
-                const { message, status } = statusUpdate;
-
-                let data: MrsTaskResult;
-
-                // Procedures with an associated async task currently do not support result sets (see BUG#38039060).
-                if (this.task.options.routineType === "FUNCTION") {
-                    data = statusUpdate.data as MrsTaskResult;
-                } else {
-                    data = { resultSets: [], outParameters: statusUpdate.data } as MrsTaskResult;
-                }
-
-                return yield { data, message, status };
-            }
-
-            if (statusUpdate.status === "SCHEDULED") {
-                // this is not a final status report, so the produced must be kept open
-                const { message, status } = statusUpdate;
-
-                yield { message, status };
-            } else {
-                const runningTaskReport = statusUpdate as IMrsRunningTaskReport<MrsTaskStatusUpdate, MrsTaskResult>;
-
-                if (progress) {
-                    await progress(runningTaskReport);
-                }
-
-                yield runningTaskReport;
-            }
-
-            // Ensure potential future status updates are retrieved in subsequent event loop iterations to avoid CPU
-            // churn
-            await new Promise((resolve) => {
-                setTimeout(resolve, refreshRate);
-            });
-        }
-    }
-}
-
-export class MrsBaseTaskRun<MrsTaskStatusUpdate, MrsTaskResult, BigIntParameterNames extends string[] = never,
-    FixedPointParameterNames extends string[] = never>
-    extends MrsBaseTaskWatch<MrsTaskStatusUpdate, MrsTaskResult, BigIntParameterNames, FixedPointParameterNames> {
-    // @ts-expect-error undefined is never returned because all non-exception cases are handled in the loop
-    public async execute(): Promise<MrsTaskResult> {
-        const errorEvents = ["ERROR", "CANCELLED", "TIMEOUT"];
-
-        for await (const response of super.submit()) {
-            if (errorEvents.includes(response.status)) {
-                if (response.status === "TIMEOUT") {
-                    await this.task.kill();
-                }
-
-                throw new Error(response.message);
-            }
-
-            if (response.status === "COMPLETED") {
-                return response.data;
-            }
-        }
-    }
-}
-
-export class MrsTask<MrsTaskStatusUpdate, MrsTaskResult, BigIntParameterNames extends string[] = never,
-    FixedPointParameterNames extends string[] = never> {
-    public constructor(
-        private readonly schema: MrsBaseSchema,
-        private readonly requestPath: string,
-        public readonly id: string,
-        public readonly options: IMrsTaskOptions<MrsTaskStatusUpdate, MrsTaskResult, BigIntParameterNames,
-            FixedPointParameterNames> = { refreshRate: 2000, routineType: "FUNCTION" }) {
-    }
-
-    public async kill(): Promise<void> {
-        const input = `${this.schema.requestPath}${this.requestPath}/${this.id}`;
-        const _ = await this.schema.service.session.doFetch({
-            input,
-            method: "DELETE",
-            errorMsg: "Failed to kill the task.",
-        });
-
-        return;
-    }
-
-    public async* watch(): AsyncGenerator<
-        IMrsTaskReport<MrsTaskStatusUpdate, MrsTaskResult>, void, unknown> {
-        const request = new MrsBaseTaskWatch<MrsTaskStatusUpdate, MrsTaskResult, BigIntParameterNames,
-            FixedPointParameterNames>(this.schema, this.requestPath, this);
-        for await (const response of request.submit()) {
-            yield response;
-        }
     }
 }

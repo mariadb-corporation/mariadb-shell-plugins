@@ -25,279 +25,179 @@
 # To use this script you need to set these environment variables:
 #
 # MARIADB_SHELL=<path to the mariadb-shell binary>
-# MARIADB_SHELL_USER_CONFIG_HOME=<shell user config home>
-# MARIADB_SHELL_PLUGIN_SOURCE_DIR=<source code path to the plugins>
+# MARIADB_SHELL_USER_CONFIG_HOME=<shell user config home to use for the test run>
 #
 # If not configured, they will be set as follows:
-# MARIADB_SHELL to the mariadb-shell in PATH
-# MARIADB_SHELL_USER_CONFIG_HOME to /tmp/dot_mariadb_shell
-# MARIADB_SHELL_PLUGIN_SOURCE_DIR to ../../
-import shutil
-import os
-import tempfile
-import subprocess
-from pathlib import Path
+# MARIADB_SHELL to the mariadb-shell found in PATH
+# MARIADB_SHELL_USER_CONFIG_HOME to a temporary directory
+#
+# The suite deploys its own MariaDB sandbox (see tests/conftest.py), so a
+# mariadbd binary has to be on the PATH; no running server is needed.
+
+# cSpell:ignore mysqlsh mariadb userhome
+
 import argparse
-from contextlib import contextmanager
-
-import signal
-import sqlite3
-import zipfile
-
-
-def signal_handler(sig, frame):
-    print(f"1) Ctrl+C! captured: {sig}")
+import os
+import shlex
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 
-if os.name == "nt":
-    signal.signal(signal.SIGINT, signal_handler)
+def _resolve_shell(explicit):
+    shell = (
+        explicit
+        or os.environ.get("MARIADB_SHELL")
+        or shutil.which("mariadb-shell")
+    )
+    assert shell is not None, (
+        "Could not find the MariaDB Shell binary. Set MARIADB_SHELL or pass "
+        "--shell."
+    )
+    return str(shell)
 
 
-@contextmanager
-def pushd(new_path):
-    current = os.getcwd()
-    os.chdir(new_path.as_posix())
-    yield
-    os.chdir(current)
-
-
-def create_symlink(target: Path, link_name: Path, is_dir):
+def _create_symlink(target: Path, link_name: Path) -> None:
+    if link_name.exists() or link_name.is_symlink():
+        link_name.unlink()
     if os.name == "nt":
-        p = subprocess.run(f'mklink /J "{link_name}" "{target}"', shell=True)
-        print(p.stdout)
-        p.check_returncode()
+        subprocess.run(
+            f'mklink /J "{link_name}" "{target}"', shell=True, check=True
+        )
     else:
         os.symlink(target, link_name)
 
 
-arg_parser = argparse.ArgumentParser()
-
-arg_parser.add_argument(
-    "-d",
-    "--debug",
-    required=False,
-    choices=["TESTS", "BACKEND"],
-    default=os.environ.get("ATTACH_DEBUGGER", None),
-    help="Attach debugger to TESTS and/or BACKEND",
-)
-arg_parser.add_argument(
-    "-p", "--portable", required=False, type=Path, help="The path to the portable code"
-)
-arg_parser.add_argument(
-    "-s",
-    "--shell",
-    required=False,
-    type=Path,
-    default=os.environ.get(
-        "MARIADB_SHELL",
-        shutil.which("mariadb-shell.exe") if os.name == "nt" else shutil.which("mariadb-shell"),
-    ),
-    help="Path to MariaDB Shell binary",
-)
-arg_parser.add_argument("-v", "--verbose", required=False, help="Enable verbose mode")
-arg_parser.add_argument(
-    "-u",
-    "--userhome",
-    required=False,
-    type=Path,
-    default=os.environ.get("MARIADB_SHELL_USER_CONFIG_HOME", None),
-    help="Path to the user config home",
-)
-arg_parser.add_argument(
-    "-k",
-    "--only",
-    required=False,
-    type=str,
-    default=None,
-    help="Run only the tests that apply to the pattern",
-)
-arg_parser.add_argument(
-    "-P",
-    "--pytest",
-    required=False,
-    type=str,
-    default=None,
-    help="Pass additional options to pytest",
-)
-arg_parser.add_argument(
-    "-M",
-    "--shell-options",
-    required=False,
-    type=str,
-    default=None,
-    help="Pass additional options to the MariaDB Shell",
-)
-
-try:
-    args, other_arguments = arg_parser.parse_known_args()
-except argparse.ArgumentError as e:
-    print(str(e))
-
-print(args)
-
-# check if we're running in the backend directory
-assert Path(
-    os.path.join(os.getcwd(), "run_tests.py")
-).exists(), "Please run this script inside the backend directory."
-
-assert (
-    args.shell is not None
-), "Could not find the MariaDB Shell binary. Please specify it using the --shell parameter or the MARIADB_SHELL environment variable."
-
-
-class MyPaths:
-    def __init__(self, debug_mode, portable_path, shell_path, userhome_path: Path):
-        class MyPathsBase:
-            pass
-
-        self.source = MyPathsBase()
-        self.runtime = MyPathsBase()
-        self.runtime.plugins = MyPathsBase()
-        self.runtime.plugin_data = MyPathsBase()
-
-        self.shell = shell_path
-
-        if debug_mode:
-            self.runtime.root = Path(
-                os.path.join(tempfile.gettempdir(), "backend_debug")
-            )
-            shutil.rmtree(self.runtime.root, ignore_errors=True)
-        elif userhome_path is None:
-            self.runtime.root = Path(
-                os.path.join(tempfile.TemporaryDirectory().name, "dot_mariadb_shell")
-            )
-        else:
-            self.runtime.root = Path(userhome_path)
-
-        self.runtime.plugins.root = Path(os.path.join(self.runtime.root, "plugins"))
-        self.runtime.plugins.gui_plugin = Path(
-            os.path.join(self.runtime.plugins.root, "gui_plugin")
-        )
-        self.runtime.plugins.test_plugin = Path(
-            os.path.join(self.runtime.plugins.root, "test_plugin")
-        )
-        self.runtime.plugins.mrs_plugin = Path(
-            os.path.join(self.runtime.plugins.root, "mrs_plugin")
-        )
-        self.runtime.plugins.msm_plugin = Path(
-            os.path.join(self.runtime.plugins.root, "msm_plugin")
-        )
-
-        self.runtime.plugin_data.root = Path(
-            os.path.join(self.runtime.root, "plugin_data")
-        )
-        self.runtime.plugin_data.gui_plugin = Path(
-            os.path.join(self.runtime.plugin_data.root, "gui_plugin")
-        )
-
-        self.source.root = Path(os.path.abspath(os.path.join(Path().cwd(), "..")))
-        self.source.plugin = Path(os.path.join(self.source.root, "mrs_plugin"))
-        self.source.msm_plugin = Path(os.path.join(self.source.root, "msm_plugin"))
-
-        self.source.pytest_config = Path(
-            os.path.join(
-                self.source.plugin,
-                (
-                    "pytest-coverage.ini"
-                    if debug_mode is None
-                    else self.source.plugin / "pytest.ini"
-                ),
-            )
-        )
-
-        if portable_path is None:
-            self.source.code = self.source.plugin
-        else:
-            self.source.code = portable_path
-
-    def verify(self):
-        assert self.runtime.root.is_dir()
-        assert self.runtime.plugins.root.is_dir()
-        assert self.runtime.plugins.gui_plugin.is_dir()
-        assert self.source.webroot.is_dir()
-        assert self.source.pytest_config.is_file()
-
-
-if args.portable is not None and zipfile.is_zipfile(args.portable):
-    # Unzip the portable zip
-    unzip_path = os.path.dirname(args.portable)
-    with zipfile.ZipFile(args.portable, "r") as zip_ref:
-        zip_ref.extractall(unzip_path)
-
-    # Update the portable argument with the final path
-    args.portable = os.path.join(unzip_path, "gui_plugin")
-
-paths = MyPaths(args.debug, args.portable, args.shell, args.userhome)
-
-# remove the shell home dir
-if args.debug is not None and paths.runtime.root.exists():
-    shutil.rmtree(paths.runtime.root, ignore_errors=True)
-
-# create the shell home dir
-if not paths.runtime.root.is_dir():
-    paths.runtime.root.mkdir(parents=True)
-
-# create .mariadb-shell/plugins
-if not paths.runtime.plugins.root.is_dir():
-    paths.runtime.plugins.root.mkdir(parents=True)
-
-# remove link to .mariadb-shell/plugins/mrs_plugin
-if paths.runtime.plugins.mrs_plugin.exists():
-    paths.runtime.plugins.mrs_plugin.unlink()
-
-# remove link to .mariadb-shell/plugins/mrs_plugin
-if paths.runtime.plugins.msm_plugin.exists():
-    paths.runtime.plugins.msm_plugin.unlink()
-
-# Create source code symlink into the runtime plugin dir (.mariadb-shell/plugins/mrs_plugin)
-create_symlink(paths.source.code, paths.runtime.plugins.mrs_plugin, is_dir=True)
-
-create_symlink(paths.source.msm_plugin, paths.runtime.plugins.msm_plugin, is_dir=True)
-LOGS = ""
-PATTERN = ""
-SHELL_FLAGS = args.shell_options or ""
-EXTRA_OPTIONS = ""
-# Enables verbose execution
-if args.verbose is not None or args.debug is not None:
-    LOGS = "-sv"
-    SHELL_FLAGS += " --verbose"
-
-if args.only is not None:
-    PATTERN = f"-k {args.only}"
-
-with pushd(paths.source.plugin):
-    env = os.environ.copy()
-    env["MARIADB_SHELL_USER_CONFIG_HOME"] = paths.runtime.root.as_posix()
-    env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
-    env["COV_CORE_DATAFILE"] = ".coverage.eager"
-
-    if args.debug is not None:
-        env["ATTACH_DEBUGGER"] = args.debug
-
-    # Install the test dependencies into the shell's Python. pytest-mock and
-    # pytest-asyncio are needed by the suite itself (the `mocker` fixture and
-    # the bare `async def` tests), so a missing install shows up as collection
-    # errors rather than as an obvious failure.
-    command = (
-        f"{paths.shell} --pym pip install "
-        f"-r {paths.source.plugin / 'requirements.txt'}"
-    )
-    print(f"Dependency install command: {command}")
-    completed = subprocess.run(command, shell=True, env=env)
-    if completed.returncode != 0:
-        print("Failed to install the test dependencies.")
-        exit(completed.returncode)
-
-    command = f"{paths.shell} {SHELL_FLAGS} --pym pytest {args.pytest or ''} --cov={paths.source.code} --cov-append -vv -c {paths.source.pytest_config} {LOGS} {paths.source.plugin} {PATTERN} {" ".join(other_arguments)}"
-    print(f"Test run command: {command}")
-    shell = subprocess.run(command, shell=True, env=env)
-
-if not shell.returncode == 0:
+def _print_shell_log(user_home: Path) -> None:
+    """Prints the shell's log of the run, the place the plugin's errors go."""
+    log_path = user_home / "mariadb-shell.log"
+    if not log_path.exists():
+        return
     print("----------------------------------------")
     print("MariaDB Shell log")
     print("----------------------------------------")
-    with open(os.path.join(paths.runtime.root / "mariadb-shell.log")) as f:
-        for line in f.readlines():
-            print(line.strip())
+    with open(log_path, encoding="utf-8", errors="replace") as log:
+        for line in log:
+            print(line.rstrip())
 
-exit(shell.returncode)
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-s",
+        "--shell",
+        required=False,
+        type=Path,
+        default=os.environ.get(
+            "MARIADB_SHELL",
+            shutil.which("mariadb-shell.exe") if os.name == "nt" else shutil.which("mariadb-shell"),
+        ),
+        help="Path to MariaDB Shell binary",
+    )
+    parser.add_argument(
+        "-u",
+        "--userhome",
+        default=os.environ.get("MARIADB_SHELL_USER_CONFIG_HOME"),
+        help="Shell user config home to use",
+    )
+    parser.add_argument(
+        "-k", "--only", default=None, help="Only run tests matching this pattern"
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Show the tests' output and run the shell with --verbose",
+    )
+    parser.add_argument(
+        "-M",
+        "--shell-options",
+        default=None,
+        help="Additional options to pass to the MariaDB Shell",
+    )
+    parser.add_argument(
+        "-P",
+        "--pytest",
+        default=None,
+        help="Additional options to pass to pytest",
+    )
+    # Anything else (a test file, say) is handed to pytest as given.
+    args, pytest_arguments = parser.parse_known_args()
+
+    shell = _resolve_shell(args.shell)
+
+    plugin_dir = Path(__file__).resolve().parent  # .../mrs_plugin
+    source_root = plugin_dir.parent  # repo root containing the plugin folders
+
+    assert (plugin_dir / "run_tests.py").exists(), (
+        "Please run this script inside the mrs_plugin directory."
+    )
+
+    user_home = Path(
+        args.userhome
+        or os.path.join(
+            tempfile.mkdtemp(prefix="mrs_dot_mariadb_shell_"), "dot_mariadb_shell"
+        )
+    )
+    plugins_dir = user_home / "plugins"
+    plugins_dir.mkdir(parents=True, exist_ok=True)
+
+    # The shell loads the plugins from the user config home, so this plugin and
+    # msm_plugin, which deploys the MRS metadata schema, must be available
+    # there.
+    _create_symlink(plugin_dir, plugins_dir / "mrs_plugin")
+    msm_source = source_root / "msm_plugin"
+    if msm_source.is_dir():
+        _create_symlink(msm_source, plugins_dir / "msm_plugin")
+
+    env = os.environ.copy()
+    env["MARIADB_SHELL_USER_CONFIG_HOME"] = user_home.as_posix()
+    env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
+    env["MARIADB_SHELL"] = shell
+    # The sandbox the suite deploys is a throw-away test server: skipping the
+    # syncs makes its DDL, which the suite does a lot of, much faster.
+    env.setdefault("MARIADB_SANDBOX_NO_SYNC", "1")
+
+    shell_options = args.shell_options or ""
+    pytest_options = [args.pytest or ""]
+    if args.verbose:
+        shell_options += " --verbose"
+        pytest_options.append("-sv")
+    if args.only:
+        # Quoted, so a pattern with "or" / "and" stays one argument.
+        pytest_options.append(f"-k {shlex.quote(args.only)}")
+    pytest_options.extend(pytest_arguments)
+    # A test file or directory given on the command line replaces the whole
+    # plugin as the thing to run.
+    test_paths = [argument for argument in pytest_arguments if not argument.startswith("-")]
+    tests = " ".join(test_paths) if test_paths else str(plugin_dir)
+
+    # Install the test dependencies into the shell's Python. Driven off
+    # requirements.txt so the versions here honour the pins declared there.
+    command = f"{shell} --pym pip install -r {plugin_dir / 'requirements.txt'}"
+    print(command)
+    completed = subprocess.run(command, shell=True, env=env)
+    if completed.returncode != 0:
+        print("Failed to install the test dependencies.")
+        return completed.returncode
+
+    command = (
+        f"{shell} {shell_options} --pym pytest "
+        f"-c {plugin_dir / 'pytest-coverage.ini'} "
+        f"--cov={plugin_dir} --cov-append -vv {tests} "
+        f"{' '.join(option for option in pytest_options if option)} "
+        f"-W ignore::DeprecationWarning"
+    )
+    print(command)
+    # The tests resolve relative paths (the content sets, the grammar test's
+    # files) from the plugin directory.
+    completed = subprocess.run(command, shell=True, env=env, cwd=plugin_dir)
+    if completed.returncode != 0:
+        _print_shell_log(user_home)
+    return completed.returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

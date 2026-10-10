@@ -24,28 +24,73 @@
 
 import json
 import os
-import re
+import shutil
+import socket
 
 import mysqlsh
 from mrs_plugin import lib
-from mrs_plugin.schemas import add_schema, delete_schema
-from mrs_plugin.services import add_service, delete_service, get_service
-from mrs_plugin.db_objects import add_db_object, delete_db_object
 
 
-def get_default_db_object_init(
+def add_test_schema(session, service_id, schema_name, request_path=None, **kwargs):
+    """Adds a REST schema the way the former mrs.add.schema() did."""
+    with lib.core.MrsDbTransaction(session):
+        return lib.schemas.add_schema(
+            session=session,
+            schema_name=schema_name,
+            service_id=lib.core.id_to_uuid(service_id, "service_id"),
+            request_path=request_path or f"/{schema_name}",
+            requires_auth=kwargs.get("requires_auth"),
+            enabled=kwargs.get("enabled", 1),
+            items_per_page=kwargs.get("items_per_page"),
+            comments=kwargs.get("comments"),
+            options=kwargs.get("options"),
+            metadata=kwargs.get("metadata"),
+        )
+
+
+def add_test_rest_object(session, **kwargs):
+    """Adds a REST object with its grants the way the former
+    mrs.add.dbObject() did."""
+    kwargs.pop("session", None)
+    with lib.core.MrsDbTransaction(session):
+        rest_object_id, grants = lib.rest_objects.add_rest_object(
+            session=session,
+            schema_id=lib.core.id_to_uuid(kwargs["schema_id"], "schema_id"),
+            rest_object_name=kwargs["rest_object_name"],
+            request_path=kwargs["request_path"],
+            enabled=kwargs.get("enabled", True),
+            rest_object_type=kwargs["rest_object_type"],
+            items_per_page=kwargs.get("items_per_page"),
+            requires_auth=kwargs.get("requires_auth"),
+            row_user_ownership_enforced=kwargs.get("row_user_ownership_enforced"),
+            row_user_ownership_column=kwargs.get("row_user_ownership_column"),
+            crud_operation_format=kwargs.get("crud_operation_format"),
+            comments=kwargs.get("comments") or "",
+            media_type=kwargs.get("media_type"),
+            auto_detect_media_type=kwargs.get("auto_detect_media_type", True),
+            auth_stored_procedure=kwargs.get("auth_stored_procedure"),
+            options=kwargs.get("options"),
+            metadata=kwargs.get("metadata"),
+            data_mappings=kwargs.get("data_mappings"),
+        )
+        for grant in grants:
+            lib.core.MrsDbExec(grant).exec(session)
+    return rest_object_id
+
+
+def get_default_rest_object_init(
     session,
     schema_id,
     name=None,
     request_path=None,
-    db_object_type=None,
+    rest_object_type=None,
     object_options=None,
 ):
-    object_id = lib.core.get_sequence_id(session)
+    data_mapping_id = lib.core.get_sequence_id(session)
     return {
         "schema_id": schema_id,
-        "db_object_name": name or "ContactBasicInfo",
-        "db_object_type": db_object_type or "VIEW",
+        "rest_object_name": name or "ContactBasicInfo",
+        "rest_object_type": rest_object_type or "VIEW",
         "request_path": request_path or "/view_contact_basic_info",
         "crud_operation_format": "FEED",
         "requires_auth": False,
@@ -57,9 +102,9 @@ def get_default_db_object_init(
         "auth_stored_procedure": None,
         "options": {"aaa": "val aaa", "bbb": "val bbb"},
         "metadata": None,
-        "objects": [
+        "data_mappings": [
             {
-                "id": object_id,
+                "id": data_mapping_id,
                 "name": "MyServicePhoneBookContactsWithEmail",
                 "position": 0,
                 "kind": "RESULT",
@@ -77,7 +122,7 @@ def get_default_db_object_init(
                 "fields": [
                     {
                         "id": lib.core.get_sequence_id(session),
-                        "object_id": object_id,
+                        "data_mapping_id": data_mapping_id,
                         "name": "id",
                         "position": 1,
                         "db_column": {
@@ -104,85 +149,54 @@ def get_default_db_object_init(
     }
 
 
-def get_default_user_init(
-    auth_app_id,
-    name="Temp User",
-    email="tempuser@domain.com",
-    auth_string="MySQLR0cks!",
-    options=None,
-    app_options=None,
-):
-    return {
-        "auth_app_id": auth_app_id,
-        "name": name,
-        "email": email,
-        "vendor_user_id": None,
-        "login_permitted": True,
-        "mapped_user_id": None,
-        "options": options,
-        "app_options": app_options,
-        "auth_string": auth_string,
-    }
+def rest_path(path):
+    """A request path quoted for REST SQL."""
+    return lib.core.quote_ident(path)
 
 
-def get_default_role_init(
-    caption=None, description=None, derived_from=None, specific_service_id=None
-):
-    return {
-        "caption": caption or "Test role",
-        "description": description or "Test role description",
-        "derived_from_role_id": derived_from,
-        "specific_to_service_id": specific_service_id,
-    }
-
-
-def get_default_content_set_init(
-    service_id,
-    content_dir=None,
-    request_path=None,
-    options={},
-    comments=None,
-    requires_auth=False,
-):
-    return {
-        "service_id": service_id,
-        "request_path": request_path or "/tempContentSet",
-        "requires_auth": requires_auth,
-        "comments": comments or "Content set comment",
-        "options": options
-        or {
-            "option_1": "value 1",
-            "option_2": "value 2",
-            "option_3": "value 3",
-        },
-        "content_dir": content_dir,
-    }
-
-
-def get_default_auth_app_init(**kwargs):
-    name = kwargs.get("name", kwargs.get("url").split("/")[1])
-
-    return {
-        "service_id": kwargs.get("service_id"),
-        "auth_vendor_id": kwargs.get("auth_vendor_id")
-        or lib.core.id_to_binary(
-            "0x31000000000000000000000000000000", "auth:vendor_id"
+def drop_rest_rest_object(session, rest_object_id):
+    """Drops a REST object with REST SQL, which also revokes its grants."""
+    row = session.run_sql(
+        lib.core.metadata_sql(
+            session,
+            """SELECT o.request_path, o.object_type, s.request_path, se.url_context_root
+        FROM <metadata>.rest_object o
+            JOIN <metadata>.rest_schema s ON s.id = o.rest_schema_id
+            JOIN <metadata>.service se ON se.id = s.service_id
+        WHERE o.id = ?""",
         ),
-        "name": name,
-        "description": kwargs.get("description"),
-        "url": kwargs.get("url", "/test_auth"),
-        "url_direct_auth": kwargs.get("url_direct_auth"),
-        "access_token": kwargs.get("access_token"),
-        "app_id": kwargs.get("app_id"),
-        "limit_to_reg_users": kwargs.get("limit_to_reg_users"),
-        "default_role_id": kwargs.get("default_role_id"),
-    }
+        [rest_object_id],
+    ).fetch_one()
+    if row:
+        kind = "VIEW" if row[1] in ("TABLE", "VIEW") else row[1]
+        session.run_sql(
+            f"DROP REST {kind} {rest_path(row[0])} "
+            f"FROM SERVICE {rest_path(row[3])} SCHEMA {rest_path(row[2])}"
+        )
+
+
+def drop_rest_schema(session, schema_id):
+    row = session.run_sql(
+        lib.core.metadata_sql(
+            session,
+            """SELECT s.request_path, se.url_context_root
+        FROM <metadata>.rest_schema s
+            JOIN <metadata>.service se ON se.id = s.service_id
+        WHERE s.id = ?""",
+        ),
+        [schema_id],
+    ).fetch_one()
+    if row:
+        session.run_sql(
+            f"DROP REST SCHEMA {rest_path(row[0])} FROM SERVICE {rest_path(row[1])}"
+        )
 
 
 class SchemaCT(object):
     def __init__(self, session, service_id, schema_name, request_path, **kwargs):
         self._session = session
-        self._schema_id = add_schema(
+        self._schema_id = add_test_schema(
+            session,
             service_id=service_id,
             schema_name=schema_name,
             request_path=request_path,
@@ -195,7 +209,7 @@ class SchemaCT(object):
         return self._schema_id
 
     def __exit__(self, type, value, traceback):
-        delete_schema(session=self._session, schema_id=self._schema_id)
+        drop_rest_schema(self._session, self._schema_id)
 
     @property
     def id(self):
@@ -205,116 +219,247 @@ class SchemaCT(object):
 class ServiceCT(object):
     def __init__(self, session, url_context_root, **kwargs):
         self._session = session
-        self._args = kwargs
-        self._args["url_context_root"] = url_context_root
-        self._args["url_protocol"] = ["HTTP"]
-        self._args["enabled"] = 1
-        self._args["auth_path"] = "/authentication"
-        self._args["comments"] = kwargs.get("comments", "")
-
-        self._service_id = lib.services.add_service(session, None, self._args)
-        assert self._service_id is not None
+        self._path = url_context_root
+        comments = kwargs.get("comments")
+        session.run_sql(
+            f"CREATE REST SERVICE {rest_path(url_context_root)}"
+            + (f" COMMENT {lib.core.squote_str(comments)}" if comments else "")
+        )
+        service = lib.services.get_service(session, url_context_root=url_context_root)
+        assert service is not None
+        self._service_id = service["id"]
 
     def __enter__(self):
         return self._service_id
 
     def __exit__(self, type, value, traceback):
-        assert (
-            delete_service(session=self._session, service_id=self._service_id) == True
-        )
+        self._session.run_sql(f"DROP REST SERVICE IF EXISTS {rest_path(self._path)}")
 
     @property
     def id(self):
         return self._service_id
 
 
-class AuthAppCT:
-    def __init__(self, session, **kwargs):
+class RestObjectCT:
+    def __init__(self, session, **kwargs) -> None:
         self._session = session
-        self.service_id = kwargs.get("service_id")
-        params = {
-            "service_id": kwargs.get("service_id"),
-            "auth_vendor_id": kwargs.get("auth_vendor_id"),
-            "name": kwargs.get("name"),
-            "description": kwargs.get("description"),
-            "url": kwargs.get("url"),
-            "url_direct_auth": kwargs.get("url_direct_auth"),
-            "access_token": kwargs.get("access_token"),
-            "app_id": kwargs.get("app_id"),
-            "limit_to_reg_users": kwargs.get("limit_to_reg_users"),
-            "default_role_id": kwargs.get("default_role_id"),
-        }
-        self._auth_app_id = lib.auth_apps.add_auth_app(
-            session,
-            params["service_id"],
-            params["auth_vendor_id"],
-            params["name"],
-            params["description"],
-            params["url"],
-            params["url_direct_auth"],
-            params["access_token"],
-            params["app_id"],
-            params["limit_to_reg_users"],
-            params["default_role_id"],
+        self._rest_object_id = add_test_rest_object(session, **kwargs)
+
+    def __enter__(self):
+        return self._rest_object_id
+
+    def __exit__(self, type, value, traceback):
+        drop_rest_rest_object(self._session, self._rest_object_id)
+
+
+def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp_dir):
+    """Creates the REST service, schema, content set and REST object of a
+    phone book database for the tests."""
+    service = lib.services.get_service(session, url_context_root=service_context_root)
+    if not service:
+        session.run_sql(
+            f"CREATE REST SERVICE {rest_path(service_context_root)} COMMENT 'Test service'"
+        )
+        service = lib.services.get_service(
+            session, url_context_root=service_context_root
+        )
+    assert service is not None, f"Unable to add the {service_context_root} service"
+
+    schema_id = add_test_schema(
+        session,
+        service["id"],
+        schema_name,
+        requires_auth=False,
+        items_per_page=20,
+        comments="test schema",
+    )
+
+    content_set = lib.content_sets.get_content_set(
+        session, service_id=service["id"], request_path="/test_content_set"
+    )
+    if not content_set:
+        session.run_sql(
+            f"CREATE REST CONTENT SET /test_content_set "
+            f"ON SERVICE {rest_path(service_context_root)} "
+            "COMMENT 'Content Set' OPTIONS {} AUTHENTICATION NOT REQUIRED"
+        )
+        for request_path, data in (
+            ("/readme.txt", b"Line '1'\nLine \"2\"\nLine \\3\\"),
+            ("/somebinaryfile.bin", b"\0\1\2\3\4\5\6\7"),
+        ):
+            session.run_sql(
+                lib.content_sets.content_file_statement(
+                    request_path,
+                    service_context_root,
+                    "/test_content_set",
+                    data,
+                    {},
+                )
+            )
+        content_set = lib.content_sets.get_content_set(
+            session, service_id=service["id"], request_path="/test_content_set"
         )
 
-    def __enter__(self):
-        return self._auth_app_id
+    object_key = lib.core.convert_id_to_string(lib.core.get_sequence_id(session))
+    rest_object = {
+        "rest_object_name": "Contacts",
+        "rest_object_type": "TABLE",
+        "schema_id": schema_id,
+        "auto_add_schema": False,
+        "request_path": "/Contacts",
+        "enabled": True,
+        "crud_operations": ["READ"],
+        "crud_operation_format": "FEED",
+        "requires_auth": True,
+        "row_user_ownership_enforced": False,
+        "comments": "",
+        "auto_detect_media_type": False,
+        "auth_stored_procedure": "",
+        "options": None,
+        "data_mappings": [
+            {
+                "id": object_key,
+                "rest_object_id": "",
+                "name": "MyServiceAnalogPhoneBookContacts",
+                "position": 0,
+                "kind": "RESULT",
+                "fields": [
+                    {
+                        "id": lib.core.convert_id_to_string(
+                            lib.core.get_sequence_id(session)
+                        ),
+                        "data_mapping_id": object_key,
+                        "name": "id",
+                        "position": 1,
+                        "db_column": {
+                            "comment": "",
+                            "datatype": "int",
+                            "id_generation": None,
+                            "is_generated": False,
+                            "is_primary": True,
+                            "is_unique": False,
+                            "name": "id",
+                            "not_null": True,
+                            "srid": None,
+                        },
+                        "enabled": True,
+                        "allow_filtering": True,
+                        "allow_sorting": True,
+                        "no_check": False,
+                        "no_update": False,
+                    },
+                    {
+                        "id": lib.core.convert_id_to_string(
+                            lib.core.get_sequence_id(session)
+                        ),
+                        "data_mapping_id": object_key,
+                        "name": "fName",
+                        "position": 2,
+                        "db_column": {
+                            "comment": "",
+                            "datatype": "varchar(45)",
+                            "id_generation": None,
+                            "is_generated": False,
+                            "is_primary": False,
+                            "is_unique": False,
+                            "name": "f_name",
+                            "not_null": False,
+                            "srid": None,
+                        },
+                        "enabled": True,
+                        "allow_filtering": True,
+                        "allow_sorting": False,
+                        "no_check": False,
+                        "no_update": False,
+                    },
+                    {
+                        "id": lib.core.convert_id_to_string(
+                            lib.core.get_sequence_id(session)
+                        ),
+                        "data_mapping_id": object_key,
+                        "name": "lName",
+                        "position": 3,
+                        "db_column": {
+                            "comment": "",
+                            "datatype": "varchar(45)",
+                            "id_generation": None,
+                            "is_generated": False,
+                            "is_primary": False,
+                            "is_unique": False,
+                            "name": "l_name",
+                            "not_null": False,
+                            "srid": None,
+                        },
+                        "enabled": True,
+                        "allow_filtering": True,
+                        "allow_sorting": False,
+                        "no_check": False,
+                        "no_update": False,
+                    },
+                    {
+                        "id": lib.core.convert_id_to_string(
+                            lib.core.get_sequence_id(session)
+                        ),
+                        "data_mapping_id": object_key,
+                        "name": "number",
+                        "position": 4,
+                        "db_column": {
+                            "comment": "",
+                            "datatype": "varchar(20)",
+                            "id_generation": None,
+                            "is_generated": False,
+                            "is_primary": False,
+                            "is_unique": False,
+                            "name": "number",
+                            "not_null": False,
+                            "srid": None,
+                        },
+                        "enabled": True,
+                        "allow_filtering": True,
+                        "allow_sorting": False,
+                        "no_check": False,
+                        "no_update": False,
+                    },
+                    {
+                        "id": lib.core.convert_id_to_string(
+                            lib.core.get_sequence_id(session)
+                        ),
+                        "data_mapping_id": object_key,
+                        "name": "email",
+                        "position": 5,
+                        "db_column": {
+                            "comment": "",
+                            "datatype": "varchar(45)",
+                            "id_generation": None,
+                            "is_generated": False,
+                            "is_primary": False,
+                            "is_unique": False,
+                            "name": "email",
+                            "not_null": False,
+                            "srid": None,
+                        },
+                        "enabled": True,
+                        "allow_filtering": True,
+                        "allow_sorting": False,
+                        "no_check": False,
+                        "no_update": False,
+                    },
+                ],
+            }
+        ],
+    }
 
-    def __exit__(self, type, value, traceback):
-        lib.auth_apps.delete_auth_app(self._session, app_id=self._auth_app_id)
+    rest_object_id = add_test_rest_object(session, **rest_object)
+    assert rest_object_id is not None
 
-
-class DbObjectCT:
-    def __init__(self, session, **kwargs) -> None:
-        self._session = session
-        self._db_object_id, grants = lib.db_objects.add_db_object(session, **kwargs)
-        for grant in grants:
-            lib.core.MrsDbExec(grant).exec(session)
-
-    def __enter__(self):
-        return self._db_object_id
-
-    def __exit__(self, type, value, traceback):
-        lib.db_objects.delete_db_object(self._session, db_object_id=self._db_object_id)
-
-
-class ContentSetCT:
-    def __init__(self, session, **kwargs) -> None:
-        self._session = session
-        self._content_set_id, self.file_list_count = lib.content_sets.add_content_set(
-            session, **kwargs
-        )
-
-    def __enter__(self):
-        return self._content_set_id
-
-    def __exit__(self, type, value, traceback):
-        lib.content_sets.delete_content_set(self._session, [self._content_set_id])
-
-
-class UserCT:
-    def __init__(self, session, **kwargs) -> None:
-        self._session = session
-        self._user_id = lib.users.add_user(session, **kwargs)
-
-    def __enter__(self):
-        return self._user_id
-
-    def __exit__(self, type, value, traceback):
-        lib.users.delete_user_by_id(self._session, self._user_id)
-
-
-class RoleCT:
-    def __init__(self, session, **kwargs) -> None:
-        self._session = session
-        self._role_id = lib.roles.add_role(session, **kwargs)
-
-    def __enter__(self):
-        return self._role_id
-
-    def __exit__(self, type, value, traceback):
-        lib.roles.delete_role(self._session, self._role_id)
+    return {
+        "session": session,
+        "service_id": service["id"],
+        "schema_id": schema_id,
+        "rest_object_id": rest_object_id,
+        "content_set_id": content_set["id"],
+        "temp_dir": temp_dir.name,
+    }
 
 
 class TableContents(object):
@@ -565,444 +710,13 @@ def create_test_db(session, schema_name):
                         JOIN `Notes` t2 ON t1.`id` = t2.`contact_id`;""")
 
 
-def reset_mrs_database(session):
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.audit_log")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.content_file")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.content_set")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.db_object")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.db_schema")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.auth_app")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.mrs_user_has_role")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.mrs_user")
-
-    roles = (
-        lib.core.MrsDbExec(
-            "SELECT * FROM mysql_rest_service_metadata.mrs_role WHERE id <> ?",
-            [lib.roles.FULL_ACCESS_ROLE_ID],
-        )
-        .exec(session)
-        .items
-    )
-
-    roles: list = [role["id"] for role in roles]
-
-    while roles:
-        for role in roles:
-            try:
-                session.run_sql(
-                    "DELETE FROM mysql_rest_service_metadata.mrs_role WHERE id = ?",
-                    [role],
-                )
-                roles.remove(role)
-            except Exception as e:
-                pass
-
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.service")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.url_host_alias")
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.url_host")
-
-    session.run_sql("DELETE FROM mysql_rest_service_metadata.config")
-    session.run_sql(
-        "INSERT INTO mysql_rest_service_metadata.config (id, service_enabled, data) VALUES (1, 1, '{}')"
-    )
-
-
-def reset_privileges(session):
-    session.run_sql(
-        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_data_provider' IGNORE UNKNOWN USER"
-    )
-    session.run_sql(
-        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_admin' IGNORE UNKNOWN USER"
-    )
-    session.run_sql(
-        "REVOKE ALL PRIVILEGES ON *.* FROM 'mysql_rest_service_schema_admin' IGNORE UNKNOWN USER"
-    )
-
-    entries = lib.core.MrsDbExec(f"""
-        SELECT *
-        FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
-        WHERE GRANTEE LIKE '%mysql_rest_service_data_provider%'
-        """).exec(session).items
-
-    assert len(entries) == 0
-
-
-def create_mrs_phonebook_schema(session, service_context_root, schema_name, temp_dir):
-
-    entries = lib.core.MrsDbExec("""
-        SELECT *
-        FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
-        WHERE GRANTEE LIKE '%mysql_rest_service_data_provider%'
-        """).exec(session).items
-
-    service = lib.services.get_service(session, url_context_root=service_context_root)
-
-    if not service:
-        url_host = (
-            lib.core.select("url_host", where="name = ?")
-            .exec(session, ["localhost"])
-            .first
-        )
-
-        service_data = {
-            "url_context_root": service_context_root,
-            "url_protocol": ["HTTP"],
-            "url_host_id": None,
-            "enabled": 1,
-            "comments": "Test service",
-            "auth_path": "/authentication",
-            "auth_completed_url": None,
-            "auth_completed_url_validation": None,
-            "auth_completed_page_content": None,
-        }
-
-        service_id = lib.services.add_service(session, None, service_data)
-        service = lib.services.get_service(session, service_id=service_id)
-
-    assert service is not None, f"Unable to add the /test service: {service}"
-
-    assert service is not None
-    assert isinstance(service, dict)
-    expected = {
-        "id": service["id"],
-        "parent_id": None,
-        "enabled": 1,
-        "url_protocol": ["HTTP"],
-        "url_host_name": "",
-        "url_context_root": service_context_root,
-        "comments": "Test service",
-        "options": lib.services.DEFAULT_OPTIONS,
-        "metadata": None,
-        "host_ctx": f"{service_context_root}",
-        "url_host_id": service["url_host_id"],
-        "auth_path": "/authentication",
-        "auth_completed_url": None,
-        "auth_completed_url_validation": None,
-        "auth_completed_page_content": None,
-        "is_current": 0,
-        "in_development": None,
-        "full_service_path": f"{service_context_root}",
-        "published": 0,
-        "sorted_developers": None,
-        # The service.name column defaults to
-        # regexp_replace(url_context_root, '[^0-9a-zA-Z ]', ''), so a service
-        # added without an explicit name is named after its context root.
-        "name": re.sub(r"[^0-9a-zA-Z ]", "", service_context_root),
-        "auth_apps": service["auth_apps"],
-    }
-    assert service == expected, f"{service}\n{expected}"
-
-    schema_data = {
-        "service_id": service["id"],
-        "schema_name": schema_name,
-        "request_path": f"/{schema_name}",
-        "requires_auth": False,
-        "enabled": True,
-        "items_per_page": 20,
-        "comments": "test schema",
-        "session": session,
-    }
-    from ...schemas import add_schema
-
-    schema_id = add_schema(**schema_data)
-    schema = lib.schemas.get_schema(
-        session, schema_id=lib.core.id_to_binary(schema_id, "schema_id")
-    )
-
-    content_set = lib.content_sets.get_content_set(
-        session, service_id=service["id"], request_path="/test_content_set"
-    )
-
-    if not content_set:
-        tmpdir_path = temp_dir.name
-        with open(os.path.join(tmpdir_path, "somebinaryfile.bin"), "w+") as f:
-            f.write("\0\1\2\3\4\5\6\7")
-        with open(os.path.join(tmpdir_path, "readme.txt"), "w+") as f:
-            f.write("Line '1'\nLine \"2\"\nLine \\3\\")
-        content_set = {
-            "request_path": "/test_content_set",
-            "requires_auth": False,
-            "comments": "Content Set",
-            "content_dir": tmpdir_path,
-            "session": session,
-        }
-
-        from ...content_sets import add_content_set
-
-        content_set_result = add_content_set(service["id"], **content_set)
-
-        content_set = lib.content_sets.get_content_set(
-            session, content_set_id=content_set_result["content_set_id"]
-        )
-
-    object_key = lib.core.convert_id_to_string(lib.core.get_sequence_id(session))
-    db_object = {
-        "db_object_name": "Contacts",
-        "db_object_type": "TABLE",
-        "schema_id": schema_id,
-        "auto_add_schema": False,
-        "request_path": "/Contacts",
-        "enabled": True,
-        "crud_operations": ["READ"],
-        "crud_operation_format": "FEED",
-        "requires_auth": True,
-        "row_user_ownership_enforced": False,
-        "comments": "",
-        "auto_detect_media_type": False,
-        "auth_stored_procedure": "",
-        "options": None,
-        "objects": [
-            {
-                "id": object_key,
-                "db_object_id": "",
-                "name": "MyServiceAnalogPhoneBookContacts",
-                "position": 0,
-                "kind": "RESULT",
-                "fields": [
-                    {
-                        "id": lib.core.convert_id_to_string(
-                            lib.core.get_sequence_id(session)
-                        ),
-                        "object_id": object_key,
-                        "name": "id",
-                        "position": 1,
-                        "db_column": {
-                            "comment": "",
-                            "datatype": "int",
-                            "id_generation": None,
-                            "is_generated": False,
-                            "is_primary": True,
-                            "is_unique": False,
-                            "name": "id",
-                            "not_null": True,
-                            "srid": None,
-                        },
-                        "enabled": True,
-                        "allow_filtering": True,
-                        "allow_sorting": True,
-                        "no_check": False,
-                        "no_update": False,
-                    },
-                    {
-                        "id": lib.core.convert_id_to_string(
-                            lib.core.get_sequence_id(session)
-                        ),
-                        "object_id": object_key,
-                        "name": "fName",
-                        "position": 2,
-                        "db_column": {
-                            "comment": "",
-                            "datatype": "varchar(45)",
-                            "id_generation": None,
-                            "is_generated": False,
-                            "is_primary": False,
-                            "is_unique": False,
-                            "name": "f_name",
-                            "not_null": False,
-                            "srid": None,
-                        },
-                        "enabled": True,
-                        "allow_filtering": True,
-                        "allow_sorting": False,
-                        "no_check": False,
-                        "no_update": False,
-                    },
-                    {
-                        "id": lib.core.convert_id_to_string(
-                            lib.core.get_sequence_id(session)
-                        ),
-                        "object_id": object_key,
-                        "name": "lName",
-                        "position": 3,
-                        "db_column": {
-                            "comment": "",
-                            "datatype": "varchar(45)",
-                            "id_generation": None,
-                            "is_generated": False,
-                            "is_primary": False,
-                            "is_unique": False,
-                            "name": "l_name",
-                            "not_null": False,
-                            "srid": None,
-                        },
-                        "enabled": True,
-                        "allow_filtering": True,
-                        "allow_sorting": False,
-                        "no_check": False,
-                        "no_update": False,
-                    },
-                    {
-                        "id": lib.core.convert_id_to_string(
-                            lib.core.get_sequence_id(session)
-                        ),
-                        "object_id": object_key,
-                        "name": "number",
-                        "position": 4,
-                        "db_column": {
-                            "comment": "",
-                            "datatype": "varchar(20)",
-                            "id_generation": None,
-                            "is_generated": False,
-                            "is_primary": False,
-                            "is_unique": False,
-                            "name": "number",
-                            "not_null": False,
-                            "srid": None,
-                        },
-                        "enabled": True,
-                        "allow_filtering": True,
-                        "allow_sorting": False,
-                        "no_check": False,
-                        "no_update": False,
-                    },
-                    {
-                        "id": lib.core.convert_id_to_string(
-                            lib.core.get_sequence_id(session)
-                        ),
-                        "object_id": object_key,
-                        "name": "email",
-                        "position": 5,
-                        "db_column": {
-                            "comment": "",
-                            "datatype": "varchar(45)",
-                            "id_generation": None,
-                            "is_generated": False,
-                            "is_primary": False,
-                            "is_unique": False,
-                            "name": "email",
-                            "not_null": False,
-                            "srid": None,
-                        },
-                        "enabled": True,
-                        "allow_filtering": True,
-                        "allow_sorting": False,
-                        "no_check": False,
-                        "no_update": False,
-                    },
-                ],
-            }
-        ],
-    }
-
-    from ...db_objects import add_db_object
-
-    db_object_id = add_db_object(**db_object)
-    assert id is not None
-
-    db_object = lib.db_objects.get_db_object(session, db_object_id)
-    assert db_object is not None
-
-    entries = lib.core.MrsDbExec(f"""
-        SELECT *
-        FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
-        WHERE GRANTEE LIKE '%mysql_rest_service_data_provider%'
-        """).exec(session).items
-
-    grants = lib.core.MrsDbExec(f"""
-        SELECT *
-        FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
-        WHERE TABLE_SCHEMA = '{db_object['schema_name']}'
-            AND TABLE_NAME = '{db_object['name']}'
-        """).exec(session).items
-
-    grants = [g["PRIVILEGE_TYPE"] for g in grants]
-    # assert sorted(grants) == ["SELECT"], f"{sorted(grants)}"
-
-    args = {
-        "auth_vendor_id": "0x30000000000000000000000000000000",
-        "description": "Authentication via MySQL accounts",
-        "url": "/mrs_auth_app",
-        "access_token": "test_token",
-        "limit_to_registered_users": False,
-        "registered_users": None,
-        "app_id": "some app id",
-        "session": session,
-    }
-
-    auth_apps = lib.auth_apps.get_auth_apps(session, service["id"])
-
-    if not auth_apps:
-        from ...auth_apps import add_auth_app
-
-        auth_app = add_auth_app(
-            app_name="MRS Auth App", service_id=service["id"], **args
-        )
-        assert auth_app is not None
-        assert "auth_app_id" in auth_app
-
-        auth_app = lib.auth_apps.get_auth_app(session, auth_app["auth_app_id"])
-
-        auth_apps = [auth_app]
-
-    auth_app = auth_apps[0]
-
-    users = lib.users.get_users(session, service["id"], auth_app["id"])
-
-    if not users:
-        user = {
-            "name": "User 1",
-            "email": "user1@host.com",
-            "auth_app_id": auth_app["id"],
-            "vendor_user_id": None,
-            "login_permitted": True,
-            "mapped_user_id": None,
-            "app_options": {},
-            "auth_string": "MySQLR0cks!",
-            "session": session,
-        }
-
-        from ...users import update_user, add_user
-
-        user = add_user(**user)
-        assert user is not None
-
-        users = [user]
-
-    user = users[0]
-
-    roles = {"Full Access": lib.roles.FULL_ACCESS_ROLE_ID}
-    service_roles = lib.roles.get_roles(session, service["id"])
-    if len(service_roles) == 1:
-        role_id = lib.roles.add_role(
-            session, None, service["id"], "DBA", "Database administrator."
-        )
-        role_id = lib.roles.add_role(
-            session,
-            role_id,
-            service["id"],
-            "Maintenance Admin",
-            "Maintenance administrator.",
-        )
-        role_id = lib.roles.add_role(
-            session, role_id, service["id"], "Process Admin", "Process administrator."
-        )
-
-        service_roles = lib.roles.get_roles(session, service["id"])
-
-    for role in service_roles:
-        roles[role["caption"]] = role["id"]
-
-    return {
-        "session": session,
-        "service_id": service["id"],
-        "schema_id": schema_id,
-        "db_object_id": db_object_id,
-        "content_set_id": content_set["id"],
-        "url_host_id": service["url_host_id"],
-        "auth_app_id": auth_app["id"],
-        "mrs_user1": user["id"],
-        "roles": roles,
-        "temp_dir": temp_dir.name,
-    }
-
-
-def get_db_object_privileges(session, schema_name, db_object_name):
+def get_rest_object_privileges(session, schema_name, rest_object_name):
     # 1. Fetch table privileges
     raw_table_grants = lib.core.MrsDbExec(f"""
         SELECT PRIVILEGE_TYPE
         FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES
         WHERE TABLE_SCHEMA = '{schema_name}'
-            AND TABLE_NAME = '{db_object_name}'
+            AND TABLE_NAME = '{rest_object_name}'
         """).exec(session).items
 
     table_grants = [g["PRIVILEGE_TYPE"].upper() for g in raw_table_grants]
@@ -1013,42 +727,67 @@ def get_db_object_privileges(session, schema_name, db_object_name):
         FROM mysql.procs_priv
         WHERE LOWER(Db) = LOWER(?)
             AND LOWER(Routine_name) = LOWER(?)
-        """).exec(session, [schema_name, db_object_name]).items
+        """).exec(session, [schema_name, rest_object_name]).items
 
     proc_grants = []
     for row in raw_proc_grants:
         priv = row.get("PROC_PRIV")
         if not priv:
             continue
-        
+
         # Handle string ('Execute,Alter Routine') or set/list ({'Execute', 'Alter Routine'})
         if isinstance(priv, str):
-            proc_grants.extend([p.strip().upper() for p in priv.split(',') if p.strip()])
+            proc_grants.extend(
+                [p.strip().upper() for p in priv.split(",") if p.strip()]
+            )
         elif isinstance(priv, (set, list, tuple)):
             proc_grants.extend([p.strip().upper() for p in priv])
 
     # 3. Combine and deduplicate preserving insertion order
     all_grants = table_grants + proc_grants
-    
+
     # dict.fromkeys removes duplicates while keeping original list order
     return list(dict.fromkeys(all_grants))
 
 
+def find_free_port() -> int:
+    """Returns a currently-free TCP port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def server_binary_available() -> bool:
+    """Returns whether a MariaDB/MySQL server binary is on the PATH.
+
+    The sandbox functions look the server up there, so this says whether a
+    sandbox can be deployed at all.
+    """
+    return bool(shutil.which("mariadbd") or shutil.which("mysqld"))
+
+
 def get_connection_data(instance: int = 0):
-    if instance == 0:
-        return {
-            "user": os.environ.get("MYSQL_USER", "root"),
-            "host": os.environ.get("MYSQL_HOST", "localhost"),
-            "port": os.environ.get("MYSQL_PORT", "3388"),
-            "password": os.environ.get("MYSQL_PASSWORD", ""),
-        }
-    else:
-        return {
-            "user": os.environ.get("MYSQL_USER", "root"),
-            "host": os.environ.get("MYSQL_HOST", "localhost"),
-            "port": os.environ.get(f"MYSQL_PORT{instance}", str(3388 + instance)),
-            "password": os.environ.get("MYSQL_PASSWORD", ""),
-        }
+    """Returns the root connection data of one of the run's sandboxes.
+
+    Instance 0 is the sandbox the ``init_mrs`` fixture deploys for the whole
+    session; the fixture publishes its port and password through MYSQL_PORT
+    and MYSQL_PASSWORD before anything connects. A further instance (the
+    metadata upgrade test deploys one of its own) gets a free port unless
+    MYSQL_PORT<instance> names one.
+
+    Args:
+        instance (int): Which sandbox of the run, 0 being the session's.
+
+    Returns:
+        A dict with user, host, port (as a string) and password.
+    """
+    port_variable = "MYSQL_PORT" if instance == 0 else f"MYSQL_PORT{instance}"
+    return {
+        "user": os.environ.get("MYSQL_USER", "root"),
+        "host": os.environ.get("MYSQL_HOST", "localhost"),
+        "port": os.environ.get(port_variable) or str(find_free_port()),
+        "password": os.environ.get("MYSQL_PASSWORD", ""),
+    }
 
 
 def create_shell_session(instance=0) -> mysqlsh.globals.session:
@@ -1064,7 +803,3 @@ def string_replace(text: str, replacers: dict) -> str:
     for key, value in replacers.items():
         text = text.replace(key, value)
     return text
-
-
-def get_current_schema(session: mysqlsh.globals.session):
-    return session.run_sql("SELECT DATABASE()").fetch_one()[0]

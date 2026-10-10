@@ -71,18 +71,41 @@
 - **`MARIADB_SHELL_USER_CONFIG_HOME` moves `plugin_data/msm_plugin`** (config, log, backups) — use a scratch one for experiments so the user's `workingDirectory` and update log are untouched.
 - **Interactive mode changes return values**: wrappers print and return None when `useWizards` is on. Set `shell.options.useWizards = False` in scripts that need the values.
 - **The `msm.set.sectionSqlContent` arguments are positional `file_path, section_id, sql_content`**; sections 140/170 (dev) and 240/270 (update) end up inside stored procedures — no `DELIMITER` there; 130/150/190/230/290 are top level and use `DELIMITER %%`.
+- **Scripting the release functions** (used 2026-10-08 for the MRS metadata 5.0.0): from
+  `mariadb-shell --py -f`, with a config home whose `plugins/msm_plugin` links to this repo
+  (otherwise `ModuleNotFoundError: msm_plugin`), `useWizards` False, then
+  `lib.management.set_development_version`, `prepare_release(version, next_version)`,
+  `set_section_sql_content(section_id, sql_content, file_path)` on the update script and
+  `generate_deployment_script(..., overwrite_existing=True)` to regenerate after an edit.
+- **Section 240 runs INSIDE a stored procedure** (`msm_update_<from>_to_<to>`): a
+  `DROP FUNCTION`/`PROCEDURE` there fails with MariaDB 1357 ("Can't drop or alter a
+  FUNCTION from within another stored routine"); put such drops in 290. MariaDB also
+  refuses to alter a column that is part of a FOREIGN KEY (1833): drop the FKs, alter,
+  re-add them, all in 240.
 - **Legal notices are additive**: keep Oracle's line and the FOSS exception, add exactly `Copyright (c) 2026, MariaDB plc.`.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-07), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-08):
 
 ```text
-$ git -C msm_plugin branch --show-current
-main   (no msm_plugin work this session)
+$ git branch --show-current
+wip/mrs_schema_improvements   (pushed, tracks origin; no PR yet)
 
-$ git -C msm_plugin status --short
-(clean before this checkpoint's context edits)
+$ git status --short   (one repository: every project's lines)
+ M mcp_plugin/run_tests.py
+ M mcp_plugin/tests/unit/helpers.py
+ M mcp_plugin/tests/unit/test_migration_e2e.py
+ M mcp_plugin/tests/unit/test_migrator_tools.py
+ M mcp_plugin/tests/unit/test_oauth.py
+ M mrs_plugin/scripts/run_grammar_test.sh
 ```
 
-msm_plugin itself: nothing open on `main`. PR #36 (`wip/msm_mrs_fixes`: MSM section 180, MRS GROUP BY queries, NO_AUTO_CREATE_USER / issue 14) is merged as `4bdf0ece`. Its remote branch `origin/wip/msm_mrs_fixes` is still on GitHub - deleting it was asked for and blocked by the session's permission layer; `git push origin --delete wip/msm_mrs_fixes` is the one command left.
+- Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
+  sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
+  the `MARIADB_SHELL_OPTIONS` support for the new shell build (made for the since removed
+  `--disable-modules=mrs`).
+- **msm_plugin itself: unchanged this session.** Its functions produced the MRS metadata
+  5.0.0 release (`prepare_release`, `set_section_sql_content`, `generate_deployment_script`).
+- PR #36 merged as `4bdf0ece`; `git push origin --delete wip/msm_mrs_fixes` is still the one
+  command left from it.

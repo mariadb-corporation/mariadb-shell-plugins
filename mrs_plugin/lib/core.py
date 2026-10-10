@@ -26,7 +26,6 @@
 
 # cSpell:ignore mysqlsh, mrs
 import traceback
-from mrs_plugin.lib import general
 import mysqlsh
 import os
 import re
@@ -34,9 +33,8 @@ import json
 from enum import IntEnum
 import threading
 import base64
+import uuid
 from typing import Optional
-
-MRS_METADATA_LOCK_ERROR = "Failed to acquire MRS metadata lock. Please ensure no other metadata update is running, then try again."
 
 
 class ConfigFile:
@@ -52,7 +50,13 @@ class ConfigFile:
             with open(self._filename, "r") as f:
                 self._settings = json.load(f)
                 for item in self._settings.get("current_objects", []):
-                    convert_ids_to_binary(["current_service_id"], item)
+                    # Earlier versions stored the id in its '0x' form; a value
+                    # that is no id at all is dropped rather than failing
+                    # every later call.
+                    try:
+                        convert_ids_to_uuid(["current_service_id"], item)
+                    except RuntimeError:
+                        item["current_service_id"] = None
         except:
             pass
 
@@ -104,16 +108,6 @@ class LogLevel(IntEnum):
     DEBUG3 = 8
 
 
-def get_local_config():
-    return ConfigFile().settings
-
-
-def script_path(*suffixes):
-    return os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), *suffixes
-    )
-
-
 def print_exception(exc_type, exc_value, exc_traceback):
     # Exception handler for the MrsDbSession context manager, which should
     # be used only in interactive mode.
@@ -132,72 +126,6 @@ def print_exception(exc_type, exc_value, exc_traceback):
     return True
 
 
-def set_current_objects(
-    service_id: bytes = None,
-    service=None,
-    schema_id: bytes = None,
-    schema=None,
-    content_set_id: bytes = None,
-    content_set=None,
-    db_object_id: bytes = None,
-    db_object=None,
-):
-    """Sets the current objects to the given ones
-
-    Note that if no service or no schema or no db_object are specified,
-    they are reset
-
-    Args:
-        service_id: The id of the service to set as the current service
-        service (dict): The service to set as the current service
-        schema_id: The id of the schema to set as the current schema
-        schema (dict): The schema to set as the current schema
-        content_set_id: The id of the content_set to set as the current
-        content_set (dict): The content_set to set as the current
-        db_object_id: The id of the db_object to set as the current
-            db_object
-        db_object (dict): The db_object to set as the current db_object
-
-    Returns:
-        The current or default service or None if no default is set
-    """
-
-    # Get current_service_id from the global mrs_config
-    mrs_config = get_current_config()
-
-    if service_id:
-        mrs_config["current_service_id"] = service_id
-    if service:
-        mrs_config["current_service_id"] = service.get("id")
-    # If current_service_id is current set but not passed in, clear it
-    if mrs_config.get("current_service_id") and not (service_id or service):
-        mrs_config["current_service_id"] = None
-
-    if schema_id:
-        mrs_config["current_schema_id"] = schema_id
-    if schema:
-        mrs_config["current_schema_id"] = schema.get("id")
-    # If current_schema_id is current set but not passed in, clear it
-    if mrs_config.get("current_schema_id") and not (schema_id or schema):
-        mrs_config["current_schema_id"] = None
-
-    if db_object_id:
-        mrs_config["current_db_object_id"] = db_object_id
-    if db_object:
-        mrs_config["current_db_object_id"] = db_object.get("id")
-    # If current_db_object_id is current set but not passed in, clear it
-    if mrs_config.get("current_db_object_id") and not (db_object_id or db_object):
-        mrs_config["current_db_object_id"] = None
-
-    if content_set_id:
-        mrs_config["current_content_set_id"] = content_set_id
-    if content_set:
-        mrs_config["current_content_set_id"] = content_set.get("id")
-    # If current_db_object_id is current set but not passed in, clear it
-    if mrs_config.get("current_content_set_id") and not (content_set_id or content_set):
-        mrs_config["current_content_set_id"] = None
-
-
 def get_interactive_default():
     """Returns the default of the interactive mode
 
@@ -209,14 +137,6 @@ def get_interactive_default():
         if ct.__class__.__name__ == "_MainThread":
             return True
     return False
-
-
-def get_interactive_result():
-    """
-    To be used in plugin functions that may return pretty formatted result when
-    called in an interactive Shell session
-    """
-    return get_interactive_default()
 
 
 def get_current_session(session=None):
@@ -241,78 +161,6 @@ def get_current_session(session=None):
         )
 
     return session
-
-
-def get_mrs_schema_version(session):
-    try:
-        # As of MRS metadata schema version 4.0.0 the version VIEW has been
-        # renamed to msm_schema_version, so try that one first
-        row = (
-            select(
-                table="msm_schema_version",
-                cols=[
-                    "major",
-                    "minor",
-                    "patch",
-                    "CONCAT(major, '.', minor, '.', patch) AS version",
-                ],
-            )
-            .exec(session)
-            .first
-        )
-    except:
-        row = (
-            select(
-                table="schema_version",
-                cols=[
-                    "major",
-                    "minor",
-                    "patch",
-                    "CONCAT(major, '.', minor, '.', patch) AS version",
-                ],
-            )
-            .exec(session)
-            .first
-        )
-
-    if not row:
-        raise Exception("Unable to fetch MRS metadata database schema version.")
-
-    return [row["major"], row["minor"], row["patch"]]
-
-
-def get_mrs_schema_version_int(session):
-    row = get_mrs_schema_version(session)
-    return row[0] * 10000 + row[1] * 100 + row[2]
-
-
-def mrs_metadata_schema_exists(session):
-    row = MrsDbExec("""
-        SELECT COUNT(*) AS schema_exists
-        FROM INFORMATION_SCHEMA.SCHEMATA
-        WHERE SCHEMA_NAME = 'mysql_rest_service_metadata'
-    """).exec(session).first
-    return row["schema_exists"]
-
-
-def get_mrs_enabled(session):
-    try:
-        row = (
-            select(
-                table="config",
-                cols=[
-                    "service_enabled",
-                ],
-            )
-            .exec(session)
-            .first
-        )
-        if not row:
-            return False
-
-        return int(row["service_enabled"]) == 1
-    except:
-        return False
 
 
 def prompt_for_list_item(
@@ -450,16 +298,6 @@ def prompt_for_list_item(
         return selected_items[0]
 
 
-def prompt_for_comments():
-    """Prompts the user for comments
-
-    Returns:
-        The comments as str
-    """
-
-    return prompt("Comments: ").strip()
-
-
 def create_json_binary_decoder(binary_formatter=None):
     binary_label = "base64:"
 
@@ -521,28 +359,6 @@ def get_sql_result_as_dict_list(res, binary_formatter=None):
     return dict_list
 
 
-def get_current_config(mrs_config=None):
-    """Gets the active config dict
-
-    If no config dict is given as parameter, the global config dict will be used
-
-    Args:
-        config (dict): The config to be used or None
-
-    Returns:
-        The active config dict
-    """
-    if mrs_config is None:
-        # Check if global object 'mrs_config' has already been registered
-        if "mrs_config" in dir(mysqlsh.globals):
-            mrs_config = getattr(mysqlsh.globals, "mrs_config")
-        else:
-            mrs_config = {}
-            setattr(mysqlsh.globals, "mrs_config", mrs_config)
-
-    return mrs_config
-
-
 def prompt(message, options=None) -> str:
     """Prompts the user for input
 
@@ -559,119 +375,6 @@ def prompt(message, options=None) -> str:
         A string value containing the input from the user.
     """
     return mysqlsh.globals.shell.prompt(message, options)
-
-
-def check_request_path(session, request_path):
-    """Checks if the given request_path is valid and unique
-
-    Args:
-        request_path (str): The request_path to check
-        **kwargs: Additional options
-
-    Keyword Args:
-        session (object): The database session to use
-
-    Returns:
-        None
-    """
-    if not request_path:
-        raise Exception("No request_path specified.")
-
-    # Check if the request_path already exists for another db_object of that
-    # schema
-    res = session.run_sql(
-        """
-        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name,
-            se.url_context_root) as full_request_path
-        FROM `mysql_rest_service_metadata`.service se
-            LEFT JOIN `mysql_rest_service_metadata`.url_host h
-                ON se.url_host_id = h.id
-        WHERE CONCAT(h.name, se.url_context_root) = ?
-        UNION
-        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
-            sc.request_path) as full_request_path
-        FROM `mysql_rest_service_metadata`.db_schema sc
-            LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
-                ON se.id = sc.service_id
-            LEFT JOIN `mysql_rest_service_metadata`.url_host h
-                ON se.url_host_id = h.id
-        WHERE CONCAT(h.name, se.url_context_root,
-                sc.request_path) = ?
-        UNION
-        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
-            sc.request_path, o.request_path) as full_request_path
-        FROM `mysql_rest_service_metadata`.db_object o
-            LEFT OUTER JOIN `mysql_rest_service_metadata`.db_schema sc
-                ON sc.id = o.db_schema_id
-            LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
-                ON se.id = sc.service_id
-            LEFT JOIN `mysql_rest_service_metadata`.url_host h
-                ON se.url_host_id = h.id
-        WHERE CONCAT(h.name, se.url_context_root,
-                sc.request_path, o.request_path) = ?
-        UNION
-        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
-            co.request_path) as full_request_path
-        FROM `mysql_rest_service_metadata`.content_set co
-            LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
-                ON se.id = co.service_id
-            LEFT JOIN `mysql_rest_service_metadata`.url_host h
-                ON se.url_host_id = h.id
-        WHERE CONCAT(h.name, se.url_context_root,
-                co.request_path) = ?
-        """,
-        [request_path, request_path, request_path, request_path],
-    )
-
-    row = res.fetch_one()
-
-    if row and row.get_field("full_request_path") != "":
-        raise Exception(f"The request_path {request_path} is already " "in use.")
-
-
-def check_mrs_object_name(session, db_schema_id, obj_id, obj_name):
-    """Checks if the given mrs object name is valid and unique"""
-    res = session.run_sql(
-        """
-            SELECT o.name
-            FROM mysql_rest_service_metadata.object o LEFT JOIN
-                mysql_rest_service_metadata.db_object dbo ON
-                o.db_object_id = dbo.id
-            WHERE dbo.db_schema_id = ? AND UPPER(o.name) = UPPER(?) AND o.id <> ?
-        """,
-        [
-            id_to_binary(db_schema_id, "db_schema_id"),
-            obj_name,
-            id_to_binary(obj_id, "object.id"),
-        ],
-    )
-
-    row = res.fetch_one()
-
-    if row and row.get_field("name") != "":
-        raise Exception(
-            f"The object name {obj_name} is already " "in use on this REST schema."
-        )
-
-
-def check_mrs_object_names(session, db_schema_id, objects):
-    """Checks if the given mrs object names are valid and unique"""
-    if objects is None:
-        return
-
-    assigned_names = []
-    for obj in objects:
-        if obj.get("name") in assigned_names:
-            raise Exception(
-                f'The object name {obj.get("name")} has been used more than once.'
-            )
-        check_mrs_object_name(
-            session=session,
-            db_schema_id=db_schema_id,
-            obj_id=obj.get("id"),
-            obj_name=obj.get("name"),
-        )
-        assigned_names.append(obj.get("name"))
 
 
 def convert_json(value) -> dict:
@@ -692,37 +395,41 @@ def convert_json(value) -> dict:
         value_str = value_str.replace(": b'", ': "')
     return json.loads(value_str)
 
-
-def cut_last_comma(fields):
-    # Cut the last , away if present
-    if fields.endswith(",\n"):
-        return fields[:-2]
-
-    # Otherwise, just cut the last \n
-    return fields[:-1]
-
-
-def format_json_entry(key: str, value: dict, advance: int = 1):
-    if value is None or value == "":
-        return ""
-
-    result: str = json.dumps(value, indent=4)
-    # Indent the json.dumps with (advance * 4) spaces
-    # js_indented = ""
-    # advance_space = "    " * advance
-    result = ["    " * advance + line for line in result.splitlines()]
-
-    return f"    {key} {"\n".join(result).lstrip()}"
     # for ln in js.split("\n"):
     # js_indented += f"{advance_space}{ln}\n"
     # return f"    {key} {js_indented[4:-1]}"
 
 
-def id_to_binary(id: str, context: str, allowNone=False):
+NIL_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def id_to_uuid(id, context: str, allowNone=False) -> str | None:
+    """Returns the canonical form of a REST object id.
+
+    The ids of the MRS metadata are UUIDs. Inside the plugin they are held in
+    the lower-case, hyphenated form MariaDB returns for a UUID column, which is
+    also what the SQL parameters are bound as. Accepted inputs:
+
+      - a UUID string, with or without hyphens
+      - the hexadecimal form of earlier metadata versions, '0x' followed by
+        32 hex digits
+      - the base64 form of the 16 id bytes, as the SDK config carries it
+      - the 16 raw bytes
+
+    Args:
+        id: The id in any of the accepted forms
+        context (str): What the id is, for the error message
+        allowNone (bool): Whether None is passed through
+
+    Returns:
+        The canonical UUID string, or None
+    """
     if allowNone and id is None:
         return None
     if isinstance(id, bytes):
-        return id
+        if len(id) != 16:
+            raise RuntimeError(f"The '{context}' has an invalid size.")
+        return str(uuid.UUID(bytes=id))
     elif isinstance(id, str):
         if id.startswith("0x"):
             try:
@@ -737,53 +444,33 @@ def id_to_binary(id: str, context: str, allowNone=False):
             except Exception:
                 raise RuntimeError(f"Invalid base64 string '{id}' for '{context}'.")
         else:
-            raise RuntimeError(f"Invalid id format '{id}' for '{context}'.")
+            try:
+                return str(uuid.UUID(id))
+            except ValueError:
+                raise RuntimeError(f"Invalid id format '{id}' for '{context}'.")
 
         if len(result) != 16:
             raise RuntimeError(f"The '{context}' has an invalid size.")
-        return result
+        return str(uuid.UUID(bytes=result))
 
     raise RuntimeError(f"Invalid id type for '{context}'.")
 
 
 def convert_id_to_base64_string(id) -> str:
-    return base64.b64encode(id).decode("ascii")
+    """Returns the base64 form of an id's 16 bytes, as the SDK config carries it."""
+    return base64.b64encode(uuid.UUID(id_to_uuid(id, "id")).bytes).decode("ascii")
 
 
-def convert_ids_to_binary(id_options, kwargs):
+def convert_ids_to_uuid(id_options, kwargs):
     for id_option in id_options:
         id = kwargs.get(id_option)
         if id is not None:
-            kwargs[id_option] = id_to_binary(id, id_option)
-
-
-def try_convert_ids_to_binary(id_options, kwargs):
-    """
-    Try to convert the kwargs ID entries, but don't fail if it's an invalid ID type.
-
-    The entry may or may not be an ID, but it needs not to fail if it's not.
-    An use case for this is when we want a parameter, for example 'service',
-    that can be one of the following:
-      - 'localhost@myService'
-      - '0x11EF8496143CFDEC969C7413EA499D96'
-      - 'Ee+ElhQ8/eyWnHQT6kmdlg=='
-    """
-    for id_option in id_options:
-        id = kwargs.get(id_option)
-        if id is not None:
-            try:
-                kwargs[id_option] = id_to_binary(id, id_option)
-            except RuntimeError as e:
-                if str(e) in [
-                    f"Invalid id type for '{id_option}'.",
-                    f"Invalid id format '{kwargs[id_option]}' for '{id_option}'.",
-                ]:
-                    continue
-                raise
+            kwargs[id_option] = id_to_uuid(id, id_option)
 
 
 def convert_id_to_string(id) -> str:
-    return f"0x{id.hex()}"
+    """Returns the canonical UUID string of an id, whatever form it came in."""
+    return id_to_uuid(id, "id")
 
 
 def convert_dict_to_json_string(dic) -> str:
@@ -801,17 +488,62 @@ def _generate_where(where):
     return ""
 
 
+# Stands for the quoted metadata schema in SQL text; MrsDbExec and
+# metadata_sql() replace it with the schema the shell's mrs module resolves
+# for the session (mariadb_rest_service, possibly with a prefix and postfix).
+METADATA = "<metadata>"
+METADATA_BASE_NAME = "mariadb_rest_service"
+
+_metadata_schemas = {}
+
+
+def _session_key(session):
+    return (id(session), getattr(session, "uri", None))
+
+
+def metadata_schema(session) -> str:
+    """The name of the session's MRS metadata schema, as SHOW REST METADATA
+    STATUS reports it (cached per session object)."""
+    key = _session_key(session)
+    name = _metadata_schemas.get(key)
+    if name is None:
+        res = session.run_sql("SHOW REST METADATA STATUS")
+        name = res.fetch_one()[res.get_column_names().index("metadata_schema")]
+        _metadata_schemas[key] = name
+    return name
+
+
+def forget_metadata_schema(session):
+    """Drops the cached schema name, e.g. after CONFIGURE REST METADATA or
+    USE REST METADATA SCHEMA."""
+    _metadata_schemas.pop(_session_key(session), None)
+
+
+def metadata_sql(session, sql: str) -> str:
+    """The SQL text with METADATA replaced by the quoted metadata schema."""
+    if METADATA not in sql:
+        return sql
+    return sql.replace(METADATA, quote_ident(metadata_schema(session)))
+
+
+def metadata_role(session, role: str) -> str:
+    """The name of an MRS role (admin, schema_admin, dev, user, meta_provider,
+    data_provider), with the prefix and postfix of the metadata schema."""
+    prefix, _, postfix = metadata_schema(session).partition(METADATA_BASE_NAME)
+    return f"{prefix}{METADATA_BASE_NAME}_{role}{postfix}"
+
+
 def _generate_table(table):
     if "." in table:
         return table
-    return f"`mysql_rest_service_metadata`.`{table}`"
+    return f"{METADATA}.`{table}`"
 
 
 def _generate_qualified_name(name):
     if "." in name:
         return name
     parts = name.split("(")
-    result = f"`mysql_rest_service_metadata`.`{parts[0]}`"
+    result = f"{METADATA}.`{parts[0]}`"
     if len(parts) == 2:  # it's a function call so add the parameters
         result = f"{result}({parts[1]}"
 
@@ -843,6 +575,7 @@ class MrsDbExec:
             # convert lists and dicts to store in the database
             self._params = [self._convert_to_database(param) for param in self._params]
 
+            self._sql = metadata_sql(session, self._sql)
             self._result = session.run_sql(self._sql, self._params)
         except Exception as e:
             mysqlsh.globals.shell.log(
@@ -911,14 +644,6 @@ def update(table: str, sets, where=[]) -> MrsDbExec:
     return MrsDbExec(sql, params)
 
 
-def delete(table: str, where=[]) -> MrsDbExec:
-    sql = f"""
-        DELETE FROM {_generate_table(table)}
-        {_generate_where(where)}"""
-
-    return MrsDbExec(sql)
-
-
 def insert(table, values={}):
     params = []
     place_holders = []
@@ -954,16 +679,6 @@ class MrsDbSession:
     def __init__(self, **kwargs) -> None:
         self._session = get_current_session(kwargs.get("session"))
         self._exception_handler = kwargs.get("exception_handler")
-        check_version = kwargs.get("check_version", True)
-        if check_version and mrs_metadata_schema_exists(self._session):
-            current_db_version = get_mrs_schema_version(self._session)
-            if current_db_version[0] < 2:
-                raise Exception(
-                    "This MariaDB Shell version requires a new major version of the MRS metadata schema, "
-                    f"{general.DB_VERSION_STR}. The currently deployed schema version is "
-                    f"{'%d.%d.%d' % tuple(current_db_version)}. Please downgrade the MariaDB Shell version "
-                    "or drop the MRS metadata schema and run `mrs.configure()`."
-                )
         if self._session.connection_id not in self.__used_sessions:
             self.__used_sessions.append(self._session.connection_id)
             # Ensures MRS usage is reported, once per session
@@ -1022,99 +737,6 @@ class ServerLocalInFile:
         self._session.run_sql(f"SET GLOBAL local_infile = '{self._local_infile}'")
 
 
-def create_identification_conditions(id, name, id_context, name_col):
-    """
-    Creates the necessary SQL WHERE conditions to identify an MRS object based given
-    id and identification string.
-    """
-    conditions = {}
-
-    if id is not None:
-        conditions["id"] = id
-    if name is not None:
-        conditions[name_col] = name
-
-    return conditions
-
-
-def identify_target_object(
-    session, service_conditions, schema_conditions, object_conditions
-):
-    """
-    Uses the given identification conditions for service, schema and object to uniquely
-    identify a specific object, either service, schema or object.
-
-    The function throws an error if either:
-    - The conditions identify no object.
-    - The conditions identify more than one object.
-
-    Returns the type of identified object and its id.
-    """
-    tables = []
-    target_object = ""
-    id_field = ""
-    conditions = []
-    params = []
-
-    # service table is included in the query either when service conditions are given
-    # or when no conditions are given
-    if service_conditions or (not schema_conditions and not object_conditions):
-        tables.append("mysql_rest_service_metadata.service se")
-        target_object = "service"
-        id_field = "se.id"
-
-    # schema table is included in the query whenever schema or object conditions are
-    # given
-    if schema_conditions or object_conditions:
-        tables.append("mysql_rest_service_metadata.db_schema sc")
-        if service_conditions:
-            conditions.append("sc.service_id = se.id")
-        target_object = "schema"
-        id_field = "sc.id"
-
-    # object table is included on the query when object conditions are given
-    if object_conditions:
-        tables.append("mysql_rest_service_metadata.db_object ob")
-        if service_conditions or schema_conditions:
-            conditions.append("ob.db_schema_id = sc.id")
-        target_object = "object"
-        id_field = "ob.id"
-
-    if service_conditions:
-        for column, value in service_conditions.items():
-            conditions.append(f"se.{column}=?")
-            params.append(value)
-
-    if schema_conditions:
-        for column, value in schema_conditions.items():
-            conditions.append(f"sc.{column}=?")
-            params.append(value)
-
-    if object_conditions:
-        for column, value in object_conditions.items():
-            conditions.append(f"ob.{column}=?")
-            params.append(value)
-
-    where = ""
-    if conditions:
-        cond_string = " AND ".join(conditions)
-        where = f"WHERE {cond_string}"
-
-    sql = f"""SELECT {id_field} FROM {" INNER JOIN ".join(tables)} {
-        where} LIMIT 2"""
-
-    result = session.run_sql(sql, params)
-
-    rows = result.fetch_all()
-
-    if len(rows) != 1:
-        raise RuntimeError(
-            f"Unable to identify a unique {target_object} for the operation."
-        )
-
-    return target_object, rows[0][0]
-
-
 def get_session_uri(session):
     if "shell.Object" in str(type(session)):
         uri = session.get_uri()
@@ -1157,12 +779,6 @@ def convert_path_to_pascal_case(
     )
 
 
-def convert_snake_to_camel_case(snake_str):
-    snake_str = "".join(x.capitalize() for x in snake_str.lower().split("_"))
-
-    return snake_str[0].lower() + snake_str[1:]
-
-
 def convert_to_snake_case(str):
     return re.sub(r"(?<!^)(?=[A-Z])", "_", str).lower()
 
@@ -1184,184 +800,23 @@ def make_string_valid_for_filesystem(str, invalid_characters='<>:"/\\|?*'):
     return str
 
 
-def unquote(name):
-    # TODO- remove this, it doesn't work
-    if name.startswith("`"):
-        return name.strip("`")
-    elif name.startswith('"'):
-        return name.strip('"')
-
-    return name
-
-
 def escape_str(s):
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
-
-
-def quote_str(s):
-    return '"' + escape_str(s) + '"'
-
-
-def unescape_str(s):
-    return s.replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
-
-
-def unquote_str(s):
-    if (s.startswith("'") and s.endswith("'")) or (
-        s.startswith('"') and s.endswith('"')
-    ):
-        return unescape_str(s[1:-1])
-    return s
 
 
 def quote_ident(s):
     return mysqlsh.mysql.quote_identifier(s)
 
 
-def unquote_ident(s):
-    return mysqlsh.mysql.unquote_identifier(s)
+def quote_service_path(path):
+    """A service path for REST SQL: the request path quoted, a developer
+    list (mike,alfredo@/path) kept as it is."""
+    developers, at, request_path = path.rpartition("@")
+    return developers + at + quote_ident(request_path)
 
 
 def squote_str(s):
     return "'" + escape_str(s) + "'"
-
-
-path_re = re.compile("^(/[a-zA-Z_0-9]*?)+?$")
-quote_text = squote_str
-quote_user = quote_ident
-quote_auth_app = quote_ident
-quote_role = quote_ident
-
-
-# full_service_path
-def quote_fsp(s):
-    return s  # TODO review
-
-
-# request_path
-def quote_rpath(s):
-    if not s or "*" in s or "?" in s or s[0] != "/":
-        return quote_ident(s)
-    if path_re.match(s):
-        return s
-    return quote_ident(s)
-
-
-def escape_wildcards(text: str) -> str:
-    "escape * and ? wildcards with \\"
-    return text.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
-
-
-def unescape_wildcards(text: str) -> str:
-    return text.replace("\\*", "*").replace("\\?", "?").replace("\\\\", "\\")
-
-
-def contains_wildcards(text: str) -> str:
-    stripped = text.replace("\\\\", "").replace("\\?", "").replace("\\*", "")
-    return "?" in stripped or "*" in stripped
-
-
-def get_enabled_status_caption(enabledState):
-    if enabledState == 2:
-        return "PRIVATE"
-    if enabledState == 1 or enabledState is True:
-        return "ENABLED"
-    return "DISABLED"
-
-
-def format_result(result):
-    if len(result) > 0:
-        columns = list(result[0].keys())
-
-        # Get max_col_lengths
-        max_lengths = {}
-        # Initialize with column name lengths
-        for col in columns:
-            max_lengths[col] = len(col)
-        # Loop over all rows and check if a field length is bigger
-        for row in result:
-            for col in columns:
-                field = str(row.get(col))
-                current_length = max_lengths.get(col, 0)
-                length = len(field)
-
-                # If the field contains linebreaks, consider the longest line
-                if "\n" in field:
-                    length = 0
-                    for ln in field.split("\n"):
-                        if len(ln) > length:
-                            length = len(ln)
-
-                if length > current_length:
-                    max_lengths[col] = length
-
-        h_sep = "+"
-        for col in columns:
-            h_sep += "-" * (max_lengths[col] + 2) + "+"
-
-        formatted_res = h_sep + "\n" + "|"
-        for col in columns:
-            formatted_res += f' {col}{" " * (max_lengths[col] - len(col))} |'
-        formatted_res += "\n" + h_sep + "\n"
-
-        for row in result:
-            formatted_res += "|"
-            for index, col in enumerate(columns):
-                f = str(row.get(col))
-
-                # If there are linebreaks in the field, add each line and extend the grid
-                if "\n" in f:
-                    pre = "| "
-                    post = " "
-                    for i, c in enumerate(columns):
-                        if i < index:
-                            pre += f'{" " * max_lengths[c]} | '
-                        elif i > index:
-                            post += f'{" " * max_lengths[c]} | '
-                    pre = pre[:-1]
-                    post = post[:-1]
-
-                    lines = f.split("\n")
-                    for ln_i, ln in enumerate(lines):
-                        if ln_i > 0:
-                            formatted_res += pre
-                        formatted_res += f' {ln}{" " *
-                                                 (max_lengths[col] - len(ln))} |'
-                        if ln_i < len(lines) - 1:
-                            formatted_res += post + "\n"
-                else:
-                    formatted_res += f' {f}{" " *
-                                            (max_lengths[col] - len(f))} |'
-
-            formatted_res += "\n"
-
-        return formatted_res + h_sep
-
-    # To make handling easier, return an empty string if there are no rows so
-    # the result does not have to be checked for None
-    return ""
-
-
-def is_text(data: bytes) -> bool:
-    if isinstance(data, str):
-        data = data.encode()
-
-    valid_text__chars = "".join(list(map(chr, range(32, 127))) + list("\n\r\t\b"))
-
-    data_without_text = data.translate(None, valid_text__chars.encode())
-
-    # If there's a null character, then it's not a text string
-    if 0 in data_without_text:
-        return False
-
-    # Check how many bytes are available after removing the ones that
-    # are considered as text.
-    if len(data_without_text) >= len(data) * 0.3:
-        # if more then 30% if the characters are binary, then
-        # take the data as binary
-        return False
-
-    return True
 
 
 def is_number(s):
@@ -1371,11 +826,3 @@ def is_number(s):
         return False
 
     return True
-
-
-class _NotSet:  # used to differentiate None (NULL) vs argument not set
-    def __bool__(self):
-        return False
-
-
-NotSet = _NotSet()

@@ -105,7 +105,7 @@ export default class WelcomePage extends Component<IWelcomePageProps, IWelcomePa
                             // Show a button for each additional auth app.
                             return (authApp.vendorId !== mainAuthApp?.vendorId)
                                 ? <button key={authApp.name} onClick={() => {
-                                    // If MRS or MySQL Internal, just reload the page for the specific auth app.
+                                    // If MRS or MariaDB Internal, just reload the page for the specific auth app.
                                     if ([mrsAuthAppId, mysqlInternalAuthAppId].includes(authApp.vendorId)) {
                                         query.set("authApp", authApp.name);
                                         globalThis.location.search = query.toString();
@@ -125,7 +125,7 @@ export default class WelcomePage extends Component<IWelcomePageProps, IWelcomePa
             <div className="page">
                 <div className={styles.welcome}>
                     <h1 className="gradientText">MRS Notes</h1>
-                    <h2>Powered by the<br />MySQL REST Service.</h2>
+                    <h2>Powered by the<br />MariaDB REST Service.</h2>
                     <div className={styles.productInfo}>
                         <p>This example implements a simple note taking application that allows
                             note sharing between its users.</p>

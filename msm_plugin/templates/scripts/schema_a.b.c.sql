@@ -28,10 +28,10 @@ SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
 -- CREATE SCHEMA statement.
 -- #############################################################################
 
-CREATE SCHEMA IF NOT EXISTS `${schema_name}`
+CREATE SCHEMA IF NOT EXISTS ${schema_identifier}
     DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
-USE `${schema_name}`;
+USE ${schema_identifier};
 
 
 -- #############################################################################
@@ -82,14 +82,14 @@ DELIMITER ;
 -- TABLE `${schema_name}`.`my_table`
 -- -----------------------------------------------------------------------------
 
-CREATE TABLE `${schema_name}`.`my_table`(
+CREATE TABLE `my_table`(
     `id` INT AUTO_INCREMENT PRIMARY KEY,
     `name` VARCHAR(255),
     `options` JSON,
     INDEX `name_index`(`name`(45))
 );
 
-INSERT INTO `${schema_name}`.`my_table`(`name`, `options`)
+INSERT INTO `my_table`(`name`, `options`)
     VALUES ('Standard User', '{"privileges": ["default"]}');
 */
 
@@ -115,17 +115,17 @@ DELIMITER %%
 -- VIEW `${schema_name}`.`my_view`
 -- -----------------------------------------------------------------------------
 
-CREATE OR REPLACE VIEW `${schema_name}`.`my_view` AS
+CREATE OR REPLACE VIEW `my_view` AS
     SELECT t.`id`, t.`name`
-    FROM `${schema_name}`.`my_table` AS t
+    FROM `my_table` AS t
     ORDER BY t.`name`%%
 
 -- -----------------------------------------------------------------------------
 -- PROCEDURE `${schema_name}`.`my_proc`
 -- -----------------------------------------------------------------------------
 
-DROP PROCEDURE IF EXISTS `${schema_name}`.`my_proc`%%
-CREATE PROCEDURE `${schema_name}`.`my_proc`(INOUT value INT)
+DROP PROCEDURE IF EXISTS `my_proc`%%
+CREATE PROCEDURE `my_proc`(INOUT value INT)
 BEGIN
     SET value = value + 1;
 END%%
@@ -169,7 +169,7 @@ DELIMITER ;
 -- Setting the correct database schema version.
 -- #############################################################################
 
-USE `${schema_name}`;
+USE ${schema_identifier};
 
 CREATE OR REPLACE SQL SECURITY INVOKER
 VIEW `msm_schema_version` (`major`,`minor`,`patch`) AS

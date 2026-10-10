@@ -712,7 +712,12 @@ class MsmDbExec:
 
 
 def execute_msm_sql_script(
-    session, sql_script: str = None, script_name: str = None, sql_file_path: str = None
+    session,
+    sql_script: str = None,
+    script_name: str = None,
+    sql_file_path: str = None,
+    substitutions: dict = None,
+    lock_name_suffix: str = None,
 ):
     if sql_script is None and sql_file_path is None:
         raise ValueError("No script or sql_file_path specified.")
@@ -727,14 +732,32 @@ def execute_msm_sql_script(
         with open(sql_file_path) as f:
             sql_script = f.read()
 
+    # The /*<msm:name>*/ placeholders are replaced before the script is split
+    if substitutions is not None:
+        from msm_plugin.lib.management import apply_substitutions
+
+        sql_script = apply_substitutions(sql_script, substitutions)
+
     commands = mysqlsh.mysql.split_script(sql_script)
+
+    # One lock per schema, so schemas deployed from the same project (e.g. one
+    # per customer) can be updated at the same time. The MD5 keeps the name
+    # within the 64 characters GET_LOCK() allows.
+    lock_name = "MSM_METADATA_LOCK"
+    lock_params = []
+    lock_expression = "?"
+    if lock_name_suffix:
+        lock_expression = "CONCAT(?, '_', MD5(?))"
+        lock_params = [lock_name, lock_name_suffix]
+    else:
+        lock_params = [lock_name]
 
     msm_lock = 0
     try:
-        # Acquire MSM_METADATA_LOCK
+        # Acquire the MSM metadata lock
         msm_lock = (
-            MsmDbExec('SELECT GET_LOCK("MSM_METADATA_LOCK", 1) AS msm_lock')
-            .exec(session)
+            MsmDbExec(f"SELECT GET_LOCK({lock_expression}, 1) AS msm_lock")
+            .exec(session, lock_params)
             .first["msm_lock"]
         )
         if msm_lock == 0:
@@ -763,7 +786,9 @@ def execute_msm_sql_script(
             raise Exception(f"Failed to run the SQL script.\n{current_cmd}\n{e}")
     finally:
         if msm_lock == 1:
-            MsmDbExec('SELECT RELEASE_LOCK("MSM_METADATA_LOCK")').exec(session)
+            MsmDbExec(f"SELECT RELEASE_LOCK({lock_expression})").exec(
+                session, lock_params
+            )
 
 
 def get_uuid_string():

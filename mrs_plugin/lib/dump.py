@@ -21,232 +21,41 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from mrs_plugin import lib
-from mrs_plugin.lib import core, db_objects
+from mrs_plugin.lib import core
 import os
 import json
 import time
 
+# How far below the highest exported id an export looks again. Audit log ids
+# follow the order the rows were inserted in, not the order their
+# transactions committed: with concurrent writers, and much more so on a
+# Galera cluster with several write nodes, a row with a lower id can become
+# visible after a higher one was exported. Each export re-reads this many ids
+# below its position and skips the ids it has already written, which the
+# position file keeps.
+AUDIT_LOG_ID_OVERLAP = 1000
 
-def get_object_fields(session, id):
-    return (
-        lib.core.select(
-            "field", where=["db_object_id=?"], binary_formatter=lambda x: f"0x{x.hex()}"
+
+def read_audit_log_position(audit_log_position_file):
+    """Reads the position and the recently exported ids from the position file
+
+    Returns:
+        (position, exported_ids): the highest exported id (0 without a file)
+        and the ids exported in the overlap window below it, or None when the
+        file does not list them.
+    """
+    if not os.path.isfile(audit_log_position_file):
+        return 0, []
+    with open(audit_log_position_file, "r") as f:
+        try:
+            data = json.loads(f.read())
+        except json.JSONDecodeError:
+            data = None
+    if not isinstance(data, dict) or not isinstance(data.get("position"), int):
+        raise ValueError(
+            f"Invalid audit log position in file {audit_log_position_file}"
         )
-        .exec(session, params=[id])
-        .items
-    )
-
-
-def cleanup_object(target_object, additional_fields=[]):
-    "Removes attributes from an object if they are None"
-    delete_fields_if_none = ["sdk_options", "comments"]
-    delete_fields_if_none = delete_fields_if_none + additional_fields
-
-    for field in delete_fields_if_none:
-        if field in target_object and target_object[field] is None:
-            del target_object[field]
-
-
-def reformat_field(field):
-    """Formats a field entry so it matches the field definition used in
-    set_object_fields_with_references'"""
-
-    # Removes fields not used in input
-    delete_fields = ["caption", "lev"]
-    for name in delete_fields:
-        del field[name]
-
-    # Removes fields if they are None in field
-    cleanup_object(
-        field, ["represents_reference_id", "parent_reference_id", "object_reference"]
-    )
-
-    # Deletes the object reference when it is not really an object reference
-    object_reference = field.get("object_reference")
-    if object_reference:
-        # Removes fields if they are None in object_reference
-        cleanup_object(object_reference, ["reduce_to_value_of_field_id"])
-
-        if object_reference.get("reduce_to_value_of_field_id"):
-            binary_id = lib.core.id_to_binary(
-                object_reference["reduce_to_value_of_field_id"],
-                "reduce_to_value_of_field_id",
-            )
-            hex_id = lib.core.convert_id_to_string(binary_id)
-            object_reference["reduce_to_value_of_field_id"] = hex_id
-
-        # Inserts the reference object id
-        object_reference["id"] = field["represents_reference_id"]
-
-
-def get_object_dump(session, id):
-    "Gets a dump of the objects associated to a db_object"
-    objects = (
-        lib.core.select(
-            "object",
-            where=["db_object_id=?"],
-            binary_formatter=lambda x: f"0x{x.hex()}",
-        )
-        .exec(session, params=[id])
-        .items
-    )
-
-    for obj in objects:
-        # Removes fields if they are None in object
-        cleanup_object(obj)
-        id = core.id_to_binary(obj["id"], "object.id")
-        obj["fields"] = db_objects.get_object_fields_with_references(
-            session, id, binary_formatter=lambda x: f"0x{x.hex()}"
-        )
-
-        for field in obj["fields"]:
-            reformat_field(field)
-
-    return objects
-
-
-def get_db_object_dump(session, id):
-    "Gets a dump for a db_object"
-    obj = (
-        lib.core.select(
-            "db_object", where=["id=?"], binary_formatter=lambda x: f"0x{x.hex()}"
-        )
-        .exec(session, params=[id])
-        .first
-    )
-
-    # A db_object may have one or more associated objects (from the object table)
-    obj["objects"] = get_object_dump(session, id)
-
-    return obj
-
-
-def get_db_schema_dump(session, id):
-    schema = (
-        lib.core.select(
-            "db_schema", where=["id=?"], binary_formatter=lambda x: f"0x{x.hex()}"
-        )
-        .exec(session, params=[id])
-        .first
-    )
-
-    schema["objects"] = []
-
-    objects = (
-        lib.core.select("db_object", cols=["id"], where=["db_schema_id=?"])
-        .exec(session, params=[id])
-        .items
-    )
-
-    schema["objects"] = [
-        get_db_object_dump(session, object["id"]) for object in objects
-    ]
-
-    return schema
-
-
-def get_service_dump(session, id):
-    service = (
-        lib.core.select(
-            "service", where=["id=?"], binary_formatter=lambda x: f"0x{x.hex()}"
-        )
-        .exec(session, params=[id])
-        .first
-    )
-
-    service["schemas"] = []
-
-    schemas = (
-        lib.core.select("db_schema", cols=["id"], where=["service_id=?"])
-        .exec(session, params=[id])
-        .items
-    )
-
-    service["schemas"] = [
-        get_db_schema_dump(session, schema["id"]) for schema in schemas
-    ]
-
-    return service
-
-
-def load_object_dump(session, target_schema_id, object, reuse_ids):
-    db_object_id = None
-    if reuse_ids:
-        db_object_id = lib.core.id_to_binary(object["id"], "object.id")
-
-    objects = object.get("objects")
-
-    current_version = core.get_mrs_schema_version(session)
-    if (
-        current_version[0] >= 3
-        and "crud_operations" in object.keys()
-        and objects is not None
-        and len(objects) > 0
-    ):
-        crud_operations = object.pop("crud_operations")
-
-        if object["object_type"] == "TABLE" or object["object_type"] == "VIEW":
-            options = objects[0].get("options")
-            if options is None:
-                options = {}
-            if "CREATE" in crud_operations:
-                options["dataMappingViewInsert"] = True
-            if "UPDATE" in crud_operations:
-                options["dataMappingViewUpdate"] = True
-            if "DELETE" in crud_operations:
-                options["dataMappingViewDelete"] = True
-
-            objects[0]["options"] = options
-
-    return lib.db_objects.add_db_object(
-        session=session,
-        schema_id=target_schema_id,
-        db_object_name=object["name"],
-        request_path=object["request_path"],
-        db_object_type=object["object_type"],
-        enabled=object["enabled"],
-        items_per_page=object["items_per_page"],
-        requires_auth=object["requires_auth"],
-        crud_operation_format=object["format"],
-        comments=object["comments"],
-        media_type=object["media_type"],
-        auto_detect_media_type=object["auto_detect_media_type"],
-        auth_stored_procedure=object["auth_stored_procedure"],
-        options=object["options"],
-        objects=objects,
-        metadata=object.get("metadata", None),
-        db_object_id=db_object_id,
-        reuse_ids=reuse_ids,
-        row_user_ownership_enforced=object.get("row_user_ownership_enforced", None),
-        row_user_ownership_column=object.get("row_user_ownership_column", None),
-    )
-
-
-def load_schema_dump(session, target_service_id, schema, reuse_ids):
-    schema_id = None
-    if reuse_ids:
-        schema_id = lib.core.id_to_binary(schema["id"], "schema.id")
-
-    schema_id = lib.schemas.add_schema(
-        session,
-        schema["name"],
-        target_service_id,
-        schema["request_path"],
-        schema["requires_auth"],
-        schema["enabled"],
-        schema["items_per_page"],
-        schema["comments"],
-        schema["options"],
-        schema_id=schema_id,
-    )
-
-    grants = []
-    for obj in schema["objects"]:
-        _, grant = load_object_dump(session, schema_id, obj, reuse_ids)
-        grants.append(grant)
-
-    return schema_id, grants
+    return data["position"], data.get("exportedIds")
 
 
 def export_audit_log(
@@ -264,17 +73,18 @@ def export_audit_log(
     # Check if MRS is available
     sql = (
         "SELECT COUNT(*) AS mrs_available FROM information_schema.TABLES "
-        + "WHERE table_schema = 'mysql_rest_service_metadata' and table_name='audit_log'"
+        + "WHERE table_schema = ? and table_name='audit_log'"
     )
-    row = core.MrsDbExec(sql).exec(session).first
+    metadata_schema = core.metadata_schema(session)
+    row = core.MrsDbExec(sql, [metadata_schema]).exec(session).first
     if row["mrs_available"] == 0:
         return
 
     if when_server_is_writeable:
-        # Check if the server is in offline mode or super read only, if so, do not write the log
-        sql = "SELECT @@global.offline_mode as offline_mode, @@global.super_read_only as super_read_only"
+        # Check if the server is read only, if so, do not write the log
+        sql = "SELECT @@global.read_only AS read_only"
         row = core.MrsDbExec(sql).exec(session).first
-        if row["offline_mode"] == 1 or row["super_read_only"] == 1:
+        if row["read_only"] == 1:
             return
 
     if audit_log_position_file is None:
@@ -282,51 +92,65 @@ def export_audit_log(
             os.path.dirname(file_path), "mrs_audit_log_position.json"
         )
 
-    # Read the audit_log_position from the audit_log_position_file if it has not been given explicitly
-    # and the audit_log_position_file already exists
-    if audit_log_position is None and os.path.isfile(audit_log_position_file):
-        with open(audit_log_position_file, "r") as f:
-            try:
-                audit_log_position = json.loads(f.read()).get("position", None)
-                if audit_log_position is None:
-                    raise ValueError(f"Invalid audit log position in file {
-                        audit_log_position}")
-            except json.JSONDecodeError:
-                raise ValueError(f"Invalid audit log position in file {
-                    audit_log_position}")
+    # Read the audit_log_position from the audit_log_position_file if it has
+    # not been given explicitly. Without the list of the recently exported ids
+    # (an explicit position, or a file without it), everything up to the
+    # position counts as exported.
+    if audit_log_position is None:
+        audit_log_position, exported_ids = read_audit_log_position(
+            audit_log_position_file
+        )
     else:
-        audit_log_position = 0
+        exported_ids = None
+    window_start = max(0, audit_log_position - AUDIT_LOG_ID_OVERLAP)
 
-    # Write the audit log to the file
-    sql = "SELECT *, @@server_uuid AS server_uuid FROM `mysql_rest_service_metadata`.`audit_log` WHERE `id` > ?"
+    # Write the audit log to the file, re-reading the overlap window for rows
+    # committed after higher ids were exported
+    sql = "SELECT *, @@server_uid AS server_uid FROM <metadata>.`audit_log` WHERE `id` > ?"
     if starting_from_today:
         sql += " AND `changed_at` >= CURDATE()"
     sql += " ORDER BY `id`"
-    rows = core.MrsDbExec(sql).exec(session, [audit_log_position]).items
+    read = core.MrsDbExec(sql).exec(session, [window_start]).items
+    if exported_ids is None:
+        rows = [row for row in read if row["id"] > audit_log_position]
+        exported_ids = []
+    else:
+        already_exported = set(exported_ids)
+        rows = [row for row in read if row["id"] not in already_exported]
+
+    # After this export, every id read is exported; keep those in the overlap
+    # window below the new position
+    new_position = max([audit_log_position] + [row["id"] for row in rows])
+    exported_ids = sorted(
+        id
+        for id in set(exported_ids) | {row["id"] for row in read}
+        if id > new_position - AUDIT_LOG_ID_OVERLAP
+    )
+
     if len(rows) > 0:
         with open(file_path, "a") as f:
             for row in rows:
                 schema_name = row.get("schema_name")
                 if schema_name is None:
-                    schema_name = "mysql_rest_service_metadata"
+                    schema_name = metadata_schema
                 f.write(
                     f'{row.get("changed_at")} {row.get("id")} {row.get("changed_by")} '
-                    + f'{row.get("server_uuid")} '
+                    + f'{row.get("server_uid")} '
                     + f'{schema_name}.{row.get("table_name")} {row.get("dml_type")} '
                     + json.dumps(row.get("old_row_data", {}))
                     + " "
                     + json.dumps(row.get("new_row_data", {}))
                     + "\n"
                 )
-        audit_log_position = rows[-1]["id"]
 
     # Write the new audit log position to the audit_log_position_path file
-    if audit_log_position_file is not None and audit_log_position > 0:
+    if audit_log_position_file is not None and new_position > 0:
         with open(audit_log_position_file, "w") as f:
             f.write(
                 json.dumps(
                     {
-                        "position": audit_log_position,
+                        "position": new_position,
+                        "exportedIds": exported_ids,
                         "updateTime": time.strftime("%Y-%m-%d %H:%M:%S"),
                     },
                     indent=4,

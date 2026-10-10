@@ -22,341 +22,19 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-from mrs_plugin.lib import (
-    core,
-    roles,
-    schemas,
-    content_sets,
-    auth_apps,
-    database,
-    script,
-)
+from mrs_plugin.lib import core, schemas, database
 
 import re
 import os
 from zipfile import ZipFile, is_zipfile
-import copy
 import json
 import shutil
 from datetime import datetime
 import mysqlsh
-from typing import Optional
 from tempfile import TemporaryDirectory
 from urllib.parse import urlparse, ParseResult
 import urllib.request
 import ssl
-
-DEFAULT_OPTIONS = {
-    "headers": {
-        "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    },
-    "http": {"allowedOrigin": "auto"},
-    "logging": {
-        "exceptions": True,
-        "request": {"body": True, "headers": True},
-        "response": {"body": True, "headers": True},
-    },
-    "returnInternalErrorDetails": True,
-    "includeLinksInResults": False,
-}
-
-
-def prompt_for_url_context_root(default=None):
-    """Prompts the user for the url_context_root
-
-    Returns:
-        The url_context_root as str
-    """
-    return core.prompt(
-        "Please enter the context path for this service [/myService]: ",
-        {"defaultValue": default if default else "/myService"},
-    ).strip()
-
-
-def prompt_for_service_protocol(default=None):
-    """Prompts the user for the supported service protocols
-
-    Returns:
-        The service protocols as str
-    """
-
-    protocols = core.prompt_for_list_item(
-        item_list=[
-            "HTTP",
-            "HTTPS",
-            # "WEBSOCKET VIA HTTP", "WEBSOCKET VIA HTTPS"
-        ],
-        prompt_caption=(
-            "Please select the protocol(s) the service should support "
-            f"[{default if default else 'HTTP,HTTPS'}]: "
-        ),
-        prompt_default_value=default if default else "HTTP,HTTPS",
-        print_list=True,
-        allow_multi_select=True,
-    )
-
-    return ",".join(protocols)
-
-
-def format_service_listing(services, print_header=False):
-    """Formats the listing of MRS services
-
-    Args:
-        services (list): A list of services as dicts
-        print_header (bool): If set to true, a header is printed
-
-
-    Returns:
-        The formatted list of services
-    """
-
-    if print_header:
-        output = (
-            f"{'ID':>3} {'PATH':25} {'ENABLED':8} {'PROTOCOL(s)':20} "
-            f"{'DEFAULT':9}\n"
-        )
-    else:
-        output = ""
-
-    for i, item in enumerate(services, start=1):
-        url = item.get("url_host_name") + item.get("url_context_root")
-        output += (
-            f"{i:>3} {url[:24]:25} "
-            f"{'Yes' if item['enabled'] else '-':8} "
-            f"{','.join(item['url_protocol'])[:19]:20} "
-            f"{'Yes' if item['is_current'] else '-':5}"
-        )
-        if i < len(services):
-            output += "\n"
-
-    return output
-
-
-def format_metadata(host_ctx: Optional[str] = None, version: Optional[str] = None):
-    """Formats the service metadata details
-
-    Args:
-        host_ctx (str): The url root context path
-        version (int): The version in the metadata audit log
-
-    Returns:
-        The metadata details in a tabular string
-    """
-    table = f"{'ID':>3} {'ROOT PATH':25} {'VERSION':15}"
-
-    if host_ctx is None:
-        return table
-
-    return f"{table}\n{1:>3} {host_ctx[:24]:25} {version}"
-
-
-def add_service(session, url_host_name, service):
-    if "options" in service:
-        service["options"] = core.convert_json(service["options"])
-    else:
-        service["options"] = DEFAULT_OPTIONS
-
-    path = service.get("url_context_root").lower()
-    if path == "/mrs":
-        raise Exception(
-            f"The REST service path `{path}` is reserved and cannot be used."
-        )
-
-    # If there is no id for the given host yet, create a host entry
-    if service.get("url_host_id") is None:
-        host = (
-            core.select(table="url_host", where=["name=?"])
-            .exec(session, [url_host_name if url_host_name else ""])
-            .first
-        )
-
-        if host:
-            service["url_host_id"] = host["id"]
-        else:
-            service["url_host_id"] = core.get_sequence_id(session)
-            core.insert(
-                table="url_host",
-                values={"id": service["url_host_id"], "name": url_host_name or ""},
-            ).exec(session)
-
-    service["id"] = core.get_sequence_id(session)
-
-    # metadata column was only added in 3.0.0
-    current_version = core.get_mrs_schema_version(session)
-    if current_version[0] <= 2:
-        service.pop("metadata", None)
-
-    if not core.insert(table="service", values=service).exec(session).success:
-        raise Exception("Failed to add the new service.")
-
-    return service["id"]
-
-
-def validate_service_path(session, path):
-    """Ensures the given path is valid in any of the registered services.
-
-    Args:
-        session (object): The database session to use.
-        path (str): The path to validate.
-
-    Returns:
-        service, schema, content_set as dict.
-    """
-    if not path:
-        return None, None, None
-
-    service = None
-    schema = None
-    content_set = None
-
-    # Match path against services and schemas
-    all_services = get_services(session)
-    for item in all_services:
-        host_ctx = item.get("host_ctx")
-        if host_ctx == path[: len(host_ctx)]:
-            service = item
-            if len(path) > len(host_ctx):
-                sub_path = path[len(host_ctx) :]
-
-                db_schemas = schemas.get_schemas(
-                    service_id=service.get("id"), session=session
-                )
-
-                if db_schemas:
-                    for item in db_schemas:
-                        request_path = item.get("request_path")
-                        if request_path == sub_path[: len(request_path)]:
-                            schema = item
-                            break
-
-                if not schema:
-                    content_sets_local = content_sets.get_content_sets(
-                        service_id=service.get("id"), session=session
-                    )
-
-                    if content_sets_local:
-                        for item in content_sets_local:
-                            request_path = item.get("request_path")
-                            if request_path == sub_path[: len(request_path)]:
-                                content_set = item
-                            break
-
-                if not schema and not content_set:
-                    raise ValueError(f"The given schema or content set was not found.")
-            break
-
-    if not service:
-        raise ValueError(f"The given MRS service was not found.")
-
-    return service, schema, content_set
-
-
-def delete_service(session, service_id):
-    res = core.delete(table="service", where=["id=?"]).exec(
-        session, params=[service_id]
-    )
-
-    if not res.success:
-        raise Exception(f"The specified service with id {service_id} was not found.")
-
-
-def delete_services(session, service_ids):
-    for service_id in service_ids:
-        delete_service(session, service_id)
-
-
-def update_services(session, service_ids, value, merge_options=False):
-    """Makes a given change to a MRS service
-
-    Args:
-        session: The database session to use
-        service_ids: The list of service ids to change
-        value: The value to be set as a dict for all values that will be changed
-        merge_options: If set to True, specified options will be merged rather than overwritten
-
-    Returns:
-        The result message as string
-    """
-    # Update all given services
-    for service_id in service_ids:
-
-        service = get_service(session, service_id=service_id)
-
-        if service is None:
-            raise Exception(
-                f"The specified service with id {core.convert_id_to_string(service_id)} was not found."
-            )
-
-        if "url_host_name" in value:
-            host = (
-                core.select(table="url_host", where="name=?")
-                .exec(session, [value["url_host_name"]])
-                .first
-            )
-
-            if host:
-                host_id = host["id"]
-            else:
-                host_id = core.get_sequence_id(session)
-                core.insert(
-                    table="url_host",
-                    values={"id": host_id, "name": value["url_host_name"]},
-                ).exec(session)
-
-            del value["url_host_name"]
-            value["url_host_id"] = host_id
-
-        # metadata column was only added in 3.0.0
-        current_version = core.get_mrs_schema_version(session)
-        if current_version[0] <= 2:
-            value.pop("metadata", None)
-            value.pop("published", None)
-
-        # Reset an empty in_development.developers list to None
-        in_development = value.get("in_development", None)
-        if in_development is not None:
-            developers = in_development.get("developers", None)
-            if developers is not None and len(developers) == 0:
-                value["in_development"] = None
-
-        # Prepare the merge of options, if requested
-        if merge_options:
-            options = value.get("options", None)
-            # Check if there are options set already, if so, merge the options
-            if options is not None:
-                row = (
-                    core.MrsDbExec(
-                        """
-                    SELECT options IS NULL AS options_is_null
-                    FROM `mysql_rest_service_metadata`.`service`
-                    WHERE id = ?""",
-                        [service_id],
-                    )
-                    .exec(session)
-                    .first
-                )
-                if row and row["options_is_null"] == 1:
-                    merge_options = False
-                else:
-                    value.pop("options")
-
-        if value:
-            core.update("service", sets=value, where=["id=?"]).exec(
-                session, [service_id]
-            )
-
-        # Merge options if requested
-        if merge_options and options is not None:
-            core.MrsDbExec(
-                """
-                UPDATE `mysql_rest_service_metadata`.`service`
-                SET options = JSON_MERGE_PATCH(options, ?)
-                WHERE id = ?
-                """,
-                [options, service_id],
-            ).exec(session)
 
 
 def query_services(
@@ -395,64 +73,44 @@ def query_services(
 
     current_service_id = get_current_service_id(session)
     if not current_service_id:
-        current_service_id = "0x00000000000000000000000000000000"
+        current_service_id = core.NIL_UUID
 
     wheres = []
     params = [current_service_id]
 
-    current_version = core.get_mrs_schema_version(session)
-    if current_version[0] <= 2:
-        # Build SQL based on which input has been provided
-        sql = f"""
-            SELECT se.id, se.enabled, se.url_protocol, h.name AS url_host_name,
-                se.url_context_root, se.comments, se.options, se.url_host_id,
-                CONCAT(h.name, se.url_context_root) AS host_ctx,
-                CONCAT(h.name, se.url_context_root) AS full_service_path,
-                se.auth_path, se.auth_completed_url,
-                se.auth_completed_url_validation,
-                se.auth_completed_page_content,
-                se.id = ? as is_current,
-                NULL AS in_development,
-                NULL AS sorted_developers,
-                se.name
-            FROM `mysql_rest_service_metadata`.`service` se
-                LEFT JOIN `mysql_rest_service_metadata`.url_host h
-                    ON se.url_host_id = h.id
-            """
-    else:
-        sql = f"""
-            SELECT se.id, se.enabled, se.published, se.url_protocol, h.name AS url_host_name,
-                se.url_context_root, se.comments, se.options, se.url_host_id,
-                CONCAT(h.name, se.url_context_root) AS host_ctx,
-                (SELECT CONCAT(COALESCE(CONCAT(GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item), '@'), ''), h.name, se.url_context_root) FROM JSON_TABLE(
-                    JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
-                    ) AS jt) AS full_service_path,
-                se.auth_path, se.auth_completed_url,
-                se.auth_completed_url_validation,
-                se.auth_completed_page_content,
-                se.metadata, se.parent_id,
-                se.id = ? as is_current,
-                se.in_development,
-                (SELECT GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item)
-                    FROM JSON_TABLE(
-                    JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
-                    ) AS jt) AS sorted_developers,
-                se.name,
-                (SELECT JSON_ARRAYAGG(aa.name) FROM `mysql_rest_service_metadata`.`service_has_auth_app` sa2
-                    JOIN `mysql_rest_service_metadata`.`auth_app` AS aa ON
-                        sa2.auth_app_id = aa.id
-                WHERE sa2.service_id = se.id) AS auth_apps
-            FROM `mysql_rest_service_metadata`.`service` se
-                LEFT JOIN `mysql_rest_service_metadata`.url_host h
-                    ON se.url_host_id = h.id
-            """
+    sql = f"""
+        SELECT se.id, se.enabled, se.published, se.url_protocol, h.name AS url_host_name,
+            se.url_context_root, se.comments, se.options, se.url_host_id,
+            CONCAT(h.name, se.url_context_root) AS host_ctx,
+            (SELECT CONCAT(COALESCE(CONCAT(GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item), '@'), ''), h.name, se.url_context_root) FROM JSON_TABLE(
+                JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
+                ) AS jt) AS full_service_path,
+            se.auth_path, se.auth_completed_url,
+            se.auth_completed_url_validation,
+            se.auth_completed_page_content,
+            se.metadata, se.parent_id,
+            se.id = ? as is_current,
+            se.in_development,
+            (SELECT GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item)
+                FROM JSON_TABLE(
+                JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
+                ) AS jt) AS sorted_developers,
+            se.name,
+            (SELECT JSON_ARRAYAGG(aa.name) FROM <metadata>.`service_has_auth_app` sa2
+                JOIN <metadata>.`auth_app` AS aa ON
+                    sa2.auth_app_id = aa.id
+            WHERE sa2.service_id = se.id) AS auth_apps
+        FROM <metadata>.`service` se
+            LEFT JOIN <metadata>.url_host h
+                ON se.url_host_id = h.id
+        """
 
-        if auth_app_id is not None:
-            sql += """
-                JOIN `mysql_rest_service_metadata`.`service_has_auth_app` sa
-                    ON se.id = sa.service_id AND sa.auth_app_id = ?
-                """
-            params.append(auth_app_id)
+    if auth_app_id is not None:
+        sql += """
+            JOIN <metadata>.`service_has_auth_app` sa
+                ON se.id = sa.service_id AND sa.auth_app_id = ?
+            """
+        params.append(auth_app_id)
         # Make sure that each user only sees the services that are either public or the user is a developer of
         # wheres.append("(in_development IS NULL OR "
         #               "SUBSTRING_INDEX(CURRENT_USER(),'@',1) MEMBER OF(JSON_UNQUOTE(JSON_EXTRACT(in_development, '$.developers'))))")
@@ -497,11 +155,14 @@ def query_services(
             )
             for dev in developer_list
         )
-        having = (
-            "\nHAVING h.name = ? AND url_context_root = ? AND sorted_developers = ?"
-        )
+        # Only the computed alias may go into HAVING: with ONLY_FULL_GROUP_BY,
+        # MariaDB refuses plain columns there (1463), while MySQL lets them
+        # through. Host and path are ordinary WHERE conditions.
+        wheres.append("h.name = ?")
+        wheres.append("url_context_root = ?")
         params.append(url_host_name)
         params.append(url_context_root)
+        having = "\nHAVING sorted_developers = ?"
         params.append(sorted_developers)
 
     result = (
@@ -609,143 +270,12 @@ def get_current_service_id(session):
     if not connection_settings:
         return None
 
-    return connection_settings[0].get("current_service_id")
-
-
-def set_current_service_id(session, service_id: bytes):
-    if not session:
-        raise RuntimeError("A valid session is required.")
-
-    config = core.ConfigFile()
-
-    current_objects = config.settings.get("current_objects", [])
-
-    # Try to find the settings for the connection which the service resides on
-    connection_settings = list(
-        filter(
-            lambda item: item["connection"] == core.get_session_uri(session),
-            current_objects,
-        )
+    # Settings written by earlier versions hold the id in its '0x' form.
+    return core.id_to_uuid(
+        connection_settings[0].get("current_service_id"),
+        "current_service_id",
+        allowNone=True,
     )
-
-    if connection_settings:
-        # Found the settings for this host
-        connection_settings[0]["current_service_id"] = service_id
-    else:
-        # The settings for this host do not exist yet....create them.
-        current_objects.append(
-            {
-                "connection": core.get_session_uri(session),
-                "current_service_id": service_id,
-            }
-        )
-
-    config.settings["current_objects"] = current_objects
-    config.store()
-
-
-def get_service_create_statement(
-    session,
-    service: dict,
-    include_database_endpoints: bool,
-    include_static_endpoints: bool,
-    include_dynamic_endpoints: bool,
-) -> str:
-    output = []
-    result = []
-    service_linked_auth_apps = []
-    service_linked_auth_apps = auth_apps.get_auth_apps(session, service["id"])
-
-    # create the service
-    output.append(f'CREATE OR REPLACE REST SERVICE {service.get("host_ctx")}')
-
-    if service.get("enabled") != 1:
-        output.append("    DISABLED")
-    if service.get("comments"):  # ignore either None or empty
-        output.append(f"    COMMENT {core.squote_str(service.get("comments"))}")
-
-    if service.get("published", False):
-        output.append(f"    PUBLISHED")
-
-    auth = []
-    if service.get("auth_path") != "/authentication":
-        auth.append(f'        PATH {core.quote_auth_app(service.get("auth_path"))}')
-    if service.get("auth_completed_url"):  # ignore either None or empty
-        auth.append(
-            f'        REDIRECTION {core.quote_str(service.get("auth_completed_url"))}'
-        )
-    if service.get("auth_completed_url_validation"):  # ignore either None or empty
-        auth.append(
-            f'        VALIDATION {core.quote_str(service.get("auth_completed_url_validation"))}'
-        )
-    if service.get("auth_completed_page_content"):  # ignore either None or empty
-        auth.append(
-            f'        PAGE CONTENT {core.quote_str(service.get("auth_completed_page_content"))}'
-        )
-    if auth:  # ignore either None or empty
-        auth.insert(0, f"    AUTHENTICATION")
-        output.append("\n".join(auth))
-
-    if service.get("options"):
-        output.append(core.format_json_entry("OPTIONS", service.get("options")))
-    if service.get("metadata"):
-        output.append(core.format_json_entry("METADATA", service.get("metadata")))
-
-    for auth_app in service_linked_auth_apps:
-        output.append(
-            f"    ADD AUTH APP {core.quote_auth_app(auth_app["name"])} IF EXISTS"
-        )
-
-    result.append("\n".join(output) + ";")
-
-    if include_database_endpoints:
-        for role in roles.get_roles(session, service["id"], include_global=False):
-            result.append(roles.get_role_create_statement(session, role))
-
-        result += [
-            schemas.get_schema_create_statement(session, schema, True)
-            for schema in schemas.get_schemas(session, service["id"])
-            if schema["schema_type"] != "SCRIPT_MODULE"
-        ]
-
-    if include_static_endpoints or include_dynamic_endpoints:
-        result += [
-            content_sets.get_content_set_create_statement(
-                session, content_set, include_dynamic_endpoints
-            )
-            for content_set in content_sets.get_content_sets(session, service["id"])
-        ]
-
-    return "\n\n".join(result)
-
-
-def store_service_create_statement(
-    session,
-    service: dict,
-    file_path: str,
-    zip: bool,
-    include_database_endpoints: bool = False,
-    include_static_endpoints: bool = False,
-    include_dynamic_endpoints: bool = False,
-):
-    file_content = get_service_create_statement(
-        session,
-        service,
-        include_database_endpoints,
-        include_static_endpoints,
-        include_dynamic_endpoints,
-    )
-
-    if zip and file_path.endswith(".zip"):
-        file_path = file_path[: -len(".zip")]
-
-    with open(file_path, "w") as f:
-        f.write(file_content)
-
-    if zip:
-        with ZipFile(f"{file_path}.zip", "w") as f:
-            f.write(file_path, arcname="service.mrs.sql")
-        os.remove(file_path)
 
 
 def store_project_validations(
@@ -774,7 +304,7 @@ def store_project_validations(
 
                 raise Exception(f"The given schema '{file_path}' was not found")
 
-    if project_settings["icon_path"]:
+    if project_settings.get("icon_path"):
         if not os.path.isfile(project_settings["icon_path"]):
             raise Exception("The icon path is not valid.")
 
@@ -789,6 +319,112 @@ def auto_detect_project_dependencies(session, service_id):
             result.append({"name": schema["name"], "file_path": None})
 
     return result
+
+
+# The endpoint selections of SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS,
+# each one a superset of the former
+ENDPOINT_SELECTIONS = (
+    "DATABASE",
+    "DATABASE AND STATIC",
+    "DATABASE AND STATIC AND DYNAMIC",
+    "ALL",
+)
+
+
+def endpoint_selection(
+    include_database_endpoints: bool,
+    include_static_endpoints: bool,
+    include_dynamic_endpoints: bool,
+):
+    """Returns the endpoint selection for the given flags, None for none.
+
+    The dynamic endpoints include the static ones and those the database ones.
+    """
+    if include_dynamic_endpoints:
+        return "ALL"
+    if include_static_endpoints:
+        return "DATABASE AND STATIC"
+    if include_database_endpoints:
+        return "DATABASE"
+    return None
+
+
+def service_script(session, service_path: str, endpoints: str | None = None) -> str:
+    """Returns the REST SQL script that recreates a service.
+
+    The script comes from the shell's mrs module through session.run_sql:
+    SHOW CREATE REST SERVICE with INCLUDING <endpoints> ENDPOINTS.
+    """
+    including = ""
+    if endpoints:
+        endpoints = " ".join(endpoints.upper().split())
+        if endpoints not in ENDPOINT_SELECTIONS:
+            raise ValueError(
+                f"Invalid endpoints '{endpoints}', use one of "
+                + ", ".join(ENDPOINT_SELECTIONS)
+                + "."
+            )
+        including = f" INCLUDING {endpoints} ENDPOINTS"
+    return session.run_sql(
+        f"SHOW CREATE REST SERVICE {core.quote_service_path(service_path)}{including}"
+    ).fetch_one()[0]
+
+
+def dump_service_script(
+    session, service_path: str, file_path: str, endpoints: str | None = None
+):
+    """Writes the REST SQL script of a service to a file."""
+    script = service_script(session, service_path, endpoints)
+    with open(file_path, "w") as f:
+        f.write(script)
+        if not script.endswith("\n"):
+            f.write("\n")
+
+
+# The service path of the two statements a service script starts with: the
+# path may carry a developer list (`dev`@/path) and backtick-quoted parts.
+SERVICE_PATH = r"((?:`(?:[^`]|``)*`|[^\s;`])+)"
+SERVICE_SCRIPT_START = (
+    re.compile(
+        r"^CREATE\s+(?:OR\s+REPLACE\s+)?REST\s+SERVICE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+        + SERVICE_PATH,
+        re.IGNORECASE,
+    ),
+    re.compile(r"^USE\s+REST\s+SERVICE\s+" + SERVICE_PATH, re.IGNORECASE),
+)
+
+
+def load_service_script(session, script: str, as_path: str | None = None):
+    """Runs the REST SQL script of a service.
+
+    With as_path, the service is created under that request path. The script
+    (SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS) names the service
+    only in its first two statements, CREATE REST SERVICE and USE REST
+    SERVICE; the other statements act on the current service. as_path
+    replaces the whole service path there, a developer list included.
+    """
+    statements = split_sql_script(script)
+
+    if as_path:
+        new_path = core.quote_service_path(as_path)
+        for i, pattern in enumerate(SERVICE_SCRIPT_START):
+            if i >= len(statements):
+                break
+            match = pattern.match(statements[i])
+            if match is None:
+                if i == 0:
+                    raise ValueError(
+                        "The script does not start with a CREATE REST SERVICE statement."
+                    )
+                break
+            statements[i] = (
+                statements[i][: match.start(1)]
+                + new_path
+                + statements[i][match.end(1) :]
+            )
+
+    for statement in statements:
+        session.run_sql(statement)
 
 
 def store_project(
@@ -811,10 +447,10 @@ def store_project(
         "creationDate": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-    if project_settings["publisher"]:
+    if project_settings.get("publisher"):
         config["publisher"] = project_settings["publisher"]
 
-    if project_settings["description"]:
+    if project_settings.get("description"):
         config["description"] = project_settings["description"]
 
     # remove the ".zip" from the destination to create the temp directory
@@ -825,7 +461,7 @@ def store_project(
     os.makedirs(temp_dir, exist_ok=True)
 
     # copy icon if set to do so
-    if project_settings["icon_path"]:
+    if project_settings.get("icon_path"):
         config["icon"] = f"appIcon{os.path.splitext(project_settings["icon_path"])[1]}"
         icon_target_path = os.path.join(temp_dir, config["icon"])
         shutil.copy(project_settings["icon_path"], icon_target_path)
@@ -846,14 +482,15 @@ def store_project(
         target_file_name = f"{service_data["name"][1:]}.service.mrs.sql"
         file_path = os.path.join(temp_dir, target_file_name)
 
-        store_service_create_statement(
+        dump_service_script(
             session,
-            service,
+            service_data["name"],
             file_path,
-            False,
-            service_data["include_database_endpoints"],
-            service_data["include_static_endpoints"],
-            service_data["include_dynamic_endpoints"],
+            endpoint_selection(
+                service_data["include_database_endpoints"],
+                service_data["include_static_endpoints"],
+                service_data["include_dynamic_endpoints"],
+            ),
         )
 
         config["restServices"].append(
@@ -924,30 +561,15 @@ def store_project(
         shutil.rmtree(temp_dir)
 
 
-def run_sql_script(session, sql_script, is_mrs: bool = False):
-    commands = mysqlsh.mysql.split_script(sql_script)
-
-    sql_mode = session.run_sql("select @@session.sql_mode").fetch_one()[0]
-    for command in commands:
-        command = command.strip()
-
-        if not command:
-            continue
-
-        if is_mrs:
-            script.run_mrs_script(
-                command,
-                **{"session": session, "sql_mode": sql_mode, "state_data": {}},
-            )
-        else:
-            session.run_sql(command)
+def split_sql_script(sql_script):
+    """The statements of a script, without empty ones"""
+    commands = (command.strip() for command in mysqlsh.mysql.split_script(sql_script))
+    return [command for command in commands if command]
 
 
-def load_service(session, path: str):
-    with open(path, "r") as f:
-        sql_script = f.read()
-
-    run_sql_script(session, sql_script=sql_script, is_mrs=True)
+def run_sql_script(session, sql_script):
+    for command in split_sql_script(sql_script):
+        session.run_sql(command)
 
 
 def is_url(url) -> bool:
@@ -1082,49 +704,12 @@ def load_project(session, path: str):
                         f"The service '{service["serviceName"]}' already exists."
                     )
 
-                with open(os.path.join(base_directory, service["fileName"])) as f:
-                    content = f.read()
-                    run_sql_script(session, content)
+                service_file = os.path.join(base_directory, service["fileName"])
+                with open(service_file) as f:
+                    load_service_script(session, f.read())
 
 
 def get_service_sdk_data(session, service_id, binary_formatter=None):
     return database.get_sdk_service_data(
         session, service_id, binary_formatter=binary_formatter
     )
-
-
-def clone_service(session, service, new_url_context_root, dev_list):
-    new_service = copy.deepcopy(service)
-
-    # Cleanup the existing data to properly insert it again
-    new_service.pop("id", None)
-    new_service.pop("url_host_name", None)
-    new_service.pop("host_ctx", None)
-    new_service.pop("full_service_path", None)
-    new_service.pop("is_current", None)
-    new_service.pop("sorted_developers", None)
-    new_service.pop("auth_apps", None)
-    new_service.pop("merge_options", None)
-
-    new_service["url_context_root"] = new_url_context_root
-    new_service["published"] = False
-    new_service["in_development"] = {"developers": dev_list}
-
-    # Add the service
-    new_service_id = add_service(
-        session=session, url_host_name=None, service=new_service
-    )
-
-    # Create links for the auth apps
-    for service_auth_app in auth_apps.get_auth_apps(session, service["id"]):
-        auth_apps.link_auth_app(session, service_auth_app["id"], new_service_id)
-
-    # Clone the schemas
-    for schema in schemas.get_schemas(session, service["id"]):
-        schemas.clone_schema(session, schema, new_service_id)
-
-    # Clone the content sets
-    for content_set in content_sets.get_content_sets(session, service["id"]):
-        content_sets.clone_content_set(session, content_set, new_service_id)
-
-    return

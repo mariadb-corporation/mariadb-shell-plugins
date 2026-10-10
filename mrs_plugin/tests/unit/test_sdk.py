@@ -296,10 +296,10 @@ import {
 
 def test_generate_function_interface():
     class_name = "MyServiceSakilaSumFuncParams"
-    db_obj = {"object_type": "FUNCTION"}
+    rest_obj = {"object_type": "FUNCTION"}
     obj = {
         "id": b"\xbd\x07oC\x91\xaaI\xc4\xdf\xf2\xb7eJ56\xa0",
-        "db_object_id": b"\x11\xefE\x1e\x8c\xc5\xc0\x01\xa9\xaa\n\x00'\x00\x00\t",
+        "rest_object_id": b"\x11\xefE\x1e\x8c\xc5\xc0\x01\xa9\xaa\n\x00'\x00\x00\t",
         "kind": "PARAMETERS",
         "position": 0,
         "sdk_options": None,
@@ -313,7 +313,7 @@ def test_generate_function_interface():
             "id": b"=]\x0e}\xac~C\r\xdd\xfcv\xef\x0c|\x95\x1d",
             "represents_reference_id": None,
             "parent_reference_id": None,
-            "object_id": b"\xbd\x07oC\x91\xaaI\xc4\xdf\xf2\xb7eJ56\xa0",
+            "data_mapping_id": b"\xbd\x07oC\x91\xaaI\xc4\xdf\xf2\xb7eJ56\xa0",
             "name": "b",
             "db_column": {
                 "in": True,
@@ -332,7 +332,7 @@ def test_generate_function_interface():
             "no_update": False,
             "sdk_options": None,
             "comments": None,
-            "object_reference": None,
+            "data_mapping_reference": None,
         },
         {
             "caption": "- a",
@@ -341,7 +341,7 @@ def test_generate_function_interface():
             "id": b"\xb7\xd6H<\xdd\x03F\xeb\xae\x93VK6\xdb\x9e\xb9",
             "represents_reference_id": None,
             "parent_reference_id": None,
-            "object_id": b"\xbd\x07oC\x91\xaaI\xc4\xdf\xf2\xb7eJ56\xa0",
+            "data_mapping_id": b"\xbd\x07oC\x91\xaaI\xc4\xdf\xf2\xb7eJ56\xa0",
             "name": "a",
             "db_column": {
                 "in": True,
@@ -360,15 +360,15 @@ def test_generate_function_interface():
             "no_update": False,
             "sdk_options": None,
             "comments": None,
-            "object_reference": None,
+            "data_mapping_reference": None,
         },
     ]
 
-    db_object_crud_ops = ["FUNCTIONCALL"]
+    rest_object_crud_ops = ["FUNCTIONCALL"]
     obj_endpoint = "https://localhost:8443/myService/sakila/sumFunc"
 
     got, _ = generate_interfaces(
-        db_obj, obj, fields, class_name, "python", db_object_crud_ops, obj_endpoint
+        rest_obj, obj, fields, class_name, "python", rest_object_crud_ops, obj_endpoint
     )
 
     want = """class IMyServiceSakilaSumFuncParams(TypedDict, total=False):
@@ -381,10 +381,10 @@ def test_generate_function_interface():
 
 def test_generate_interfaces():
     class_name = "Foo"
-    db_obj = {"object_type": "TABLE"}
+    rest_obj = {"object_type": "TABLE"}
     obj = {}
     fields = []
-    db_object_crud_ops = ["READ"]
+    rest_object_crud_ops = ["READ"]
 
     db_column = {
         "datatype": "varchar(3)",
@@ -419,12 +419,12 @@ export interface IFooCursors {
 """
 
     got, _ = generate_interfaces(
-        db_obj, obj, fields, class_name, "typescript", db_object_crud_ops
+        rest_obj, obj, fields, class_name, "typescript", rest_object_crud_ops
     )
 
     assert got == want
 
-    db_object_crud_ops = ["CREATE", "READ", "UPDATE", "DELETE"]
+    rest_object_crud_ops = ["CREATE", "READ", "UPDATE", "DELETE"]
     want = """export interface INewFoo {
     bar?: string,
 }
@@ -452,7 +452,7 @@ export interface IFooCursors {
 """
 
     got, _ = generate_interfaces(
-        db_obj, obj, fields, class_name, "typescript", db_object_crud_ops
+        rest_obj, obj, fields, class_name, "typescript", rest_object_crud_ops
     )
 
     assert got == want
@@ -535,12 +535,12 @@ class I{name}Cursors(TypedDict, total=False):
     )
 
     got, _ = generate_interfaces(
-        db_obj,
+        rest_obj,
         obj,
         fields,
         class_name,
         "python",
-        db_object_crud_ops,
+        rest_object_crud_ops,
         obj_endpoint=obj_endpoint,
     )
 
@@ -548,11 +548,11 @@ class I{name}Cursors(TypedDict, total=False):
 
     # PROCEDUREs
     got, _ = generate_interfaces(
-        db_obj={"object_type": "PROCEDURE"},
+        rest_obj={"object_type": "PROCEDURE"},
         obj={"kind": "RESULT"},
         fields=fields,
         class_name="Foo",
-        db_object_crud_ops=["PROCEDURECALL"],
+        rest_object_crud_ops=["PROCEDURECALL"],
         sdk_language="typescript",
     )
 
@@ -618,15 +618,15 @@ public struct IFooCursors {
 """
 
     got, _ = generate_interfaces(
-        db_obj, obj, fields, class_name, "swift", db_object_crud_ops
+        rest_obj, obj, fields, class_name, "swift", rest_object_crud_ops
     )
 
     assert got == want
 
     fields[0]["db_column"] = {"datatype": "varchar(3)", "not_null": True}
-    db_object_crud_ops = ["READ"]
+    rest_object_crud_ops = ["READ"]
     got, _ = generate_interfaces(
-        db_obj, obj, fields, class_name, "typescript", db_object_crud_ops
+        rest_obj, obj, fields, class_name, "typescript", rest_object_crud_ops
     )
 
     want = """export interface IFoo {
@@ -647,7 +647,7 @@ type IFooCursors = never;
 def test_nested_custom_datatype_import():
     # test that custom datatypes are imported
     # using "unnest" reduces the code path and simplifies the test
-    parent_field = {"represents_reference_id": 1, "object_reference": {"unnest": True}}
+    parent_field = {"represents_reference_id": 1, "data_mapping_reference": {"unnest": True}}
     fields = [
         {
             "enabled": True,
@@ -907,7 +907,7 @@ def test_generate_data_class():
         + "    bar_baz: qux | UndefinedDataClassField"
     )
 
-    test_cases_db_object_crud_ops = [
+    test_cases_rest_object_crud_ops = [
         [],
         ["UPDATE"],
         ["DELETE"],
@@ -918,17 +918,17 @@ def test_generate_data_class():
     obj_input_prk_fields = [[], [], ["fooId"], ["fooId"], ["fooId1", "fooId2"]]
     obj_output_prk_fields = [[], [], ["foo_id"], ["foo_id"], ["foo_id1", "foo_id2"]]
 
-    for db_object_crud_ops in test_cases_db_object_crud_ops:
+    for rest_object_crud_ops in test_cases_rest_object_crud_ops:
         for idx, obj_prk_fields in enumerate(obj_input_prk_fields):
-            db_object_delete_op = []
+            rest_object_delete_op = []
             mixins = []
 
             if len(obj_prk_fields) > 0:
-                if "UPDATE" in db_object_crud_ops:
+                if "UPDATE" in rest_object_crud_ops:
                     mixins.append(
                         f'\n\t_MrsDocumentUpdateMixin["I{name}Data", "I{name}", "I{name}Details"],'
                     )
-                if "DELETE" in db_object_crud_ops:
+                if "DELETE" in rest_object_crud_ops:
                     mixins.append(
                         f'\n\t_MrsDocumentDeleteMixin["I{name}Data", "I{name}Filterable"],'
                     )
@@ -939,7 +939,7 @@ def test_generate_data_class():
                 name,
                 {"foo": "baz", "barBaz": "qux"},
                 "python",
-                db_object_crud_ops + db_object_delete_op,
+                rest_object_crud_ops + rest_object_delete_op,
                 obj_endpoint=obj_endpoint,
                 primary_key_fields=obj_prk_fields,
             )
@@ -1011,14 +1011,6 @@ def test_generate_union():
 
     union = generate_union("Foo", ["Bar", "Baz"], "python")
     assert union == "Foo: TypeAlias = Bar | Baz\n\n\n"
-
-
-def test_generate_sequence_constant():
-    constant = generate_sequence_constant("Foo", ["Bar", "Baz"], "typescript")
-    assert constant == 'const Foo = ["Bar", "Baz"] as const;\n'
-
-    constant = generate_sequence_constant("Foo", ["Bar", "Baz"], "python")
-    assert constant == 'Foo: Sequence = ["Bar", "Baz"]\n\n'
 
 
 def test_field_is_required():
