@@ -29,6 +29,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.stopSandbox` | Stop Sandbox | Inline on, and context menu of, a RUNNING sandbox |
 | `mariadb.deleteSandbox` | Delete Sandbox | Inline on, and context menu of, every sandbox not busy. Asks first; stops a running one before deleting |
 | `mariadb.selectRows` | Select Rows | Inline on (`toolbar-execute.svg`), and context menu of, a table or view in the Connections view. Runs `SELECT * FROM \`schema\`.\`name\`` and opens the result maximized, in an editor tab titled `schema.name`. Hidden from the palette |
+| `mariadb.dumpInstance` / `loadDump` / `copyInstance` | Dump Instance to Disk... / Load Dump from Disk... / Copy Instance to Another Server... | Dump and Load submenu of a connection. Open the util dialog; see dump-and-load.md. Hidden from the palette |
+| `mariadb.dumpSchemas` / `copySchemas` | Dump Schema to Disk... / Copy Schema to Another Server... | Dump and Load submenu of a schema; every selected schema of the connection. Hidden from the palette |
+| `mariadb.dumpTables` / `copyTables` | Dump Table to Disk... / Copy Table to Another Server... | Dump and Load submenu of a table or view; every selected one of the schema. Hidden from the palette |
+| `mariadb.exportTable` / `importTable` | Export Table Data to File... / Import Data from File... | Dump and Load submenu of a table. Hidden from the palette |
+| `mariadb.cancelTask` / `removeTask` | Cancel Task / Remove from List | Inline on, and context menu of, a running / finished task in the Tasks view. Hidden from the palette |
+| `mariadb.showTaskOutput` / `clearFinishedTasks` | Show Task Output / Clear Finished Tasks | The Tasks view's title bar; Show Task Output also on a task's click and menu |
 | `mariadb.clearResultView` | Clear Actions | Result view toolbar |
 | `mariadb.selectEditorConnection` | Select Connection for this SQL File | SQL editor toolbar, status bar |
 | `mariadb.runSqlFile` | Run SQL Script | SQL editor toolbar, `Ctrl`/`Cmd`+`Enter` |

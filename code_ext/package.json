@@ -48,6 +48,10 @@
         {
           "id": "mariadb.sandboxes",
           "name": "Sandboxes"
+        },
+        {
+          "id": "mariadb.tasks",
+          "name": "Tasks"
         }
       ],
       "mariadb-panel": [
@@ -398,6 +402,75 @@
         "command": "mariadb.showMcpServerLog",
         "title": "Show MCP Server Log",
         "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.dumpInstance",
+        "title": "Dump Instance to Disk...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.loadDump",
+        "title": "Load Dump from Disk...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.copyInstance",
+        "title": "Copy Instance to Another Server...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.dumpSchemas",
+        "title": "Dump Schema to Disk...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.copySchemas",
+        "title": "Copy Schema to Another Server...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.dumpTables",
+        "title": "Dump Table to Disk...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.copyTables",
+        "title": "Copy Table to Another Server...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.exportTable",
+        "title": "Export Table Data to File...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.importTable",
+        "title": "Import Data from File...",
+        "category": "MariaDB"
+      },
+      {
+        "command": "mariadb.cancelTask",
+        "title": "Cancel Task",
+        "category": "MariaDB",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "mariadb.removeTask",
+        "title": "Remove from List",
+        "category": "MariaDB",
+        "icon": "$(close)"
+      },
+      {
+        "command": "mariadb.clearFinishedTasks",
+        "title": "Clear Finished Tasks",
+        "category": "MariaDB",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mariadb.showTaskOutput",
+        "title": "Show Task Output",
+        "category": "MariaDB",
+        "icon": "$(output)"
       }
     ],
     "menus": {
@@ -431,6 +504,16 @@
           "command": "mariadb.clearResultView",
           "when": "view == mariadb.results",
           "group": "navigation@1"
+        },
+        {
+          "command": "mariadb.showTaskOutput",
+          "when": "view == mariadb.tasks",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mariadb.clearFinishedTasks",
+          "when": "view == mariadb.tasks",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -568,6 +651,36 @@
           "command": "mariadb.deleteSandbox",
           "when": "view == mariadb.sandboxes && viewItem =~ /^mariadbSandbox\\.(running|stopped)$/",
           "group": "2_manage@1"
+        },
+        {
+          "submenu": "mariadb.dumpLoad",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./ || view == mariadb.connections && viewItem == mariadbSchema || view == mariadb.connections && viewItem =~ /^mariadbObject\\.(table|view)$/",
+          "group": "2_data@1"
+        },
+        {
+          "command": "mariadb.cancelTask",
+          "when": "view == mariadb.tasks && viewItem == mariadbTask.running",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.cancelTask",
+          "when": "view == mariadb.tasks && viewItem == mariadbTask.running",
+          "group": "1_task@1"
+        },
+        {
+          "command": "mariadb.removeTask",
+          "when": "view == mariadb.tasks && viewItem == mariadbTask.finished",
+          "group": "inline@1"
+        },
+        {
+          "command": "mariadb.removeTask",
+          "when": "view == mariadb.tasks && viewItem == mariadbTask.finished",
+          "group": "1_task@1"
+        },
+        {
+          "command": "mariadb.showTaskOutput",
+          "when": "view == mariadb.tasks",
+          "group": "1_task@2"
         }
       ],
       "editor/title": [
@@ -709,6 +822,97 @@
         {
           "command": "mariadb.refreshSandboxes",
           "when": "false"
+        },
+        {
+          "command": "mariadb.dumpInstance",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.loadDump",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.copyInstance",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.dumpSchemas",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.copySchemas",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.dumpTables",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.copyTables",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.exportTable",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.importTable",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.cancelTask",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.removeTask",
+          "when": "false"
+        }
+      ],
+      "mariadb.dumpLoad": [
+        {
+          "command": "mariadb.dumpInstance",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "1_dump@1"
+        },
+        {
+          "command": "mariadb.loadDump",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "2_load@1"
+        },
+        {
+          "command": "mariadb.copyInstance",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbConnection\\./",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "mariadb.dumpSchemas",
+          "when": "view == mariadb.connections && viewItem == mariadbSchema",
+          "group": "1_dump@1"
+        },
+        {
+          "command": "mariadb.copySchemas",
+          "when": "view == mariadb.connections && viewItem == mariadbSchema",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "mariadb.dumpTables",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbObject\\.(table|view)$/",
+          "group": "1_dump@1"
+        },
+        {
+          "command": "mariadb.exportTable",
+          "when": "view == mariadb.connections && viewItem == mariadbObject.table",
+          "group": "1_dump@2"
+        },
+        {
+          "command": "mariadb.importTable",
+          "when": "view == mariadb.connections && viewItem == mariadbObject.table",
+          "group": "2_load@1"
+        },
+        {
+          "command": "mariadb.copyTables",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbObject\\.(table|view)$/",
+          "group": "3_copy@1"
         }
       ]
     },
@@ -777,6 +981,12 @@
         "key": "f8",
         "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'f8'"
       }
+    ],
+    "submenus": [
+      {
+        "id": "mariadb.dumpLoad",
+        "label": "Dump and Load"
+      }
     ]
   },
   "scripts": {
@@ -790,7 +1000,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "build:extension": "vite build",
-    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts && vite build --config vite.sandbox.config.ts",
+    "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts && vite build --config vite.sandbox.config.ts && vite build --config vite.util.config.ts",
     "watch:webview": "vite build --config vite.webview.config.ts --watch",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
   },
