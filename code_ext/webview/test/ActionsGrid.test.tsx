@@ -232,6 +232,28 @@ describe("formatMessageCell", () => {
         rendered.remove();
     });
 
+    it("shows a task's totals in full, as an error is", () => {
+        const rendered = formatMessageCell(cell(row({
+            multiline: true,
+            message: "Total duration: 00:00:01s\nRows written: 4",
+        })), new Set(), onCopy);
+        const content = rendered.querySelector<HTMLElement>(
+            ".actionMessageContent");
+        Object.defineProperty(content, "scrollWidth",
+            { configurable: true, value: 400 });
+        Object.defineProperty(content, "clientWidth",
+            { configurable: true, value: 120 });
+        document.body.appendChild(rendered);
+
+        content?.dispatchEvent(new Event("mouseenter"));
+
+        expect(document.querySelector(".overflowPopup")).toBeNull();
+        expect(content?.textContent).toBe(
+            "Total duration: 00:00:01s\nRows written: 4");
+
+        rendered.remove();
+    });
+
     it("leaves an error to wrap instead of hiding it behind a popup", () => {
         const rendered = formatMessageCell(cell(row({
             kind: "error",
