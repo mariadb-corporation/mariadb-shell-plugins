@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest";
 import type { IUtilTaskMessage, IUtilTaskState } from "../../mcp/utilApi.js";
 import {
     MAX_TASK_ACTION_CHILDREN,
+    resultText,
     TaskActionLog,
     taskSummary,
 } from "../../util/taskActions.js";
@@ -49,19 +50,24 @@ const message = (seq: number, text: string, level = "status"):
     return { seq, time: "2026-10-10T10:00:01Z", level, text };
 };
 
-/** A log whose rows are recorded, the newest put last. */
+/** A log whose rows are recorded, on a clock a second per look. */
 const recordingLog = (): { log: TaskActionLog; put: IActionRow[] } => {
     const put: IActionRow[] = [];
+    let tick = 0;
     const log = new TaskActionLog((connection, row) => {
         expect(connection).toBe("mariadb://root@h:3306");
         put.push(row);
-    }, "UI Backend");
+    }, "UI Backend", () => {
+        tick += 1;
+
+        return new Date(2026, 9, 10, 12, 0, tick, 250);
+    });
 
     return { log, put };
 };
 
 describe("tasks in the Actions tab", () => {
-    it("puts up a task's row as it starts, the call under it", () => {
+    it("puts up a task's row as it starts", () => {
         const { log, put } = recordingLog();
 
         log.report({ tracked: tracked(), messages: [], first: true });
@@ -69,68 +75,93 @@ describe("tasks in the Actions tab", () => {
         expect(put).toHaveLength(1);
         expect(put[0]).toMatchObject({
             id: "task-t1", role: "run", message: "Dump shop to Disk",
-            summary: "Starting…", kind: "pending",
+            summary: "Starting\u2026", kind: "pending", time: "12:00:01.250",
             connection: "mariadb://root@h:3306", connectionLabel: "UI Backend",
+            children: [],
         });
-        expect(put[0].children).toMatchObject([{
-            role: "statement", statement: "util.dump_schemas(shop, /d)",
-            message: "Started", connectionLabel: "UI Backend",
-        }]);
+        expect(put[0]).not.toHaveProperty("elapsedMs");
     });
 
-    it("adds the messages under it as they come, and marks how it ended",
-        () => {
-            const { log, put } = recordingLog();
-            log.report({ tracked: tracked(), messages: [], first: true });
-            log.report({
-                tracked: tracked({
-                    stage: "Dumping data",
-                    progress: { current: 4, total: 10, percent: 40,
-                        items: "rows" },
-                }),
-                messages: [message(1, "Writing DDL..."),
-                    message(2, "Table t has no PK", "warning")],
-                first: false,
-            });
-
-            expect(put[1].summary).toBe("Dumping data 40%…");
-            expect(put[1].children?.map((row) => {
-                return [row.role, row.statement, row.message, row.kind];
-            })).toEqual([
-                ["statement", "util.dump_schemas(shop, /d)", "Started", "info"],
-                ["statement", "", "Writing DDL...", "info"],
-                ["warning", "Warning", "Table t has no PK", "warning"],
-            ]);
-
-            log.report({
-                tracked: tracked({ status: "completed",
-                    finished_at: "2026-10-10T10:00:05Z" }),
-                messages: [message(3, "Total duration: 00:00:05s")],
-                first: false,
-            });
-
-            // the run's own marker takes the warning its children saw
-            expect(put[2]).toMatchObject({ summary: "Completed",
-                kind: "warning", elapsedMs: 5000 });
-            expect(put[2].children?.at(-1)?.message)
-                .toBe("Total duration: 00:00:05s");
+    it("puts what it came to under it, not the steps along the way", () => {
+        const { log, put } = recordingLog();
+        log.report({ tracked: tracked(), messages: [], first: true });
+        log.report({
+            tracked: tracked({
+                stage: "Dumping data",
+                progress: { current: 4, total: 10, percent: 40,
+                    items: "rows" },
+            }),
+            messages: [message(1, "Writing DDL..."),
+                message(2, "Acquiring global read lock"),
+                message(3, "Table t has no PK", "warning")],
+            first: false,
         });
+
+        expect(put[1].summary).toBe("Dumping data 40%\u2026");
+        expect(put[1].children?.map((row) => {
+            return [row.message, row.kind];
+        })).toEqual([["Table t has no PK", "warning"]]);
+
+        log.report({
+            tracked: tracked({ status: "completed" }),
+            messages: [message(4, "Dump duration: 00:00:05s"),
+                message(5, "Total duration: 00:00:05s"),
+                message(6, "Rows written: 4"),
+                message(7, "Average throughput: 42.00 B/s")],
+            first: false,
+        });
+
+        // the run's own marker takes the warning its children saw, and its
+        // time is the extension's own, to the millisecond
+        expect(put[2]).toMatchObject({ summary: "Completed",
+            kind: "warning", elapsedMs: 2000 });
+        expect(put[2].children?.map((row) => { return row.message; }))
+            .toEqual(["Table t has no PK", "Total duration: 00:00:05s",
+                "Rows written: 4"]);
+    });
+
+    it("tells a total from a step, a copy's halves included", () => {
+        expect(resultText(message(1, "SRC: Rows written: 20006")))
+            .toBe("Rows written: 20006");
+        expect(resultText(message(1, "TGT: 4 chunks (20.01K rows, 2.13 MB) "
+            + "for 4 tables in 1 schemas were loaded in 0 sec")))
+            .toMatch(/^4 chunks/u);
+        expect(resultText(message(1, "0 warnings were reported during the "
+            + "load."))).toBeDefined();
+        expect(resultText(message(1, "Total rows affected in s.t: Records: 2"
+            + "  Deleted: 0"))).toBeDefined();
+        expect(resultText(message(1, "SRC: Writing global DDL files")))
+            .toBeUndefined();
+        expect(resultText(message(1, "Starting data load"))).toBeUndefined();
+    });
+
+    it("shows a copy's total duration once, from either half", () => {
+        const { log, put } = recordingLog();
+        log.report({ tracked: tracked(), messages: [], first: true });
+        log.report({
+            tracked: tracked({ status: "completed" }),
+            messages: [message(1, "SRC: Total duration: 00:00:00s"),
+                message(2, "TGT: Total duration: 00:00:00s")],
+            first: false,
+        });
+
+        expect(put[1].children).toHaveLength(1);
+    });
 
     it("shows a failure with its reason as the row under it", () => {
         const { log, put } = recordingLog();
         log.report({ tracked: tracked(), messages: [], first: true });
         log.report({
-            tracked: tracked({ status: "failed", error: "Access denied",
-                finished_at: "2026-10-10T10:00:01Z" }),
+            tracked: tracked({ status: "failed", error: "Access denied" }),
             messages: [message(1, "Writing DDL...")],
             first: false,
         });
 
         expect(put[1]).toMatchObject({ kind: "error", summary: "Failed",
             jumpToRowId: "task-t1-error" });
-        expect(put[1].children?.at(-1)).toMatchObject({
+        expect(put[1].children).toMatchObject([{
             id: "task-t1-error", message: "Access denied", kind: "error",
-        });
+        }]);
     });
 
     it("does not repeat an error the shell already reported last", () => {
@@ -142,33 +173,34 @@ describe("tasks in the Actions tab", () => {
             first: false,
         });
 
-        expect(put[1].children?.filter((row) => {
-            return row.message === "Access denied";
-        })).toHaveLength(1);
+        expect(put[1].children).toHaveLength(1);
         expect(put[1].jumpToRowId).toBe("task-t1-1");
     });
 
-    it("keeps the newest messages of a long task", () => {
+    it("keeps the newest of very many warnings", () => {
         const { log, put } = recordingLog();
         log.report({ tracked: tracked(), messages: [], first: true });
         log.report({
             tracked: tracked(),
             messages: Array.from({ length: MAX_TASK_ACTION_CHILDREN + 5 },
-                (_, i) => { return message(i + 1, `line ${String(i + 1)}`); }),
+                (_, i) => {
+                    return message(i + 1, `warning ${String(i + 1)}`,
+                        "warning");
+                }),
             first: false,
         });
 
         const children = put[1].children ?? [];
         expect(children).toHaveLength(MAX_TASK_ACTION_CHILDREN);
         expect(children.at(-1)?.message)
-            .toBe(`line ${String(MAX_TASK_ACTION_CHILDREN + 5)}`);
+            .toBe(`warning ${String(MAX_TASK_ACTION_CHILDREN + 5)}`);
     });
 
     it("says what a task is doing, or what it came to", () => {
         expect(taskSummary(tracked({ stage: "Gathering information" })))
-            .toBe("Gathering information…");
+            .toBe("Gathering information\u2026");
         expect(taskSummary(tracked({ stage: "Dumping data" },
-            { cancelling: true }))).toBe("Dumping data, cancelling…");
+            { cancelling: true }))).toBe("Dumping data, cancelling\u2026");
         expect(taskSummary(tracked({ status: "cancelled" })))
             .toBe("Cancelled");
         expect(taskSummary(tracked({}, { interrupted: true })))

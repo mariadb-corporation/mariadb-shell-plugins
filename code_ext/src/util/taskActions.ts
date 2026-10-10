@@ -23,8 +23,9 @@ import type { ITaskReport, ITrackedTask } from "./taskMonitor.js";
 /**
  * The `util.*` tasks in the Actions tab of the MariaDB panel: one row per
  * task, on the connection it works on, kept up to date while it runs, with
- * the messages the shell reported for it - its stages, warnings, errors and
- * the summary it ends with - as the rows under it.
+ * what it came to under it - the totals the shell ends with, and every
+ * warning and error. The steps it reports along the way are left to the
+ * task's log.
  */
 
 /**
@@ -35,17 +36,6 @@ import type { ITaskReport, ITrackedTask } from "./taskMonitor.js";
 export const MAX_TASK_ACTION_CHILDREN = 200;
 
 /**
- * @param time A timestamp the server sent.
- *
- * @returns It as the Time column shows it, or as it came if it is not one.
- */
-const timeOf = (time: string | null | undefined): string => {
-    const when = time === null || time === undefined ? NaN : Date.parse(time);
-
-    return Number.isNaN(when) ? time ?? "" : formatTime(new Date(when));
-};
-
-/**
  * @param message A message of a task.
  *
  * @returns How its row is marked.
@@ -53,6 +43,28 @@ const timeOf = (time: string | null | undefined): string => {
 const severityOf = (message: IUtilTaskMessage): ActionSeverity => {
     return message.level === "error" ? "error"
         : message.level === "warning" ? "warning" : "info";
+};
+
+/** The lines of a task's end that say what it came to. */
+const RESULT = new RegExp("^(?:Total duration|Schemas dumped|Tables dumped"
+    + "|Rows written|Data size|Uncompressed data size):"
+    + "|^Total rows affected|\\bwere loaded in\\b"
+    + "|\\bwarnings? (?:were|was) reported\\b", "iu");
+
+/**
+ * @param message A message of a task.
+ *
+ * @returns Its text, where it is a warning, an error or one of the totals
+ *          a task ends with; undefined for the steps along the way. A
+ *          copy's "SRC:" / "TGT:" is left off.
+ */
+export const resultText = (message: IUtilTaskMessage): string | undefined => {
+    const text = message.text.replace(/^(?:SRC|TGT):\s*/u, "").trim();
+    if (message.level === "warning" || message.level === "error") {
+        return text;
+    }
+
+    return RESULT.test(text) ? text : undefined;
 };
 
 /**
@@ -69,21 +81,30 @@ const severityOf = (message: IUtilTaskMessage): ActionSeverity => {
 export const taskMessageRows = (
     tracked: ITrackedTask,
     messages: IUtilTaskMessage[],
+    time: string,
 ): IActionRow[] => {
-    return messages.map((message): IActionRow => {
+    const rows: IActionRow[] = [];
+    for (const message of messages) {
+        const text = resultText(message);
+        // A copy's two halves each end with a total duration.
+        if (text === undefined || rows.some((row) => {
+            return row.message === text;
+        })) {
+            continue;
+        }
         const kind = severityOf(message);
-
-        return {
+        rows.push({
             id: `task-${tracked.state.task_id}-${String(message.seq)}`,
-            time: timeOf(message.time),
+            time,
             connection: tracked.connection,
-            role: kind === "info" ? "statement" : "warning",
-            statement: kind === "error" ? "Error"
-                : kind === "warning" ? "Warning" : "",
-            message: message.text,
+            role: "statement",
+            statement: "",
+            message: text,
             kind,
-        };
-    });
+        });
+    }
+
+    return rows;
 };
 
 /**
@@ -134,6 +155,7 @@ export const taskActionRow = (
     tracked: ITrackedTask,
     children: IActionRow[],
     label: string,
+    timing: { started: Date; elapsedMs?: number },
 ): IActionRow => {
     const { state } = tracked;
     const finished = isFinished(state.status) || tracked.interrupted === true;
@@ -145,13 +167,9 @@ export const taskActionRow = (
         : state.status === "failed" || tracked.interrupted === true ? "error"
             : state.status === "cancelled" ? "warning"
                 : worst === "error" ? "warning" : worst;
-    const started = Date.parse(state.started_at ?? state.created_at);
-    const ended = state.finished_at === null ? NaN
-        : Date.parse(state.finished_at);
-
     return {
         id: `task-${state.task_id}`,
-        time: timeOf(state.created_at),
+        time: formatTime(timing.started),
         connection: tracked.connection,
         connectionLabel: label,
         role: "run",
@@ -170,8 +188,8 @@ export const taskActionRow = (
                 return row.kind === "error";
             })!.id }
             : {}),
-        ...(Number.isNaN(started) || Number.isNaN(ended)
-            ? {} : { elapsedMs: Math.max(0, ended - started) }),
+        ...(timing.elapsedMs === undefined
+            ? {} : { elapsedMs: timing.elapsedMs }),
     };
 };
 
@@ -180,16 +198,18 @@ export const taskActionRow = (
  * whole row on after every look at the task, to replace the one before.
  */
 export class TaskActionLog {
-    #children = new Map<string, IActionRow[]>();
+    #tasks = new Map<string, { children: IActionRow[]; started: Date }>();
 
     /**
      * @param put Puts a row up, or replaces the one with its id.
      * @param label Which connection open on a URI the tasks are filed
      *              under: the one the commands open them with.
+     * @param now The time; the server's has whole seconds only.
      */
     public constructor(
         private readonly put: (connection: string, row: IActionRow) => void,
         private readonly label: string,
+        private readonly now: () => Date = () => { return new Date(); },
     ) { }
 
     /**
@@ -200,22 +220,20 @@ export class TaskActionLog {
     public report(report: ITaskReport): void {
         const { tracked, messages } = report;
         const taskId = tracked.state.task_id;
-        let children = this.#children.get(taskId);
-        if (children === undefined) {
-            // The call it was started with comes first, where a run's
-            // first statement would.
-            children = tracked.call === undefined ? [] : [{
-                id: `task-${taskId}-call`,
-                time: timeOf(tracked.state.created_at),
-                connection: tracked.connection,
-                role: "statement",
-                statement: tracked.call,
-                message: "Started",
-                kind: "info",
-            }];
-            this.#children.set(taskId, children);
+        const now = this.now();
+        let task = this.#tasks.get(taskId);
+        if (task === undefined) {
+            task = { children: [], started: now };
+            this.#tasks.set(taskId, task);
         }
-        children.push(...taskMessageRows(tracked, messages));
+        const { children } = task;
+        const time = formatTime(now);
+        children.push(...taskMessageRows(tracked, messages, time).filter(
+            (row) => {
+                return !children.some((kept) => {
+                    return kept.message === row.message;
+                });
+            }));
         // A failure ends with its error as a row of its own, as a SQL
         // script's run does - unless the shell's last word already was it.
         const { status, error } = tracked.state;
@@ -223,7 +241,7 @@ export class TaskActionLog {
             && children.at(-1)?.message !== error) {
             children.push({
                 id: `task-${taskId}-error`,
-                time: timeOf(tracked.state.finished_at),
+                time,
                 connection: tracked.connection,
                 role: "statement",
                 statement: "",
@@ -235,10 +253,16 @@ export class TaskActionLog {
             children.splice(0, children.length - MAX_TASK_ACTION_CHILDREN);
         }
 
-        this.put(tracked.connection,
-            taskActionRow(tracked, [...children], this.label));
-        if (isFinished(tracked.state.status)) {
-            this.#children.delete(taskId);
+        const finished = isFinished(status);
+        this.put(tracked.connection, taskActionRow(tracked, [...children],
+            this.label, {
+                started: task.started,
+                ...(finished
+                    ? { elapsedMs: now.getTime() - task.started.getTime() }
+                    : {}),
+            }));
+        if (finished) {
+            this.#tasks.delete(taskId);
         }
     }
 }

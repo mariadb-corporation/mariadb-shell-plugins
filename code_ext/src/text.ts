@@ -38,3 +38,13 @@ export const errorText = (error: unknown): string => {
 export const counted = (count: number, singular: string): string => {
     return `${count} ${singular}${count === 1 ? "" : "s"}`;
 };
+
+/**
+ * @param text Text a terminal program wrote.
+ *
+ * @returns It without the escape sequences that colour a terminal, which
+ *          show as garbage anywhere else.
+ */
+export const stripAnsi = (text: string): string => {
+    return text.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/gu, "");
+};
