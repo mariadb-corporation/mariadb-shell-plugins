@@ -54,10 +54,15 @@ the wrapper that produces them:
 - `createLoggingApi` wraps the calls that browse one: `db.list_schemas`,
   `db.list_objects` and `db.get_object_details`. It times each, says what
   came back (`Listed 12 tables in world`) and reports a failure as the row
-  instead. A UUID it cannot resolve - one closed while the call was in
-  flight - is reported as nothing at all.
-- **General Actions** (`mariadb.actions.logAllCalls`, off by default):
-  the calls made on NO open connection - `db.list_connections` and the
+  instead. **Since 2026-10-10 a browsing call that worked is reported only
+  with `logAllCalls` on**: the user found the Actions tab drowning in
+  listings, and it is for what was done (runs, opening and closing, tasks,
+  MRS changes). A failure is reported either way. A UUID it cannot resolve
+  - one closed while the call was in flight - is reported as nothing at
+  all.
+- **General Actions** (`mariadb.actions.logAllCalls`, off by default; it
+  also turns the browsing calls above back on): the calls made on NO open
+  connection - `db.list_connections` and the
   add/update/delete/test tools - are reported too, under the pseudo
   connection `GENERAL_ACTIONS` (`"General Actions"`, empty label), which is
   how they get an entry of the panel's connection picker. The setting is

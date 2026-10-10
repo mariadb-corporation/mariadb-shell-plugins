@@ -116,7 +116,7 @@
         "mariadb.actions.logAllCalls": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Also log the MCP calls that are made on no open connection in the MariaDB panel: listing the connections, and adding, editing, moving, deleting and testing them. They are shown under **General Actions** in the panel's connection picker. Calls made on an open connection are logged under that connection either way."
+          "markdownDescription": "Log every MCP call in the MariaDB panel's Actions, not only what was done. Calls made on an open connection - browsing its schemas and objects - are added to that connection's Actions. Those made on no open connection - listing the connections, and adding, editing, moving, deleting and testing them - are shown under **General Actions** in the panel's connection picker. A call that fails is logged either way."
         },
         "mariadb.connections.connectMode": {
           "type": "string",
