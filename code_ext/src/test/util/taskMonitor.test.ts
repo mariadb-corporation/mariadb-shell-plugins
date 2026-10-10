@@ -143,6 +143,22 @@ describe("TaskMonitor", () => {
             .toEqual(["completed"]);
     });
 
+    it("keeps the dialog's title, not the server's", async () => {
+        const { api } = fakeApi([
+            state({ title: "Dump shop to /home/u/shop-2026-10-10-1200" }),
+            finished("completed", {
+                title: "Dump shop to /home/u/shop-2026-10-10-1200",
+            }),
+        ]);
+        const monitor = monitorWith(api);
+
+        await monitor.follow({ task_id: "t1", status: "running" },
+            { title: "Dump shop to Disk", connection: "root@h" });
+
+        expect(monitor.tasks.map((task) => { return task.state.title; }))
+            .toEqual(["Dump shop to Disk"]);
+    });
+
     it("cancels a task from its notification", async () => {
         const { api, cancelled } = fakeApi([
             state({ stage: "Dumping data" }),
