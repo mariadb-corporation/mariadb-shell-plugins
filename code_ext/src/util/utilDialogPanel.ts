@@ -17,6 +17,7 @@
 
 import * as vscode from "vscode";
 
+import { connectionLabel } from "../connections/connectionUri.js";
 import { buildWebviewHtml, webviewOptions } from "../webview/html.js";
 import { errorText } from "../text.js";
 import type { UtilOptions } from "../mcp/utilApi.js";
@@ -24,6 +25,7 @@ import {
     buildUtilOptions,
     initialUtilValues,
     type IUtilOperationSpec,
+    type IUtilProblem,
 } from "./utilFields.js";
 import type { UtilHostMessage, UtilWebviewMessage } from "./utilProtocol.js";
 
@@ -39,6 +41,12 @@ export interface IUtilDialogHost {
      */
     start(options: UtilOptions, paths: string[], target?: string):
         Promise<void>;
+    /**
+     * Checks the paths before anything starts, where the extension can
+     * tell what the shell would refuse - a dump folder that is not empty -
+     * so the dialog stays open and says why.
+     */
+    check?(paths: string[]): Promise<IUtilProblem | undefined>;
     log(message: string): void;
 }
 
@@ -124,7 +132,9 @@ export class UtilDialogPanel {
                     spec: this.spec,
                     values: initialUtilValues(this.spec,
                         this.host.initialPath ?? ""),
-                    targets: this.host.targets ?? [],
+                    targets: (this.host.targets ?? []).map((uri) => {
+                        return { uri, label: connectionLabel(uri) };
+                    }),
                 });
                 break;
             }
@@ -150,6 +160,11 @@ export class UtilDialogPanel {
 
                 this.#post({ type: "busy", busy: true });
                 try {
+                    const problem = await this.host.check?.(built.paths);
+                    if (problem !== undefined) {
+                        this.#post({ type: "startError", ...problem });
+                        break;
+                    }
                     await this.host.start(built.options, built.paths,
                         built.target);
                     this.#panel.dispose();

@@ -26,7 +26,10 @@ import {
     utilOperationSpec,
     type UtilOperation,
 } from "../../src/util/utilFields.js";
-import type { UtilHostMessage } from "../../src/util/utilProtocol.js";
+import type {
+    IUtilTarget,
+    UtilHostMessage,
+} from "../../src/util/utilProtocol.js";
 
 let host: HTMLDivElement;
 
@@ -38,7 +41,7 @@ const send = async (message: UtilHostMessage): Promise<void> => {
 };
 
 const open = async (operation: UtilOperation, path = "/home/me/dump",
-    targets: string[] = []): Promise<void> => {
+    targets: IUtilTarget[] = []): Promise<void> => {
     await act(async () => {
         render(<UtilDialog />, host);
         await Promise.resolve();
@@ -160,7 +163,10 @@ describe("UtilDialog", () => {
     });
 
     it("offers the targets of a copy", async () => {
-        await open("copySchemas", "", ["root@a:3306", "root@b:3306"]);
+        await open("copySchemas", "", [
+            { uri: "mariadb://root@a:3306", label: "root@a:3306" },
+            { uri: "mariadb://root@b:3306", label: "root@b:3306" },
+        ]);
         const options = [...host.querySelectorAll("[name='target'] option")]
             .map((option) => { return option.textContent; });
         expect(options).toEqual(["Choose a connection", "root@a:3306",
@@ -169,10 +175,11 @@ describe("UtilDialog", () => {
         await click("Copy");
         expect(host.textContent).toContain("Choose the connection to copy to.");
 
-        await change("target", "root@b:3306");
+        // shown by address, sent back by URI
+        await change("target", "mariadb://root@b:3306");
         await click("Copy");
         expect(posted.at(-1)).toMatchObject({ type: "start",
-            values: { target: "root@b:3306" } });
+            values: { target: "mariadb://root@b:3306" } });
     });
 
     it("shows a progress bar and disables the buttons while it starts",

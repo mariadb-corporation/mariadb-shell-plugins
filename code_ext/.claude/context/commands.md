@@ -6,7 +6,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 | Command | Title | Where |
 | --- | --- | --- |
-| `mariadb.refreshConnections` | Refresh | Connections view title |
+| `mariadb.refreshConnections` | Refresh Connections | Connections view title |
 | `mariadb.toolbarAddConnection` | New Connection… | Connections view title (`+`). In the selection's folder, the top level when nothing is selected; hidden from the palette |
 | `mariadb.editConnection` | Edit Connection | Connection context menu |
 | `mariadb.deleteConnection` | Delete Connection | Connection context menu |
@@ -24,7 +24,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.setDefaultConnection` | Set as Default Connection | Connection context menu |
 | `mariadb.clearDefaultConnection` | Clear Default Connection | Connection context menu |
 | `mariadb.addSandbox` | New Sandbox… | Sandboxes view title (`+`); the view's welcome content |
-| `mariadb.refreshSandboxes` | Refresh | Sandboxes view title; Retry in its failed welcome content |
+| `mariadb.refreshSandboxes` | Refresh Sandboxes | Sandboxes view title; Retry in its failed welcome content |
 | `mariadb.startSandbox` | Start Sandbox | Inline on, and context menu of, a STOPPED sandbox |
 | `mariadb.stopSandbox` | Stop Sandbox | Inline on, and context menu of, a RUNNING sandbox |
 | `mariadb.deleteSandbox` | Delete Sandbox | Inline on, and context menu of, every sandbox not busy. Asks first; stops a running one before deleting |

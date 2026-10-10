@@ -15,6 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+import { readdir } from "node:fs/promises";
 import * as path from "node:path";
 
 import * as vscode from "vscode";
@@ -39,7 +40,11 @@ import {
     type TaskMonitor,
 } from "./taskMonitor.js";
 import { UtilDialogPanel } from "./utilDialogPanel.js";
-import { utilOperationSpec, type UtilOperation } from "./utilFields.js";
+import {
+    utilOperationSpec,
+    type IUtilProblem,
+    type UtilOperation,
+} from "./utilFields.js";
 
 /** What the dump, load, copy, export and import commands need. */
 export interface IUtilCommandsHost {
@@ -370,6 +375,11 @@ export class UtilCommands {
                 initialPath: start.initialPath,
                 targets,
                 log: this.host.log,
+                ...(DUMPS.has(start.operation)
+                    ? { check: async (paths: string[]) => {
+                        return await dumpFolderProblem(paths[0]);
+                    } }
+                    : {}),
                 start: async (options, paths, target) => {
                     const id = await this.host.connect(start.uri);
                     const targetId = target === undefined ? undefined
@@ -397,6 +407,46 @@ export class UtilCommands {
         })();
     }
 }
+
+/** The operations that write a dump folder. */
+const DUMPS: ReadonlySet<UtilOperation> = new Set<UtilOperation>([
+    "dumpInstance", "dumpSchemas", "dumpTables",
+]);
+
+/**
+ * Says what the shell would refuse about a dump folder, before the dump is
+ * started: one that holds something already, or a file in its place. The
+ * server runs on this machine, so the extension sees the same folder.
+ *
+ * @param folder The folder the dump is to go to.
+ *
+ * @returns The problem, or undefined where the folder is new or empty.
+ */
+export const dumpFolderProblem = async (
+    folder: string | undefined,
+): Promise<IUtilProblem | undefined> => {
+    if (folder === undefined) {
+        return undefined;
+    }
+    try {
+        const entries = await readdir(folder);
+        if (entries.length > 0) {
+            return {
+                field: "path",
+                message: "This folder is not empty. Pick a new or an empty "
+                    + "one: a dump never writes over another.",
+            };
+        }
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOTDIR") {
+            return { field: "path", message: "This is a file, not a folder." };
+        }
+        // ENOENT: the dump makes it. Anything else, the shell reports.
+    }
+
+    return undefined;
+};
 
 /** A name for util.export_table's `schema.table`, quoted where it must be. */
 

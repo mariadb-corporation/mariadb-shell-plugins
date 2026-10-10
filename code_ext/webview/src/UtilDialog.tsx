@@ -25,6 +25,7 @@ import {
     type UtilValues,
 } from "../../src/util/utilFields.js";
 import type {
+    IUtilTarget,
     UtilHostMessage,
     UtilWebviewMessage,
 } from "../../src/util/utilProtocol.js";
@@ -44,7 +45,7 @@ type Tab = (typeof TABS)[number];
 export const UtilDialog = (): preact.JSX.Element => {
     const [spec, setSpec] = useState<IUtilOperationSpec | undefined>();
     const [values, setValues] = useState<UtilValues>({});
-    const [targets, setTargets] = useState<string[]>([]);
+    const [targets, setTargets] = useState<IUtilTarget[]>([]);
     const [tab, setTab] = useState<Tab>("Basic");
     const [problem, setProblem] = useState<IUtilProblem | undefined>();
     const [startError, setStartError] = useState<string | undefined>();
@@ -292,7 +293,11 @@ export const UtilDialog = (): preact.JSX.Element => {
                         >
                             <option value="">Choose a connection</option>
                             {targets.map((target) => {
-                                return <option key={target} value={target}>{target}</option>;
+                                return (
+                                    <option key={target.uri} value={target.uri}>
+                                        {target.label}
+                                    </option>
+                                );
                             })}
                         </select>
                     </Field>

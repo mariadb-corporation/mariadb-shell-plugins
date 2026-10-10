@@ -203,7 +203,7 @@
     "commands": [
       {
         "command": "mariadb.refreshConnections",
-        "title": "Refresh",
+        "title": "Refresh Connections",
         "category": "MariaDB",
         "icon": "$(refresh)"
       },
@@ -314,7 +314,7 @@
       },
       {
         "command": "mariadb.refreshSandboxes",
-        "title": "Refresh",
+        "title": "Refresh Sandboxes",
         "category": "MariaDB",
         "icon": "$(refresh)"
       },
