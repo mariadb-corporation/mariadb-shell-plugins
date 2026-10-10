@@ -57,6 +57,9 @@ import {
     waitFor,
     waitForNotification,
     waitGone,
+    actionRows,
+    inResults,
+    waitForAction,
 } from "../lib/ui";
 
 /**
@@ -178,6 +181,14 @@ describe("MariaDB REST Service", () => {
         assert.equal(await row.getDescription(), "Unpublished");
         // Linked to MRS, so the app shows under it.
         assert.ok((await childLabels(connections, SERVICE)).includes("MRS"));
+        // In the connection's Actions, in plain words: what was done, and
+        // not the tree reading it back.
+        await waitForAction(/Created REST Service '\/uitest'/);
+        await waitForAction(/Configured REST Metadata/);
+        assert.equal((await inResults(actionRows)).filter((row) => {
+            return row.startsWith("Listed REST");
+        }).length, 0);
+        await screenshot("02-actions");
     });
 
     it("publishes the service with the edit dialog", async () => {
@@ -507,6 +518,8 @@ describe("MariaDB REST Service", () => {
         await waitFor(async () => {
             return existsSync(target) && readdirSync(target).length > 0;
         }, "the SDK files");
+        // In the connection's Actions.
+        await waitForAction(/Dumped the REST Client SDK to .*uitest\.mrs\.sdk/);
     });
 
     it("dumps the service's REST SQL to a file", async () => {

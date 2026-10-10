@@ -275,53 +275,73 @@ export class MrsModel {
         }
 
         try {
-            const schemas = await this.api.metadataSchemas(connectionId);
-            if (schemas.length === 0) {
-                return [];
-            }
-
-            // Named only where there is a choice: the shell resolves a
-            // single one by itself, and a USE before every call would cost
-            // a round of its checks each time.
-            const named = schemas.length > 1;
-            const roots: Array<IMrsRootNode | IMrsMessageNode> = [];
-            for (const schema of schemas) {
-                const base: IMrsNodeBase = named
-                    ? { uri, metadataSchema: schema.schema_name }
-                    : { uri };
-                const status = await this.api.status({
-                    connectionId,
-                    ...(named ? { metadataSchema: schema.schema_name } : {}),
-                });
-                if (status.service_being_upgraded) {
-                    roots.push({
-                        ...base,
-                        kind: "mrsMessage",
-                        message: "The REST metadata"
-                            + (named ? ` in ${schema.schema_name}` : "")
-                            + " is being deployed. Refresh once it is done.",
-                    });
-                    continue;
-                }
-                if (!status.service_configured) {
-                    continue;
-                }
-
-                roots.push({
-                    ...base,
-                    kind: "mrsRoot",
-                    status,
-                    showPrivate: this.#showsPrivate(base),
-                });
-            }
-
-            return roots;
+            // Part of opening the connection, which reports itself: only a
+            // failure is worth a row of its own.
+            return await this.api.group(connectionId,
+                "Read the MariaDB REST Service",
+                async () => { return await this.#rootsOf(uri, connectionId); },
+                undefined, true);
         } catch (error) {
             this.log(`Could not read the REST Service of ${uri}: `
                 + (error instanceof Error ? error.message : String(error)));
 
             return [];
         }
+    }
+
+    /**
+     * Reads the roots, as {@link rootsOf} reports them.
+     *
+     * @param uri The connection.
+     * @param connectionId Its open connection.
+     *
+     * @returns The roots.
+     */
+    async #rootsOf(
+        uri: string,
+        connectionId: string,
+    ): Promise<Array<IMrsRootNode | IMrsMessageNode>> {
+        const schemas = await this.api.metadataSchemas(connectionId);
+        if (schemas.length === 0) {
+            return [];
+        }
+
+        // Named only where there is a choice: the shell resolves a
+        // single one by itself, and a USE before every call would cost
+        // a round of its checks each time.
+        const named = schemas.length > 1;
+        const roots: Array<IMrsRootNode | IMrsMessageNode> = [];
+        for (const schema of schemas) {
+            const base: IMrsNodeBase = named
+                ? { uri, metadataSchema: schema.schema_name }
+                : { uri };
+            const status = await this.api.status({
+                connectionId,
+                ...(named ? { metadataSchema: schema.schema_name } : {}),
+            });
+            if (status.service_being_upgraded) {
+                roots.push({
+                    ...base,
+                    kind: "mrsMessage",
+                    message: "The REST metadata"
+                        + (named ? ` in ${schema.schema_name}` : "")
+                        + " is being deployed. Refresh once it is done.",
+                });
+                continue;
+            }
+            if (!status.service_configured) {
+                continue;
+            }
+
+            roots.push({
+                ...base,
+                kind: "mrsRoot",
+                status,
+                showPrivate: this.#showsPrivate(base),
+            });
+        }
+
+        return roots;
     }
 
     /**
@@ -334,6 +354,22 @@ export class MrsModel {
         if (scope === undefined) {
             return [];
         }
+
+        // Browsing is not something the user did to the service: the
+        // Actions tab is for what was done, so a listing is a row of its
+        // own only where it failed - one row, however many lists it read.
+        return await this.api.group(scope.connectionId, listingOf(node),
+            async () => { return await this.#childrenOf(node, scope); },
+            undefined, true);
+    }
+
+    /**
+     * @param node A REST Service row.
+     * @param scope Where it is.
+     *
+     * @returns Its children.
+     */
+    async #childrenOf(node: MrsNode, scope: IMrsScope): Promise<MrsNode[]> {
         const base: IMrsNodeBase = node.metadataSchema === undefined
             ? { uri: node.uri }
             : { uri: node.uri, metadataSchema: node.metadataSchema };
@@ -471,6 +507,51 @@ export class MrsModel {
         }
     }
 }
+
+/**
+ * @param node A REST Service row.
+ *
+ * @returns What opening it is called in the Actions tab.
+ */
+export const listingOf = (node: MrsNode): string => {
+    switch (node.kind) {
+        case "mrsRoot": {
+            return "Listed REST Services";
+        }
+
+        case "mrsService": {
+            return `Listed REST Service '${node.service.full_service_path}'`;
+        }
+
+        case "mrsSchema": {
+            return `Listed REST Schema '${node.schema.request_path}'`;
+        }
+
+        case "mrsContentSet": {
+            return `Listed REST Content Set '${node.contentSet.request_path}'`;
+        }
+
+        case "mrsAuthAppGroup": {
+            return "Listed REST Authentication Apps";
+        }
+
+        case "mrsAuthApp": {
+            return `Listed REST Authentication App '${node.authApp.name}'`;
+        }
+
+        case "mrsDaemonGroup": {
+            return "Listed REST Daemons";
+        }
+
+        case "mrsDaemon": {
+            return `Listed REST Daemon '${node.daemon.name}'`;
+        }
+
+        default: {
+            return "Listed REST objects";
+        }
+    }
+};
 
 /**
  * @param node A REST Service row.

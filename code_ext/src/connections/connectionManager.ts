@@ -461,6 +461,16 @@ export class ConnectionManager {
     /**
      * @param connectionId The UUID to resolve.
      *
+     * @returns The connection it identifies, if it is still open: what
+     *          the Actions tab files a call on it under.
+     */
+    public sessionOf(connectionId: string): IOpenConnection | undefined {
+        return this.#sessionOf(connectionId);
+    }
+
+    /**
+     * @param connectionId The UUID to resolve.
+     *
      * @returns The connection it identifies, if it is still open.
      */
     #sessionOf(connectionId: string): IOpenConnection | undefined {

@@ -20,13 +20,21 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { By, CustomTreeSection, Workbench } from "vscode-extension-tester";
+import {
+    By,
+    CustomTreeSection,
+    EditorView,
+    TextEditor,
+    Workbench,
+} from "vscode-extension-tester";
 
 import {
     childLabels,
+    clickButton,
     clearNotifications,
     CONNECTION,
     DEPLOY_TIMEOUT,
+    dialogText,
     inDialog,
     inlineAction,
     FILES,
@@ -46,6 +54,8 @@ import {
     submitDialog,
     treeItem,
     waitFor,
+    waitDialogClosed,
+    waitForAction,
     waitForNotification,
     waitGone,
 } from "../lib/ui";
@@ -189,12 +199,32 @@ describe("Dump and Load", () => {
         await waitCompleted(title);
 
         assert.equal(await taskState(title), "completed");
+        // A row of the connection's Actions, with the call under it.
+        await waitForAction(/Dump uitest to Disk.*Completed/);
+        await waitForAction(/Total duration/);
+        await screenshot("06-actions");
         const files = readdirSync(DUMP);
         assert.ok(files.includes("@.done.json"), files.join(", "));
         assert.ok(files.some((name) => {
             return name.startsWith("uitest@country");
         }), files.join(", "));
         await screenshot("06-dumped");
+    });
+
+    it("opens a task's own log from the Tasks view", async () => {
+        const tasks = await openSection("Tasks");
+        await (await treeItem(tasks, ["Dump uitest to Disk"])).click();
+        const text = await waitFor(async () => {
+            const title = await (await new EditorView().getActiveTab())
+                ?.getTitle();
+
+            return title?.endsWith(".log") === true
+                ? await new TextEditor().getText() : undefined;
+        }, "the task's log");
+        assert.match(text, /^Dump uitest to Disk\n/u);
+        assert.match(text, /Call: util\.dump_schemas\(uitest, /u);
+        assert.match(text, /Completed\.\n$/u);
+        await new EditorView().closeAllEditors();
     });
 
     it("loads the dump into another schema from the connection's submenu",
@@ -286,20 +316,27 @@ describe("Dump and Load", () => {
         assert.equal(await taskState(title), "cancelled");
     });
 
-    it("says why a dump into a folder that is not empty failed", async () => {
-        const title = "Dump uitest to Disk";
-        connections = await openSection("Connections");
-        await openDialog(connections, [...CONNECTION, ...SCHEMA],
-            [SUBMENU, "Dump Schema to Disk..."], title);
-        await inDialog(title, async (view) => {
-            await setField(view, "path", DUMP);
-            await submitDialog(view, "Dump", SERVER_TIMEOUT * 2);
+    it("keeps the dialog open when the dump folder is not empty",
+        async () => {
+            const title = "Dump uitest to Disk";
+            connections = await openSection("Connections");
+            await openDialog(connections, [...CONNECTION, ...SCHEMA],
+                [SUBMENU, "Dump Schema to Disk..."], title);
+            await inDialog(title, async (view) => {
+                await setField(view, "path", DUMP);
+                await clickButton(view, "Dump");
+                // Said at the folder, before anything starts.
+                const said = await waitFor(async () => {
+                    const text = await dialogText(view);
+
+                    return text.includes("not empty") ? text : undefined;
+                }, "the dialog to say the folder is not empty");
+                assert.match(said, /Pick a new or an empty one/u);
+                await screenshot("06-not-empty");
+                await clickButton(view, "Cancel");
+            });
+            await waitDialogClosed(title);
         });
-        const message = await waitEnded(title);
-        await screenshot("06-not-empty");
-        assert.match(message, /failed/);
-        assert.match(message, /not empty|already exists|exists/i);
-    });
 
     it("copies a schema to another server", async () => {
         await runCommand("MariaDB: New Sandbox…");

@@ -17,6 +17,7 @@
 
 import type { McpServerCommand } from "../shell/mcpServer.js";
 import { MariaDbApi, type IToolCaller } from "./mariaDbApi.js";
+import type { IMrsAction } from "../mrs/mrsActions.js";
 import { MrsToolsApi } from "../mrs/mrsApi.js";
 import { SandboxApi, type ISandboxApi } from "./sandboxApi.js";
 import { UtilApi, type IUtilApi } from "./utilApi.js";
@@ -62,6 +63,9 @@ export class McpSession {
     #api?: IMariaDbApi;
     #sandboxApi?: ISandboxApi;
     #mrsTools?: MrsToolsApi;
+
+    /** Where what each `mrs.*` tool call did is reported. */
+    public onMrsAction?: (action: IMrsAction) => void;
     #utilApi?: IUtilApi;
 
     public constructor(
@@ -171,7 +175,9 @@ export class McpSession {
         this.#connection = connection;
         this.#api = new MariaDbApi(connection);
         this.#sandboxApi = new SandboxApi(connection);
-        this.#mrsTools = new MrsToolsApi(connection);
+        this.#mrsTools = new MrsToolsApi(connection, (action) => {
+            this.onMrsAction?.(action);
+        });
         this.#utilApi = new UtilApi(connection);
         this.log("MCP server ready.");
 

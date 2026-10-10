@@ -26,6 +26,7 @@ import {
     MrsToolsApi,
     type IMrsScope,
 } from "../../mrs/mrsApi.js";
+import type { IMrsAction } from "../../mrs/mrsActions.js";
 import {
     createFakeRestSql,
     mrsObject,
@@ -613,4 +614,115 @@ describe("MrsToolsApi", () => {
         await expect(failure).rejects.toBeInstanceOf(McpToolError);
         await expect(failure).rejects.toThrow("No such service");
     });
+});
+
+describe("reporting what MRS does, for the Actions tab", () => {
+    const reporting = (fake: FakeRestSql) => {
+        const actions: IMrsAction[] = [];
+        const api = new MrsApi(() => { return Promise.resolve(fake); },
+            (action) => { actions.push(action); });
+
+        return { api, actions };
+    };
+
+    it("says what a change did, in plain words", async () => {
+        const { api, actions } = reporting(createFakeRestSql());
+
+        await api.run(named, ["CREATE REST SERVICE /myService/v1"]);
+
+        expect(actions).toMatchObject([{
+            connectionId: "uuid-1",
+            message: "Created REST Service '/myService/v1'",
+        }]);
+        expect(actions[0]).not.toHaveProperty("error");
+    });
+
+    it("leaves out a read made on its own, unless it failed", async () => {
+        const { api, actions } = reporting(createFakeRestSql({
+            answers: { "SHOW REST SERVICES FORMAT=JSON": [mrsService()] },
+            errors: { "SHOW REST ROLES ON ANY SERVICE FORMAT=JSON": "No access" },
+        }));
+
+        await api.services(scope);
+        await expect(api.roles(scope)).rejects.toThrow("No access");
+
+        expect(actions).toMatchObject([{
+            message: "Read REST Roles", error: "No access",
+        }]);
+    });
+
+    it("makes the calls of a group one action, with what it came to",
+        async () => {
+            const { api, actions } = reporting(createFakeRestSql());
+
+            const found = await api.group("uuid-1",
+                "Listed REST Service '/a'",
+                async () => {
+                    await api.run(scope, ["SHOW REST SCHEMAS FORMAT=JSON"]);
+                    await api.run(scope, ["SHOW REST AUTH APPS FORMAT=JSON"]);
+
+                    return 3;
+                },
+                (count) => { return `${String(count)} things`; });
+
+            expect(found).toBe(3);
+            expect(actions).toMatchObject([{
+                connectionId: "uuid-1", message: "Listed REST Service '/a'",
+                detail: "3 things",
+            }]);
+        });
+
+    it("reports a failed group with the error of the call that failed",
+        async () => {
+            const { api, actions } = reporting(createFakeRestSql({
+                errors: { "SHOW REST SCHEMAS FORMAT=JSON": "Lost connection" },
+            }));
+
+            await expect(api.group("uuid-1", "Listed REST Services",
+                async () => {
+                    await api.run(scope, ["SHOW REST SCHEMAS FORMAT=JSON"]);
+                })).rejects.toThrow("Lost connection");
+
+            expect(actions).toMatchObject([{
+                message: "Listed REST Services", error: "Lost connection",
+            }]);
+        });
+
+    it("reports a tool call by what it did, without the tool's name",
+        async () => {
+            const actions: IMrsAction[] = [];
+            const caller: IToolCaller = {
+                callTool: () => { return Promise.resolve({ content: [] }); },
+            };
+            const tools = new MrsToolsApi(caller,
+                (action) => { actions.push(action); });
+
+            await tools.dumpService("uuid-1", "/myService", "/tmp/s.sql",
+                "all");
+
+            expect(actions).toMatchObject([{
+                connectionId: "uuid-1",
+                message: "Dumped REST Service '/myService' to /tmp/s.sql",
+            }]);
+        });
+
+    it("reports a tool call that failed, as well as raising it",
+        async () => {
+            const actions: IMrsAction[] = [];
+            const caller: IToolCaller = {
+                callTool: () => {
+                    return Promise.reject(new Error("No such folder"));
+                },
+            };
+            const tools = new MrsToolsApi(caller,
+                (action) => { actions.push(action); });
+
+            await expect(tools.loadServiceProject("uuid-1", "/nope"))
+                .rejects.toThrow("No such folder");
+
+            expect(actions).toMatchObject([{
+                message: "Loaded the REST Project /nope",
+                error: "No such folder",
+            }]);
+        });
 });

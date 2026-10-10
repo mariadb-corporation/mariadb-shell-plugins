@@ -21,6 +21,7 @@ import { join } from "node:path";
 
 import {
     ActivityBar,
+    BottomBarPanel,
     By,
     CustomTreeItem,
     CustomTreeSection,
@@ -33,6 +34,7 @@ import {
     WebDriver,
     WebElement,
     WebView,
+    WebviewView,
     Workbench,
 } from "vscode-extension-tester";
 
@@ -521,7 +523,17 @@ export const menuAction = async (
     what: string,
 ): Promise<void> => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        await contextMenu(await treeItem(section, path), ...menu);
+        try {
+            await contextMenu(await treeItem(section, path), ...menu);
+        } catch (error) {
+            // The row was redrawn while its menu opened: find it again.
+            if (String(error).includes("StaleElementReference")
+                || String(error).includes("stale element")) {
+                await sleep(500);
+                continue;
+            }
+            throw error;
+        }
         try {
             await waitFor(async () => {
                 if (await done()) {
@@ -874,6 +886,91 @@ export const dialogErrors = async (view: WebView): Promise<string[]> => {
  */
 export const dialogText = async (view: WebView): Promise<string> => {
     return await (await view.findWebElement(By.css("body"))).getText();
+};
+
+// --- the result view ---------------------------------------------------
+
+/**
+ * Works inside the result view in the bottom panel.
+ *
+ * @param work What to do there.
+ *
+ * @returns What `work` returns.
+ */
+export const inResults = async <T>(
+    work: (view: WebviewView) => Promise<T>,
+): Promise<T> => {
+    const panel = new BottomBarPanel();
+    await panel.toggle(true);
+    await panel.openTab("MariaDB");
+    const view = new WebviewView();
+    await view.switchToFrame();
+    try {
+        return await work(view);
+    } finally {
+        await view.switchBack();
+    }
+};
+
+/**
+ * @param view The webview that is switched to.
+ *
+ * @returns The texts of its grid cells.
+ */
+export const cellTexts = async (
+    view: WebView | WebviewView,
+): Promise<string[]> => {
+    const cells = await view.findWebElements(By.css(".tabulator-cell"));
+
+    return Promise.all(cells.map(async (cell) => {
+        return (await cell.getText()).trim();
+    }));
+};
+
+/**
+ * Brings the Actions tab of the result view up and reads its rows: those
+ * on show, so the rows of a run that is closed are not among them.
+ *
+ * @param view The result view, switched to.
+ *
+ * @returns Each row's text, its cells joined by " | ".
+ */
+export const actionRows = async (view: WebviewView): Promise<string[]> => {
+    const tabs = await view.findWebElements(
+        By.css(".contentSelectionBar [role='tab']"));
+    await tabs[0]?.click();
+    const rows = await view.findWebElements(
+        By.css(".actionsGridHost .tabulator-row"));
+
+    return Promise.all(rows.map(async (row) => {
+        const cells = await row.findElements(By.css(".tabulator-cell"));
+        const texts = await Promise.all(cells.map(async (cell) => {
+            return (await cell.getText()).trim();
+        }));
+
+        return texts.join(" | ");
+    }));
+};
+
+/**
+ * Waits for a row of the Actions tab that says something.
+ *
+ * @param pattern What the row says.
+ * @param timeout How long to wait.
+ *
+ * @returns The row's text.
+ */
+export const waitForAction = async (
+    pattern: RegExp,
+    timeout = SERVER_TIMEOUT,
+): Promise<string> => {
+    return await inResults(async (view) => {
+        return await waitFor(async () => {
+            return (await actionRows(view)).find((row) => {
+                return pattern.test(row);
+            });
+        }, `an action row saying ${String(pattern)}`, timeout);
+    });
 };
 
 // --- VS Code's own prompts -------------------------------------------

@@ -17,6 +17,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { IMrsAction } from "../../mrs/mrsActions.js";
 import { MrsApi } from "../../mrs/mrsApi.js";
 import {
     compareVersions,
@@ -352,6 +353,34 @@ describe("MrsModel.getChildren", () => {
                 mrsAuthApp(),
             ],
         };
+
+        it("is no row of the Actions tab, unless it failed", async () => {
+            const listing = (fake: FakeRestSql) => {
+                const actions: IMrsAction[] = [];
+                const model = new MrsModel(new MrsApi(() => {
+                    return Promise.resolve(fake);
+                }, (action) => { actions.push(action); }), () => {
+                    return "uuid-1";
+                }, createRecordingLog());
+
+                return { actions, model };
+            };
+
+            const fine = listing(createFakeRestSql({ answers }));
+            await fine.model.getChildren(serviceNode());
+            expect(fine.actions).toEqual([]);
+
+            const failing = listing(createFakeRestSql({ answers, errors: {
+                "SHOW REST AUTH APPS ON SERVICE /myService FORMAT=JSON":
+                    "Lost connection",
+            } }));
+            await expect(failing.model.getChildren(serviceNode()))
+                .rejects.toThrow("Lost connection");
+            expect(failing.actions).toMatchObject([{
+                message: "Listed REST Service '/myService'",
+                error: "Lost connection",
+            }]);
+        });
 
         const describeChildren = (children: MrsNode[]): string[] => {
             return children.map((child) => {

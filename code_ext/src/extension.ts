@@ -79,6 +79,9 @@ import type { ISandboxApi } from "./mcp/sandboxApi.js";
 import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
 import { SandboxStore } from "./sandboxes/sandboxStore.js";
 import { SandboxEditorPanel } from "./sandboxes/sandboxEditorPanel.js";
+import type { IActivityEvent } from "./connections/connectionActivity.js";
+import type { IActionRow } from "./webview/protocol.js";
+import { reportMrsAction } from "./mrs/mrsActivity.js";
 import { MrsApi } from "./mrs/mrsApi.js";
 import { MrsCommands } from "./mrs/mrsCommands.js";
 import { MrsDialogPanel } from "./mrs/mrsDialogPanel.js";
@@ -256,9 +259,27 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const collapsedFolders =
         new FolderSet(context.globalState, COLLAPSED_FOLDERS_KEY);
     // The REST Service rows read REST SQL on the session the tree browses
-    // with, through the connection manager's API, so every call is a row of
-    // that connection's output like the tree's other queries.
-    const mrsApi = new MrsApi(async () => { return await connections.api(); });
+    // with, through the connection manager's API. That API passes
+    // db.execute_sql through unreported (a SQL run reports itself), so
+    // MrsApi reports its REST SQL itself, and the mrs.* tools theirs, to the
+    // connection's Actions in the panel.
+    const mrsActivity = {
+        sessionOf: (connectionId: string) => {
+            return connections.sessionOf(connectionId);
+        },
+        report: (event: IActivityEvent) => {
+            void resultView.appendEvent(event);
+        },
+        put: (connection: string, row: IActionRow) => {
+            void resultView.putAction(connection, row);
+        },
+        logAllCalls: () => { return settings.logAllCalls?.() ?? false; },
+    };
+    session.onMrsAction = (action) => {
+        reportMrsAction(mrsActivity, action);
+    };
+    const mrsApi = new MrsApi(async () => { return await connections.api(); },
+        (action) => { reportMrsAction(mrsActivity, action); });
     const mrsModel = new MrsModel(mrsApi, (uri) => {
         return connections.connectionIdFor(uri, UI_BACKEND_SESSION);
     }, log);

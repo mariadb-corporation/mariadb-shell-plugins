@@ -57,7 +57,7 @@ describe("Sandbox lifecycle and the MCP server", () => {
         await waitFor(async () => {
             return (await state()).includes("running");
         }, "the sandbox to start", SERVER_TIMEOUT);
-        await runCommand("MariaDB: Refresh Connections");
+        await runCommand("MariaDB: Refresh Sandboxes");
         assert.match(await state(), /running/);
     });
 

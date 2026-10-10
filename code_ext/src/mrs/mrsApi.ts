@@ -21,8 +21,13 @@ import {
     decodeObject,
     decodeScalar,
     decodeVoid,
+    type IToolResult,
 } from "../mcp/protocol.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import type { IMariaDbApi, IStatementResult } from "../mcp/types.js";
+import { counted, errorText } from "../text.js";
+import { describeRestSql, type IMrsAction } from "./mrsActions.js";
 import type {
     IMrsAuthApp,
     IMrsAuthVendor,
@@ -119,8 +124,63 @@ export class MrsApi {
     /**
      * @param api The database API; asked for on each call, since the MCP
      *            server can be restarted and hand out a new one.
+     * @param report Where what was done is reported, for the Actions
+     *               tab: each call, or each {@link group} of calls.
      */
-    public constructor(private readonly api: () => Promise<IMariaDbApi>) { }
+    public constructor(
+        private readonly api: () => Promise<IMariaDbApi>,
+        private readonly report?: (action: IMrsAction) => void,
+    ) { }
+
+    /** Whether the calls being made belong to a {@link group}. */
+    readonly #grouped = new AsyncLocalStorage<true>();
+
+    /**
+     * Makes the calls of one piece of work one action: listing a tree row
+     * reads several kinds of objects, and is still one thing the user did.
+     * Groups inside a group are part of it.
+     *
+     * @param connectionId The connection the work is done on.
+     * @param message What it is: "Listed REST Service '/myService'".
+     * @param work The work.
+     * @param detail What it came to, from its result.
+     * @param onlyFailures Whether it is reported only where it failed: work
+     *                     the user did not ask for as such.
+     *
+     * @returns What the work returned.
+     */
+    public async group<T>(
+        connectionId: string,
+        message: string,
+        work: () => Promise<T>,
+        detail?: (value: T) => string | undefined,
+        onlyFailures = false,
+    ): Promise<T> {
+        if (this.#grouped.getStore() === true) {
+            return await work();
+        }
+        const when = new Date();
+        try {
+            const value = await this.#grouped.run(true, work);
+            if (onlyFailures) {
+                return value;
+            }
+            const said = detail?.(value);
+            this.report?.({
+                connectionId, message, when,
+                elapsedMs: Date.now() - when.getTime(),
+                ...(said === undefined ? {} : { detail: said }),
+            });
+
+            return value;
+        } catch (error) {
+            this.report?.({
+                connectionId, message, when, error: errorText(error),
+                elapsedMs: Date.now() - when.getTime(),
+            });
+            throw error;
+        }
+    }
 
     /**
      * Runs statements on the scope's connection, after choosing its
@@ -146,9 +206,21 @@ export class MrsApi {
         if (all.length === 0) {
             return [];
         }
-        const results = all.length === 1
-            ? [await api.executeSql(scope.connectionId, all[0])]
-            : await api.executeScript(scope.connectionId, all.join("\n"), true);
+        const run = async (): Promise<IStatementResult[]> => {
+            return all.length === 1
+                ? [await api.executeSql(scope.connectionId, all[0])]
+                : await api.executeScript(scope.connectionId, all.join("\n"),
+                    true);
+        };
+        // A call on its own is an action of its own; inside a group, the
+        // group is the action. A read on its own - a dialog filling in its
+        // choices - is not something the user did, and is reported only
+        // where it failed.
+        const message = describeRestSql(all);
+        const results = this.#grouped.getStore() === true
+            ? await run()
+            : await this.#reported(scope.connectionId, message, run,
+                message.startsWith("Read "));
         const failed = results.find((result) => {
             return result.error !== undefined;
         });
@@ -157,6 +229,41 @@ export class MrsApi {
         }
 
         return results.slice(use.length);
+    }
+
+    /**
+     * Runs REST SQL as an action of its own, reported once it is done. A
+     * statement that failed is the action's error, as the call is.
+     */
+    async #reported(
+        connectionId: string,
+        message: string,
+        run: () => Promise<IStatementResult[]>,
+        onlyFailures: boolean,
+    ): Promise<IStatementResult[]> {
+        const when = new Date();
+        let results: IStatementResult[];
+        try {
+            results = await run();
+        } catch (error) {
+            this.report?.({
+                connectionId, message, when, error: errorText(error),
+                elapsedMs: Date.now() - when.getTime(),
+            });
+            throw error;
+        }
+        const failed = results.find((result) => {
+            return result.error !== undefined;
+        });
+        if (failed !== undefined || !onlyFailures) {
+            this.report?.({
+                connectionId, message, when,
+                elapsedMs: Date.now() - when.getTime(),
+                ...(failed === undefined ? {} : { error: failed.error }),
+            });
+        }
+
+        return results;
     }
 
     /**
@@ -403,13 +510,23 @@ export interface IContentSetUpload {
  * first where there is a choice.
  */
 export class MrsToolsApi {
-    public constructor(private readonly caller: IToolCaller) { }
+    /**
+     * @param caller What calls the server's tools.
+     * @param report Where what each call did is reported, for the Actions
+     *               tab.
+     */
+    public constructor(
+        private readonly caller: IToolCaller,
+        private readonly report?: (action: IMrsAction) => void,
+    ) { }
 
     public async getSdkOptions(directory: string): Promise<IMrsSdkOptions> {
-        const name = "mrs.get_sdk_options";
-        const result = await this.caller.callTool(name, { directory });
-
-        return (decodeList<IMrsSdkOptions>(name, result)[0] ?? {});
+        return await this.#tool("mrs.get_sdk_options", undefined,
+            { directory },
+            (name, result) => {
+                return decodeList<IMrsSdkOptions>(name, result)[0] ?? {};
+            },
+            `Read the REST Client SDK options in ${directory}`);
     }
 
     public async dumpSdkServiceFiles(
@@ -417,10 +534,10 @@ export class MrsToolsApi {
         directory: string,
         options: Record<string, unknown>,
     ): Promise<void> {
-        const name = "mrs.dump_sdk_service_files";
-        decodeVoid(name, await this.caller.callTool(name, {
-            connection_id: connectionId, directory, options,
-        }, MRS_TOOL_TIMEOUT_MS));
+        await this.#tool("mrs.dump_sdk_service_files", connectionId,
+            { directory, options }, decodeVoid,
+            `Dumped the REST Client SDK to ${directory}`,
+            undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
     public async dumpService(
@@ -429,14 +546,14 @@ export class MrsToolsApi {
         filePath: string,
         endpoints: string,
     ): Promise<void> {
-        const name = "mrs.dump_service";
-        decodeVoid(name, await this.caller.callTool(name, {
-            connection_id: connectionId,
+        await this.#tool("mrs.dump_service", connectionId, {
             service_path: servicePath,
             file_path: filePath,
             endpoints,
             overwrite: true,
-        }, MRS_TOOL_TIMEOUT_MS));
+        }, decodeVoid,
+        `Dumped REST Service '${servicePath}' to ${filePath}`,
+        undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
     public async loadService(
@@ -444,21 +561,20 @@ export class MrsToolsApi {
         filePath: string,
         asPath?: string,
     ): Promise<void> {
-        const name = "mrs.load_service";
-        decodeVoid(name, await this.caller.callTool(name, {
-            connection_id: connectionId,
+        await this.#tool("mrs.load_service", connectionId, {
             file_path: filePath,
             ...(asPath === undefined ? {} : { as_path: asPath }),
-        }, MRS_TOOL_TIMEOUT_MS));
+        }, decodeVoid,
+        (asPath === undefined ? "Loaded a REST Service"
+            : `Loaded REST Service '${asPath}'`) + ` from ${filePath}`,
+        undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
     public async dumpServiceProject(
         connectionId: string,
         options: IServiceProjectOptions,
     ): Promise<void> {
-        const name = "mrs.dump_service_project";
-        decodeVoid(name, await this.caller.callTool(name, {
-            connection_id: connectionId,
+        await this.#tool("mrs.dump_service_project", connectionId, {
             destination: options.destination,
             services: [{
                 name: options.servicePath,
@@ -476,17 +592,19 @@ export class MrsToolsApi {
             },
             overwrite: true,
             zip: options.zip,
-        }, MRS_TOOL_TIMEOUT_MS));
+        }, decodeVoid,
+        `Dumped REST Service '${options.servicePath}' as a REST Project to `
+            + options.destination,
+        undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
     public async loadServiceProject(
         connectionId: string,
         source: string,
     ): Promise<void> {
-        const name = "mrs.load_service_project";
-        decodeVoid(name, await this.caller.callTool(name, {
-            connection_id: connectionId, source,
-        }, MRS_TOOL_TIMEOUT_MS));
+        await this.#tool("mrs.load_service_project", connectionId, { source },
+            decodeVoid, `Loaded the REST Project ${source}`,
+            undefined, MRS_TOOL_TIMEOUT_MS);
     }
 
     public async loadContentSet(
@@ -497,51 +615,96 @@ export class MrsToolsApi {
         ignoreList: string,
         loadScripts: boolean | undefined,
     ): Promise<IContentSetUpload> {
-        const name = "mrs.load_content_set";
-
-        return decodeObject<IContentSetUpload>(name, await this.caller.callTool(
-            name, {
-                connection_id: connectionId,
-                directory,
-                content_set_path: contentSetPath,
-                service_path: servicePath,
-                ignore_list: ignoreList,
-                ...(loadScripts === undefined
-                    ? {} : { load_scripts: loadScripts }),
-                replace: true,
-            }, MRS_TOOL_TIMEOUT_MS));
+        return await this.#tool("mrs.load_content_set", connectionId, {
+            directory,
+            content_set_path: contentSetPath,
+            service_path: servicePath,
+            ignore_list: ignoreList,
+            ...(loadScripts === undefined ? {} : { load_scripts: loadScripts }),
+            replace: true,
+        }, decodeObject<IContentSetUpload>,
+        `Loaded REST Content Set '${contentSetPath}' from ${directory}`,
+        (upload) => { return counted(upload.files.length, "file"); },
+        MRS_TOOL_TIMEOUT_MS);
     }
 
     public async folderScriptLanguage(
         path: string,
         ignoreList: string,
     ): Promise<string | undefined> {
-        const name = "mrs.get_folder_mrs_script_language";
-        const result = await this.caller.callTool(name, {
-            path, ignore_list: ignoreList,
-        });
-        const texts = decodeList<string | null>(name, result);
-        const language = texts[0];
+        return await this.#tool("mrs.get_folder_mrs_script_language",
+            undefined, { path, ignore_list: ignoreList },
+            (name, result) => {
+                const language = decodeList<string | null>(name, result)[0];
 
-        return typeof language === "string" && language !== ""
-            && language !== "null" ? language : undefined;
+                return typeof language === "string" && language !== ""
+                    && language !== "null" ? language : undefined;
+            },
+            `Looked for MRS scripts in ${path}`,
+            (language) => { return language ?? "none"; });
     }
 
     public async folderScriptDefinitions(
         path: string,
         ignoreList: string,
     ): Promise<IMrsScriptDefinitions> {
-        const name = "mrs.get_folder_mrs_script_definitions";
-
-        return decodeObject<IMrsScriptDefinitions>(name,
-            await this.caller.callTool(name, {
-                path, ignore_list: ignoreList,
-            }, MRS_TOOL_TIMEOUT_MS));
+        return await this.#tool("mrs.get_folder_mrs_script_definitions",
+            undefined, { path, ignore_list: ignoreList },
+            decodeObject<IMrsScriptDefinitions>,
+            `Read the MRS scripts in ${path}`, undefined,
+            MRS_TOOL_TIMEOUT_MS);
     }
 
     public async version(): Promise<string> {
-        const name = "mrs.version";
+        return await this.#tool("mrs.version", undefined, {}, decodeScalar,
+            "Read the MRS plugin version", (version) => { return version; });
+    }
 
-        return decodeScalar(name, await this.caller.callTool(name, {}));
+    /**
+     * Calls a tool, timing it and reporting what it did.
+     *
+     * @param name The tool.
+     * @param connectionId The connection it works on, if it takes one.
+     * @param args Its other arguments.
+     * @param decode Reads its answer.
+     * @param message What it does, in the words of the Actions tab.
+     * @param detail What it came to, from the answer, where that says more.
+     * @param timeout How long it may take, where longer than the default.
+     *
+     * @returns The answer, decoded.
+     */
+    async #tool<T>(
+        name: string,
+        connectionId: string | undefined,
+        args: Record<string, unknown>,
+        decode: (name: string, result: IToolResult) => T,
+        message: string,
+        detail?: (value: T) => string,
+        timeout?: number,
+    ): Promise<T> {
+        const when = new Date();
+        const action = {
+            ...(connectionId === undefined ? {} : { connectionId }),
+            message, when,
+        };
+        try {
+            const value = decode(name, await this.caller.callTool(name, {
+                ...(connectionId === undefined
+                    ? {} : { connection_id: connectionId }),
+                ...args,
+            }, timeout));
+            this.report?.({
+                ...action, elapsedMs: Date.now() - when.getTime(),
+                ...(detail === undefined ? {} : { detail: detail(value) }),
+            });
+
+            return value;
+        } catch (error) {
+            this.report?.({
+                ...action, error: errorText(error),
+                elapsedMs: Date.now() - when.getTime(),
+            });
+            throw error;
+        }
     }
 }

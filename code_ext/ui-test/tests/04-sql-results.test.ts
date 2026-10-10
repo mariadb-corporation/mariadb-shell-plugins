@@ -18,20 +18,20 @@
 import * as assert from "node:assert/strict";
 
 import {
-    BottomBarPanel,
     By,
     CustomTreeSection,
     EditorView,
     Key,
     TextEditor,
     WebView,
-    WebviewView,
 } from "vscode-extension-tester";
 
 import {
+    cellTexts,
     CONNECTION,
     driver,
     inlineAction,
+    inResults,
     menuAction,
     openSection,
     runCommand,
@@ -50,30 +50,6 @@ import {
  */
 
 let connections: CustomTreeSection;
-
-/** Works inside the result view in the bottom panel. */
-const inResults = async <T>(work: (view: WebviewView) => Promise<T>)
-    : Promise<T> => {
-    const panel = new BottomBarPanel();
-    await panel.toggle(true);
-    await panel.openTab("MariaDB");
-    const view = new WebviewView();
-    await view.switchToFrame();
-    try {
-        return await work(view);
-    } finally {
-        await view.switchBack();
-    }
-};
-
-/** The texts of a grid's cells, in the webview that is switched to. */
-const cellTexts = async (view: WebView | WebviewView): Promise<string[]> => {
-    const cells = await view.findWebElements(By.css(".tabulator-cell"));
-
-    return Promise.all(cells.map(async (cell) => {
-        return (await cell.getText()).trim();
-    }));
-};
 
 /** Opens a new SQL editor on the sandbox and puts the text in it. */
 const sqlEditor = async (text: string): Promise<TextEditor> => {
