@@ -768,3 +768,91 @@ def execute_msm_sql_script(
 
 def get_uuid_string():
     return str(uuid.uuid4()).replace("-", "")
+
+
+# --- running a shell utility on a given session ----------------------------
+
+# The name under which every plugin of this repository finds the one lock that
+# guards the shell's global session; see _global_session_lock.
+_GLOBAL_SESSION_LOCK_MODULE = "_mariadb_shell_plugins_global_session"
+
+_util_session_option = None
+
+
+def _global_session_lock():
+    """The process-wide lock around switching the shell's global session.
+
+    Shared by the plugins of this repository, which do not import each other:
+    the lock lives in a module object of its own in sys.modules, so whichever
+    plugin asks first creates it and every other one finds the same lock.
+
+    Returns:
+        threading.RLock: The lock.
+    """
+    import sys
+    import types
+
+    holder = sys.modules.get(_GLOBAL_SESSION_LOCK_MODULE)
+    if holder is None:
+        created = types.ModuleType(_GLOBAL_SESSION_LOCK_MODULE)
+        created.lock = threading.RLock()
+        # setdefault: of two threads creating it at once, one module wins
+        holder = sys.modules.setdefault(_GLOBAL_SESSION_LOCK_MODULE, created)
+
+    return holder.lock
+
+
+def _util_takes_session_option() -> bool:
+    """Whether the shell's utilities take the 'session' option.
+
+    Shells before mariadb-shell #73 run them on the global session only.
+    """
+    global _util_session_option
+
+    if _util_session_option is None:
+        try:
+            text = mysqlsh.globals.util.help("dump_schemas")
+            _util_session_option = "progressCallback" in str(text)
+        except Exception:
+            _util_session_option = False
+
+    return _util_session_option
+
+
+def run_util(session, function: str, *args, options=None):
+    """Runs a shell utility, such as dump_schemas or load_dump, on a session.
+
+    The utilities run on the shell's global session unless they are given one
+    in their 'session' option. Where the shell has that option, the session is
+    passed and the global session is never touched. On an older shell, the
+    global session is switched to this one for the call and switched back
+    afterwards, under a lock shared by every plugin, so that two calls on
+    different sessions at once (two deployments on an MCP server) cannot run
+    on each other's session.
+
+    Args:
+        session: The session, a shell session or a wrapper with a 'session'.
+        function (str): The util function, e.g. "dump_schemas".
+        *args: Its arguments before the options.
+        options (dict): Its options.
+
+    Returns:
+        What the function returns.
+    """
+    shell_session = (
+        session if "shell.Object" in str(type(session)) else session.session
+    )
+    utility = getattr(mysqlsh.globals.util, function)
+    options = dict(options or {})
+
+    if _util_takes_session_option():
+        return utility(*args, dict(options, session=shell_session))
+
+    shell = mysqlsh.globals.shell
+    with _global_session_lock():
+        previous = shell.get_session()
+        shell.set_session(shell_session)
+        try:
+            return utility(*args, options)
+        finally:
+            shell.set_session(previous)
