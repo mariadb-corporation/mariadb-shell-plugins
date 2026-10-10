@@ -31,7 +31,11 @@ import * as os from "node:os";
 import { applyKeybindings } from "./editor/keybindings.js";
 import type { IUtilApi } from "./mcp/utilApi.js";
 import { TaskMonitor } from "./util/taskMonitor.js";
-import { TASKS_VIEW_ID, TasksTreeProvider } from "./util/tasksTreeProvider.js";
+import {
+    showRunningTasks,
+    TASKS_VIEW_ID,
+    TasksTreeProvider,
+} from "./util/tasksTreeProvider.js";
 import { UtilCommands } from "./util/utilCommands.js";
 import { SqlEditorBinding } from "./editor/sqlEditorBinding.js";
 import { StatementDecorator } from "./editor/statementDecorations.js";
@@ -357,11 +361,18 @@ export const activate = (context: vscode.ExtensionContext): void => {
         return api;
     };
     const taskOutput = vscode.window.createOutputChannel("MariaDB Tasks");
-    const taskMonitor = new TaskMonitor(utilApi, taskOutput, log);
+    // Kept in the workspace state, so the tasks of the last window are
+    // still listed, those it stopped among them.
+    const taskMonitor = new TaskMonitor(utilApi, taskOutput, log,
+        context.workspaceState);
     const tasksTree = new TasksTreeProvider(taskMonitor);
     const tasksView = vscode.window.createTreeView(TASKS_VIEW_ID, {
         treeDataProvider: tasksTree,
     });
+    // VS Code gives no chance to warn when the window is about to close, so
+    // the view says it while tasks run.
+    showRunningTasks(tasksView, taskMonitor);
+    taskMonitor.onDidChange(() => { showRunningTasks(tasksView, taskMonitor); });
     const utilCommands = new UtilCommands({
         extensionUri: context.extensionUri,
         connect: async (uri) => {

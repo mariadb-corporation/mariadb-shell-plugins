@@ -31,7 +31,13 @@ import type {
     IUtilTaskStarted,
     UtilOptions,
 } from "../mcp/utilApi.js";
-import type { ITrackedTask, TaskMonitor } from "./taskMonitor.js";
+import { errorText } from "../text.js";
+import {
+    canResume,
+    type IResumeLoad,
+    type ITrackedTask,
+    type TaskMonitor,
+} from "./taskMonitor.js";
 import { UtilDialogPanel } from "./utilDialogPanel.js";
 import { utilOperationSpec, type UtilOperation } from "./utilFields.js";
 
@@ -98,6 +104,8 @@ interface IStart {
     initialPath?: string;
     /** Whether the server's contents change, so the tree is read again. */
     changes: boolean;
+    /** How to start it again, for a load. */
+    resume?(options: UtilOptions, paths: string[]): IResumeLoad;
     run(api: IUtilApi, connectionId: string, options: UtilOptions,
         paths: string[], targetId?: string): Promise<IUtilTaskStarted>;
 }
@@ -143,6 +151,11 @@ export class UtilCommands {
                     void this.host.monitor.cancel(item.state.task_id);
                 }
             },
+            "mariadb.resumeTask": (item?: ITrackedTask) => {
+                if (item !== undefined && canResume(item)) {
+                    void this.#resume(item);
+                }
+            },
             "mariadb.removeTask": (item?: ITrackedTask) => {
                 if (item !== undefined) {
                     this.host.monitor.remove(item.state.task_id);
@@ -186,6 +199,13 @@ export class UtilCommands {
                     operation, uri: node.uri, changes: true,
                     run: (api, id, options, paths) => {
                         return api.loadDump(id, paths[0], options);
+                    },
+                    resume: (options, paths) => {
+                        // Starting over would load everything again.
+                        const { resetProgress: _reset, ...kept } = options;
+
+                        return { operation: "loadDump", uri: node.uri,
+                            url: paths[0], options: kept };
                     },
                 });
                 break;
@@ -301,6 +321,35 @@ export class UtilCommands {
         }
     }
 
+    /**
+     * Starts a load that stopped again, in place of its row: it loads what
+     * the first one had not, from the progress file in the dump folder.
+     */
+    async #resume(tracked: ITrackedTask): Promise<void> {
+        const resume = tracked.resume!;
+        try {
+            const id = await this.host.connect(resume.uri);
+            const started = await (await this.host.utilApi()).loadDump(id,
+                resume.url, resume.options);
+            this.host.log(`Resumed ${tracked.state.title}.`);
+            this.host.monitor.remove(tracked.state.task_id);
+
+            void this.host.monitor.follow(started, {
+                title: tracked.state.title,
+                connection: resume.uri,
+                resume,
+                onDone: (state) => {
+                    if (state.status !== "failed") {
+                        this.host.refresh();
+                    }
+                },
+            });
+        } catch (error) {
+            void vscode.window.showErrorMessage(
+                `Could not resume ${tracked.state.title}: ${errorText(error)}`);
+        }
+    }
+
     /** Opens the dialog for an operation, which then starts and follows it. */
     #open(start: IStart): void {
         const spec = utilOperationSpec(start.operation, {
@@ -335,6 +384,8 @@ export class UtilCommands {
                     void this.host.monitor.follow(started, {
                         title: spec.title,
                         connection: start.uri,
+                        ...(start.resume === undefined ? {}
+                            : { resume: start.resume(options, paths) }),
                         onDone: (state) => {
                             if (start.changes && state.status !== "failed") {
                                 this.host.refresh();
@@ -348,6 +399,7 @@ export class UtilCommands {
 }
 
 /** A name for util.export_table's `schema.table`, quoted where it must be. */
+
 const quote = (name: string): string => {
     return /^[A-Za-z_][A-Za-z0-9_$]*$/u.test(name)
         ? name : `\`${name.replaceAll("`", "``")}\``;

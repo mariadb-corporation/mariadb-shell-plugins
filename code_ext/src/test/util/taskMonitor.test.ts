@@ -22,10 +22,18 @@ import type {
     IUtilTaskState,
     UtilTaskStatus,
 } from "../../mcp/utilApi.js";
-import { TaskMonitor } from "../../util/taskMonitor.js";
 import {
+    TASKS_KEY,
+    TaskMonitor,
+    canResume,
+    type ITaskStore,
+    type ITrackedTask,
+} from "../../util/taskMonitor.js";
+import {
+    RUNNING_TASKS_MESSAGE,
     TaskTreeItem,
     TasksTreeProvider,
+    showRunningTasks,
     taskDescription,
     taskTooltip,
 } from "../../util/tasksTreeProvider.js";
@@ -230,5 +238,105 @@ describe("the Tasks view", () => {
 
         expect(tree.getChildren().map((task) => { return task.state.task_id; }))
             .toEqual(["t2", "t1"]);
+    });
+});
+
+/** A workspace state that keeps what it is given. */
+const memento = (initial?: unknown): ITaskStore & { value: unknown } => {
+    const store = {
+        value: initial,
+        get: <T>(key: string): T | undefined => {
+            return key === TASKS_KEY ? store.value as T : undefined;
+        },
+        update: (key: string, value: unknown): Promise<void> => {
+            if (key === TASKS_KEY) {
+                store.value = JSON.parse(JSON.stringify(value));
+            }
+
+            return Promise.resolve();
+        },
+    };
+
+    return store;
+};
+
+const RESUME = { operation: "loadDump" as const, uri: "root@h", url: "/dump",
+    options: { schema: "b" } };
+
+describe("tasks across a window reload", () => {
+    beforeEach(() => { resetVscodeMock(); });
+
+    it("keeps the list, without the messages", async () => {
+        const store = memento();
+        const { api } = fakeApi([
+            state({ messages: [{ seq: 1, time: "t", level: "info", text: "x" }], next_since: 1 }),
+            finished("completed"),
+        ]);
+        const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
+            new MockOutputChannel("t"), () => { /* not needed */ }, store);
+
+        await monitor.follow({ task_id: "t1", status: "running" },
+            { title: "Load", connection: "root@h", resume: RESUME });
+
+        const kept = store.value as ITrackedTask[];
+        expect(kept).toHaveLength(1);
+        expect(kept[0].state.status).toBe("completed");
+        expect(kept[0].state.messages).toEqual([]);
+        expect(kept[0].resume).toEqual(RESUME);
+    });
+
+    it("marks a task that was running as interrupted", () => {
+        const store = memento([
+            { connection: "root@h", cancelling: true, resume: RESUME,
+                state: state({ task_id: "a", status: "running" }) },
+            { connection: "root@h", cancelling: false,
+                state: finished("completed", { task_id: "b" }) },
+        ]);
+        const monitor = new TaskMonitor(() => { return Promise.reject(new Error("no")); },
+            new MockOutputChannel("t"), () => { /* not needed */ }, store);
+
+        const [b, a] = monitor.tasks;
+        expect(a.interrupted).toBe(true);
+        expect(a.cancelling).toBe(false);
+        expect(b.interrupted).toBeUndefined();
+        expect(monitor.running).toBe(0);
+        // an interrupted load can go on; a completed task, or one without a
+        // way to start it again, cannot
+        expect(canResume(a)).toBe(true);
+        expect(canResume(b)).toBe(false);
+        expect(canResume({ ...a, resume: undefined })).toBe(false);
+
+        expect(taskDescription(a)).toBe("interrupted");
+        expect(taskTooltip(a)).toContain("Stopped when its window closed or reloaded.");
+        expect(new TaskTreeItem(a).contextValue).toBe("mariadbTask.finished.resumable");
+        // and it can be taken off the list
+        monitor.clearFinished();
+        expect(monitor.tasks).toEqual([]);
+    });
+
+    it("says on the view that running tasks end with the window", async () => {
+        let release: (() => void) | undefined;
+        const api = {
+            getTask: (): Promise<IUtilTaskState> => {
+                return new Promise((resolve) => {
+                    release = () => { resolve(finished("completed")); };
+                });
+            },
+        } as unknown as IUtilApi;
+        const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
+            new MockOutputChannel("t"), () => { /* not needed */ });
+        const view: { message?: string; badge?: { value: number; tooltip: string } } = {};
+        monitor.onDidChange(() => { showRunningTasks(view as never, monitor); });
+
+        const following = monitor.follow({ task_id: "t1", status: "running" },
+            { title: "Dump", connection: "root@h" });
+        expect(view.message).toBe(RUNNING_TASKS_MESSAGE);
+        expect(view.badge).toEqual({ value: 1, tooltip: "1 running" });
+
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        release!();
+        await following;
+        expect(view.message).toBeUndefined();
+        expect(view.badge).toBeUndefined();
     });
 });

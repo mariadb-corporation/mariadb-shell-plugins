@@ -40,6 +40,7 @@ import {
 const URI = "root@localhost:3306";
 
 interface IRecorded {
+    monitor?: TaskMonitor;
     connected: string[];
     started: Array<{ name: string; args: unknown[] }>;
     refreshed: number;
@@ -84,6 +85,7 @@ const setUp = (failStart?: string): IRecorded => {
             recorded.logs.push(message);
         });
 
+    recorded.monitor = monitor;
     new UtilCommands({
         extensionUri: Uri.file("/ext") as never,
         connect: (uri) => {
@@ -102,6 +104,10 @@ const setUp = (failStart?: string): IRecorded => {
     }).register();
 
     return recorded;
+};
+
+const monitorOf = (recorded: IRecorded): TaskMonitor => {
+    return recorded.monitor!;
 };
 
 const panel = (): MockWebviewPanel => {
@@ -181,6 +187,41 @@ describe("the dump and load commands", () => {
         expect(recorded.started[0]).toEqual({ name: "loadDump",
             args: [`id-of-${URI}`, "/dump", { schema: "copy_of_shop" }] });
         expect(recorded.refreshed).toBe(1);
+    });
+
+    it("resumes a load that stopped, without starting over", async () => {
+        const recorded = setUp();
+        await run("mariadb.loadDump", { kind: "connection", uri: URI,
+            connected: true, isDefault: false });
+        const load = await loaded();
+        await receive({ type: "start", values: { ...load.values, path: "/dump",
+            resetProgress: true, threads: "2" } });
+        const [first] = monitorOf(recorded).tasks;
+        expect(first.resume).toEqual({ operation: "loadDump", uri: URI,
+            url: "/dump", options: { threads: 2 } });
+
+        // as a reload leaves it: still running when the window closed
+        first.interrupted = true;
+        first.state = { ...first.state, status: "running" };
+        await run("mariadb.resumeTask", first);
+
+        expect(recorded.started[1]).toEqual({ name: "loadDump",
+            args: [`id-of-${URI}`, "/dump", { threads: 2 }] });
+        // the resumed load takes the stopped one's place
+        expect(monitorOf(recorded).tasks.map((task) => { return task.state.task_id; }))
+            .toEqual(["t2"]);
+    });
+
+    it("does not resume what cannot be", async () => {
+        const recorded = setUp();
+        await run("mariadb.dumpSchemas", schema("shop"));
+        const load = await loaded();
+        await receive({ type: "start", values: load.values });
+        const [dump] = monitorOf(recorded).tasks;
+
+        await run("mariadb.resumeTask", { ...dump, interrupted: true });
+
+        expect(recorded.started).toHaveLength(1);
     });
 
     it("copies to another connection, opened for the task", async () => {

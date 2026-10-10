@@ -17,8 +17,12 @@
 
 import * as vscode from "vscode";
 
-import { isFinished } from "../mcp/utilApi.js";
-import type { ITrackedTask, TaskMonitor } from "./taskMonitor.js";
+import {
+    canResume,
+    isOver,
+    type ITrackedTask,
+    type TaskMonitor,
+} from "./taskMonitor.js";
 
 export const TASKS_VIEW_ID = "mariadb.tasks";
 
@@ -28,7 +32,12 @@ const ICONS: Record<string, string> = {
     completed: "pass",
     failed: "error",
     cancelled: "circle-slash",
+    interrupted: "debug-disconnect",
 };
+
+/** What the view says while tasks run: they end with the window. */
+export const RUNNING_TASKS_MESSAGE = "Closing or reloading this window stops "
+    + "the running tasks. A stopped load can be resumed.";
 
 /**
  * @param tracked A task.
@@ -38,7 +47,10 @@ const ICONS: Record<string, string> = {
  */
 export const taskDescription = (tracked: ITrackedTask): string => {
     const { state } = tracked;
-    if (isFinished(state.status)) {
+    if (tracked.interrupted === true) {
+        return "interrupted";
+    }
+    if (isOver(tracked)) {
         return state.status;
     }
     if (tracked.cancelling) {
@@ -68,8 +80,14 @@ export const taskTooltip = (tracked: ITrackedTask): string => {
         lines.push(`${stage.status === "completed" ? "✓" : "•"} ${stage.name}`
             + seconds);
     }
+    if (tracked.interrupted === true) {
+        lines.push("Stopped when its window closed or reloaded.");
+    }
     if (state.error !== null) {
         lines.push(state.error);
+    }
+    if (canResume(tracked)) {
+        lines.push("Resume loads the rest: what was loaded already is kept.");
     }
 
     return lines.join("\n");
@@ -82,16 +100,36 @@ export class TaskTreeItem extends vscode.TreeItem {
         this.id = tracked.state.task_id;
         this.description = taskDescription(tracked);
         this.tooltip = taskTooltip(tracked);
-        this.iconPath = new vscode.ThemeIcon(
-            ICONS[tracked.state.status] ?? "circle-outline");
-        this.contextValue = isFinished(tracked.state.status)
-            ? "mariadbTask.finished" : "mariadbTask.running";
+        this.iconPath = new vscode.ThemeIcon(ICONS[
+            tracked.interrupted === true ? "interrupted" : tracked.state.status]
+            ?? "circle-outline");
+        this.contextValue = !isOver(tracked) ? "mariadbTask.running"
+            : canResume(tracked) ? "mariadbTask.finished.resumable"
+                : "mariadbTask.finished";
         this.command = {
             command: "mariadb.showTaskOutput",
             title: "Show Task Output",
         };
     }
 }
+
+/**
+ * Shows on the view that running tasks end with the window, and how many
+ * there are.
+ *
+ * @param view The Tasks view.
+ * @param monitor What follows the tasks.
+ */
+export const showRunningTasks = (
+    view: Pick<vscode.TreeView<unknown>, "message" | "badge">,
+    monitor: TaskMonitor,
+): void => {
+    const running = monitor.running;
+    view.message = running > 0 ? RUNNING_TASKS_MESSAGE : undefined;
+    view.badge = running > 0
+        ? { value: running, tooltip: `${String(running)} running` }
+        : undefined;
+};
 
 /** The Tasks view: the dumps, loads and copies started in this window. */
 export class TasksTreeProvider implements vscode.TreeDataProvider<ITrackedTask> {

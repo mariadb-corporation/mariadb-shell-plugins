@@ -316,6 +316,7 @@ describe("activate", () => {
             "mariadb.removeTask",
             "mariadb.renameFolder",
             "mariadb.restartMcpServer",
+            "mariadb.resumeTask",
             "mariadb.retryConnection",
             "mariadb.runSqlFile",
             "mariadb.runSqlStatement",

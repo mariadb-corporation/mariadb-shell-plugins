@@ -471,6 +471,12 @@
         "title": "Show Task Output",
         "category": "MariaDB",
         "icon": "$(output)"
+      },
+      {
+        "command": "mariadb.resumeTask",
+        "title": "Resume Load",
+        "category": "MariaDB",
+        "icon": "$(debug-restart)"
       }
     ],
     "menus": {
@@ -668,13 +674,23 @@
           "group": "1_task@1"
         },
         {
+          "command": "mariadb.resumeTask",
+          "when": "view == mariadb.tasks && viewItem == mariadbTask.finished.resumable",
+          "group": "inline@0"
+        },
+        {
+          "command": "mariadb.resumeTask",
+          "when": "view == mariadb.tasks && viewItem == mariadbTask.finished.resumable",
+          "group": "1_task@0"
+        },
+        {
           "command": "mariadb.removeTask",
-          "when": "view == mariadb.tasks && viewItem == mariadbTask.finished",
+          "when": "view == mariadb.tasks && viewItem =~ /^mariadbTask\\.finished/",
           "group": "inline@1"
         },
         {
           "command": "mariadb.removeTask",
-          "when": "view == mariadb.tasks && viewItem == mariadbTask.finished",
+          "when": "view == mariadb.tasks && viewItem =~ /^mariadbTask\\.finished/",
           "group": "1_task@1"
         },
         {
@@ -865,6 +881,10 @@
         },
         {
           "command": "mariadb.removeTask",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.resumeTask",
           "when": "false"
         }
       ],
