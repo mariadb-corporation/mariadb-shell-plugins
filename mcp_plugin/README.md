@@ -219,8 +219,8 @@ primitives in `lib/setup_prompts.py`).
 ## Exposed MCP tools
 
 The tools are grouped into function groups that can be loaded independently via the
-`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migrator`;
-defaults to all):
+`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migrator`,
+`util`; defaults to all):
 
 ```bash
 # expose only the database tools
@@ -366,6 +366,57 @@ which the deploy's message spells out:
 
 Verified on Windows 11 ARM64 against shell 26.9.1.
 
+### Dump, load and copy tools (`util`)
+
+Tools wrapping the shell's dump, load, copy, export and import utilities. Each of them
+runs for minutes or hours, so the tools start it as a background **task** and return
+its `task_id` at once; the client follows the task with `util.get_task`.
+
+| MCP tool | Wraps |
+| --- | --- |
+| `util.dump_instance` | `util.dump_instance` |
+| `util.dump_schemas` | `util.dump_schemas` |
+| `util.dump_tables` | `util.dump_tables` |
+| `util.export_table` | `util.export_table` |
+| `util.load_dump` | `util.load_dump` |
+| `util.import_table` | `util.import_table` |
+| `util.copy_instance` | `util.copy_instance` |
+| `util.copy_schemas` | `util.copy_schemas` |
+| `util.copy_tables` | `util.copy_tables` |
+| `util.get_task` | - (`lib/tasks.py`) |
+| `util.list_tasks` | - |
+| `util.cancel_task` | - |
+
+- **A task works on a session of its own**, opened on the connection a client got
+  from `db.connect` (for a copy, the target is a second `db.connect` connection). On
+  the connection's own session it would hold that connection for as long as it runs,
+  and every other tool call on it would wait. The utility gets that session and a
+  progress callback through its `session` and `progressCallback` options, which
+  need a MariaDB Shell with mariadb-shell #73; with an older one every task fails
+  with an error that says so.
+- **Options** are the utility's own, with their camelCase names, in `options`, such as
+  `{"threads": 8, "users": false}`. `session`, `progressCallback` and `showProgress`
+  are set by the tool and refused.
+- **`util.get_task(task_id, since, wait_ms)`** returns:
+  - the status: `pending`, `running`, `completed`, `failed` or `cancelled`;
+  - the stages with their state, and the current stage's `progress`: `current`,
+    `total`, `percent`, and `throughput`, `eta_seconds` and `items` where the stage
+    measures them;
+  - the messages printed after `since`, with `next_since` for the next call;
+  - once it ended, the `result` or the `error`.
+
+  With `wait_ms` (up to 30000) it waits for a change before answering, so a client
+  can follow a task without polling quickly.
+- **`util.cancel_task`** stops the utility at its next progress update, as Ctrl+C
+  would. A load that is stopped can be resumed by loading the same dump again.
+- **Limits:** a client may run 4 tasks at once. Finished tasks are kept for an hour,
+  100 at most. A task belongs to the client that started it, as a connection does.
+- Local paths are checked against the allowed paths. A URL, or a prefix in object
+  storage (`s3BucketName`, `osBucketName`, `azureContainerName`), is left to the
+  utility.
+- The tools are registered only when the `db` group is served as well, and never in
+  multi-tenant mode.
+
 ### Migrator tools (`migrator`)
 
 | MCP tool | Purpose |
@@ -490,7 +541,7 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
   as they are, so that `--showApiKey` can show them again). **Run the server
   under an OS account of its own**, and on Linux note that the default
   `login-path` helper only obfuscates `~/.mylogin.cnf`.
-- **Only the `db` group** is served. The `sandbox` and `migrator` tools run
+- **Only the `db` group** is served. The `sandbox`, `migrator` and `util` tools run
   local servers and long jobs on the machine, and the `msm` tools work on
   schema project folders, which belong on the developer's own machine, not on
   a remote server; none of them are offered to tenants. Neither is `--gui`,
