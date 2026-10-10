@@ -100,7 +100,7 @@ describe("TaskMonitor", () => {
 
     const monitorWith = (api: IUtilApi): TaskMonitor => {
         return new TaskMonitor(() => { return Promise.resolve(api); }, output,
-            (message) => { logs.push(message); });
+            (message) => { logs.push(message); }, undefined, 0);
     };
 
     it("follows a task to its end, with its messages and progress", async () => {
@@ -141,6 +141,24 @@ describe("TaskMonitor", () => {
         expect(informationMessages).toEqual(["Dump shop to Disk completed."]);
         expect(monitor.tasks.map((task) => { return task.state.status; }))
             .toEqual(["completed"]);
+    });
+
+    it("looks at a busy task at most once per interval", async () => {
+        const { api, since } = fakeApi([
+            state({ stage: "Dumping data", next_since: 1 }),
+            state({ stage: "Dumping data", next_since: 2 }),
+            finished("completed", { next_since: 2 }),
+        ]);
+        const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
+            output, () => { /* not needed */ }, undefined, 100);
+
+        const started = Date.now();
+        await monitor.follow({ task_id: "t1", status: "running" },
+            { title: "Dump", connection: "root@h" });
+
+        // the server answered at once each time; two waits came between
+        expect(since).toEqual([0, 1, 2]);
+        expect(Date.now() - started).toBeGreaterThanOrEqual(190);
     });
 
     it("keeps the dialog's title, not the server's", async () => {
@@ -245,7 +263,7 @@ describe("the Tasks view", () => {
         const { api } = fakeApi([finished("completed"),
             finished("completed", { task_id: "t2" })]);
         const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
-            output, () => { /* not needed */ });
+            output, () => { /* not needed */ }, undefined, 0);
         const tree = new TasksTreeProvider(monitor);
         await monitor.follow({ task_id: "t1", status: "running" },
             { title: "First", connection: "c" });
@@ -289,7 +307,7 @@ describe("tasks across a window reload", () => {
             finished("completed"),
         ]);
         const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
-            new MockOutputChannel("t"), () => { /* not needed */ }, store);
+            new MockOutputChannel("t"), () => { /* not needed */ }, store, 0);
 
         await monitor.follow({ task_id: "t1", status: "running" },
             { title: "Load", connection: "root@h", resume: RESUME });
@@ -309,7 +327,7 @@ describe("tasks across a window reload", () => {
                 state: finished("completed", { task_id: "b" }) },
         ]);
         const monitor = new TaskMonitor(() => { return Promise.reject(new Error("no")); },
-            new MockOutputChannel("t"), () => { /* not needed */ }, store);
+            new MockOutputChannel("t"), () => { /* not needed */ }, store, 0);
 
         const [b, a] = monitor.tasks;
         expect(a.interrupted).toBe(true);
@@ -340,7 +358,8 @@ describe("tasks across a window reload", () => {
             },
         } as unknown as IUtilApi;
         const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
-            new MockOutputChannel("t"), () => { /* not needed */ });
+            new MockOutputChannel("t"), () => { /* not needed */ }, undefined,
+            0);
         const view: { message?: string; badge?: { value: number; tooltip: string } } = {};
         monitor.onDidChange(() => { showRunningTasks(view as never, monitor); });
 
