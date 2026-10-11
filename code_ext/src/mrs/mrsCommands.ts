@@ -134,6 +134,13 @@ export interface IMrsCommandsHost {
     connections: ConnectionManager;
     /** Redraws the Connections view. */
     refresh(): void;
+    /**
+     * Brings up the panel on a connection's Actions, where what failed is:
+     * success needs no telling there, a failure is notified and shown.
+     *
+     * @param uri The connection, where the failure is on one.
+     */
+    showActions(uri?: string): void;
     log(message: string): void;
 }
 
@@ -250,6 +257,10 @@ export class MrsCommands {
                     await handler.apply(this, args);
                 } catch (error) {
                     reportError(this.host.log, error);
+                    // The node the command was run on names the connection.
+                    const node = args[0] as { uri?: unknown } | undefined;
+                    this.host.showActions(typeof node?.uri === "string"
+                        ? node.uri : undefined);
                 }
             });
         });
@@ -308,13 +319,20 @@ export class MrsCommands {
         this.host.refresh();
     }
 
-    #show(spec: IMrsDialogSpec): void {
+    /**
+     * Opens a dialog.
+     *
+     * @param spec The dialog.
+     * @param connectionId The connection what it saves goes to.
+     */
+    #show(spec: IMrsDialogSpec, connectionId: string): void {
         MrsDialogPanel.show(this.host.extensionUri, spec, {
-            onSaved: (message) => {
+            onSaved: () => {
                 this.host.refresh();
-                if (message !== undefined) {
-                    void vscode.window.showInformationMessage(message);
-                }
+            },
+            onFailed: () => {
+                this.host.showActions(
+                    this.host.connections.sessionOf(connectionId)?.uri);
             },
             log: this.host.log,
         });
@@ -357,13 +375,11 @@ export class MrsCommands {
         question: string,
         action: string,
         statement: string,
-        done: string,
     ): Promise<void> {
         if (!await confirm(question, action)) {
             return;
         }
         await this.#run(this.#scope(node), [statement]);
-        void vscode.window.showInformationMessage(done);
     }
 
     // --- metadata ----------------------------------------------------
@@ -443,10 +459,8 @@ export class MrsCommands {
                 // and may not be chosen before it exists.
                 await this.host.api.run(context.init
                     ? { connectionId: scope.connectionId } : scope, statements);
-
-                return "MariaDB REST Service configured successfully.";
             },
-        });
+        }, scope.connectionId);
     }
 
     public async showPrivateItems(node?: IMrsRootNode): Promise<void> {
@@ -497,12 +511,8 @@ export class MrsCommands {
             save: async (values) => {
                 await this.host.api.run(scope, serviceStatements(
                     values as IServiceDialogValues, context));
-
-                return service === undefined
-                    ? "The MRS service has been created."
-                    : "The MRS service has been successfully updated.";
             },
-        });
+        }, scope.connectionId);
     }
 
     public async addService(node?: IMrsRootNode): Promise<void> {
@@ -525,8 +535,7 @@ export class MrsCommands {
             `Are you sure the MRS service ${node.service.full_service_path} `
             + "should be deleted?",
             "Delete REST Service",
-            dropServiceSql(node.service.full_service_path),
-            "The MRS service has been deleted successfully.");
+            dropServiceSql(node.service.full_service_path));
     }
 
     public async setCurrentService(node?: IMrsServiceNode): Promise<void> {
@@ -535,8 +544,6 @@ export class MrsCommands {
         }
         await this.#run(this.#scope(node),
             [useServiceSql(node.service.full_service_path)]);
-        void vscode.window.showInformationMessage(
-            "The MRS service has been set as the new default service.");
     }
 
     public async linkAuthApp(node?: IMrsServiceNode): Promise<void> {
@@ -566,8 +573,6 @@ export class MrsCommands {
         }
         await this.#run(scope, [linkAuthAppSql(node.service.full_service_path,
             picked.label, true)]);
-        void vscode.window.showInformationMessage("The MRS Authentication App "
-            + `has been linked to service ${node.service.full_service_path}`);
     }
 
     public async addAndLinkAuthApp(node?: IMrsServiceNode): Promise<void> {
@@ -590,8 +595,6 @@ export class MrsCommands {
         }
         await this.#run(this.#scope(node),
             [linkAuthAppSql(service, app, false)]);
-        void vscode.window.showInformationMessage(
-            `The MRS Authentication App "${app}" has been unlinked.`);
     }
 
     async #createServiceSql(
@@ -688,10 +691,8 @@ export class MrsCommands {
                             ? {} : { add_app_base_class: sdk.addAppBaseClass }),
                         ...(sdk.header === "" ? {} : { header: sdk.header }),
                     });
-
-                return "MRS SDK Files exported successfully.";
             },
-        });
+        }, scope.connectionId);
     }
 
     public async dumpServiceAsProject(node?: IMrsServiceNode): Promise<void> {
@@ -742,8 +743,6 @@ export class MrsCommands {
             ...(icon?.[0] === undefined ? {} : { iconPath: icon[0].fsPath }),
             zip: target.fsPath.toLowerCase().endsWith(".zip"),
         });
-        void vscode.window.showInformationMessage(
-            "The REST Project has been dumped successfully.");
     }
 
     public async loadProjectFromDisk(
@@ -769,8 +768,6 @@ export class MrsCommands {
         await (await this.host.tools()).loadServiceProject(scope.connectionId,
             picked[0].fsPath);
         this.host.refresh();
-        void vscode.window.showInformationMessage(
-            "The REST Project has been loaded successfully.");
     }
 
     public async loadServiceFromDisk(node?: IMrsRootNode): Promise<void> {
@@ -799,8 +796,6 @@ export class MrsCommands {
         await (await this.host.tools()).loadService(scope.connectionId,
             picked[0].fsPath, asPath.trim() === "" ? undefined : asPath.trim());
         this.host.refresh();
-        void vscode.window.showInformationMessage(
-            "The REST Service has been loaded successfully.");
     }
 
     // --- REST schemas -------------------------------------------------
@@ -837,12 +832,8 @@ export class MrsCommands {
             save: async (values) => {
                 await this.host.api.run(scope, schemaStatements(
                     values as ISchemaDialogValues, context));
-
-                return schema === undefined
-                    ? "The MRS schema has been added successfully."
-                    : "The MRS schema has been updated successfully.";
             },
-        });
+        }, scope.connectionId);
     }
 
     /** Adds a database schema of the tree to a REST service. */
@@ -872,8 +863,7 @@ export class MrsCommands {
             + "be deleted?",
             "Delete REST Schema",
             dropSchemaSql(node.schema.request_path,
-                node.service.full_service_path),
-            "The MRS schema has been deleted successfully.");
+                node.service.full_service_path));
     }
 
     async #createSchemaSql(node: IMrsSchemaNode): Promise<string> {
@@ -986,15 +976,12 @@ export class MrsCommands {
             save: async (values) => {
                 await this.host.api.run(scope, objectStatements(
                     values as IObjectDialogValues, context));
-
-                return `The MRS Database Object ${dbObject} was successfully `
-                    + `${object === undefined ? "created" : "updated"}.`;
             },
             loadColumns: async (refSchema, table) => {
                 return await this.host.api.columns(scope, "TABLE", refSchema,
                     table);
             },
-        });
+        }, scope.connectionId);
     }
 
     /** Adds a table, view, procedure or function of the tree to REST. */
@@ -1082,8 +1069,7 @@ export class MrsCommands {
             + `${node.object.request_path}?`,
             "Delete DB Object",
             dropObjectSql(node.object.object_type, node.object.request_path,
-                node.service.full_service_path, node.schema.request_path),
-            `The REST DB Object ${node.object.request_path} has been deleted.`);
+                node.service.full_service_path, node.schema.request_path));
     }
 
     #objectUrl(node: IMrsObjectNode): string {
@@ -1166,13 +1152,13 @@ export class MrsCommands {
                     await this.host.api.run(scope, contentSetStatements(
                         values, context, contentSet));
 
-                    return "The MRS static content set has been updated.";
+                    return;
                 }
 
                 if (scope.metadataSchema !== undefined) {
                     await this.host.api.run(scope, []);
                 }
-                const upload = await tools.loadContentSet(scope.connectionId,
+                await tools.loadContentSet(scope.connectionId,
                     values.directory, values.requestPath.trim(),
                     values.servicePath, values.ignoreList,
                     values.loadScripts ? undefined : false);
@@ -1185,10 +1171,6 @@ export class MrsCommands {
                 await this.host.api.run(scope, contentSetStatements(values,
                     { ...context, existingPath: values.requestPath.trim() },
                     created));
-
-                return "The MRS static content set has been added "
-                    + `successfully. ${upload.files.length} file(s) have been `
-                    + "uploaded";
             },
             analyzeFolder: async (folder, ignoreList) => {
                 const language = await tools.folderScriptLanguage(folder,
@@ -1203,7 +1185,7 @@ export class MrsCommands {
                         ignoreList),
                 };
             },
-        });
+        }, scope.connectionId);
     }
 
     public async addContentSet(node?: IMrsServiceNode): Promise<void> {
@@ -1254,8 +1236,7 @@ export class MrsCommands {
             + `${node.contentSet.request_path}?`,
             "Delete Static Content Set",
             dropContentSetSql(node.contentSet.request_path,
-                node.service.full_service_path),
-            "The MRS static content set has been deleted successfully.");
+                node.service.full_service_path));
     }
 
     public async openContentSetRequestPath(
@@ -1325,8 +1306,7 @@ export class MrsCommands {
             + `${node.file.request_path}?`,
             "Delete Content File",
             dropContentFileSql(node.file.request_path,
-                node.service.full_service_path, node.contentSet.request_path),
-            "The MRS content file has been deleted successfully.");
+                node.service.full_service_path, node.contentSet.request_path));
     }
 
     // --- auth apps and users -----------------------------------------
@@ -1361,12 +1341,8 @@ export class MrsCommands {
             save: async (values) => {
                 await this.host.api.run(scope, authAppStatements(
                     values as IAuthAppDialogValues, context));
-
-                return app === undefined
-                    ? "The MRS Authentication App has been added."
-                    : "The MRS Authentication App has been updated.";
             },
-        });
+        }, scope.connectionId);
     }
 
     public async addAuthApp(node?: IMrsAuthAppGroupNode): Promise<void> {
@@ -1391,8 +1367,7 @@ export class MrsCommands {
             `Are you sure the MRS authentication app ${node.authApp.name} `
             + "should be deleted?",
             "Delete Authentication App",
-            dropAuthAppSql(node.authApp.name),
-            `The MRS Authentication App ${node.authApp.name} has been deleted.`);
+            dropAuthAppSql(node.authApp.name));
     }
 
     async #createAuthAppSql(
@@ -1455,11 +1430,8 @@ export class MrsCommands {
                 const userValues = saved as IUserDialogValues;
                 await this.host.api.run(scope, userStatements(userValues,
                     context));
-
-                return `The MRS User "${userValues.name}" has been `
-                    + `${user === undefined ? "added" : "updated"}.`;
             },
-        });
+        }, scope.connectionId);
     }
 
     public async addUser(node?: IMrsAuthAppNode): Promise<void> {
@@ -1481,8 +1453,7 @@ export class MrsCommands {
         await this.#drop(node,
             `Are you sure the MRS user ${node.user.name} should be deleted?`,
             "Delete User",
-            dropUserSql(node.user.name, node.authApp.name),
-            `The MRS User ${node.user.name} has been deleted.`);
+            dropUserSql(node.user.name, node.authApp.name));
     }
 
     async #createUserSql(node: IMrsUserNode): Promise<string> {
@@ -1515,8 +1486,7 @@ export class MrsCommands {
             `Are you sure the MariaDB REST Daemon ${node.daemon.address || node.daemon.name} `
             + "should be deleted?",
             "Delete REST Daemon",
-            dropDaemonSql(node.daemon.id),
-            "The MariaDB REST Daemon has been deleted successfully.");
+            dropDaemonSql(node.daemon.id));
     }
 
     // --- the Explorer --------------------------------------------------
@@ -1548,7 +1518,5 @@ export class MrsCommands {
         }
         await (await this.host.tools()).dumpSdkServiceFiles(scope.connectionId,
             folder.fsPath, {});
-        void vscode.window.showInformationMessage(
-            "MRS SDK Files exported successfully.");
     }
 }

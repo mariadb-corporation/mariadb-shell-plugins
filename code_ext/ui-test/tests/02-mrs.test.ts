@@ -61,7 +61,6 @@ import {
     treeItem,
     waitDialogClosed,
     waitFor,
-    waitForNotification,
     waitGone,
     actionRows,
     inResults,
@@ -153,7 +152,8 @@ describe("MariaDB REST Service", () => {
             await submitDialog(view, "OK", DEPLOY_TIMEOUT,
                 "Deploying the MariaDB REST Service metadata schema...");
         });
-        await waitForNotification("configured successfully");
+        // Said in the connection's Actions, not by a notification.
+        await waitForAction(/Configured REST Metadata/, DEPLOY_TIMEOUT);
         await appears(ROOT);
     });
 
@@ -259,7 +259,7 @@ describe("MariaDB REST Service", () => {
         if (entries.includes("Set as Current REST Service")) {
             await contextMenu(await treeItem(connections, SERVICE),
                 "Set as Current REST Service");
-            await waitForNotification("new default service");
+            await waitForAction(/Switched to REST Service '\/uitest'/);
         }
         await waitFor(async () => {
             return !(await contextMenuEntries(await treeItem(connections,
@@ -457,7 +457,8 @@ describe("MariaDB REST Service", () => {
             await submitDialog(view, "OK", DEPLOY_TIMEOUT,
                 "Uploading the files...");
         });
-        await waitForNotification("1 file(s) have been uploaded");
+        await waitForAction(/Loaded REST Content Set '\/web'.*1 file/,
+            DEPLOY_TIMEOUT);
         await appears([...SERVICE, "/web", "/index.html"]);
     });
 

@@ -122,7 +122,19 @@ agent's `sandbox.deploy`) shows up at the next Refresh.
 ## Connections view
 
 Contributed into its own activity bar container, whose icon is the MariaDB
-seal (`images/mariadb-seal.svg`, kept as a vector). The tree is:
+seal (`images/mariadb-seal.svg`, kept as a vector).
+
+**First-start layout** (2026-10-11): `initialSize` weights in package.json,
+Connections 100, Sandboxes 16, Tasks 16 with `visibility: "collapsed"`.
+VS Code sizes a view it has no stored size for as `container height *
+weight / sum of the weights` (default weight 20, `computeInitialSizes` in
+the workbench), so it is proportional, not a row count: on the UI tests'
+1320px side bar Sandboxes gets about 6 rows, Tasks its header, Connections
+the rest; Tasks opened gets about 6 rows too. It applies only to a profile
+without stored sizes - an existing install keeps its own.
+`00-startup`'s "lays the views out for a first start" checks it.
+
+The tree is:
 
 ```text
 dba@localhost:3310/world      connection (icon by scheme; "default" if default)

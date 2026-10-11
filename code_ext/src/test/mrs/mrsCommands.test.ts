@@ -178,7 +178,11 @@ const setup = async (
     };
     const tools = new MrsToolsApi(caller);
     const log = createRecordingLog();
-    const state = { refreshed: 0 };
+    const state = {
+        refreshed: 0,
+        /** The connections the panel was brought up on, after failures. */
+        shownActions: [] as Array<string | undefined>,
+    };
     const mrsCommands = new MrsCommands({
         extensionUri: Uri.file("/ext") as never,
         api: mrsApi,
@@ -186,6 +190,7 @@ const setup = async (
         model,
         connections,
         refresh: () => { state.refreshed += 1; },
+        showActions: (uri) => { state.shownActions.push(uri); },
         log,
     });
     const disposables = mrsCommands.register();
@@ -377,8 +382,8 @@ describe("MrsCommands.register", () => {
         expect(warningMessageCalls).toEqual([]);
     });
 
-    it("reports a failure with the log", async () => {
-        const { api, log } = await setup();
+    it("reports a failure with the log, and shows its Actions", async () => {
+        const { api, log, state } = await setup();
         api.errors["USE REST SERVICE /myService"] = "No such service";
 
         await run("mariadb.mrs.setCurrentService", serviceNode());
@@ -386,6 +391,8 @@ describe("MrsCommands.register", () => {
         expect(errorMessages).toEqual(["MariaDB: No such service"]);
         expect(log.lines).toEqual(["No such service"]);
         expect(informationMessages).toEqual([]);
+        // The failed action is a row there, with its REST SQL.
+        expect(state.shownActions).toEqual([URI]);
     });
 
     it("says a connection is not open rather than running anything",
@@ -407,7 +414,6 @@ describe("deleting", () => {
         question: string;
         action: string;
         sql: string;
-        done: string;
     }> = [
         {
             id: "deleteService",
@@ -416,7 +422,6 @@ describe("deleting", () => {
                 + "deleted?",
             action: "Delete REST Service",
             sql: "DROP REST SERVICE /myService;",
-            done: "The MRS service has been deleted successfully.",
         },
         {
             id: "deleteSchema",
@@ -424,7 +429,6 @@ describe("deleting", () => {
             question: "Are you sure the MRS schema /sakila should be deleted?",
             action: "Delete REST Schema",
             sql: "DROP REST SCHEMA /sakila FROM SERVICE /myService;",
-            done: "The MRS schema has been deleted successfully.",
         },
         {
             id: "deleteDbObject",
@@ -434,7 +438,6 @@ describe("deleting", () => {
             action: "Delete DB Object",
             sql: "DROP REST VIEW /actor FROM SERVICE /myService SCHEMA "
                 + "/sakila;",
-            done: "The REST DB Object /actor has been deleted.",
         },
         {
             id: "deleteContentSet",
@@ -443,7 +446,6 @@ describe("deleting", () => {
                 + "/app?",
             action: "Delete Static Content Set",
             sql: "DROP REST CONTENT SET /app FROM SERVICE /myService;",
-            done: "The MRS static content set has been deleted successfully.",
         },
         {
             id: "deleteContentFile",
@@ -454,7 +456,6 @@ describe("deleting", () => {
             // A path with a dot is quoted.
             sql: "DROP REST CONTENT FILE `/index.html` FROM SERVICE "
                 + "/myService CONTENT SET /app;",
-            done: "The MRS content file has been deleted successfully.",
         },
         {
             id: "deleteAuthApp",
@@ -463,7 +464,6 @@ describe("deleting", () => {
                 + "deleted?",
             action: "Delete Authentication App",
             sql: "DROP REST AUTH APP 'MRS';",
-            done: "The MRS Authentication App MRS has been deleted.",
         },
         {
             id: "deleteUser",
@@ -471,7 +471,6 @@ describe("deleting", () => {
             question: "Are you sure the MRS user anna should be deleted?",
             action: "Delete User",
             sql: "DROP REST USER 'anna'@'MRS';",
-            done: "The MRS User anna has been deleted.",
         },
         {
             id: "deleteDaemon",
@@ -480,7 +479,6 @@ describe("deleting", () => {
                 + "be deleted?",
             action: "Delete REST Daemon",
             sql: "DROP REST DAEMON '88888888-0000-0000-0000-000000000001';",
-            done: "The MariaDB REST Daemon has been deleted successfully.",
         },
     ];
 
@@ -503,7 +501,7 @@ describe("deleting", () => {
             }]);
             expect(api.sent).toEqual([entry.sql]);
             expect(state.refreshed).toBe(1);
-            expect(informationMessages).toEqual([entry.done]);
+            expect(informationMessages).toEqual([]);
         });
 
         it(`${entry.id} drops nothing when declined`, async () => {
@@ -559,8 +557,8 @@ describe("services", () => {
 
         expect(api.sent).toEqual(["USE REST SERVICE /myService;"]);
         expect(state.refreshed).toBe(1);
-        expect(informationMessages).toEqual([
-            "The MRS service has been set as the new default service."]);
+        // Done is a row of the connection's Actions, not a notification.
+        expect(informationMessages).toEqual([]);
     });
 
     it("links an auth app picked from those not linked yet", async () => {
@@ -581,9 +579,8 @@ describe("services", () => {
         expect(api.sent.at(-1)).toBe(
             "ALTER REST SERVICE /myService ADD AUTH APP 'Google';");
         expect(state.refreshed).toBe(1);
-        expect(informationMessages).toEqual([
-            "The MRS Authentication App has been linked to service "
-            + "/myService"]);
+        // Done is a row of the connection's Actions, not a notification.
+        expect(informationMessages).toEqual([]);
     });
 
     it("links nothing when the pick is cancelled", async () => {
@@ -625,8 +622,8 @@ describe("services", () => {
             + "service \"/myService\"?");
         expect(api.sent).toEqual([
             "ALTER REST SERVICE /myService REMOVE AUTH APP 'MRS';"]);
-        expect(informationMessages).toEqual([
-            "The MRS Authentication App \"MRS\" has been unlinked."]);
+        // Done is a row of the connection's Actions, not a notification.
+        expect(informationMessages).toEqual([]);
     });
 
     it("unlinks nothing when declined", async () => {
@@ -659,7 +656,7 @@ describe("services", () => {
 
             api.sent.length = 0;
             await expect(spec.save({ ...values, path: "/shop" }))
-                .resolves.toBe("The MRS service has been created.");
+                .resolves.toBeUndefined();
             expect(api.scripts.at(-1)).toMatch(/^CREATE REST SERVICE \/shop\n/);
             expect(api.sent.at(-1)).toBe("USE REST SERVICE /shop;");
         });
@@ -686,14 +683,13 @@ describe("services", () => {
             expect(values.makeCurrent).toBe(false);
 
             await expect(spec.save({ ...values, authApps: ["Google"] }))
-                .resolves.toBe(
-                    "The MRS service has been successfully updated.");
+                .resolves.toBeUndefined();
             const sql = api.sent.at(-1)!;
             expect(sql).toMatch(/^ALTER REST SERVICE \/myService\n/);
             expect(sql).toContain("'Google'");
         });
 
-    it("redraws and says what a save said, through the panel", async () => {
+    it("redraws after a save through the panel, telling nobody", async () => {
         const { state } = await setup({ [ANY_APPS]: [] });
         await run("mariadb.mrs.addService", root());
         const panel = webviewPanels[0]!;
@@ -704,8 +700,8 @@ describe("services", () => {
         await new Promise((resolve) => { setTimeout(resolve, 0); });
 
         expect(state.refreshed).toBe(1);
-        expect(informationMessages).toEqual([
-            "The MRS service has been created."]);
+        // Done is a row of the connection's Actions, not a notification.
+        expect(informationMessages).toEqual([]);
         expect(panel.disposed).toBe(true);
     });
 });
@@ -958,7 +954,7 @@ describe("configure", () => {
         api.scripts.length = 0;
         await expect(spec.save({
             ...values, authAppUser: "admin", authAppPassword: "Secret1!x",
-        })).resolves.toBe("MariaDB REST Service configured successfully.");
+        })).resolves.toBeUndefined();
         // The new schema may not be chosen before it exists.
         expect(api.sent.some((sql) => { return sql.startsWith("USE"); }))
             .toBe(false);
@@ -1087,8 +1083,7 @@ describe("REST schemas", () => {
             dbSchema: "sakila", servicePath: "/myService",
         });
 
-        await expect(spec.save(values)).resolves.toBe(
-            "The MRS schema has been added successfully.");
+        await expect(spec.save(values)).resolves.toBeUndefined();
         expect(api.sent.at(-1)!.startsWith("CREATE REST SCHEMA /sakila "
             + "ON SERVICE /myService FROM `sakila`")).toBe(true);
     });
@@ -1157,8 +1152,7 @@ describe("REST schemas", () => {
             services: ["/myService"], existingPath: "/sakila",
         });
 
-        await expect(spec.save(spec.values)).resolves.toBe(
-            "The MRS schema has been updated successfully.");
+        await expect(spec.save(spec.values)).resolves.toBeUndefined();
         expect(api.sent.at(-1)).toMatch(/^ALTER REST SCHEMA \/sakila/);
     });
 });
@@ -1195,8 +1189,7 @@ describe("REST objects", () => {
         expect(values.document.fields.length).toBeGreaterThan(0);
 
         api.sent.length = 0;
-        await expect(spec.save(values)).resolves.toBe(
-            "The MRS Database Object actor was successfully created.");
+        await expect(spec.save(values)).resolves.toBeUndefined();
         expect(api.sent[0]).toMatch(/^CREATE REST VIEW \/actor/);
 
         await expect(spec.loadColumns!("sakila", "film")).resolves
@@ -1363,8 +1356,7 @@ describe("REST objects", () => {
         expect((spec.context as IObjectContext).existingPath).toBe("/actor");
 
         api.sent.length = 0;
-        await expect(spec.save(spec.values)).resolves.toBe(
-            "The MRS Database Object actor was successfully updated.");
+        await expect(spec.save(spec.values)).resolves.toBeUndefined();
         expect(api.sent[0]).toMatch(/^ALTER REST VIEW \/actor/);
     });
 
@@ -1429,8 +1421,7 @@ describe("content sets", () => {
             api.sent.length = 0;
             await expect(spec.save({
                 ...values, directory: "/src/web", requestPath: " /web ",
-            })).resolves.toBe("The MRS static content set has been added "
-                + "successfully. 2 file(s) have been uploaded");
+            })).resolves.toBeUndefined();
             expect(toolCalls).toEqual([{
                 name: "mrs.load_content_set",
                 args: {
@@ -1542,8 +1533,7 @@ describe("content sets", () => {
         expect(spec.context).toEqual({
             services: ["/myService"], existingPath: "/app",
         });
-        await expect(spec.save(spec.values)).resolves.toBe(
-            "The MRS static content set has been updated.");
+        await expect(spec.save(spec.values)).resolves.toBeUndefined();
         expect(api.sent.at(-1)).toMatch(/^ALTER REST CONTENT SET \/app/);
         expect(toolCalls).toEqual([]);
     });
@@ -1622,7 +1612,7 @@ describe("auth apps", () => {
 
         await expect(spec.save({
             ...spec.values as IAuthAppDialogValues, name: "Mine",
-        })).resolves.toBe("The MRS Authentication App has been added.");
+        })).resolves.toBeUndefined();
         expect(api.sent.at(-1))
             .toMatch(/^CREATE REST AUTH APP 'Mine' VENDOR MRS/);
     });
@@ -1655,8 +1645,7 @@ describe("auth apps", () => {
             expect(spec.context).toMatchObject({
                 existingName: "MRS", hasSecret: true,
             });
-            await expect(spec.save(spec.values)).resolves.toBe(
-                "The MRS Authentication App has been updated.");
+            await expect(spec.save(spec.values)).resolves.toBeUndefined();
             expect(api.sent.at(-1)).toMatch(/^ALTER REST AUTH APP 'MRS'/);
         }
     });
@@ -1700,7 +1689,7 @@ describe("users", () => {
 
         await expect(spec.save({
             ...values, name: "bob", password: "Secret1!x",
-        })).resolves.toBe("The MRS User \"bob\" has been added.");
+        })).resolves.toBeUndefined();
         expect(api.sent.at(-2)).toMatch(
             /^CREATE REST USER 'bob'@'MRS' IDENTIFIED BY 'Secret1!x'/);
         expect(api.sent.at(-1)).toBe(
@@ -1728,7 +1717,7 @@ describe("users", () => {
 
         await expect(spec.save({
             ...spec.values as IUserDialogValues, roles: ["Full Access"],
-        })).resolves.toBe("The MRS User \"anna\" has been updated.");
+        })).resolves.toBeUndefined();
         expect(api.sent.slice(-3)).toEqual([
             expect.stringMatching(/^ALTER REST USER 'anna'@'MRS'/),
             "REVOKE REST ROLE 'Shop Reader' ON SERVICE /myService FROM "
@@ -1789,7 +1778,7 @@ describe("the mrs tools", () => {
             ...spec.values as ISdkExportValues,
             addAppBaseClass: "MrsBaseAppPreact.ts",
             header: "// hi",
-        })).resolves.toBe("MRS SDK Files exported successfully.");
+        })).resolves.toBeUndefined();
         expect(toolCalls[1]).toEqual({
             name: "mrs.dump_sdk_service_files",
             args: {
@@ -1872,8 +1861,8 @@ describe("the mrs tools", () => {
             },
             timeoutMs: MRS_TOOL_TIMEOUT_MS,
         }]);
-        expect(informationMessages).toEqual([
-            "The REST Project has been dumped successfully."]);
+        // Done is a row of the connection's Actions, not a notification.
+        expect(informationMessages).toEqual([]);
     });
 
     it("dumps a project folder without an icon", async () => {
@@ -1924,8 +1913,8 @@ describe("the mrs tools", () => {
             timeoutMs: MRS_TOOL_TIMEOUT_MS,
         }]);
         expect(state.refreshed).toBe(1);
-        expect(informationMessages).toEqual([
-            "The REST Project has been loaded successfully."]);
+        // Done is a row of the connection's Actions, not a notification.
+        expect(informationMessages).toEqual([]);
     });
 
     it("loads no project when none is picked", async () => {
@@ -1981,8 +1970,8 @@ describe("the mrs tools", () => {
             },
             timeoutMs: MRS_TOOL_TIMEOUT_MS,
         }]);
-        expect(informationMessages).toEqual([
-            "MRS SDK Files exported successfully."]);
+        // Done is a row of the connection's Actions, not a notification.
+        expect(informationMessages).toEqual([]);
     });
 
     it("rebuilds in the metadata schema picked", async () => {

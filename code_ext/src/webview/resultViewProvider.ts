@@ -505,6 +505,36 @@ export class ResultViewProvider
     }
 
     /**
+     * Brings up the panel on a connection's actions, at the newest row that
+     * failed: what follows a failure the user was notified of, so the
+     * notification is not all there is to go on.
+     *
+     * @param connection The connection the failure was on; the one on show
+     *     where it is not known.
+     *
+     * @returns Nothing.
+     */
+    public async showActions(connection?: string): Promise<void> {
+        if (connection !== undefined) {
+            this.#setActive(connection);
+            // The failure may be on any connection open on the URI.
+            this.#activeSession = undefined;
+        }
+        await this.reveal();
+        await this.#sendState();
+
+        const failed = this.#active === undefined ? undefined
+            : this.#resultsFor(this.#active).actions.find((row) => {
+                return row.kind === "error";
+            });
+        this.#send({
+            type: "showActions",
+            ...(failed === undefined
+                ? {} : { rowId: failed.jumpToRowId ?? failed.id }),
+        });
+    }
+
+    /**
      * Shows another connection's actions and results.
      *
      * @param connection The connection to show.

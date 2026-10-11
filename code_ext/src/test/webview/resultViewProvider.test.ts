@@ -1574,6 +1574,39 @@ describe("ResultViewProvider", () => {
                 expect(view.shown).toBeFalsy();
             });
 
+        it("brings up a connection's actions at its newest failure",
+            async () => {
+                const { provider, view } = createWithSessions();
+                await provider.putAction("dba@localhost:3310", {
+                    id: "mrs-1", time: "12:00:00.000",
+                    connection: "dba@localhost:3310",
+                    connectionLabel: "UI Backend", role: "run",
+                    statement: "", message: "Deleted REST Service '/a'",
+                    summary: "Finished with 1 error", kind: "error",
+                    jumpToRowId: "mrs-1-error",
+                    children: [{
+                        id: "mrs-1-error", time: "12:00:00.000",
+                        connection: "dba@localhost:3310", role: "statement",
+                        statement: "", message: "Access denied",
+                        kind: "error",
+                    }],
+                });
+                await provider.appendEvent(anEvent({
+                    connection: "General Actions", label: "",
+                    call: "sandbox.list_instances()", message: "Listed 0",
+                }));
+                await provider.selectConnection("General Actions");
+                expect(view.shown).toBeFalsy();
+
+                await provider.showActions("dba@localhost:3310");
+
+                expect(view.shown).toBeTruthy();
+                expect(view.description).toBe("dba@localhost:3310");
+                expect(view.webview.posted.at(-1)).toEqual({
+                    type: "showActions", rowId: "mrs-1-error",
+                });
+            });
+
         it("keeps General Actions on show once it was picked", async () => {
             const { provider, view } = createWithSessions();
             await provider.appendEvent(anEvent({

@@ -43,11 +43,10 @@ export interface IMrsDialogSpec {
     values: unknown;
     context: unknown;
     /**
-     * Saves the fields, which have passed validation.
-     *
-     * @returns What to tell the user, if anything.
+     * Saves the fields, which have passed validation. What it did is a row
+     * of the connection's Actions, so it reports nothing itself.
      */
-    save(values: unknown): Promise<string | undefined>;
+    save(values: unknown): Promise<void>;
     /** The columns of a table a data mapping reference points to. */
     loadColumns?(schema: string, table: string): Promise<IMrsColumns>;
     /** What a folder's MRS scripts define. */
@@ -59,8 +58,10 @@ export interface IMrsDialogSpec {
 
 /** What the panel needs from the extension, so a test can supply its own. */
 export interface IMrsDialogHost {
-    /** Called after a save went through, with what it said. */
-    onSaved(message: string | undefined): void;
+    /** Called after a save went through. */
+    onSaved(): void;
+    /** Called after a save failed, once the error has been shown. */
+    onFailed(): void;
     log(message: string): void;
 }
 
@@ -247,8 +248,8 @@ export class MrsDialogPanel {
 
         this.#post({ type: "busy", busy: true });
         try {
-            const result = await this.#spec.save(values);
-            this.#host.onSaved(result);
+            await this.#spec.save(values);
+            this.#host.onSaved();
             this.#panel.dispose();
         } catch (error) {
             const text = errorText(error);
@@ -258,6 +259,7 @@ export class MrsDialogPanel {
             } else {
                 this.#post({ type: "saveError", message: text });
             }
+            this.#host.onFailed();
         } finally {
             this.#post({ type: "busy", busy: false });
         }

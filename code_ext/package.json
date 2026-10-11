@@ -43,15 +43,19 @@
         {
           "id": "mariadb.connections",
           "name": "Connections",
+          "initialSize": 100,
           "icon": "images/light/connectionMariaDB.svg"
         },
         {
           "id": "mariadb.sandboxes",
-          "name": "Sandboxes"
+          "name": "Sandboxes",
+          "initialSize": 16
         },
         {
           "id": "mariadb.tasks",
-          "name": "Tasks"
+          "name": "Tasks",
+          "visibility": "collapsed",
+          "initialSize": 16
         }
       ],
       "mariadb-panel": [

@@ -17,11 +17,12 @@
 
 import * as assert from "node:assert/strict";
 
-import { VSBrowser } from "vscode-extension-tester";
+import { ActivityBar, By, VSBrowser } from "vscode-extension-tester";
 
 import {
     openSection,
     screenshot,
+    VIEW_CONTAINER,
     DEPLOY_TIMEOUT,
     SERVER_TIMEOUT,
     waitFor,
@@ -35,6 +36,56 @@ import {
 describe("Startup", () => {
     before(async () => {
         await VSBrowser.instance.waitForWorkbench();
+    });
+
+    it("lays the views out for a first start", async () => {
+        // package.json's initialSize weights and Tasks' collapsed
+        // visibility, which VS Code applies only while it has no sizes of
+        // its own for the views: a new profile, as every run is.
+        const control = await waitFor(async () => {
+            return await new ActivityBar().getViewControl(VIEW_CONTAINER);
+        }, "the MariaDB activity bar entry");
+        const content = (await control.openView()).getContent();
+        const heights = async (): Promise<Record<string, number>> => {
+            const found: Record<string, number> = {};
+            for (const pane of await VSBrowser.instance.driver.findElements(
+                By.css(".part.sidebar .split-view-view"))) {
+                const titles = await pane.findElements(
+                    By.css(".pane-header h3"));
+                if (titles.length > 0) {
+                    found[(await titles[0].getText()).toLowerCase()] =
+                        (await pane.getRect()).height;
+                }
+            }
+
+            return found;
+        };
+        const ROW = 22;
+
+        const first = await waitFor(async () => {
+            const found = await heights();
+
+            return found.tasks === undefined ? undefined : found;
+        }, "the MariaDB views");
+        await screenshot("00-first-layout");
+        // Tasks: its header only.
+        assert.ok(first.tasks! <= 2 * ROW, `Tasks is ${first.tasks}px`);
+        // Sandboxes: room for a handful of rows, Connections the rest.
+        assert.ok(first.sandboxes! >= 5 * ROW && first.sandboxes! <= 9 * ROW,
+            `Sandboxes is ${first.sandboxes}px`);
+        assert.ok(first.connections! > 5 * first.sandboxes!,
+            `Connections is ${first.connections}px`);
+
+        // Opened, Tasks gets a few rows' worth too.
+        await (await content.getSection("Tasks")).expand();
+        const expanded = await waitFor(async () => {
+            const found = await heights();
+
+            return found.tasks! > 2 * ROW ? found : undefined;
+        }, "the Tasks view to open");
+        assert.ok(expanded.tasks! >= 4 * ROW && expanded.tasks! <= 9 * ROW,
+            `Tasks is ${expanded.tasks}px`);
+        await (await content.getSection("Tasks")).collapse();
     });
 
     it("shows the Connections view, listed and empty", async () => {

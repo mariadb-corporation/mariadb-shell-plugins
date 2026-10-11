@@ -511,6 +511,20 @@ describe("App", () => {
         expect(host.querySelector(".statusBar")).toBeNull();
     });
 
+    it("goes to the Actions tab when the host asks", async () => {
+        await mount();
+        await send({ type: "state", state: report() });
+        const actionsTab = [...host.querySelectorAll(".tab")].find((tab) => {
+            return tab.textContent?.startsWith("Actions");
+        })!;
+        // A run with a result set opens on its result.
+        expect(actionsTab.getAttribute("aria-selected")).toBe("false");
+
+        await send({ type: "showActions", rowId: "run1-0" });
+
+        expect(actionsTab.getAttribute("aria-selected")).toBe("true");
+    });
+
     it("keeps the Actions tab out of the strip that scrolls", async () => {
         await mount();
         await send({ type: "state", state: report() });

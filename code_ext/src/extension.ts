@@ -311,6 +311,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         model: mrsModel,
         connections,
         refresh: () => { tree.refresh(); },
+        showActions: (uri) => { void resultView.showActions(uri); },
         log,
     });
     // The sandbox tools come with the server, so asking for them is asking

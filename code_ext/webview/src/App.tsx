@@ -388,6 +388,14 @@ export const App = (): JSX.Element => {
                     break;
                 }
 
+                case "showActions": {
+                    setActiveTab(ACTIONS_TAB);
+                    if (message.rowId !== undefined) {
+                        setScrollToRowId(message.rowId);
+                    }
+                    break;
+                }
+
                 case "applied": {
                     if (message.error !== undefined) {
                         // An apply failure is one error with no row of

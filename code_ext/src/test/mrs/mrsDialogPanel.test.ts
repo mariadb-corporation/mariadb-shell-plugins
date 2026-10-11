@@ -54,7 +54,10 @@ const VALID: ISdkExportValues = {
 
 interface IRecorded {
     host: IMrsDialogHost;
-    saved: Array<string | undefined>;
+    /** How many saves went through. */
+    saved: number;
+    /** How many failed. */
+    failed: number;
     logs: string[];
     /** The values every save was called with. */
     saves: unknown[];
@@ -64,12 +67,14 @@ interface IRecorded {
 const createHost = (): IRecorded => {
     const recorded: IRecorded = {
         host: undefined as unknown as IMrsDialogHost,
-        saved: [],
+        saved: 0,
+        failed: 0,
         logs: [],
         saves: [],
     };
     recorded.host = {
-        onSaved: (message) => { recorded.saved.push(message); },
+        onSaved: () => { recorded.saved += 1; },
+        onFailed: () => { recorded.failed += 1; },
         log: (message) => { recorded.logs.push(message); },
     };
 
@@ -94,7 +99,7 @@ const createSpec = (
         save: (values) => {
             recorded.saves.push(values);
 
-            return Promise.resolve("Exported.");
+            return Promise.resolve();
         },
         ...overrides,
     };
@@ -176,7 +181,7 @@ describe("MrsDialogPanel", () => {
                 type: "saveError", message: "Please specify a directory.",
             }]);
             expect(recorded.saves).toEqual([]);
-            expect(recorded.saved).toEqual([]);
+            expect(recorded.saved).toBe(0);
             expect(currentPanel().disposed).toBe(false);
         });
 
@@ -189,7 +194,7 @@ describe("MrsDialogPanel", () => {
         await receive({ type: "save", values: VALID });
 
         expect(recorded.saves).toEqual([VALID]);
-        expect(recorded.saved).toEqual(["Exported."]);
+        expect(recorded.saved).toBe(1);
         expect(panel.disposed).toBe(true);
         // Busy first; nothing is sent to a panel that is gone.
         expect(posted()).toEqual([{ type: "busy", busy: true }]);
@@ -197,7 +202,7 @@ describe("MrsDialogPanel", () => {
 
     it("is busy while the save runs", async () => {
         const recorded = createHost();
-        let finish: (value: string | undefined) => void = () => { /* */ };
+        let finish: () => void = () => { /* */ };
         MrsDialogPanel.show(extensionUri as never, createSpec(recorded, {
             save: () => {
                 return new Promise((resolve) => { finish = resolve; });
@@ -208,10 +213,10 @@ describe("MrsDialogPanel", () => {
         expect(posted()).toEqual([{ type: "busy", busy: true }]);
         expect(currentPanel().disposed).toBe(false);
 
-        finish(undefined);
+        finish();
         await new Promise((resolve) => { setTimeout(resolve, 0); });
 
-        expect(recorded.saved).toEqual([undefined]);
+        expect(recorded.saved).toBe(1);
         expect(currentPanel().disposed).toBe(true);
     });
 
@@ -230,7 +235,9 @@ describe("MrsDialogPanel", () => {
         ]);
         expect(recorded.logs).toEqual([
             "Failed to save the Export MRS SDK Files for /svc: Access denied"]);
-        expect(recorded.saved).toEqual([]);
+        expect(recorded.saved).toBe(0);
+        // So the panel can show what failed in the connection's Actions.
+        expect(recorded.failed).toBe(1);
         expect(currentPanel().disposed).toBe(false);
         expect(errorMessages).toEqual([]);
     });
@@ -254,6 +261,7 @@ describe("MrsDialogPanel", () => {
             await new Promise((resolve) => { setTimeout(resolve, 0); });
 
             expect(errorMessages).toEqual(["MariaDB: Too late"]);
+            expect(recorded.failed).toBe(1);
             expect(posted()).toEqual([{ type: "busy", busy: true }]);
             expect(recorded.logs).toHaveLength(1);
         });
@@ -411,7 +419,7 @@ describe("MrsDialogPanel", () => {
         await receive({ type: "cancel" });
 
         expect(currentPanel().disposed).toBe(true);
-        expect(recorded.saved).toEqual([]);
+        expect(recorded.saved).toBe(0);
     });
 
     it("keeps one panel per dialog, showing the new subject in it",
@@ -451,8 +459,8 @@ describe("MrsDialogPanel", () => {
 
         // The spec saved is the second's; so should the host told be.
         expect(second.saves).toEqual([VALID]);
-        expect(second.saved).toEqual(["Exported."]);
-        expect(first.saved).toEqual([]);
+        expect(second.saved).toBe(1);
+        expect(first.saved).toBe(0);
     });
 
     it("opens a panel of its own for another kind of dialog", () => {

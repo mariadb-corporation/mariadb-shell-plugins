@@ -195,3 +195,23 @@ far too verbose:
   its one statement beside it, "Configured REST Metadata", no "Listed REST"
   row by default, the SDK dump, and with the setting switched on in the
   Settings editor the listings with their REST SQL under them.
+- **No success notifications** (2026-10-11, the user's call): what an MRS
+  action did is its row in the Actions tab, so saving a dialog, a delete,
+  Set as Current, linking an auth app, project / service dump and load and
+  the SDK export say nothing else. A dialog's `save` and `#drop` return
+  nothing. Kept: the clipboard copies, Export REST SQL to a file, and
+  "every auth app is linked already" - none of them is an action row.
+- **A failure is notified AND shown**: the command wrapper's catch
+  (`reportError`) and a dialog's failed save (`IMrsDialogHost.onFailed`,
+  also when the dialog stays open with the error in it) call
+  `IMrsCommandsHost.showActions(uri)` -> `ResultViewProvider.showActions`:
+  the panel comes up on that connection's actions, and a `showActions`
+  message switches the webview to the Actions tab and scrolls to the newest
+  failed row (`jumpToRowId`, else the row).
+- **Long operations (checked 2026-10-11):** closing a dialog tab cancels
+  nothing; `#save` runs on, a later failure is notified. A content set
+  upload is several top-level rows (the `mrs.load_content_set` call, then
+  the settings' REST SQL), not one group. `MRS_TOOL_TIMEOUT_MS` (10 min)
+  ends the CLIENT's wait: the server's thread finishes the upload, the
+  extension reports a timeout and skips the settings statements. A
+  connection closed mid-run drops the final report, leaving the spinner.
