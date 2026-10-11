@@ -33,6 +33,7 @@ import {
     DEPLOY_TIMEOUT,
     submitDialog,
     SERVER_TIMEOUT,
+    setChecked,
     setFieldByCaption,
     sleep,
     treeItem,
@@ -68,6 +69,8 @@ describe("A sandbox to test with", () => {
         await runCommand("MariaDB: New Sandbox…");
         await inDialog("New Sandbox", async (view) => {
             await setFieldByCaption(view, "Port", String(SANDBOX_PORT));
+            // A password of its own, which the later tests log in with.
+            await setChecked(view, "generatePassword", false);
             await setFieldByCaption(view, "Root Password", SANDBOX_PASSWORD);
             await setFieldByCaption(view, "Confirm Root Password",
                 SANDBOX_PASSWORD);

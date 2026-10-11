@@ -52,6 +52,7 @@ type Tab = (typeof TABS)[number];
 const FIELD_TABS: Record<SandboxField, Tab> = {
     port: "Basic",
     serverVersion: "Basic",
+    generatePassword: "Basic",
     password: "Basic",
     passwordConfirmation: "Basic",
     allowRootFrom: "Advanced",
@@ -142,7 +143,7 @@ export const SandboxEditor = (): preact.JSX.Element => {
     };
 
     const text = (
-        key: Exclude<SandboxField, "ssl" | "mcpAccess">,
+        key: Exclude<SandboxField, "ssl" | "mcpAccess" | "generatePassword">,
         options: { placeholder?: string; type?: string } = {},
     ): preact.JSX.Element => {
         return (
@@ -184,13 +185,13 @@ export const SandboxEditor = (): preact.JSX.Element => {
                 <p class="editor-description">
                     A local MariaDB server, deployed in the default sandbox
                     directory. Its root account is added to the Connections
-                    view, in the Sandboxes folder, with the password below.
+                    view, in the Sandboxes folder, with its password.
                 </p>
             </header>
 
             {/* The fields' own two columns, so the checkbox lines up with the
                 right-hand column below it: Server Version, and Confirm Root
-                Password. */}
+                Password when it is shown. */}
             <section class="grid sandbox-connection">
                 <span class="field-caption sandbox-connection-caption">
                     Connection
@@ -259,20 +260,48 @@ export const SandboxEditor = (): preact.JSX.Element => {
                             />
                         </Field>
 
-                        <Field caption="Root Password">
-                            {text("password", { type: "password" })}
-                        </Field>
-                        <Field
-                            caption="Confirm Root Password"
-                            hint={hintOf("passwordConfirmation")}
-                        >
-                            {text("passwordConfirmation",
-                                { type: "password" })}
-                        </Field>
+                        <label class="checkbox password-choice">
+                            <input
+                                type="checkbox"
+                                name="generatePassword"
+                                checked={fields.generatePassword}
+                                disabled={busy}
+                                onChange={(event) => {
+                                    update("generatePassword", (event.target as
+                                        HTMLInputElement).checked);
+                                }}
+                            />
+                            <span>
+                                Automatically generate a sandbox password
+                            </span>
+                        </label>
+                        {/* Asked for only when the user wants to choose it:
+                            the password is stored with the connection, so a
+                            generated one never has to be typed. */}
+                        {fields.generatePassword ? null : (
+                            <>
+                                <Field
+                                    caption="Root Password"
+                                    hint={hintOf("password")}
+                                >
+                                    {text("password", { type: "password" })}
+                                </Field>
+                                <Field
+                                    caption="Confirm Root Password"
+                                    hint={hintOf("passwordConfirmation")}
+                                >
+                                    {text("passwordConfirmation",
+                                        { type: "password" })}
+                                </Field>
+                            </>
+                        )}
                         <p class="note password-note">
-                            Stored with the connection, so it is not
-                            asked for again. Left empty, a random
-                            12 character password is generated.
+                            {fields.generatePassword
+                                ? "A random 12 character password, stored "
+                                + "with the connection, so it never has to "
+                                + "be typed."
+                                : "Stored with the connection, so it is not "
+                                + "asked for again."}
                         </p>
                     </section>
                 ) : null}

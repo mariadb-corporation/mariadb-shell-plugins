@@ -1168,7 +1168,8 @@ describe("activate", () => {
             webviewPanels.at(-1)!.webview.receive({
                 type: "create",
                 fields: {
-                    port: "3399", password: "", passwordConfirmation: "",
+                    port: "3399", generatePassword: true,
+                    password: "", passwordConfirmation: "",
                     serverVersion: "Server on the PATH",
                     allowRootFrom: "127.0.0.1", serverId: "", ssl: false,
                     mariadbdOptions: "", timeout: "",

@@ -263,7 +263,8 @@ describe("SandboxEditorPanel", () => {
         await receive({
             type: "create",
             fields: fields({
-                serverVersion: "11.8", password: "pw", passwordConfirmation: "pw",
+                serverVersion: "11.8", generatePassword: false,
+                password: "pw", passwordConfirmation: "pw",
             }),
         });
 
@@ -283,7 +284,10 @@ describe("SandboxEditorPanel", () => {
 
         await receive({
             type: "create",
-            fields: fields({ password: "pw", passwordConfirmation: "wp" }),
+            fields: fields({
+                generatePassword: false,
+                password: "pw", passwordConfirmation: "wp",
+            }),
         });
 
         expect(state.deployed).toEqual([]);
