@@ -15,12 +15,12 @@
 - **prepare_release** (`lib/management.py`): requires version ≥ last released and next_version > version (or ≥ with `allow_to_stay_on_same_version`); inlines `SOURCE '<path>'[a:b];` lines (Python slice on file text, relative to `development/`, indentation applied) into the dev script; fills template `schema_a.b.c.sql` section-by-section from the dev script (only section ids present in the TEMPLATE survive), drops empty sections except `license`/`001`; writes `versions/<file>_<v>.sql`; if a previous release exists and differs, writes the EMPTY update script `updates/<file>_<prev>_to_<v>.sql` from `schema_x.y.z_to_a.b.c.sql`; then sets section 910 of the dev file to next_version.
 - **generate_deployment_script**: first release → plain copy of the version file. Later releases → `schema_deployment_a.b.c.sql` with target sections 130/140/150/170/190 and, per consecutive released pair (`MSM-LOOP-START/END:UPDATABLE-VERSIONS` blocks, `(indent=N)`), the update script's sections 230/240/270/290. Target 180 (REST) is emitted after 370, run in full every time (since the 2026-10-05 fix). Section 140 → body of `msm_create_<target>()`, each 240 → `msm_update_<from>_to_<to>()`, 170 → `msm_auth_<target>()`, 270 → `msm_auth_<from>_to_<to>()`; dispatcher `msm_create_or_update()` / `msm_auth()` pick fresh-create vs. chained updates (via `@msm_schema_init`, `@msm_current_version`); all `msm_*` procs dropped at the end. SIGNAL errnos 32100 (exists, unmanaged), 32101 (stuck at 0.0.0), 32102 (version not updatable). Requires an update file for EVERY consecutive released pair (`get_updatable_versions` raises otherwise).
 - **Authorization model (verified 2026-10-05):** `msm_auth` runs the 270 step procedures, then ALWAYS the target's 170 (fresh install: only 170). So 170 must be re-runnable (`CREATE ROLE IF NOT EXISTS`, `GRANT`) and new roles/grants reach upgraded schemas through it; 270 is only for `REVOKE`/`DROP ROLE`. Upgrade and fresh install then end with identical roles and grants. The ai-plugins skills say to `GRANT` in 270 — wrong, and dangerous with issue 14.
-- **deploy_schema** (`lib/management.py`): checks released == deployment-script versions, picks latest if no version; refuses an existing unmanaged schema; no-op message if already on version; message (not error) if server is NEWER than the project; refuses a version not in the update chain. Runs the script via `lib.core.execute_msm_sql_script` (`mysqlsh.mysql.split_script`, so `DELIMITER` works) holding user lock `GET_LOCK("MSM_METADATA_LOCK", 1)`. `backup=True` (default False, added in a MariaDB session) + existing schema: sets `GLOBAL local_infile=1` if needed, `util.dump_schemas` to `backup_directory` (default `plugin_data/msm_plugin/backups/<file>_backup_<ver>[_N]`), on failure DROP + `util.load_dump`, removes the dump either way. Without backup a failed UPDATE leaves the schema as the failure left it; a failed fresh CREATE drops the schema. Every step goes to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
+- **deploy_schema** (`lib/management.py`): checks released == deployment-script versions, picks latest if no version; refuses an existing unmanaged schema; no-op message if already on version; message (not error) if server is NEWER than the project; refuses a version not in the update chain. Runs the script via `lib.core.execute_msm_sql_script` (`mysqlsh.mysql.split_script`, so `DELIMITER` works) holding user lock `GET_LOCK("MSM_METADATA_LOCK", 1)`. `backup=True` (default False, added in a MariaDB session) + existing schema: sets `GLOBAL local_infile=1` if needed, `util.dump_schemas` to `backup_directory` (default `plugin_data/msm_plugin/backups/<file>_backup_<ver>[_N]`), on failure DROP + `util.load_dump`, removes the dump either way. Both run through `lib.core.run_util(session, function, *args, options=)` (on `wip/mcp_dump_load`, PR #43): with mariadb-shell #73 the session goes in the utility's `session` option and the global session is never touched; on an older shell the global session is switched under a lock (a module object in `sys.modules`, `_mariadb_shell_plugins_global_session`, shareable by other plugins) and switched back. Before, the backup switched the global session without a lock and never switched back, so two deployments at once on an MCP server could run on each other's session. Without backup a failed UPDATE leaves the schema as the failure left it; a failed fresh CREATE drops the schema. Every step goes to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
 - **Copyrights.** `msm.project.json` has a `copyrights` list (`holder`, `yearOfCreation`, `yearOfLastUpdate`, `tracksUpdates`) plus the legacy `copyrightHolder` mirror; old projects are migrated on read (`get_project_copyrights`). Licenses = `templates/license/*.txt` (`BSD`, `GPL-2.0`, `MIT`, `None`) or `CUSTOM` with `customLicense` text; placeholders `${copyright_notices}`, `${copyright_holder}`, `${year}`. Template files' own copyright headers are stripped (`strip_template_copyright_header`).
 
 ## Current state
 
-- **Suite: 16 pass** (14 before the issue-2 and issue-14 tests) (2026-10-05, `build/bin/mariadb-shell` 26.9.5, MariaDB 12.3.2 from `/opt/homebrew/bin`, ~8s). `tests/conftest.py` deploys a sandbox on port 3388 (`MYSQL_PORT` etc. override), `ssl: False`.
+- **Suite: 22 pass** on `wip/mcp_dump_load` (2026-10-10; `tests/unit/test_run_util.py` adds 6 with fakes for `mysqlsh`); 16 at the 2026-10-05 checkpoint (14 before the issue-2 and issue-14 tests) (2026-10-05, `build/bin/mariadb-shell` 26.9.5, MariaDB 12.3.2 from `/opt/homebrew/bin`, ~8s). `tests/conftest.py` deploys a sandbox on port 3388 (`MYSQL_PORT` etc. override), `ssl: False`.
 - **Verified end to end on 12.3.2 (2026-10-05, scratch sandbox, script in the docs session scratchpad):** create project → fill 140/150/170/180 → release 1.0.0 → deploy fresh → redeploy (no-op message) → release 1.1.0 with 240 ALTER+UPDATE and 270 GRANT → update with `backup=True` (dump taken and removed) → fresh install of 1.1.0 → unmanaged-schema refusal; version-order refusals; CLI output of `get` functions; `msm cd/pwd/ls`.
 - **Known issues (confirmed live unless noted):**
   1. **Update script section 250 is unused by design, but still advertised.** The deployment script brings tables up through the chained 240 steps, THEN runs the target's full section 150 once, so views/routines always end in the target state whatever the start version; intermediate definitions are never needed (user's design, verified 2026-10-05: 1.0.0→1.2.0, 1.1.0→1.2.0 and fresh 1.2.0 give identical views/routines, a view on a renamed column ends valid, only the target's routine body is in the script). Removals go in 240 (`DROP ... IF EXISTS`), since 150 cannot express them. Caveat (code reading): during the 240 chain the objects are still the START version's, so a later 240 step cannot rely on a routine an intermediate version introduced — use 230 helpers. The real defect is documentation: the update template's 250 and the ai-plugins `-release`/overview skills tell authors to fill 250, which is never executed.
@@ -86,26 +86,16 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-08):
+Checked at this checkpoint (2026-10-11), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
-$ git branch --show-current
-wip/mrs_schema_improvements   (pushed, tracks origin; no PR yet)
+$ git -C msm_plugin branch --show-current
+wip/mrs_code_ext
 
-$ git status --short   (one repository: every project's lines)
- M mcp_plugin/run_tests.py
- M mcp_plugin/tests/unit/helpers.py
- M mcp_plugin/tests/unit/test_migration_e2e.py
- M mcp_plugin/tests/unit/test_migrator_tools.py
- M mcp_plugin/tests/unit/test_oauth.py
- M mrs_plugin/scripts/run_grammar_test.sh
+$ git -C msm_plugin status --short
+(clean before this checkpoint's context edits)
 ```
 
-- Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
-  sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
-  the `MARIADB_SHELL_OPTIONS` support for the new shell build (made for the since removed
-  `--disable-modules=mrs`).
-- **msm_plugin itself: unchanged this session.** Its functions produced the MRS metadata
-  5.0.0 release (`prepare_release`, `set_section_sql_content`, `generate_deployment_script`).
-- PR #36 merged as `4bdf0ece`; `git push origin --delete wip/msm_mrs_fixes` is still the one
-  command left from it.
+- msm_plugin's open work: `ba426f4d` (deployment backup through `lib.core.run_util`) is on `wip/mcp_dump_load`, **PR #43**, and with it on PR #44. PR #41 (`wip/mrs_schema_improvements`) carries msm_plugin changes of its own (metadata 5.0.0 side).
+- The msm suite passes in the plugins CI (22); those PRs fail CI on the mcp_plugin / mrs_plugin suites only, for want of mariadb-shell #71 / #73 on the runner.
+- Still open: `git push origin --delete wip/msm_mrs_fixes` (merged as #36).

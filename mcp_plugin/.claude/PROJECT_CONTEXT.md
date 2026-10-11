@@ -23,7 +23,9 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 [`context/environment.md`](context/environment.md)),
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
-Standard suite: **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
+Standard suite: **616 pass, 3 skipped (~95s)** on PR #44's tree at the 2026-10-11
+checkpoint, against a local shell build of mariadb-shell #71 + #73 (the `util`
+stdio test needs #73); **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
 on `wip/mcp-multi-tenant` at the 2026-10-07 checkpoint, with Rene's review fixes in the
 working tree (584 / 4 after the simplification pass; 585 / 3 at the 2026-10-06 evening
 checkpoint; 577 and 93%, 5200 statements, at the one before),
@@ -68,7 +70,7 @@ this table with it.
 | [`context/db-tools.md`](context/db-tools.md) | `db.execute_sql` / `execute_sql_script` including the per-statement script results, the three introspection tools and their SQL. |
 | [`context/migrator.md`](context/migrator.md) | The migration tooling: the naming rule, the four `migrator.*` tools, the install, the Windows gate and the opt-in end-to-end test. |
 | [`context/setup.md`](context/setup.md) | `mcp.setup`: the three interactive modules, the shell's own prompt types, and the command-line option surface. |
-| [`context/util.md`](context/util.md) | The `util` group: dumps, loads, copies, exports and imports as background tasks (`lib/tasks.py`), the 12 tools, their own sessions, and what they need from mariadb-shell #73. |
+| [`context/util.md`](context/util.md) | The `util` group: dumps, loads, copies, exports and imports as background tasks (`lib/tasks.py`), the 12 tools, their own sessions, what they need from mariadb-shell #73, why CI fails on it, and what the extension does with the tasks. |
 | [`context/sandbox.md`](context/sandbox.md) | `sandbox.deploy` on a requested server version: the search order, the pinned index, checksums and extraction. |
 | [`context/testing.md`](context/testing.md) | The suite's contents, how to run it, what the coverage number means, and the fixture and harness traps. |
 | [`context/siblings.md`](context/siblings.md) | `msm_plugin` and `mrs_plugin`: what was changed there, how to run their suites, and their own failures. |
@@ -83,40 +85,34 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-08):
+Checked at this checkpoint (2026-10-11):
 
 ```text
-$ git branch --show-current
-wip/mrs_schema_improvements   (pushed, tracks origin; no PR yet)
+$ git -C mcp_plugin branch --show-current
+wip/mrs_code_ext
 
-$ git status --short   (one repository: every project's lines)
- M mcp_plugin/run_tests.py
- M mcp_plugin/tests/unit/helpers.py
- M mcp_plugin/tests/unit/test_migration_e2e.py
- M mcp_plugin/tests/unit/test_migrator_tools.py
- M mcp_plugin/tests/unit/test_oauth.py
- M mrs_plugin/scripts/run_grammar_test.sh
+$ git -C mcp_plugin status --short   (one repository: every project's lines)
+(clean before this checkpoint's context edits)
 ```
 
-- Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
-  sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
-  the `MARIADB_SHELL_OPTIONS` support for the new shell build (made for the since removed
-  `--disable-modules=mrs`).
-- **mcp_plugin this session:** only the test harness - `run_tests.py -M/--shell-options`
-  and `helpers.shell_command()` for every shell the tests start (see
-  [`context/testing.md`](context/testing.md) Gotchas). 596 passed, 3 skipped on the new
-  shell with the since removed `--disable-modules=mrs`. The mrs_plugin work is in
-  [`context/siblings.md`](context/siblings.md).
-- Earlier: PR #37 (multi-tenant mode and OAuth2) merged as `a5ad8bdf` on 2026-10-07,
-  branch deleted; Rene's review fixes are `fe4dbfe6` (see "Review round" in
-  [`context/multi-tenant.md`](context/multi-tenant.md)). What is open from it is in that
-  file's Next steps.
-- **Docs:** the MCP reference docs in `../mariadb-shell/docs-ref/` are on `wip/docs-ref`
-  (`5ae870fa5`, `42ea44ca4`), mariadb-shell PR #59.
-- **Left on the machine:** `cloudflared` (Homebrew). The user's Arcade dashboard still
-  lists a `mariadb` server with a dead URL.
-- **Over the ~400-line split threshold and NOT split:** `context/connections.md` (507),
-  `context/history.md` (466, an archive), `context/security-review.md` (402),
-  `context/migrator.md` (401). None touched this session.
-- [`context/history.md`](context/history.md) is deliberately NOT updated, as by every
-  session since `wip/sandbox-binaries`; this section is the current record.
+- **Open PRs with mcp_plugin work, all pushed:**
+  - **#43** `wip/mcp_dump_load`: the `util` function group (see
+    [`context/util.md`](context/util.md)), and msm's `run_util` (see
+    [`context/siblings.md`](context/siblings.md)).
+  - **#44** `wip/mrs_code_ext` (opened 2026-10-11): the `mrs` function group
+    wrapping mrs_plugin, plus the extension. It has #41 and #43 merged in.
+  - #41 `wip/mrs_schema_improvements`: mrs_plugin / msm_plugin.
+- **CI fails on all three for one reason**: the runner's shell is the
+  26.10.1 release, without mariadb-shell #71 (MRS module, #41/#44) and #73
+  (`util.*` options, #43/#44). Nothing else fails: #43's run had 606 passed
+  and 1 failed (the util stdio test). See util.md "CI".
+- Suite: **616 passed, 3 skipped** on #44's tree against a local build of
+  #71 + #73 (`wip/ui_test_shell` in `~/git/mariadb-shell`, local only).
+- **mariadb-shell open PRs this depends on:** #71 (MRS module), #73 (util
+  session / progressCallback), #74 (`[bypass-ci]` docs for the util tools),
+  #75 (a flaky encrypted-load test).
+- Still open from before: deleting `origin/wip/msm_mrs_fixes` (merged as
+  #36). After #41 merges, mrs_plugin's project dump/load should get the
+  same `run_util` as msm (siblings.md).
+- [`context/history.md`](context/history.md) is deliberately NOT updated,
+  as by every session since `wip/sandbox-binaries`.

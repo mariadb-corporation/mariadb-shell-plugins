@@ -55,5 +55,23 @@ every task fails with "This MariaDB Shell is too old for the util tools".
   schema, export, import, a cancelled `maxRate` dump, a copy to the same server
   failing as a task, `list_tasks`, refusals.
 
-`test_multi_tenant.py` checks that `util` is refused. Full suite: 609 passed,
-3 skipped (2026-10-10, against the shell built from #73).
+`test_multi_tenant.py` checks that `util` is refused. Full suite: 616 passed,
+3 skipped (2026-10-11, on PR #44's tree, against a local shell build of
+mariadb-shell #71 + #73 merged - `wip/ui_test_shell`, local only).
+
+## CI
+
+The stdio test fails in the plugins CI ("This MariaDB Shell is too old for
+the util tools"): the runner's shell is the 26.10.1 release from
+`~/.cache/ci`, without #73. It passes once a shell with #73 is there. See
+code_ext's PROJECT_CONTEXT "Known gaps" for the options weighed.
+
+## The extension's side
+
+`code_ext` (PRs #43 / #44) follows a task with `util.get_task` at most once a
+second (the tool answers as soon as a task changes, which while data moves
+is many times a second), puts each task in the Actions tab with only its
+totals and warnings under it, and writes a log file per task. The progress
+messages of a copy carry terminal colour codes on their `SRC:` / `TGT:`
+prefixes, which the extension strips; the server passes them on as the
+shell wrote them.

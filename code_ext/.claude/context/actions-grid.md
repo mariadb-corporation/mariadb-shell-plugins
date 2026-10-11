@@ -140,6 +140,13 @@ against the block whether or not that is wanted: Tabulator writes
 `align-items` as an **inline** style for a column with a `vertAlign`,
 which no rule in the stylesheet can outrank.
 
+**A row marked `multiline` is shown the same way** (2026-10-10): its
+message is a block of lines, shown in full, the row as tall as it needs.
+The grid gives such a row - and every error row - `.fullRow`, which is what
+the wrap and the top-aligned marker are keyed on; the red stays with
+`.errorRow`. A dump's totals are such a row, under its task (see
+[dump-and-load.md](dump-and-load.md)).
+
 **Every other cut-off cell gets a hover popup** (`overflowPopup.ts`)
 holding the whole text and a button that copies it - `title` would do
 none of the three things wanted, being unselectable, uncopyable and
