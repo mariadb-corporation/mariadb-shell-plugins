@@ -523,15 +523,12 @@ def store_project(
             # Create a schema dump into the target directory
             schema_format = "dump"
 
-            # Set the mysqlsh session to the one that was given
-            if "shell.Object" in str(type(session)):
-                mysqlsh.globals.shell.set_session(session)
-            else:
-                mysqlsh.globals.shell.set_session(session.session)
-            mysqlsh.globals.util.dump_schemas(
+            core.run_util(
+                session,
+                "dump_schemas",
                 [schema_data["name"]],
                 f"file://{schema_target}",
-                {
+                options={
                     "skipUpgradeChecks": True,
                     "showProgress": False,
                 },
@@ -683,14 +680,12 @@ def load_project(session, path: str):
                             run_sql_script(session, f.read())
 
                 elif schema["format"] == "dump":
-                    if "shell.Object" in str(type(session)):
-                        mysqlsh.globals.shell.set_session(session)
-                    else:
-                        mysqlsh.globals.shell.set_session(session.session)
-
                     with core.ServerLocalInFile(session, True):
-                        mysqlsh.globals.util.load_dump(
-                            schema_path, ignoreExistingObjects=True
+                        core.run_util(
+                            session,
+                            "load_dump",
+                            schema_path,
+                            options={"ignoreExistingObjects": True},
                         )
                 else:
                     raise Exception("Invalid schema format.")
