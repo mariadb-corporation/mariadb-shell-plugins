@@ -58,64 +58,21 @@ change belongs to up to date, and this table with it.
 
 ## Known gaps
 
-- `MINIMUM_SHELL_VERSION` is 26.9.4. 26.9.3 was the floor for the
-  connection URI (the first parser to accept `mariadb://`, which the MCP
-  plugin now stores); 26.9.4 is the first release whose bundled
-  `mcp_plugin` carries `db.test_connection` and the per-statement
-  `db.execute_sql_script` results (`statement_index`, `execution_time`,
-  per-statement `error`, `stop_on_error`, `warnings`) - checked by
-  installing it and diffing its plugin against this repo's. The readers
-  of those fields still fall back when they are missing, but no shell
-  the extension accepts lacks them any more.
-- **Connection folders, captions and colors need a shell that is not
-  released yet.** No shell the extension accepts bundles an `mcp_plugin`
-  with them, and an older plugin SILENTLY ignores `path` / `caption` /
-  `color` and their `new_` forms (the MCP SDK drops arguments a tool does
-  not declare) - such a change "saves" and does nothing. Decided: no runtime detection; raise `MINIMUM_SHELL_VERSION` to
-  the first release that includes it once that is out. To try folders
-  before then, the shell in use has to load this repo's plugin, not its
-  bundled one (the installed 26.9.4 loads
-  `lib/mariadb-shell/plugins/mcp_plugin`, not `~/.mariadb-shell/plugins`).
-- **The Sandboxes view needs an unreleased shell too.** It lists through
-  `sandbox.list_instances`, which only this repo's `mcp_plugin` has; on
-  any released shell the view shows "could not be listed". Same decision
-  as folders: raise `MINIMUM_SHELL_VERSION` once a release carries it. See
-  [`context/sandboxes.md`](context/sandboxes.md).
-- The installer is run with `MARIADB_SHELL_TAG` pinned, so a release
-  marked **prerelease** on GitHub installs fine (every 26.9.x is one);
-  only an unpinned `install.sh` would skip it.
-- The Connections view keeps a connection of its own per URI, so a URI
-  being browsed and run on costs two of the server's
-  `MAX_CONNECTIONS_PER_CLIENT` (16). Nine connections open at once is
-  therefore the ceiling, and nothing closes the tree's one on its own -
-  only Disconnect does, or the server's 12 hour lifetime.
-- The connection editor has no file pickers: the SSL certificate paths, the
-  SSH identity and config files and the socket are typed, where the MySQL
-  Shell's editor offers a browse button for each.
-- The SSH tab has no password or passphrase field, because a URI cannot
-  carry one: the shell keeps `ssh-password` and
-  `ssh-identity-file-password` out of `ssh_uri_query_attributes` on
-  purpose. A tunnel needing one therefore cannot be configured here - use
-  a key the agent has already unlocked.
+- `MINIMUM_SHELL_VERSION` is **26.10.1**, set by the release tooling
+  (`tools/update_version`, the shell repo's `main` version); the hard
+  floor is 26.9.4 (`mariadb://` URIs from 26.9.3, `db.test_connection` and
+  per-statement script results from 26.9.4). 26.10.0 is the first release
+  whose bundled `mcp_plugin` has connection folders / captions / colors,
+  `sandbox.list_instances` and `mcp_access`, paging (`has_more_pages`) and
+  `column_metadata` - checked 2026-10-11 by unpacking the 26.10.0 and
+  26.10.1 tarballs and grepping their plugin - so those are no longer
+  gaps. **What 26.10.1 still lacks:** the MRS module (mariadb-shell #71)
+  with the `mrs` MCP group, and the `util.*` session / progressCallback
+  options (#73): the REST Service tree and Dump and Load need a shell
+  newer than any release. Raise the version once one carries them.
 - The result grid edits every value as text; there is no type-aware editor
   (date picker, BLOB viewer) yet. Its cell menu has Save / Load Value and
   Set Field to Null only - none of the MySQL Shell's Copy items.
-- **Paging needs an unreleased shell too.** It relies on this repo's
-  `mcp_plugin` adding the LIMIT and reporting `has_more_pages`; an older
-  plugin silently drops the `limit` argument (the MCP SDK drops what a
-  tool does not declare), so every row comes back, no result set carries
-  a `page`, and the Pages buttons stay off - it degrades to the old
-  behaviour rather than breaking. Same decision as folders: raise
-  `MINIMUM_SHELL_VERSION` once a release carries it.
-- **Column metadata needs the unreleased shell too**: the data icons and
-  hex display go by `column_metadata`, which only this repo's `mcp_plugin`
-  sends (the extension always passes `column_metadata: true`; an older
-  plugin drops the argument). Such a shell also reports its result set as
-  top-level `columns`/`rows` rather than `result_sets`, which
-  `normalizeStatementResult` (`src/mcp/mariaDbApi.ts`) turns into the one
-  shape the rest of the extension reads.
-  Without it, only an editable single-table result - whose columns are
-  looked up - shows them; everything else is plain text, as before.
 - A VECTOR is recognised only from the table's own column type (the
   server reports it as `BYTES`, like VARBINARY), so outside an editable
   single-table result it shows as hex.
@@ -129,10 +86,6 @@ change belongs to up to date, and this table with it.
   and left as the 2026-10-07 security review's one defence-in-depth
   suggestion: dropping it needs a check that the bundled CSS does not rely
   on it.
-- The actions grid's `openTo` has an unreachable branch that was meant to
-  scroll to an event row or a summary-only failed run from the error bar;
-  flagged by both 2026-10-07 reviews, not fixed
-  ([`context/actions-grid.md`](context/actions-grid.md)).
 - **CI cannot test what needs the unreleased shell.** The plugins CI uses
   the shell tarball someone put in `~/.cache/ci` on the GCE runner (the
   26.10.1 release), which has neither mariadb-shell #71 (MRS module) nor

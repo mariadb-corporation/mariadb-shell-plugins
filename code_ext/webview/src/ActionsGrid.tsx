@@ -531,19 +531,23 @@ export const startsExpanded = (
 };
 
 /**
- * @param rows The actions, newest first.
- * @param rowId The statement row to place.
+ * The top level row a row is reached through: the run holding a statement,
+ * or the row itself when it is top level - an event, or a run that failed
+ * before it could blame a statement, both of which the error bar points at.
  *
- * @returns The id of the run holding it, if any run does.
+ * @param rows The actions, newest first.
+ * @param rowId The row to place.
+ *
+ * @returns The id of that top level row, if the actions still hold it.
  */
-export const runHolding = (
+export const topLevelRowOf = (
     rows: IActionRow[],
     rowId: string,
 ): string | undefined => {
-    return rows.find((run) => {
-        return run.children?.some((child) => {
+    return rows.find((top) => {
+        return top.id === rowId || (top.children?.some((child) => {
             return child.id === rowId;
-        }) ?? false;
+        }) ?? false);
     })?.id;
 };
 
@@ -751,7 +755,7 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
         // The run asked about here is usually a closed one - it is the
         // error of an older run that is being pointed at - so it is
         // opened on the way.
-        const runId = runHolding(rows, scrollToRowId);
+        const runId = topLevelRowOf(rows, scrollToRowId);
         if (runId === undefined) {
             return;
         }

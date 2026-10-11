@@ -151,10 +151,9 @@ MCP plugin's own `context/sandbox.md`.
 
 ## Known gaps
 
-- **Needs an unreleased shell.** `sandbox.list_instances` is new in this
-  repo's `mcp_plugin`; no released shell bundles it, and an older one fails
-  the listing - the view then shows its failed welcome content. Raise
-  `MINIMUM_SHELL_VERSION` once a release carries it, as with folders.
+- `sandbox.list_instances` and `mcp_access` first shipped in shell
+  26.10.0's bundled `mcp_plugin`; `MINIMUM_SHELL_VERSION` (26.10.1) covers
+  them (checked 2026-10-11 by unpacking both releases).
 - **Stop on Windows sends no password.** The shell uses the root password to
   request a shutdown there; the extension cannot read the stored one back,
   so a Windows stop relies on the shell's fallback. Not tried on Windows.

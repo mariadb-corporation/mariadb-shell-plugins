@@ -30,7 +30,7 @@ import {
     createSeverityIcon,
     informationOf,
     expandedIdsOf,
-    runHolding,
+    topLevelRowOf,
     startsExpanded,
     timeOf,
 } from "../src/ActionsGrid.js";
@@ -456,18 +456,30 @@ describe("startsExpanded", () => {
     });
 });
 
-describe("runHolding", () => {
+describe("topLevelRowOf", () => {
     it("finds the run a statement belongs to", () => {
         const rows = [
             run({ id: "run1", children: [row({ id: "run1-0" })] }),
             run({ id: "run2", children: [row({ id: "run2-0" })] }),
         ];
 
-        expect(runHolding(rows, "run2-0")).toBe("run2");
-        expect(runHolding(rows, "run3-0")).toBeUndefined();
+        expect(topLevelRowOf(rows, "run2-0")).toBe("run2");
+        expect(topLevelRowOf(rows, "run3-0")).toBeUndefined();
         // A run that never reported back holds nothing.
-        expect(runHolding([run({ children: [] })], "run1-0"))
+        expect(topLevelRowOf([run({ children: [] })], "run1-0"))
             .toBeUndefined();
+    });
+
+    it("finds a top level row by its own id", () => {
+        // What the error bar points at when no statement is to blame: an
+        // event that failed, or a run that failed before any statement.
+        const rows = [
+            row({ id: "event1", role: "event", kind: "error" }),
+            run({ id: "run1", children: [] }),
+        ];
+
+        expect(topLevelRowOf(rows, "event1")).toBe("event1");
+        expect(topLevelRowOf(rows, "run1")).toBe("run1");
     });
 });
 

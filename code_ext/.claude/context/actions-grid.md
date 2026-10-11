@@ -203,13 +203,13 @@ Three things about the tree had to be told to Tabulator:
 
 Rows are looked up by index among the **top level only**, so a statement
 cannot be scrolled to by its own id: `openTo()` finds its run, opens it
-and takes the child component from `getTreeChildren()`. **Latent bug,
-found by the 2026-10-07 reviews and NOT fixed:** `openTo`'s
-`rowId === runId` branch is unreachable - its only caller is gated on
-`runHolding()`, which finds a run only by its CHILDREN - so the error
-bar's "go to" on an event row, or on a failed run with no failed
-statement under it (both of which `errorsOf()` produces), never scrolls
-the grid. Fall back to the row itself when `runHolding` finds nothing.
+and takes the child component from `getTreeChildren()`. The row to open
+is found by `topLevelRowOf()`: the run holding a statement, or the row
+itself when it is top level - an event, or a failed run with no failed
+statement under it, both of which `errorsOf()` points at. Until
+2026-10-11 only runs holding the row were looked for (`runHolding`), so
+the error bar's "go to" on those two never scrolled (found by the
+2026-10-07 reviews).
 
 ## Nothing scrolls itself
 

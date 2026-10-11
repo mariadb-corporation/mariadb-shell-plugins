@@ -113,7 +113,9 @@ differ from a plain form, so keep them when changing it:
   dialog's Auth. Required, a metadata schema name on first deployment.
 - Edits use ALTER (CREATE OR REPLACE would give new ids); a view is saved
   with its whole mapping generated here, `@DATATYPE` and `JSON SCHEMA`
-  included, since `SHOW CREATE REST VIEW` loses them.
+  included. `SHOW CREATE REST VIEW` lost them until mariadb-shell's
+  2026-10-11 fix (on #71's branch, see the shell repo's mrs-module.md);
+  generating the text here keeps working with a shell without it.
 - Reference CRUD flags are always written explicitly (`@INSERT`/
   `@NOINSERT`...) so a following `@NOCHECK` is the reference's, not the
   field's (the grammar resolves the ambiguity toward the field).
@@ -142,8 +144,9 @@ differ from a plain form, so keep them when changing it:
 ## Known gaps / next steps
 
 - The `mrs.*` tools and REST SQL FORMAT=JSON need a shell carrying
-  mcp_plugin's mrs group and the module of mariadb-shell PR #71; raise
-  `MINIMUM_SHELL_VERSION` once a release has them.
+  mcp_plugin's mrs group and the module of mariadb-shell PR #71. No release
+  has them yet (26.10.1, the current `MINIMUM_SHELL_VERSION`, does not);
+  raise it once one does.
 - The data mapping editor has no SDK language mode (the old one showed
   per-language class names and datatypes).
 
