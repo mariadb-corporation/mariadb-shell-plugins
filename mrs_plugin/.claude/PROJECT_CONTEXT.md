@@ -158,9 +158,10 @@ packages with msm_plugin and mcp_plugin.
   - CI (`.github/workflows/shell-plugins-ci.yml`) needs a shell build with the built-in mrs
     module now: without it no `MRS` handler exists and the
     REST SQL in the tests and the grammar test fails.
-  - `SHOW CREATE REST VIEW` drops `@DATATYPE` and `JSON SCHEMA` of fields below a reference
-    (module, pre-existing): re-creating from the text loses them. Blocks code_ext saving
-    views as generated REST SQL; offered to the user, not fixed.
+  - `SHOW CREATE REST VIEW` dropped `@DATATYPE` and `JSON SCHEMA` and wrote annotations in an
+    order the grammar rejects. Fixed 2026-10-11 in the shell's mrs module (uncommitted at first
+    in mariadb-shell, for #71's `wip/mrs_module`; see its `.claude/context/mrs-module.md`), so
+    `mrs.dump.service` output now round-trips them.
 
 - **Audit log export (`mrs.dump.auditLog`, `lib/dump.py`), 2026-10-09.** Audit log ids are not in commit order (concurrent writers, Galera with several write nodes), so every export re-reads the `AUDIT_LOG_ID_OVERLAP` (1000) ids below its position and skips those listed in the position file's new `exportedIds`; a file without that list, or an explicit `audit_log_position`, counts everything up to the position as exported. Also fixed for MariaDB: `@@server_uid` (written as `server_uid`) instead of `@@server_uuid`, `@@global.read_only` instead of `offline_mode` / `super_read_only` for `when_server_is_writeable`, and an explicit `audit_log_position` is no longer reset to 0. Test: `tests/unit/lib/test_dump.py`.
 
@@ -201,7 +202,8 @@ packages with msm_plugin and mcp_plugin.
 1. Docs follow-ups (in the shell repo's context): new VS Code screenshots, verify the
    open points of the conversion (daemon role activation, GTID read-your-writes, custom
    auth procedure id type). Async tasks were dropped on 2026-10-09.
-2. Fix the `@DATATYPE` / `JSON SCHEMA` loss in `SHOW CREATE REST VIEW` (if the user agrees).
+2. (Done 2026-10-11 in the shell's mrs module: `SHOW CREATE REST VIEW` keeps `@DATATYPE` and
+   `JSON SCHEMA`.)
 - (Done 2026-10-09, in 5.0.0 itself: the `router*` tables, the `router_services` view,
   procedures and events are `rest_daemon*`; `rest_daemon.id` is a `UUID`, the ids of
   `rest_daemon_status`, `rest_daemon_session` and `rest_daemon_general_log` are
@@ -274,6 +276,11 @@ packages with msm_plugin and mcp_plugin.
 - The sandbox on port 3360 (from a mariadb-shell session, sakila loaded) still has 4.1.6
   metadata, so 5.x statements refuse it; do not upgrade it, verify with the scripted tests
   (own sandboxes) or `run_tests.py`.
+- **Shell utilities go through `core.run_util(session, "dump_schemas", ..., options=)`**
+  (2026-10-11, the project dump/load in `lib/services.py`): the session in the utility's
+  `session` option on a shell with mariadb-shell #73, else the global session switched under
+  the lock msm_plugin shares (same `sys.modules` name) and switched back. Never
+  `shell.set_session` around a utility by hand.
 - `run_tests.py -k "a or b"` is quoted with `shlex.quote` now; a pattern that misses the
   sandbox-deploying fixture still works because `init_mrs` is session-scoped.
 
