@@ -57,7 +57,7 @@
 ## Next steps
 
 1. DONE (2026-10-05, uncommitted in mariadb-shell `wip/docs-ref`): MSM reference docs, 7 pages in `docs-ref/content/mariadb-shell/schema-management/`, documenting issues 3, 4, 7, 8 and 14 as they behave today. Update them when those are fixed.
-2. Issue 1: mark section 250 of the update template as not deployed (or remove it) and fix the ai-plugins `-release`/overview skills to say changed views/routines go in the dev file's 150 and removals in 240; then get the `wip/msm_mrs_fixes` PR (issue-2 msm and issue-12 mrs fixes) reviewed and merged.
+2. Issue 1: mark section 250 of the update template as not deployed (or remove it) and fix the ai-plugins `-release`/overview skills to say changed views/routines go in the dev file's 150 and removals in 240. (The `wip/msm_mrs_fixes` PR with the issue-2 and issue-12 fixes merged as #36.)
 3. Fix issue 3 (invert the condition) and add a test; fix 5, 6, 7, 9 (small).
 4. Replace `utf8mb4_0900_ai_ci` with a collation every supported MariaDB has (e.g. `utf8mb4_uca1400_ai_ci` from 10.10, or none), or document the floor.
 5. Issue 14 is fixed for new projects; consider adding `NO_AUTO_CREATE_USER` to the mrs metadata project's dev script at its next release.
@@ -98,4 +98,4 @@ $ git -C msm_plugin status --short
 
 - msm_plugin's open work: `ba426f4d` (deployment backup through `lib.core.run_util`) is on `wip/mcp_dump_load`, **PR #43**, and with it on PR #44. PR #41 (`wip/mrs_schema_improvements`) carries msm_plugin changes of its own (metadata 5.0.0 side).
 - The msm suite passes in the plugins CI (22); those PRs fail CI on the mcp_plugin / mrs_plugin suites only, for want of mariadb-shell #71 / #73 on the runner.
-- Still open: `git push origin --delete wip/msm_mrs_fixes` (merged as #36).
+- `wip/msm_mrs_fixes` (merged as #36) is gone locally and on origin (checked 2026-10-11).

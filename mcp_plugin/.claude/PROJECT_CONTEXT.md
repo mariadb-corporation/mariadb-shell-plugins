@@ -111,8 +111,8 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
 - **mariadb-shell open PRs this depends on:** #71 (MRS module), #73 (util
   session / progressCallback), #74 (`[bypass-ci]` docs for the util tools),
   #75 (a flaky encrypted-load test).
-- Still open from before: deleting `origin/wip/msm_mrs_fixes` (merged as
-  #36). After #41 merges, mrs_plugin's project dump/load should get the
-  same `run_util` as msm (siblings.md).
+- `origin/wip/msm_mrs_fixes` (merged as #36) is gone (checked 2026-10-11).
+  mrs_plugin's project dump/load got msm's `run_util` on #41's branch
+  (2026-10-11, see [`context/siblings.md`](context/siblings.md)).
 - [`context/history.md`](context/history.md) is deliberately NOT updated,
   as by every session since `wip/sandbox-binaries`.

@@ -83,10 +83,12 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
       (`_mariadb_shell_plugins_global_session`), so another plugin can share
       it.
     - `shell.set_session(None)` clears it again without closing anything.
-  - **mrs_plugin has the same pattern** (project dump/load in
-    `lib/services.py`), but it is left alone on this branch: PR #41
-    (`wip/mrs_schema_improvements`) rewrites that code. Apply the same
-    `run_util` there once #41 is merged.
+  - **mrs_plugin had the same pattern** (project dump/load in
+    `lib/services.py`). Fixed 2026-10-11 on PR #41's branch
+    (`wip/mrs_schema_improvements`, which rewrites that code): its own
+    copy of `run_util` in `mrs_plugin/lib/core.py`, the same lock module
+    name, so both plugins share one lock; `tests/unit/lib/test_run_util.py`
+    (the msm tests, 6). mrs suite 174 passed.
   - Tests: `msm_plugin/tests/unit/test_run_util.py` (6, fakes for
     `mysqlsh`). The full msm suite passes (22), its backup restore test
     included.
