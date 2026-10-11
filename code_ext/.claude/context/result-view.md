@@ -224,6 +224,25 @@ run that made them (`run3-result-0`): without it a later run's
 `result-0` would make an old row's jump arrow point at the wrong tab.
 The grid only draws the arrow when the id is still among the open tabs.
 
+## The Actions tab's badge counts what was not seen
+
+(2026-10-11, the user's rule.) The blue count on the Actions tab is the
+number of top-level rows that came in, or changed, while the tab was NOT
+on show (`webview/src/unseenActions.ts`: rows kept by id with the `kind`
+they were seen with, so a run seen pending that then fails counts again;
+progress alone does not). It is never shown while the Actions tab is
+selected - what arrives is in sight - and everything on show there is
+marked seen (an effect in `App`). A run whose result set opens on its own
+tab is seen through it when it worked (`shownByItsResult`: info or
+pending); its warnings and errors still count. Switching to another
+connection starts that log as seen. Seen state is the webview's, so a
+reload of the panel starts afresh.
+
+`showActions` (host -> webview) switches to the Actions tab and scrolls to
+a row: `ResultViewProvider.showActions(connection)` brings the panel up on
+a connection at its newest failed row, after a failure was notified (MRS
+commands and dialogs, a sandbox deploy, a Dump / Load that did not start).
+
 ## Fonts and surfaces
 
 The view is UI, not an editor, so it uses `--vscode-font-family` at

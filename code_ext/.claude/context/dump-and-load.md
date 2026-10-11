@@ -70,3 +70,15 @@ Notes:
   `MYSQLSH_USER_CONFIG_HOME` pointing elsewhere; both had to be removed by
   hand. The plugin's `run_tests.py` isolates the secret store, which a
   one-off run does not.
+
+## A task that does not start (2026-10-11)
+
+When the start call itself fails - no task id to follow - the failure is
+a row of the connection's Actions of its own (`TaskActionLog.startFailed`:
+the task's title, summary "Did not start", the call and the error as the
+row under it), and the panel comes up on it (`IUtilCommandsHost.showActions`
+via the dialog's `onFailed`). A dialog closed meanwhile notifies it too;
+one still open shows it as before. Closing the dialog never stops a task:
+the dialog closes itself once the task runs, and the task runs on in the
+server's thread until it ends or is cancelled.
+

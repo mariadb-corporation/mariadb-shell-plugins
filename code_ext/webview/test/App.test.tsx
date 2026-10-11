@@ -544,8 +544,115 @@ describe("App", () => {
         const tabs = [...host.querySelectorAll(".tab")].map((node) => {
             return node.textContent;
         });
-        // The badge counts runs, which is what the output now holds.
-        expect(tabs).toEqual(["Actions1", "Result #1"]);
+        // No badge: nothing came in behind the result.
+        expect(tabs).toEqual(["Actions", "Result #1"]);
+    });
+
+    describe("the Actions tab's badge", () => {
+        /**
+         * @param id The row's id.
+         * @param kind How it went.
+         *
+         * @returns A top-level row, as an MRS action or a task puts up.
+         */
+        const action = (
+            id: string,
+            kind: "info" | "error" | "pending",
+        ): IActionRow => {
+            return {
+                id, time: "12:00:01.000", connection: "dba@localhost:3310",
+                role: "event", statement: "", message: `Action ${id}`, kind,
+            };
+        };
+
+        /** @returns The badge's text, or undefined where there is none. */
+        const badge = (): string | undefined => {
+            return host.querySelector(".tab .badge")?.textContent
+                ?? undefined;
+        };
+
+        it("counts what came in behind a result tab, until it is looked at",
+            async () => {
+                await mount();
+                await send({ type: "state", state: report() });
+                expect(badge()).toBeUndefined();
+
+                const later = report();
+                later.actions = [action("a1", "error"), action("a2", "info"),
+                    ...later.actions];
+                await send({ type: "state", state: later });
+                expect(badge()).toBe("2");
+
+                await click((label) => { return label.startsWith("Actions"); });
+                expect(badge()).toBeUndefined();
+                await click((label) => { return label === "Result #1"; });
+                expect(badge()).toBeUndefined();
+            });
+
+        it("counts a row again when it changed out of sight", async () => {
+            await mount();
+            const first = report();
+            first.actions = [action("a1", "pending"), ...first.actions];
+            await send({ type: "state", state: first });
+
+            const failed = report();
+            failed.actions = [action("a1", "error"), ...failed.actions];
+            await send({ type: "state", state: failed });
+
+            expect(badge()).toBe("1");
+        });
+
+        it("never shows while the Actions tab is on show", async () => {
+            await mount();
+            const empty = { ...report(), resultSets: [] };
+            await send({ type: "state", state: empty });
+
+            await send({
+                type: "state",
+                state: { ...empty, actions: [action("a1", "error"),
+                    ...empty.actions] },
+            });
+            expect(badge()).toBeUndefined();
+            // Nor once it is left: it was in sight when it came.
+            await send({
+                type: "state",
+                state: { ...report(), actions: [action("a1", "error"),
+                    ...report().actions] },
+            });
+            await click((label) => { return label === "Result #1"; });
+            expect(badge()).toBeUndefined();
+        });
+
+        it("counts a run's failure, not the run its result shows",
+            async () => {
+                await mount();
+                await send({ type: "state", state: report() });
+
+                // A new run, its result set on a new tab: that it worked
+                // is in sight, what failed beside it is not.
+                const next = report();
+                next.actions = [{ ...next.actions[0]!, id: "run2" },
+                    action("a1", "error"), ...next.actions];
+                next.resultSets = [{ ...next.resultSets[0]!,
+                    id: "run2-result-0" }];
+                await send({ type: "state", state: next });
+
+                expect(host.querySelector(".tab.active")?.textContent)
+                    .toBe("Result #1");
+                expect(badge()).toBe("1");
+            });
+
+        it("starts another connection's log as seen", async () => {
+            await mount();
+            await send({ type: "state", state: report() });
+
+            const other = report();
+            other.connection = "app@localhost:3311";
+            other.actions = [action("b1", "error"), ...other.actions];
+            await send({ type: "state", state: other });
+
+            expect(badge()).toBeUndefined();
+        });
     });
 
     it("opens on the result set when the script produced rows", async () => {
@@ -563,8 +670,9 @@ describe("App", () => {
             state: { ...report(), resultSets: [] },
         });
 
+        // On show, so with no badge: what it holds is in sight.
         expect(host.querySelector(".tab.active")?.textContent)
-            .toBe("Actions1");
+            .toBe("Actions");
         // Tabulator renders nothing under jsdom, so only the mount is
         // checkable here; the rows themselves are covered by the
         // ActionsGrid tests.

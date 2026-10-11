@@ -25,8 +25,10 @@ import {
 } from "../../connections/connectionManager.js";
 import type { IToolCaller } from "../../mcp/mariaDbApi.js";
 import type { IToolResult } from "../../mcp/protocol.js";
+import type { IMrsAction } from "../../mrs/mrsActions.js";
 import {
     MRS_TOOL_TIMEOUT_MS,
+    MRS_UPLOAD_TIMEOUT_MS,
     MrsApi,
     MrsToolsApi,
 } from "../../mrs/mrsApi.js";
@@ -157,7 +159,13 @@ const setup = async (
         () => { return Promise.resolve(api); },
         createFakeSettings(),
     );
-    const mrsApi = new MrsApi(async () => { return await connections.api(); });
+    // What goes to the Actions tab, in the order it was reported.
+    const actions: IMrsAction[] = [];
+    const reportAction = (action: IMrsAction): void => {
+        actions.push(action);
+    };
+    const mrsApi = new MrsApi(async () => { return await connections.api(); },
+        reportAction);
     const model = new MrsModel(mrsApi, (uri) => {
         return connections.connectionIdFor(uri, UI_BACKEND_SESSION);
     });
@@ -176,7 +184,7 @@ const setup = async (
                 ?? { content: [] });
         },
     };
-    const tools = new MrsToolsApi(caller);
+    const tools = new MrsToolsApi(caller, reportAction);
     const log = createRecordingLog();
     const state = {
         refreshed: 0,
@@ -198,7 +206,9 @@ const setup = async (
         await connections.connect(uris[0]!, UI_BACKEND_SESSION);
     }
 
-    return { api, connections, disposables, log, model, state, toolCalls };
+    return {
+        actions, api, connections, disposables, log, model, state, toolCalls,
+    };
 };
 
 /** Runs a registered command, as a menu would. */
@@ -1393,7 +1403,7 @@ describe("content sets", () => {
 
     it("uploads a folder as a new content set, then applies the dialog",
         async () => {
-            const { api, toolCalls } = await setup({
+            const { actions, api, toolCalls } = await setup({
                 [SERVICES]: [service],
                 "SHOW REST CONTENT SETS ON SERVICE /myService FORMAT=JSON":
                     [mrsContentSet({ request_path: "/web" })],
@@ -1433,9 +1443,24 @@ describe("content sets", () => {
                     load_scripts: false,
                     replace: true,
                 },
-                timeoutMs: MRS_TOOL_TIMEOUT_MS,
+                timeoutMs: MRS_UPLOAD_TIMEOUT_MS,
             }]);
             expect(api.sent.at(-1)).toMatch(/^ALTER REST CONTENT SET \/web/);
+            // One action, however long the upload takes: a spinner, then
+            // what it came to, with the upload and the settings under it.
+            const reported = actions.slice(-2);
+            expect(reported[0]).toMatchObject({
+                message: "Creating REST Content Set '/web'\u2026",
+                pending: true,
+            });
+            expect(reported[1]).toMatchObject({
+                id: reported[0]!.id,
+                message: "Created REST Content Set '/web'", detail: "2 files",
+            });
+            expect(reported[1]!.statements?.map((step) => {
+                return step.sql.split("(")[0]!.split(" ").slice(0, 4).join(" ");
+            })).toEqual(["mrs.load_content_set", "SHOW REST CONTENT SETS",
+                "ALTER REST CONTENT SET"]);
         });
 
     it("leaves the scripts to the plugin where they are to be loaded",

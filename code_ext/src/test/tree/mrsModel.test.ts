@@ -377,7 +377,7 @@ describe("MrsModel.getChildren", () => {
             await expect(failing.model.getChildren(serviceNode()))
                 .rejects.toThrow("Lost connection");
             expect(failing.actions).toMatchObject([{
-                message: "Listed REST Service '/myService'",
+                message: "Listing REST Service '/myService' failed",
                 error: "Lost connection",
             }]);
         });

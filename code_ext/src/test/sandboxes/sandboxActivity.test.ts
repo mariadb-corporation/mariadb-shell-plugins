@@ -23,6 +23,7 @@ import {
 } from "../../connections/connectionActivity.js";
 import type { ISandboxApi } from "../../mcp/sandboxApi.js";
 import { createLoggingSandboxApi } from "../../sandboxes/sandboxActivity.js";
+import type { IActionRow } from "../../webview/protocol.js";
 
 const api: ISandboxApi = {
     listInstances: () => {
@@ -38,16 +39,20 @@ const api: ISandboxApi = {
     delete: () => { return Promise.reject(new Error("It is running.")); },
 };
 
-const logging = (on = true): {
+const logging = (on = true, wrapped: ISandboxApi = api): {
     logged: ISandboxApi;
     events: IActivityEvent[];
+    rows: Array<[string, IActionRow]>;
 } => {
     const events: IActivityEvent[] = [];
+    const rows: Array<[string, IActionRow]> = [];
 
     return {
-        logged: createLoggingSandboxApi(api, (event) => { events.push(event); },
-            () => { return on; }),
+        logged: createLoggingSandboxApi(wrapped,
+            (event) => { events.push(event); }, () => { return on; },
+            (connection, row) => { rows.push([connection, row]); }),
         events,
+        rows,
     };
 };
 
@@ -78,8 +83,10 @@ describe("createLoggingSandboxApi", () => {
         ]);
     });
 
-    it("never shows the root password", async () => {
-        const { logged, events } = logging();
+    it("puts a deploy up as it starts and replaces it as it ended, "
+        + "never showing the root password", async () => {
+        // Whatever the setting: a deploy is always an action of its own.
+        const { logged, events, rows } = logging(false);
 
         await logged.deploy({
             port: 3310,
@@ -89,10 +96,47 @@ describe("createLoggingSandboxApi", () => {
             mcpAccess: false,
         });
 
-        expect(events[0]?.call).toBe("sandbox.deploy(port=3310, password=***, "
+        const call = "sandbox.deploy(port=3310, password=***, "
             + "server_version=11.8, mariadbd_options=a=1 b=2, "
-            + "mcp_access=false)");
-        expect(JSON.stringify(events)).not.toContain("s3cret");
+            + "mcp_access=false)";
+        expect(rows.map(([connection]) => { return connection; }))
+            .toEqual([GENERAL_ACTIONS, GENERAL_ACTIONS]);
+        expect(rows[0]![1]).toMatchObject({
+            message: "Creating Sandbox on port 3310\u2026", kind: "pending",
+            statement: call,
+        });
+        expect(rows[1]![1]).toMatchObject({
+            id: rows[0]![1].id, message: "Created Sandbox on port 3310",
+            kind: "info", statement: "Sandbox deployed.",
+        });
+        // Not reported a second time as a call.
+        expect(events).toEqual([]);
+        expect(JSON.stringify(rows)).not.toContain("s3cret");
+    });
+
+    it("shows a failed deploy with its error under it", async () => {
+        const { logged, rows } = logging(true, {
+            ...api,
+            deploy: () => {
+                return Promise.reject(new Error("Port 3310 is in use."));
+            },
+        });
+
+        await expect(logged.deploy({ port: 3310, password: "pw" }))
+            .rejects.toThrow("Port 3310 is in use.");
+
+        const failed = rows.at(-1)![1];
+        expect(failed).toMatchObject({
+            role: "run", kind: "error",
+            message: "Creating Sandbox on port 3310 failed",
+            summary: "Finished with 1 error",
+            jumpToRowId: `${failed.id}-error`,
+        });
+        expect(failed.children).toEqual([expect.objectContaining({
+            id: `${failed.id}-error`, kind: "error",
+            message: "Port 3310 is in use.",
+            statement: "sandbox.deploy(port=3310, password=***)",
+        })]);
     });
 
     it("reports a failed call, and lets the failure through", async () => {
@@ -124,7 +168,8 @@ describe("createLoggingSandboxApi", () => {
                     { port: 3310, version: null, status: "stopped" },
                 ]);
             },
-        }, (event) => { events.push(event); }, () => { return true; });
+        }, (event) => { events.push(event); }, () => { return true; },
+        () => { /* no deploy here */ });
 
         await one.listInstances();
 

@@ -457,7 +457,8 @@ describe("MariaDB REST Service", () => {
             await submitDialog(view, "OK", DEPLOY_TIMEOUT,
                 "Uploading the files...");
         });
-        await waitForAction(/Loaded REST Content Set '\/web'.*1 file/,
+        // One action, the upload and the settings its steps.
+        await waitForAction(/^Created REST Content Set '\/web'.*1 file/,
             DEPLOY_TIMEOUT);
         await appears([...SERVICE, "/web", "/index.html"]);
     });

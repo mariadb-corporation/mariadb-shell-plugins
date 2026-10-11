@@ -62,6 +62,14 @@ export interface IUtilCommandsHost {
     /** Checks a dump folder; {@link dumpFolderProblem} where not given. */
     checkDumpFolder?(folder: string | undefined):
         Promise<IUtilProblem | undefined>;
+    /**
+     * Puts up a task that did not start, as a row of its connection's
+     * Actions (see `TaskActionLog.startFailed`).
+     */
+    startFailed?(connection: string, title: string, call: string,
+        error: string): void;
+    /** Brings up the panel on a connection's Actions, at what failed. */
+    showActions?(uri: string): void;
     log(message: string): void;
 }
 
@@ -391,12 +399,24 @@ export class UtilCommands {
                     } }
                     : {}),
                 start: async (options, paths, target) => {
-                    const id = await this.host.connect(start.uri);
-                    const targetId = target === undefined ? undefined
-                        : await this.host.connect(target);
-                    const api = await this.host.utilApi();
-                    const started = await start.run(api, id, options, paths,
-                        targetId);
+                    const call = utilCall(start.operation, start,
+                        target === undefined ? paths
+                            : [connectionLabel(target)], options);
+                    let started;
+                    try {
+                        const id = await this.host.connect(start.uri);
+                        const targetId = target === undefined ? undefined
+                            : await this.host.connect(target);
+                        const api = await this.host.utilApi();
+                        started = await start.run(api, id, options, paths,
+                            targetId);
+                    } catch (error) {
+                        // No task to follow, so its row says so itself -
+                        // also where the dialog was closed meanwhile.
+                        this.host.startFailed?.(start.uri, spec.title, call,
+                            errorText(error));
+                        throw error;
+                    }
                     this.host.log(`Started ${spec.title}.`);
 
                     // Followed from here on, not awaited: the dialog closes
@@ -404,9 +424,7 @@ export class UtilCommands {
                     void this.host.monitor.follow(started, {
                         title: spec.title,
                         connection: start.uri,
-                        call: utilCall(start.operation, start,
-                            target === undefined ? paths
-                                : [connectionLabel(target)], options),
+                        call,
                         ...(start.resume === undefined ? {}
                             : { resume: start.resume(options, paths) }),
                         onDone: (state) => {
@@ -415,6 +433,9 @@ export class UtilCommands {
                             }
                         },
                     });
+                },
+                onFailed: () => {
+                    this.host.showActions?.(start.uri);
                 },
             });
         })();

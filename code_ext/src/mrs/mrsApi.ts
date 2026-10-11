@@ -26,10 +26,12 @@ import {
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import type { IMariaDbApi, IStatementResult } from "../mcp/types.js";
+import { callArguments } from "../connections/connectionActivity.js";
 import { counted, errorText } from "../text.js";
 import {
     describeRestSql,
     describeStatement,
+    failedWords,
     type IMrsAction,
     type IMrsStatement,
     type IMrsWords,
@@ -157,6 +159,13 @@ const statementsOf = (
 /** What `listObjects` merges: every list statement of REST objects. */
 const OBJECT_LISTS = ["VIEWS", "PROCEDURES", "FUNCTIONS", "SCRIPTS"] as const;
 
+/**
+ * The action the calls being made belong to: their statements. Shared by
+ * {@link MrsApi} and {@link MrsToolsApi}, so a tool called inside a group
+ * is a step of the group's action rather than an action of its own.
+ */
+const currentAction = new AsyncLocalStorage<IMrsStatement[]>();
+
 /** REST SQL against one server, as typed calls. */
 export class MrsApi {
     /**
@@ -173,9 +182,6 @@ export class MrsApi {
         private readonly report?: (action: IMrsAction) => void,
         private readonly verbose: () => boolean = () => { return false; },
     ) { }
-
-    /** The action the calls being made belong to: their statements. */
-    readonly #action = new AsyncLocalStorage<IMrsStatement[]>();
 
     /** Makes the actions' ids unique. */
     #actions = 0;
@@ -202,7 +208,7 @@ export class MrsApi {
         detail?: (value: T) => string | undefined,
         onlyFailures = false,
     ): Promise<T> {
-        if (this.#action.getStore() !== undefined) {
+        if (currentAction.getStore() !== undefined) {
             return await work();
         }
 
@@ -240,7 +246,7 @@ export class MrsApi {
                 ? [await api.executeSql(scope.connectionId, all[0])]
                 : await api.executeScript(scope.connectionId,
                     all.join("\n"), true);
-            this.#action.getStore()?.push(...statementsOf(all, results,
+            currentAction.getStore()?.push(...statementsOf(all, results,
                 Date.now() - startedMs));
             const failed = results.find((result) => {
                 return result.error !== undefined;
@@ -257,7 +263,7 @@ export class MrsApi {
         // choices - is not something the user did, and is reported only
         // where it failed, or every call is logged.
         const said = describeRestSql(all);
-        const results = this.#action.getStore() !== undefined
+        const results = currentAction.getStore() !== undefined
             ? await run()
             : await this.#act(scope.connectionId, said, run, undefined,
                 said.done.startsWith("Read "));
@@ -303,7 +309,7 @@ export class MrsApi {
         }
 
         try {
-            const value = await this.#action.run(statements, work);
+            const value = await currentAction.run(statements, work);
             if (shown) {
                 const said2 = detail?.(value);
                 this.report?.({
@@ -314,8 +320,8 @@ export class MrsApi {
 
             return value;
         } catch (error) {
-            this.report?.({ id, connectionId, message: said.done, when,
-                error: errorText(error), ...ended() });
+            this.report?.({ id, connectionId, message: failedWords(said),
+                when, error: errorText(error), ...ended() });
             throw error;
         }
     }
@@ -529,6 +535,14 @@ export class MrsApi {
 /** How long an SDK or dump call may take: they write many files. */
 export const MRS_TOOL_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * How long a content set upload may take: as good as forever, the longest
+ * a timer waits (about 24 days). A large folder takes what it takes, and
+ * giving up would not stop the server, which finishes the upload anyway -
+ * the extension would only report a failure and skip the set's settings.
+ */
+export const MRS_UPLOAD_TIMEOUT_MS = 2 ** 31 - 1;
+
 /** What `mrs.dump_service_project` writes. */
 export interface IServiceProjectOptions {
     destination: string;
@@ -691,7 +705,7 @@ export class MrsToolsApi {
         words(`Loading REST Content Set '${contentSetPath}' from ${directory}`,
             `Loaded REST Content Set '${contentSetPath}' from ${directory}`),
         (upload) => { return counted(upload.files.length, "file"); },
-        MRS_TOOL_TIMEOUT_MS);
+        MRS_UPLOAD_TIMEOUT_MS);
     }
 
     public async folderScriptLanguage(
@@ -752,6 +766,37 @@ export class MrsToolsApi {
         timeout?: number,
     ): Promise<T> {
         const when = new Date();
+        const call = (): Promise<T> => {
+            return this.caller.callTool(name, {
+                ...(connectionId === undefined
+                    ? {} : { connection_id: connectionId }),
+                ...args,
+            }, timeout).then((result) => { return decode(name, result); });
+        };
+
+        // Inside a group the call is one of its steps: a row under the
+        // group's action, beside the REST SQL around it.
+        const group = currentAction.getStore();
+        if (group !== undefined) {
+            const sql = `${name}(${callArguments(args)})`;
+            try {
+                const value = await call();
+                const came = detail?.(value);
+                group.push({
+                    sql, elapsedMs: Date.now() - when.getTime(),
+                    message: came === undefined
+                        ? said.done : `${said.done}: ${came}`,
+                });
+
+                return value;
+            } catch (error) {
+                const text = errorText(error);
+                group.push({ sql, message: text, error: text,
+                    elapsedMs: Date.now() - when.getTime() });
+                throw error;
+            }
+        }
+
         this.#calls += 1;
         const action = {
             id: `mrs-tool-${String(this.#calls)}`,
@@ -761,11 +806,7 @@ export class MrsToolsApi {
         this.report?.({ ...action, message: said.doing, pending: true,
             elapsedMs: 0 });
         try {
-            const value = decode(name, await this.caller.callTool(name, {
-                ...(connectionId === undefined
-                    ? {} : { connection_id: connectionId }),
-                ...args,
-            }, timeout));
+            const value = await call();
             this.report?.({
                 ...action, message: said.done,
                 elapsedMs: Date.now() - when.getTime(),
@@ -775,7 +816,7 @@ export class MrsToolsApi {
             return value;
         } catch (error) {
             this.report?.({
-                ...action, message: said.done, error: errorText(error),
+                ...action, message: failedWords(said), error: errorText(error),
                 elapsedMs: Date.now() - when.getTime(),
             });
             throw error;

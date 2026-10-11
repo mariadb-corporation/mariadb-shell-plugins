@@ -42,7 +42,17 @@ MCP plugin's own `context/sandbox.md`.
   so the dialog lists it once per extension session. `refresh()` redraws
   from what is kept; only `reload()` re-reads. Known cost: a sandbox an
   agent deploys shows at the next Refresh.
-- **Every `sandbox.*` call is a General Action** when
+- **A deploy is always an action row of its own** (2026-10-11, the user's
+  request), under General Actions - the sandbox has no connection open
+  yet - whatever `logAllCalls` says: `createLoggingSandboxApi`'s `put`
+  shows "Creating Sandbox on port 3310…" with the spinner, replaced by
+  "Created Sandbox on port 3310" with the server's message, or "Creating
+  Sandbox on port 3310 failed" with the call and the full error as the row
+  under it (`sandboxDeployRow`). It is not also reported as a call. Success
+  is no notification any more; a failure shows in the dialog, or as a
+  notification once it was closed, and the panel comes up on General
+  Actions (`onFailed`). Closing the dialog does not stop the deploy.
+- **Every other `sandbox.*` call is a General Action** when
   `mariadb.actions.logAllCalls` is on: `createLoggingSandboxApi` wraps the
   API in `extension.ts`'s `sandboxApi()`, using the same
   `createGeneralWatcher` the `db.*` wrapper does (extracted from
@@ -163,12 +173,9 @@ MCP plugin's own `context/sandbox.md`.
 - `sandbox.list_instances` and `mcp_access` first shipped in shell
   26.10.0's bundled `mcp_plugin`; `MINIMUM_SHELL_VERSION` (26.10.1) covers
   them (checked 2026-10-11 by unpacking both releases).
-- **A deploy is not an action row of its own** (checked 2026-10-11): it
-  shows in the Actions tab only with `mariadb.actions.logAllCalls`, then as
-  one General Actions event once it ended (no spinner row, the error as the
-  row's message, no child). Closing the dialog does not stop it; success
-  is a notification. `sandbox.deploy` runs synchronously in the server's
-  event loop, so a client timeout (30 min) cannot stop it there either.
+- `sandbox.deploy` runs synchronously in the server's event loop, so a
+  client timeout (30 min) cannot stop it there: the extension would report
+  a failure while the deploy completes.
 - **Stop on Windows sends no password.** The shell uses the root password to
   request a shutdown there; the extension cannot read the stored one back,
   so a Windows stop relies on the shell's fallback. Not tried on Windows.

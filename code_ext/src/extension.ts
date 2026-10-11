@@ -76,6 +76,7 @@ import {
 import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
 import { withDefaultScheme } from "./connections/connectionUri.js";
 import type { ISandboxApi } from "./mcp/sandboxApi.js";
+import { GENERAL_ACTIONS } from "./connections/connectionActivity.js";
 import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
 import { SandboxStore } from "./sandboxes/sandboxStore.js";
 import { SandboxEditorPanel } from "./sandboxes/sandboxEditorPanel.js";
@@ -339,6 +340,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     plain,
                     (event) => { void resultView.appendEvent(event); },
                     () => { return settings.logAllCalls?.() ?? false; },
+                    (connection, row) => {
+                        void resultView.putAction(connection, row);
+                    },
                 ),
             };
         }
@@ -486,6 +490,10 @@ export const activate = (context: vscode.ExtensionContext): void => {
             return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
                 ?? os.homedir();
         },
+        startFailed: (connection, title, call, error) => {
+            taskActions.startFailed(connection, title, call, error);
+        },
+        showActions: (uri) => { void resultView.showActions(uri); },
         log,
     });
     context.subscriptions.push(taskOutput, taskMonitor, tasksTree, tasksView,
@@ -870,12 +878,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         work,
                     ));
                 },
-                onCreated: (message) => {
+                onCreated: () => {
                     // The store has dropped its list, so this reads it.
+                    // What was done is the deploy's row in the Actions tab.
                     sandboxes.refresh();
                     connectionsChanged();
-                    void vscode.window.showInformationMessage(
-                        `MariaDB: ${message}`);
+                },
+                onFailed: () => {
+                    void resultView.showActions(GENERAL_ACTIONS);
                 },
                 log,
             });

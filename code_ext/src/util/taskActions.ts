@@ -218,6 +218,39 @@ export class TaskActionLog {
         private readonly now: () => Date = () => { return new Date(); },
     ) { }
 
+    /** Makes the ids of starts that failed unique. */
+    #failedStarts = 0;
+
+    /**
+     * Puts up a task that never started - the call itself was refused, so
+     * there is no task to follow - as a failed task's row, its error the
+     * row under it.
+     *
+     * @param connection The connection it was to run on.
+     * @param title The task's title, "Dump shop to Disk".
+     * @param call The call, as the task's row would show it.
+     * @param error Why it did not start.
+     */
+    public startFailed(
+        connection: string,
+        title: string,
+        call: string,
+        error: string,
+    ): void {
+        this.#failedStarts += 1;
+        const id = `task-start-${String(this.#failedStarts)}`;
+        const time = formatTime(this.now());
+        const errorRow: IActionRow = {
+            id: `${id}-error`, time, connection, connectionLabel: this.label,
+            role: "statement", statement: call, message: error, kind: "error",
+        };
+        this.put(connection, {
+            id, time, connection, connectionLabel: this.label, role: "run",
+            statement: "", message: title, summary: "Did not start",
+            kind: "error", jumpToRowId: errorRow.id, children: [errorRow],
+        });
+    }
+
     /**
      * Takes in a look at a task.
      *

@@ -22,6 +22,7 @@ import {
     type ConnectionManager,
 } from "../connections/connectionManager.js";
 import { reportError } from "../errorMessages.js";
+import { counted } from "../text.js";
 import type { IConnectionNode, IObjectNode, ISchemaNode } from "../tree/connectionsModel.js";
 import type {
     IMrsAuthAppGroupNode,
@@ -88,6 +89,7 @@ import {
     type IUserContext,
     type IUserDialogValues,
 } from "./mrsDialogs.js";
+import { words } from "./mrsActions.js";
 import { MrsDialogPanel, type IMrsDialogSpec } from "./mrsDialogPanel.js";
 import type {
     IMrsDataMappingField,
@@ -1155,22 +1157,34 @@ export class MrsCommands {
                     return;
                 }
 
-                if (scope.metadataSchema !== undefined) {
-                    await this.host.api.run(scope, []);
-                }
-                await tools.loadContentSet(scope.connectionId,
-                    values.directory, values.requestPath.trim(),
-                    values.servicePath, values.ignoreList,
-                    values.loadScripts ? undefined : false);
-                // The upload makes the set as the plugin does; its settings
-                // are this dialog's, applied once it exists.
-                const created = (await this.host.api.contentSets(scope,
-                    values.servicePath)).find((candidate) => {
-                    return candidate.request_path === values.requestPath.trim();
-                });
-                await this.host.api.run(scope, contentSetStatements(values,
-                    { ...context, existingPath: values.requestPath.trim() },
-                    created));
+                // One action in the Actions tab, however long the upload
+                // takes: the upload and the settings are its steps.
+                const path = values.requestPath.trim();
+                await this.host.api.group(scope.connectionId,
+                    words(`Creating REST Content Set '${path}'`,
+                        `Created REST Content Set '${path}'`),
+                    async () => {
+                        if (scope.metadataSchema !== undefined) {
+                            await this.host.api.run(scope, []);
+                        }
+                        const upload = await tools.loadContentSet(
+                            scope.connectionId, values.directory, path,
+                            values.servicePath, values.ignoreList,
+                            values.loadScripts ? undefined : false);
+                        // The upload makes the set as the plugin does; its
+                        // settings are this dialog's, applied once it
+                        // exists.
+                        const created = (await this.host.api.contentSets(
+                            scope, values.servicePath)).find((candidate) => {
+                            return candidate.request_path === path;
+                        });
+                        await this.host.api.run(scope, contentSetStatements(
+                            values, { ...context, existingPath: path },
+                            created));
+
+                        return upload;
+                    },
+                    (upload) => { return counted(upload.files.length, "file"); });
             },
             analyzeFolder: async (folder, ignoreList) => {
                 const language = await tools.folderScriptLanguage(folder,

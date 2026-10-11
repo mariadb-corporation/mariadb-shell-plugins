@@ -38,6 +38,7 @@ import {
     sleep,
     treeItem,
     waitFor,
+    waitForAction,
 } from "../lib/ui";
 
 /**
@@ -80,6 +81,12 @@ describe("A sandbox to test with", () => {
                 + "not have is downloaded first, which can take a few "
                 + "minutes.");
         });
+
+        // Its own row of the Actions tab, under General Actions - what
+        // the panel shows until a connection reports something.
+        await waitForAction(
+            new RegExp(`^Created Sandbox on port ${String(SANDBOX_PORT)}`),
+            DEPLOY_TIMEOUT);
 
         const sandboxes = await openSection("Sandboxes");
         const row = await treeItem(sandboxes, [SANDBOX_ROW]);

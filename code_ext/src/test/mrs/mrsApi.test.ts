@@ -21,6 +21,7 @@ import type { IToolCaller } from "../../mcp/mariaDbApi.js";
 import { McpToolError, type IToolResult } from "../../mcp/protocol.js";
 import {
     MRS_TOOL_TIMEOUT_MS,
+    MRS_UPLOAD_TIMEOUT_MS,
     MrsApi,
     MrsError,
     MrsToolsApi,
@@ -558,7 +559,8 @@ describe("MrsToolsApi", () => {
                 ignore_list: "*.git",
                 replace: true,
             },
-            timeoutMs: MRS_TOOL_TIMEOUT_MS,
+            // A large folder takes what it takes.
+            timeoutMs: MRS_UPLOAD_TIMEOUT_MS,
         });
         expect(calls[1]!.args).toMatchObject({ load_scripts: false });
     });
@@ -699,7 +701,7 @@ describe("reporting what MRS does, for the Actions tab", () => {
 
         expect(actions).toHaveLength(1);
         expect(actions[0]).toMatchObject({
-            message: "Read REST Roles", error: "No access",
+            message: "Reading REST Roles failed", error: "No access",
         });
     });
 
@@ -737,7 +739,8 @@ describe("reporting what MRS does, for the Actions tab", () => {
                 })).rejects.toThrow("Lost connection");
 
             expect(actions.at(-1)).toMatchObject({
-                message: "Listed REST Services", error: "Lost connection",
+                message: "Listing REST Services failed",
+                error: "Lost connection",
             });
         });
 
@@ -817,7 +820,8 @@ describe("reporting what MRS does, for the Actions tab", () => {
                 .rejects.toThrow("No such folder");
 
             expect(actions.at(-1)).toMatchObject({
-                message: "Loaded the REST Project /nope",
+                // Not "Loaded ...": it did not.
+                message: "Loading the REST Project /nope failed",
                 error: "No such folder",
             });
         });

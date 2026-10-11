@@ -81,6 +81,17 @@ export const words = (doing: string, done: string): IMrsWords => {
     return { doing: `${doing}\u2026`, done };
 };
 
+/**
+ * @param said What an action is called.
+ *
+ * @returns What it is called once it failed: "Creating REST Service
+ *          '/myService' failed", which a done form ("Created ...") beside
+ *          an error would contradict.
+ */
+export const failedWords = (said: IMrsWords): string => {
+    return `${said.doing.replace(/\u2026$/u, "")} failed`;
+};
+
 /** What each verb of REST SQL does, while running and once done. */
 const VERBS: Record<string, [string, string]> = {
     "CREATE": ["Creating", "Created"],

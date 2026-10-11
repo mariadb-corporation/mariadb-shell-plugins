@@ -208,10 +208,15 @@ far too verbose:
   the panel comes up on that connection's actions, and a `showActions`
   message switches the webview to the Actions tab and scrolls to the newest
   failed row (`jumpToRowId`, else the row).
-- **Long operations (checked 2026-10-11):** closing a dialog tab cancels
-  nothing; `#save` runs on, a later failure is notified. A content set
-  upload is several top-level rows (the `mrs.load_content_set` call, then
-  the settings' REST SQL), not one group. `MRS_TOOL_TIMEOUT_MS` (10 min)
-  ends the CLIENT's wait: the server's thread finishes the upload, the
-  extension reports a timeout and skips the settings statements. A
-  connection closed mid-run drops the final report, leaving the spinner.
+- **Long operations (2026-10-11):** closing a dialog tab cancels
+  nothing; `#save` runs on, a later failure is notified and shown. A new
+  content set is ONE action, "Creating REST Content Set '/web'…" ->
+  "Created REST Content Set '/web'" with "N files", the `mrs.load_content_set`
+  call and the settings' REST SQL its steps: `MrsApi.group`, and a tool
+  called inside a group pushes a step instead of reporting itself (the
+  group's `AsyncLocalStorage`, `currentAction`, is shared by `MrsApi` and
+  `MrsToolsApi`). The upload's timeout is `MRS_UPLOAD_TIMEOUT_MS` (2^31-1
+  ms, as good as none): the server finishes an upload anyway, and giving
+  up only skipped the set's settings. A failed action says "Creating ...
+  failed" (`failedWords`), not its done form. Still: a connection closed
+  mid-run drops the final report, leaving the spinner.

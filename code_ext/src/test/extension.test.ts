@@ -1191,9 +1191,8 @@ describe("activate", () => {
                 return call.name === "sandbox.list_instances";
             }).map((call) => { return call.args; }))
                 .toEqual([{ port: 3399 }]);
-            expect(informationMessages).toEqual([
-                "MariaDB: sandbox.deploy on port 3399",
-            ]);
+            // Said by the deploy's row in the Actions tab instead.
+            expect(informationMessages).toEqual([]);
         });
 
         it("suggests 3311 when a connection is on localhost:3310", async () => {
