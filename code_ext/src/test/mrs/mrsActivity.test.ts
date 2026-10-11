@@ -17,7 +17,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { describeRestSql, type IMrsAction } from "../../mrs/mrsActions.js";
+import {
+    describeRestSql,
+    describeStatement,
+    type IMrsAction,
+} from "../../mrs/mrsActions.js";
 import { reportMrsAction } from "../../mrs/mrsActivity.js";
 import type { IActionRow } from "../../webview/protocol.js";
 
@@ -39,6 +43,18 @@ const recording = (logAllCalls = false) => {
 };
 
 describe("MRS actions in words", () => {
+    it("says what a single statement does, for the rows under an action",
+        () => {
+            expect(describeStatement("USE REST METADATA SCHEMA `m`;")?.done)
+                .toBe("Switched to REST Metadata Schema 'm'");
+            expect(describeStatement("USE REST SERVICE /a;")?.done)
+                .toBe("Switched to REST Service '/a'");
+            expect(describeStatement("SELECT 1")).toBeUndefined();
+            expect(describeStatement("GRANT REST ROLE 'Full Access' ON ANY "
+                + "SERVICE TO 'anna'@'UiApp';")?.done)
+                .toBe("Granted REST Role 'Full Access'");
+        });
+
     it("says what is being done while it runs", () => {
         expect(describeRestSql(["DROP REST USER 'u'@'MRS'"]).doing)
             .toBe("Deleting REST User 'u'@'MRS'\u2026");
@@ -144,6 +160,22 @@ describe("MRS in the Actions tab", () => {
                 ["CREATE REST SERVICE /a;", "Query OK, 1 row affected", 3],
             ]);
         });
+
+    it("shows a single statement beside the action, not under it", () => {
+        const { target, rows } = recording();
+
+        reportMrsAction(target, action({ statements: [
+            { sql: "CREATE REST SERVICE /a;",
+                message: "Created REST Service '/a'", elapsedMs: 3 },
+        ] }));
+
+        expect(rows).toEqual([{
+            id: "mrs-sql-1", time: "12:00:00.000", connection: URI,
+            connectionLabel: "UI Backend", role: "event", kind: "info",
+            statement: "CREATE REST SERVICE /a;", elapsedMs: 9,
+            message: "Created REST Service '/a'",
+        }]);
+    });
 
     it("points a failure at the statement that failed, where they are "
         + "logged", () => {

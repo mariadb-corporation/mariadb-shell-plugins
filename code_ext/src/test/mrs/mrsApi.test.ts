@@ -642,9 +642,30 @@ describe("reporting what MRS does, for the Actions tab", () => {
             });
             expect(actions[1]).not.toHaveProperty("pending");
             expect(actions[1]).not.toHaveProperty("error");
-            // the statements only where every call is logged
-            expect(actions[1]).not.toHaveProperty("statements");
+            // the REST SQL it ran, each saying what it does
+            expect(actions[1].statements).toMatchObject([{
+                sql: USE,
+                message: "Switched to REST Metadata Schema "
+                    + "'dev_mariadb_rest_service'",
+            }, {
+                sql: "CREATE REST SERVICE /myService/v1;",
+                message: "Created REST Service '/myService/v1'",
+            }]);
         });
+
+    it("says which statements a failed script did not run", async () => {
+        const { api, actions } = reporting(createFakeRestSql({
+            errors: { "DROP REST SERVICE /a": "No such service" },
+        }));
+
+        await expect(api.run(scope, ["DROP REST SERVICE /a",
+            "DROP REST SERVICE /b"])).rejects.toThrow("No such service");
+
+        expect(actions[1].statements?.map((statement) => {
+            return statement.message;
+        })).toEqual(["No such service",
+            "Deleted REST Service '/b' - not run, after the error"]);
+    });
 
     it("says so for every kind of change", async () => {
         const { api, actions } = reporting(createFakeRestSql());
@@ -720,7 +741,7 @@ describe("reporting what MRS does, for the Actions tab", () => {
             });
         });
 
-    it("shows browsing, and each statement, where every call is logged",
+    it("shows browsing too, where every call is logged",
         async () => {
             const { api, actions } = reporting(createFakeRestSql({
                 answers: { "SHOW REST SERVICES FORMAT=JSON": [mrsService()] },
@@ -742,7 +763,7 @@ describe("reporting what MRS does, for the Actions tab", () => {
             })).toEqual([USE, "SHOW REST SERVICES FORMAT=JSON;"]);
             expect(actions[3].statements).toMatchObject([{
                 sql: "CREATE REST SERVICE /b;",
-                message: "Query OK, 0 rows affected",
+                message: "Created REST Service '/b'",
             }]);
         });
 

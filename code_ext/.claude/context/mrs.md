@@ -169,18 +169,26 @@ far too verbose:
 - Not shown unless they fail: a read on its own (a dialog filling its
   choices) and the tree's listings (`onlyFailures`) - they drowned the
   real actions.
+- Every action carries the REST SQL it ran (`IMrsStatement`: the
+  statement on one line, a caption saying what it does from
+  `describeStatement()` - "Switched to REST Metadata Schema 'm'",
+  "Granted REST Role 'Full Access'" - or its error, or "... - not run,
+  after the error", and its time). ONE statement is shown beside the
+  action, in the Information column, with no row under it; SEVERAL are the
+  rows under it, caption in the message column and the statement beside
+  it, so the REST SQL can be learned by reading. Success shows as for SQL:
+  no error marker and no error row (the user's rule, 2026-10-11).
 - **Verbose** (`mariadb.actions.logAllCalls`, read on every call as
-  `MrsApi`'s `verbose`): the listings and reads are shown too, and every
-  action carries its REST SQL (`IMrsStatement`: one line, what it came to,
-  its error, its time), which become the rows under it.
+  `MrsApi`'s `verbose`): the listings and standalone reads are shown too.
 - `src/mrs/mrsActivity.ts` `mrsActionRow()`: pending - an event row with
-  the spinner; done - an event row (detail in the Information column), or
-  a run row with a child per statement in verbose; failed - a run row with
-  the done message, "Finished with 1 error", and the error as its child
-  (the failed statement itself in verbose), pointed at by `jumpToRowId`, as
-  a failed SQL script shows. Work on no connection goes under General
-  Actions, with `logAllCalls` only.
-- UI tests in `02-mrs`: "Created REST Service '/uitest'", "Configured REST
-  Metadata", no "Listed REST" row by default, the SDK dump, and with the
-  setting switched on in the Settings editor the listings with their REST
-  SQL under them.
+  the spinner; done - an event row with the one statement (or the detail)
+  in the Information column, or a run row with a child per statement;
+  failed - a run row with the done message, "Finished with 1 error", and
+  the failed statement (or a row of its own) as its child, pointed at by
+  `jumpToRowId`, as a failed SQL script shows. Work on no connection goes
+  under General Actions, with `logAllCalls` only.
+- UI tests in `02-mrs`: "Created REST Service '/uitest'" with its
+  captioned statements under it, "Deleted REST Service '/uitest'" with
+  its one statement beside it, "Configured REST Metadata", no "Listed REST"
+  row by default, the SDK dump, and with the setting switched on in the
+  Settings editor the listings with their REST SQL under them.

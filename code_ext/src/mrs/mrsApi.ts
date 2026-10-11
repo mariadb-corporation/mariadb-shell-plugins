@@ -27,9 +27,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import type { IMariaDbApi, IStatementResult } from "../mcp/types.js";
 import { counted, errorText } from "../text.js";
-import { describeResult } from "../sql/executionService.js";
 import {
     describeRestSql,
+    describeStatement,
     type IMrsAction,
     type IMrsStatement,
     type IMrsWords,
@@ -128,7 +128,7 @@ const parseCell = <T>(value: unknown): T => {
  * @param results What came back, one per statement that ran.
  * @param elapsedMs How long the call took, where the server did not say.
  *
- * @returns Each statement as the verbose log shows it.
+ * @returns Each statement as the row under its action shows it.
  */
 const statementsOf = (
     statements: string[],
@@ -138,8 +138,10 @@ const statementsOf = (
     return statements.map((statement, index): IMrsStatement => {
         const result = results[index];
         const sql = statement.replace(/\s+/gu, " ").trim();
+        // What it does, so the statement beside it can be learned from.
+        const caption = describeStatement(sql)?.done ?? "Ran a REST statement";
         if (result === undefined) {
-            return { sql, message: "Not run" };
+            return { sql, message: `${caption} - not run, after the error` };
         }
         const took = result.execution_time === undefined
             ? (statements.length === 1 ? elapsedMs : undefined)
@@ -147,7 +149,7 @@ const statementsOf = (
         const timed = took === undefined ? {} : { elapsedMs: took };
 
         return result.error === undefined
-            ? { sql, message: describeResult(result), ...timed }
+            ? { sql, message: caption, ...timed }
             : { sql, message: result.error, error: result.error, ...timed };
     });
 };
@@ -163,8 +165,8 @@ export class MrsApi {
      * @param report Where what is done is reported, for the Actions tab:
      *               each call, or each {@link group} of calls, once as it
      *               starts and once as it ended.
-     * @param verbose Whether every call is logged: the listings and reads,
-     *                and each REST SQL statement of an action.
+     * @param verbose Whether every call is logged: the listings and reads
+     *                too, not only what changes something.
      */
     public constructor(
         private readonly api: () => Promise<IMariaDbApi>,
@@ -265,8 +267,8 @@ export class MrsApi {
 
     /**
      * Does one action, reporting it as it starts and as it ended: what is
-     * being done, then what was done or why it failed, and, where every
-     * call is logged, the REST SQL it ran.
+     * being done, then what was done or why it failed, with the REST SQL
+     * it ran.
      *
      * @param connectionId The connection it is done on.
      * @param said What it is called.
@@ -284,8 +286,7 @@ export class MrsApi {
         detail: ((value: T) => string | undefined) | undefined,
         onlyFailures: boolean,
     ): Promise<T> {
-        const verbose = this.verbose();
-        const shown = !onlyFailures || verbose;
+        const shown = !onlyFailures || this.verbose();
         this.#actions += 1;
         const id = `mrs-sql-${String(this.#actions)}`;
         const when = new Date();
@@ -293,7 +294,7 @@ export class MrsApi {
         const ended = (): Pick<IMrsAction, "elapsedMs" | "statements"> => {
             return {
                 elapsedMs: Date.now() - when.getTime(),
-                ...(verbose ? { statements } : {}),
+                ...(statements.length > 0 ? { statements } : {}),
             };
         };
         if (shown) {

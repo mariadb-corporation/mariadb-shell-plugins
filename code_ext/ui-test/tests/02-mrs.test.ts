@@ -206,6 +206,9 @@ describe("MariaDB REST Service", () => {
         // In the connection's Actions, in plain words: what was done, and
         // not the tree reading it back.
         await waitForAction(/Created REST Service '\/uitest'/);
+        // Its REST SQL under it, each statement saying what it does.
+        await waitForAction(
+            /^Created REST Service '\/uitest' \|.*\| CREATE REST SERVICE \/uitest/u);
         await waitForAction(/Configured REST Metadata/);
         assert.equal((await inResults(actionRows)).filter((row) => {
             return row.startsWith("Listed REST");
@@ -225,7 +228,7 @@ describe("MariaDB REST Service", () => {
             // The listing is a row now, with its REST SQL under it.
             await waitForAction(/Listed REST Service '\/uitest'.*3 statements/);
             // The newest one is open: its statement shows.
-            await waitForAction(/row in set.*SHOW REST /);
+            await waitForAction(/Read REST .*SHOW REST /);
             await screenshot("02-verbose");
         } finally {
             await setLogAllCalls(false);
@@ -611,6 +614,9 @@ describe("MariaDB REST Service", () => {
         await menuConfirm(connections, SERVICE,
             ["Delete REST Service..."], "Delete REST Service");
         await waitGone(connections, SERVICE);
+        // One statement: its REST SQL beside the action, no row under it.
+        await waitForAction(
+            /^Deleted REST Service '\/uitest' \|.*\| DROP REST SERVICE \/uitest/u);
         assert.deepEqual(await childLabels(connections, ROOT),
             ["REST Daemons", "REST Authentication Apps"]);
         await screenshot("02-all-deleted");

@@ -36,10 +36,7 @@ export interface IMrsAction {
     message: string;
     /** Whether it is still running. */
     pending?: boolean;
-    /**
-     * The REST SQL it ran, a statement each, where every call is logged
-     * (`mariadb.actions.logAllCalls`).
-     */
+    /** The REST SQL it ran, a statement each. */
     statements?: IMrsStatement[];
     /** What it came to, where that says more: "2 schemas, 1 auth app". */
     detail?: string;
@@ -49,11 +46,18 @@ export interface IMrsAction {
     elapsedMs: number;
 }
 
-/** One REST SQL statement an action ran, for the verbose log. */
+/**
+ * One REST SQL statement an action ran: a row under the action's, saying
+ * what it does beside the statement itself, so the REST SQL can be learned
+ * by reading.
+ */
 export interface IMrsStatement {
     /** The statement, on one line. */
     sql: string;
-    /** What it came to: "Query OK, 1 row affected", "Not run". */
+    /**
+     * What it did, "Created REST Service '/myService'"; why it failed, or
+     * that it was not run.
+     */
     message: string;
     error?: string;
     elapsedMs?: number;
@@ -85,6 +89,7 @@ const VERBS: Record<string, [string, string]> = {
     "DROP": ["Deleting", "Deleted"],
     "SHOW": ["Reading", "Read"],
     "SHOW CREATE": ["Reading the definition of", "Read the definition of"],
+    "USE": ["Switching to", "Switched to"],
     "CONFIGURE": ["Configuring", "Configured"],
     "GRANT": ["Granting", "Granted"],
     "REVOKE": ["Revoking", "Revoked"],
@@ -140,7 +145,21 @@ export const describeRestSql = (statements: string[]): IMrsWords => {
     const main = statements.find((statement) => {
         return !/^\s*USE\s/iu.test(statement);
     }) ?? statements[0] ?? "";
-    const tokens = main.trim().split(/\s+/u);
+
+    return describeStatement(main) ?? UNKNOWN;
+};
+
+/**
+ * Says what one REST SQL statement does.
+ *
+ * @param statement The statement.
+ *
+ * @returns Its words, or undefined where it is not one it knows.
+ */
+export const describeStatement = (
+    statement: string,
+): IMrsWords | undefined => {
+    const tokens = statement.trim().split(/\s+/u);
 
     let at = 0;
     let verb = (tokens[at] ?? "").toUpperCase();
@@ -153,7 +172,7 @@ export const describeRestSql = (statements: string[]): IMrsWords => {
         at += 1;
     }
     if (!/^REST$/iu.test(tokens[at] ?? "")) {
-        return UNKNOWN;
+        return undefined;
     }
     at += 1;
 
@@ -163,22 +182,27 @@ export const describeRestSql = (statements: string[]): IMrsWords => {
             || rest.startsWith(`${candidate};`);
     });
     if (object === undefined) {
-        return UNKNOWN;
+        return undefined;
     }
     at += object.split(" ").length;
     if (/^IF$/iu.test(tokens[at] ?? "")) {
         at += 3;
     }
+    // A quoted name can hold spaces: 'Full Access'.
+    const quoted = /^(['"`])(.*?)\1(?:@(['"`])(.*?)\3)?/u.exec(
+        tokens.slice(at).join(" "));
     const token = object === "METADATA" ? undefined : tokens[at];
-    const name = token === undefined
-        || NOT_A_NAME.test(token.split("=")[0].replace(/;$/u, ""))
-        ? "" : ` '${unquote(token)}'`;
+    const name = quoted !== null && object !== "METADATA"
+        ? ` '${quoted[2]}'${quoted[4] === undefined ? "" : `@'${quoted[4]}'`}`
+        : token === undefined
+            || NOT_A_NAME.test(token.split("=")[0].replace(/;$/u, ""))
+            ? "" : ` '${unquote(token)}'`;
     const what = `REST ${titleCase(object
         .replace("METADATA STATUS", "SERVICE STATUS")
         .replace("AUTH", "AUTHENTICATION"))}`;
 
     const verbs = VERBS[verb];
 
-    return verbs === undefined ? UNKNOWN
+    return verbs === undefined ? undefined
         : words(`${verbs[0]} ${what}${name}`, `${verbs[1]} ${what}${name}`);
 };

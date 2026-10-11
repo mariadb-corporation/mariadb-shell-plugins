@@ -28,8 +28,11 @@ import type { IMrsAction } from "./mrsActions.js";
  * What the MariaDB REST Service does, in the Actions of the connection it
  * is done on: a row per action, put up as it starts - "Creating REST
  * Service '/myService'…", with the spinner a running SQL script has - and
- * replaced once it ended, by what was done or why it failed. Where every
- * call is logged, the REST SQL it ran is the rows under it. Work on files
+ * replaced once it ended, by what was done or why it failed. One REST SQL
+ * statement is shown beside it; several are the rows under it, each saying
+ * what it does beside the statement, so the REST SQL can be learned by
+ * reading. Success shows as it does for SQL: no error marker, and no row
+ * with an error under it. Work on files
  * only, made on no connection, goes under General Actions where that log
  * is kept.
  */
@@ -108,8 +111,8 @@ export const mrsActionRow = (
 
     if (action.error !== undefined) {
         // What was being done stays the message, and the error is the row
-        // under it, as a failed SQL script shows it - the failed statement
-        // itself where the statements are logged.
+        // under it, as a failed SQL script shows it: the failed statement,
+        // or a row of its own where no statement failed.
         const failed = children.find((row) => { return row.kind === "error"; });
         const errorRow: IActionRow = failed ?? {
             id: `${action.id}-error`, time, connection,
@@ -126,7 +129,16 @@ export const mrsActionRow = (
         };
     }
 
-    if (children.length > 0) {
+    // One statement is the row's own: its REST SQL where an event names
+    // its call. Rows under it only where there are several.
+    if (children.length === 1) {
+        return {
+            ...base, role: "event", statement: children[0].statement,
+            kind: "info", elapsedMs: action.elapsedMs,
+        };
+    }
+
+    if (children.length > 1) {
         return {
             ...base, role: "run", statement: "",
             summary: action.detail ?? `Finished ${counted(children.length,
