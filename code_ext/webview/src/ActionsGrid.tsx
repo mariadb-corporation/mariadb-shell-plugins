@@ -95,8 +95,9 @@ const COLLAPSE_ELEMENT =
 /**
  * How far each level of the tree is indented under the one above, in
  * pixels. With the element Tabulator puts in front of a child row given
- * no width (styles.css), a level-N row is indented exactly N times this;
- * the indent guides drawn there assume 27.
+ * no width (styles.css), a level-N row is indented exactly N times this.
+ * The host passes it to the stylesheet as `--actionsTreeIndent`, which
+ * places the indent guides.
  */
 const CHILD_INDENT = 27;
 
@@ -428,7 +429,7 @@ export const buildActionColumns = (
                 title: "Conn",
                 field: "connectionLabel",
                 width: 76,
-                    headerSort: false,
+                headerSort: false,
                 cssClass: "actionConnection",
                 headerTooltip:
                     "Which connection open on this URI the row is from",
@@ -649,8 +650,14 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             // the marker, then what happened.
             dataTreeElementColumn: "message",
             dataTreeChildIndent: CHILD_INDENT,
-            // Every cell at the top: a message that wraps keeps its
-            // marker, Time and Information level with its first line.
+            // Every cell at the top (the user's rule, 2026-10-12): a
+            // message that wraps keeps its marker beside its first line,
+            // in the column every marker lines up in, and Time and
+            // Information stay level with that line. Tabulator does it by
+            // making each cell an inline flex box - inline, as a cell is
+            // laid out beside its neighbours - which the message cell
+            // lays out the twistie, marker and text in too; the
+            // stylesheet sets neither.
             columnDefaults: { vertAlign: "top" },
             // Not Tabulator's branch: a fixed little L per row, placed
             // with a negative margin, that knows neither the row's
@@ -802,5 +809,11 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rows, availableKey]);
 
-    return <div class="actionsGridHost" ref={host} />;
+    return (
+        <div
+            class="actionsGridHost"
+            style={`--actionsTreeIndent: ${String(CHILD_INDENT)}px`}
+            ref={host}
+        />
+    );
 };

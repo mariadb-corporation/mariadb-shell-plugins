@@ -55,7 +55,8 @@ import { delimiter, join, resolve } from "node:path";
  * Arguments that name no suite are passed to `extest setup-and-run`;
  * `UI_TEST_GLOB` runs the files it matches as one run instead, without
  * the suites' setup and cleanup. `UI_TEST_SUITE_MINUTES` (default 20)
- * is how long a suite may take before it is stopped.
+ * is how long a suite may take before it is stopped. Ctrl-C, SIGTERM
+ * or SIGHUP stop the suite running and end the run.
  */
 
 const root = resolve(__dirname, "../..");
@@ -67,9 +68,17 @@ const compiled = "out/ui-test/tests";
  * fails to start - its port taken in the moment between being picked
  * and being bound - so without a limit such a run waits forever and the
  * suites after it never start.
+ *
+ * @returns The limit in milliseconds, or undefined when
+ *          `UI_TEST_SUITE_MINUTES` is not a positive number.
  */
-const SUITE_TIMEOUT_MS =
-    Number(process.env.UI_TEST_SUITE_MINUTES ?? "20") * 60_000;
+const suiteTimeoutMs = (): number | undefined => {
+    const minutes = Number(process.env.UI_TEST_SUITE_MINUTES ?? "20");
+
+    return Number.isFinite(minutes) && minutes > 0
+        ? minutes * 60_000
+        : undefined;
+};
 
 /** Deploys the suite's sandbox and creates the schema the tests use. */
 const SETUP = "01-sandbox";
@@ -89,6 +98,52 @@ const SUITES: Record<string, string[]> = {
     "dump-load": [SETUP, "06-dump-load", CLEANUP],
 };
 
+/** The signals that end the run, with the exit code each ends it with. */
+const STOP_SIGNALS = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 } as const;
+
+/** The process group of the suite running now, while one is. */
+let runningGroup: number | undefined;
+
+/** The exit code of the signal that ended the run, once one did. */
+let interruptedWith: number | undefined;
+
+/**
+ * Kills the process group of the suite running now, if there is one.
+ *
+ * @param reason Why, for the log.
+ *
+ * @returns Nothing.
+ */
+const stopRunningGroup = (reason: string): void => {
+    if (runningGroup === undefined) {
+        return;
+    }
+    console.error(`The run was stopped: ${reason}`);
+    try {
+        process.kill(-runningGroup, "SIGKILL");
+    } catch {
+        // Gone already.
+    }
+};
+
+/*
+ * A suite runs in a process group of its own, which neither the terminal's
+ * Ctrl-C nor a closed terminal nor a SIGTERM from a task reaches: each is
+ * passed on to it here, and ends the run - no suite after it starts. The
+ * handlers stay for the whole run, so a second Ctrl-C does not kill the
+ * runner before it has cleaned up. And should the runner exit anyway, the
+ * group goes with it.
+ */
+for (const [signal, code] of Object.entries(STOP_SIGNALS)) {
+    process.on(signal, () => {
+        interruptedWith ??= code;
+        stopRunningGroup(signal);
+    });
+}
+process.on("exit", () => {
+    stopRunningGroup("the runner exited");
+});
+
 /**
  * Runs a command in a process group of its own, stopping the whole group
  * - ExTester, the VS Code and the ChromeDriver it started - when the
@@ -98,40 +153,39 @@ const SUITES: Record<string, string[]> = {
  *
  * @param command The command.
  * @param args Its arguments.
- * @param options Where, and with what environment.
+ * @param options Where, with what environment, and for how long.
  *
- * @returns Its exit code, 1 when it was stopped.
+ * @returns Its exit code, 1 when it was stopped or could not start.
  */
 const runGroup = async (
     command: string,
     args: string[],
-    options: { cwd: string; env: NodeJS.ProcessEnv },
+    options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
 ): Promise<number> => {
+    if (interruptedWith !== undefined) {
+        // Interrupted while the suite was being set up.
+        return interruptedWith;
+    }
+    const { timeoutMs, ...spawnOptions } = options;
     const child = spawn(command, args,
-        { ...options, stdio: "inherit", detached: true });
-    const stop = (reason: string): void => {
-        console.error(`The run was stopped: ${reason}`);
-        try {
-            process.kill(-(child.pid ?? 0), "SIGKILL");
-        } catch {
-            // Gone already.
-        }
-    };
-    // A group of its own does not get the terminal's Ctrl-C.
-    const interrupted = (): void => { stop("interrupted"); };
-    process.once("SIGINT", interrupted);
+        { ...spawnOptions, stdio: "inherit", detached: true });
+    // No pid when it could not start; the error event says why.
+    runningGroup = child.pid;
     const timer = setTimeout(() => {
-        stop(`over ${String(SUITE_TIMEOUT_MS / 60_000)} minutes`);
-    }, SUITE_TIMEOUT_MS);
+        stopRunningGroup(`over ${String(timeoutMs / 60_000)} minutes`);
+    }, timeoutMs);
 
     try {
         return await new Promise<number>((done) => {
-            child.once("error", () => { done(1); });
+            child.once("error", (error) => {
+                console.error(`Could not run ${command}: ${error.message}`);
+                done(1);
+            });
             child.once("exit", (code) => { done(code ?? 1); });
         });
     } finally {
         clearTimeout(timer);
-        process.removeListener("SIGINT", interrupted);
+        runningGroup = undefined;
     }
 };
 
@@ -154,6 +208,7 @@ const freePort = async (): Promise<number> => {
  * @param shell The mariadb-shell to test with.
  * @param testFiles The files, in the order they run.
  * @param extraArgs Passed on to `extest setup-and-run`.
+ * @param timeoutMs How long the run may take.
  *
  * @returns The exit code of the run.
  */
@@ -161,6 +216,7 @@ const runFiles = async (
     shell: string,
     testFiles: string[],
     extraArgs: string[],
+    timeoutMs: number,
 ): Promise<number> => {
     const work = mkdtempSync(join(tmpdir(), "mariadb-ui-test-"));
     const home = join(work, "shell-home");
@@ -224,7 +280,7 @@ const runFiles = async (
             "--mocha_config", join(root, "ui-test", ".mocharc.json"),
             "--code_version", process.env.UI_TEST_CODE_VERSION ?? "max",
             ...extraArgs,
-        ], { cwd: root, env });
+        ], { cwd: root, env, timeoutMs });
     } finally {
         // A sandbox a failed run left behind stops with its directory gone.
         spawnSync("pkill", ["-f", sandboxes]);
@@ -242,25 +298,38 @@ const main = async (): Promise<number> => {
 
         return 2;
     }
+    const timeoutMs = suiteTimeoutMs();
+    if (timeoutMs === undefined) {
+        console.error("Set UI_TEST_SUITE_MINUTES to a number of minutes "
+            + `above 0, not "${process.env.UI_TEST_SUITE_MINUTES ?? ""}".`);
+
+        return 2;
+    }
 
     const named: string[] = [];
     const extraArgs: string[] = [];
     for (const arg of process.argv.slice(2)) {
-        (arg in SUITES ? named : extraArgs).push(arg);
+        (Object.hasOwn(SUITES, arg) ? named : extraArgs).push(arg);
     }
     if (process.env.UI_TEST_GLOB !== undefined) {
-        return await runFiles(shell, [process.env.UI_TEST_GLOB], extraArgs);
+        return await runFiles(shell, [process.env.UI_TEST_GLOB], extraArgs,
+            timeoutMs);
     }
 
     const outcomes: Array<[string, number]> = [];
     for (const name of named.length > 0 ? named : Object.keys(SUITES)) {
+        if (interruptedWith !== undefined) {
+            console.log(`${name}: not run, the run was interrupted`);
+            continue;
+        }
         console.log(`\n=== UI test suite: ${name} ===\n`);
         // One pattern per file, so the order holds: ExTester adds the
         // files of one pattern in no set order.
         const files = SUITES[name].map((file) => {
             return `${compiled}/${file}.test.js`;
         });
-        outcomes.push([name, await runFiles(shell, files, extraArgs)]);
+        outcomes.push(
+            [name, await runFiles(shell, files, extraArgs, timeoutMs)]);
     }
 
     if (outcomes.length > 1) {
@@ -268,6 +337,10 @@ const main = async (): Promise<number> => {
         for (const [name, code] of outcomes) {
             console.log(`${name}: ${code === 0 ? "passed" : "FAILED"}`);
         }
+    }
+
+    if (interruptedWith !== undefined) {
+        return interruptedWith;
     }
 
     return outcomes.some(([, code]) => { return code !== 0; }) ? 1 : 0;

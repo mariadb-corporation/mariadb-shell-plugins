@@ -752,15 +752,17 @@ button.toolbarMenuItem:hover:not(:disabled) {
  * puts in front of a child row's content, carries the indent instead.
  * It has no width: Tabulator adds a width it measures before the row is
  * in the document to its margin, so with none its margin is exactly
- * `level x CHILD_INDENT` (27px, ActionsGrid.tsx).
+ * `level x --actionsTreeIndent`, which the host is given from
+ * CHILD_INDENT (ActionsGrid.tsx) - the one place the indent is set.
  *
- * So a level-N row's content starts at 10 + 27N - the cell's 5px of
- * padding, the margin and the 5px after it - and a top-level row's at 5.
- * A twistie's middle is 8px into the content it leads: the top-level
- * twistie's at 13, the next level's at 45, then every 27px. Each guide is
- * a background layer of the cell, so it costs no element and cannot be
- * caught by the flex layout: the first at 13, the rest a repeating line
- * every 27px from 45, as many as the row is levels deep less one.
+ * So a level-N row's content starts at 10 + N x indent - the cell's 5px
+ * of padding, the margin and the 5px after it - and a top-level row's at
+ * 5. A twistie's middle is 8px into the content it leads: the top-level
+ * twistie's at 13, the next level's at 18 + indent, then one indent
+ * apart. Each guide is a background layer of the cell, so it costs no
+ * element and cannot be caught by the flex layout: the first at 13, the
+ * rest a line repeated every indent from 18 + indent, as many as the row
+ * is levels deep less one.
  */
 .actionsGridHost {
     --actionsTreeGuide: var(--vscode-tree-indentGuidesStroke,
@@ -788,8 +790,11 @@ button.toolbarMenuItem:hover:not(:disabled) {
         linear-gradient(var(--actionsTreeGuide), var(--actionsTreeGuide))
             13px 0 / 1px 100% no-repeat,
         repeating-linear-gradient(to right,
-            var(--actionsTreeGuide) 0 1px, transparent 1px 27px)
-            45px 0 / calc(27px * (var(--treeLevel, 1) - 1)) 100% no-repeat;
+            var(--actionsTreeGuide) 0 1px,
+            transparent 1px var(--actionsTreeIndent))
+            calc(18px + var(--actionsTreeIndent)) 0
+            / calc(var(--actionsTreeIndent) * (var(--treeLevel, 1) - 1)) 100%
+            no-repeat;
 }
 
 /* The Problems panel's severity markers, in its colours. */
@@ -876,26 +881,6 @@ button.toolbarMenuItem:hover:not(:disabled) {
 .goToStatement:hover {
     background: var(--vscode-toolbar-hoverBackground);
     color: var(--vscode-textLink-activeForeground);
-}
-
-/*
- * Everything a row leads with is in this cell: the twistie of a run or
- * the branch of a statement, which Tabulator puts in front of the
- * cell's own content, then the marker, then what happened.
- *
- * `inline-flex`, not `flex`: a Tabulator cell is inline-level and laid
- * out beside its neighbours, so a block one takes the whole row and the
- * grid comes apart.
- */
-.tabulator .tabulator-cell.actionMessage {
-    display: inline-flex;
-    /*
-     * Every cell of the grid is aligned at the top (the user's rule,
-     * 2026-10-12): a message on several lines keeps its marker beside
-     * its first line, in the column every marker lines up in, and Time
-     * and Information (`vertAlign: "top"`) stay level with that line.
-     */
-    align-items: flex-start;
 }
 
 /*
