@@ -277,10 +277,10 @@ packages with msm_plugin and mcp_plugin.
   metadata, so 5.x statements refuse it; do not upgrade it, verify with the scripted tests
   (own sandboxes) or `run_tests.py`.
 - **Shell utilities go through `core.run_util(session, "dump_schemas", ..., options=)`**
-  (2026-10-11, the project dump/load in `lib/services.py`): the session in the utility's
-  `session` option on a shell with mariadb-shell #73, else the global session switched under
+  (2026-10-11, the project dump/load in `lib/services.py`): the global session switched under
   the lock msm_plugin shares (same `sys.modules` name) and switched back. Never
-  `shell.set_session` around a utility by hand.
+  `shell.set_session` around a utility by hand. (Its branch for mariadb-shell #73's
+  `session` option was dropped on 2026-10-12, when #73 was closed.)
 - `run_tests.py -k "a or b"` is quoted with `shlex.quote` now; a pattern that misses the
   sandbox-deploying fixture still works because `init_mrs` is session-scoped.
 

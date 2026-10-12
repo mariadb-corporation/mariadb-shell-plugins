@@ -744,8 +744,6 @@ class ServerLocalInFile:
 # the same name.
 _GLOBAL_SESSION_LOCK_MODULE = "_mariadb_shell_plugins_global_session"
 
-_util_session_option = None
-
 
 def _global_session_lock():
     """The process-wide lock around switching the shell's global session.
@@ -770,33 +768,13 @@ def _global_session_lock():
     return holder.lock
 
 
-def _util_takes_session_option() -> bool:
-    """Whether the shell's utilities take the 'session' option.
-
-    Shells before mariadb-shell #73 run them on the global session only.
-    """
-    global _util_session_option
-
-    if _util_session_option is None:
-        try:
-            text = mysqlsh.globals.util.help("dump_schemas")
-            _util_session_option = "progressCallback" in str(text)
-        except Exception:
-            _util_session_option = False
-
-    return _util_session_option
-
-
 def run_util(session, function: str, *args, options=None):
     """Runs a shell utility, such as dump_schemas or load_dump, on a session.
 
-    The utilities run on the shell's global session unless they are given one
-    in their 'session' option. Where the shell has that option, the session is
-    passed and the global session is never touched. On an older shell, the
-    global session is switched to this one for the call and switched back
-    afterwards, under a lock shared by every plugin, so that two calls on
-    different sessions at once (two project loads on an MCP server) cannot run
-    on each other's session.
+    The utilities run on the shell's global session only. It is switched to
+    this one for the call and switched back afterwards, under a lock shared by
+    every plugin, so that two calls on different sessions at once (two project
+    loads on an MCP server) cannot run on each other's session.
 
     Args:
         session: The session, a shell session or a wrapper with a 'session'.
@@ -812,9 +790,6 @@ def run_util(session, function: str, *args, options=None):
     )
     utility = getattr(mysqlsh.globals.util, function)
     options = dict(options or {})
-
-    if _util_takes_session_option():
-        return utility(*args, dict(options, session=shell_session))
 
     shell = mysqlsh.globals.shell
     with _global_session_lock():
