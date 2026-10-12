@@ -50,8 +50,7 @@ which exposes the backend functions over the Model Context Protocol.
   it. The **Tasks** view lists what ran; click a task for its own log,
   which can be watched while it runs and is kept after it ended, failed
   or not. Each task is also a row of its connection's **Actions** in the
-  MariaDB panel, with what it reported under it. Needs a MariaDB Shell
-  with mariadb-shell #73.
+  MariaDB panel, with what it reported under it.
 
 ## Requirements
 
