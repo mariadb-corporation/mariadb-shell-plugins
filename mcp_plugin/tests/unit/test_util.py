@@ -471,7 +471,12 @@ import json, os, signal, sys
 state = os.environ["FAKE_SHELL_STATE"]
 runs = json.load(open(state)) if os.path.exists(state) else []
 runs.append({"argv": sys.argv[1:], "stdin": sys.stdin.read()})
-json.dump(runs, open(state, "w"))
+def save():
+    # whole or not at all: the test reads the file while this runs
+    with open(state + ".tmp", "w") as file:
+        json.dump(runs, file)
+    os.replace(state + ".tmp", state)
+save()
 def out(line):
     print(json.dumps(line), flush=True)
 mode = os.environ["FAKE_SHELL_MODE"]
@@ -479,7 +484,7 @@ if mode == "hang":
     # deaf to ^C: only a kill ends it
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     runs[-1]["pid"] = os.getpid()
-    json.dump(runs, open(state, "w"))
+    save()
     out({"info": "Dumping data", "dumpProgress": {}, "throughputProgressUpdate": {"current": 1, "total": 2}})
     import time
     time.sleep(60)
