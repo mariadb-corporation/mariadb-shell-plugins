@@ -105,42 +105,50 @@ change belongs to up to date, and this table with it.
   2026-10-13: any local build of `main` in `~/git/mariadb-shell`
   (`MARIADB_SHELL=...`). Before that it took the local-only merge
   `wip/ui_test_shell`, deleted on 2026-10-13.
+- **Highlighting is lexical.** Non-reserved keywords used as names are
+  coloured as keywords, data types have no scope of their own, and the
+  ANSI_QUOTES identifiers are semantic tokens, so a theme with semantic
+  highlighting off shows them as strings and they appear a moment after
+  the grammar's colours. See [`context/sql-grammar.md`](context/sql-grammar.md).
 
 ## Git state
 
-Checked at this checkpoint (2026-10-11):
+Checked at this checkpoint (2026-10-12):
 
 ```text
 $ git -C code_ext branch --show-current
-wip/mrs_code_ext
+wip/vscode_syntax_highlighter
 
 $ git -C code_ext status --short   (one repository: every project's lines)
 (clean before this checkpoint's context edits)
 ```
 
-- **Three open PRs carry the extension work, all pushed:**
-  - **#43** `wip/mcp_dump_load`: Dump and Load (plus the mcp_plugin util
-    group), the Actions tab rows of tasks, a log file per task, the
-    non-empty dump folder check, copy targets by address, Refresh
-    Connections / Refresh Sandboxes, browsing logged only on failure or
-    with `logAllCalls`.
-  - **#44** `wip/mrs_code_ext` (opened 2026-10-11): the REST Service tree
-    and dialogs, the `mrs` MCP group, the ExTester UI tests, MRS actions in
-    the Actions tab. It has #41 (`wip/mrs_schema_improvements`) and #43
-    merged in, so its diff against `main` includes theirs until they merge.
-    Fixes the UI tests found in #43's code were made on #43 and merged into
-    #44 (always that direction).
-  - #41 is the mrs_plugin / msm side.
-- **Session 2026-10-10/11** (all in those PRs): UI tests for Dump and Load
-  and the fixes they found (task title, poll interval), tasks and MRS in
-  the Actions tab, refined over many rounds of the user's feedback on
-  verbosity - see dump-and-load.md, mrs.md, actions-grid.md and
-  connections.md for what was settled.
-- Suite: **1903 unit tests pass**, 8 skipped; **57 UI tests pass** (run
-  twice) against the local `wip/ui_test_shell` build (a merge of the then
-  unmerged shell #71, deleted since).
-- Not looked at in a running VS Code outside the UI tests: still the PR #34
-  / #38 items listed in earlier checkpoints.
+- **`wip/vscode_syntax_highlighter`** (pushed, upstream set, **no PR
+  yet**; branched from `wip/mrs_code_ext`, so a PR should target that
+  until #44 merges): `13b7e192` mcp_plugin `ansi_quotes` /
+  `report_sql_mode`, `a7da1b99` the MariaDB SQL language, grammar,
+  ANSI_QUOTES semantic tokens, splitter fixes and the `sql_mode` round
+  trip, `75602592` context. See [`context/sql-grammar.md`](context/sql-grammar.md)
+  and [`context/running-sql.md`](context/running-sql.md).
+- **`wip/mrs_code_ext` (#44)** got `92c5b4d1` (the tab on show drawn as a
+  tab, see [`context/result-view.md`](context/result-view.md)), pushed.
+- **Still open from earlier:** #43 `wip/mcp_dump_load` (Dump and Load),
+  #44 `wip/mrs_code_ext` (REST Service tree, `mrs` MCP group, UI tests; it
+  has #41 and #43 merged in), #41 the mrs_plugin / msm side. Fixes go
+  #43 -> #44 -> `wip/vscode_syntax_highlighter`, always that direction.
+- **Session 2026-10-12:** footer tab styling (several rounds), then the
+  grammar: a generated TextMate grammar instead of an LSP (the user's
+  call after the trade-off), identifiers `entity.name.identifier.sql`
+  and variables `variable.language.*` after trying `variable.other` and
+  `variable.parameter` in Dark 2026, two languages tried and dropped for
+  semantic tokens (setTextDocumentLanguage closes/reopens the document).
+- Suite: **1994 unit tests pass**, 8 skipped; **60 UI tests pass** against
+  the local `wip/ui_test_shell` build (whose plugins are this repo's,
+  symlinked by `ui-test/run.ts`); mcp_plugin's script/paging/session/sql
+  tests 133 passed.
+- Not looked at in a running VS Code outside the UI tests: the
+  ANSI_QUOTES colouring (no UI test, the sandbox has no ANSI_QUOTES), and
+  still the PR #34 / #38 items listed in earlier checkpoints.
 
 ## Conventions
 

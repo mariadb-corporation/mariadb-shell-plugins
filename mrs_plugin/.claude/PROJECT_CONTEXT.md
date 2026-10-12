@@ -325,19 +325,17 @@ packages with msm_plugin and mcp_plugin.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-09), before its commit:
+Checked at this checkpoint (2026-10-12), repo `mariadb-shell-plugins` (mrs_plugin is a subfolder):
 
 ```text
-$ git branch --show-current
-wip/mrs_schema_improvements   (tracks origin; PR to main opened with this checkpoint)
+$ git -C mrs_plugin branch --show-current
+wip/vscode_syntax_highlighter
 
-$ git status --short   (all of this session, committed with this checkpoint)
- M mrs_plugin/.claude/PROJECT_CONTEXT.md
- M mrs_plugin/.claude/context/metadata-schema-5.0.0.md
- M mrs_plugin/dump.py
- M mrs_plugin/lib/dump.py
-?? mrs_plugin/tests/unit/lib/test_dump.py
+$ git -C mrs_plugin status --short   (one repository: every project's lines)
+(clean before this checkpoint's context edits)
 ```
 
-- Last pushed commit before this checkpoint: `800bdf34`.
-- No other session's uncommitted work in the tree.
+- No mrs_plugin change since the 2026-10-11 checkpoint. Its open work is
+  PR #41 (`wip/mrs_schema_improvements`), merged into #44
+  (`wip/mrs_code_ext`) and from there into the extension's
+  `wip/vscode_syntax_highlighter`, which is the branch checked out.
