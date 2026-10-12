@@ -85,16 +85,21 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-11):
+Checked at this checkpoint (2026-10-12):
 
 ```text
 $ git -C mcp_plugin branch --show-current
-wip/mrs_code_ext
+wip/vscode_syntax_highlighter
 
 $ git -C mcp_plugin status --short   (one repository: every project's lines)
 (clean before this checkpoint's context edits)
 ```
 
+- **`wip/vscode_syntax_highlighter`** (pushed, no PR yet, branched from
+  #44's `wip/mrs_code_ext`): `13b7e192` `db.execute_sql_script` gains
+  opt-in `ansi_quotes` and `report_sql_mode` (see
+  [`context/db-tools.md`](context/db-tools.md)), for the VS Code
+  extension's grammar work.
 - **Open PRs with mcp_plugin work, all pushed:**
   - **#43** `wip/mcp_dump_load`: the `util` function group (see
     [`context/util.md`](context/util.md)), and msm's `run_util` (see
@@ -107,10 +112,13 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
   (`util.*` options, #43/#44). Nothing else fails: #43's run had 606 passed
   and 1 failed (the util stdio test). See util.md "CI".
 - Suite: **616 passed, 3 skipped** on #44's tree against a local build of
-  #71 + #73 (`wip/ui_test_shell` in `~/git/mariadb-shell`, local only).
+  #71 + #73 (`wip/ui_test_shell` in `~/git/mariadb-shell`, local only); on
+  `wip/vscode_syntax_highlighter` only the script / paging / session / sql
+  tests were run (133 passed, 1 skipped).
 - **mariadb-shell open PRs this depends on:** #71 (MRS module), #73 (util
   session / progressCallback), #74 (`[bypass-ci]` docs for the util tools),
-  #75 (a flaky encrypted-load test).
+  #75 (a flaky encrypted-load test). `split_script`'s options argument,
+  which `ansi_quotes` needs, is in every release since 26.8.0.
 - `origin/wip/msm_mrs_fixes` (merged as #36) is gone (checked 2026-10-11).
   mrs_plugin's project dump/load got msm's `run_util` on #41's branch
   (2026-10-11, see [`context/siblings.md`](context/siblings.md)).
