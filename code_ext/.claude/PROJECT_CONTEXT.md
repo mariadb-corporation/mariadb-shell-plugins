@@ -71,9 +71,10 @@ change belongs to up to date, and this table with it.
   `column_metadata` - checked 2026-10-11 by unpacking the 26.10.0 and
   26.10.1 tarballs and grepping their plugin - so those are no longer
   gaps. **What 26.10.1 still lacks:** the MRS module (mariadb-shell #71)
-  with the `mrs` MCP group, and the `util.*` session / progressCallback
-  options (#73): the REST Service tree and Dump and Load need a shell
-  newer than any release. Raise the version once one carries them.
+  with the `mrs` MCP group: the REST Service tree needs a shell newer than
+  any release. Raise the version once one carries it. Dump and Load works
+  with any of them: since 2026-10-12 the server runs each task in a shell
+  process of its own and no longer needs #73.
 - The result grid edits every value as text; there is no type-aware editor
   (date picker, BLOB viewer) yet. Its cell menu has Save / Load Value and
   Set Field to Null only - none of the MySQL Shell's Copy items.
@@ -92,16 +93,17 @@ change belongs to up to date, and this table with it.
   on it.
 - **CI cannot test what needs the unreleased shell.** The plugins CI uses
   the shell tarball someone put in `~/.cache/ci` on the GCE runner (the
-  26.10.1 release), which has neither mariadb-shell #71 (MRS module) nor
-  #73 (`util.*` session/progressCallback): #41, #43 and #44 fail there for
-  that reason alone (checked 2026-10-11). The UI tests are not in CI at
+  26.10.1 release), which does not have mariadb-shell #71 (MRS module):
+  #41 and #44 fail there for that reason alone (checked 2026-10-11). #43
+  failed for #73 too, until its tasks moved to a shell process of their
+  own (2026-10-12). The UI tests are not in CI at
   all. Options weighed, none done: wait for a shell release; let a PR name
   the shell build it needs and download it (shell PR CI would have to
   upload its Linux package; `rocky-linux.yml` can build one on dispatch);
   skip tests whose feature the shell lacks.
-- The UI tests need a shell with #71 AND #73: built locally from
-  `wip/ui_test_shell` in `~/git/mariadb-shell` (a local-only merge of the
-  two, not pushed).
+- The UI tests need a shell with #71: built locally from
+  `wip/ui_test_shell` in `~/git/mariadb-shell` (a local-only merge, not
+  pushed; it held #73 until 2026-10-12).
 - **Highlighting is lexical.** Non-reserved keywords used as names are
   coloured as keywords, data types have no scope of their own, and the
   ANSI_QUOTES identifiers are semantic tokens, so a theme with semantic
