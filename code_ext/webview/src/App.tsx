@@ -1159,7 +1159,7 @@ export const App = (): JSX.Element => {
                             setActiveTab(ACTIONS_TAB);
                         }}
                     >
-                        Actions
+                        <span class="tabCaption">Actions</span>
                         {unseen > 0 && <span class="badge">{unseen}</span>}
                     </button>
                     {paging.overflowing && (
@@ -1204,7 +1204,9 @@ export const App = (): JSX.Element => {
                                         setActiveTab(set.id);
                                     }}
                                 >
-                                    {set.caption}
+                                    <span class="tabCaption">
+                                        {set.caption}
+                                    </span>
                                 </button>
                             );
                         })}

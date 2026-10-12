@@ -158,8 +158,22 @@ button:focus-visible {
     flex: 0 0 auto;
     align-items: center;
     gap: 6px;
-    padding: 2px 6px;
-    border-top: 1px solid var(--vscode-panel-border);
+    /*
+     * No padding above or below: the tab on show runs the bar's full
+     * height, to its very top. The rest keep their distance with a
+     * margin of their own.
+     */
+    padding: 0 6px;
+    /*
+     * The line along the top is painted, not a border: a border is
+     * outside what `overflow` leaves visible, so nothing in the bar
+     * could cover it. Painted, it shows behind everything but the tab
+     * on show, whose own surface hides it.
+     */
+    background:
+        linear-gradient(var(--vscode-panel-border),
+            var(--vscode-panel-border)) top / 100% 1px no-repeat,
+        var(--vscode-editor-background);
     /*
      * Hidden, not scrolled: the bar holds the pickers at a fixed
      * place, and it is the strip of result tabs inside it that gives
@@ -538,17 +552,17 @@ button.toolbarMenuItem:hover:not(:disabled) {
 /* Tabs, in the bar that picks what is on show. */
 
 /*
- * The tabs are the editor's, not the activity bar's: flat, and the one
- * on show marked by a line under it rather than by a filled surface.
- * The panel's own container tabs above them are selected by surface,
- * so two selections in the same corner of the screen cannot be read as
- * one.
+ * The tab on show is drawn as a tab: on the content's surface, it
+ * covers the line along the top of the bar, which carries on down its
+ * sides and round its foot, so it reads as part of the content it
+ * shows. Its caption is underlined in the link colour.
  */
 .tabs {
     display: flex;
     /* It, and nothing else in the bar, is what gives way. */
     flex: 0 1 auto;
     min-width: 0;
+    align-self: stretch;
     align-items: stretch;
 }
 
@@ -570,10 +584,14 @@ button.toolbarMenuItem:hover:not(:disabled) {
 
 .tab {
     flex: 0 0 auto;
-    border: none;
-    border-radius: 0;
-    border-bottom: 1px solid transparent;
-    padding: 1px 8px;
+    /*
+     * The tab on show's borders, kept clear: picking a tab moves
+     * nothing, and the line along the top shows through.
+     */
+    border: 1px solid transparent;
+    border-radius: 0 0 4px 4px;
+    margin-bottom: 2px;
+    padding: 0 8px;
     background: transparent;
     color: var(--vscode-tab-inactiveForeground,
             var(--vscode-descriptionForeground));
@@ -586,15 +604,36 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 .tab.active {
+    border-color: var(--vscode-panel-border);
+    /* Open at the top, towards the content it shows. */
+    border-top-color: transparent;
+    /*
+     * The border closes it at the foot, rounded, short of the bar's
+     * bottom edge by the margin every tab has.
+     */
+    background: var(--vscode-sideBar-background,
+            var(--vscode-panel-background));
     color: var(--vscode-tab-activeForeground,
             var(--vscode-foreground));
-    border-bottom-color: var(--vscode-textLink-foreground);
+}
+
+/*
+ * Under the caption, not along the foot of the tab; on the caption's
+ * own span, so the Actions badge is left out of it.
+ */
+.tab.active .tabCaption {
+    text-decoration: underline;
+    text-decoration-color: var(--vscode-textLink-foreground);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
 }
 
 /* Only there while the tabs do not all fit. */
 .tabPager {
     flex: 0 0 auto;
     border: none;
+    /* Its hover surface would hide the line along the top. */
+    margin-top: 1px;
     border-radius: 2px;
     padding: 0 2px;
     background: transparent;
@@ -1042,6 +1081,9 @@ button.toolbarMenuItem:hover:not(:disabled) {
 .connectionPicker,
 .sessionPicker {
     flex: 0 1 auto;
+    /* The bar has no padding above or below; see there. */
+    margin-top: 3px;
+    margin-bottom: 2px;
     min-width: 6em;
     max-width: 22em;
     border: 1px solid var(--vscode-dropdown-border, transparent);
