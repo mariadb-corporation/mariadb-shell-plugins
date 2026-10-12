@@ -39,6 +39,14 @@ For a Keycloak installed from the distribution, copy the folder to `<keycloak>/t
 
 Restart Keycloak, then select the theme for the realm:
 
+* With `mcp setup-keycloak-realm`, which checks that Keycloak has the theme before it changes anything in the realm:
+
+  ```bash
+  mariadb-shell -- mcp setup-keycloak-realm --server=https://kc.example.com --realm=mariadb \
+    --adminUser=admin --loginTheme=mariadb-mcp
+  ```
+
+  The MariaDB Shell container image passes `KEYCLOAK_LOGIN_THEME` to this option on its first start.
 * In the admin console, open the realm, go to **Realm settings** → **Themes**, set **Login theme** to `mariadb-mcp`, and save.
 * Or with the admin CLI:
 

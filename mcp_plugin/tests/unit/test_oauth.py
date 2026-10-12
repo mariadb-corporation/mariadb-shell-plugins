@@ -1532,6 +1532,8 @@ class _KeycloakAdminStandIn:
         self.scopes, self.mappers, self.roles, self.clients = [], {}, [], []
         self.optional, self.role_mappings = {}, {}
         self.users = [{"id": "u1", "username": "dba", "email": "dba@example.com"}]
+        self.login_themes = ["base", "keycloak", "keycloak.v2"]
+        self.realm_settings, self.realm_updates = {"realm": realm}, []
         self.server = HTTPServer(("127.0.0.1", 0), self._handler())
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -1572,9 +1574,18 @@ class _KeycloakAdminStandIn:
                     return self._answer(200, {"issuer": issuer, "jwks_uri": issuer + "/certs"})
                 if self.headers.get("authorization") != "Bearer admintok":
                     return self._answer(401)
+                if path == "/admin/serverinfo":
+                    return self._answer(200, {"themes": {"login": [
+                        {"name": name} for name in stand_in.login_themes]}})
                 base = f"/admin/realms/{stand_in.realm}"
                 data = json.loads(body) if body else None
                 rest = path[len(base):]
+                if rest == "":
+                    if method == "GET":
+                        return self._answer(200, stand_in.realm_settings)
+                    stand_in.realm_updates.append(data)
+                    stand_in.realm_settings.update(data)
+                    return self._answer(204)
                 if rest == "/client-scopes":
                     if method == "GET":
                         return self._answer(200, stand_in.scopes)
@@ -1672,6 +1683,44 @@ def test_setup_keycloak_realm_prepares_the_realm_once(tenant_config, keycloak_ad
     assert oauth_config.get_oauth_settings()["keycloak"]["issuer"] == (
         f"{keycloak_admin.url}/realms/mariadb"
     )
+
+
+def test_setup_keycloak_realm_selects_an_installed_login_theme(tenant_config, keycloak_admin,
+                                                              monkeypatch, capsys):
+    """Once, naming only the theme, so the realm's other settings stay as they are."""
+    from mcp_plugin.lib import setup_keycloak
+
+    monkeypatch.setenv("MCP_TEST_KC_ADMIN", "adminpw")
+    keycloak_admin.login_themes.append("mariadb-mcp")
+    options = {
+        "server": keycloak_admin.url, "realm": "mariadb", "admin_user": "admin",
+        "admin_password_env": "MCP_TEST_KC_ADMIN", "mcp_url": PUBLIC_URL,
+        "login_theme": "mariadb-mcp", "non_interactive": True,
+    }
+    setup_keycloak.run_setup_keycloak_realm(**options)
+    setup_keycloak.run_setup_keycloak_realm(**options)
+
+    assert keycloak_admin.realm_settings["loginTheme"] == "mariadb-mcp"
+    assert keycloak_admin.realm_updates == [{"loginTheme": "mariadb-mcp"}]
+    assert "Login theme of realm 'mariadb': mariadb-mcp." in capsys.readouterr().out
+
+
+def test_setup_keycloak_realm_refuses_a_login_theme_keycloak_does_not_have(
+        tenant_config, keycloak_admin, monkeypatch):
+    """Before anything in the realm is changed, and saying where the theme is."""
+    from mcp_plugin.lib import setup_keycloak
+
+    monkeypatch.setenv("MCP_TEST_KC_ADMIN", "adminpw")
+    with pytest.raises(mysqlsh.Error, match="no login theme 'mariadb-mcp'.*keycloak-theme"):
+        setup_keycloak.run_setup_keycloak_realm(
+            server=keycloak_admin.url, realm="mariadb", admin_user="admin",
+            admin_password_env="MCP_TEST_KC_ADMIN", mcp_url=PUBLIC_URL,
+            login_theme="mariadb-mcp", non_interactive=True,
+        )
+
+    assert keycloak_admin.scopes == [] and keycloak_admin.clients == []
+    assert keycloak_admin.realm_updates == []
+    assert oauth_config.get_mode() == "none"
 
 
 def test_setup_keycloak_realm_asks_for_what_was_not_given(tenant_config, keycloak_admin,

@@ -33,6 +33,11 @@ API, in the given realm, it creates:
   the scope as an optional scope. ``--directGrant`` also allows the password
   grant, for the opt-in live test only - never on a production client.
 
+With ``--loginTheme`` it also selects a login theme for the realm, such as
+``mariadb-mcp`` from ``keycloak-theme/``. Themes are files on Keycloak's own
+disk, which the admin API cannot upload, so the theme has to be installed
+already; that is checked before anything in the realm is changed.
+
 Unless ``--configureServer=false``, it then points this server at the realm:
 ``mcp setup-oauth --mode=keycloak --issuer=<realm issuer>``.
 
@@ -69,6 +74,7 @@ KNOWN_OPTIONS = (
     "direct_grant",
     "grant_realm_role_to",
     "configure_server",
+    "login_theme",
     "non_interactive",
 )
 
@@ -113,8 +119,16 @@ class KeycloakAdmin:
         return cls(server, realm, token)
 
     def call(self, method, path, body=None):
-        """Calls the admin API; a conflict (it exists already) answers None."""
-        url = f"{self.server}/admin/realms/{self.realm}{path}"
+        """Calls the admin API of the realm; a conflict (it exists already) answers None."""
+        return self._send(method, f"/realms/{self.realm}{path}", path or "/", body)
+
+    def server_info(self):
+        """Returns what the server offers, among it the installed themes."""
+        return self._send("GET", "/serverinfo", "/serverinfo")
+
+    def _send(self, method, admin_path, path, body=None):
+        """Sends a request to the admin API, naming it by path in errors."""
+        url = f"{self.server}/admin{admin_path}"
         data = json.dumps(body).encode() if body is not None else None
         request = urllib.request.Request(url, data=data, method=method)
         request.add_header("Authorization", f"Bearer {self.token}")
@@ -220,6 +234,26 @@ def ensure_client(admin, client_id, scope_ids, direct_grant) -> None:
     print(f"Client {client_id} may request {', '.join(tenants.SUPPORTED_SCOPES)}.")
 
 
+def check_login_theme(admin, theme) -> None:
+    """Refuses a login theme that the Keycloak server does not have."""
+    installed = [t.get("name") for t in (admin.server_info() or {}).get("themes", {}).get("login", [])]
+    if theme not in installed:
+        raise mysqlsh.Error(
+            f"Keycloak has no login theme '{theme}'. Install it on the Keycloak server "
+            "first - the mariadb-mcp theme and how to install it are in the keycloak-theme "
+            "folder of mcp_plugin - and restart Keycloak. Installed login themes: "
+            f"{', '.join(sorted(n for n in installed if n)) or 'none'}."
+        )
+
+
+def set_login_theme(admin, theme) -> None:
+    """Selects the login theme of the realm, if it is not selected already."""
+    if (admin.call("GET", "") or {}).get("loginTheme") != theme:
+        # Keycloak applies the attributes a realm update names, and keeps the rest.
+        admin.call("PUT", "", {"loginTheme": theme})
+    print(f"Login theme of realm '{admin.realm}': {theme}.")
+
+
 def _ask(options, name, message, secret=False):
     """Returns an option's value, asking for it if it was not given."""
     if options.get(name):
@@ -266,13 +300,18 @@ def run_setup_keycloak_realm(**options) -> None:
         mcp_url or _ask(options, "mcp_url", "This server's public URL (e.g. https://mcp.example.com/mcp): ")
     )
     client_id = str(options.get("client_id") or DEFAULT_CLIENT_ID)
+    login_theme = str(options.get("login_theme") or "")
 
     admin = KeycloakAdmin.login(server, realm, admin_realm, admin_user, password)
+    if login_theme:
+        check_login_theme(admin, login_theme)
     scope_ids = [ensure_scope(admin, name, mcp_url) for name in tenants.SUPPORTED_SCOPES]
     role = ensure_role(admin)
     for username in _as_list(options.get("grant_realm_role_to")):
         grant_role(admin, role, username)
     ensure_client(admin, client_id, scope_ids, _as_bool(options.get("direct_grant", False)))
+    if login_theme:
+        set_login_theme(admin, login_theme)
 
     issuer = f"{server}/realms/{realm}"
     print(f"Realm '{realm}' is prepared for {mcp_url}. Issuer: {issuer}")

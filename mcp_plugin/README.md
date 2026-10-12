@@ -660,7 +660,9 @@ asks Keycloak about every token (cached for 30s) instead of only checking its
 signature, so a session ended in Keycloak is refused at once.
 
 To give the realm's sign-in pages the look of this server's own sign-in page,
-install the Keycloak login theme in [`keycloak-theme/`](keycloak-theme/README.md).
+install the Keycloak login theme in [`keycloak-theme/`](keycloak-theme/README.md)
+on the Keycloak server, and add `--loginTheme=mariadb-mcp` to
+`setup-keycloak-realm` to select it for the realm.
 
 #### The built-in authorization server
 

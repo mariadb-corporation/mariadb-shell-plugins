@@ -275,8 +275,9 @@ def setup_keycloak_realm(**options) -> None:
     again: what exists already is left alone. In the realm it creates the
     client scope mcp:db, putting this server's public URL
     into the token's audience, the realm role mcp-user a user needs to be
-    created at first sign-in, and a public PKCE client for MCP clients. It then
-    points this server at the realm, unless configure_server is false.
+    created at first sign-in, and a public PKCE client for MCP clients. With
+    login_theme it also selects the realm's login theme. It then points this
+    server at the realm, unless configure_server is false.
 
     Args:
         **options (dict): Options saying what to prepare.
@@ -302,6 +303,10 @@ def setup_keycloak_realm(**options) -> None:
             give the realm role mcp-user.
         configure_server (bool): Also point this server at the realm (mode
             keycloak and its issuer). Defaults to true.
+        login_theme (str): A login theme to select for the realm, such as
+            mariadb-mcp, which gives the sign-in pages the look of this
+            server's own. It must be installed on the Keycloak server already;
+            see the keycloak-theme folder of mcp_plugin.
         non_interactive (bool): Never prompt: something not given is an error.
 
     Returns:
