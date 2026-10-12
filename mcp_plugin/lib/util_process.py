@@ -52,7 +52,9 @@ from typing import Optional
 
 from mcp_plugin.lib.tool_registrar import tool_error
 # the watchdog imports nothing of the plugin, so it is where these are kept
-from mcp_plugin.lib.util_watchdog import EXIT_MARKER, GRACE_SECONDS
+from mcp_plugin.lib.util_watchdog import (
+    EXIT_MARKER, GRACE_SECONDS, interrupt_shell, kill_shell,
+)
 
 # How long a cancelled shell gets to stop before it is killed.
 CANCEL_GRACE_SECONDS = GRACE_SECONDS
@@ -64,8 +66,10 @@ MAX_RESTARTS = 3
 # it where the resetProgress option asks for that (Dump_loader::execute_tasks).
 _PROGRESS_FILE_READ = "Scanning metadata"
 
-# The lines of the shell's stderr kept for the report of a crash.
+# The lines of the shell's stderr kept for the report of a crash, and how long
+# the end of the process waits for the last of them.
 STDERR_LINES = 20
+STDERR_DRAIN_SECONDS = 5
 
 _WATCHDOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "util_watchdog.py")
 
@@ -228,8 +232,11 @@ def _named(name: str, value) -> Optional[str]:
     return f"--{name}:json={json.dumps(value)}"
 
 
-def _target_arguments(target: dict) -> list:
+def _target_arguments(target: Optional[dict]) -> list:
     """A copy's target as connection attributes, without its password."""
+    if target is None:
+        raise tool_error("A copy needs a target connection.")
+
     arguments = []
     for key, value in target.items():
         if key == "password" or value is None:
@@ -367,7 +374,7 @@ class OutputParser:
 
         if line.get("numericProgressUpdate"):
             return events + self._numeric(prefix, message, line["numericProgressUpdate"])
-        if "throughputProgressUpdate" in line or "throughputProgressConfig" in line:
+        if line.get("throughputProgressUpdate") or line.get("throughputProgressConfig"):
             return events + self._throughput(prefix, line)
         if level is None:
             return events
@@ -510,7 +517,8 @@ class ShellProcess:
             self._write(input_text)
             self._close_stdin()
 
-        threading.Thread(target=self._read_stderr, daemon=True).start()
+        self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
+        self._stderr_thread.start()
         _running.add(self)
 
     def _write(self, text: str) -> None:
@@ -545,12 +553,7 @@ class ShellProcess:
         if self.watched:
             self._write("cancel\n")
         else:
-            try:
-                self.process.send_signal(
-                    signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT
-                )
-            except OSError:
-                pass
+            interrupt_shell(self.process)
 
         with self._lock:
             if self._kill_timer is None:
@@ -569,10 +572,7 @@ class ShellProcess:
             self._write("kill\n")
             self._close_stdin()
         else:
-            try:
-                self.process.kill()
-            except OSError:
-                pass
+            kill_shell(self.process)
 
     def stop(self) -> None:
         """Interrupts the shell, and has it killed if it does not stop.
@@ -586,12 +586,18 @@ class ShellProcess:
             self.kill()
 
     def wait(self) -> int:
-        """Waits for the end of the process; its return code."""
+        """Waits for the end of the process; its return code.
+
+        Once it returns, :attr:`stderr` is complete and no longer written to.
+        """
         returncode = self.process.wait()
         with self._lock:
             if self._kill_timer is not None:
                 self._kill_timer.cancel()
         self._close_stdin()
+        # the pipe ends with its last writer: a shell the watchdog left behind
+        # would keep it open, so this does not wait for ever
+        self._stderr_thread.join(STDERR_DRAIN_SECONDS)
         _running.discard(self)
         return returncode
 

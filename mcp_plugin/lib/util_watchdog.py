@@ -16,8 +16,9 @@
 """Runs a MariaDB Shell process for the MCP server and stops it with the server.
 
 Started by :mod:`mcp_plugin.lib.util_process` as a script of its own, with the
-shell's command line as its arguments. It is not imported by the plugin, and
-imports nothing from it.
+shell's command line as its arguments. It imports nothing from the plugin, so
+that ``python -I`` can run it; the plugin imports its constants and the two
+signal helpers from here.
 
 Why it exists: a dump or a load runs in a shell process of its own, and that
 process has to end when the MCP server does, however the server ends. A load
@@ -51,16 +52,16 @@ EXIT_MARKER = "mcpShellExit"
 GRACE_SECONDS = 30
 
 
-def _interrupt(process) -> None:
-    """Interrupts the shell as ^C does."""
+def interrupt_shell(process) -> None:
+    """Interrupts a shell process as ^C does."""
     try:
         process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
     except OSError:
         pass
 
 
-def _kill(process) -> None:
-    """Ends the shell at once."""
+def kill_shell(process) -> None:
+    """Ends a shell process at once."""
     try:
         process.kill()
     except OSError:
@@ -72,17 +73,17 @@ def _follow_commands(process) -> None:
     for line in sys.stdin:
         command = line.strip()
         if command == "cancel":
-            _interrupt(process)
+            interrupt_shell(process)
         elif command == "kill":
-            _kill(process)
+            kill_shell(process)
 
     # the server is gone, or done with the shell
     if process.poll() is None:
-        _interrupt(process)
+        interrupt_shell(process)
         try:
             process.wait(GRACE_SECONDS)
         except subprocess.TimeoutExpired:
-            _kill(process)
+            kill_shell(process)
 
 
 def main() -> int:
