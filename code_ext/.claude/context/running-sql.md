@@ -98,6 +98,36 @@ text). `ExecutionService.execute()` then:
    result set to a tab of its own,
 4. works out whether a result set can be written back.
 
+## The language, and ANSI_QUOTES
+
+(2026-10-12.) A `.sql` file opens as **MariaDB SQL** (`mariadb-sql`), the
+language the extension contributes with its own grammar (see
+[sql-grammar.md](sql-grammar.md)); `openSqlEditor` creates new files in
+it. The grammar reads `"..."` as a string. Where the server reads it as
+an identifier, `AnsiQuotesHighlighter` (`src/editor/ansiQuotes.ts`,
+owned by the binding) marks it with semantic tokens:
+
+- The setting `mariadb.sql.ansiQuotes` - `auto` (default), `on`, `off`.
+  Not `auto`: every document is read that way, no connection needed.
+- `auto`: what `SqlModes` (below) says of the document's connection
+  (`connectionFor`: picked, header, default) - read with one
+  `SELECT @@sql_mode` the first time, two asking at once sharing the
+  query, and kept up to date by every run after that. `hasAnsiQuotes`
+  looks for the one mode name: the server spells `ANSI` out as its
+  parts. A connection not open yet means no marks; what it had is
+  dropped when it closes, since it may reopen with another `sql_mode`.
+  A failed read is logged, means no marks, and is asked again next
+  time.
+- The editor asks the provider again whenever the document changes.
+  The highlighter makes it ask for every document
+  (`onDidChangeSemanticTokens`) when a connection opens or closes, the
+  setting changes, a run reports a different `sql_mode`, or a document
+  is bound to another connection (`bindConnection` calls `refresh()`).
+
+The document's language never changes - an earlier design moved it
+between two languages, which VS Code reports as closing and reopening
+it, and that lost the binding's state (see sql-grammar.md).
+
 ## The statement scanner
 
 `src/sql/statementSpans.ts` is a port of the MySQL Shell's
@@ -161,6 +191,41 @@ it - unless the run failed, in which case it points at its first error.
 `src/test/sql/splitStatements.test.ts` pins all of these, and
 `splitStatements()` also drops DELIMITER commands, which the server
 consumes without producing a result.
+
+**Quotes, as the shell's splitter reads them** (2026-10-12). The MCP
+plugin splits with `mysqlsh.mysql.split_script` (`mcp_plugin/lib/
+db_functions.py`), whose `Sql_splitter` (`mysqlshdk/libs/utils/
+utils_mysql_parsing.cc`) reads `'...'` as a string, in which a backslash
+escapes, `` `...` `` as an identifier, in which it does not
+(`span_quoted_identifier`), and `"..."` as either, by its `ansiQuotes`
+option. The scanner (`scanStatements(sql, delimiter, ansiQuotes)`) reads
+them the same way. It used to escape in backticks too, so
+`` SELECT `a\`; SELECT 1; `` - a column named `` a\ `` - ran to the end
+of the file as one open identifier.
+
+**The run passes the mode, and learns it back.** `SqlModes`
+(`src/connections/sqlModes.ts`, owned by the binding) knows per
+connection URI whether the server reads `"..."` as an identifier: read
+with one `SELECT @@sql_mode` the first time it is asked, and then taken
+from every run. `runScript` splits by what it knows to put the run's row
+up, asks `SqlModes.ansiQuotes(uri)` once the connection is open - which
+reads it on the first run only - and re-splits if that differs. The
+execution service sends `ansi_quotes` and `report_sql_mode` to
+`db.execute_sql_script`, so the plugin splits the same way and reports,
+on its last entry, how it split and the session's `sql_mode` after the
+script (see the plugin's db-tools.md). That `sql_mode` goes to
+`SqlModes.record` through `onSqlMode`: a script that ran `SET sql_mode`
+changes how the next run splits, how `"..."` is highlighted and where
+the gutter dots go, with no query of the extension's own. **A reply
+without `ansi_quotes` is an older plugin**, which ignored the argument
+and split `"..."` as a string; the service then pairs by a string split.
+It is the connection's real mode, never the `mariadb.sql.ansiQuotes`
+setting, that a split follows: the setting only changes the
+highlighting, a split has to be what the server makes of the text.
+`runStatementAtCursor` and the gutter markers (`ansiQuotesFor`, a
+rescan when `onDidChangeSqlMode` fires) take what is known without
+asking. Within one script, a `SET sql_mode` cannot change how that
+script splits - both sides split it up front.
 
 Agreement was checked against a running server across 21 scripts
 (comments in every position, quoted and escaped delimiters, block

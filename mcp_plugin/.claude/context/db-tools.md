@@ -38,6 +38,26 @@ handling are in [connections.md](connections.md).
   nothing tells a VECTOR from a VARBINARY. Values are unchanged: binary
   still comes as hex.
 
+- **Splitting under ANSI_QUOTES, and reporting the sql_mode** (2026-10-12,
+  for the VS Code extension, branch `wip/vscode_syntax_highlighter`).
+  `db.execute_sql_script(ansi_quotes=False, report_sql_mode=False)`.
+  `ansi_quotes` goes to `mysqlsh.mysql.split_script(sql_script,
+  {"ansiQuotes": ...})`, so `"..."` is split as the identifier the server
+  reads under ANSI_QUOTES: no backslash escapes, only `""`. Without it,
+  `SELECT "a\"; SELECT 1;` is ONE unfinished string statement to the
+  shell's splitter and two to the server. `report_sql_mode` puts
+  `ansi_quotes` (how it was split) and `sql_mode` (`SELECT @@sql_mode`
+  after the last statement, same session) on the LAST entry; `sql_mode` is
+  left out, and logged, if the read fails, and a script of only comments
+  has no entry to carry either. Both are opt-in, so other callers neither
+  pay the query nor see new keys, and the existing stubs that assert the
+  exact statements a script sent are untouched. The extension always
+  sets `report_sql_mode` and reads the missing `ansi_quotes` echo as an
+  older plugin, which ignores an unknown argument without complaint (the
+  MCP SDK's pydantic argument model drops extra fields). Tests at the end
+  of `tests/unit/test_db_script.py`; the recording stub answers
+  `SELECT @@sql_mode` and fails what is in `fail_on`.
+
 - **Paging** (2026-09-25, for the VS Code extension's result pages):
   `db.execute_sql_script(limit=)` and `db.execute_sql(limit=, offset=)`.
   `_limit_statement` appends `\nLIMIT n [OFFSET m]` (own line, so a

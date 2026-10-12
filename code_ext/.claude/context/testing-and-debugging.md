@@ -37,6 +37,13 @@ so a test calls it (`as unknown as () => HTMLElement`) and reads
 `textContent`; and `formatValue` / `formatCell` return elements, so
 their tests read `textContent` rather than comparing strings.
 
+The grammar tests (`src/test/grammar/`) tokenize with `vscode-textmate`
+on `vscode-oniguruma`, VS Code's own engine, so they need no VS Code and
+see exactly what the editor colours: generated coverage of every word
+in `syntaxes/words.json`, a case per lexer token class, and snapshots of
+real SQL corpora (`corpus/*.tokens`, rewritten with `vitest -u` after a
+deliberate change). See [sql-grammar.md](sql-grammar.md).
+
 ## UI tests (ExTester)
 
 `MARIADB_SHELL=<path to mariadb-shell> npm run ui-test` drives a real
