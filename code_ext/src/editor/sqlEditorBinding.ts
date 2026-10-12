@@ -38,7 +38,7 @@ import {
 import { quoteIdentifier } from "../sql/queryBuilder.js";
 import { splitStatements } from "../sql/splitStatements.js";
 import { statementAtOffset } from "../sql/statementAtOffset.js";
-import { SqlModes } from "../connections/sqlModes.js";
+import type { SqlModes } from "../connections/sqlModes.js";
 import { AnsiQuotesHighlighter } from "./ansiQuotes.js";
 import { isSqlDocument, MARIADB_SQL_LANGUAGE_ID } from "./sqlLanguage.js";
 import type {
@@ -134,16 +134,23 @@ export class SqlEditorBinding implements vscode.Disposable {
     /** The stop-on-error state last published to the toolbar, if any. */
     #publishedStopOnError: boolean | undefined;
     readonly #statusItem: vscode.StatusBarItem;
-    /** What each connection's sql_mode says about double quotes. */
-    readonly #sqlModes: SqlModes;
     /** Colours `"..."` as an identifier where ANSI_QUOTES is on. */
     readonly #ansiQuotes: AnsiQuotesHighlighter;
     readonly #disposables: vscode.Disposable[] = [];
 
+    /**
+     * @param connections The connections a document can run on.
+     * @param resultView Where a run's actions and results are shown.
+     * @param log Where failures are noted.
+     * @param sqlModes What each connection's sql_mode says about double
+     *                 quotes: how a run splits, and what the highlighting
+     *                 marks.
+     */
     public constructor(
         private readonly connections: ConnectionManager,
         private readonly resultView: ResultViewProvider,
         private readonly log: (message: string) => void,
+        private readonly sqlModes: SqlModes,
     ) {
         this.#statusItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
@@ -170,12 +177,11 @@ export class SqlEditorBinding implements vscode.Disposable {
             }),
         });
 
-        this.#sqlModes = new SqlModes(connections, log);
-        this.#ansiQuotes = new AnsiQuotesHighlighter(connections,
-            this.#sqlModes, (document) => {
+        this.#ansiQuotes = new AnsiQuotesHighlighter(connections, sqlModes,
+            (document) => {
                 return this.connectionFor(document);
             });
-        this.#disposables.push(this.#sqlModes, this.#ansiQuotes);
+        this.#disposables.push(this.#ansiQuotes);
 
         this.updateStatusBar();
     }
@@ -215,19 +221,7 @@ export class SqlEditorBinding implements vscode.Disposable {
 
         return uri === undefined
             ? false
-            : this.#sqlModes.known(uri) ?? false;
-    }
-
-    /**
-     * Listens for a connection's sql_mode becoming known or changing,
-     * which may change how its documents split.
-     *
-     * @param listener Called with the connection's URI.
-     *
-     * @returns A function that stops listening.
-     */
-    public onDidChangeSqlMode(listener: (uri: string) => void): () => void {
-        return this.#sqlModes.onDidChange(listener);
+            : this.sqlModes.known(uri) ?? false;
     }
 
     /**
@@ -548,7 +542,7 @@ export class SqlEditorBinding implements vscode.Disposable {
         // Split here and handed on, so the row can say what is about to
         // run without the script being split a second time to run it -
         // by what is known of the sql_mode; checked once it is open.
-        let ansiQuotes = this.#sqlModes.known(uri) ?? false;
+        let ansiQuotes = this.sqlModes.known(uri) ?? false;
         let statements = splitStatements(script, ansiQuotes);
         const what = describeStatements(statements, label);
         // Which connection this will run on has to be known before it is
@@ -566,7 +560,7 @@ export class SqlEditorBinding implements vscode.Disposable {
         try {
             const connectionId = await this.connections.connect(uri);
             // Read on the first run, known from the last one after that.
-            const known = await this.#sqlModes.ansiQuotes(uri);
+            const known = await this.sqlModes.ansiQuotes(uri);
             if (known !== ansiQuotes) {
                 ansiQuotes = known;
                 statements = splitStatements(script, ansiQuotes);
@@ -586,7 +580,7 @@ export class SqlEditorBinding implements vscode.Disposable {
                 pageSize: pageSize(),
                 ansiQuotes,
                 onSqlMode: (sqlMode) => {
-                    this.#sqlModes.record(uri, sqlMode);
+                    this.sqlModes.record(uri, sqlMode);
                 },
             });
             await this.resultView.showResults(report, {

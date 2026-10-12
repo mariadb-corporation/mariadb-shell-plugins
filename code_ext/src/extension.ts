@@ -93,6 +93,7 @@ import {
     type ISandboxNode,
 } from "./tree/sandboxesTreeProvider.js";
 import { deleteConnection } from "./connections/connectionStore.js";
+import { SqlModes } from "./connections/sqlModes.js";
 import { ConnectionColorDecorations } from "./tree/connectionColors.js";
 import {
     folderOf,
@@ -370,7 +371,11 @@ export const activate = (context: vscode.ExtensionContext): void => {
             }
         }
     };
-    const editors = new SqlEditorBinding(connections, resultView, log);
+    // What each connection's sql_mode says about double quotes, which
+    // the runs, the highlighting and the gutter markers all follow.
+    const sqlModes = new SqlModes(connections, log);
+    const editors = new SqlEditorBinding(connections, resultView, log,
+        sqlModes);
     // Marks where each statement begins. The ranges come from the SQL
     // scanner for now; a language server would report the same thing.
     const statementDots = new StatementDecorator(context.extensionUri, {
@@ -380,7 +385,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
     });
     // A connection whose sql_mode turned out to have ANSI_QUOTES, or
     // whose script changed it, may end its statements elsewhere.
-    const stopFollowingSqlModes = editors.onDidChangeSqlMode(() => {
+    const stopFollowingSqlModes = sqlModes.onDidChange(() => {
         statementDots.refresh();
     });
     resultView.setRefreshHandler(async (resultSet, target) => {
@@ -525,6 +530,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         editors,
         statementDots,
         { dispose: stopFollowingSqlModes },
+        sqlModes,
         resultView,
         connectionsView,
         // Grid values opened in editors, as files of their own scheme.

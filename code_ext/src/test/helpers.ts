@@ -16,6 +16,7 @@
  */
 
 import type { IConnectionSettings } from "../connections/connectionManager.js";
+import { SQL_MODE_QUERY } from "../connections/sqlModes.js";
 import { ObjectNotFoundError } from "../mcp/mariaDbApi.js";
 import type { IToolResult } from "../mcp/protocol.js";
 import type { IMcpConnection, IMcpConnector } from "../mcp/session.js";
@@ -420,7 +421,7 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
 
         executeSql: (_id: string, sql: string, page?: IPageRequest) => {
             api.statements.push({ sql, ...(page ? { page } : {}) });
-            if (sql === "SELECT @@sql_mode") {
+            if (sql === SQL_MODE_QUERY) {
                 return Promise.resolve({
                     result_sets: [{
                         columns: ["@@sql_mode"],

@@ -16,8 +16,8 @@
  */
 
 /**
- * Keeps the MariaDB SQL TextMate grammars in step with the servers they
- * highlight for.
+ * Keeps the MariaDB SQL TextMate grammar in step with the servers it
+ * highlights for.
  *
  * A TextMate grammar is a tokenizer, so only two things of the MariaDB
  * Server and REST SQL grammars matter to it: the token classes their
@@ -43,7 +43,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -79,7 +79,7 @@ interface IWords {
 }
 
 /** The grammar built from the template. */
-const grammarFile = "mariadb-sql.tmLanguage.json";
+const grammarFile = join(syntaxes, "mariadb-sql.tmLanguage.json");
 
 /**
  * Cuts the lines of one C array out of a source file.
@@ -126,61 +126,33 @@ const symbolTable = (text: string, name: string): Map<string, string> => {
 };
 
 /**
- * Reads the parser tokens `sql_yacc.yy` lets stand for an identifier: the
- * members of every `keyword_*` rule, Oracle mode's included, since the
- * grammar highlights one SQL for both modes.
+ * Reads the tokens that lead the alternatives of some of `sql_yacc.yy`'s
+ * rules.
  *
  * @param text The file.
+ * @param isRule Which rules, by name.
+ * @param alternative An alternative's line, the token its first group.
+ *                    `%ifdef` lines and actions in braces carry none.
  *
  * @returns The token names.
  */
-const unreservedTokens = (text: string): Set<string> => {
+const ruleTokens = (
+    text: string,
+    isRule: RegExp,
+    alternative: RegExp,
+): Set<string> => {
     const tokens = new Set<string>();
-    let inKeywordRule = false;
+    let inRule = false;
     for (const line of text.split("\n")) {
         const rule = /^([a-z_]+):/.exec(line);
         if (rule) {
-            inKeywordRule = /^(keyword_|non_reserved_keyword_udt)/
-                .test(rule[1]);
+            inRule = isRule.test(rule[1]);
         }
-        // An alternative is the token alone, or after `|`; the `%ifdef`
-        // lines and the actions in braces carry no tokens.
-        if (inKeywordRule && !line.startsWith("%")) {
-            const alternative = /^\s*\|?\s*([A-Z][A-Z0-9_]*)\s*(\{.*\})?\s*$/
-                .exec(line);
-            if (alternative) {
-                tokens.add(alternative[1]);
-            }
-        }
-    }
-
-    return tokens;
-};
-
-/**
- * Reads the parser tokens `sql_yacc.yy` parses as a function call with a
- * syntax of its own - `DATE(`, `LEFT(`, `CHAR(... USING ...)`, `INSERT(`:
- * the alternatives of its `function_call_*` rules that start with a
- * token and `(`. Those are keywords everywhere else, which is how the
- * grammar treats them too: a function only before a parenthesis.
- *
- * @param text The file.
- *
- * @returns The token names.
- */
-const functionTokens = (text: string): Set<string> => {
-    const tokens = new Set<string>();
-    let inFunctionRule = false;
-    for (const line of text.split("\n")) {
-        const rule = /^([a-z_]+):/.exec(line);
-        if (rule) {
-            inFunctionRule = rule[1].startsWith("function_call_");
-        }
-        if (inFunctionRule) {
-            const call = /^\s*\|?\s*([A-Z][A-Z0-9_]*)\s*'\('/.exec(line);
-            if (call) {
-                tokens.add(call[1]);
-            }
+        const match = inRule && !line.startsWith("%")
+            ? alternative.exec(line)
+            : null;
+        if (match) {
+            tokens.add(match[1]);
         }
     }
 
@@ -277,12 +249,24 @@ const sync = (server: string, shell: string): void => {
         return readFileSync(join(...parts), "utf8");
     };
     const lex = read(server, "sql", "lex.h");
+    const mrs = read(shell, "modules", "mrs", "core", "mrs_lexer.h");
     const symbols = symbolTable(lex, "symbols");
     const syntacticFunctions = symbolTable(lex, "sql_functions");
     const yacc = read(server, "sql", "sql_yacc.yy");
-    const unreserved = unreservedTokens(yacc);
-    // A token can have several spellings: SUBSTRING is SUBSTR and MID too.
-    const callTokens = functionTokens(yacc);
+    // The members of every `keyword_*` rule are what may stand for an
+    // identifier - Oracle mode's included, since the grammar highlights
+    // one SQL for both modes. Each alternative is the token alone, or
+    // after `|`.
+    const unreserved = ruleTokens(yacc,
+        /^(keyword_|non_reserved_keyword_udt)/,
+        /^\s*\|?\s*([A-Z][A-Z0-9_]*)\s*(\{.*\})?\s*$/);
+    // The `function_call_*` alternatives that start with a token and `(`
+    // are a call with a syntax of its own - `DATE(`, `LEFT(`, `CHAR(...
+    // USING ...)` - and a keyword everywhere else, as the grammar treats
+    // them: a function only before a parenthesis. A token can have
+    // several spellings: SUBSTRING is SUBSTR and MID too.
+    const callTokens = ruleTokens(yacc, /^function_call_/,
+        /^\s*\|?\s*([A-Z][A-Z0-9_]*)\s*'\('/);
     const keywordFunctions = [...symbols, ...syntacticFunctions]
         .filter(([, token]) => {
             return callTokens.has(token);
@@ -317,12 +301,8 @@ const sync = (server: string, shell: string): void => {
             ...nativeFunctions(read(server, "sql", "item_geofunc.cc"),
                 "func_array_geom"),
         ]),
-        restKeywords: list(xMacroList(
-            read(shell, "modules", "mrs", "core", "mrs_lexer.h"),
-            "MRS_KEYWORD_LIST")),
-        restAnnotations: list(xMacroList(
-            read(shell, "modules", "mrs", "core", "mrs_lexer.h"),
-            "MRS_ANNOTATION_LIST")),
+        restKeywords: list(xMacroList(mrs, "MRS_KEYWORD_LIST")),
+        restAnnotations: list(xMacroList(mrs, "MRS_ANNOTATION_LIST")),
     };
     writeFileSync(wordsFile, `${JSON.stringify(words, null, 4)}\n`);
     console.log(`${wordsFile}: ${words.reserved.length} reserved, `
@@ -382,22 +362,16 @@ const build = (check: boolean): boolean => {
     // Parsed and printed again: the template is kept readable, the
     // grammar VS Code loads is kept valid.
     const text = `${JSON.stringify(JSON.parse(grammar), null, 4)}\n`;
-    const file = join(syntaxes, grammarFile);
     if (!check) {
-        writeFileSync(file, text);
-        console.log(`${file} written`);
+        writeFileSync(grammarFile, text);
+        console.log(`${grammarFile} written`);
 
         return true;
     }
 
-    let current: string | undefined;
-    try {
-        current = readFileSync(file, "utf8");
-    } catch {
-        current = undefined;
-    }
-    if (current !== text) {
-        console.error(`${file} is out of date: run `
+    if (!existsSync(grammarFile)
+        || readFileSync(grammarFile, "utf8") !== text) {
+        console.error(`${grammarFile} is out of date: run `
             + "`node tools/grammar.mts build`");
 
         return false;

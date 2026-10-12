@@ -458,14 +458,12 @@ export function* scanStatements(
  *
  * @param sql The SQL to split.
  * @param delimiter The delimiter in force at the start.
- * @param ansiQuotes Whether `"..."` is an identifier; see scanStatements.
  *
  * @returns Every statement range.
  */
 export const determineStatementRanges = (
     sql: string,
     delimiter = ";",
-    ansiQuotes = false,
 ): IStatementSpan[] => {
-    return [...scanStatements(sql, delimiter, ansiQuotes)];
+    return [...scanStatements(sql, delimiter)];
 };

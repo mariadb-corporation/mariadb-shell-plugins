@@ -18,6 +18,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { ConnectionManager } from "../../connections/connectionManager.js";
+import { SqlModes } from "../../connections/sqlModes.js";
 import type { IStatementResult } from "../../mcp/types.js";
 import {
     buildConnectionHeader,
@@ -112,9 +113,11 @@ const createBinding = (
     const view = new MockWebviewView(RESULT_VIEW_ID);
     resultView.resolveWebviewView(view as never);
     view.webview.receive({ type: "ready" });
-    const binding = new SqlEditorBinding(connections, resultView, log);
+    const sqlModes = new SqlModes(connections, log);
+    const binding = new SqlEditorBinding(connections, resultView, log,
+        sqlModes);
 
-    return { api, connections, resultView, view, binding, log };
+    return { api, connections, resultView, view, binding, log, sqlModes };
 };
 
 describe("SqlEditorBinding", () => {
@@ -234,7 +237,7 @@ describe("SqlEditorBinding", () => {
             const binding = new SqlEditorBinding(
                 connections,
                 new ResultViewProvider(Uri.file("/ext") as never, log),
-                log);
+                log, new SqlModes(connections, log));
 
             await binding.selectConnection(
                 createEditor("SELECT 1;").document as never);
@@ -284,7 +287,7 @@ describe("SqlEditorBinding", () => {
         const binding = new SqlEditorBinding(
             connections,
             new ResultViewProvider(Uri.file("/ext") as never, log),
-            log);
+            log, new SqlModes(connections, log));
 
         await expect(binding.selectConnection(
             createEditor("SELECT 1;").document as never,
@@ -314,7 +317,8 @@ describe("SqlEditorBinding", () => {
 
     it("follows the sql_mode a run reports, for the next run and the markers",
         async () => {
-            const { api, binding } = createBinding("dba@localhost:3310", {
+            const { api, binding, sqlModes } = createBinding(
+                "dba@localhost:3310", {
                 defaultResults: [{
                     statement_index: 0,
                     result_sets: [],
@@ -324,7 +328,7 @@ describe("SqlEditorBinding", () => {
             });
             const editor = createEditor("SET sql_mode = 'ANSI_QUOTES';");
             const changed: string[] = [];
-            binding.onDidChangeSqlMode((uri) => {
+            sqlModes.onDidChange((uri) => {
                 changed.push(uri);
             });
 

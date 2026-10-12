@@ -27,11 +27,12 @@ import {
 
 /**
  * @param sql The script to scan.
+ * @param ansiQuotes Whether `"..."` is an identifier, as under ANSI_QUOTES.
  *
  * @returns The text of each span, as the offsets describe it.
  */
-const spanTexts = (sql: string): string[] => {
-    return determineStatementRanges(sql).map((span) => {
+const spanTexts = (sql: string, ansiQuotes = false): string[] => {
+    return [...scanStatements(sql, ";", ansiQuotes)].map((span) => {
         return sql.substr(span.span.start, span.span.length);
     });
 };
@@ -161,10 +162,7 @@ describe("scanStatements", () => {
         // An identifier, as the server reads it then: `"a\"` ends at the
         // second quote, and `""` is the one escape.
         const sql = "SELECT \"a\\\"; SELECT \"b\"\";c\"; SELECT 1;";
-        expect(determineStatementRanges(sql, ";", true).map((span) => {
-            return sql.slice(span.span.start,
-                span.span.start + span.span.length);
-        })).toEqual([
+        expect(spanTexts(sql, true)).toEqual([
             "SELECT \"a\\\";", " SELECT \"b\"\";c\";", " SELECT 1;",
         ]);
     });
