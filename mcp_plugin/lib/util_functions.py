@@ -47,6 +47,19 @@ _RESERVED_OPTIONS = ("session", "progressCallback", "showProgress")
 # Options that make the URL a prefix in object storage instead of a path.
 _REMOTE_STORAGE_OPTIONS = ("s3BucketName", "osBucketName", "azureContainerName")
 
+# Options that name a local file the utility reads or writes, whatever the
+# storage its URL is in: the load's progress file, and the configuration and
+# credential files of the object storage services.
+_LOCAL_FILE_OPTIONS = (
+    "progressFile",
+    "ociConfigFile",
+    "s3ConfigFile",
+    "s3CredentialsFile",
+    "azureConfigFile",
+)
+
+_SCHEME_DELIMITER = "://"
+
 
 def _options(options: Optional[dict]) -> dict:
     """The utility options a client gave, refusing the ones set here."""
@@ -63,17 +76,48 @@ def _options(options: Optional[dict]) -> dict:
     return options
 
 
-def _local_paths(urls, options: dict) -> list:
-    """The paths on this machine among the URLs a utility reads or writes."""
-    if any(key in options for key in _REMOTE_STORAGE_OPTIONS):
-        return []
+def _local_path(url) -> Optional[str]:
+    """The path on this machine a URL names, or None for a remote one.
 
+    Follows the shell's storage layer (``mysqlshdk/libs/storage``): the scheme
+    is what comes before the first ``://``, a URL without one is a local path,
+    and so is one whose scheme is ``file`` in any case - with the scheme
+    stripped. Every other scheme (an ``https`` PAR, say) is remote.
+    """
+    if not isinstance(url, str):
+        return None
+
+    position = url.find(_SCHEME_DELIMITER)
+    if position < 0:
+        return url
+    if url[:position].lower() == "file":
+        return url[position + len(_SCHEME_DELIMITER):]
+
+    return None
+
+
+def _local_paths(urls, options: dict) -> list:
+    """The paths on this machine a utility reads or writes.
+
+    The URLs are local unless an object storage option makes them prefixes in
+    a bucket; the file options name local files in every case.
+    """
     paths = []
-    for url in urls:
-        if "://" in url:
-            continue
-        # a pattern of files is checked where the files are
-        paths.append(os.path.dirname(url) if any(c in url for c in "*?[") else url)
+
+    if not any(key in options for key in _REMOTE_STORAGE_OPTIONS):
+        for url in urls:
+            path = _local_path(url)
+            if path is None:
+                continue
+            # a pattern of files is checked where the files are
+            paths.append(
+                os.path.dirname(path) if any(c in path for c in "*?[") else path
+            )
+
+    for key in _LOCAL_FILE_OPTIONS:
+        path = _local_path(options.get(key))
+        if path:
+            paths.append(path)
 
     return paths
 
