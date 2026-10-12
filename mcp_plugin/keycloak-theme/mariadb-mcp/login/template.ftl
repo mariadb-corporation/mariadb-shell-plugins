@@ -17,7 +17,6 @@
 <#-- The page frame of every page of this theme: the base theme's template with
      its scripts and hooks kept as they are, laid out like the MCP server's own
      sign-in page (logo, welcome header, card, footer). -->
-<#import "theme-resources.ftl" as themeResourceTags>
 <#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
 <!DOCTYPE html>
 <html lang="${lang}"<#if realm.internationalizationEnabled> dir="${(locale.rtl)?then('rtl','ltr')}"</#if>>
@@ -92,7 +91,7 @@
         <p>${msg("mcpWelcomeText")}</p>
     </div>
 
-    <div class="mcpCard">
+    <div class="mrsLogin mcpCard">
         <#if realm.internationalizationEnabled && locale.supported?size gt 1>
             <div id="kc-locale" class="menu-button-links">
                 <button id="kc-current-locale-link" class="mcpButton" aria-label="${msg("languages")}" aria-haspopup="true" aria-expanded="false" aria-controls="language-switch1">${locale.current}</button>
@@ -110,14 +109,12 @@
             <#nested "show-username">
             <div id="kc-username">
                 <span id="kc-attempted-username">${auth.attemptedUsername}</span>
-                <a id="reset-login" href="${url.loginRestartFlowUrl}" aria-label="${msg("restartLoginTooltip")}" title="${msg("restartLoginTooltip")}">
-                    <span class="kc-tooltip-text">${msg("restartLoginTooltip")}</span>
-                </a>
+                <a id="reset-login" href="${url.loginRestartFlowUrl}" aria-label="${msg("restartLoginTooltip")}" title="${msg("restartLoginTooltip")}"></a>
             </div>
         </#if>
 
         <#if client?? && client.clientId?? && !(client.clientId?starts_with("account") || client.clientId?starts_with("security-admin"))>
-            <div class="mcpIntro">${msg("mcpContinueTo")} <strong>${(client.name?has_content)?then(advancedMsg(client.name), client.clientId)}</strong></div>
+            <div class="mrsLoginIntro">${msg("mcpContinueTo")} <strong>${(client.name?has_content)?then(advancedMsg(client.name), client.clientId)}</strong></div>
         </#if>
 
         <div id="kc-content">
@@ -127,7 +124,7 @@
                     <#if message.type = 'error'>
                         <div class="mrsLoginError" role="alert"><p>${kcSanitize(message.summary)?no_esc}</p></div>
                     <#else>
-                        <div class="mcpAlert alert-${message.type}" role="status">${kcSanitize(message.summary)?no_esc}</div>
+                        <div class="mcpAlert" role="status">${kcSanitize(message.summary)?no_esc}</div>
                     </#if>
                 </#if>
 

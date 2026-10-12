@@ -1524,106 +1524,26 @@ _SCOPE_DESCRIPTIONS = {
     tenants.SCOPE_DB: "work with your databases (connect, browse, run SQL)",
 }
 
-# The page follows the MySQL REST Service's sign-in page (mrs_plugin's
-# default_static_content/index.html), without its script: same colours, same
-# welcome header, same joined fields with the round "next" button.
-_PAGE_STYLE = """
-:root{--body-background:hsl(240,5%,91%);--body-text-color:hsl(240,5%,12%);
---logo-color:#003545;--textLink-foreground:hsl(200,65%,34%);
---primary-text-color:#333;--secondary-text-color:#adadad;--focus-color:hsl(200,65%,70%);
---error-color:hsl(0,100%,70%);--error-text-color:#500}
-@media (prefers-color-scheme:dark){:root{--body-background:hsl(0,0%,17%);--logo-color:#fff;
---body-text-color:hsl(0,0%,75%);--textLink-foreground:hsl(200,65%,54%);
---primary-text-color:#c4c4c4;--secondary-text-color:#595959;--focus-color:hsl(200,65%,30%);
---error-color:hsl(0,100%,20%);--error-text-color:#e00}}
-body,html{width:100%;min-height:100%;height:100%}
-*{margin:0;padding:0}
-body{background-color:var(--body-background);
-font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:12px;
-color:var(--body-text-color)}
-h2{margin:20px 0;font-weight:100;font-size:33px}
-p{line-height:19px;font-weight:200;font-size:15px}
-#root{display:flex;box-sizing:border-box;min-height:100%;padding:0 16px 40px;
-flex-direction:column;align-items:center;justify-content:center;position:relative}
-.welcomeLogo{margin-top:20px;margin-bottom:16px;width:160px;height:130px;min-height:130px}
-.welcomeLogo svg{width:100%;height:100%}
-.welcomeLogo path{fill:var(--logo-color)}
-.welcomeText{display:flex;flex-direction:column;align-items:center;justify-content:center}
-.welcomeText p{text-align:center;max-width:400px}
-.welcomeSpacer{height:80px}
-.footer{position:absolute;bottom:0;line-height:12pt;font-weight:200;font-size:10px;margin:5px 0}
-.mrsLogin{display:flex;flex-direction:column;padding-top:20px;padding-bottom:20px;gap:12px;
-align-items:center}
-.mrsLogin>p{font-size:20px;font-weight:400;margin-top:38px}
-.mrsLoginIntro{max-width:300px;text-align:center;line-height:19px;font-weight:200;
-font-size:15px}
-.mrsLoginIntro strong{font-weight:500}
-.mrsLoginFields{display:flex;flex-direction:column}
-.mrsLoginScopes{border:none;margin:0 0 16px;font-size:14px;font-weight:200}
-.mrsLoginScopes legend{font-weight:400;margin-bottom:6px}
-.mrsLoginScopes label{display:flex;align-items:center;gap:8px;margin:4px 0}
-input[type=checkbox]{margin:0}
-.mrsLoginFields input[type=password],.mrsLoginFields input[type=text],.mrsLoginFields select
-{border:none;outline:0;background-color:transparent;color:var(--primary-text-color);
-font-size:17px;font-weight:300;width:250px;flex:1 1 250px;min-width:0;
-font-family:inherit}
-.mrsLoginField{display:flex;flex-direction:row;border:1px solid var(--secondary-text-color);
-padding:8px 8px 8px 16px}
-.mrsLoginField:first-of-type{border-top-left-radius:5px;border-top-right-radius:5px}
-.mrsLoginField:last-of-type:not(:only-of-type){border-top:0}
-.mrsLoginField:last-of-type{border-bottom-left-radius:5px;border-bottom-right-radius:5px;
-margin-bottom:16px}
-.mrsLoginField input,.mrsLoginField select{height:26px}
-.mrsLoginField:focus-within{border-color:var(--focus-color)}
-.mrsLoginBtnNext{border:1px solid var(--secondary-text-color);border-radius:50%;width:24px;
-height:24px;min-width:24px;margin-left:12px;padding:0;background:transparent;
-cursor:pointer;display:block;line-height:0;text-align:left;align-self:center;box-sizing:content-box;
--webkit-appearance:none;appearance:none;font:inherit;color:inherit;box-shadow:none}
-.mrsLoginBtnNext svg{display:block;width:24px;height:24px;fill:none;
-stroke:var(--secondary-text-color);stroke-width:3;stroke-linejoin:miter}
-.mrsLoginField:has(input:not(:placeholder-shown)) .mrsLoginBtnNext{
-border:1px solid var(--primary-text-color)}
-.mrsLoginField:has(input:not(:placeholder-shown)) .mrsLoginBtnNext svg{
-stroke:var(--primary-text-color)}
-.mrsLoginBtnNext:focus-visible{outline:2px solid var(--focus-color);outline-offset:2px}
-.mrsLoginError{background-color:var(--error-color);box-shadow:rgb(0 0 0 / 10%) 0 5px 10px 2px;
-width:220px;padding:8px 20px;border:1px solid var(--error-text-color);border-radius:6px;
-overflow-wrap:break-word;position:relative}
-.mrsLoginError p{color:var(--error-text-color);font-size:14px;text-align:center}
-.mrsLoginError:before{width:15px;height:15px;background-color:var(--error-color);content:"";
-position:absolute;left:50%;top:0;margin-top:-9px;margin-left:-8px;
-transform:rotate(135deg) skewX(5deg) skewY(5deg);border-left:1px solid var(--error-text-color);
-border-bottom:1px solid var(--error-text-color)}
-.mrsLoginSeparator{background:linear-gradient(to right,rgba(200,200,200,0),#c8c8c8,#c8c8c8,
-rgba(200,200,200,0));width:400px;max-width:100%;height:1px;margin-top:20px}
-"""
-
-
+# The page's style (lib/assets/sign-in-page.css) follows the MySQL REST
+# Service's sign-in page (mrs_plugin's default_static_content/index.html),
+# without its script: same colours, same welcome header, same joined fields
+# with the round "next" button.
 @functools.lru_cache(maxsize=None)
-def _logo_svg() -> str:
-    """Returns the MariaDB logo as inline SVG, coloured by the page's CSS.
+def _asset(name) -> str:
+    """Returns a file of ``lib/assets``, read once.
 
-    The official vertical logo (the seal above the MariaDB wordmark), in its
-    white variant; the page colours it with ``--logo-color``, the logo's blue
-    in the light scheme and white in the dark one. Inline because the page's
-    CSP loads nothing. Its own ``<style>`` element, its ``<title>`` (the
-    ``aria-label`` names it instead), and its style, class and id attributes
-    are removed: the CSP allows only the nonce'd style element, and the
-    logo's own fill would otherwise win over the page's. Read once.
+    ``sign-in-page.css`` is the page's style. ``mariadb-logo-vertical.svg`` is
+    the official vertical MariaDB logo (the seal above the wordmark), committed
+    ready to inline: without its own style, class or title - the CSP allows
+    only the page's nonce'd style element, and its own fill would win over the
+    page's ``--logo-color`` (the logo's blue in the light scheme, white in the
+    dark one) - and with ``role="img"`` and its ``aria-label``. Inline because
+    the page's CSP loads nothing.
     """
     import os
-    import re
 
-    path = os.path.join(os.path.dirname(__file__), "assets", "mariadb-logo-vertical.svg")
-    with open(path, encoding="utf-8") as file:
-        svg = file.read()
-    svg = svg[svg.index("<svg"):]
-    svg = re.sub(r"\s*<(defs|title)>.*?</\1>", "", svg, flags=re.S)
-    svg = re.sub(
-        r'\s(style|class|id|data-name|width|height|xml:space|xmlns:\w+|serif:\w+)="[^"]*"', "", svg
-    )
-
-    return svg.replace("<svg", '<svg role="img" aria-label="MariaDB"', 1)
+    with open(os.path.join(os.path.dirname(__file__), "assets", name), encoding="utf-8") as file:
+        return file.read()
 
 
 def _page(response_class, body: str, status: int = 200, raw: bool = False,
@@ -1643,8 +1563,8 @@ def _page(response_class, body: str, status: int = 200, raw: bool = False,
     document = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<title>MariaDB MCP Server</title><style nonce="{nonce}">{_PAGE_STYLE}</style>'
-        f'</head><body><div id="root"><div class="welcomeLogo">{_logo_svg()}</div>'
+        f'<title>MariaDB MCP Server</title><style nonce="{nonce}">{_asset("sign-in-page.css")}</style>'
+        f'</head><body><div id="root"><div class="welcomeLogo">{_asset("mariadb-logo-vertical.svg")}</div>'
         '<div class="welcomeText"><h2>MCP Server</h2>'
         "<p>Welcome to the MariaDB MCP Server.</p></div>"
         f"{content}"

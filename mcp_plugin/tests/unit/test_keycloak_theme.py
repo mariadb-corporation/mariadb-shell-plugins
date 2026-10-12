@@ -40,15 +40,20 @@ def _read(*path):
         return file.read()
 
 
-def test_the_stylesheet_carries_the_sign_in_page_style():
-    assert oauth_builtin._PAGE_STYLE in _read("resources", "css", "mariadb-mcp.css")
+def _asset(name):
+    with open(os.path.join(os.path.dirname(os.path.abspath(oauth_builtin.__file__)),
+                           "assets", name), encoding="utf-8") as file:
+        return file.read()
+
+
+def test_the_stylesheet_is_the_sign_in_pages():
+    assert _read("resources", "css", "sign-in-page.css") == _asset("sign-in-page.css")
 
 
 def test_the_logo_is_the_one_the_sign_in_page_shows():
-    logo = _read("logo.ftl")
-
     # Inside noparse, so that FreeMarker never reads the SVG as a template.
-    assert f"<#noparse>{oauth_builtin._logo_svg().strip()}</#noparse>" in logo
+    logo = _asset("mariadb-logo-vertical.svg").strip()
+    assert f"<#noparse>{logo}</#noparse>" in _read("logo.ftl")
 
 
 def test_the_theme_extends_the_base_theme_with_its_own_stylesheet():
@@ -59,8 +64,9 @@ def test_the_theme_extends_the_base_theme_with_its_own_stylesheet():
     )
 
     assert properties["parent"] == "base"
-    assert properties["styles"] == "css/mariadb-mcp.css"
-    assert os.path.isfile(os.path.join(THEME, "resources", properties["styles"]))
+    assert properties["styles"] == "css/sign-in-page.css css/mariadb-mcp.css"
+    for style in properties["styles"].split():
+        assert os.path.isfile(os.path.join(THEME, "resources", style))
 
 
 def test_the_page_frame_is_the_only_template_layout():

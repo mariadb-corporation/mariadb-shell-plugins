@@ -12,7 +12,8 @@ The theme changes only how the pages look. It works with any realm, including on
 | `mariadb-mcp/login/template.ftl` | The page frame of every login page: logo, header, card, footer. It keeps all scripts of the base template. |
 | `mariadb-mcp/login/login.ftl` | The sign-in page. |
 | `mariadb-mcp/login/logo.ftl` | The official MariaDB logo, inline so that the stylesheet can color it: the logo's blue in the light scheme, white in the dark one. |
-| `mariadb-mcp/login/resources/css/mariadb-mcp.css` | The MCP server's sign-in page stylesheet, followed by styles for Keycloak's other login pages. |
+| `mariadb-mcp/login/resources/css/sign-in-page.css` | The stylesheet of the MCP server's own sign-in page, unchanged. |
+| `mariadb-mcp/login/resources/css/mariadb-mcp.css` | The styles for Keycloak's other login pages, on top of it. |
 | `mariadb-mcp/login/messages/messages_en.properties` | The header, welcome, and footer texts. |
 
 All other pages, such as updating a profile after the first sign-in through an identity provider, come from the `base` theme and use the same frame and styles.
@@ -59,7 +60,7 @@ To see the result, open `https://<keycloak>/realms/<realm>/account/` in a privat
 ## Customize
 
 * **Texts:** change `messages/messages_en.properties`, or add `messages_<language>.properties` files for other languages. The base theme provides all other texts in every language it supports.
-* **Colors:** the variables at the top of the stylesheet, `:root` for the light and the `prefers-color-scheme: dark` block for the dark scheme.
+* **Colors:** the variables at the top of `sign-in-page.css`, `:root` for the light and the `prefers-color-scheme: dark` block for the dark scheme.
 
 After a change, restart Keycloak. Keycloak keeps a compressed copy of each stylesheet under `data/tmp/kc-gzip-cache` and serves it to browsers that accept gzip, which is every browser. A restart doesn't clear that directory, so after changing anything under `resources`, also delete the theme's copies:
 
@@ -71,4 +72,4 @@ Browsers also cache the stylesheet. Check a change in a private window.
 
 ## Keeping It in Line with the MCP Server's Page
 
-The first part of `mariadb-mcp.css` and the logo in `logo.ftl` are copies of `_PAGE_STYLE` and of `lib/assets/mariadb-logo-vertical.svg`, as used by the MCP server's own sign-in page in `lib/oauth_builtin.py`. `tests/unit/test_keycloak_theme.py` fails when they drift apart. After changing the server's page, copy the changes over.
+`sign-in-page.css` and the logo in `logo.ftl` are copies of `lib/assets/sign-in-page.css` and `lib/assets/mariadb-logo-vertical.svg`, which the MCP server's own sign-in page uses. `tests/unit/test_keycloak_theme.py` fails when they drift apart. After changing the server's page, copy the files over. Changing a color in the theme's copy alone makes the test fail; change it in both, or override it in `mariadb-mcp.css`.
