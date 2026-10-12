@@ -442,7 +442,10 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   would. A load that is stopped can be resumed by loading the same dump again.
 - **Limits:** a client may run 4 tasks at once. Finished tasks are kept for an hour,
   100 at most. A task belongs to the client that started it, as a connection does.
-- Local paths are checked against the allowed paths. A URL, or a prefix in object
+- Local paths are checked against the allowed paths: a path with no scheme, a
+  `file://` URL (as the shell reads it, scheme in any case), and the local files
+  named by `progressFile`, `ociConfigFile`, `s3ConfigFile`, `s3CredentialsFile` and
+  `azureConfigFile`. A remote URL (`https://` and the like), or a prefix in object
   storage (`s3BucketName`, `osBucketName`, `azureContainerName`), is left to the
   utility.
 - The tools are registered only when the `db` group is served as well, and never in

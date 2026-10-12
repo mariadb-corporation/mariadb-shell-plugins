@@ -223,6 +223,41 @@ def test_only_local_paths_are_checked():
     assert util_functions._local_paths(["/data/in/part-*.tsv"], {}) == ["/data/in"]
 
 
+def test_a_file_url_is_checked_as_the_path_it_names():
+    # as the shell reads it: the scheme matched in any case, then stripped
+    assert util_functions._local_paths(["file:///etc/passwd"], {}) == ["/etc/passwd"]
+    assert util_functions._local_paths(["FILE:///etc/passwd"], {}) == ["/etc/passwd"]
+    assert util_functions._local_paths(["File://~/dump"], {}) == ["~/dump"]
+    assert util_functions._local_paths(["file:///data/in/*.tsv"], {}) == ["/data/in"]
+    # every other scheme is remote
+    assert util_functions._local_paths(["HTTPS://example.com/par/"], {}) == []
+
+
+def test_the_file_options_are_checked_wherever_the_dump_is():
+    options = {
+        "progressFile": "file:///tmp/progress.json",
+        "s3ConfigFile": "~/.aws/config",
+        "s3CredentialsFile": "/home/u/.aws/credentials",
+        "threads": 4,
+    }
+    assert util_functions._local_paths(["/data/dump"], options) == [
+        "/data/dump",
+        "/tmp/progress.json",
+        "~/.aws/config",
+        "/home/u/.aws/credentials",
+    ]
+    # in a bucket the URL is a prefix there, but the files are still local
+    assert util_functions._local_paths(
+        ["prefix/dump"], {"s3BucketName": "b", "progressFile": "/tmp/p.json"}
+    ) == ["/tmp/p.json"]
+    # a progress file of a PAR load can be remote too
+    assert util_functions._local_paths(
+        ["https://example.com/par/"], {"progressFile": "https://example.com/p"}
+    ) == []
+    # an empty one is not a path
+    assert util_functions._local_paths([], {"progressFile": ""}) == []
+
+
 # --- the tools, end to end ----------------------------------------------------
 
 TOOLS = {
