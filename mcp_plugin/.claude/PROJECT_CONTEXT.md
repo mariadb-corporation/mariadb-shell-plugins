@@ -110,18 +110,20 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
   - **#44** `wip/mrs_code_ext` (opened 2026-10-11): the `mrs` function group
     wrapping mrs_plugin, plus the extension. It has #41 and #43 merged in.
   - #41 `wip/mrs_schema_improvements`: mrs_plugin / msm_plugin.
-- **CI fails on all three for one reason**: the runner's shell is the
-  26.10.1 release, without mariadb-shell #71 (MRS module, #41/#44) and #73
-  (`util.*` options, #43/#44). Nothing else fails: #43's run had 606 passed
-  and 1 failed (the util stdio test). See util.md "CI".
+- **CI fails on #41 and #44 for one reason**: the runner's shell is the
+  26.10.1 release, without mariadb-shell #71 (MRS module). #43 failed too,
+  for want of #73 (`util.*` options), until its tasks moved to a shell
+  process of their own on 2026-10-12, which any release can run.
 - Suite: **616 passed, 3 skipped** on #44's tree against a local build of
   #71 + #73 (`wip/ui_test_shell` in `~/git/mariadb-shell`, local only); on
   `wip/vscode_syntax_highlighter` only the script / paging / session / sql
   tests were run (133 passed, 1 skipped).
-- **mariadb-shell open PRs this depends on:** #71 (MRS module), #73 (util
-  session / progressCallback), #74 (`[bypass-ci]` docs for the util tools),
-  #75 (a flaky encrypted-load test). `split_script`'s options argument,
-  which `ansi_quotes` needs, is in every release since 26.8.0.
+- **mariadb-shell open PRs this depends on:** #71 (MRS module), #74
+  (`[bypass-ci]` docs for the util tools). #73 (util session /
+  progressCallback) was closed on 2026-10-12, when the tasks moved to a
+  shell process of their own; #75 (a flaky encrypted-load test) is merged.
+  `split_script`'s options argument, which `ansi_quotes` needs, is in every
+  release since 26.8.0.
 - `origin/wip/msm_mrs_fixes` (merged as #36) is gone (checked 2026-10-11).
   mrs_plugin's project dump/load got msm's `run_util` on #41's branch
   (2026-10-11, see [`context/siblings.md`](context/siblings.md)).
