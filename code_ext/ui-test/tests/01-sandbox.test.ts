@@ -17,7 +17,7 @@
 
 import * as assert from "node:assert/strict";
 
-import { EditorView, TextEditor } from "vscode-extension-tester";
+import { EditorView, TextEditor, VSBrowser } from "vscode-extension-tester";
 
 import {
     childLabels,
@@ -44,8 +44,11 @@ import {
 /**
  * A clean sandbox for the tests that follow, made the way a user makes
  * one: the New Sandbox dialog. Then the `uitest` schema, created by running
- * SQL from an editor opened on the sandbox's connection. The last test
- * file deletes the sandbox again.
+ * SQL from an editor opened on the sandbox's connection.
+ *
+ * Every suite starts with this file (see `ui-test/run.ts`), in a VS Code
+ * and a shell home of its own, and ends with `99-cleanup`, which deletes
+ * the sandbox again - so it cannot count on anything a test before it did.
  */
 
 const SCHEMA_SQL = [
@@ -65,6 +68,11 @@ const SCHEMA_SQL = [
 ].join("\n");
 
 describe("A sandbox to test with", () => {
+    before(async () => {
+        // The first file of most suites: nothing has waited for VS Code yet.
+        await VSBrowser.instance.waitForWorkbench();
+    });
+
     it("deploys a sandbox with the New Sandbox dialog", async () => {
         await openSection("Sandboxes");
         await runCommand("MariaDB: New Sandbox…");

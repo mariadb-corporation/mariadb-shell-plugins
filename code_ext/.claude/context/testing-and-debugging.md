@@ -39,14 +39,41 @@ their tests read `textContent` rather than comparing strings.
 
 ## UI tests (ExTester)
 
-`MARIADB_SHELL=<path to mariadb-shell> npm run ui-test` drives a real
-VS Code through WebDriver. It uses vscode-extension-tester 8.28.1 and
-Mocha, on the newest VS Code (`--code_version max`). `UI_TEST_GLOB`
-picks the files, e.g. `UI_TEST_GLOB=out/ui-test/tests/0[01]*.test.js`.
+`MARIADB_SHELL=<path to mariadb-shell> npm run ui-test [suite...]`
+drives a real VS Code through WebDriver. It uses vscode-extension-tester
+8.28.1 and Mocha, on the newest VS Code (`--code_version max`).
 `mariadbd` must be on the PATH.
 
-- `ui-test/run.ts` builds a temporary work dir, which is removed at the
-  end, also after a failure. Sandboxes left running are pkill'ed first.
+**Split into suites by area** (2026-10-12, the user's call: a change in
+one area should not need the full run). `SUITES` in `ui-test/run.ts`:
+
+| Suite | Files, between `01-sandbox` and `99-cleanup` | npm script |
+| --- | --- | --- |
+| `core` | `00-startup` (before the setup), `03-connections`, `04-sql-results`, `05-lifecycle` | `ui-test:core` |
+| `mrs` | `02-mrs` | `ui-test:mrs` |
+| `dump-load` | `06-dump-load` | `ui-test:dump-load` |
+
+Each suite is one `extest setup-and-run` of its own: a fresh VS Code
+profile, a work dir, shell home, ports and sandbox of its own.
+`01-sandbox` (New Sandbox dialog, the `uitest` schema) and `99-cleanup`
+(delete it) wrap every suite, so a suite can count on nothing another
+did. No suite named runs all three, one after the other; a failing one
+does not stop the next, and a summary says which failed. The files are
+passed one pattern each, because ExTester adds the matches of one
+pattern in no set order (`globSync(...).reverse()`). Arguments naming no
+suite go to `extest`; `UI_TEST_GLOB` runs its files as one run without
+the setup and cleanup. A new test file goes into a suite's `files`.
+A suite is stopped after `UI_TEST_SUITE_MINUTES` (default 20): ExTester
+never exits when ChromeDriver fails to start, which it does when its
+port is taken between being picked and bound (`bind() failed: Address
+already in use` in `.vscode-test/extest/chromedriver.log`, "Server
+terminated early with status 1" in the run) - seen 2026-10-12, it held
+the whole run. ExTester is started directly, not through `npx`, so the
+kill reaches it.
+
+- `ui-test/run.ts` builds a temporary work dir per suite, which is
+  removed at the end, also after a failure. Sandboxes left running are
+  pkill'ed first.
   - A shell home with this repo's plugins linked in and options.json
     `sandboxDir` + `credentialStore.helper: plaintext`. The keychain is
     the whole user's, so without the plaintext helper the test VS Code
@@ -57,9 +84,12 @@ picks the files, e.g. `UI_TEST_GLOB=out/ui-test/tests/0[01]*.test.js`.
     PATH and finds the user's shell.
   - All `VSCODE_*` / `ELECTRON_*` variables are stripped. An inherited
     `ELECTRON_RUN_AS_NODE` makes the test VS Code exit at once.
-- The files run in order and lean on each other:
-  - `00-startup`
-  - `01-sandbox`: New Sandbox dialog, test schema
+- The files, by suite above; within a suite they run in order and lean
+  on each other:
+  - `00-startup`: the first-start layout and the empty views (`core`
+    only, before the sandbox exists)
+  - `01-sandbox`: New Sandbox dialog, test schema; waits for the
+    workbench itself, as it is the first file of `mrs` and `dump-load`
   - `02-mrs`: MRS end to end
   - `03-connections`
   - `04-sql-results`
@@ -69,7 +99,8 @@ picks the files, e.g. `UI_TEST_GLOB=out/ui-test/tests/0[01]*.test.js`.
     server's state with the shell on the command line, outside the UI.
   - `99-cleanup`: drops the sandbox
 
-  `.mocharc.json` has `bail`.
+  `.mocharc.json` has `bail`: a failure ends its suite, skipping
+  `99-cleanup`, and the work dir removal and pkill clean up instead.
 - Helpers live in `ui-test/lib/ui.ts`. `openSection` collapses the
   other MariaDB views and expands the one asked for: with three views
   sharing the side bar, deep Connections rows were out of sight (and
