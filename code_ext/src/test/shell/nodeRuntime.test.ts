@@ -36,7 +36,7 @@ import {
 let sandbox: string;
 
 beforeAll(async () => {
-    sandbox = await fs.mkdtemp(path.join(os.tmpdir(), "mariadb-ext-"));
+    sandbox = await fs.mkdtemp(path.join(os.tmpdir(), "mariadb-dev-"));
 });
 
 afterAll(async () => {
