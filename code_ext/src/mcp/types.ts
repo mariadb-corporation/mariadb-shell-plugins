@@ -165,6 +165,25 @@ export interface IStatementResult {
     error?: string;
     /** The failing statement's text, abbreviated. */
     statement?: string;
+    /**
+     * On a script's last entry, when the sql_mode was asked for: how the
+     * script was split. Absent from a shell that predates the argument -
+     * which then split it with `"..."` as a string, whatever was asked.
+     */
+    ansi_quotes?: boolean;
+    /**
+     * On a script's last entry, when asked for: the session's sql_mode
+     * once the script was over. Absent where it could not be read.
+     */
+    sql_mode?: string;
+}
+
+/** How `db.execute_sql_script` is to treat a script, beyond running it. */
+export interface IScriptOptions {
+    /** Split it with `"..."` as an identifier, as under ANSI_QUOTES. */
+    ansiQuotes?: boolean;
+    /** Report the split and the session's sql_mode on the last entry. */
+    reportSqlMode?: boolean;
 }
 
 /** Which rows of a statement's result to fetch. */
@@ -267,6 +286,7 @@ export interface IMariaDbApi {
         sqlScript: string,
         stopOnError?: boolean,
         limit?: number,
+        options?: IScriptOptions,
     ): Promise<IStatementResult[]>;
     executeSql(
         connectionId: string,

@@ -104,12 +104,17 @@ export const hasContent = (span: IStatementSpan): boolean => {
  *
  * @param sql The SQL to split.
  * @param initialDelimiter The delimiter in force at the start.
+ * @param ansiQuotes Whether `"..."` is an identifier, as under the
+ *                   ANSI_QUOTES sql_mode, rather than a string. It has to
+ *                   be what `db.execute_sql_script` is told, so the two
+ *                   splits agree.
  *
  * @returns Each statement range, in order.
  */
 export function* scanStatements(
     sql: string,
     initialDelimiter = ";",
+    ansiQuotes = false,
 ): Generator<IStatementSpan> {
     if (sql.length === 0) {
         return;
@@ -299,9 +304,15 @@ export function* scanStatements(
             case "`": { // A quoted string or identifier.
                 haveContent = true;
                 const quote = sql[tail++];
+                // A backslash escapes in a string, not in an identifier:
+                // `a\` is a name ending in a backslash, and so is "a\"
+                // under ANSI_QUOTES - as the shell's splitter, which the
+                // MCP plugin splits with, reads them.
+                const escapes = quote === "'"
+                    || (quote === "\"" && !ansiQuotes);
                 while (tail < end && sql[tail] !== quote) {
                     // Skip any escaped character too.
-                    if (sql[tail] === "\\") {
+                    if (escapes && sql[tail] === "\\") {
                         ++tail;
                     }
                     ++tail;
@@ -447,12 +458,14 @@ export function* scanStatements(
  *
  * @param sql The SQL to split.
  * @param delimiter The delimiter in force at the start.
+ * @param ansiQuotes Whether `"..."` is an identifier; see scanStatements.
  *
  * @returns Every statement range.
  */
 export const determineStatementRanges = (
     sql: string,
     delimiter = ";",
+    ansiQuotes = false,
 ): IStatementSpan[] => {
-    return [...scanStatements(sql, delimiter)];
+    return [...scanStatements(sql, delimiter, ansiQuotes)];
 };

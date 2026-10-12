@@ -1,0 +1,435 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "comment": "The template `tools/grammar.mts build` makes the grammar from: the word-list placeholders are filled from syntaxes/words.json; the token rules follow sql/sql_lex.cc of the server and modules/mrs/core/mrs_lexer.h of the shell. Edit this file, never the built grammar.",
+    "name": "MariaDB SQL",
+    "scopeName": "source.mariadb-sql",
+    "patterns": [
+        {
+            "include": "#versioned-comment"
+        },
+        {
+            "include": "#tokens"
+        }
+    ],
+    "repository": {
+        "tokens": {
+            "comment": "Everything but the versioned comment, whose body is these again: inside one, another /*! is a plain comment, as in the server.",
+            "patterns": [
+                {
+                    "include": "#comments"
+                },
+                {
+                    "include": "#delimiter"
+                },
+                {
+                    "include": "#strings"
+                },
+                {
+                    "include": "#double-quoted-string"
+                },
+                {
+                    "include": "#quoted-identifier"
+                },
+                {
+                    "include": "#numbers"
+                },
+                {
+                    "include": "#constants"
+                },
+                {
+                    "include": "#rest"
+                },
+                {
+                    "include": "#variables"
+                },
+                {
+                    "include": "#functions"
+                },
+                {
+                    "include": "#keywords"
+                },
+                {
+                    "include": "#operators"
+                },
+                {
+                    "include": "#punctuation"
+                },
+                {
+                    "include": "#identifier"
+                }
+            ]
+        },
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.number-sign.sql",
+                    "match": "#.*$"
+                },
+                {
+                    "comment": "Only a comment when whitespace or the line's end follows; `--1` is two minus signs.",
+                    "name": "comment.line.double-dash.sql",
+                    "match": "--(?=\\s|$).*$"
+                },
+                {
+                    "name": "comment.block.hint.sql",
+                    "begin": "/\\*\\+",
+                    "end": "\\*/",
+                    "captures": {
+                        "0": {
+                            "name": "punctuation.definition.comment.sql"
+                        }
+                    }
+                },
+                {
+                    "comment": "No nesting: the first */ closes it, as in the server.",
+                    "name": "comment.block.sql",
+                    "begin": "/\\*",
+                    "end": "\\*/",
+                    "captures": {
+                        "0": {
+                            "name": "punctuation.definition.comment.sql"
+                        }
+                    }
+                }
+            ]
+        },
+        "versioned-comment": {
+            "comment": "/*!, /*M! and the reversed /*!!, with an optional 5 or 6 digit version: the body is SQL the server runs, only the markers are a comment.",
+            "name": "meta.comment.versioned.sql",
+            "begin": "(/\\*M?!!?)(\\d{5,6})?",
+            "end": "\\*/",
+            "beginCaptures": {
+                "1": {
+                    "name": "comment.block.versioned.sql punctuation.definition.comment.begin.sql"
+                },
+                "2": {
+                    "name": "comment.block.versioned.sql constant.numeric.version.sql"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "comment.block.versioned.sql punctuation.definition.comment.end.sql"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#tokens"
+                }
+            ]
+        },
+        "delimiter": {
+            "comment": "The client command, on a line of its own, as the statement splitter expects it.",
+            "match": "(?i)^\\s*(DELIMITER)\\s+(\\S+)\\s*$",
+            "captures": {
+                "1": {
+                    "name": "keyword.other.delimiter.sql"
+                },
+                "2": {
+                    "name": "punctuation.terminator.statement.custom.sql"
+                }
+            }
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "comment": "A character set introducer, directly before the quote.",
+                    "name": "storage.modifier.charset.sql",
+                    "match": "(?i)(?<![\\w$])_[a-z0-9]+(?=['\"])"
+                },
+                {
+                    "name": "storage.modifier.national.sql",
+                    "match": "(?i)(?<![\\w$])N(?=')"
+                },
+                {
+                    "name": "string.quoted.single.sql",
+                    "begin": "'",
+                    "end": "'",
+                    "applyEndPatternLast": 1,
+                    "beginCaptures": {
+                        "0": {
+                            "name": "punctuation.definition.string.begin.sql"
+                        }
+                    },
+                    "endCaptures": {
+                        "0": {
+                            "name": "punctuation.definition.string.end.sql"
+                        }
+                    },
+                    "patterns": [
+                        {
+                            "include": "#string-escapes"
+                        },
+                        {
+                            "name": "constant.character.escape.sql",
+                            "match": "''"
+                        }
+                    ]
+                }
+            ]
+        },
+        "double-quoted-string": {
+            "comment": "The default sql_mode: \"...\" is a string. Under ANSI_QUOTES it is an identifier, which the extension marks with semantic tokens (src/editor/ansiQuotes.ts), as only the connection can tell.",
+            "name": "string.quoted.double.sql",
+            "begin": "\"",
+            "end": "\"",
+            "applyEndPatternLast": 1,
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.begin.sql"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.string.end.sql"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#string-escapes"
+                },
+                {
+                    "name": "constant.character.escape.sql",
+                    "match": "\"\""
+                }
+            ]
+        },
+        "string-escapes": {
+            "comment": "Backslash escapes, as without NO_BACKSLASH_ESCAPES; a backslash at the line's end continues the string.",
+            "name": "constant.character.escape.sql",
+            "match": "\\\\(.|$)"
+        },
+        "quoted-identifier": {
+            "name": "entity.name.identifier.quoted.sql",
+            "begin": "`",
+            "end": "`",
+            "applyEndPatternLast": 1,
+            "beginCaptures": {
+                "0": {
+                    "name": "punctuation.definition.identifier.begin.sql"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "punctuation.definition.identifier.end.sql"
+                }
+            },
+            "patterns": [
+                {
+                    "name": "constant.character.escape.sql",
+                    "match": "``"
+                }
+            ]
+        },
+        "numbers": {
+            "comment": "A number followed by an identifier character is an identifier (1e, 123abc), which the lookaheads leave to the identifier rule, and so is one after a qualifying dot (t.1) - but not after the range operator (1..10). 1e5 and 1e+5 are floats.",
+            "patterns": [
+                {
+                    "name": "constant.numeric.hex.sql",
+                    "match": "(?i)(?<![\\w$])(?:0x[0-9a-f]+(?![\\w$])|x'[0-9a-f]*')"
+                },
+                {
+                    "name": "constant.numeric.binary.sql",
+                    "match": "(?i)(?<![\\w$])(?:0b[01]+(?![\\w$])|b'[01]*')"
+                },
+                {
+                    "name": "constant.numeric.float.sql",
+                    "match": "(?i)(?<![\\w$])(?<![^.]\\.)(?:\\d+\\.?\\d*|\\.\\d+)e[+-]?\\d+(?![\\w$])"
+                },
+                {
+                    "comment": "Not 1..10, whose dots are the range operator.",
+                    "name": "constant.numeric.decimal.sql",
+                    "match": "(?<![\\w$])(?<![^.]\\.)(?:\\d+\\.(?!\\.)\\d*|\\.\\d+)(?![\\w$])"
+                },
+                {
+                    "name": "constant.numeric.integer.sql",
+                    "match": "(?<![\\w$])(?<![^.]\\.)\\d+(?![\\w$])"
+                }
+            ]
+        },
+        "constants": {
+            "patterns": [
+                {
+                    "comment": "\\N is NULL, for LOAD DATA's sake.",
+                    "name": "constant.language.null.sql",
+                    "match": "\\\\N(?![\\w$])"
+                },
+                {
+                    "name": "constant.language.sql",
+                    "match": "(?i)(?<![\\w$])(?:NULL|TRUE|FALSE|UNKNOWN)(?![\\w$])"
+                }
+            ]
+        },
+        "rest": {
+            "comment": "What REST SQL adds to the server's lexer: the @ANNOTATIONS of a data mapping, and request paths.",
+            "patterns": [
+                {
+                    "name": "storage.modifier.annotation.rest.sql",
+                    "match": "(?i)@(?:ROWOWNERSHIP|NOFILTERING|DATATYPE|NODELETE|NOINSERT|NOSELECT|NOUPDATE|SORTABLE|NOCHECK|DELETE|INSERT|SELECT|UNNEST|UPDATE|CHECK|INOUT|KEY|OUT|IN)(?![\\w$])"
+                },
+                {
+                    "comment": "The host of a service, host@/path.",
+                    "match": "(?<=['\"`\\w$])(@)(?=/)",
+                    "captures": {
+                        "1": {
+                            "name": "punctuation.separator.host.sql"
+                        }
+                    }
+                },
+                {
+                    "comment": "/service/schema after whitespace: `a/b` is a division, and so is `a / b`; `a /b` is read as a path, which the lexer could only tell apart by context.",
+                    "name": "string.unquoted.path.rest.sql",
+                    "match": "(?<=\\s|^)(?:/[A-Za-z_][\\w$]*)+(?![\\w$])"
+                }
+            ]
+        },
+        "variables": {
+            "patterns": [
+                {
+                    "comment": "The host of user@host, directly after the user: not a variable.",
+                    "match": "(?<=['\"`\\w$])(@)('[^']*'|\"[^\"]*\"|`[^`]*`|[\\w$.%-]+)",
+                    "captures": {
+                        "1": {
+                            "name": "punctuation.separator.host.sql"
+                        },
+                        "2": {
+                            "name": "string.other.host.sql"
+                        }
+                    }
+                },
+                {
+                    "name": "variable.language.system.sql",
+                    "match": "(?i)@@(?:(?:global|session|local)\\.)?(?:[\\w$]+|`[^`]*`)?"
+                },
+                {
+                    "name": "variable.language.user.sql",
+                    "match": "@[\\w$.]+"
+                },
+                {
+                    "comment": "@'name', @\"name\" and @`name`.",
+                    "name": "variable.language.user.quoted.sql",
+                    "begin": "@(['\"`])",
+                    "end": "\\1"
+                },
+                {
+                    "name": "variable.parameter.placeholder.sql",
+                    "match": "\\?"
+                }
+            ]
+        },
+        "functions": {
+            "comment": "A name is a function only when ( follows, as in the lexer: LEFT JOIN is a keyword, LEFT( a function, and a column may be called `date`.",
+            "name": "support.function.sql",
+            "match": "(?i)(?<![\\w$])(?:ST_GEOMETRYCOLLECTIONFROMTEXT|ST_GEOMETRYCOLLECTIONFROMWKB|GEOMETRYCOLLECTIONFROMTEXT|ST_MULTILINESTRINGFROMTEXT|GEOMETRYCOLLECTIONFROMWKB|ST_MULTILINESTRINGFROMWKB|WSREP_SYNC_WAIT_UPTO_GTID|JSON_OBJECT_FILTER_KEYS|MULTILINESTRINGFROMTEXT|ST_MULTIPOLYGONFROMTEXT|WSREP_LAST_WRITTEN_GTID|CONCAT_OPERATOR_ORACLE|MULTILINESTRINGFROMWKB|ST_MULTIPOLYGONFROMWKB|VEC_DISTANCE_EUCLIDEAN|ST_LINESTRINGFROMTEXT|ST_MULTIPOINTFROMTEXT|JSON_ARRAY_INTERSECT|JSON_OBJECT_TO_ARRAY|MULTIPOLYGONFROMTEXT|ST_LINESTRINGFROMWKB|ST_MULTIPOINTFROMWKB|WSREP_LAST_SEEN_GTID|JSON_MERGE_PRESERVE|MULTIPOLYGONFROMWKB|ST_GEOMCOLLFROMTEXT|ST_GEOMETRYFROMTEXT|ST_NUMINTERIORRINGS|ST_POINTFROMGEOHASH|UNCOMPRESSED_LENGTH|VEC_DISTANCE_COSINE|JSON_CONTAINS_PATH|LINESTRINGFROMTEXT|MULTIPOINTFROMTEXT|ST_DISTANCE_SPHERE|ST_GEOMCOLLFROMWKB|ST_GEOMETRYFROMWKB|ST_GEOMFROMGEOJSON|ST_LONGFROMGEOHASH|ST_POLYGONFROMTEXT|JSON_ARRAY_APPEND|JSON_ARRAY_INSERT|JSON_SCHEMA_VALID|LINESTRINGFROMWKB|MULTIPOINTFROMWKB|RELEASE_ALL_LOCKS|ST_LATFROMGEOHASH|ST_MPOINTFROMTEXT|ST_POINTONSURFACE|ST_POLYGONFROMWKB|CHARACTER_LENGTH|DECODE_HISTOGRAM|FORMAT_PICO_TIME|GEOMCOLLFROMTEXT|GEOMETRYFROMTEXT|JSON_MERGE_PATCH|MASTER_GTID_WAIT|NATURAL_SORT_KEY|NUMINTERIORRINGS|POINTFROMGEOHASH|ST_INTERIORRINGN|ST_MLINEFROMTEXT|ST_MPOINTFROMWKB|ST_MPOLYFROMTEXT|ST_NUMGEOMETRIES|ST_POINTFROMTEXT|ST_SYMDIFFERENCE|BINLOG_GTID_POS|GEOMCOLLFROMWKB|GEOMETRYFROMWKB|LONGFROMGEOHASH|MASTER_POS_WAIT|PERCENTILE_CONT|PERCENTILE_DISC|POLYGONFROMTEXT|ST_EXTERIORRING|ST_GEOMETRYTYPE|ST_GEOMFROMTEXT|ST_INTERSECTION|ST_LINEFROMTEXT|ST_MLINEFROMWKB|ST_MPOLYFROMWKB|ST_POINTFROMWKB|ST_POLYFROMTEXT|SUBSTRING_INDEX|JSON_KEY_VALUE|JSON_NORMALIZE|JSON_OBJECTAGG|LAST_INSERT_ID|LATFROMGEOHASH|LIKE_RANGE_MAX|LIKE_RANGE_MIN|MONTHS_BETWEEN|MPOINTFROMTEXT|POINTONSURFACE|POLYGONFROMWKB|REGEXP_REPLACE|REPLACE_ORACLE|SQL_TSI_MINUTE|SQL_TSI_SECOND|ST_GEOMFROMWKB|ST_LINEFROMWKB|ST_POLYFROMWKB|UNIX_TIMESTAMP|COLUMN_CREATE|COLUMN_DELETE|COLUMN_EXISTS|CONNECTION_ID|DECODE_ORACLE|FROM_UNIXTIME|INTERIORRINGN|JSON_ARRAYAGG|JSON_CONTAINS|JSON_DETAILED|JSON_OVERLAPS|MBRINTERSECTS|MLINEFROMTEXT|MPOINTFROMWKB|MPOLYFROMTEXT|NUMGEOMETRIES|POINTFROMTEXT|REGEXP_SUBSTR|SQL_TSI_MONTH|ST_CONVEXHULL|ST_DIFFERENCE|ST_INTERSECTS|ST_STARTPOINT|SUBSTR_ORACLE|TIMESTAMPDIFF|WEIGHT_STRING|COERCIBILITY|COLUMN_CHECK|EXTERIORRING|EXTRACTVALUE|FORMAT_BYTES|GEOMETRYTYPE|GEOMFROMTEXT|GROUP_CONCAT|IS_FREE_LOCK|IS_USED_LOCK|JSON_COMPACT|JSON_EXTRACT|JSON_REPLACE|JSON_UNQUOTE|LINEFROMTEXT|LTRIM_ORACLE|MBRCOVEREDBY|MLINEFROMWKB|MPOLYFROMWKB|OCTET_LENGTH|OLD_PASSWORD|PERCENT_RANK|POINTFROMWKB|POLYFROMTEXT|RANDOM_BYTES|REGEXP_INSTR|RELEASE_LOCK|RTRIM_ORACLE|SESSION_USER|SQL_TSI_HOUR|SQL_TSI_YEAR|ST_ASGEOJSON|ST_COVEREDBY|ST_DIMENSION|ST_GEOMETRYN|ST_GIS_DEBUG|ST_NUMPOINTS|TIMESTAMPADD|VEC_DISTANCE|VEC_FROMTEXT|AES_DECRYPT|AES_ENCRYPT|CHAR_LENGTH|COLUMN_JSON|COLUMN_LIST|DATE_FORMAT|FIND_IN_SET|FIRST_VALUE|FROM_BASE64|GEOMFROMWKB|JSON_EQUALS|JSON_EXISTS|JSON_INSERT|JSON_LENGTH|JSON_OBJECT|JSON_PRETTY|JSON_REMOVE|JSON_SEARCH|LINEFROMWKB|LPAD_ORACLE|MBRCONTAINS|MBRDISJOINT|MBROVERLAPS|MICROSECOND|PERIOD_DIFF|POLYFROMWKB|RPAD_ORACLE|SEC_TO_TIME|SQL_TSI_DAY|ST_ASBINARY|ST_BOUNDARY|ST_CENTROID|ST_CONTAINS|ST_DISJOINT|ST_DISTANCE|ST_ENDPOINT|ST_ENVELOPE|ST_ISCLOSED|ST_ISSIMPLE|ST_OVERLAPS|ST_SIMPLIFY|ST_VALIDATE|STDDEV_SAMP|STR_TO_DATE|SYSTEM_USER|TIME_FORMAT|TIME_TO_SEC|TRIM_ORACLE|ADD_MONTHS|BIT_LENGTH|COLUMN_ADD|COLUMN_GET|CONVERT_TZ|CONVEXHULL|DAYOFMONTH|DENSE_RANK|EXPORT_SET|FOUND_ROWS|GET_FORMAT|INTERSECTS|JSON_ARRAY|JSON_DEPTH|JSON_LOOSE|JSON_MERGE|JSON_QUERY|JSON_QUOTE|JSON_VALID|JSON_VALUE|LAST_VALUE|MBRTOUCHES|NAME_CONST|PERIOD_ADD|ST_COLLECT|ST_CROSSES|ST_GEOHASH|ST_ISEMPTY|ST_ISVALID|ST_TOUCHES|STARTPOINT|STDDEV_POP|TO_SECONDS|UNCOMPRESS|UUID_SHORT|VEC_TOTEXT|WEEKOFYEAR|BENCHMARK|BIT_COUNT|CHARACTER|COLLATION|CONCAT_WS|COVEREDBY|CUME_DIST|DAYOFWEEK|DAYOFYEAR|DIMENSION|FROM_DAYS|GEOMETRYN|JSON_KEYS|JSON_TYPE|LOAD_FILE|MBREQUALS|MBRWITHIN|MONTHNAME|NTH_VALUE|NUMPOINTS|ROW_COUNT|ST_ASTEXT|ST_BUFFER|ST_EQUALS|ST_ISRING|ST_LENGTH|ST_POINTN|ST_RELATE|ST_WITHIN|SUBSTRING|TIMESTAMP|TO_BASE64|TO_NUMBER|UPDATEXML|ASBINARY|BOUNDARY|CENTROID|COALESCE|COMPRESS|CONTAINS|DATABASE|DATE_ADD|DATE_SUB|DATEDIFF|DISJOINT|ENDPOINT|ENVELOPE|GET_LOCK|GREATEST|INTERVAL|ISCLOSED|ISSIMPLE|JSON_SET|LAST_DAY|MAKE_SET|MAKEDATE|MAKETIME|MBREQUAL|OVERLAPS|PASSWORD|POSITION|SIMPLIFY|ST_ASWKB|ST_ASWKT|ST_UNION|TIMEDIFF|TRUNCATE|VALIDATE|VAR_SAMP|VARIANCE|YEARWEEK|ADDDATE|ADDTIME|BIT_AND|BIT_XOR|CEILING|CHARSET|CROSSES|CURDATE|CURTIME|DAYNAME|DEGREES|ENCRYPT|EXTRACT|GEOHASH|GLENGTH|ISEMPTY|ISVALID|LENGTHB|QUARTER|RADIANS|REPLACE|REVERSE|SCHEMAS|SFORMAT|SOUNDEX|ST_AREA|ST_SRID|SUBDATE|SUBTIME|SYSDATE|TO_CHAR|TO_DAYS|TOUCHES|VAR_POP|VERSION|WEEKDAY|ASTEXT|BIT_OR|BUFFER|CONCAT|CRC32C|DECODE|ENCODE|EQUALS|FORMAT|IFNULL|INSERT|ISNULL|ISRING|LENGTH|LOCATE|MEDIAN|MINUTE|NULLIF|POINTN|REPEAT|SCHEMA|SECOND|STDDEV|STRCMP|SUBSTR|WITHIN|ASCII|ASWKB|ASWKT|ATAN2|COUNT|CRC32|FIELD|FLOOR|INSTR|LCASE|LEAST|LOG10|LOWER|LTRIM|MONTH|NTILE|POWER|QUOTE|RIGHT|ROUND|RTRIM|SLEEP|SPACE|TRUNC|UCASE|UNHEX|UPPER|XXH32|ACOS|AREA|ASIN|ATAN|CAST|CEIL|CHAR|CONV|DATE|HOUR|LEAD|LEFT|LOG2|LPAD|NVL2|RAND|RANK|RPAD|SHA1|SHA2|SIGN|SQRT|SRID|ST_X|ST_Y|TIME|TRIM|USER|WEEK|XXH3|YEAR|ABS|BIN|CHR|COS|COT|DAY|ELT|EXP|HEX|KDF|LAG|LOG|MAX|MD5|MID|MIN|MOD|NOW|NVL|OCT|ORD|POW|SHA|SIN|STD|SUM|TAN|IF|LN|PI|X|Y)(?=\\s*\\()"
+        },
+        "keywords": {
+            "comment": "Reserved and non-reserved keywords look the same by default; the two scopes let a theme, or a later rule, tell a keyword used as a name apart.",
+            "patterns": [
+                {
+                    "name": "keyword.other.reserved.sql",
+                    "match": "(?i)(?<![\\w$])(?:MASTER_DEMOTE_TO_REPLICA|MASTER_DEMOTE_TO_SLAVE|SQL_CALC_FOUND_ROWS|MINUTE_MICROSECOND|NO_WRITE_TO_BINLOG|SECOND_MICROSECOND|STATS_SAMPLE_PAGES|CURRENT_TIMESTAMP|IGNORE_DOMAIN_IDS|STATS_AUTO_RECALC|DELETE_DOMAIN_ID|HOUR_MICROSECOND|SQL_BEFORE_GTIDS|SQL_SMALL_RESULT|STATS_PERSISTENT|DAY_MICROSECOND|PARSE_VCOL_EXPR|SQL_AFTER_GTIDS|LOCALTIMESTAMP|SQL_BIG_RESULT|DETERMINISTIC|DO_DOMAIN_IDS|HIGH_PRIORITY|MINUTE_SECOND|PAGE_CHECKSUM|REF_SYSTEM_ID|STRAIGHT_JOIN|UTC_TIMESTAMP|CURRENT_DATE|CURRENT_PATH|CURRENT_ROLE|CURRENT_TIME|CURRENT_USER|LOW_PRIORITY|SQLEXCEPTION|VARCHARACTER|DISTINCTROW|HOUR_MINUTE|HOUR_SECOND|INSENSITIVE|TRANSACTION|ASENSITIVE|CONSTRAINT|CONVERSION|DAY_MINUTE|DAY_SECOND|MEDIUMBLOB|MEDIUMTEXT|OPTIONALLY|READ_WRITE|REFERENCES|ROW_NUMBER|SQLWARNING|TERMINATED|YEAR_MONTH|CHARACTER|CONDITION|DATABASES|INTERSECT|LOCALTIME|MEDIUMINT|MIDDLEINT|PARTITION|PRECISION|PROCEDURE|RECURSIVE|RETURNING|SAVEPOINT|SENSITIVE|SEPARATOR|TIMESTAMP|VARBINARY|CONTAINS|CONTINUE|DAY_HOUR|DESCRIBE|DISTINCT|ENCLOSED|FULLTEXT|INTERVAL|LANGUAGE|LONGBLOB|LONGTEXT|MAXVALUE|MODIFIES|OPTIMIZE|PRECEDES|PREVIOUS|RESIGNAL|RESTRICT|ROLLBACK|SHUTDOWN|SMALLINT|SPECIFIC|SQLSTATE|STARTING|TINYBLOB|TINYTEXT|TRAILING|TRUNCATE|UNSIGNED|UTC_DATE|UTC_TIME|ZEROFILL|ANALYZE|BETWEEN|CASCADE|CHARSET|COLLATE|CONVERT|DECIMAL|DECLARE|DEFAULT|DELAYED|ESCAPED|EXPLAIN|FOLLOWS|FOREIGN|HANDLER|INTEGER|ITERATE|LEADING|NATURAL|NUMERIC|OUTFILE|PACKAGE|PORTION|PRIMARY|RELEASE|REPLACE|REQUIRE|SCHEMAS|SPATIAL|TINYINT|TO_DATE|TRIGGER|VARCHAR|VARYING|BEFORE|BIGINT|BINARY|CHANGE|COLUMN|COMMIT|CREATE|CURSOR|DELETE|DOUBLE|ELSEIF|EXCEPT|EXISTS|FLOAT4|FLOAT8|HAVING|IGNORE|INFILE|INSERT|LINEAR|REGEXP|RENAME|REPAIR|REPEAT|RETURN|REVOKE|SELECT|SIGNAL|UNIQUE|UNLOCK|UPDATE|VALUES|VECTOR|ALTER|CHECK|CLOSE|CROSS|FALSE|FETCH|FLOAT|FORCE|GRANT|GROUP|INDEX|INNER|INOUT|LEAVE|LIMIT|LINES|MATCH|ORDER|OUTER|PURGE|RANGE|READS|RIGHT|RLIKE|TABLE|UNION|USAGE|USING|WHERE|WHILE|WRITE|BLOB|BOTH|CALL|CASE|CHAR|DATE|DENY|DESC|DROP|DUAL|EACH|ELSE|EXIT|FROM|INT1|INT2|INT3|INT4|INT8|INTO|JOIN|KEYS|KILL|LEFT|LIKE|LOAD|LOCK|LONG|LOOP|NEXT|NULL|OPEN|OVER|READ|REAL|ROWS|SHOW|THEN|TIME|TRUE|UNDO|USER|WHEN|WITH|ADD|ALL|AND|ASC|DEC|DIV|FOR|INT|KEY|MOD|NOT|OUT|SET|SQL|SSL|USE|XOR|AS|BY|DO|IF|IN|IS|NO|ON|OR|TO)(?![\\w$])"
+                },
+                {
+                    "name": "keyword.other.unreserved.sql",
+                    "match": "(?i)(?<![\\w$])(?:MASTER_SSL_VERIFY_SERVER_CERT|MAX_CONNECTIONS_PER_HOUR|MASTER_HEARTBEAT_PERIOD|MASTER_CONNECT_RETRY|MAX_QUERIES_PER_HOUR|MAX_UPDATES_PER_HOUR|MAX_USER_CONNECTIONS|CONSTRAINT_CATALOG|MASTER_RETRY_COUNT|MASTER_SSL_CRLPATH|MAX_STATEMENT_TIME|CONSTRAINT_SCHEMA|IGNORE_SERVER_IDS|MASTER_SSL_CAPATH|MASTER_SSL_CIPHER|RETURNED_SQLSTATE|SQL_BUFFER_RESULT|MASTER_SERVER_ID|CONSTRAINT_NAME|DELAY_KEY_WRITE|MASTER_GTID_POS|MASTER_LOG_FILE|MASTER_PASSWORD|MASTER_SSL_CERT|MASTER_USE_GTID|SQL_TSI_QUARTER|SUBCLASS_ORIGIN|AUTO_INCREMENT|AVG_ROW_LENGTH|KEY_BLOCK_SIZE|MASTER_LOG_POS|MASTER_SSL_CRL|MASTER_SSL_KEY|RELAY_LOG_FILE|SQL_TSI_MINUTE|SQL_TSI_SECOND|TABLE_CHECKSUM|USER_RESOURCES|AUTHORIZATION|COLUMN_CREATE|COLUMN_DELETE|INSERT_METHOD|MASTER_SSL_CA|RELAY_LOG_POS|SQL_TSI_MONTH|SUBPARTITIONS|TIMESTAMPDIFF|TRANSACTIONAL|WEIGHT_STRING|CATALOG_NAME|CLASS_ORIGIN|COLUMN_CHECK|CONTRIBUTORS|MASTER_DELAY|MESSAGE_TEXT|OLD_PASSWORD|PARTITIONING|RELAY_THREAD|SERIALIZABLE|SQL_NO_CACHE|SQL_TSI_HOUR|SQL_TSI_WEEK|SQL_TSI_YEAR|SUBPARTITION|TIMESTAMPADD|COLUMN_NAME|CURRENT_POS|CURSOR_NAME|DIAGNOSTICS|EXTENT_SIZE|MASTER_HOST|MASTER_PORT|MASTER_USER|MICROSECOND|MYSQL_ERRNO|PROCESSLIST|REPLICA_POS|REPLICATION|SCHEMA_NAME|SQL_TSI_DAY|SYSTEM_TIME|UNCOMMITTED|CHECKPOINT|COLUMN_ADD|COLUMN_GET|COMPLETION|COMPRESSED|CONCURRENT|CONNECTION|CONSISTENT|DEALLOCATE|GET_FORMAT|IDENTIFIED|JSON_TABLE|LAST_VALUE|MASTER_SSL|NOMAXVALUE|NOMINVALUE|ORDINALITY|PARTITIONS|PERSISTENT|PRIVILEGES|REORGANIZE|REPEATABLE|ROW_FORMAT|SQL_THREAD|TABLE_NAME|TABLESPACE|VALIDATION|VERSIONING|AGGREGATE|ALGORITHM|COLLATION|COMMITTED|DIRECTORY|DUPLICATE|EXCEPTION|EXPANSION|FEDERATED|FOLLOWING|GENERATED|IMMEDIATE|INCREMENT|INVISIBLE|IO_THREAD|ISOLATION|NODEGROUP|OLD_VALUE|PACK_KEYS|PRECEDING|READ_ONLY|REDUNDANT|ROW_COUNT|SLAVE_POS|SQL_CACHE|STATEMENT|TEMPORARY|TEMPTABLE|UNBOUNDED|UNDEFINED|UNINSTALL|VARIABLES|CASCADED|CHECKSUM|COALESCE|DATABASE|DATETIME|DUMPFILE|EXAMINED|EXCHANGE|EXTENDED|FUNCTION|MAX_ROWS|MIN_ROWS|MINVALUE|NATIONAL|NOTFOUND|NVARCHAR|OVERLAPS|PASSWORD|PRESERVE|PROFILES|RELAYLOG|REPLICAS|ROWCOUNT|SCHEDULE|SECURITY|SEQUENCE|SNAPSHOT|SWITCHES|TRIGGERS|VARCHAR2|WARNINGS|ACCOUNT|AGAINST|AUTHORS|BOOLEAN|CHANGED|CHANNEL|COLUMNS|COMMENT|COMPACT|CONTEXT|CURRENT|DEFINER|DISABLE|DISCARD|DYNAMIC|ENGINES|EXCLUDE|EXECUTE|GENERAL|HISTORY|IGNORED|INDEXES|INSTALL|INVOKER|LASTVAL|MIGRATE|MONITOR|NEXTVAL|NOCACHE|NOCYCLE|OPTIONS|PARTIAL|PLUGINS|PREPARE|PROFILE|QUARTER|REBUILD|RECOVER|REPLICA|RESTART|RETURNS|REVERSE|ROUTINE|ROWTYPE|SESSION|STORAGE|SUBJECT|SUSPEND|SYSDATE|THREADS|UNICODE|UNKNOWN|UPGRADE|USE_FRM|VIRTUAL|VISIBLE|WITHOUT|WRAPPER|ACTION|ALWAYS|ATOMIC|BACKUP|BINLOG|CIPHER|CLIENT|ENABLE|ENGINE|ERRORS|ESCAPE|EVENTS|EXPIRE|EXPORT|FAULTS|FIELDS|FORMAT|GLOBAL|GRANTS|IMPORT|ISOPEN|ISSUER|LEAVES|LOCKED|MASTER|MEDIUM|MEMORY|MINUTE|MODIFY|NESTED|NOCOPY|NOWAIT|NUMBER|OBJECT|OFFSET|ONLINE|OPTION|OTHERS|PARSER|PERIOD|PLUGIN|RECORD|RELOAD|REMOVE|REPLAY|RESUME|ROLLUP|ROWNUM|SCALAR|SCHEMA|SECOND|SERIAL|SERVER|SETVAL|SIGNED|SIMPLE|SLAVES|SOCKET|SONAME|SOUNDS|SOURCE|STARTS|STATUS|STORED|STRING|SYSTEM|TABLES|WINDOW|WITHIN|ADMIN|AFTER|ARRAY|ASCII|BEGIN|BLOCK|BTREE|CACHE|CHAIN|CYCLE|ELSIF|EMPTY|ERROR|EVENT|EVERY|FIRST|FIXED|FLUSH|FOUND|HOSTS|LEVEL|LOCAL|LOCKS|MERGE|MINUS|MONTH|MUTEX|MYSQL|NAMES|NCHAR|NEVER|OWNER|PHASE|PROXY|QUERY|QUICK|RAISE|RELAY|RESET|REUSE|RTREE|SHARE|SLAVE|STAGE|START|SUPER|SWAPS|UNTIL|VALUE|AUTO|BODY|BOOL|BYTE|CLOB|CODE|CUBE|DATA|DISK|ENDS|ENUM|FAST|FILE|FULL|GOTO|HARD|HASH|HELP|HOST|HOUR|JSON|LAST|LESS|LIST|LOGS|MODE|NAME|NONE|ONLY|PAGE|PATH|PORT|PREV|ROLE|SKIP|SLOW|SOFT|SOME|STOP|TEXT|THAN|TIES|TYPE|VIEW|WAIT|WEEK|WORK|X509|YEAR|ANY|AVG|BIT|CPU|DAY|END|GET|IPC|LOG|ONE|RAW|REF|ROW|VIA|XML|AT|ID|IO|OF|XA)(?![\\w$])"
+                },
+                {
+                    "name": "keyword.other.rest.sql",
+                    "match": "(?i)(?<![\\w$])(?:AUTHENTICATION|DEVELOPMENT|REDIRECTION|UNPUBLISHED|AUTODETECT|MANAGEMENT|PARAMETERS|PROCEDURES|TYPESCRIPT|AVAILABLE|CONFIGURE|ENDPOINTS|FUNCTIONS|HIERARCHY|INCLUDING|PUBLISHED|DISABLED|METADATA|PROTOCOL|REGISTER|REQUIRED|SERVICES|CONTENT|DAEMONS|ENABLED|EXTENDS|INCLUDE|MAPPING|MARIADB|OBJECTS|PRIVATE|REQUEST|SCRIPTS|SERVICE|VENDORS|DAEMON|FILTER|RESULT|SECRET|STATIC|VENDOR|ALLOW|CLASS|CLONE|FILES|HTTPS|ITEMS|MEDIA|ROLES|USERS|VIEWS|APPS|AUTH|FEED|HTTP|ITEM|REST|SETS|APP|MRS|NEW|PER|URL)(?![\\w$])"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.assignment.sql",
+                    "match": ":="
+                },
+                {
+                    "name": "keyword.operator.json.sql",
+                    "match": "->>|->"
+                },
+                {
+                    "name": "keyword.operator.arrow.sql",
+                    "match": "=>"
+                },
+                {
+                    "comment": "Before the comparisons: at one position the earlier rule wins, not the longer match.",
+                    "name": "keyword.operator.bitwise.sql",
+                    "match": "<<|>>"
+                },
+                {
+                    "name": "keyword.operator.comparison.sql",
+                    "match": "<=>|<>|!=|<=|>=|=|<|>"
+                },
+                {
+                    "name": "keyword.operator.logical.sql",
+                    "match": "&&|\\|\\||!"
+                },
+                {
+                    "name": "keyword.operator.bitwise.sql",
+                    "match": "[&|^~]"
+                },
+                {
+                    "name": "keyword.operator.arithmetic.sql",
+                    "match": "[-+*/%]"
+                }
+            ]
+        },
+        "punctuation": {
+            "patterns": [
+                {
+                    "name": "punctuation.terminator.statement.sql",
+                    "match": ";"
+                },
+                {
+                    "name": "punctuation.separator.comma.sql",
+                    "match": ","
+                },
+                {
+                    "comment": "A label's, or a REST data mapping's and JSON's.",
+                    "name": "punctuation.separator.colon.sql",
+                    "match": ":"
+                },
+                {
+                    "name": "keyword.operator.range.sql",
+                    "match": "\\.\\."
+                },
+                {
+                    "name": "punctuation.accessor.sql",
+                    "match": "\\."
+                },
+                {
+                    "name": "punctuation.section.parens.begin.sql",
+                    "match": "\\("
+                },
+                {
+                    "name": "punctuation.section.parens.end.sql",
+                    "match": "\\)"
+                },
+                {
+                    "name": "punctuation.section.braces.sql",
+                    "match": "[{}]"
+                },
+                {
+                    "comment": "JSON arrays in REST SQL options; the server itself has no use for them outside MSSQL mode.",
+                    "name": "punctuation.section.brackets.sql",
+                    "match": "[\\[\\]]"
+                }
+            ]
+        },
+        "identifier": {
+            "patterns": [
+                {
+                    "comment": "An entity.name, which the themes colour as one: in the 2026 themes orange, in Dark+ the foreground.",
+                    "name": "entity.name.identifier.sql",
+                    "match": "[\\w$]+"
+                },
+                {
+                    "comment": "Anything else, a stray backslash or bracket, the server returns as a one-character token and then rejects.",
+                    "name": "invalid.illegal.character.sql",
+                    "match": "\\S"
+                }
+            ]
+        }
+    }
+}

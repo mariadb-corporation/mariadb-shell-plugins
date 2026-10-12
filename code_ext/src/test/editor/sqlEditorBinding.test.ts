@@ -18,6 +18,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { ConnectionManager } from "../../connections/connectionManager.js";
+import type { IStatementResult } from "../../mcp/types.js";
 import {
     buildConnectionHeader,
     readConnectionHeader,
@@ -80,14 +81,18 @@ const createEditor = (text: string, languageId = "sql") => {
  *
  * @returns A binding over a fake server.
  */
-const createBinding = (defaultConnection?: string) => {
+const createBinding = (
+    defaultConnection?: string,
+    server: { sqlMode?: string; defaultResults?: IStatementResult[] } = {},
+) => {
     const api = createFakeApi({
         connections: ["dba@localhost:3310", "app@localhost:3311"],
         connectionIds: {
             "dba@localhost:3310": "uuid-dba",
             "app@localhost:3311": "uuid-app",
         },
-        defaultResults: [{
+        sqlMode: server.sqlMode,
+        defaultResults: server.defaultResults ?? [{
             affected_items_count: 0,
             warnings_count: 0,
             result_sets: [{
@@ -290,6 +295,51 @@ describe("SqlEditorBinding", () => {
         binding.dispose();
     });
 
+    it("splits a run as the connection's sql_mode says, read once",
+        async () => {
+            const { api, binding } = createBinding("dba@localhost:3310",
+                { sqlMode: "STRICT_TRANS_TABLES,ANSI_QUOTES" });
+
+            await binding.run(createEditor("SELECT \"a\";") as never);
+            await binding.run(createEditor("SELECT \"b\";") as never);
+
+            expect(api.scriptOptions).toEqual({
+                ansiQuotes: true,
+                reportSqlMode: true,
+            });
+            expect(api.statements.map((s) => { return s.sql; }))
+                .toEqual(["SELECT @@sql_mode"]);
+            binding.dispose();
+        });
+
+    it("follows the sql_mode a run reports, for the next run and the markers",
+        async () => {
+            const { api, binding } = createBinding("dba@localhost:3310", {
+                defaultResults: [{
+                    statement_index: 0,
+                    result_sets: [],
+                    ansi_quotes: false,
+                    sql_mode: "ANSI_QUOTES",
+                }],
+            });
+            const editor = createEditor("SET sql_mode = 'ANSI_QUOTES';");
+            const changed: string[] = [];
+            binding.onDidChangeSqlMode((uri) => {
+                changed.push(uri);
+            });
+
+            await binding.run(editor as never);
+
+            // Once read before the run, as the default mode, and once
+            // reported after it, as ANSI_QUOTES.
+            expect(changed).toEqual(["dba@localhost:3310",
+                "dba@localhost:3310"]);
+            expect(binding.ansiQuotesFor(editor.document as never)).toBe(true);
+            await binding.run(editor as never);
+            expect(api.scriptOptions?.ansiQuotes).toBe(true);
+            binding.dispose();
+        });
+
     it("runs the file and shows the results in the view", async () => {
         const { api, view, binding } = createBinding("dba@localhost:3310");
         const editor = createEditor("SELECT 1 AS a;");
@@ -488,7 +538,7 @@ describe("SqlEditorBinding", () => {
         const document = await binding.openSqlEditor("app@localhost:3311");
 
         expect(openedDocuments).toHaveLength(1);
-        expect(openedDocuments[0].languageId).toBe("sql");
+        expect(openedDocuments[0].languageId).toBe("mariadb-sql");
         expect(shownDocuments).toEqual([document]);
         expect(binding.connectionFor(document as never))
             .toBe("app@localhost:3311");

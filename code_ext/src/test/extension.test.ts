@@ -1690,7 +1690,7 @@ describe("activate", () => {
             });
 
             expect(openedDocuments).toHaveLength(1);
-            expect(openedDocuments[0].languageId).toBe("sql");
+            expect(openedDocuments[0].languageId).toBe("mariadb-sql");
             expect(openedDocuments[0].getText())
                 .toContain("-- MariaDB connection: dba@localhost:3310");
             expect(shownDocuments).toEqual([openedDocuments[0]]);

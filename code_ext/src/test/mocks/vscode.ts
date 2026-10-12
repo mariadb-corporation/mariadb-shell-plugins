@@ -212,6 +212,77 @@ export const openedWith: Array<{ uri: Uri; options: unknown }> = [];
 /** The file system providers registered, by scheme. */
 export const fileSystemProviders = new Map<string, unknown>();
 
+export class SemanticTokensLegend {
+    public constructor(
+        public readonly tokenTypes: string[],
+        public readonly tokenModifiers: string[] = [],
+    ) { }
+}
+
+/** What a provider returns; `data` as the real one encodes it. */
+export class SemanticTokens {
+    public constructor(public readonly data: Uint32Array) { }
+}
+
+/**
+ * Builds the relative encoding of the real builder: per token, the line
+ * and start relative to the previous token's, its length, type and
+ * modifiers.
+ */
+export class SemanticTokensBuilder {
+    readonly #data: number[] = [];
+    #line = 0;
+    #character = 0;
+
+    public constructor(public readonly legend?: SemanticTokensLegend) { }
+
+    public push(
+        line: number,
+        character: number,
+        length: number,
+        tokenType: number,
+        tokenModifiers = 0,
+    ): void {
+        const deltaLine = line - this.#line;
+        const deltaStart = deltaLine === 0
+            ? character - this.#character
+            : character;
+        this.#data.push(deltaLine, deltaStart, length, tokenType,
+            tokenModifiers);
+        this.#line = line;
+        this.#character = character;
+    }
+
+    public build(): SemanticTokens {
+        return new SemanticTokens(Uint32Array.from(this.#data));
+    }
+}
+
+/**
+ * Decodes semantic tokens back into absolute positions, for assertions.
+ *
+ * @param tokens What a provider returned.
+ *
+ * @returns Line, start and length of each token.
+ */
+export const decodeSemanticTokens = (
+    tokens: SemanticTokens,
+): Array<{ line: number; start: number; length: number }> => {
+    const decoded: Array<{ line: number; start: number; length: number }> =
+        [];
+    let line = 0;
+    let start = 0;
+    for (let i = 0; i < tokens.data.length; i += 5) {
+        const deltaLine = tokens.data[i];
+        line += deltaLine;
+        start = deltaLine === 0 ? start + tokens.data[i + 1]
+            : tokens.data[i + 1];
+        decoded.push({ line, start, length: tokens.data[i + 2] });
+    }
+
+    return decoded;
+};
+
 export class EventEmitter<T> {
     readonly #listeners = new Set<(value: T) => void>();
 
@@ -545,6 +616,10 @@ export class MockTextDocument {
         private text: string,
     ) { }
 
+    public lineAt(line: number): { text: string } {
+        return { text: this.text.split("\n")[line] ?? "" };
+    }
+
     public getText(range?: unknown): string {
         return range === undefined ? this.text : this.text;
     }
@@ -699,6 +774,22 @@ const visibleEditorListeners =
 const changeDocumentListeners = new Set<(event: unknown) => void>();
 const closeDocumentListeners = new Set<(document: unknown) => void>();
 const configurationListeners = new Set<(event: unknown) => void>();
+
+/** A registered semantic tokens provider, and what it was registered for. */
+export interface SemanticTokensRegistration {
+    selector: unknown;
+    provider: {
+        provideDocumentSemanticTokens(
+            document: unknown,
+            token: CancellationToken,
+        ): unknown;
+        onDidChangeSemanticTokens?: (listener: () => void) => Disposable;
+    };
+    legend: SemanticTokensLegend;
+}
+
+/** Every `languages.registerDocumentSemanticTokensProvider` call. */
+export const semanticTokensProviders: SemanticTokensRegistration[] = [];
 
 /**
  * Fires the configuration change event.
@@ -1156,6 +1247,26 @@ export const workspace = {
     },
 };
 
+export const languages = {
+    registerDocumentSemanticTokensProvider: (
+        selector: unknown,
+        provider: SemanticTokensRegistration["provider"],
+        legend: SemanticTokensLegend,
+    ): Disposable => {
+        const registration = { selector, provider, legend };
+        semanticTokensProviders.push(registration);
+
+        return {
+            dispose: () => {
+                const index = semanticTokensProviders.indexOf(registration);
+                if (index >= 0) {
+                    semanticTokensProviders.splice(index, 1);
+                }
+            },
+        };
+    },
+};
+
 export const commands = {
     registerCommand: (
         command: string,
@@ -1253,6 +1364,7 @@ export const resolveWebviewView = (viewType: string): MockWebviewView => {
  */
 export const resetVscodeMock = (): void => {
     openedWith.length = 0;
+    semanticTokensProviders.length = 0;
     fileSystemProviders.clear();
     fileDialogs.saveAnswer = undefined;
     fileDialogs.openAnswer = undefined;
