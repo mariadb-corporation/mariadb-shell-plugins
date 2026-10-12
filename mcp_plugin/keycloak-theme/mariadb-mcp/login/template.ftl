@@ -88,7 +88,7 @@
 <div id="root">
     <div class="welcomeLogo"><#include "logo.ftl"></div>
     <div class="welcomeText">
-        <h2>${msg("mcpWelcomeTitle")}</h2>
+        <h2>${msg("mcpWelcomeHeading")}</h2>
         <p>${msg("mcpWelcomeText")}</p>
     </div>
 

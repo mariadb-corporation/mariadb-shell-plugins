@@ -1921,5 +1921,7 @@ def test_the_sign_in_page_shows_the_logo_inline(tenant_config):
     assert " style=" not in page
     assert page.count("<style") == 1 and "cls-1" not in page and "<title>MDB" not in page
     assert ".welcomeLogo path{fill:var(--logo-color)}" in page
+    # The logo carries the MariaDB name, so the heading below it does not repeat it.
+    assert "<h2>MCP Server</h2>" in page and "<title>MariaDB MCP Server</title>" in page
     assert "img-src" not in response.headers["Content-Security-Policy"]
     assert '<div class="mrsLoginError" role="alert"><p>No.</p></div>' in page

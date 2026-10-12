@@ -1545,7 +1545,7 @@ h2{margin:20px 0;font-weight:100;font-size:33px}
 p{line-height:19px;font-weight:200;font-size:15px}
 #root{display:flex;box-sizing:border-box;min-height:100%;padding:0 16px 40px;
 flex-direction:column;align-items:center;justify-content:center;position:relative}
-.welcomeLogo{margin-top:20px;width:160px;height:130px;min-height:130px}
+.welcomeLogo{margin-top:20px;margin-bottom:16px;width:160px;height:130px;min-height:130px}
 .welcomeLogo svg{width:100%;height:100%}
 .welcomeLogo path{fill:var(--logo-color)}
 .welcomeText{display:flex;flex-direction:column;align-items:center;justify-content:center}
@@ -1645,7 +1645,7 @@ def _page(response_class, body: str, status: int = 200, raw: bool = False,
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<title>MariaDB MCP Server</title><style nonce="{nonce}">{_PAGE_STYLE}</style>'
         f'</head><body><div id="root"><div class="welcomeLogo">{_logo_svg()}</div>'
-        '<div class="welcomeText"><h2>MariaDB MCP Server</h2>'
+        '<div class="welcomeText"><h2>MCP Server</h2>'
         "<p>Welcome to the MariaDB MCP Server.</p></div>"
         f"{content}"
         '<div class="welcomeSpacer"></div>'
