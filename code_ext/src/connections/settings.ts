@@ -69,8 +69,8 @@ export const CONNECT_ON_OPEN_CONTEXT_KEY = "mariadb.connectOnOpen";
 export const STOP_ON_ERROR_CONTEXT_KEY = "mariadb.stopOnError";
 
 /**
- * Which language mode SQL documents get: the one their connection's
- * `sql_mode` calls for, or one of the two regardless.
+ * Whether `"..."` in SQL documents is highlighted as an identifier: as
+ * their connection's `sql_mode` says, or always, or never.
  *
  * @returns `auto`, the default, `on` for ANSI_QUOTES or `off` for not.
  */

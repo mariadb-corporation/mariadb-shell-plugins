@@ -26,7 +26,12 @@
  * followed without a query of its own.
  */
 
+import { firstCell } from "../mcp/types.js";
+import { errorText } from "../text.js";
 import type { ConnectionManager } from "./connectionManager.js";
+
+/** What a connection is asked, the first time, for its sql_mode. */
+export const SQL_MODE_QUERY = "SELECT @@sql_mode";
 
 /**
  * Whether a `sql_mode` value has `ANSI_QUOTES` in it.
@@ -49,12 +54,12 @@ export type SqlModeChangeListener = (uri: string) => void;
 /** Whether each open connection reads `"..."` as an identifier. */
 export class SqlModes {
     /**
-     * Connection URI -> whether it has ANSI_QUOTES. A promise while the
-     * first read is under way, so two asking at once share one query.
+     * Connection URI -> whether it has ANSI_QUOTES, or the first read of
+     * it while that is under way, so two asking at once share one query.
+     * A read only stores its answer while its own promise is still the
+     * entry: a run's report that came in meanwhile is newer.
      */
-    readonly #reading = new Map<string, Promise<boolean>>();
-    /** Connection URI -> the answer, once there is one. */
-    readonly #known = new Map<string, boolean>();
+    readonly #modes = new Map<string, boolean | Promise<boolean>>();
     readonly #listeners = new Set<SqlModeChangeListener>();
     readonly #unsubscribe: () => void;
 
@@ -70,11 +75,9 @@ export class SqlModes {
         this.#unsubscribe = connections.onDidChange(() => {
             // A closed connection may be reopened with another sql_mode;
             // what it had is not kept.
-            for (const uri of [...this.#known.keys(),
-                ...this.#reading.keys()]) {
+            for (const uri of this.#modes.keys()) {
                 if (!connections.isConnected(uri)) {
-                    this.#known.delete(uri);
-                    this.#reading.delete(uri);
+                    this.#modes.delete(uri);
                 }
             }
         });
@@ -103,7 +106,9 @@ export class SqlModes {
      * @returns Whether it has ANSI_QUOTES, or undefined until read.
      */
     public known(uri: string): boolean | undefined {
-        return this.#known.get(uri);
+        const mode = this.#modes.get(uri);
+
+        return typeof mode === "boolean" ? mode : undefined;
     }
 
     /**
@@ -116,19 +121,16 @@ export class SqlModes {
      *          next time.
      */
     public ansiQuotes(uri: string): Promise<boolean> {
-        const known = this.#known.get(uri);
-        if (known !== undefined) {
-            return Promise.resolve(known);
+        const mode = this.#modes.get(uri);
+        if (mode !== undefined) {
+            return Promise.resolve(mode);
         }
         if (!this.connections.isConnected(uri)) {
             return Promise.resolve(false);
         }
 
-        let reading = this.#reading.get(uri);
-        if (!reading) {
-            reading = this.#read(uri);
-            this.#reading.set(uri, reading);
-        }
+        const reading = this.#read(uri);
+        this.#modes.set(uri, reading);
 
         return reading;
     }
@@ -159,11 +161,10 @@ export class SqlModes {
      * @returns Nothing.
      */
     #set(uri: string, ansiQuotes: boolean): void {
-        this.#reading.delete(uri);
-        if (this.#known.get(uri) === ansiQuotes) {
+        if (this.#modes.get(uri) === ansiQuotes) {
             return;
         }
-        this.#known.set(uri, ansiQuotes);
+        this.#modes.set(uri, ansiQuotes);
         for (const listener of this.#listeners) {
             listener(uri);
         }
@@ -174,36 +175,33 @@ export class SqlModes {
      *
      * @param uri The connection.
      *
-     * @returns Whether it has ANSI_QUOTES.
+     * @returns Whether it has ANSI_QUOTES - or what a run reported while
+     *          the read was under way, which is newer.
      */
     async #read(uri: string): Promise<boolean> {
+        let ansiQuotes = false;
         try {
             const connectionId = this.connections.connectionIdFor(uri);
-            if (connectionId === undefined) {
-                this.#reading.delete(uri);
-
-                return false;
+            if (connectionId !== undefined) {
+                const api = await this.connections.api();
+                const value = firstCell(
+                    await api.executeSql(connectionId, SQL_MODE_QUERY));
+                ansiQuotes = typeof value === "string" && hasAnsiQuotes(value);
             }
-            const api = await this.connections.api();
-            const result = await api.executeSql(connectionId,
-                "SELECT @@sql_mode");
-            const row = result.result_sets?.[0]?.rows[0];
-            const value = row === undefined ? undefined : Object.values(row)[0];
-            const ansiQuotes = typeof value === "string"
-                && hasAnsiQuotes(value);
-            // A run may have reported the mode while this was under way;
-            // what it said is newer.
-            if (this.#reading.has(uri)) {
-                this.#set(uri, ansiQuotes);
-            }
-
-            return this.#known.get(uri) ?? ansiQuotes;
         } catch (error) {
-            this.#reading.delete(uri);
-            this.log(`Could not read sql_mode on ${uri}: `
-                + `${error instanceof Error ? error.message : String(error)}`);
+            this.log(`Could not read sql_mode on ${uri}: ${errorText(error)}`);
+            if (this.#modes.get(uri) instanceof Promise) {
+                // Asked again next time.
+                this.#modes.delete(uri);
+            }
 
-            return false;
+            return this.known(uri) ?? false;
         }
+
+        if (this.#modes.get(uri) instanceof Promise) {
+            this.#set(uri, ansiQuotes);
+        }
+
+        return this.known(uri) ?? ansiQuotes;
     }
 }

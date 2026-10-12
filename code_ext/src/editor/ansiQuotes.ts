@@ -39,7 +39,7 @@ import { doubleQuotedSpans } from "../sql/doubleQuotedSpans.js";
 import { SQL_LANGUAGE_IDS } from "./sqlLanguage.js";
 
 /** The one token type: a `"..."` the server reads as an identifier. */
-export const ANSI_QUOTES_LEGEND = new vscode.SemanticTokensLegend(
+const ANSI_QUOTES_LEGEND = new vscode.SemanticTokensLegend(
     ["sqlQuotedIdentifier"]);
 
 /**
@@ -114,7 +114,7 @@ export class AnsiQuotesHighlighter implements
      *
      * @returns True under ANSI_QUOTES.
      */
-    public async isAnsiQuotes(
+    async #isAnsiQuotes(
         document: vscode.TextDocument,
     ): Promise<boolean> {
         const setting = ansiQuotes();
@@ -140,7 +140,7 @@ export class AnsiQuotesHighlighter implements
         token: vscode.CancellationToken,
     ): Promise<vscode.SemanticTokens> {
         const builder = new vscode.SemanticTokensBuilder(ANSI_QUOTES_LEGEND);
-        if (!await this.isAnsiQuotes(document)) {
+        if (!await this.#isAnsiQuotes(document)) {
             return builder.build();
         }
 

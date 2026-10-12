@@ -213,75 +213,32 @@ export const openedWith: Array<{ uri: Uri; options: unknown }> = [];
 export const fileSystemProviders = new Map<string, unknown>();
 
 export class SemanticTokensLegend {
-    public constructor(
-        public readonly tokenTypes: string[],
-        public readonly tokenModifiers: string[] = [],
-    ) { }
+    public constructor(public readonly tokenTypes: string[]) { }
 }
 
-/** What a provider returns; `data` as the real one encodes it. */
-export class SemanticTokens {
-    public constructor(public readonly data: Uint32Array) { }
+/** A token as a test asserts it: where it is, not how it is encoded. */
+export interface MockSemanticToken {
+    line: number;
+    start: number;
+    length: number;
 }
 
 /**
- * Builds the relative encoding of the real builder: per token, the line
- * and start relative to the previous token's, its length, type and
- * modifiers.
+ * Keeps the positions it is given. The real builder encodes them
+ * relative to each other, which is VS Code's business, not the
+ * provider's.
  */
 export class SemanticTokensBuilder {
-    readonly #data: number[] = [];
-    #line = 0;
-    #character = 0;
+    readonly #tokens: MockSemanticToken[] = [];
 
-    public constructor(public readonly legend?: SemanticTokensLegend) { }
-
-    public push(
-        line: number,
-        character: number,
-        length: number,
-        tokenType: number,
-        tokenModifiers = 0,
-    ): void {
-        const deltaLine = line - this.#line;
-        const deltaStart = deltaLine === 0
-            ? character - this.#character
-            : character;
-        this.#data.push(deltaLine, deltaStart, length, tokenType,
-            tokenModifiers);
-        this.#line = line;
-        this.#character = character;
+    public push(line: number, start: number, length: number): void {
+        this.#tokens.push({ line, start, length });
     }
 
-    public build(): SemanticTokens {
-        return new SemanticTokens(Uint32Array.from(this.#data));
+    public build(): { tokens: MockSemanticToken[] } {
+        return { tokens: [...this.#tokens] };
     }
 }
-
-/**
- * Decodes semantic tokens back into absolute positions, for assertions.
- *
- * @param tokens What a provider returned.
- *
- * @returns Line, start and length of each token.
- */
-export const decodeSemanticTokens = (
-    tokens: SemanticTokens,
-): Array<{ line: number; start: number; length: number }> => {
-    const decoded: Array<{ line: number; start: number; length: number }> =
-        [];
-    let line = 0;
-    let start = 0;
-    for (let i = 0; i < tokens.data.length; i += 5) {
-        const deltaLine = tokens.data[i];
-        line += deltaLine;
-        start = deltaLine === 0 ? start + tokens.data[i + 1]
-            : tokens.data[i + 1];
-        decoded.push({ line, start, length: tokens.data[i + 2] });
-    }
-
-    return decoded;
-};
 
 export class EventEmitter<T> {
     readonly #listeners = new Set<(value: T) => void>();
@@ -783,7 +740,6 @@ export interface SemanticTokensRegistration {
             document: unknown,
             token: CancellationToken,
         ): unknown;
-        onDidChangeSemanticTokens?: (listener: () => void) => Disposable;
     };
     legend: SemanticTokensLegend;
 }

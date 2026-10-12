@@ -43,13 +43,21 @@ const files = readdirSync(corpus).filter((name) => {
 
 describe.each(files)("%s", (file) => {
     const text = readFileSync(join(corpus, file), "utf8");
+    const sourceLines = text.split("\n");
+    // Tokenized once, for both tests - when the first one asks.
+    let tokenized: ReturnType<typeof tokenize> | undefined;
+    const tokens = (): ReturnType<typeof tokenize> => {
+        tokenized ??= tokenize(text);
+
+        return tokenized;
+    };
 
     it("tokenizes as it did", async () => {
-        const lines = await tokenize(text);
+        const lines = await tokens();
         // One line of the file, then one line per token under it, so a
         // diff shows the SQL the moved token is in.
         const rendered = lines.map((tokens, index) => {
-            const source = text.split("\n")[index];
+            const source = sourceLines[index];
             const shown = tokens.filter((token) => {
                 return token.text.trim() !== "";
             }).map((token) => {
@@ -65,8 +73,8 @@ describe.each(files)("%s", (file) => {
 
     it("leaves no token without a scope", async () => {
         const unscoped: string[] = [];
-        for (const [index, tokens] of (await tokenize(text)).entries()) {
-            for (const token of tokens) {
+        for (const [index, line] of (await tokens()).entries()) {
+            for (const token of line) {
                 if (token.text.trim() !== "" && token.scopes.length === 0) {
                     unscoped.push(`${index + 1}: ${JSON.stringify(token.text)}`);
                 }

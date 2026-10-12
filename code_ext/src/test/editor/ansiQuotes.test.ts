@@ -28,12 +28,11 @@ import { createFakeApi, createFakeSettings, createRecordingLog } from
     "../helpers.js";
 import {
     configuration,
-    decodeSemanticTokens,
     fireConfigurationChange,
     MockTextDocument,
     resetVscodeMock,
     semanticTokensProviders,
-    type SemanticTokens,
+    type MockSemanticToken,
     Uri,
 } from "../mocks/vscode.js";
 
@@ -79,7 +78,7 @@ const createHighlighter = (sqlMode: string) => {
         const tokens = await highlighter.provideDocumentSemanticTokens(
             document as never, notCancelled);
 
-        return decodeSemanticTokens(tokens as unknown as SemanticTokens);
+        return (tokens as unknown as { tokens: MockSemanticToken[] }).tokens;
     };
 
     return { api, connections, highlighter, log, sqlModes, tokensOf };

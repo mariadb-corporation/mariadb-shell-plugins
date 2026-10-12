@@ -178,6 +178,17 @@ export interface IStatementResult {
     sql_mode?: string;
 }
 
+/**
+ * @param result A statement's result.
+ *
+ * @returns The value of its first cell, where it has one.
+ */
+export const firstCell = (result: IStatementResult | undefined): unknown => {
+    const row = result?.result_sets?.[0]?.rows[0];
+
+    return row === undefined ? undefined : Object.values(row)[0];
+};
+
 /** How `db.execute_sql_script` is to treat a script, beyond running it. */
 export interface IScriptOptions {
     /** Split it with `"..."` as an identifier, as under ANSI_QUOTES. */
