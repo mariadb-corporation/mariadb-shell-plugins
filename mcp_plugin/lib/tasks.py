@@ -21,10 +21,10 @@ id at once. The client then follows it with ``util.get_task``, which returns
 the task's state, the progress of its current stage and the messages it
 printed since the last call, and can stop it with ``util.cancel_task``.
 
-A task runs on a thread of its own and reports through the shell utility's
-``progressCallback`` option: every event updates the task under its lock and
-wakes the callers waiting for a change. Cancelling only sets a flag; the next
-event returns "cancel" to the utility, which then stops as it does on ^C.
+A task's work runs on a thread of its own, which follows the MariaDB Shell
+process running the utility (see :mod:`mcp_plugin.lib.util_process`): every
+event of its output updates the task under its lock and wakes the callers
+waiting for a change. Cancelling interrupts that process as ^C does.
 
 A task belongs to the client that started it, exactly as a connection does:
 another client is told it does not exist. Finished tasks are kept for
@@ -89,20 +89,21 @@ class Task:
         self.result = None
         self.error = None
         self.cancel_requested = False
+        # stops the running work; set by it while it can be stopped
+        self._canceller = None
         # bumped on every change, so a waiting caller can tell one happened
         self.version = 0
         self.changed = threading.Condition()
 
     # --- reported by the running utility ---------------------------------
 
-    def on_event(self, event) -> object:
-        """The utility's progressCallback: records one event.
+    def on_event(self, event) -> None:
+        """Records one event of the running utility.
 
         Args:
-            event (dict): The event, as the shell hands it over.
-
-        Returns:
-            "cancel" once the task is to stop, else None.
+            event (dict): The event: "message" (level, text), "stageStarted"
+                (stage), "progress" (stage, current, total, and what else the
+                stage measures) or "stageFinished" (stage, seconds).
         """
         event = dict(event)
         kind = event.get("type")
@@ -125,7 +126,6 @@ class Task:
                         break
 
             self._touch()
-            return "cancel" if self.cancel_requested else None
 
     def _add_message(self, level: str, text: str) -> None:
         self.message_count += 1
@@ -148,8 +148,8 @@ class Task:
         """Runs the work on a thread of its own.
 
         Args:
-            work: A function taking the progress callback and returning the
-                task's result, or raising to fail it.
+            work: A function taking the task and returning its result, or
+                raising to fail it.
         """
         thread = threading.Thread(
             target=self._run, args=(work,), name=f"mcp-task-{self.id}", daemon=True
@@ -162,7 +162,7 @@ class Task:
 
     def _run(self, work) -> None:
         try:
-            result = work(self.on_event)
+            result = work(self)
         except Exception as error:  # noqa: BLE001 - reported to the client
             self._finish(CANCELLED if self.cancel_requested else FAILED, error=str(error).strip())
         else:
@@ -185,13 +185,37 @@ class Task:
                 self._add_message("error", error)
             self._touch()
 
+    def fail_running_stages(self) -> None:
+        """Ends the stages still running as failed: their process crashed."""
+        with self.changed:
+            for stage in self.stages:
+                if stage["status"] == RUNNING:
+                    stage["status"] = FAILED
+            self._touch()
+
+    def set_canceller(self, canceller) -> None:
+        """Sets what stops the running work, or None where nothing can.
+
+        A cancel asked for before it was set reaches it at once.
+        """
+        with self.changed:
+            self._canceller = canceller
+            cancelled = self.cancel_requested
+
+        if canceller is not None and cancelled:
+            canceller()
+
     def cancel(self) -> None:
-        """Asks the running utility to stop, at its next event."""
+        """Asks the running utility to stop, as ^C does."""
         with self.changed:
             if self.status in FINISHED_STATES:
                 return
             self.cancel_requested = True
+            canceller = self._canceller
             self._touch()
+
+        if canceller is not None:
+            canceller()
 
     # --- read by clients -------------------------------------------------
 

@@ -387,16 +387,20 @@ its `task_id` at once; the client follows the task with `util.get_task`.
 | `util.list_tasks` | - |
 | `util.cancel_task` | - |
 
-- **A task works on a session of its own**, opened on the connection a client got
-  from `db.connect` (for a copy, the target is a second `db.connect` connection). On
-  the connection's own session it would hold that connection for as long as it runs,
-  and every other tool call on it would wait. The utility gets that session and a
-  progress callback through its `session` and `progressCallback` options, which
-  need a MariaDB Shell with mariadb-shell #73; with an older one every task fails
-  with an error that says so.
+- **A task runs in a MariaDB Shell process of its own**, `mariadb-shell --json=raw
+  --uri=<uri> -- util <command> ...`, connected with the URI and password of the
+  connection a client got from `db.connect` (for a copy, the target is a second
+  `db.connect` connection). The passwords go to the process's stdin, never on its
+  command line. So the task never holds the connection, and a utility that crashes
+  takes only its own process down: the task reports it, and **a load is resumed**
+  where it stopped, up to 3 times, from the dump's progress file. Any other
+  utility that crashes fails, because starting it again would not continue its
+  work. The process ends with the server, however the server ends.
 - **Options** are the utility's own, with their camelCase names, in `options`, such as
   `{"threads": 8, "users": false}`. `session`, `progressCallback` and `showProgress`
-  are set by the tool and refused.
+  are refused. A value the shell's command line cannot pass on unchanged is refused
+  too: a string with `\,`, `\"`, `\'` or `\=` in it, or a name or path such as
+  `2024`, `true` or `-x` where the command line takes it without a name.
 - **`util.get_task(task_id, since, wait_ms)`** returns:
   - the status: `pending`, `running`, `completed`, `failed` or `cancelled`;
   - the stages with their state, and the current stage's `progress`: `current`,
@@ -407,8 +411,8 @@ its `task_id` at once; the client follows the task with `util.get_task`.
 
   With `wait_ms` (up to 30000) it waits for a change before answering, so a client
   can follow a task without polling quickly.
-- **`util.cancel_task`** stops the utility at its next progress update, as Ctrl+C
-  would. A load that is stopped can be resumed by loading the same dump again.
+- **`util.cancel_task`** interrupts the utility as Ctrl+C would, and ends its process
+  if it has not stopped 30 seconds later. A load that is stopped can be resumed by loading the same dump again.
 - **Limits:** a client may run 4 tasks at once. Finished tasks are kept for an hour,
   100 at most. A task belongs to the client that started it, as a connection does.
 - Local paths are checked against the allowed paths: a path with no scheme, a

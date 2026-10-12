@@ -17,12 +17,12 @@
 
 Every utility runs as a background task (see :mod:`mcp_plugin.lib.tasks`): the
 tool starts it and returns its id at once, and ``util.get_task`` follows it.
-A task works on a session of its own, opened on the connection a client got
-from ``db.connect``: on the connection's own session it would hold that
-connection's lock for as long as it runs, and every other tool call on it
-would wait. The utility is given that session and a progress callback through
-its ``session`` and ``progressCallback`` options, so it neither touches the
-shell's global session nor prints anything.
+A task runs the utility in a MariaDB Shell process of its own (see
+:mod:`mcp_plugin.lib.util_process`), connected with the URI and password of
+the connection a client got from ``db.connect``. So it never takes that
+connection's lock, the server's global session is never touched, and a
+utility that crashes takes only its own process down: the task reports it,
+and a load is resumed.
 
 Paths are authorized with :func:`mcp_plugin.lib.general.require_allowed_path`;
 a URL, or a prefix in object storage, is no path on this machine and is left
@@ -36,12 +36,11 @@ disk, and a dump takes connections and threads from every other user.
 import os
 from typing import Optional, Union
 
-import mysqlsh
-
-from mcp_plugin.lib import db_functions, general, tasks
+from mcp_plugin.lib import db_functions, general, tasks, util_process
 from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 
-# The options the tools set themselves.
+# The options the tools set themselves, or that only a call in the shell's own
+# process could give.
 _RESERVED_OPTIONS = ("session", "progressCallback", "showProgress")
 
 # Options that make the URL a prefix in object storage instead of a path.
@@ -122,28 +121,6 @@ def _local_paths(urls, options: dict) -> list:
     return paths
 
 
-def _run_utility(function: str, args: list, options: dict, session, callback):
-    """Runs a util function on a session, reporting to a callback."""
-    try:
-        getattr(mysqlsh.globals.util, function)(
-            *args, dict(options, session=session, progressCallback=callback)
-        )
-    except Exception as error:
-        text = str(error)
-        if "Invalid options" in text and "progressCallback" in text:
-            raise RuntimeError(
-                "This MariaDB Shell is too old for the util tools: its "
-                "utilities have no 'session' and 'progressCallback' options. "
-                "Update MariaDB Shell."
-            ) from error
-        raise
-    finally:
-        try:
-            session.close()
-        except Exception:  # noqa: BLE001 - the work is over either way
-            pass
-
-
 def register_util_tools(server, function_groups=()) -> None:
     """Registers the dump, load, copy, export and import tools.
 
@@ -190,23 +167,20 @@ def register_util_tools(server, function_groups=()) -> None:
             target = None
             if target_connection_id is not None:
                 target = db_functions.connection_data(target_connection_id, client)
-            return db_functions.open_separate_session(connection_id, client), target
+            source = db_functions.connection_credentials(connection_id, client)
+            # the command line is checked here too, so that what it cannot
+            # take fails the call itself
+            util_process.build_command(function, args, options, target)
+            return source, target
 
-        # Opening a session is a round trip to the server: not on the loop.
-        # Done before the task starts, so that a wrong connection fails the
-        # call itself.
-        session, target = await anyio.to_thread.run_sync(prepare)
+        # Reading the secret store is no work for the loop. Done before the
+        # task starts, so that a wrong connection fails the call itself.
+        source, target = await anyio.to_thread.run_sync(prepare)
 
-        try:
-            task = tasks.create(kind, title, client, connection_id)
-        except Exception:
-            session.close()
-            raise
+        task = tasks.create(kind, title, client, connection_id)
 
-        call_args = list(args) + ([target] if target is not None else [])
-
-        def work(callback):
-            _run_utility(function, call_args, options, session, callback)
+        def work(task):
+            util_process.run(task, function, args, options, source, target)
             return result
 
         task.start(work)
@@ -222,8 +196,9 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts a dump of the whole server, as a background task.
 
-        Runs MariaDB Shell's util.dump_instance on a session of its own on the
-        connection, and returns at once. Follow the task with util.get_task.
+        Runs MariaDB Shell's util.dump_instance in a shell process of its own,
+        on the connection, and returns at once. Follow the task with
+        util.get_task.
 
         Args:
             connection_id: The UUID returned by db.connect, for the server to
@@ -254,8 +229,9 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts a dump of database schemas, as a background task.
 
-        Runs MariaDB Shell's util.dump_schemas on a session of its own on the
-        connection, and returns at once. Follow the task with util.get_task.
+        Runs MariaDB Shell's util.dump_schemas in a shell process of its own,
+        on the connection, and returns at once. Follow the task with
+        util.get_task.
 
         Args:
             connection_id: The UUID returned by db.connect.
@@ -286,8 +262,9 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts a dump of tables and views of a schema, as a background task.
 
-        Runs MariaDB Shell's util.dump_tables on a session of its own on the
-        connection, and returns at once. Follow the task with util.get_task.
+        Runs MariaDB Shell's util.dump_tables in a shell process of its own,
+        on the connection, and returns at once. Follow the task with
+        util.get_task.
 
         Args:
             connection_id: The UUID returned by db.connect.
@@ -319,8 +296,9 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts an export of a table's rows to a file, as a background task.
 
-        Runs MariaDB Shell's util.export_table on a session of its own on the
-        connection, and returns at once. Follow the task with util.get_task.
+        Runs MariaDB Shell's util.export_table in a shell process of its own,
+        on the connection, and returns at once. Follow the task with
+        util.get_task.
 
         Args:
             connection_id: The UUID returned by db.connect.
@@ -348,8 +326,9 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts loading a dump into the server, as a background task.
 
-        Runs MariaDB Shell's util.load_dump on a session of its own on the
-        connection, and returns at once. Follow the task with util.get_task.
+        Runs MariaDB Shell's util.load_dump in a shell process of its own,
+        on the connection, and returns at once. Follow the task with
+        util.get_task.
         The server needs local_infile switched on.
 
         Args:
@@ -380,8 +359,9 @@ def register_util_tools(server, function_groups=()) -> None:
     ) -> dict:
         """Starts importing files into a table, as a background task.
 
-        Runs MariaDB Shell's util.import_table on a session of its own on the
-        connection, and returns at once. Follow the task with util.get_task.
+        Runs MariaDB Shell's util.import_table in a shell process of its own,
+        on the connection, and returns at once. Follow the task with
+        util.get_task.
         The table must exist, and the server needs local_infile switched on.
 
         Args:
@@ -567,8 +547,8 @@ def register_util_tools(server, function_groups=()) -> None:
     def cancel_task(ctx: Context, task_id: str) -> dict:
         """Stops a running task.
 
-        The utility stops at its next progress update, as it does on Ctrl+C,
-        and the task then ends as cancelled. A load that is stopped can be
+        The utility is interrupted as by Ctrl+C, and the task then ends as
+        cancelled. A load that is stopped can be
         resumed by loading the same dump again.
 
         Args:

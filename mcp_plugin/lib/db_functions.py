@@ -1134,55 +1134,33 @@ def _refuse_on_the_event_loop() -> None:
     )
 
 
-def open_separate_session(connection_id: str, client):
-    """Opens a session of its own on a connection opened with ``db.connect``.
+def connection_credentials(connection_id: str, client) -> tuple:
+    """The URI and the password of a connection opened with ``db.connect``.
 
-    For work that runs in the background for a long time, such as a dump: on
-    the connection's own session it would hold the connection's lock for all
-    that time, and every other tool call on the connection would wait for it.
-    The new session is opened as the connection reopens one closed for being
-    idle, so the same checks apply. The caller closes it.
+    For a utility that runs in a MariaDB Shell process of its own, which
+    connects by itself (see :mod:`mcp_plugin.lib.util_process`). The same
+    check applies as on every open of a session: the URI must still be a
+    configured connection.
 
-    Not to be called on the event loop's thread: opening a session is a round
-    trip to the server.
-
-    Args:
-        connection_id (str): The UUID returned by ``db.connect``.
-        client (ClientIdentity): The identity of the requesting client.
-
-    Returns:
-        The open shell session.
-    """
-    connection = _get_connection(connection_id, client)
-
-    if connection.grant_id is not None:
-        return _open_login_session(
-            connection.uri, connection.mcp_user_id, connection.grant_id
-        )
-
-    return _open_session(connection.uri, connection.kind, connection.mcp_user_id)
-
-
-def connection_data(connection_id: str, client) -> dict:
-    """The connection data of a connection, with its password.
-
-    For a shell function that opens a connection by itself, such as the
-    target of a copy: it takes connection data, not a session.
+    A connection opened with the account a user signed in with is refused:
+    its sessions are opened only while the sign-in's grant lives, and under
+    the user's default role, neither of which a process of its own would
+    keep to. Such connections exist only in multi-tenant mode, which serves
+    no utilities; this is the guard for the day it would.
 
     Args:
         connection_id (str): The UUID returned by ``db.connect``.
         client (ClientIdentity): The identity of the requesting client.
 
     Returns:
-        dict: The connection data, as ``shell.parse_uri`` gives it, plus the
-        stored password.
+        tuple: The URI, as configured, and its stored password.
     """
     connection = _get_connection(connection_id, client)
 
     if connection.grant_id is not None:
         raise tool_error(
             "A connection opened with the account a user signed in with "
-            "cannot be the target of a copy."
+            "cannot be used by a utility."
         )
 
     if connection.uri not in config.list_stored_connection_uris(
@@ -1193,10 +1171,29 @@ def connection_data(connection_id: str, client) -> dict:
             "db.list_connections to see the configured connections."
         )
 
-    data = mysqlsh.globals.shell.parse_uri(connection.uri)
-    data["password"] = config.get_connection_password(
+    return connection.uri, config.get_connection_password(
         connection.uri, connection.kind, connection.mcp_user_id
     )
+
+
+def connection_data(connection_id: str, client) -> dict:
+    """The connection data of a connection, with its password.
+
+    For the target of a copy, which the utility connects to by itself; see
+    :func:`connection_credentials`.
+
+    Args:
+        connection_id (str): The UUID returned by ``db.connect``.
+        client (ClientIdentity): The identity of the requesting client.
+
+    Returns:
+        dict: The connection data, as ``shell.parse_uri`` gives it, plus the
+        stored password.
+    """
+    uri, password = connection_credentials(connection_id, client)
+
+    data = dict(mysqlsh.globals.shell.parse_uri(uri))
+    data["password"] = password
 
     return data
 
