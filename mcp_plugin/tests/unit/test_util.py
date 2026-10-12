@@ -313,6 +313,51 @@ def test_a_copy_names_its_target_by_its_attributes():
     assert not any("secret" in argument for argument in command)
 
 
+_TARGET = {"user": "tgt", "host": "h", "port": 3307, "password": "secret"}
+
+
+@pytest.mark.parametrize("name", [
+    "host", "port", "user", "password", "socket", "uri", "ssh", "ssh-host",
+    "ssh-password", "auth-method", "oci-config-file", "connect-timeout",
+    # every spelling the shell's command line reads as the same name
+    "Host", "sslMode", "ssl_mode", "ssl-mode", "authMethod", "sshPassword",
+])
+@pytest.mark.parametrize("function,args", [
+    ("copy_instance", []),
+    ("copy_schemas", [["s"]]),
+    ("copy_tables", ["s", ["t"]]),
+])
+def test_a_copy_takes_no_connection_attribute_in_its_options(function, args, name):
+    # it would replace the target's: the copy, and the target's stored
+    # password, would go to a server the client chose
+    with pytest.raises(Exception, match="names a connection attribute"):
+        util_process.build_command(function, args, {name: "203.0.113.10"}, _TARGET)
+
+
+def test_a_copy_keeps_its_own_options():
+    command = util_process.build_command(
+        "copy_schemas", [["s"]],
+        {"threads": 4, "users": False, "ddlOnly": True, "schema": "renamed",
+         "excludeTables": ["s.t"]},
+        _TARGET,
+    )
+    assert command[-6:-1] == [
+        "--threads=4", "--users=false", "--ddlOnly=true",
+        "--options-schema:str=renamed", '--excludeTables:json=["s.t"]',
+    ]
+
+
+@pytest.mark.parametrize("name", ["host=evil", "host:json", "threads ", "-host", "", "1x"])
+@pytest.mark.parametrize("function,args,target", [
+    ("copy_instance", [], _TARGET),
+    ("dump_schemas", [["s"], "/d"], None),
+])
+def test_an_option_name_that_would_write_another_option_is_refused(function, args, target, name):
+    # '--host=evil:str=x' would set host, whatever the name was meant to be
+    with pytest.raises(Exception, match="is not the name of an option"):
+        util_process.build_command(function, args, {name: "x"}, target)
+
+
 @pytest.mark.parametrize("value", ["2024", "true", "null", "[1]", "-x", ""])
 def test_an_unnamed_value_the_shell_would_misread_is_refused(value):
     with pytest.raises(Exception, match="cannot be passed|non-empty"):
@@ -749,6 +794,12 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                 assert all("messages" not in task for task in listed)
 
                 # refusals
+                result = await call("util.copy_instance", {
+                    "connection_id": connection_id, "target_connection_id": connection_id,
+                    "options": {"host": "203.0.113.10", "port": 3306},
+                })
+                assert result.is_error
+                assert "names a connection attribute" in str(helpers.tool_payload(result))
                 result = await call("util.dump_schemas", {
                     "connection_id": connection_id, "schemas": ["mcp_util"],
                     "output_url": dump_dir, "options": {"session": 1},
