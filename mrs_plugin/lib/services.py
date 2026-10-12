@@ -383,18 +383,24 @@ def dump_service_script(
 
 # The service path of the two statements a service script starts with: the
 # path may carry a developer list (`dev`@/path) and backtick-quoted parts.
-SERVICE_PATH = r"((?:`(?:[^`]|``)*`|[^\s;`])+)"
+SERVICE_PATH = r"(?P<path>(?:`(?:[^`]|``)*`|[^\s;`])+)"
 SERVICE_SCRIPT_START = (
     re.compile(
-        r"^CREATE\s+(?:OR\s+REPLACE\s+)?REST\s+SERVICE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
-        + SERVICE_PATH,
+        r"^CREATE\s+(?P<replace>OR\s+REPLACE\s+)?REST\s+SERVICE\s+"
+        r"(?P<if_not_exists>IF\s+NOT\s+EXISTS\s+)?" + SERVICE_PATH,
         re.IGNORECASE,
     ),
     re.compile(r"^USE\s+REST\s+SERVICE\s+" + SERVICE_PATH, re.IGNORECASE),
 )
 
 
-def load_service_script(session, script: str, as_path: str | None = None):
+def load_service_script(
+    session,
+    script: str,
+    as_path: str | None = None,
+    replace: bool = True,
+    created: list | None = None,
+):
     """Runs the REST SQL script of a service.
 
     With as_path, the service is created under that request path. The script
@@ -402,8 +408,22 @@ def load_service_script(session, script: str, as_path: str | None = None):
     only in its first two statements, CREATE REST SERVICE and USE REST
     SERVICE; the other statements act on the current service. as_path
     replaces the whole service path there, a developer list included.
+
+    The script replaces a service of the same path (CREATE OR REPLACE). With
+    replace=False its CREATE REST SERVICE fails on an existing service
+    instead (OR REPLACE and IF NOT EXISTS are taken out), so the script never
+    touches a service that existed before.
+
+    Every statement commits as it runs, so a failing script leaves the service
+    as far as it got. With created, the path of the service is appended to it
+    once the CREATE REST SERVICE statement ran, so the caller knows what to
+    drop again.
     """
     statements = split_sql_script(script)
+
+    start = SERVICE_SCRIPT_START[0].match(statements[0]) if statements else None
+    if start is None and (as_path or not replace or created is not None):
+        raise ValueError("The script does not start with a CREATE REST SERVICE statement.")
 
     if as_path:
         new_path = core.quote_service_path(as_path)
@@ -412,19 +432,26 @@ def load_service_script(session, script: str, as_path: str | None = None):
                 break
             match = pattern.match(statements[i])
             if match is None:
-                if i == 0:
-                    raise ValueError(
-                        "The script does not start with a CREATE REST SERVICE statement."
-                    )
                 break
             statements[i] = (
-                statements[i][: match.start(1)]
+                statements[i][: match.start("path")]
                 + new_path
-                + statements[i][match.end(1) :]
+                + statements[i][match.end("path") :]
             )
 
-    for statement in statements:
+    if not replace:
+        match = SERVICE_SCRIPT_START[0].match(statements[0])
+        for clause in ("if_not_exists", "replace"):  # the later one first
+            if match.group(clause):
+                statements[0] = (
+                    statements[0][: match.start(clause)]
+                    + statements[0][match.end(clause) :]
+                )
+
+    for i, statement in enumerate(statements):
         session.run_sql(statement)
+        if i == 0 and created is not None:
+            created.append(SERVICE_SCRIPT_START[0].match(statement).group("path"))
 
 
 def store_project(
@@ -655,53 +682,65 @@ def load_project(session, path: str):
         with open(project_file, "r") as f:
             project_config = json.load(f)
 
-        with core.MrsDbTransaction(session):
-            for schema in project_config.get("schemas", []):
-                if database.get_schema(session, schema) is not None:
-                    raise ValueError(f"The schema '{schema}' already exists.")
+        # The REST services must not exist yet. Checked before anything is
+        # loaded; load_service_script(replace=False) checks it again when it
+        # creates them.
+        service_scripts = []
+        for service in project_config.get("restServices", []):
+            if get_service(session, url_context_root=service["serviceName"]) is not None:
+                raise ValueError(f"The service '{service["serviceName"]}' already exists.")
 
-                schema_path = os.path.join(base_directory, schema["path"])
+            service_file = os.path.join(base_directory, service["fileName"])
+            with open(service_file) as f:
+                service_scripts.append(f.read())
 
-                if schema["format"] == "sqlFile":
-                    with open(schema_path) as f:
+        # A database schema may exist already: a dump is loaded with
+        # ignoreExistingObjects, SQL scripts run as they are. They commit as
+        # they run, so a failure leaves the schemas as far as they were loaded.
+        for schema in project_config.get("schemas", []):
+            schema_path = os.path.join(base_directory, schema["path"])
+
+            if schema["format"] == "sqlFile":
+                with open(schema_path) as f:
+                    run_sql_script(session, f.read())
+            elif schema["format"] == "folder":
+                folder_path = schema_path
+                only_files = [
+                    f
+                    for f in os.listdir(folder_path)
+                    if os.path.isfile(os.path.join(folder_path, f))
+                    and f.endswith(".sql")
+                ]
+
+                for file in only_files:
+                    file = os.path.join(schema_path, file)
+                    with open(file) as f:
                         run_sql_script(session, f.read())
-                elif schema["format"] == "folder":
-                    folder_path = schema_path
-                    only_files = [
-                        f
-                        for f in os.listdir(folder_path)
-                        if os.path.isfile(os.path.join(folder_path, f))
-                        and f.endswith(".sql")
-                    ]
 
-                    for file in only_files:
-                        file = os.path.join(schema_path, file)
-                        with open(file) as f:
-                            run_sql_script(session, f.read())
-
-                elif schema["format"] == "dump":
-                    with core.ServerLocalInFile(session, True):
-                        core.run_util(
-                            session,
-                            "load_dump",
-                            schema_path,
-                            options={"ignoreExistingObjects": True},
-                        )
-                else:
-                    raise Exception("Invalid schema format.")
-
-            for service in project_config.get("restServices", []):
-                if (
-                    get_service(session, url_context_root=service["serviceName"])
-                    is not None
-                ):
-                    raise ValueError(
-                        f"The service '{service["serviceName"]}' already exists."
+            elif schema["format"] == "dump":
+                with core.ServerLocalInFile(session, True):
+                    core.run_util(
+                        session,
+                        "load_dump",
+                        schema_path,
+                        options={"ignoreExistingObjects": True},
                     )
+            else:
+                raise Exception("Invalid schema format.")
 
-                service_file = os.path.join(base_directory, service["fileName"])
-                with open(service_file) as f:
-                    load_service_script(session, f.read())
+        # A failing service script drops the services this load created again,
+        # never one that existed before
+        created = []
+        try:
+            for script in service_scripts:
+                load_service_script(session, script, replace=False, created=created)
+        except Exception:
+            for service_path in reversed(created):
+                try:
+                    session.run_sql(f"DROP REST SERVICE {service_path}")
+                except Exception:
+                    pass  # the error of the load is the one to report
+            raise
 
 
 def get_service_sdk_data(session, service_id, binary_formatter=None):

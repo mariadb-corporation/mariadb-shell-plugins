@@ -489,3 +489,102 @@ def test_service_as_project(phone_book, table_contents, mocker):
         session.run_sql(
             f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
         )
+
+
+def write_project(directory, services: dict):
+    """A project of REST service scripts only: {service name: script}."""
+    config = {"name": "p", "version": "1.0.0", "schemas": [], "restServices": []}
+    for i, (name, script) in enumerate(services.items()):
+        file_name = f"service{i}.service.mrs.sql"
+        with open(os.path.join(directory, file_name), "w") as f:
+            f.write(script)
+        config["restServices"].append({"serviceName": name, "fileName": file_name})
+    with open(os.path.join(directory, "mrs.package.json"), "w") as f:
+        json.dump(config, f)
+
+
+def service_exists(session, service_path):
+    paths = [row[0] for row in session.run_sql("SHOW REST SERVICES").fetch_all()]
+    return service_path in paths
+
+
+def test_load_service_script_without_replace(phone_book):
+    session = phone_book["session"]
+
+    session.run_sql("CREATE REST SERVICE /keep COMMENT 'existing'")
+    try:
+        for create in ("CREATE OR REPLACE", "CREATE"):
+            script = f"{create} REST SERVICE /keep COMMENT 'new';\nUSE REST SERVICE /keep;"
+            with pytest.raises(Exception, match="already used by another entity"):
+                lib.services.load_service_script(session, script, replace=False)
+        # IF NOT EXISTS would keep the service and run the rest of the
+        # script on it: without replace it fails as well
+        created = []
+        with pytest.raises(Exception, match="already used by another entity"):
+            lib.services.load_service_script(
+                session,
+                "CREATE REST SERVICE IF NOT EXISTS /keep;\nALTER REST SERVICE /keep COMMENT 'changed';",
+                replace=False,
+                created=created,
+            )
+        assert created == []
+        assert "COMMENT 'existing'" in session.run_sql(
+            "SHOW CREATE REST SERVICE /keep"
+        ).fetch_one()[0]
+    finally:
+        session.run_sql("DROP REST SERVICE /keep")
+
+
+def test_load_project_drops_the_services_it_created(phone_book):
+    session = phone_book["session"]
+
+    with tempfile.TemporaryDirectory() as directory:
+        write_project(
+            directory,
+            {
+                "/projA": "CREATE OR REPLACE REST SERVICE /projA;\nUSE REST SERVICE /projA;",
+                "/projB": "CREATE OR REPLACE REST SERVICE /projB;\n"
+                "USE REST SERVICE /projB;\n"
+                "CREATE REST SCHEMA /nope FROM `no_such_schema`;",
+            },
+        )
+        with pytest.raises(Exception, match="no_such_schema"):
+            lib.services.load_project(session, directory)
+
+    assert not service_exists(session, "/projA")
+    assert not service_exists(session, "/projB")
+
+
+def test_load_project_keeps_a_service_that_existed(phone_book):
+    session = phone_book["session"]
+
+    session.run_sql("CREATE REST SERVICE /keep COMMENT 'existing'")
+    try:
+        # Refused before anything is loaded
+        with tempfile.TemporaryDirectory() as directory:
+            write_project(
+                directory, {"/keep": "CREATE OR REPLACE REST SERVICE /keep;"}
+            )
+            with pytest.raises(Exception, match="The service '/keep' already exists."):
+                lib.services.load_project(session, directory)
+
+        # A script naming another service than the package (or a service
+        # created meanwhile) fails on its CREATE and the existing service
+        # stays, while the service the load created is dropped again
+        with tempfile.TemporaryDirectory() as directory:
+            write_project(
+                directory,
+                {
+                    "/projA": "CREATE OR REPLACE REST SERVICE /projA;",
+                    "/other": "CREATE OR REPLACE REST SERVICE /keep COMMENT 'new';",
+                },
+            )
+            with pytest.raises(Exception, match="already used by another entity"):
+                lib.services.load_project(session, directory)
+
+        assert not service_exists(session, "/projA")
+        assert "COMMENT 'existing'" in session.run_sql(
+            "SHOW CREATE REST SERVICE /keep"
+        ).fetch_one()[0]
+    finally:
+        session.run_sql("DROP REST SERVICE /keep")

@@ -269,6 +269,12 @@ packages with msm_plugin and mcp_plugin.
   request path, keeps a developer list `mike@/path` unquoted); `quote_ident` on a developer
   path breaks it. `load_service_script(as_path=...)` relies on the dump naming the service
   only in its CREATE and USE statements (since 2026-10-09).
+- **Transactions around REST SQL:** a statement joins a transaction the caller started (the
+  shell uses a SAVEPOINT), so `MrsDbTransaction` holds, except across statements that grant
+  or revoke (CREATE/ALTER/DROP REST VIEW/PROCEDURE/FUNCTION, LOAD SCRIPTS with grants):
+  those commit. Service scripts and project loads therefore commit as they go;
+  `load_project` uses `load_service_script(replace=False, created=...)` to refuse existing
+  services and drop only the ones it created when a script fails.
 - Keywords used as names need quotes (`FOR AUTH APP app` fails: `APP` is a keyword); only
   `FILES` and `VENDORS` are allowed unquoted.
 - **A stored data mapping holds every column**: the ones left out of the mapping are
