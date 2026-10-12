@@ -24,8 +24,7 @@ SDK-bump session — that jump is what broke CI, see the SDK-error gotcha in
 Python 3.14, pytest
 9.1.1, uvicorn 0.52.1, httpx2 2.9.1, `mariadbd` at `/opt/homebrew/bin` (MariaDB 12.3.2).
 Standard suite: **616 pass, 3 skipped (~95s)** on PR #44's tree at the 2026-10-11
-checkpoint, against a local shell build of mariadb-shell #71 + #73 (the `util`
-stdio test needs #73); **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
+checkpoint, against a local shell build of mariadb-shell #71 + #73; **595 tests pass, 3 SKIPPED (~78s), no warnings, 97% (5309 statements)**
 on `wip/mcp-multi-tenant` at the 2026-10-07 checkpoint, with Rene's review fixes in the
 working tree (584 / 4 after the simplification pass; 585 / 3 at the 2026-10-06 evening
 checkpoint; 577 and 93%, 5200 statements, at the one before),
@@ -70,7 +69,7 @@ this table with it.
 | [`context/db-tools.md`](context/db-tools.md) | `db.execute_sql` / `execute_sql_script` including the per-statement script results, the three introspection tools and their SQL. |
 | [`context/migrator.md`](context/migrator.md) | The migration tooling: the naming rule, the four `migrator.*` tools, the install, the Windows gate and the opt-in end-to-end test. |
 | [`context/setup.md`](context/setup.md) | `mcp.setup`: the three interactive modules, the shell's own prompt types, and the command-line option surface. |
-| [`context/util.md`](context/util.md) | The `util` group: dumps, loads, copies, exports and imports as background tasks (`lib/tasks.py`), the 12 tools, their own sessions, what they need from mariadb-shell #73, why CI fails on it, and what the extension does with the tasks. |
+| [`context/util.md`](context/util.md) | The `util` group: dumps, loads, copies, exports and imports as background tasks (`lib/tasks.py`), the 12 tools, the shell process each task runs in, how a crashed load is resumed, and what the extension does with the tasks. |
 | [`context/sandbox.md`](context/sandbox.md) | `sandbox.deploy` on a requested server version: the search order, the pinned index, checksums and extraction. |
 | [`context/testing.md`](context/testing.md) | The suite's contents, how to run it, what the coverage number means, and the fixture and harness traps. |
 | [`context/siblings.md`](context/siblings.md) | `msm_plugin` and `mrs_plugin`: what was changed there, how to run their suites, and their own failures. |

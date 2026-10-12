@@ -74,11 +74,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     It switched the global session to the given one with `shell.set_session`
     first, without a lock and without switching back, so two deployments at
     once on an MCP server could run on each other's session.
-  - msm now calls `lib.core.run_util(session, function, *args, options=)`:
-    - On a shell with mariadb-shell #73 it passes the session in the
-      utility's `session` option and never touches the global session.
-    - On an older shell it switches the global session under a lock and
-      switches it back.
+  - msm now calls `lib.core.run_util(session, function, *args, options=)`,
+    which switches the global session under a lock and switches it back.
+    (It first passed the session in the utility's `session` option of
+    mariadb-shell #73; #73 was dropped on 2026-10-12, see `util.md`.)
     - The lock lives in a module object in `sys.modules`
       (`_mariadb_shell_plugins_global_session`), so another plugin can share
       it.
@@ -87,11 +86,20 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     `lib/services.py`). Fixed 2026-10-11 on PR #41's branch
     (`wip/mrs_schema_improvements`, which rewrites that code): its own
     copy of `run_util` in `mrs_plugin/lib/core.py`, the same lock module
-    name, so both plugins share one lock; `tests/unit/lib/test_run_util.py`
-    (the msm tests, 6). mrs suite 174 passed.
-  - Tests: `msm_plugin/tests/unit/test_run_util.py` (6, fakes for
-    `mysqlsh`). The full msm suite passes (22), its backup restore test
-    included.
+    name, so both plugins share one lock; `tests/unit/lib/test_run_util.py`.
+    Its branch for #73's `session` option was dropped there too
+    (2026-10-12).
+  - Tests: `msm_plugin/tests/unit/test_run_util.py` (5, fakes for
+    `mysqlsh`). The msm suite: 20 pass, backup restore included (2026-10-12).
+    `test_the_lock_is_shared_by_every_plugin` fails against a shell with
+    the built-in MRS module (#71): importing `mrs_plugin.lib.core` raises
+    "An SQL Handler named 'MRS' already exists", not an ImportError.
+  - The utilities still run in the shell's own process here, on whatever
+    thread calls `msm.deploy_schema`. On an MCP worker thread the first dump
+    of the process can segfault in mysys (the charset setup writes
+    `my_errno` with no thread state): fixed in the shell by
+    `Mysys_thread_guard`, mariadb-shell branch
+    `wip/util_mysys_thread_guard`.
 
 ## Gotchas / things not to repeat
 

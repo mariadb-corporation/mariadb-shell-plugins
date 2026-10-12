@@ -15,15 +15,21 @@
 
 """Tests for the util function group and the background tasks it runs.
 
-The registry of tasks is tested on its own first, without a server. The tools
-then run end to end over stdio against the shared sandbox: a dump, a load into
-another schema, an export and an import, each followed with util.get_task, a
-cancelled dump, and the refusals.
+The registry of tasks is tested on its own first, without a server, then the
+command line a utility is run with and the parsing of what the shell prints,
+on lines recorded from a real shell. A fake shell then crashes, to show that a
+load is resumed and nothing else is. The tools finally run end to end over
+stdio against the shared sandbox: a dump, a load into another schema, an
+export and an import, each followed with util.get_task, a cancelled dump, and
+the refusals.
 """
-# cSpell:ignore mysqlsh
+# cSpell:ignore mysqlsh thds
 
 import asyncio
+import json
 import os
+import signal
+import sys
 import tempfile
 import threading
 import time
@@ -31,7 +37,7 @@ import time
 import pytest
 
 import helpers
-from mcp_plugin.lib import general, tasks, util_functions
+from mcp_plugin.lib import general, tasks, util_functions, util_process
 
 CLIENT = general.ClientIdentity(None, None)
 OTHER = general.ClientIdentity("10.0.0.2", "session-2")
@@ -58,13 +64,13 @@ def _finished(task, timeout=5):
 def test_a_task_records_its_events():
     task = tasks.create("dump_schemas", "Dump shop", CLIENT, "conn-1")
 
-    def work(callback):
-        callback({"type": "stageStarted", "stage": "Writing DDL"})
-        callback({"type": "progress", "stage": "Writing DDL", "current": 1, "total": 4, "totalKnown": True})
-        callback({"type": "message", "level": "status", "text": "Writing DDL..."})
-        callback({"type": "stageFinished", "stage": "Writing DDL", "seconds": 0.5})
-        callback({"type": "stageStarted", "stage": "Dumping data"})
-        callback({
+    def work(task):
+        task.on_event({"type": "stageStarted", "stage": "Writing DDL"})
+        task.on_event({"type": "progress", "stage": "Writing DDL", "current": 1, "total": 4, "totalKnown": True})
+        task.on_event({"type": "message", "level": "status", "text": "Writing DDL..."})
+        task.on_event({"type": "stageFinished", "stage": "Writing DDL", "seconds": 0.5})
+        task.on_event({"type": "stageStarted", "stage": "Dumping data"})
+        task.on_event({
             "type": "progress", "stage": "Dumping data", "current": 50, "total": 200,
             "throughput": 1000, "etaSeconds": 3, "items": "rows", "totalIsApproximate": True,
         })
@@ -112,7 +118,7 @@ def test_messages_since_and_dropped(monkeypatch):
 def test_a_failed_task_reports_its_error():
     task = tasks.create("load_dump", "Load", CLIENT)
 
-    def work(callback):
+    def work(task):
         raise RuntimeError("Dump directory not found\n")
 
     task.start(work)
@@ -122,26 +128,22 @@ def test_a_failed_task_reports_its_error():
     assert snapshot["messages"][-1] == {**snapshot["messages"][-1], "level": "error", "text": "Dump directory not found"}
 
 
-def test_cancel_reaches_the_utility_at_its_next_event():
+def test_cancel_reaches_the_running_work():
     task = tasks.create("dump_instance", "Dump", CLIENT)
     started = threading.Event()
-    answers = []
+    stop = threading.Event()
 
-    def work(callback):
-        answers.append(callback({"type": "stageStarted", "stage": "Dumping data"}))
+    def work(task):
+        task.set_canceller(stop.set)
+        task.on_event({"type": "stageStarted", "stage": "Dumping data"})
         started.set()
-        while True:
-            answer = callback({"type": "progress", "stage": "Dumping data", "current": 1, "total": 2})
-            if answer == "cancel":
-                answers.append(answer)
-                raise RuntimeError("Interrupted by user")
-            time.sleep(0.01)
+        assert stop.wait(5)
+        raise RuntimeError("Interrupted by user")
 
     task.start(work)
     assert started.wait(5)
     task.cancel()
     assert _finished(task) == tasks.CANCELLED
-    assert answers == [None, "cancel"]
     snapshot = task.snapshot()
     assert snapshot["cancel_requested"] is True
     assert snapshot["stages"][0]["status"] == "cancelled"
@@ -177,7 +179,7 @@ def test_finished_tasks_are_pruned(monkeypatch):
     done = []
     for index in range(3):
         task = tasks.create("t", f"T{index}", CLIENT)
-        task.start(lambda callback: None)
+        task.start(lambda task: None)
         _finished(task)
         done.append(task)
     # the oldest of the three finished ones is gone
@@ -200,6 +202,14 @@ def test_a_waiting_caller_wakes_on_a_change():
     task.wait_for_change(version, 5)
     assert time.monotonic() - started < 2
     assert task.snapshot()["messages"][0]["text"] == "hello"
+
+
+def test_a_cancel_before_the_work_could_take_it_reaches_it_later():
+    task = tasks.create("load_dump", "Load", CLIENT)
+    task.cancel()
+    stopped = []
+    task.set_canceller(lambda: stopped.append(True))
+    assert stopped == [True]
 
 
 def test_a_percentage_only_where_the_total_is_known():
@@ -258,6 +268,316 @@ def test_the_file_options_are_checked_wherever_the_dump_is():
     assert util_functions._local_paths([], {"progressFile": ""}) == []
 
 
+# --- the command line --------------------------------------------------------
+
+
+def test_the_command_line_of_each_utility():
+    assert util_process.build_command("dump_instance", ["/d"], {"threads": 4}) == [
+        "util", "dump-instance", "/d", "--threads=4", "--showProgress=true",
+    ]
+    # what follows a list is named, and the list is JSON
+    assert util_process.build_command("dump_schemas", [["a", "b,c"], "/d"], {}) == [
+        "util", "dump-schemas", '["a", "b,c"]', "--outputUrl:str=/d", "--showProgress=true",
+    ]
+    assert util_process.build_command("dump_tables", ["s", [], "/d"], {"all": True}) == [
+        "util", "dump-tables", "s", "[]", "--outputUrl:str=/d", "--all=true",
+        "--showProgress=true",
+    ]
+    assert util_process.build_command("import_table", ["/in/a.tsv"], {"schema": "s"})[2:4] == [
+        '["/in/a.tsv"]', "--schema:str=s",
+    ]
+    # every value typed, so that the shell does not guess: "100" stays a string
+    assert util_process.build_command(
+        "export_table", ["s.t", "/o.tsv"],
+        {"maxRate": "100", "where": {"s.t": "id > 1"}, "compatibility": ["x"],
+         "bytesPerChunk": None, "fieldsTerminatedBy": "\t"},
+    )[4:-1] == [
+        "--maxRate:str=100", '--where:json={"s.t": "id > 1"}',
+        '--compatibility:json=["x"]', "--fieldsTerminatedBy:str=\t",
+    ]
+
+
+def test_a_copy_names_its_target_by_its_attributes():
+    target = {"scheme": "mariadb", "user": "tgt", "host": "h", "port": 3307,
+              "schema": "db", "password": "secret"}
+    command = util_process.build_command(
+        "copy_schemas", [["a"]], {"schema": "renamed"}, target
+    )
+    assert command == [
+        "util", "copy-schemas", '["a"]', "--scheme:str=mariadb", "--user:str=tgt",
+        "--host:str=h", "--port=3307", "--connection-data-schema:str=db",
+        "--options-schema:str=renamed", "--showProgress=true",
+    ]
+    # the password is no argument
+    assert not any("secret" in argument for argument in command)
+
+
+@pytest.mark.parametrize("value", ["2024", "true", "null", "[1]", "-x", ""])
+def test_an_unnamed_value_the_shell_would_misread_is_refused(value):
+    with pytest.raises(Exception, match="cannot be passed|non-empty"):
+        util_process.build_command("load_dump", [value], {})
+
+
+def test_a_string_the_shell_would_unescape_is_refused():
+    with pytest.raises(Exception, match="cannot pass on unchanged"):
+        util_process.build_command("export_table", ["s.t", "/o"], {"where": "v = 'a\\'b'"})
+    # a number written differently is a string to the shell, and fine
+    assert util_process.build_command("load_dump", ["1.50"], {})[2] == "1.50"
+
+
+# --- what the shell prints ------------------------------------------------------
+
+
+def _events(kind, lines):
+    parser = util_process.OutputParser(kind)
+    events = []
+    for line in lines:
+        events += parser.feed(json.dumps(line) + "\n")
+    return parser, events
+
+
+def test_a_dump_is_parsed_into_stages_progress_and_messages():
+    parser, events = _events("dump_schemas", [
+        {"prompt": "Please provide the password for 'root@h': ", "type": "password"},
+        {"info": "Initializing"},
+        {"info": "Acquiring global read lock\n"},
+        {"info": "Initializing - done"},
+        {"info": "Writing DDL - 0 / 3 ", "numericProgressUpdate": {
+            "current": 0, "description": "Writing DDL", "total": 3, "totalKnown": True}},
+        {"note": "Progress information uses estimated values and may not be accurate.\n"},
+        {"info": "Writing DDL - done", "numericProgressUpdate": {
+            "current": 3, "description": "Writing DDL", "total": 3, "totalKnown": True}},
+        {"info": "2 thds dumping - 13% (80.00K rows / ~595.79K rows)",
+         "dumpProgress": {}, "throughputProgressConfig": {
+             "itemsFull": "rows", "totalIsApproximate": True}},
+        {"info": "2 thds dumping - 13% (80.00K rows / ~595.79K rows)",
+         "dumpProgress": {}, "throughputProgressUpdate": {
+             "current": 80000, "etaSeconds": 7, "total": 595788,
+             "throughput": {"items": 126000, "seconds": 2}}},
+        {"status": "Dump duration: 00:00:09s\n"},
+        {util_process.EXIT_MARKER: {"returncode": 0}},
+    ])
+    kinds = [(e["type"], e.get("stage") or e.get("text")) for e in events]
+    assert kinds == [
+        ("stageStarted", "Initializing"),
+        ("message", "Acquiring global read lock"),
+        ("stageFinished", "Initializing"),
+        ("stageStarted", "Writing DDL"),
+        ("progress", "Writing DDL"),
+        ("message", "Progress information uses estimated values and may not be accurate."),
+        ("progress", "Writing DDL"),
+        ("stageFinished", "Writing DDL"),
+        ("stageStarted", "Dumping data"),
+        ("progress", "Dumping data"),
+        ("message", "Dump duration: 00:00:09s"),
+    ]
+    assert events[5]["level"] == "note"
+    assert events[-2] == {
+        "type": "progress", "stage": "Dumping data", "current": 80000, "total": 595788,
+        "throughput": 63000.0, "etaSeconds": 7, "items": "rows",
+        "totalIsApproximate": True, "totalKnown": True,
+    }
+    assert parser.exit_code == 0
+    # the data stage ends with the run
+    assert [e["stage"] for e in parser.finish_all()] == ["Dumping data"]
+
+
+def test_a_copy_has_the_stages_of_both_sides():
+    _, events = _events("copy_schemas", [
+        {"info": "SRC: Writing DDL - 0 / 3 ", "numericProgressUpdate": {
+            "current": 0, "description": "Writing DDL", "total": 3, "totalKnown": True}},
+        {"status": "TGT: Opening dump...\n"},
+        {"status": "TGT: Opening dump - done\n"},
+        {"info": "SRC: 100% (600.00K rows / ~595.79K rows)", "dumpProgress": {},
+         "throughputProgressUpdate": {"current": 1, "total": 2}},
+        {"info": "TGT: ?% (58.58 MB / ?)", "loadProgress": {},
+         "throughputProgressUpdate": {"current": 5, "total": 0}},
+    ])
+    started = [e["stage"] for e in events if e["type"] == "stageStarted"]
+    assert started == ["SRC: Writing DDL", "TGT: Opening dump", "SRC: Dumping data", "TGT: Loading data"]
+    assert [e["stage"] for e in events if e["type"] == "stageFinished"] == ["TGT: Opening dump"]
+    # an unknown total is no percentage
+    assert tasks._progress_of(events[-1])["percent"] is None
+
+
+def test_the_last_error_is_the_task_error_and_earlier_ones_are_messages():
+    parser, events = _events("load_dump", [
+        {"error": "[Worker001] Error loading t1\n"},
+        {"error": "Exception: x\n", "exceptionInfo": {}},
+        {"error": "Util.load_dump: Error loading dump\n"},
+        {util_process.EXIT_MARKER: {"returncode": 1}},
+    ])
+    assert [e["text"] for e in events] == ["[Worker001] Error loading t1"]
+    assert parser.error == "Util.load_dump: Error loading dump"
+    assert parser.exit_code == 1
+
+
+def test_other_output_is_kept_as_a_message():
+    parser = util_process.OutputParser("load_dump")
+    assert parser.feed("not json\n") == [{"type": "message", "level": "info", "text": "not json"}]
+    assert parser.feed("\n") == []
+
+
+# --- the process, with a fake shell ---------------------------------------------
+
+_FAKE_SHELL = """
+import json, os, signal, sys
+state = os.environ["FAKE_SHELL_STATE"]
+runs = json.load(open(state)) if os.path.exists(state) else []
+runs.append({"argv": sys.argv[1:], "stdin": sys.stdin.read()})
+json.dump(runs, open(state, "w"))
+def out(line):
+    print(json.dumps(line), flush=True)
+mode = os.environ["FAKE_SHELL_MODE"]
+if mode == "hang":
+    # deaf to ^C: only a kill ends it
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    runs[-1]["pid"] = os.getpid()
+    json.dump(runs, open(state, "w"))
+    out({"info": "Dumping data", "dumpProgress": {}, "throughputProgressUpdate": {"current": 1, "total": 2}})
+    import time
+    time.sleep(60)
+if mode == "crash-early" and len(runs) == 1:
+    os.kill(os.getpid(), signal.SIGKILL)
+out({"info": "Scanning metadata - done", "numericProgressUpdate": {"description": "Scanning metadata", "current": 1, "total": 1}})
+out({"info": "Loading data", "loadProgress": {}, "throughputProgressUpdate": {"current": len(runs), "total": 3}})
+if mode == "crash" or (mode == "crash-once" and len(runs) == 1):
+    print("the shell's last words", file=sys.stderr, flush=True)
+    os.kill(os.getpid(), signal.SIGKILL)
+if mode == "fail":
+    out({"error": "Util.load_dump: Error loading dump\\n"})
+    sys.exit(1)
+out({"info": "1 chunks were loaded\\n"})
+"""
+
+
+@pytest.fixture
+def fake_shell(tmp_path, monkeypatch):
+    """A shell that records its runs, and crashes or fails when told to."""
+    if os.name == "nt":
+        pytest.skip("the fake shell is a POSIX script")
+
+    script = tmp_path / "fake_shell.py"
+    script.write_text(_FAKE_SHELL)
+    executable = tmp_path / "mariadb-shell"
+    executable.write_text(f"#!/bin/sh\nexec '{sys.executable}' -I '{script}' \"$@\"\n")
+    executable.chmod(0o755)
+    state = tmp_path / "runs.json"
+
+    monkeypatch.setattr(util_process, "shell_executable", lambda: str(executable))
+    monkeypatch.setenv("FAKE_SHELL_STATE", str(state))
+
+    def runs():
+        return json.loads(state.read_text()) if state.exists() else []
+
+    return runs
+
+
+def _run(kind, function, args, options, monkeypatch, mode, target=None):
+    monkeypatch.setenv("FAKE_SHELL_MODE", mode)
+    task = tasks.create(kind, kind, CLIENT)
+    task.start(lambda task: util_process.run(
+        task, function, args, options, ("mariadb://u@h:3306", "pw"), target
+    ))
+    _finished(task, timeout=30)
+    return task.snapshot()
+
+
+def test_the_utility_runs_in_a_process_with_the_passwords_on_stdin(fake_shell, monkeypatch):
+    target = {"user": "t", "host": "h2", "port": 3307, "password": "pw2"}
+    snapshot = _run("copy_schemas", "copy_schemas", [["s"]], {}, monkeypatch, "ok", target)
+
+    assert snapshot["status"] == "completed", snapshot["error"]
+    (run,) = fake_shell()
+    assert run["stdin"] == "pw\npw2\n"
+    assert run["argv"][:4] == ["--json=raw", "--passwords-from-stdin", "--uri=mariadb://u@h:3306", "--"]
+    assert "pw" not in " ".join(run["argv"]).replace("--passwords", "")
+    assert [(stage["name"], stage["status"]) for stage in snapshot["stages"]] == [
+        ("Scanning metadata", "completed"), ("Loading data", "completed"),
+    ]
+    assert [m["text"] for m in snapshot["messages"]] == ["1 chunks were loaded"]
+
+
+def test_a_crashed_load_is_resumed(fake_shell, monkeypatch):
+    snapshot = _run("load_dump", "load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-once")
+
+    assert snapshot["status"] == "completed", snapshot["error"]
+    first, second = fake_shell()
+    # the second run continues where the first stopped
+    assert "--resetProgress=true" in first["argv"]
+    assert "--resetProgress=true" not in second["argv"]
+    texts = [m["text"] for m in snapshot["messages"]]
+    assert "the shell's last words" in texts
+    assert any("crashed: it was ended by SIGKILL. Resuming the load, attempt 2 of 4." in t for t in texts)
+    assert [stage["status"] for stage in snapshot["stages"]] == [
+        "completed", "failed", "completed", "completed",
+    ]
+
+
+def test_a_load_that_crashed_before_reading_its_progress_file_keeps_its_reset(fake_shell, monkeypatch):
+    snapshot = _run("load_dump", "load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-early")
+
+    assert snapshot["status"] == "completed", snapshot["error"]
+    # the progress file might still be another load's: it is still reset
+    assert all("--resetProgress=true" in run["argv"] for run in fake_shell())
+
+
+def test_a_load_that_keeps_crashing_fails_in_the_end(fake_shell, monkeypatch):
+    snapshot = _run("load_dump", "load_dump", ["/d"], {}, monkeypatch, "crash")
+
+    assert snapshot["status"] == "failed"
+    assert len(fake_shell()) == util_process.MAX_RESTARTS + 1
+    assert "crashed: it was ended by SIGKILL. It was started 4 times." in snapshot["error"]
+
+
+@pytest.mark.parametrize("function,args,options", [
+    ("dump_schemas", [["s"], "/d"], {}),
+    ("load_dump", ["https://example.com/par/"], {}),
+    ("load_dump", ["/d"], {"progressFile": ""}),
+])
+def test_nothing_else_is_resumed(fake_shell, monkeypatch, function, args, options):
+    snapshot = _run(function, function, args, options, monkeypatch, "crash")
+
+    assert snapshot["status"] == "failed"
+    assert len(fake_shell()) == 1
+    assert "crashed" in snapshot["error"]
+
+
+def test_a_shell_that_does_not_stop_on_cancel_is_killed(fake_shell, monkeypatch):
+    monkeypatch.setattr(util_process, "CANCEL_GRACE_SECONDS", 0.5)
+    monkeypatch.setenv("FAKE_SHELL_MODE", "hang")
+    task = tasks.create("dump_schemas", "Dump", CLIENT)
+    task.start(lambda task: util_process.run(
+        task, "dump_schemas", [["s"], "/d"], {}, ("mariadb://u@h", "pw")
+    ))
+    deadline = time.monotonic() + 10
+    while not (fake_shell() and "pid" in fake_shell()[0]) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    pid = fake_shell()[0]["pid"]
+
+    task.cancel()
+    assert _finished(task, timeout=10) == tasks.CANCELLED
+    # the shell itself is gone, not only the watchdog above it
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(pid, signal.SIGKILL)
+        raise AssertionError("the shell is still running")
+
+
+def test_a_failure_is_no_crash(fake_shell, monkeypatch):
+    snapshot = _run("load_dump", "load_dump", ["/d"], {}, monkeypatch, "fail")
+
+    assert snapshot["status"] == "failed"
+    assert len(fake_shell()) == 1
+    assert snapshot["error"] == "Util.load_dump: Error loading dump"
+
+
 # --- the tools, end to end ----------------------------------------------------
 
 TOOLS = {
@@ -273,6 +593,28 @@ def test_util_tools_need_the_db_group():
 
     assert not TOOLS & set(helpers.list_tool_names(["util"]))
     assert TOOLS <= set(helpers.list_tool_names(["util", "db"]))
+
+
+def _kill_shell_running(argument: str, timeout: float = 10) -> bool:
+    """Kills the shell process whose command line has an argument, at once.
+
+    The shell, not the watchdog above it: a crash of the utility.
+    """
+    import subprocess
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        listing = subprocess.run(
+            ["ps", "-axo", "pid=,command="], capture_output=True, text=True
+        ).stdout
+        for line in listing.splitlines():
+            pid, _, command = line.strip().partition(" ")
+            if argument in command and "--json=raw" in command and "util_watchdog" not in command:
+                os.kill(int(pid), signal.SIGKILL)
+                return True
+        time.sleep(0.02)
+
+    return False
 
 
 def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
@@ -325,7 +667,7 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                 assert os.path.isfile(os.path.join(dump_dir, "@.done.json"))
                 assert "Dumping data" in [stage["name"] for stage in state["stages"]]
                 assert all(stage["status"] == "completed" for stage in state["stages"])
-                assert any(m["text"] == "Dumping data..." for m in messages)
+                assert any(m["text"].startswith("Dump duration") for m in messages)
                 assert seen_progress
 
                 # the connection's own session was never taken: it answers
@@ -341,6 +683,21 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                 assert state["status"] == "completed", state["error"]
                 rows = helpers.result_set(await sql("SELECT COUNT(*) AS n FROM mcp_util_loaded.t"))["rows"]
                 assert rows[0][0] == 20000 if isinstance(rows[0], list) else rows[0]["n"] == 20000
+
+                # a load whose shell process is killed is resumed
+                if os.name != "nt":
+                    await sql("DROP SCHEMA IF EXISTS mcp_util_resumed")
+                    started = payload(await call("util.load_dump", {
+                        "connection_id": connection_id, "url": dump_dir,
+                        "options": {"schema": "mcp_util_resumed", "resetProgress": True},
+                    }))
+                    assert await asyncio.to_thread(_kill_shell_running, "mcp_util_resumed")
+                    state, messages, _ = await follow(started["task_id"])
+                    assert state["status"] == "completed", state["error"]
+                    assert any("Resuming the load, attempt 2 of 4" in m["text"] for m in messages)
+                    rows = helpers.result_set(await sql("SELECT COUNT(*) FROM mcp_util_resumed.t"))["rows"]
+                    assert 20000 in (rows[0] if isinstance(rows[0], list) else list(rows[0].values()))
+                    await sql("DROP SCHEMA IF EXISTS mcp_util_resumed")
 
                 # exported and imported again
                 tsv = os.path.join(allowed_temp_dir, "t.tsv")
@@ -385,10 +742,11 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                 # all of them are listed, without their messages
                 listed = payload(await call("util.list_tasks", {}))
                 listed = listed if isinstance(listed, list) else [listed]
-                assert [task["kind"] for task in listed] == [
-                    "dump_schemas", "load_dump", "export_table", "import_table",
-                    "dump_schemas", "copy_schemas",
-                ]
+                assert [task["kind"] for task in listed] == (
+                    ["dump_schemas", "load_dump"]
+                    + (["load_dump"] if os.name != "nt" else [])
+                    + ["export_table", "import_table", "dump_schemas", "copy_schemas"]
+                )
                 assert all("messages" not in task for task in listed)
 
                 # refusals
@@ -407,6 +765,7 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
             finally:
                 await sql("DROP SCHEMA IF EXISTS mcp_util")
                 await sql("DROP SCHEMA IF EXISTS mcp_util_loaded")
+                await sql("DROP SCHEMA IF EXISTS mcp_util_resumed")
                 await call("db.close", {"connection_id": connection_id})
 
     asyncio.run(_run())
