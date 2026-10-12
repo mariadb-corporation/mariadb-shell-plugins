@@ -20,7 +20,12 @@ every task fails with "This MariaDB Shell is too old for the util tools".
 - `lib/util_functions.py`: the 12 tools.
   - The nine start tools are async: `require_allowed_path` elicits. They:
     1. refuse `session`/`progressCallback`/`showProgress` in `options`;
-    2. check the local paths;
+    2. check the local paths (`_local_paths`): every URL with no scheme or a
+       `file` one (any case, stripped as the shell's `strip_scheme` does),
+       unless a bucket option makes the URLs prefixes, plus `progressFile`
+       and the object storage config/credential files in every case. It
+       skipped every `://` once, which let `file:///...` past the allow-list
+       (found by `/security-review`, 2026-10-12);
     3. open the task's own session with
        `db_functions.open_separate_session()` (and, for a copy, the target's
        `connection_data()` with its password) via `anyio.to_thread`, so a
@@ -46,10 +51,10 @@ every task fails with "This MariaDB Shell is too old for the util tools".
 
 ## Tests
 
-`tests/unit/test_util.py` (13):
+`tests/unit/test_util.py` (15):
 - the registry on its own: events, since/dropped messages, failure, cancel,
   client binding, the per-client cap, pruning, waking a waiter, percent;
-- `_options` and `_local_paths`;
+- `_options` and `_local_paths`, `file://` URLs and the file options included;
 - the db-group gate;
 - an end-to-end run over stdio on the shared sandbox: dump, load into another
   schema, export, import, a cancelled `maxRate` dump, a copy to the same server
