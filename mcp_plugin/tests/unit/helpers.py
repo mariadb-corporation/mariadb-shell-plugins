@@ -310,7 +310,7 @@ def _wait_for_port(host, port, timeout):
 
 
 @asynccontextmanager
-async def http_server(function_groups, timeout=None, bind_host=None):
+async def http_server(function_groups, timeout=None, bind_host=None, extra_args=()):
     """Runs the MCP server over streamable-http and yields its endpoint URL.
 
     A ``mariadb-shell`` subprocess is launched with
@@ -326,6 +326,8 @@ async def http_server(function_groups, timeout=None, bind_host=None):
             127.0.0.1. The yielded URL always dials 127.0.0.1, so this is only
             useful for hosts that still bind loopback - which is what the
             DNS-rebinding test needs.
+        extra_args: More ``start-server`` options, such as
+            ``--trusted-proxies=127.0.0.1``.
 
     Yields:
         The MCP endpoint URL of the running server.
@@ -349,6 +351,7 @@ async def http_server(function_groups, timeout=None, bind_host=None):
             f"--host={host}",
             f"--port={port}",
             f"--function-groups={','.join(function_groups)}",
+            *extra_args,
         ],
         env=env,
         stdout=subprocess.DEVNULL,

@@ -604,7 +604,8 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
 - **TLS**: every request carries a key. A server listening beyond loopback over
   plain HTTP warns about it; serve HTTPS with `--ssl-certfile`/`--ssl-keyfile`,
   or behind a TLS-terminating reverse proxy (add its name with
-  `--allowed-hosts`).
+  `--allowed-hosts`, and its address with `--trusted-proxies`, see
+  [Behind a reverse proxy](#behind-a-reverse-proxy)).
 - One user may hold at most 32 connections; `--max-connections` raises the
   server-wide limit of 64 for many users.
 
@@ -689,7 +690,9 @@ mariadb-shell -- mcp setup-oauth --mode=builtin \
 - Starting a sign-in (`/authorize`) is limited to 30 per address per minute.
   Behind a reverse proxy every browser shares the proxy's address, so many
   people signing in within the same minute can reach that limit; they are told
-  to retry after a minute.
+  to retry after a minute. Name the proxy with `--trusted-proxies` (see
+  [Behind a reverse proxy](#behind-a-reverse-proxy)) and each browser is
+  counted on its own address again.
 
 #### Arcade (and other gateways)
 
@@ -798,6 +801,38 @@ protection on only when the host is written exactly `127.0.0.1`, `localhost` or
 `::1` - so `LOCALHOST`, `127.0.0.2` or any non-loopback bind would otherwise be
 served with no `Host` or `Origin` validation at all.
 
+### Behind a reverse proxy
+
+Behind a reverse proxy - one terminating TLS, say - every request arrives from
+the proxy's address, so every client looks like the same one: they share the
+sign-in rate limit and the throttle on refused tokens, and
+`--allowedClientNetworks` can only name the proxy. Name the proxy with
+`--trusted-proxies` (comma-separated IP addresses or CIDR networks, IPv4 or
+IPv6) and the server takes the client's address from the `X-Forwarded-For`
+header of the requests that come from it:
+
+```sh
+mariadb-shell -- mcp start-server --host=0.0.0.0 --allowed-hosts=mcp.example.com \
+    --trusted-proxies=192.0.2.0/24
+```
+
+- Only requests whose TCP peer is a trusted proxy have the header read at all.
+  From anyone else it is ignored, as it is when the option is not given, since
+  any client can send it.
+- The header is read from the right, skipping every trusted proxy: the first
+  address that is not one is the client. An entry that is not an IP address
+  (`unknown`, an obfuscated name, an address with a port) stops the search,
+  and the request is seen as coming from the proxy. If every entry is a trusted
+  proxy, the leftmost is the client.
+- `Forwarded`, `X-Real-IP` and `X-Forwarded-Proto` are not read.
+- `0.0.0.0/0` and `::/0` are refused: trusting every address would let every
+  client choose the address it is seen as.
+- The proxy has to add the address it received the request from to the header.
+  What a client wrote into the header itself then ends up to the left of that
+  address, and is never reached.
+
+The server logs the trusted proxies to stderr when it starts.
+
 ### Connection handling over HTTP
 
 Served over stdio, the server talks to a single client - the process that started
@@ -817,13 +852,15 @@ substitute for the authentication described above.
     identical - as they are behind one NAT or reverse proxy, and as they are for
     every process on the machine when the server is bound to loopback.
   - The **IP address** comes from the peer address of the connection the request
-    arrived on, never from a header (which a client can forge). To keep that
+    arrived on, never from a header (which a client can forge) - unless the peer
+    is a proxy named with `--trusted-proxies` (see
+    [Behind a reverse proxy](#behind-a-reverse-proxy)). To keep that
     trustworthy the server is run with uvicorn's proxy-header handling disabled -
     left at its default, uvicorn would replace the peer address with the
     `X-Forwarded-For` header of any request from a trusted address, and loopback
-    is trusted by default. Consequently, running behind a reverse proxy collapses
-    every client onto the proxy's address, which is exactly why the binding does
-    not rest on the address alone. Addresses are compared in a normalized form, so
+    is trusted by default. Consequently, running behind a reverse proxy that is
+    not named collapses every client onto the proxy's address, which is exactly
+    why the binding does not rest on the address alone. Addresses are compared in a normalized form, so
     a client reaching the server over IPv4 on one call and IPv6 on the next is
     still the same client.
 

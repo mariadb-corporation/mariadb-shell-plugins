@@ -62,6 +62,13 @@ session machinery the db tools sit on is in
   `streamable_http_app`, same `settings.log_level`) plus TWO deliberate differences, both
   security fixes and neither a style choice — see Gotchas:
   - **`proxy_headers=False`** on the `uvicorn.Config` (S1).
+    `--trustedProxies` (branch `mcp-trusted-proxies`) does NOT turn it back on: our own
+    `TrustedProxyMiddleware`, OUTERMOST (outside `AuthFailureThrottle`), rewrites a COPY
+    of `scope["client"]` to `(address, 0)` only when the TCP peer is in a trusted
+    network, reading `X-Forwarded-For` right to left past trusted hops; a non-IP entry
+    leaves the scope alone (fail closed), all-trusted takes the leftmost. `/0` refused,
+    stdio refused, one `[mcp] server:` log line at start. Loopback peers match a loopback
+    network of either IP version. Tests: `tests/unit/test_trusted_proxies.py`.
   - **an explicit `transport_security=`** built by `_transport_security_settings` (S4),
     instead of letting `streamable_http_app` decide.
 

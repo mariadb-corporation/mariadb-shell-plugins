@@ -896,7 +896,11 @@ def get_client_address(ctx) -> Optional[str]:
     server being run with uvicorn's proxy-header handling disabled, which
     :func:`mcp_plugin.lib.server._serve_streamable_http` takes care of;
     otherwise uvicorn would overwrite it with the ``X-Forwarded-For`` header for
-    every request coming from a trusted address - loopback included.
+    every request coming from a trusted address - loopback included. The one
+    exception is a request from a reverse proxy named with ``--trustedProxies``,
+    whose peer address is replaced by the client the proxy forwarded it for
+    before anything reads it (see
+    :class:`mcp_plugin.lib.server.TrustedProxyMiddleware`).
 
     The address is normalized (see :func:`normalize_client_address`) so that
     the one returned when a connection is opened and the one returned when it
