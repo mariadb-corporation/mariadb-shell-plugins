@@ -29,6 +29,7 @@ import asyncio
 import json
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -473,9 +474,9 @@ def fake_shell(tmp_path, monkeypatch):
     return runs
 
 
-def _run(kind, function, args, options, monkeypatch, mode, target=None):
+def _run(function, args, options, monkeypatch, mode, target=None):
     monkeypatch.setenv("FAKE_SHELL_MODE", mode)
-    task = tasks.create(kind, kind, CLIENT)
+    task = tasks.create(function, function, CLIENT)
     task.start(lambda task: util_process.run(
         task, function, args, options, ("mariadb://u@h:3306", "pw"), target
     ))
@@ -485,7 +486,7 @@ def _run(kind, function, args, options, monkeypatch, mode, target=None):
 
 def test_the_utility_runs_in_a_process_with_the_passwords_on_stdin(fake_shell, monkeypatch):
     target = {"user": "t", "host": "h2", "port": 3307, "password": "pw2"}
-    snapshot = _run("copy_schemas", "copy_schemas", [["s"]], {}, monkeypatch, "ok", target)
+    snapshot = _run("copy_schemas", [["s"]], {}, monkeypatch, "ok", target)
 
     assert snapshot["status"] == "completed", snapshot["error"]
     (run,) = fake_shell()
@@ -499,7 +500,7 @@ def test_the_utility_runs_in_a_process_with_the_passwords_on_stdin(fake_shell, m
 
 
 def test_a_crashed_load_is_resumed(fake_shell, monkeypatch):
-    snapshot = _run("load_dump", "load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-once")
+    snapshot = _run("load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-once")
 
     assert snapshot["status"] == "completed", snapshot["error"]
     first, second = fake_shell()
@@ -515,7 +516,7 @@ def test_a_crashed_load_is_resumed(fake_shell, monkeypatch):
 
 
 def test_a_load_that_crashed_before_reading_its_progress_file_keeps_its_reset(fake_shell, monkeypatch):
-    snapshot = _run("load_dump", "load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-early")
+    snapshot = _run("load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-early")
 
     assert snapshot["status"] == "completed", snapshot["error"]
     # the progress file might still be another load's: it is still reset
@@ -523,7 +524,7 @@ def test_a_load_that_crashed_before_reading_its_progress_file_keeps_its_reset(fa
 
 
 def test_a_load_that_keeps_crashing_fails_in_the_end(fake_shell, monkeypatch):
-    snapshot = _run("load_dump", "load_dump", ["/d"], {}, monkeypatch, "crash")
+    snapshot = _run("load_dump", ["/d"], {}, monkeypatch, "crash")
 
     assert snapshot["status"] == "failed"
     assert len(fake_shell()) == util_process.MAX_RESTARTS + 1
@@ -536,7 +537,7 @@ def test_a_load_that_keeps_crashing_fails_in_the_end(fake_shell, monkeypatch):
     ("load_dump", ["/d"], {"progressFile": ""}),
 ])
 def test_nothing_else_is_resumed(fake_shell, monkeypatch, function, args, options):
-    snapshot = _run(function, function, args, options, monkeypatch, "crash")
+    snapshot = _run(function, args, options, monkeypatch, "crash")
 
     assert snapshot["status"] == "failed"
     assert len(fake_shell()) == 1
@@ -571,7 +572,7 @@ def test_a_shell_that_does_not_stop_on_cancel_is_killed(fake_shell, monkeypatch)
 
 
 def test_a_failure_is_no_crash(fake_shell, monkeypatch):
-    snapshot = _run("load_dump", "load_dump", ["/d"], {}, monkeypatch, "fail")
+    snapshot = _run("load_dump", ["/d"], {}, monkeypatch, "fail")
 
     assert snapshot["status"] == "failed"
     assert len(fake_shell()) == 1
@@ -600,8 +601,6 @@ def _kill_shell_running(argument: str, timeout: float = 10) -> bool:
 
     The shell, not the watchdog above it: a crash of the utility.
     """
-    import subprocess
-
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         listing = subprocess.run(
