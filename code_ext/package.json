@@ -18,10 +18,47 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onLanguage:sql"
+    "onLanguage:sql",
+    "onLanguage:mariadb-sql"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "mariadb-sql",
+        "aliases": [
+          "MariaDB SQL",
+          "mariadb-sql"
+        ],
+        "extensions": [
+          ".sql"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mariadb-sql",
+        "scopeName": "source.mariadb-sql",
+        "path": "./syntaxes/mariadb-sql.tmLanguage.json"
+      }
+    ],
+    "semanticTokenTypes": [
+      {
+        "id": "sqlQuotedIdentifier",
+        "superType": "variable",
+        "description": "A double-quoted identifier: \"...\" on a connection whose sql_mode has ANSI_QUOTES."
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "scopes": {
+          "sqlQuotedIdentifier": [
+            "entity.name.identifier.quoted.sql"
+          ]
+        }
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -145,6 +182,21 @@
           "default": 200,
           "minimum": 1,
           "markdownDescription": "How many rows of a result set are fetched and shown at a time. A `SELECT` without a `LIMIT` of its own is given one, and the result set's toolbar pages through the rest."
+        },
+        "mariadb.sql.ansiQuotes": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ],
+          "enumDescriptions": [
+            "As the SQL file's connection's sql_mode says, once the connection is open.",
+            "Always an identifier, as under ANSI_QUOTES.",
+            "Always a string, as in the default sql_mode."
+          ],
+          "markdownDescription": "Whether `\"...\"` in a SQL file is highlighted as a string or as an identifier, as the server reads it under `ANSI_QUOTES`. The identifier colouring is a semantic highlight, so it shows only where `#editor.semanticHighlighting.enabled#` is on - which the built-in themes turn on."
         },
         "mariadb.resultSet.freezePrimaryKeyColumns": {
           "type": "boolean",
@@ -1194,39 +1246,39 @@
       "editor/title": [
         {
           "command": "mariadb.selectEditorConnection",
-          "when": "resourceLangId == sql",
+          "when": "resourceLangId =~ /^(sql|mariadb-sql)$/",
           "group": "navigation@1"
         },
         {
           "command": "mariadb.runSqlFile",
-          "when": "resourceLangId == sql",
+          "when": "resourceLangId =~ /^(sql|mariadb-sql)$/",
           "group": "navigation@2"
         },
         {
           "command": "mariadb.runSqlStatement",
-          "when": "resourceLangId == sql",
+          "when": "resourceLangId =~ /^(sql|mariadb-sql)$/",
           "group": "navigation@3"
         },
         {
           "command": "mariadb.stopOnError.disable",
-          "when": "resourceLangId == sql && mariadb.stopOnError",
+          "when": "resourceLangId =~ /^(sql|mariadb-sql)$/ && mariadb.stopOnError",
           "group": "navigation@4"
         },
         {
           "command": "mariadb.stopOnError.enable",
-          "when": "resourceLangId == sql && !mariadb.stopOnError",
+          "when": "resourceLangId =~ /^(sql|mariadb-sql)$/ && !mariadb.stopOnError",
           "group": "navigation@4"
         }
       ],
       "editor/context": [
         {
           "command": "mariadb.runSqlFile",
-          "when": "resourceLangId == sql",
+          "when": "resourceLangId =~ /^(sql|mariadb-sql)$/",
           "group": "mariadb@1"
         },
         {
           "command": "mariadb.runSqlStatement",
-          "when": "resourceLangId == sql",
+          "when": "resourceLangId =~ /^(sql|mariadb-sql)$/",
           "group": "mariadb@2"
         }
       ],
@@ -1257,23 +1309,23 @@
         },
         {
           "command": "mariadb.runSqlFile",
-          "when": "editorLangId == sql"
+          "when": "editorLangId =~ /^(sql|mariadb-sql)$/"
         },
         {
           "command": "mariadb.selectEditorConnection",
-          "when": "editorLangId == sql"
+          "when": "editorLangId =~ /^(sql|mariadb-sql)$/"
         },
         {
           "command": "mariadb.runSqlStatement",
-          "when": "editorLangId == sql"
+          "when": "editorLangId =~ /^(sql|mariadb-sql)$/"
         },
         {
           "command": "mariadb.stopOnError.disable",
-          "when": "editorLangId == sql && mariadb.stopOnError"
+          "when": "editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.stopOnError"
         },
         {
           "command": "mariadb.stopOnError.enable",
-          "when": "editorLangId == sql && !mariadb.stopOnError"
+          "when": "editorLangId =~ /^(sql|mariadb-sql)$/ && !mariadb.stopOnError"
         },
         {
           "command": "mariadb.clearResultView",
@@ -1761,65 +1813,65 @@
         "command": "mariadb.runSqlFile",
         "key": "ctrl+enter",
         "mac": "cmd+enter",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'cmdOrCtrl+enter'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runScript == 'cmdOrCtrl+enter'"
       },
       {
         "command": "mariadb.runSqlFile",
         "key": "shift+enter",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'shift+enter'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runScript == 'shift+enter'"
       },
       {
         "command": "mariadb.runSqlFile",
         "key": "ctrl+shift+enter",
         "mac": "cmd+shift+enter",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'cmdOrCtrl+shift+enter'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runScript == 'cmdOrCtrl+shift+enter'"
       },
       {
         "command": "mariadb.runSqlFile",
         "key": "alt+enter",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'alt+enter'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runScript == 'alt+enter'"
       },
       {
         "command": "mariadb.runSqlFile",
         "key": "f5",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'f5'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runScript == 'f5'"
       },
       {
         "command": "mariadb.runSqlFile",
         "key": "f8",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runScript == 'f8'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runScript == 'f8'"
       },
       {
         "command": "mariadb.runSqlStatement",
         "key": "ctrl+enter",
         "mac": "cmd+enter",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'cmdOrCtrl+enter'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runStatement == 'cmdOrCtrl+enter'"
       },
       {
         "command": "mariadb.runSqlStatement",
         "key": "shift+enter",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'shift+enter'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runStatement == 'shift+enter'"
       },
       {
         "command": "mariadb.runSqlStatement",
         "key": "ctrl+shift+enter",
         "mac": "cmd+shift+enter",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'cmdOrCtrl+shift+enter'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runStatement == 'cmdOrCtrl+shift+enter'"
       },
       {
         "command": "mariadb.runSqlStatement",
         "key": "alt+enter",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'alt+enter'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runStatement == 'alt+enter'"
       },
       {
         "command": "mariadb.runSqlStatement",
         "key": "f5",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'f5'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runStatement == 'f5'"
       },
       {
         "command": "mariadb.runSqlStatement",
         "key": "f8",
-        "when": "editorTextFocus && editorLangId == sql && mariadb.chord.runStatement == 'f8'"
+        "when": "editorTextFocus && editorLangId =~ /^(sql|mariadb-sql)$/ && mariadb.chord.runStatement == 'f8'"
       }
     ],
     "submenus": [
@@ -1859,6 +1911,9 @@
     "build:webview": "vite build --config vite.webview.config.ts && vite build --config vite.editor.config.ts && vite build --config vite.sandbox.config.ts && vite build --config vite.mrs.config.ts && vite build --config vite.util.config.ts",
     "watch:webview": "vite build --config vite.webview.config.ts --watch",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "grammar:sync": "node tools/grammar.mts sync",
+    "grammar:build": "node tools/grammar.mts build",
+    "grammar:check": "node tools/grammar.mts build --check",
     "ui-test:build": "tsc -p ui-test",
     "ui-test": "npm run ui-test:build && node out/ui-test/run.js"
   },
@@ -1877,7 +1932,9 @@
     "typescript-eslint": "^8.61.1",
     "vite": "^7.1.5",
     "vitest": "^5.0.1",
-    "vscode-extension-tester": "^8.28.1"
+    "vscode-extension-tester": "^8.28.1",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   },
   "overrides": {
     "diff": "^8.0.4",

@@ -141,6 +141,34 @@ describe("scanStatements", () => {
             .toEqual(["SELECT 'it\\'s; here';"]);
     });
 
+    it("takes a backslash in a quoted identifier as a character", () => {
+        // `a\` is a column named a-backslash: the identifier ends at the
+        // second backtick, and the next statement is one of its own.
+        expect(spanTexts("SELECT `a\\`; SELECT 1;"))
+            .toEqual(["SELECT `a\\`;", " SELECT 1;"]);
+        // Only a doubled backtick escapes one.
+        expect(spanTexts("SELECT `a``;b`; SELECT 1;"))
+            .toEqual(["SELECT `a``;b`;", " SELECT 1;"]);
+    });
+
+    it("takes a backslash in double quotes as an escape by default", () => {
+        // A string, as in the default sql_mode.
+        expect(spanTexts("SELECT \"a\\\";b\"; SELECT 1;"))
+            .toEqual(["SELECT \"a\\\";b\";", " SELECT 1;"]);
+    });
+
+    it("takes it as a character in double quotes under ANSI_QUOTES", () => {
+        // An identifier, as the server reads it then: `"a\"` ends at the
+        // second quote, and `""` is the one escape.
+        const sql = "SELECT \"a\\\"; SELECT \"b\"\";c\"; SELECT 1;";
+        expect(determineStatementRanges(sql, ";", true).map((span) => {
+            return sql.slice(span.span.start,
+                span.span.start + span.span.length);
+        })).toEqual([
+            "SELECT \"a\\\";", " SELECT \"b\"\";c\";", " SELECT 1;",
+        ]);
+    });
+
     it("ignores a delimiter inside a block comment", () => {
         expect(spanTexts("SELECT /* a; b */ 1;"))
             .toEqual(["SELECT /* a; b */ 1;"]);

@@ -53,6 +53,7 @@ const createEditor = (text: string, languageId = "sql"): MockTextEditor => {
  */
 const createDecorator = (
     editors: MockTextEditor[] = [],
+    ansiQuotesFor?: () => boolean,
 ): StatementDecorator => {
     setVisibleTextEditors(editors);
 
@@ -60,6 +61,7 @@ const createDecorator = (
         sliceMs: -1,
         applyIntervalMs: -1,
         debounceMs: 1,
+        ansiQuotesFor,
     });
 };
 
@@ -100,6 +102,26 @@ describe("StatementDecorator", () => {
 
         decorator.dispose();
     });
+
+    it("rescans when the document's quote mode changes, and only then",
+        async () => {
+            // `"a\"` swallows the next statement as a string, and ends
+            // before it as an ANSI_QUOTES identifier.
+            const editor = createEditor("SELECT \"a\\\";\nSELECT 2;");
+            let ansiQuotes = false;
+            const decorator = createDecorator([], () => {
+                return ansiQuotes;
+            });
+
+            await decorator.decorate(editor as never);
+            expect(editor.decoratedLines).toEqual([0]);
+
+            ansiQuotes = true;
+            await decorator.decorate(editor as never);
+            expect(editor.decoratedLines).toEqual([0, 1]);
+
+            decorator.dispose();
+        });
 
     it("marks a statement at its content, not at its comment", async () => {
         const editor = createEditor(

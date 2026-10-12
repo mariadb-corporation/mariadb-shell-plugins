@@ -18,3 +18,8 @@ webview/**
 !images/**
 ui-test/**
 out/**
+
+# The grammar tool and its inputs: only the built grammars ship.
+tools/**
+syntaxes/mariadb-sql.template.json
+syntaxes/words.json

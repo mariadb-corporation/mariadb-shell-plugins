@@ -25,6 +25,12 @@ export const CONFIG_SECTION = "mariadb";
 /** The setting holding the default connection's URI. */
 export const DEFAULT_CONNECTION_SETTING = "defaultConnection";
 
+/** The setting deciding whether `"..."` quotes an identifier or a string. */
+export const ANSI_QUOTES_SETTING = "sql.ansiQuotes";
+
+/** What `mariadb.sql.ansiQuotes` can be set to. */
+export type AnsiQuotesSetting = "auto" | "on" | "off";
+
 /** The setting deciding whether a failing statement ends a script. */
 export const STOP_ON_ERROR_SETTING = "execute.stopOnError";
 
@@ -61,6 +67,20 @@ export const CONNECT_ON_OPEN_CONTEXT_KEY = "mariadb.connectOnOpen";
  * commands and this key decides which of them the toolbar shows.
  */
 export const STOP_ON_ERROR_CONTEXT_KEY = "mariadb.stopOnError";
+
+/**
+ * Which language mode SQL documents get: the one their connection's
+ * `sql_mode` calls for, or one of the two regardless.
+ *
+ * @returns `auto`, the default, `on` for ANSI_QUOTES or `off` for not.
+ */
+export const ansiQuotes = (): AnsiQuotesSetting => {
+    const value = vscode.workspace
+        .getConfiguration(CONFIG_SECTION)
+        .get<string>(ANSI_QUOTES_SETTING);
+
+    return value === "on" || value === "off" ? value : "auto";
+};
 
 /**
  * Whether a failing statement should end the script it is part of.

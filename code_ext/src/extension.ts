@@ -373,7 +373,16 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const editors = new SqlEditorBinding(connections, resultView, log);
     // Marks where each statement begins. The ranges come from the SQL
     // scanner for now; a language server would report the same thing.
-    const statementDots = new StatementDecorator(context.extensionUri);
+    const statementDots = new StatementDecorator(context.extensionUri, {
+        ansiQuotesFor: (document) => {
+            return editors.ansiQuotesFor(document);
+        },
+    });
+    // A connection whose sql_mode turned out to have ANSI_QUOTES, or
+    // whose script changed it, may end its statements elsewhere.
+    const stopFollowingSqlModes = editors.onDidChangeSqlMode(() => {
+        statementDots.refresh();
+    });
     resultView.setRefreshHandler(async (resultSet, target) => {
         await editors.refreshResultSet(resultSet, target);
     });
@@ -508,6 +517,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         sandboxesView,
         editors,
         statementDots,
+        { dispose: stopFollowingSqlModes },
         resultView,
         connectionsView,
         // Grid values opened in editors, as files of their own scheme.

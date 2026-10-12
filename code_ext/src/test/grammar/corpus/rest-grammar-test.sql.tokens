@@ -1,0 +1,4563 @@
+1: /* MRS Grammar Test
+    "/*"  punctuation.definition.comment.sql
+    " MRS Grammar Test"  comment.block.sql
+2: Copyright (c) 2023, 2025, Oracle and/or its affiliates.*/
+    "Copyright (c) 2023, 2025, Oracle and/or its affiliates."  comment.block.sql
+    "*/"  punctuation.definition.comment.sql
+3: 
+4: # cSpell:ignore gtid
+    "# cSpell:ignore gtid"  comment.line.number-sign.sql
+5: CONFIGURE REST METADATA
+    "CONFIGURE"  keyword.other.rest.sql
+    "REST"  keyword.other.rest.sql
+    "METADATA"  keyword.other.rest.sql
+6:     ENABLED
+    "ENABLED"  keyword.other.rest.sql
+7:     UPDATE IF AVAILABLE;
+    "UPDATE"  keyword.other.reserved.sql
+    "IF"  keyword.other.reserved.sql
+    "AVAILABLE"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+8: 
+9: CREATE OR REPLACE REST SERVICE /myTestService;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+10: 
+11: CREATE OR REPLACE REST SERVICE mike@/myTestService;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "mike"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+12: 
+13: SHOW REST SERVICES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+14: 
+15: DROP REST SERVICE mike@/myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "mike"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+16: 
+17: CREATE OR REPLACE REST SERVICE /myTestService
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+18:     ENABLED
+    "ENABLED"  keyword.other.rest.sql
+19:     COMMENT "A simple REST service"
+    "COMMENT"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "A simple REST service"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+20:     AUTHENTICATION
+    "AUTHENTICATION"  keyword.other.rest.sql
+21:         PATH "/authentication"
+    "PATH"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "/authentication"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+22:         REDIRECTION DEFAULT
+    "REDIRECTION"  keyword.other.rest.sql
+    "DEFAULT"  keyword.other.reserved.sql
+23:         VALIDATION DEFAULT
+    "VALIDATION"  keyword.other.unreserved.sql
+    "DEFAULT"  keyword.other.reserved.sql
+24:         PAGE CONTENT DEFAULT
+    "PAGE"  keyword.other.unreserved.sql
+    "CONTENT"  keyword.other.rest.sql
+    "DEFAULT"  keyword.other.reserved.sql
+25:     OPTIONS {
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+26:         "headers": {
+    "\""  punctuation.definition.string.begin.sql
+    "headers"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+27:             "Access-Control-Allow-Credentials": "true",
+    "\""  punctuation.definition.string.begin.sql
+    "Access-Control-Allow-Credentials"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "true"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+28:             "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token",
+    "\""  punctuation.definition.string.begin.sql
+    "Access-Control-Allow-Headers"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "Content-Type, Authorization, X-Requested-With, Origin, X-Auth-Token"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+29:             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+    "\""  punctuation.definition.string.begin.sql
+    "Access-Control-Allow-Methods"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "GET, POST, PUT, DELETE, OPTIONS"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+30:         },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+31:         "http": {
+    "\""  punctuation.definition.string.begin.sql
+    "http"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+32:             "allowedOrigin": "auto"
+    "\""  punctuation.definition.string.begin.sql
+    "allowedOrigin"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "auto"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+33:         },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+34:         "logging": {
+    "\""  punctuation.definition.string.begin.sql
+    "logging"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+35:             "exceptions": true,
+    "\""  punctuation.definition.string.begin.sql
+    "exceptions"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+    ","  punctuation.separator.comma.sql
+36:             "request": {
+    "\""  punctuation.definition.string.begin.sql
+    "request"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+37:                 "body": true,
+    "\""  punctuation.definition.string.begin.sql
+    "body"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+    ","  punctuation.separator.comma.sql
+38:                 "headers": true
+    "\""  punctuation.definition.string.begin.sql
+    "headers"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+39:             },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+40:             "response": {
+    "\""  punctuation.definition.string.begin.sql
+    "response"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+41:                 "body": true,
+    "\""  punctuation.definition.string.begin.sql
+    "body"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+    ","  punctuation.separator.comma.sql
+42:                 "headers": true
+    "\""  punctuation.definition.string.begin.sql
+    "headers"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+43:             }
+    "}"  punctuation.section.braces.sql
+44:         },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+45:         "returnInternalErrorDetails": true
+    "\""  punctuation.definition.string.begin.sql
+    "returnInternalErrorDetails"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+46:     }
+    "}"  punctuation.section.braces.sql
+47:     METADATA {
+    "METADATA"  keyword.other.rest.sql
+    "{"  punctuation.section.braces.sql
+48:         "position": 1
+    "\""  punctuation.definition.string.begin.sql
+    "position"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+49:     };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+50: 
+51: CREATE OR REPLACE REST SERVICE /myService;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+52: 
+53: 
+54: SHOW CREATE REST SERVICE /myTestService;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+55: 
+56: ALTER REST SERVICE /myTestService
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+57:     NEW REQUEST PATH /myAlteredTestService
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/myAlteredTestService"  string.unquoted.path.rest.sql
+58:     DISABLED
+    "DISABLED"  keyword.other.rest.sql
+59:     COMMENT "A real simple REST service"
+    "COMMENT"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "A real simple REST service"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+60:     AUTHENTICATION
+    "AUTHENTICATION"  keyword.other.rest.sql
+61:         PATH "/authentication2"
+    "PATH"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "/authentication2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+62:         REDIRECTION "/authReDir"
+    "REDIRECTION"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "/authReDir"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+63:         VALIDATION "/authVal"
+    "VALIDATION"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "/authVal"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+64:     OPTIONS {
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+65:         "logging": {
+    "\""  punctuation.definition.string.begin.sql
+    "logging"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+66:             "exceptions": true
+    "\""  punctuation.definition.string.begin.sql
+    "exceptions"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+67:         },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+68:         "returnInternalErrorDetails": false
+    "\""  punctuation.definition.string.begin.sql
+    "returnInternalErrorDetails"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "false"  constant.language.sql
+69:     }
+    "}"  punctuation.section.braces.sql
+70:     METADATA {
+    "METADATA"  keyword.other.rest.sql
+    "{"  punctuation.section.braces.sql
+71:         "position": 2
+    "\""  punctuation.definition.string.begin.sql
+    "position"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "2"  constant.numeric.integer.sql
+72:     };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+73: 
+74: SHOW CREATE REST SERVICE /myAlteredTestService;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myAlteredTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+75: 
+76: ALTER REST SERVICE /myAlteredTestService
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myAlteredTestService"  string.unquoted.path.rest.sql
+77:     NEW REQUEST PATH /myTestService;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+78: 
+79: CREATE REST SCHEMA ON SERVICE /myTestService FROM `sakila`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+80:     ENABLED
+    "ENABLED"  keyword.other.rest.sql
+81:     ITEMS PER PAGE 25
+    "ITEMS"  keyword.other.rest.sql
+    "PER"  keyword.other.rest.sql
+    "PAGE"  keyword.other.unreserved.sql
+    "25"  constant.numeric.integer.sql
+82:     COMMENT "The sakila schema"
+    "COMMENT"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "The sakila schema"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+83:     METADATA { "position": 1};
+    "METADATA"  keyword.other.rest.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "position"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+84: 
+85: USE REST SERVICE /myTestService;
+    "USE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+86: 
+87: CREATE OR REPLACE REST SCHEMA /sakila FROM `sakila`
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+88:     DISABLED
+    "DISABLED"  keyword.other.rest.sql
+89:     OPTIONS {
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+90:         "logging": {
+    "\""  punctuation.definition.string.begin.sql
+    "logging"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+91:             "exceptions": true
+    "\""  punctuation.definition.string.begin.sql
+    "exceptions"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+92:         },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+93:         "returnInternalErrorDetails": false
+    "\""  punctuation.definition.string.begin.sql
+    "returnInternalErrorDetails"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "false"  constant.language.sql
+94:     };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+95: 
+96: ALTER REST SCHEMA /sakila
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+97:     NEW REQUEST PATH /sakila2
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/sakila2"  string.unquoted.path.rest.sql
+98:     DISABLED;
+    "DISABLED"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+99: 
+100: ALTER REST SCHEMA /sakila2
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila2"  string.unquoted.path.rest.sql
+101:     NEW REQUEST PATH /sakila;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+102: 
+103: USE REST SCHEMA /sakila;
+    "USE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+104: 
+105: CREATE OR REPLACE REST DATA MAPPING VIEW /city
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/city"  string.unquoted.path.rest.sql
+106: AS `sakila`.`city`;
+    "AS"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "."  punctuation.accessor.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "city"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    ";"  punctuation.terminator.statement.sql
+107: 
+108: SHOW CREATE REST VIEW /city;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/city"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+109: 
+110: ALTER REST VIEW /city CLASS MyServiceSakilaCity2;
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/city"  string.unquoted.path.rest.sql
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaCity2"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+111: 
+112: SHOW CREATE REST VIEW /city;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/city"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+113: 
+114: CREATE OR REPLACE REST DATA MAPPING VIEW /city
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/city"  string.unquoted.path.rest.sql
+115:     AS sakila.city
+    "AS"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "city"  entity.name.identifier.sql
+116:     CLASS MyServiceSakilaCity {
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaCity"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+117:         cityId: city_id @KEY @SORTABLE @NOCHECK,
+    "cityId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "city_id"  entity.name.identifier.sql
+    "@KEY"  storage.modifier.annotation.rest.sql
+    "@SORTABLE"  storage.modifier.annotation.rest.sql
+    "@NOCHECK"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+118:         city: city,
+    "city"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "city"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+119:         countryId: country_id,
+    "countryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "country_id"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+120:         lastUpdate: last_update,
+    "lastUpdate"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "last_update"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+121:         address: sakila.address @UNNEST {
+    "address"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "address"  entity.name.identifier.sql
+    "@UNNEST"  storage.modifier.annotation.rest.sql
+    "{"  punctuation.section.braces.sql
+122:             address: address
+    "address"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "address"  entity.name.identifier.sql
+123:         },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+124:         country: sakila.country {
+    "country"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "country"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+125:             countryId: country_id @SORTABLE,
+    "countryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "country_id"  entity.name.identifier.sql
+    "@SORTABLE"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+126:             country: country
+    "country"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "country"  entity.name.identifier.sql
+127:         }
+    "}"  punctuation.section.braces.sql
+128:     };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+129: 
+130: SHOW CREATE REST VIEW /city;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/city"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+131: 
+132: CREATE OR REPLACE REST DATA MAPPING VIEW /country
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/country"  string.unquoted.path.rest.sql
+133: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+134: AS sakila.country CLASS MyServiceSakilaCountry @INSERT @UPDATE @DELETE @NOCHECK {
+    "AS"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "country"  entity.name.identifier.sql
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaCountry"  entity.name.identifier.sql
+    "@INSERT"  storage.modifier.annotation.rest.sql
+    "@UPDATE"  storage.modifier.annotation.rest.sql
+    "@DELETE"  storage.modifier.annotation.rest.sql
+    "@NOCHECK"  storage.modifier.annotation.rest.sql
+    "{"  punctuation.section.braces.sql
+135:     countryId: country_id @SORTABLE,
+    "countryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "country_id"  entity.name.identifier.sql
+    "@SORTABLE"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+136:     country: country,
+    "country"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "country"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+137:     lastUpdate: last_update,
+    "lastUpdate"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "last_update"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+138:     cities: sakila.city {
+    "cities"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "city"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+139:         city: city
+    "city"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "city"  entity.name.identifier.sql
+140:     }
+    "}"  punctuation.section.braces.sql
+141: }
+    "}"  punctuation.section.braces.sql
+142: ENABLED
+    "ENABLED"  keyword.other.rest.sql
+143: AUTHENTICATION REQUIRED
+    "AUTHENTICATION"  keyword.other.rest.sql
+    "REQUIRED"  keyword.other.rest.sql
+144: ITEMS PER PAGE 25
+    "ITEMS"  keyword.other.rest.sql
+    "PER"  keyword.other.rest.sql
+    "PAGE"  keyword.other.unreserved.sql
+    "25"  constant.numeric.integer.sql
+145: COMMENT "The sakila.country table"
+    "COMMENT"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "The sakila.country table"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+146: MEDIA TYPE "Test"
+    "MEDIA"  keyword.other.rest.sql
+    "TYPE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "Test"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+147: FORMAT FEED
+    "FORMAT"  keyword.other.unreserved.sql
+    "FEED"  keyword.other.rest.sql
+148: AUTHENTICATION PROCEDURE sakila.auth_proc;
+    "AUTHENTICATION"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "auth_proc"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+149: 
+150: CREATE OR REPLACE REST DATA MAPPING VIEW /actor
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actor"  string.unquoted.path.rest.sql
+151: AS `sakila`.`actor` CLASS MyServiceSakilaActor {
+    "AS"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "."  punctuation.accessor.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "actor"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaActor"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+152:     actorId: actor_id @SORTABLE,
+    "actorId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "actor_id"  entity.name.identifier.sql
+    "@SORTABLE"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+153:     firstName: first_name,
+    "firstName"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "first_name"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+154:     lastName: last_name,
+    "lastName"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "last_name"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+155:     lastUpdate: last_update,
+    "lastUpdate"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "last_update"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+156:     filmActor: sakila.film_actor @UNNEST {
+    "filmActor"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "film_actor"  entity.name.identifier.sql
+    "@UNNEST"  storage.modifier.annotation.rest.sql
+    "{"  punctuation.section.braces.sql
+157:         film: sakila.film @UNNEST {
+    "film"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "film"  entity.name.identifier.sql
+    "@UNNEST"  storage.modifier.annotation.rest.sql
+    "{"  punctuation.section.braces.sql
+158:             title: title
+    "title"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "title"  entity.name.identifier.sql
+159:         }
+    "}"  punctuation.section.braces.sql
+160:     }
+    "}"  punctuation.section.braces.sql
+161: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+162: 
+163: CREATE REST DATA MAPPING VIEW /actorInfo
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+164: AS `sakila`.`actor_info` CLASS MyServiceSakilaActorInfo {
+    "AS"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "."  punctuation.accessor.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "actor_info"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaActorInfo"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+165:     actorId: actor_id @SORTABLE,
+    "actorId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "actor_id"  entity.name.identifier.sql
+    "@SORTABLE"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+166:     firstName: first_name,
+    "firstName"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "first_name"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+167:     lastName: last_name,
+    "lastName"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "last_name"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+168:     filmInfo: film_info
+    "filmInfo"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "film_info"  entity.name.identifier.sql
+169: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+170: 
+171: ALTER REST DATA MAPPING VIEW /actorInfo
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+172: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+173: DISABLED
+    "DISABLED"  keyword.other.rest.sql
+174: OPTIONS {
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+175:     "option1": "this is option 1",
+    "\""  punctuation.definition.string.begin.sql
+    "option1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "this is option 1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+176:     "option2": {
+    "\""  punctuation.definition.string.begin.sql
+    "option2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+177:         "option11": "this is option 1.1"
+    "\""  punctuation.definition.string.begin.sql
+    "option11"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "this is option 1.1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+178:     }
+    "}"  punctuation.section.braces.sql
+179: }
+    "}"  punctuation.section.braces.sql
+180: FORMAT ITEM;
+    "FORMAT"  keyword.other.unreserved.sql
+    "ITEM"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+181: 
+182: ALTER REST DATA MAPPING VIEW /actorInfo
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+183: NEW REQUEST PATH /actorInfo2
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/actorInfo2"  string.unquoted.path.rest.sql
+184: CLASS MyServiceSakilaActorInfoTest;
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaActorInfoTest"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+185: 
+186: ALTER REST DATA MAPPING VIEW /actorInfo2
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo2"  string.unquoted.path.rest.sql
+187: NEW REQUEST PATH /actorInfo;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+188: 
+189: SHOW CREATE REST VIEW /actorInfo;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+190: 
+191: ALTER REST DATA MAPPING VIEW /actorInfo
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+192: CLASS MyServiceSakilaActorInfoTest2 @UPDATE @INSERT @DELETE {
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaActorInfoTest2"  entity.name.identifier.sql
+    "@UPDATE"  storage.modifier.annotation.rest.sql
+    "@INSERT"  storage.modifier.annotation.rest.sql
+    "@DELETE"  storage.modifier.annotation.rest.sql
+    "{"  punctuation.section.braces.sql
+193:     actorId: actor_id @SORTABLE,
+    "actorId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "actor_id"  entity.name.identifier.sql
+    "@SORTABLE"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+194:     firstName: first_name
+    "firstName"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "first_name"  entity.name.identifier.sql
+195: }
+    "}"  punctuation.section.braces.sql
+196: DISABLED;
+    "DISABLED"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+197: 
+198: SHOW CREATE REST VIEW /actorInfo;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+199: 
+200: ALTER REST DATA MAPPING VIEW /actorInfo
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+201: CLASS MyServiceSakilaActorInfoTest5 {
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaActorInfoTest5"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+202:     actorId: actor_id @SORTABLE,
+    "actorId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "actor_id"  entity.name.identifier.sql
+    "@SORTABLE"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+203:     firstName: first_name
+    "firstName"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "first_name"  entity.name.identifier.sql
+204: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+205: 
+206: SHOW CREATE REST VIEW /actorInfo;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+207: 
+208: CREATE OR REPLACE REST PROCEDURE /filmInStock
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+209: AS sakila.film_in_stock
+    "AS"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "film_in_stock"  entity.name.identifier.sql
+210: PARAMETERS MyServiceSakilaFilmInStockParams {
+    "PARAMETERS"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStockParams"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+211:     pFilmId: p_film_id @IN,
+    "pFilmId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+212:     pStoreId: p_store_id @IN,
+    "pStoreId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_store_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+213:     pFilmCount: p_film_count @OUT
+    "pFilmCount"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_count"  entity.name.identifier.sql
+    "@OUT"  storage.modifier.annotation.rest.sql
+214: }
+    "}"  punctuation.section.braces.sql
+215: RESULT MyServiceSakilaFilmInStock {
+    "RESULT"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStock"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+216:     inventoryId: inventory_id @DATATYPE("int")
+    "inventoryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+217: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+218: 
+219: SHOW CREATE REST PROCEDURE /filmInStock;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+220: 
+221: ALTER REST PROCEDURE /filmInStock
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+222: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+223: PARAMETERS {
+    "PARAMETERS"  keyword.other.rest.sql
+    "{"  punctuation.section.braces.sql
+224:     pFilmId: p_film_id @IN,
+    "pFilmId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+225:     pStoreId: p_store_id @IN,
+    "pStoreId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_store_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+226:     pFilmCount: p_film_count @OUT
+    "pFilmCount"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_count"  entity.name.identifier.sql
+    "@OUT"  storage.modifier.annotation.rest.sql
+227: }
+    "}"  punctuation.section.braces.sql
+228: RESULT {
+    "RESULT"  keyword.other.rest.sql
+    "{"  punctuation.section.braces.sql
+229:     inventoryId: inventory_id @DATATYPE("int")
+    "inventoryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+230: }
+    "}"  punctuation.section.braces.sql
+231: RESULT {
+    "RESULT"  keyword.other.rest.sql
+    "{"  punctuation.section.braces.sql
+232:     inventoryId2: inventory_id @DATATYPE("int")
+    "inventoryId2"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+233: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+234: 
+235: SHOW CREATE REST PROCEDURE /filmInStock;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+236: 
+237: ALTER REST PROCEDURE /filmInStock
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+238: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+239: NEW REQUEST PATH /filmInStockUpdated
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/filmInStockUpdated"  string.unquoted.path.rest.sql
+240: PARAMETERS MyServiceSakilaFilmInStockUpdated {
+    "PARAMETERS"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStockUpdated"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+241:     pFilmId: p_film_id @IN,
+    "pFilmId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+242:     pStoreId: p_store_id @IN,
+    "pStoreId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_store_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+243:     pFilmCount: p_film_count @OUT
+    "pFilmCount"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_count"  entity.name.identifier.sql
+    "@OUT"  storage.modifier.annotation.rest.sql
+244: }
+    "}"  punctuation.section.braces.sql
+245: RESULT MyServiceSakilaFilmInStock {
+    "RESULT"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStock"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+246:     inventoryId: inventory_id @DATATYPE("int")
+    "inventoryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+247: }
+    "}"  punctuation.section.braces.sql
+248: RESULT MyServiceSakilaFilmInStock2 {
+    "RESULT"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStock2"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+249:     inventoryId2: inventory_id @DATATYPE("int")
+    "inventoryId2"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+250: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+251: 
+252: SHOW CREATE REST PROCEDURE /filmInStockUpdated;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStockUpdated"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+253: 
+254: ALTER REST PROCEDURE /filmInStockUpdated
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStockUpdated"  string.unquoted.path.rest.sql
+255: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+256: NEW REQUEST PATH /filmInStock
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+257: PARAMETERS MyServiceSakilaFilmInStockParams {
+    "PARAMETERS"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStockParams"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+258:     pFilmId: p_film_id @IN,
+    "pFilmId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+259:     pStoreId: p_store_id @IN,
+    "pStoreId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_store_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+260:     pFilmCount: p_film_count @OUT
+    "pFilmCount"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_count"  entity.name.identifier.sql
+    "@OUT"  storage.modifier.annotation.rest.sql
+261: }
+    "}"  punctuation.section.braces.sql
+262: RESULT MyServiceSakilaFilmInStock {
+    "RESULT"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStock"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+263:     inventoryId: inventory_id @DATATYPE("int")
+    "inventoryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+264: }
+    "}"  punctuation.section.braces.sql
+265: RESULT MyServiceSakilaFilmInStock2 {
+    "RESULT"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStock2"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+266:     inventoryId2: inventory_id @DATATYPE("int")
+    "inventoryId2"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+267: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+268: 
+269: SHOW CREATE REST PROCEDURE /filmInStock;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+270: 
+271: SHOW CREATE REST VIEW /country;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/country"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+272: SHOW CREATE REST PROCEDURE /filmInStock;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+273: 
+274: CREATE REST CONTENT SET /testContent
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/testContent"  string.unquoted.path.rest.sql
+275: ON SERVICE /myTestService
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+276: COMMENT "Inline content";
+    "COMMENT"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "Inline content"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+277: 
+278: CREATE REST CONTENT FILE `/index.html`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/index.html"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+279: ON SERVICE /myTestService CONTENT SET /testContent
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/testContent"  string.unquoted.path.rest.sql
+280: CONTENT "<!doctype html><html><body>Test</body></html>";
+    "CONTENT"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "<!doctype html><html><body>Test</body></html>"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+281: 
+282: CREATE REST CONTENT SET /scripts
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/scripts"  string.unquoted.path.rest.sql
+283: ON SERVICE /myTestService;
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+284: 
+285: CREATE REST CONTENT FILE `/src/hello.mts`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/src/hello.mts"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+286: ON SERVICE /myTestService CONTENT SET /scripts
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/scripts"  string.unquoted.path.rest.sql
+287: CONTENT '@Mrs.module({ name: "hello", requestPath: "/hello" })
+    "CONTENT"  keyword.other.rest.sql
+    "'"  punctuation.definition.string.begin.sql
+    "@Mrs.module({ name: \"hello\", requestPath: \"/hello\" })"  string.quoted.single.sql
+288: class Hello {
+    "class Hello {"  string.quoted.single.sql
+289:     @Mrs.script({ name: "greet", requiresAuth: false })
+    "    @Mrs.script({ name: \"greet\", requiresAuth: false })"  string.quoted.single.sql
+290:     public static async greet(name: string): Promise<string> {
+    "    public static async greet(name: string): Promise<string> {"  string.quoted.single.sql
+291:         return "Hello " + name;
+    "        return \"Hello \" + name;"  string.quoted.single.sql
+292:     }
+    "    }"  string.quoted.single.sql
+293: }';
+    "}"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+294: 
+295: CREATE REST CONTENT FILE `/dist/hello.mjs`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/dist/hello.mjs"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+296: ON SERVICE /myTestService CONTENT SET /scripts
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/scripts"  string.unquoted.path.rest.sql
+297: CONTENT 'export class Hello {}';
+    "CONTENT"  keyword.other.rest.sql
+    "'"  punctuation.definition.string.begin.sql
+    "export class Hello {}"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+298: 
+299: ALTER REST CONTENT SET /scripts
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/scripts"  string.unquoted.path.rest.sql
+300: ON SERVICE /myTestService
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+301: LOAD TYPESCRIPT SCRIPTS;
+    "LOAD"  keyword.other.reserved.sql
+    "TYPESCRIPT"  keyword.other.rest.sql
+    "SCRIPTS"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+302: 
+303: SHOW CREATE REST CONTENT SET /scripts
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/scripts"  string.unquoted.path.rest.sql
+304: ON SERVICE /myTestService;
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+305: 
+306: SHOW REST CONTENT SETS;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SETS"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+307: 
+308: SHOW REST CONTENT SETS ON SERVICE /myTestService FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SETS"  keyword.other.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+309: 
+310: SHOW REST CONTENT FILES ON SERVICE /myTestService CONTENT SET /scripts FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILES"  keyword.other.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/scripts"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+311: 
+312: SHOW REST SCRIPTS ON SERVICE /myTestService SCHEMA /hello;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCRIPTS"  keyword.other.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/hello"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+313: 
+314: SHOW REST SCRIPTS FROM SERVICE /myTestService SCHEMA /hello FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCRIPTS"  keyword.other.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/hello"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+315: 
+316: SHOW REST METADATA STATUS;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "METADATA"  keyword.other.rest.sql
+    "STATUS"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+317: 
+318: SHOW REST METADATA SCHEMAS FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "METADATA"  keyword.other.rest.sql
+    "SCHEMAS"  keyword.other.reserved.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+319: 
+320: SHOW REST STATUS FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "STATUS"  keyword.other.unreserved.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+321: 
+322: SHOW REST SERVICES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+323: 
+324: SHOW REST SCHEMAS;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMAS"  keyword.other.reserved.sql
+    ";"  punctuation.terminator.statement.sql
+325: 
+326: SHOW REST DATA MAPPING VIEWS
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEWS"  keyword.other.rest.sql
+327:     FROM SERVICE /myTestService SCHEMA /sakila;
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+328: 
+329: SHOW REST PROCEDURES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+330: 
+331: SHOW REST SERVICES FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+332: 
+333: SHOW REST SCHEMAS ON SERVICE /myTestService FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMAS"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+334: 
+335: SHOW REST VIEWS FROM SERVICE /myTestService SCHEMA /sakila FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "VIEWS"  keyword.other.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+336: 
+337: SHOW REST PROCEDURES FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURES"  keyword.other.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+338: 
+339: SHOW REST FUNCTIONS FORMAT=TRADITIONAL;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTIONS"  keyword.other.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "TRADITIONAL"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+340: 
+341: SHOW CREATE REST SERVICE /myTestService;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+342: 
+343: SHOW CREATE REST SCHEMA /sakila;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+344: 
+345: SHOW CREATE REST SCHEMA /sakila FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+346: 
+347: SHOW CREATE REST SERVICE /myTestService INCLUDING DATABASE ENDPOINTS FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "INCLUDING"  keyword.other.rest.sql
+    "DATABASE"  keyword.other.unreserved.sql
+    "ENDPOINTS"  keyword.other.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+348: 
+349: SHOW CREATE REST DATA MAPPING VIEW /actorInfo FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+350: 
+351: SHOW REST COLUMNS FROM sakila.city;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "COLUMNS"  keyword.other.unreserved.sql
+    "FROM"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "city"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+352: 
+353: SHOW REST COLUMNS FROM TABLE sakila.city FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "COLUMNS"  keyword.other.unreserved.sql
+    "FROM"  keyword.other.reserved.sql
+    "TABLE"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "city"  entity.name.identifier.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+354: 
+355: SHOW REST COLUMNS FROM PROCEDURE sakila.film_in_stock;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "COLUMNS"  keyword.other.unreserved.sql
+    "FROM"  keyword.other.reserved.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "film_in_stock"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+356: 
+357: SHOW CREATE REST DATA MAPPING VIEW /actorInfo;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+358: 
+359: ALTER REST SCHEMA /sakila
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+360: ON SERVICE /myTestService
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+361: NEW REQUEST PATH /sakila123;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/sakila123"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+362: 
+363: SHOW REST SCHEMAS;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMAS"  keyword.other.reserved.sql
+    ";"  punctuation.terminator.statement.sql
+364: 
+365: ALTER REST SCHEMA /sakila123
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila123"  string.unquoted.path.rest.sql
+366: ON SERVICE /myTestService
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+367: NEW REQUEST PATH /sakila;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+368: 
+369: SHOW REST SCHEMAS;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMAS"  keyword.other.reserved.sql
+    ";"  punctuation.terminator.statement.sql
+370: 
+371: CREATE OR REPLACE REST AUTH APP "MRS" VENDOR MRS;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MRS"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "VENDOR"  keyword.other.rest.sql
+    "MRS"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+372: CREATE REST AUTH APP IF NOT EXISTS "MRS" VENDOR MRS;
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "IF"  keyword.other.reserved.sql
+    "NOT"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MRS"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "VENDOR"  keyword.other.rest.sql
+    "MRS"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+373: 
+374: ALTER REST SERVICE /myTestService
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+375: ADD AUTH APP "MRS";
+    "ADD"  keyword.other.reserved.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MRS"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+376: 
+377: CREATE REST USER "mike"@"MRS" IDENTIFIED BY "MariaDBR0cks!";
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USER"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    "IDENTIFIED"  keyword.other.unreserved.sql
+    "BY"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDBR0cks!"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+378: CREATE REST USER "mike2"@"MRS" IDENTIFIED BY "MariaDBR0cks!";
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USER"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    "IDENTIFIED"  keyword.other.unreserved.sql
+    "BY"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDBR0cks!"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+379: CREATE REST USER "boss"@"MRS" IDENTIFIED BY "MariaDBR0cks!" ACCOUNT LOCK OPTIONS {
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USER"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "boss"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    "IDENTIFIED"  keyword.other.unreserved.sql
+    "BY"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDBR0cks!"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "ACCOUNT"  keyword.other.unreserved.sql
+    "LOCK"  keyword.other.reserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+380:     "email": "boss@example.com",
+    "\""  punctuation.definition.string.begin.sql
+    "email"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "boss@example.com"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+381:     "vendor_user_id": "vendor",
+    "\""  punctuation.definition.string.begin.sql
+    "vendor_user_id"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "vendor"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+382:     "mapped_user_id": "vendorboss123",
+    "\""  punctuation.definition.string.begin.sql
+    "mapped_user_id"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "vendorboss123"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+383:     "other_option": false
+    "\""  punctuation.definition.string.begin.sql
+    "other_option"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "false"  constant.language.sql
+384: } APP OPTIONS {"myoption": 12345};
+    "}"  punctuation.section.braces.sql
+    "APP"  keyword.other.rest.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "myoption"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "12345"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+385: 
+386: ALTER REST USER "mike"@"MRS" IDENTIFIED BY "MariaDBR0cks!!";
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USER"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    "IDENTIFIED"  keyword.other.unreserved.sql
+    "BY"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDBR0cks!!"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+387: 
+388: ALTER REST USER "mike"@"MRS" OPTIONS {
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USER"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+389:     "email": "mike@example.com",
+    "\""  punctuation.definition.string.begin.sql
+    "email"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike@example.com"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+390:     "vendor_user_id": "vendor2",
+    "\""  punctuation.definition.string.begin.sql
+    "vendor_user_id"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "vendor2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+391:     "mapped_user_id": "vendormike123"
+    "\""  punctuation.definition.string.begin.sql
+    "mapped_user_id"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "vendormike123"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+392: } APP OPTIONS {
+    "}"  punctuation.section.braces.sql
+    "APP"  keyword.other.rest.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+393:     "anything": [32]
+    "\""  punctuation.definition.string.begin.sql
+    "anything"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "["  punctuation.section.brackets.sql
+    "32"  constant.numeric.integer.sql
+    "]"  punctuation.section.brackets.sql
+394: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+395: 
+396: select * from mariadb_rest_service.mrs_user;
+    "select"  keyword.other.reserved.sql
+    "*"  keyword.operator.arithmetic.sql
+    "from"  keyword.other.reserved.sql
+    "mariadb_rest_service"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "mrs_user"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+397: 
+398: CREATE OR REPLACE REST ROLE "role1";
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+399: CREATE REST ROLE IF NOT EXISTS "role1";
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "IF"  keyword.other.reserved.sql
+    "NOT"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+400: CREATE OR REPLACE REST ROLE "role2" EXTENDS "role1";
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "EXTENDS"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+401: -- should cascade and drop role1 and role2
+    "-- should cascade and drop role1 and role2"  comment.line.double-dash.sql
+402: -- DROP REST ROLE "role1";
+    "-- DROP REST ROLE \"role1\";"  comment.line.double-dash.sql
+403: 
+404: -- CREATE REST ROLE "role1";
+    "-- CREATE REST ROLE \"role1\";"  comment.line.double-dash.sql
+405: -- CREATE REST ROLE "role2" EXTENDS "role1";
+    "-- CREATE REST ROLE \"role2\" EXTENDS \"role1\";"  comment.line.double-dash.sql
+406: 
+407: CREATE REST ROLE "role3" EXTENDS "role1" ON SERVICE /myTestService COMMENT "A comment here" OPTIONS {"option1":1, "option2": false, "option3": [1, "bla", null]};
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role3"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "EXTENDS"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "COMMENT"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "A comment here"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "option1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+    ","  punctuation.separator.comma.sql
+    "\""  punctuation.definition.string.begin.sql
+    "option2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "false"  constant.language.sql
+    ","  punctuation.separator.comma.sql
+    "\""  punctuation.definition.string.begin.sql
+    "option3"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "["  punctuation.section.brackets.sql
+    "1"  constant.numeric.integer.sql
+    ","  punctuation.separator.comma.sql
+    "\""  punctuation.definition.string.begin.sql
+    "bla"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+    "null"  constant.language.sql
+    "]"  punctuation.section.brackets.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+408: 
+409: CREATE REST ROLE "myrole" ON SERVICE /myService;
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "myrole"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+410: 
+411: GRANT REST CREATE, READ, UPDATE, DELETE ON SERVICE /myTestService SCHEMA /sakila TO "role1";
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CREATE"  keyword.other.reserved.sql
+    ","  punctuation.separator.comma.sql
+    "READ"  keyword.other.reserved.sql
+    ","  punctuation.separator.comma.sql
+    "UPDATE"  keyword.other.reserved.sql
+    ","  punctuation.separator.comma.sql
+    "DELETE"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+412: GRANT REST CREATE, READ, UPDATE, DELETE ON SERVICE /myTestService SCHEMA /sakila OBJECT /country TO "role2";
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CREATE"  keyword.other.reserved.sql
+    ","  punctuation.separator.comma.sql
+    "READ"  keyword.other.reserved.sql
+    ","  punctuation.separator.comma.sql
+    "UPDATE"  keyword.other.reserved.sql
+    ","  punctuation.separator.comma.sql
+    "DELETE"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "OBJECT"  keyword.other.unreserved.sql
+    "/country"  string.unquoted.path.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+413: GRANT REST UPDATE ON SERVICE /myTestService SCHEMA /sakila OBJECT /filmInStock TO "role1";
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "UPDATE"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "OBJECT"  keyword.other.unreserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+414: GRANT REST READ ON SCHEMA /sakila OBJECT /actor TO "role2";
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "READ"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "OBJECT"  keyword.other.unreserved.sql
+    "/actor"  string.unquoted.path.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+415: 
+416: GRANT REST ROLE "role1" TO "mike"@"MRS" COMMENT "Hello World!?";
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "TO"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    "COMMENT"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "Hello World!?"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+417: 
+418: SHOW REST GRANTS FOR "role1";
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "GRANTS"  keyword.other.unreserved.sql
+    "FOR"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+419: SHOW REST GRANTS FOR "role2";
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "GRANTS"  keyword.other.unreserved.sql
+    "FOR"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+420: 
+421: SHOW REST ROLES FOR "mike"@"MRS";
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLES"  keyword.other.rest.sql
+    "FOR"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    ";"  punctuation.terminator.statement.sql
+422: 
+423: REVOKE REST ROLE "role1" FROM "mike"@"MRS";
+    "REVOKE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "FROM"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    ";"  punctuation.terminator.statement.sql
+424: 
+425: SHOW REST ROLES FOR "mike"@"MRS";
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLES"  keyword.other.rest.sql
+    "FOR"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    ";"  punctuation.terminator.statement.sql
+426: 
+427: REVOKE REST CREATE ON SERVICE /myTestService SCHEMA /sakila FROM "role1";
+    "REVOKE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CREATE"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+428: 
+429: SHOW REST GRANTS FOR "role1";
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "GRANTS"  keyword.other.unreserved.sql
+    "FOR"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+430: 
+431: SHOW REST ROLES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+432: SHOW REST ROLES ON SERVICE /myTestService;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLES"  keyword.other.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+433: SHOW REST ROLES ON ANY SERVICE FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLES"  keyword.other.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "ANY"  keyword.other.unreserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+434: SHOW REST ROLES FOR "mike"@"MRS" FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLES"  keyword.other.rest.sql
+    "FOR"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+435: 
+436: DROP REST ROLE "role3" ON SERVICE /myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role3"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+437: DROP REST ROLE IF EXISTS "role3" ON SERVICE /myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role3"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+438: DROP REST ROLE "role2";
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+439: DROP REST ROLE "role1";
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+440: 
+441: DROP REST USER "mike"@"MRS";
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USER"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    ";"  punctuation.terminator.statement.sql
+442: DROP REST USER IF EXISTS "mike"@"MRS";
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USER"  keyword.other.reserved.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "mike"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "\"MRS\""  string.other.host.sql
+    ";"  punctuation.terminator.statement.sql
+443: 
+444: CREATE OR REPLACE REST AUTH APP "MariaDB" VENDOR MariaDB
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDB"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "VENDOR"  keyword.other.rest.sql
+    "MariaDB"  keyword.other.rest.sql
+445: ALLOW NEW USERS TO REGISTER
+    "ALLOW"  keyword.other.rest.sql
+    "NEW"  keyword.other.rest.sql
+    "USERS"  keyword.other.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "REGISTER"  keyword.other.rest.sql
+446: DEFAULT ROLE "Full Access";
+    "DEFAULT"  keyword.other.reserved.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "Full Access"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+447: 
+448: CREATE REST AUTH APP IF NOT EXISTS "MariaDB" VENDOR MariaDB
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "IF"  keyword.other.reserved.sql
+    "NOT"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDB"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "VENDOR"  keyword.other.rest.sql
+    "MariaDB"  keyword.other.rest.sql
+449: ALLOW NEW USERS TO REGISTER
+    "ALLOW"  keyword.other.rest.sql
+    "NEW"  keyword.other.rest.sql
+    "USERS"  keyword.other.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "REGISTER"  keyword.other.rest.sql
+450: DEFAULT ROLE "Full Access";
+    "DEFAULT"  keyword.other.reserved.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "Full Access"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+451: 
+452: ALTER REST SERVICE /myTestService
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+453: ADD AUTH APP "MariaDB";
+    "ADD"  keyword.other.reserved.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDB"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+454: 
+455: SHOW REST AUTH APPS FROM SERVICE /myTestService;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APPS"  keyword.other.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+456: 
+457: SHOW REST AUTH VENDORS;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "VENDORS"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+458: 
+459: SHOW REST AUTH VENDORS FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "VENDORS"  keyword.other.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+460: 
+461: SHOW REST AUTH APPS ON ANY SERVICE;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APPS"  keyword.other.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "ANY"  keyword.other.unreserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+462: 
+463: SHOW REST AUTH APPS FROM SERVICE /myTestService FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APPS"  keyword.other.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+464: 
+465: SHOW REST DAEMONS;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DAEMONS"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+466: 
+467: SHOW REST DAEMONS FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DAEMONS"  keyword.other.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+468: 
+469: DROP REST DAEMON IF EXISTS '0199a1b2-0000-7000-8000-000000000999';
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DAEMON"  keyword.other.rest.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "'"  punctuation.definition.string.begin.sql
+    "0199a1b2-0000-7000-8000-000000000999"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+470: 
+471: SHOW REST SERVICES FOR AUTH APP "MariaDB";
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    "FOR"  keyword.other.reserved.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDB"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+472: 
+473: SHOW REST USERS ON SERVICE /myTestService;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USERS"  keyword.other.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+474: 
+475: SHOW REST USERS FOR AUTH APP "MRS";
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USERS"  keyword.other.rest.sql
+    "FOR"  keyword.other.reserved.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MRS"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+476: 
+477: SHOW REST USERS ON SERVICE /myTestService FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "USERS"  keyword.other.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+478: 
+479: SHOW REST SERVICES FOR AUTH APP "MariaDB" FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    "FOR"  keyword.other.reserved.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDB"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+480: 
+481: SHOW CREATE REST AUTH APP "MRS";
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MRS"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+482: 
+483: SHOW CREATE REST AUTH APP "MariaDB";
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDB"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+484: 
+485: SHOW CREATE REST AUTH APP "MariaDB" FORMAT=JSON;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDB"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "FORMAT"  keyword.other.unreserved.sql
+    "="  keyword.operator.comparison.sql
+    "JSON"  keyword.other.unreserved.sql
+    ";"  punctuation.terminator.statement.sql
+486: 
+487: ALTER REST SERVICE /myTestService DISABLED;
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "DISABLED"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+488: 
+489: DROP REST AUTH APP "MRS";
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MRS"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+490: DROP REST AUTH APP IF EXISTS "MRS";
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MRS"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+491: 
+492: DROP REST AUTH APP "MariaDB";
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "AUTH"  keyword.other.rest.sql
+    "APP"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "MariaDB"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+493: 
+494: DROP REST DATA MAPPING VIEW /country
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/country"  string.unquoted.path.rest.sql
+495: FROM SERVICE /myTestService SCHEMA /sakila;
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+496: 
+497: DROP REST DATA MAPPING VIEW IF EXISTS /country
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/country"  string.unquoted.path.rest.sql
+498: FROM SERVICE /myTestService SCHEMA /sakila;
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+499: 
+500: DROP REST DATA MAPPING VIEW /actor;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actor"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+501: 
+502: DROP REST DATA MAPPING VIEW /actorInfo;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actorInfo"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+503: 
+504: DROP REST PROCEDURE /filmInStock;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+505: DROP REST PROCEDURE IF EXISTS /filmInStock;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/filmInStock"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+506: 
+507: DROP REST CONTENT SET /testContent;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/testContent"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+508: DROP REST CONTENT SET IF EXISTS /testContent;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/testContent"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+509: 
+510: CREATE OR REPLACE REST DATA MAPPING VIEW /moviesByLanguage
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/moviesByLanguage"  string.unquoted.path.rest.sql
+511: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+512: AS `sakila`.`language` {
+    "AS"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "."  punctuation.accessor.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "language"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "{"  punctuation.section.braces.sql
+513:     id: language_id,
+    "id"  keyword.other.unreserved.sql
+    ":"  punctuation.separator.colon.sql
+    "language_id"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+514:     name: name,
+    "name"  keyword.other.unreserved.sql
+    ":"  punctuation.separator.colon.sql
+    "name"  keyword.other.unreserved.sql
+    ","  punctuation.separator.comma.sql
+515:     films: film {
+    "films"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "film"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+516:         title: title
+    "title"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "title"  entity.name.identifier.sql
+517:     }
+    "}"  punctuation.section.braces.sql
+518: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+519: 
+520: CREATE REST DATA MAPPING VIEW IF NOT EXISTS /moviesByLanguage
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "IF"  keyword.other.reserved.sql
+    "NOT"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/moviesByLanguage"  string.unquoted.path.rest.sql
+521: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+522: AS `sakila`.`language` {
+    "AS"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "."  punctuation.accessor.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "language"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "{"  punctuation.section.braces.sql
+523:     id: language_id,
+    "id"  keyword.other.unreserved.sql
+    ":"  punctuation.separator.colon.sql
+    "language_id"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+524:     name: name,
+    "name"  keyword.other.unreserved.sql
+    ":"  punctuation.separator.colon.sql
+    "name"  keyword.other.unreserved.sql
+    ","  punctuation.separator.comma.sql
+525:     films: film {
+    "films"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "film"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+526:         title: title
+    "title"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "title"  entity.name.identifier.sql
+527:     }
+    "}"  punctuation.section.braces.sql
+528: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+529: 
+530: DROP REST DATA MAPPING VIEW /moviesByLanguage;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/moviesByLanguage"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+531: 
+532: CREATE REST FUNCTION /actorFunc
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+533: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+534: AS `sakila`.`actor`;
+    "AS"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "."  punctuation.accessor.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "actor"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    ";"  punctuation.terminator.statement.sql
+535: 
+536: SHOW CREATE REST FUNCTION /actorFunc
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+537: ON SERVICE /myTestService SCHEMA /sakila;
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+538: 
+539: ALTER REST FUNCTION /actorFunc
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+540: ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+541: NEW REQUEST PATH /actorFuncNew;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/actorFuncNew"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+542: 
+543: SHOW CREATE REST FUNCTION /actorFuncNew
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFuncNew"  string.unquoted.path.rest.sql
+544: ON SERVICE /myTestService SCHEMA /sakila;
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+545: 
+546: DROP REST FUNCTION /actorFuncNew;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFuncNew"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+547: DROP REST FUNCTION IF EXISTS /actorFuncNew;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/actorFuncNew"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+548: 
+549: CREATE OR REPLACE REST FUNCTION /actorFunc
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+550:     ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+551:     AS sakila.actor
+    "AS"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "actor"  entity.name.identifier.sql
+552:     PARAMETERS LocalhostMyServiceSakilaActorFuncParams {
+    "PARAMETERS"  keyword.other.rest.sql
+    "LocalhostMyServiceSakilaActorFuncParams"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+553:         s: s @IN
+    "s"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "s"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+554:     }
+    "}"  punctuation.section.braces.sql
+555:     RESULT LocalhostMyServiceSakilaActorFunc {
+    "RESULT"  keyword.other.rest.sql
+    "LocalhostMyServiceSakilaActorFunc"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+556:         result: result @DATATYPE("char")
+    "result"  keyword.other.rest.sql
+    ":"  punctuation.separator.colon.sql
+    "result"  keyword.other.rest.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "char"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+557:     };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+558: 
+559: CREATE REST FUNCTION IF NOT EXISTS /actorFunc
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "IF"  keyword.other.reserved.sql
+    "NOT"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+560:     ON SERVICE /myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+561:     AS sakila.actor
+    "AS"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "actor"  entity.name.identifier.sql
+562:     PARAMETERS LocalhostMyServiceSakilaActorFuncParams {
+    "PARAMETERS"  keyword.other.rest.sql
+    "LocalhostMyServiceSakilaActorFuncParams"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+563:         s: s @IN
+    "s"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "s"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+564:     }
+    "}"  punctuation.section.braces.sql
+565:     RESULT LocalhostMyServiceSakilaActorFunc {
+    "RESULT"  keyword.other.rest.sql
+    "LocalhostMyServiceSakilaActorFunc"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+566:         result: result @DATATYPE("char")
+    "result"  keyword.other.rest.sql
+    ":"  punctuation.separator.colon.sql
+    "result"  keyword.other.rest.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "char"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+567:     };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+568: 
+569: DROP REST FUNCTION /actorFunc;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+570: 
+571: DROP REST SCHEMA /sakila FROM /myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+572: DROP REST SCHEMA IF EXISTS /sakila FROM /myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+573: 
+574: DROP REST SERVICE /myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+575: DROP REST SERVICE IF EXISTS /myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "IF"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/myTestService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+576: 
+577: SHOW REST SERVICES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+578: 
+579: 
+580: 
+581: CREATE OR REPLACE REST SERVICE mike@/myTestService;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "mike"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+582: 
+583: SHOW REST SERVICES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+584: 
+585: 
+586: CREATE OR REPLACE REST SERVICE miguel,'alfredo@oracle.com'@/myTestService;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+587: 
+588: SHOW REST SERVICES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+589: 
+590: ALTER REST SERVICE mike@/myTestService
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "mike"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+591:     NEW REQUEST PATH mike,alfredo@/myTestService;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "mike"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "alfredo"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+592: 
+593: SHOW REST SERVICES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+594: 
+595: ALTER REST SERVICE mike,alfredo@/myTestService
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "mike"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "alfredo"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+596:     NEW REQUEST PATH mike@/myTestService;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "mike"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+597: 
+598: CLONE REST SERVICE mike@/myTestService
+    "CLONE"  keyword.other.rest.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "mike"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+599:     NEW REQUEST PATH /myClonedService;
+    "NEW"  keyword.other.rest.sql
+    "REQUEST"  keyword.other.rest.sql
+    "PATH"  keyword.other.unreserved.sql
+    "/myClonedService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+600: 
+601: SHOW REST SERVICES;
+    "SHOW"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICES"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+602: 
+603: DROP REST SERVICE /myClonedService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myClonedService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+604: 
+605: DROP REST SERVICE mike@/myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "mike"  entity.name.identifier.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+606: 
+607: CREATE REST SCHEMA /sakila
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+608: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+609: FROM `sakila`
+    "FROM"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+610:     ENABLED
+    "ENABLED"  keyword.other.rest.sql
+611:     ITEMS PER PAGE 25
+    "ITEMS"  keyword.other.rest.sql
+    "PER"  keyword.other.rest.sql
+    "PAGE"  keyword.other.unreserved.sql
+    "25"  constant.numeric.integer.sql
+612:     COMMENT "The sakila schema"
+    "COMMENT"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "The sakila schema"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+613:     METADATA { "position": 1};
+    "METADATA"  keyword.other.rest.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "position"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+614: 
+615: CREATE OR REPLACE REST DATA MAPPING VIEW /actor
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actor"  string.unquoted.path.rest.sql
+616: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+617: AS `sakila`.`actor` CLASS MyServiceSakilaActor {
+    "AS"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "sakila"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "."  punctuation.accessor.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "actor"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "CLASS"  keyword.other.rest.sql
+    "MyServiceSakilaActor"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+618:     actorId: actor_id @SORTABLE,
+    "actorId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "actor_id"  entity.name.identifier.sql
+    "@SORTABLE"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+619:     firstName: first_name,
+    "firstName"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "first_name"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+620:     lastName: last_name,
+    "lastName"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "last_name"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+621:     lastUpdate: last_update,
+    "lastUpdate"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "last_update"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+622:     filmActor: sakila.film_actor @UNNEST {
+    "filmActor"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "film_actor"  entity.name.identifier.sql
+    "@UNNEST"  storage.modifier.annotation.rest.sql
+    "{"  punctuation.section.braces.sql
+623:         film: sakila.film @UNNEST {
+    "film"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "film"  entity.name.identifier.sql
+    "@UNNEST"  storage.modifier.annotation.rest.sql
+    "{"  punctuation.section.braces.sql
+624:             title: title
+    "title"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "title"  entity.name.identifier.sql
+625:         }
+    "}"  punctuation.section.braces.sql
+626:     }
+    "}"  punctuation.section.braces.sql
+627: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+628: 
+629: ALTER REST DATA MAPPING VIEW /actor
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/actor"  string.unquoted.path.rest.sql
+630: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService SCHEMA /sakila
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/sakila"  string.unquoted.path.rest.sql
+631: OPTIONS {
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+632:     "option1": "this is option 1",
+    "\""  punctuation.definition.string.begin.sql
+    "option1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "this is option 1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+633:     "option2": {
+    "\""  punctuation.definition.string.begin.sql
+    "option2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+634:         "option11": "this is option 1.1"
+    "\""  punctuation.definition.string.begin.sql
+    "option11"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "this is option 1.1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+635:     }
+    "}"  punctuation.section.braces.sql
+636: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+637: 
+638: CREATE REST CONTENT SET /mySet
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+639: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService;
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+640: 
+641: CREATE REST CONTENT FILE `/textFile`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/textFile"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+642: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+643: CONTENT "normal string";
+    "CONTENT"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "normal string"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+644: 
+645: CREATE REST CONTENT FILE `/binaryFile1`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/binaryFile1"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+646: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+647: BINARY CONTENT "aHR0cHM6Ly93d3cuYmFzZTY0ZW5jb2RlLm9yZy8gVGVzdA==";
+    "BINARY"  keyword.other.reserved.sql
+    "CONTENT"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "aHR0cHM6Ly93d3cuYmFzZTY0ZW5jb2RlLm9yZy8gVGVzdA=="  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+648: 
+649: CREATE REST CONTENT FILE `/binaryFile2`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/binaryFile2"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+650: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+651: BINARY CONTENT "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+    "BINARY"  keyword.other.reserved.sql
+    "CONTENT"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+652: 
+653: CREATE REST CONTENT FILE `/binaryFile3`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/binaryFile3"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+654: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+655: BINARY CONTENT "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+    "BINARY"  keyword.other.reserved.sql
+    "CONTENT"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+656: 
+657: CREATE REST CONTENT FILE `/binaryFile4`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/binaryFile4"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+658: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+659: BINARY CONTENT "AAECAwQFBgcICQo=";
+    "BINARY"  keyword.other.reserved.sql
+    "CONTENT"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "AAECAwQFBgcICQo="  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+660: 
+661: CREATE REST CONTENT FILE `/binaryFile5`
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/binaryFile5"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+662: ON SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+663: CONTENT "SELECT 1;";
+    "CONTENT"  keyword.other.rest.sql
+    "\""  punctuation.definition.string.begin.sql
+    "SELECT 1;"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+664: 
+665: 
+666: DROP REST CONTENT FILE `/textFile`
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/textFile"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+667: FROM SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet;
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+668: 
+669: DROP REST CONTENT FILE `/binaryFile1`
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "FILE"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "/binaryFile1"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+670: FROM SERVICE miguel,'alfredo@oracle.com'@/myTestService CONTENT SET /mySet;
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+671: 
+672: DROP REST CONTENT SET /mySet
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "CONTENT"  keyword.other.rest.sql
+    "SET"  keyword.other.reserved.sql
+    "/mySet"  string.unquoted.path.rest.sql
+673: FROM SERVICE miguel,'alfredo@oracle.com'@/myTestService;
+    "FROM"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+674: 
+675: ALTER REST SERVICE miguel,'alfredo@oracle.com'@/myTestService
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+676:     PUBLISHED;
+    "PUBLISHED"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+677: 
+678: DROP REST SERVICE miguel,'alfredo@oracle.com'@/myTestService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "miguel"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+    "'"  punctuation.definition.string.begin.sql
+    "alfredo@oracle.com"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    "@"  punctuation.separator.host.sql
+    "/"  keyword.operator.arithmetic.sql
+    "myTestService"  entity.name.identifier.sql
+    ";"  punctuation.terminator.statement.sql
+679: 
+680: 
+681: 
+682: CREATE OR REPLACE REST SERVICE /myTest;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+683: 
+684: CREATE OR REPLACE REST SCHEMA /test ON SERVICE /myTest FROM `test`;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "test"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    ";"  punctuation.terminator.statement.sql
+685: 
+686: CREATE REST SCHEMA IF NOT EXISTS /test ON SERVICE /myTest FROM `test`;
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "IF"  keyword.other.reserved.sql
+    "NOT"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "test"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    ";"  punctuation.terminator.statement.sql
+687: 
+688: CREATE OR REPLACE REST DATA MAPPING VIEW /t1
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "DATA"  keyword.other.unreserved.sql
+    "MAPPING"  keyword.other.rest.sql
+    "VIEW"  keyword.other.unreserved.sql
+    "/t1"  string.unquoted.path.rest.sql
+689: ON SERVICE /myTest SCHEMA /test
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+690: AS `test`.`t1` {
+    "AS"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "test"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "."  punctuation.accessor.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "t1"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "{"  punctuation.section.braces.sql
+691:     c1: c1,
+    "c1"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "c1"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+692:     c2: c2,
+    "c2"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "c2"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+693:     c3: c3,
+    "c3"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "c3"  entity.name.identifier.sql
+    ","  punctuation.separator.comma.sql
+694:     info: info JSON SCHEMA {
+    "info"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "info"  entity.name.identifier.sql
+    "JSON"  keyword.other.unreserved.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+695:         "id": "https://mariadb.com/mrs/test/test.t1/info",
+    "\""  punctuation.definition.string.begin.sql
+    "id"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "https://mariadb.com/mrs/test/test.t1/info"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+696:         "type": "object",
+    "\""  punctuation.definition.string.begin.sql
+    "type"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "object"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+697:         "properties": {
+    "\""  punctuation.definition.string.begin.sql
+    "properties"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+698:             "friends": {
+    "\""  punctuation.definition.string.begin.sql
+    "friends"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+699:                 "type": "array",
+    "\""  punctuation.definition.string.begin.sql
+    "type"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "array"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+700:                 "items": {
+    "\""  punctuation.definition.string.begin.sql
+    "items"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+701:                     "type": "string"
+    "\""  punctuation.definition.string.begin.sql
+    "type"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "string"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+702:                 },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+703:                 "minItems": 1,
+    "\""  punctuation.definition.string.begin.sql
+    "minItems"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+    ","  punctuation.separator.comma.sql
+704:                 "uniqueItems": true
+    "\""  punctuation.definition.string.begin.sql
+    "uniqueItems"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+705:             },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+706:             "nickName": {
+    "\""  punctuation.definition.string.begin.sql
+    "nickName"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+707:             "type": "string"
+    "\""  punctuation.definition.string.begin.sql
+    "type"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "string"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+708:             }
+    "}"  punctuation.section.braces.sql
+709:         },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+710:         "required": [ "friends" ]
+    "\""  punctuation.definition.string.begin.sql
+    "required"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "["  punctuation.section.brackets.sql
+    "\""  punctuation.definition.string.begin.sql
+    "friends"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "]"  punctuation.section.brackets.sql
+711:     },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+712:     data: data JSON SCHEMA {
+    "data"  keyword.other.unreserved.sql
+    ":"  punctuation.separator.colon.sql
+    "data"  keyword.other.unreserved.sql
+    "JSON"  keyword.other.unreserved.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+713:         "id": "https://mariadb.com/mrs/test/test.t1/data",
+    "\""  punctuation.definition.string.begin.sql
+    "id"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "https://mariadb.com/mrs/test/test.t1/data"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+714:         "type": "object",
+    "\""  punctuation.definition.string.begin.sql
+    "type"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "object"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+715:         "properties": {
+    "\""  punctuation.definition.string.begin.sql
+    "properties"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+716:             "hobbies": {
+    "\""  punctuation.definition.string.begin.sql
+    "hobbies"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+717:                 "type": "array",
+    "\""  punctuation.definition.string.begin.sql
+    "type"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "array"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ","  punctuation.separator.comma.sql
+718:                 "items": {
+    "\""  punctuation.definition.string.begin.sql
+    "items"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+719:                     "type": "string"
+    "\""  punctuation.definition.string.begin.sql
+    "type"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "string"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+720:                 },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+721:                 "minItems": 0,
+    "\""  punctuation.definition.string.begin.sql
+    "minItems"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "0"  constant.numeric.integer.sql
+    ","  punctuation.separator.comma.sql
+722:                 "uniqueItems": true
+    "\""  punctuation.definition.string.begin.sql
+    "uniqueItems"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "true"  constant.language.sql
+723:             },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+724:             "height": {
+    "\""  punctuation.definition.string.begin.sql
+    "height"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "{"  punctuation.section.braces.sql
+725:                 "type": "number"
+    "\""  punctuation.definition.string.begin.sql
+    "type"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "\""  punctuation.definition.string.begin.sql
+    "number"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+726:             }
+    "}"  punctuation.section.braces.sql
+727:         },
+    "}"  punctuation.section.braces.sql
+    ","  punctuation.separator.comma.sql
+728:         "required": [ "height" ]
+    "\""  punctuation.definition.string.begin.sql
+    "required"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "["  punctuation.section.brackets.sql
+    "\""  punctuation.definition.string.begin.sql
+    "height"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    "]"  punctuation.section.brackets.sql
+729:     }
+    "}"  punctuation.section.braces.sql
+730: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+731: 
+732: DROP REST SERVICE /myTest;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+733: 
+734: CREATE OR REPLACE REST SERVICE /testService;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/testService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+735: 
+736: USE REST SERVICE /testService;
+    "USE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/testService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+737: 
+738: CREATE OR REPLACE REST ROLE "role1";
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+739: 
+740: GRANT REST READ ON SERVICE `*` TO 'Role1';
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "READ"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "*"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "TO"  keyword.other.reserved.sql
+    "'"  punctuation.definition.string.begin.sql
+    "Role1"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+741: 
+742: GRANT REST READ ON SERVICE /testService TO 'Role1';
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "READ"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/testService"  string.unquoted.path.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "'"  punctuation.definition.string.begin.sql
+    "Role1"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+743: 
+744: GRANT REST READ ON SERVICE /testService SCHEMA /testSchema TO 'Role1';
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "READ"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/testService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/testSchema"  string.unquoted.path.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "'"  punctuation.definition.string.begin.sql
+    "Role1"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+745: 
+746: GRANT REST READ ON SERVICE /testService SCHEMA /testSchema
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "READ"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/testService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/testSchema"  string.unquoted.path.rest.sql
+747:     OBJECT /testObject TO 'Role1';
+    "OBJECT"  keyword.other.unreserved.sql
+    "/testObject"  string.unquoted.path.rest.sql
+    "TO"  keyword.other.reserved.sql
+    "'"  punctuation.definition.string.begin.sql
+    "Role1"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+748: 
+749: GRANT REST READ ON SERVICE /testService SCHEMA ``
+    "GRANT"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "READ"  keyword.other.reserved.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/testService"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "`"  punctuation.definition.identifier.end.sql
+750:     OBJECT `` TO 'Role1';
+    "OBJECT"  keyword.other.unreserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "`"  punctuation.definition.identifier.end.sql
+    "TO"  keyword.other.reserved.sql
+    "'"  punctuation.definition.string.begin.sql
+    "Role1"  string.quoted.single.sql
+    "'"  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+751: 
+752: DROP REST ROLE "role1";
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "ROLE"  keyword.other.unreserved.sql
+    "\""  punctuation.definition.string.begin.sql
+    "role1"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ";"  punctuation.terminator.statement.sql
+753: 
+754: DROP REST SERVICE /testService;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/testService"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+755: 
+756: CREATE OR REPLACE REST SERVICE /myTest;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+757: 
+758: CREATE OR REPLACE REST SCHEMA /test ON SERVICE /myTest FROM `test`;
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "test"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+    ";"  punctuation.terminator.statement.sql
+759: 
+760: CREATE OR REPLACE REST PROCEDURE /filmInStock2
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "/filmInStock2"  string.unquoted.path.rest.sql
+761: ON SERVICE /myTest SCHEMA /test
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+762: AS sakila.film_in_stock2 FORCE
+    "AS"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "film_in_stock2"  entity.name.identifier.sql
+    "FORCE"  keyword.other.reserved.sql
+763: PARAMETERS MyServiceSakilaFilmInStockParams {
+    "PARAMETERS"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStockParams"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+764:     pFilmId: p_film_id @IN,
+    "pFilmId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+765:     pStoreId: p_store_id @IN,
+    "pStoreId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_store_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+766:     pFilmCount: p_film_count @OUT
+    "pFilmCount"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_count"  entity.name.identifier.sql
+    "@OUT"  storage.modifier.annotation.rest.sql
+767: }
+    "}"  punctuation.section.braces.sql
+768: RESULT MyServiceSakilaFilmInStock {
+    "RESULT"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStock"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+769:     inventoryId: inventory_id @DATATYPE("int")
+    "inventoryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+770: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+771: 
+772: CREATE REST PROCEDURE IF NOT EXISTS /filmInStock2
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "PROCEDURE"  keyword.other.reserved.sql
+    "IF"  keyword.other.reserved.sql
+    "NOT"  keyword.other.reserved.sql
+    "EXISTS"  keyword.other.reserved.sql
+    "/filmInStock2"  string.unquoted.path.rest.sql
+773: ON SERVICE /myTest SCHEMA /test
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+774: AS sakila.film_in_stock2 FORCE
+    "AS"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "film_in_stock2"  entity.name.identifier.sql
+    "FORCE"  keyword.other.reserved.sql
+775: PARAMETERS MyServiceSakilaFilmInStockParams {
+    "PARAMETERS"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStockParams"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+776:     pFilmId: p_film_id @IN,
+    "pFilmId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+777:     pStoreId: p_store_id @IN,
+    "pStoreId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_store_id"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+    ","  punctuation.separator.comma.sql
+778:     pFilmCount: p_film_count @OUT
+    "pFilmCount"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "p_film_count"  entity.name.identifier.sql
+    "@OUT"  storage.modifier.annotation.rest.sql
+779: }
+    "}"  punctuation.section.braces.sql
+780: RESULT MyServiceSakilaFilmInStock {
+    "RESULT"  keyword.other.rest.sql
+    "MyServiceSakilaFilmInStock"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+781:     inventoryId: inventory_id @DATATYPE("int")
+    "inventoryId"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "inventory_id"  entity.name.identifier.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "int"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+782: };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+783: 
+784: CREATE OR REPLACE REST FUNCTION /actorFunc
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+785:     ON SERVICE /myTest SCHEMA /test
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+786:     AS sakila.actor FORCE
+    "AS"  keyword.other.reserved.sql
+    "sakila"  entity.name.identifier.sql
+    "."  punctuation.accessor.sql
+    "actor"  entity.name.identifier.sql
+    "FORCE"  keyword.other.reserved.sql
+787:     PARAMETERS myServiceSakilaActorFuncParams {
+    "PARAMETERS"  keyword.other.rest.sql
+    "myServiceSakilaActorFuncParams"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+788:         s: s @IN
+    "s"  entity.name.identifier.sql
+    ":"  punctuation.separator.colon.sql
+    "s"  entity.name.identifier.sql
+    "@IN"  storage.modifier.annotation.rest.sql
+789:     }
+    "}"  punctuation.section.braces.sql
+790:     RESULT myServiceSakilaActorFunc {
+    "RESULT"  keyword.other.rest.sql
+    "myServiceSakilaActorFunc"  entity.name.identifier.sql
+    "{"  punctuation.section.braces.sql
+791:         result: result @DATATYPE("char")
+    "result"  keyword.other.rest.sql
+    ":"  punctuation.separator.colon.sql
+    "result"  keyword.other.rest.sql
+    "@DATATYPE"  storage.modifier.annotation.rest.sql
+    "("  punctuation.section.parens.begin.sql
+    "\""  punctuation.definition.string.begin.sql
+    "char"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ")"  punctuation.section.parens.end.sql
+792:     };
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+793: 
+794: -- Test REST SERVICE Option Handling
+    "-- Test REST SERVICE Option Handling"  comment.line.double-dash.sql
+795: 
+796: ALTER REST SERVICE /myTest MERGE OPTIONS {"test": 1};
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+797: 
+798: ALTER REST SERVICE /myTest MERGE OPTIONS {"test2": 2};
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "2"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+799: 
+800: SHOW CREATE REST SERVICE /myTest;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+801: 
+802: ALTER REST SERVICE /myTest MERGE OPTIONS {"test": null};
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "null"  constant.language.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+803: 
+804: SHOW CREATE REST SERVICE /myTest;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+805: 
+806: ALTER REST SERVICE /myTest OPTIONS {"test3": 1};
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test3"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+807: 
+808: SHOW CREATE REST SERVICE /myTest;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+809: 
+810: -- Test REST SCHEMA Option Handling
+    "-- Test REST SCHEMA Option Handling"  comment.line.double-dash.sql
+811: 
+812: ALTER REST SCHEMA /test ON SERVICE /myTest MERGE OPTIONS {"test": 1};
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+813: 
+814: ALTER REST SCHEMA /test ON SERVICE /myTest MERGE OPTIONS {"test2": 2};
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "2"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+815: 
+816: SHOW CREATE REST SCHEMA /test ON SERVICE /myTest;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+817: 
+818: ALTER REST SCHEMA /test ON SERVICE /myTest MERGE OPTIONS {"test": null};
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "null"  constant.language.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+819: 
+820: SHOW CREATE REST SCHEMA /test ON SERVICE /myTest;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+821: 
+822: -- Test REST DB_OBJECT Option Handling
+    "-- Test REST DB_OBJECT Option Handling"  comment.line.double-dash.sql
+823: 
+824: ALTER REST FUNCTION /actorFunc ON SERVICE /myTest SCHEMA /test
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+825: MERGE OPTIONS {"test": 1};
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "1"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+826: 
+827: ALTER REST FUNCTION /actorFunc ON SERVICE /myTest SCHEMA /test
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+828: MERGE OPTIONS {"test2": 2};
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test2"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "2"  constant.numeric.integer.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+829: 
+830: SHOW CREATE REST FUNCTION /actorFunc ON SERVICE /myTest SCHEMA /test;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+831: 
+832: ALTER REST FUNCTION /actorFunc ON SERVICE /myTest SCHEMA /test
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+833: MERGE OPTIONS {"test": null};
+    "MERGE"  keyword.other.unreserved.sql
+    "OPTIONS"  keyword.other.unreserved.sql
+    "{"  punctuation.section.braces.sql
+    "\""  punctuation.definition.string.begin.sql
+    "test"  string.quoted.double.sql
+    "\""  punctuation.definition.string.end.sql
+    ":"  punctuation.separator.colon.sql
+    "null"  constant.language.sql
+    "}"  punctuation.section.braces.sql
+    ";"  punctuation.terminator.statement.sql
+834: 
+835: SHOW CREATE REST FUNCTION /actorFunc ON SERVICE /myTest SCHEMA /test;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "FUNCTION"  keyword.other.unreserved.sql
+    "/actorFunc"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/test"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+836: 
+837: CREATE OR REPLACE REST SCHEMA /testWithAuth ON SERVICE /myTest FROM `test`
+    "CREATE"  keyword.other.reserved.sql
+    "OR"  keyword.other.reserved.sql
+    "REPLACE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/testWithAuth"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    "FROM"  keyword.other.reserved.sql
+    "`"  punctuation.definition.identifier.begin.sql
+    "test"  entity.name.identifier.quoted.sql
+    "`"  punctuation.definition.identifier.end.sql
+838: AUTHENTICATION REQUIRED;
+    "AUTHENTICATION"  keyword.other.rest.sql
+    "REQUIRED"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+839: 
+840: SHOW CREATE REST SCHEMA /testWithAuth ON SERVICE /myTest;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/testWithAuth"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+841: 
+842: ALTER REST SCHEMA /testWithAuth ON SERVICE /myTest
+    "ALTER"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/testWithAuth"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+843: AUTHENTICATION NOT REQUIRED;
+    "AUTHENTICATION"  keyword.other.rest.sql
+    "NOT"  keyword.other.reserved.sql
+    "REQUIRED"  keyword.other.rest.sql
+    ";"  punctuation.terminator.statement.sql
+844: 
+845: SHOW CREATE REST SCHEMA /testWithAuth ON SERVICE /myTest;
+    "SHOW"  keyword.other.reserved.sql
+    "CREATE"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SCHEMA"  keyword.other.unreserved.sql
+    "/testWithAuth"  string.unquoted.path.rest.sql
+    "ON"  keyword.other.reserved.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql
+846: 
+847: DROP REST SERVICE /myTest;
+    "DROP"  keyword.other.reserved.sql
+    "REST"  keyword.other.rest.sql
+    "SERVICE"  keyword.other.rest.sql
+    "/myTest"  string.unquoted.path.rest.sql
+    ";"  punctuation.terminator.statement.sql

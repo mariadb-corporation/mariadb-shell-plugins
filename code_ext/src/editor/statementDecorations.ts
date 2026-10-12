@@ -22,7 +22,7 @@ import {
     scanStatements,
     StatementFinishState,
 } from "../sql/statementSpans.js";
-import { SQL_LANGUAGE_ID } from "./sqlEditorBinding.js";
+import { isSqlDocument } from "./sqlLanguage.js";
 
 /** How long to scan before handing control back to the editor. */
 const DEFAULT_SLICE_MS = 8;
@@ -39,6 +39,12 @@ export interface IStatementDecoratorOptions {
     debounceMs?: number;
     /** How a scan hands control back between slices. */
     yieldToHost?: () => Promise<void>;
+    /**
+     * Whether `"..."` in a document is an identifier, as under the
+     * ANSI_QUOTES sql_mode - which moves where a statement can end.
+     * Left out, it is a string.
+     */
+    ansiQuotesFor?: (document: vscode.TextDocument) => boolean;
 }
 
 /**
@@ -79,6 +85,7 @@ export class StatementDecorator implements vscode.Disposable {
     readonly #running = new Map<string, {
         cancelled: boolean;
         version: number;
+        ansiQuotes: boolean;
         /** What it has found so far, for an editor that opens meanwhile. */
         ranges: vscode.Range[];
     }>();
@@ -89,6 +96,8 @@ export class StatementDecorator implements vscode.Disposable {
      */
     readonly #scanned = new Map<string, {
         version: number;
+        /** What `"..."` was read as: a change of mode is a rescan. */
+        ansiQuotes: boolean;
         ranges: vscode.Range[];
     }>();
     /** Document URI -> the pending rescan after an edit. */
@@ -98,6 +107,7 @@ export class StatementDecorator implements vscode.Disposable {
     readonly #applyIntervalMs: number;
     readonly #debounceMs: number;
     readonly #yieldToHost: () => Promise<void>;
+    readonly #ansiQuotesFor: (document: vscode.TextDocument) => boolean;
 
     public constructor(
         extensionUri: vscode.Uri,
@@ -108,6 +118,9 @@ export class StatementDecorator implements vscode.Disposable {
             ?? DEFAULT_APPLY_INTERVAL_MS;
         this.#debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
         this.#yieldToHost = options.yieldToHost ?? nextTick;
+        this.#ansiQuotesFor = options.ansiQuotesFor ?? (() => {
+            return false;
+        });
 
         this.#decoration = vscode.window.createTextEditorDecorationType({
             gutterIconSize: "contain",
@@ -147,7 +160,7 @@ export class StatementDecorator implements vscode.Disposable {
      */
     public refresh(): void {
         for (const editor of vscode.window.visibleTextEditors) {
-            if (editor.document.languageId === SQL_LANGUAGE_ID) {
+            if (isSqlDocument(editor.document)) {
                 void this.decorate(editor);
             }
         }
@@ -169,9 +182,11 @@ export class StatementDecorator implements vscode.Disposable {
         const { document } = editor;
         const key = document.uri.toString();
         const version = document.version;
+        const ansiQuotes = this.#ansiQuotesFor(document);
 
         const scanned = this.#scanned.get(key);
-        if (scanned?.version === version) {
+        if (scanned?.version === version
+            && scanned.ansiQuotes === ansiQuotes) {
             editor.setDecorations(this.#decoration, scanned.ranges);
 
             return;
@@ -181,7 +196,8 @@ export class StatementDecorator implements vscode.Disposable {
         // has found so far now, and the rest along with the others as the
         // scan goes on.
         const running = this.#running.get(key);
-        if (running?.version === version) {
+        if (running?.version === version
+            && running.ansiQuotes === ansiQuotes) {
             editor.setDecorations(this.#decoration, [...running.ranges]);
 
             return;
@@ -189,7 +205,7 @@ export class StatementDecorator implements vscode.Disposable {
         this.#cancel(key);
 
         const ranges: vscode.Range[] = [];
-        const token = { cancelled: false, version, ranges };
+        const token = { cancelled: false, version, ansiQuotes, ranges };
         this.#running.set(key, token);
 
         const text = document.getText();
@@ -221,7 +237,7 @@ export class StatementDecorator implements vscode.Disposable {
         };
 
         try {
-            for (const span of scanStatements(text)) {
+            for (const span of scanStatements(text, ";", ansiQuotes)) {
                 if (stale()) {
                     return;
                 }
@@ -263,7 +279,7 @@ export class StatementDecorator implements vscode.Disposable {
                 sliceStart = Date.now();
             }
 
-            this.#scanned.set(key, { version, ranges });
+            this.#scanned.set(key, { version, ansiQuotes, ranges });
             apply();
         } finally {
             if (this.#running.get(key) === token) {
@@ -302,7 +318,7 @@ export class StatementDecorator implements vscode.Disposable {
      * @returns Nothing.
      */
     #scheduleRescan(document: vscode.TextDocument): void {
-        if (document.languageId !== SQL_LANGUAGE_ID) {
+        if (!isSqlDocument(document)) {
             return;
         }
 
