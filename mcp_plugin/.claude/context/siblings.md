@@ -70,11 +70,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     the built-in MRS module (#71): importing `mrs_plugin.lib.core` raises
     "An SQL Handler named 'MRS' already exists", not an ImportError.
   - The utilities still run in the shell's own process here, on whatever
-    thread calls `msm.deploy_schema`. On an MCP worker thread the first dump
-    of the process can segfault in mysys (the charset setup writes
-    `my_errno` with no thread state): fixed in the shell by
-    `Mysys_thread_guard`, mariadb-shell branch
-    `wip/util_mysys_thread_guard`.
+    thread calls `msm.deploy_schema` (an MCP worker thread). #73 added a
+    `Mysys_thread_guard` for utilities called from a script's thread,
+    against a mysys segfault (no thread state for `my_errno`). It was not
+    reproduced on mariadb-shell `main` (2026-10-12): all nine utilities,
+    including their error paths, ran from a Python thread without a
+    crash. The guard and a test for it are kept on the local mariadb-shell
+    branch `wip/util_mysys_thread_guard`, with no PR.
 
 ## Gotchas / things not to repeat
 
