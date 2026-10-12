@@ -258,6 +258,11 @@
           "type": "string",
           "default": "https://localhost:8443",
           "markdownDescription": "Where the MariaDB REST Daemon serves REST requests. The **Open ... Request Path in Web Browser** commands and the client SDK's default service URL start with it."
+        },
+        "mariadb.copilot.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Whether GitHub Copilot - and any other chat in VS Code - gets the MariaDB skills and the MariaDB Shell's MCP server. The server runs in agent mode: it opens only the connections that allow MCP access, and asks before it touches a path outside its allowed list. Starting it the first time installs the MariaDB Shell if there is none."
         }
       }
     },
@@ -1895,11 +1900,360 @@
         "id": "mariadb.dumpLoad",
         "label": "Dump and Load"
       }
+    ],
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "mariadb.mcpServer",
+        "label": "MariaDB"
+      }
+    ],
+    "chatSkills": [
+      {
+        "path": "skills/mariadb-aggregate-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-alter-table/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-alter-user/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-binlog/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-call/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-client/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-c-install/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-c-usage/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-cpp-install/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-cpp-usage/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-j-install/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-j-usage/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-nodejs-install/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-nodejs-usage/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-odbc-install/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-odbc-usage/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-python-install/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-python-usage/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-r2dbc-install/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-connector-r2dbc-usage/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-control-flow-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-database/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-function/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-index/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-procedure/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-sequence/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-table/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-trigger/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-user/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-create-view/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-date-time-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-delete/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-drop-table/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-drop-user/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-dump/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-encryption-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-explain/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-features/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-grant/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-import/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-information-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-insert/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-json-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-laravel-ai-sdk/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-laravel-connector/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-laravel-vector/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-load-data/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-lock-tables/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-migrator/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-migrator-configure/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-migrator-discovery/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-migrator-modes/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-migrator-run/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-migrator-troubleshooting/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-migrator-verify/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-numeric-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-prepare/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-query-optimization/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-rename-table/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-replace/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-rest-service-authorization/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-rest-service-create/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-rest-service-drop/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-rest-service-show/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-rest-service-update-endpoints/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-revoke/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-schema-create-script/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-schema-management/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-schema-management-create/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-schema-management-deploy/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-schema-management-develop/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-schema-management-release/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-select/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-set/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-set-transaction/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-show/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-string-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-system-versioned-tables/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-transactions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-truncate-table/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-update/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-vector/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-vector-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mariadb-window-functions/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      },
+      {
+        "path": "skills/mysql-to-mariadb/SKILL.md",
+        "when": "config.mariadb.copilot.enabled"
+      }
     ]
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
-    "build": "npm run clean && npm run build:extension && npm run build:webview",
+    "build": "npm run clean && npm run sync:skills && npm run build:extension && npm run build:webview",
+    "sync:skills": "node tools/syncAiSkills.mts",
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit -p ./ && tsc --noEmit -p tsconfig.webview.json",
     "pretest": "npm run typecheck && npm run lint",

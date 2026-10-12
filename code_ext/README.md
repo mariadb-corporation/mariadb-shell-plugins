@@ -57,6 +57,16 @@ which exposes the backend functions over the Model Context Protocol.
   which can be watched while it runs and is kept after it ended, failed
   or not. Each task is also a row of its connection's **Actions** in the
   MariaDB panel, with what it reported under it.
+- **GitHub Copilot** gets the MariaDB agent skills and the MariaDB Shell's
+  MCP server, with nothing to set up. The skills - the same ones the
+  [MariaDB AI plugins](https://github.com/mariadb-corporation/ai-plugins)
+  give Claude Code, Codex, OpenCode and Pi - teach it MariaDB SQL, the
+  connectors and the REST Service; the **MariaDB** server in VS Code's MCP
+  server list gives it the `db.*` and other tools to act on a database.
+  The server runs in agent mode: it opens only the connections with
+  **MCP access** ticked, and asks before touching a file outside its
+  allowed paths. Starting it the first time installs the MariaDB Shell if
+  there is none. `mariadb.copilot.enabled` turns both off.
 
 ## Requirements
 
@@ -82,6 +92,7 @@ Set `MARIADB_SHELL_PREFIX` to install and look somewhere else.
 | --- | --- |
 | `mariadb.defaultConnection` | The connection URI new SQL editors run on. |
 | `mariadb.connections.connectMode` | Whether expanding a connection in the **Connections** view opens it (`onOpen`, the default) or only the Connect button does (`explicit`). |
+| `mariadb.copilot.enabled` | Whether Copilot gets the MariaDB skills and MCP server (on by default). |
 
 ## Commands
 
@@ -97,7 +108,8 @@ Set `MARIADB_SHELL_PREFIX` to install and look somewhere else.
 
 ```bash
 npm install            # install the toolchain
-npm run build          # bundle the extension and the result panel
+npm run build          # sync the Copilot skills, bundle the extension and the result panel
+npm run sync:skills    # only bring skills/ up to the newest ai-plugins release
 npm test               # run the Vitest suite
 npm run pretest        # type check and lint
 ```
@@ -113,6 +125,12 @@ The extension is bundled with [Vite](https://vite.dev), the result panel is
 [Vitest](https://vitest.dev). See
 [.claude/PROJECT_CONTEXT.md](https://github.com/mariadb-corporation/mariadb-shell-plugins/blob/main/code_ext/.claude/PROJECT_CONTEXT.md)
 for the layout and the behaviour in detail.
+
+The skills in `skills/` are vendored from the newest
+[ai-plugins release](https://github.com/mariadb-corporation/ai-plugins/releases)
+by `npm run build` and committed; never edit them by hand. Set
+`SKIP_SKILL_SYNC=1` to build without asking GitHub, and pass `--strict`
+(`npm run sync:skills -- --strict`) to make a failed check fail the build.
 
 ## Licensing
 

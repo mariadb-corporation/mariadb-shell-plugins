@@ -1272,6 +1272,35 @@ export const commands = {
     },
 };
 
+/** An MCP server run as a local process, as `vscode.lm` takes it. */
+export class McpStdioServerDefinition {
+    public constructor(
+        public readonly label: string,
+        public command: string,
+        public args: string[] = [],
+        public env: Record<string, string | number | null> = {},
+        public version?: string,
+    ) { }
+}
+
+/** The MCP server definition providers registered, by id. */
+export const mcpServerDefinitionProviders = new Map<string, unknown>();
+
+export const lm = {
+    registerMcpServerDefinitionProvider: (
+        id: string,
+        provider: unknown,
+    ): Disposable => {
+        mcpServerDefinitionProviders.set(id, provider);
+
+        return {
+            dispose: () => {
+                mcpServerDefinitionProviders.delete(id);
+            },
+        };
+    },
+};
+
 export const env = {
     openExternal: (uri: Uri): Promise<boolean> => {
         openedExternally.push(uri);
@@ -1374,4 +1403,5 @@ export const resetVscodeMock = (): void => {
     setActiveTextEditor(undefined);
     setWorkspaceFolders(undefined);
     env.clipboard.text = "";
+    mcpServerDefinitionProviders.clear();
 };

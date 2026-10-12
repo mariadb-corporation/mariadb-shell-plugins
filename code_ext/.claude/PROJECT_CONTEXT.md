@@ -14,7 +14,9 @@ extension grows.
 | Path | Purpose |
 | --- | --- |
 | `src/extension.ts` | Activation entry point. Wires everything together and registers the commands. |
-| `src/shell/` | Finding, installing and launching the MariaDB Shell. |
+| `src/shell/` | Finding, installing and launching the MariaDB Shell; `shellResolver.ts`, the one lookup both servers share. |
+| `src/copilot/` | The MCP server definition provider that gives Copilot the shell's MCP server (see [`context/copilot.md`](context/copilot.md)). |
+| `skills/` | The MariaDB agent skills contributed to Copilot - vendored from the newest ai-plugins release by `tools/syncAiSkills.mts`, committed, never hand-edited. |
 | `src/mcp/` | The MCP client: the one-at-a-time server startup, session lifecycle, wire decoding, typed `db.*` and `sandbox.*` APIs. |
 | `src/errorMessages.ts` | The error notification every failure uses, with its Show Log button, and `reportError` (log it, then notify). |
 | `src/text.ts` | `errorText`, `counted` and `stripAnsi`: text helpers shared with the webviews, so free of `vscode`. |
@@ -26,6 +28,7 @@ extension grows.
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
 | `src/editor/` | The SQL editor toolbar, status bar entry and run command; `sqlLanguage.ts`, which documents are SQL; `ansiQuotes.ts`, the semantic tokens that mark `"..."` as an identifier where the connection has ANSI_QUOTES. |
 | `syntaxes/` | The MariaDB SQL TextMate grammar: the hand-written template, the generated `words.json`, and the built grammar (see [`context/sql-grammar.md`](context/sql-grammar.md)). |
+| `tools/syncAiSkills.mts` | `sync:skills`, run by `build`: brings `skills/` and `contributes.chatSkills` up to the newest ai-plugins release. |
 | `tools/grammar.mts` | `grammar:sync` reads the word lists out of the mariadb-server and mariadb-shell checkouts; `grammar:build` makes the grammar from the template. |
 | `language-configuration.json` | Comments, brackets and auto-closing pairs of the MariaDB SQL language. |
 | `src/webview/` | The result view host, its message protocol and the edit-collection logic; a maximized result set's editor tab (`maximizedResult.ts`); grid values as files - saved / loaded (`valueFiles.ts`) and opened in editors (`valueDocuments.ts`); what every webview shares - the HTML, CSP and options (`html.ts`), the hold-until-`ready` queue (`readyQueue.ts`), the dialogs' common messages (`dialogProtocol.ts`). |
@@ -44,6 +47,7 @@ change belongs to up to date, and this table with it.
 | File | What is in it |
 | --- | --- |
 | [`context/toolchain.md`](context/toolchain.md) | The two Vite builds and two Vitest projects, the npm scripts, the pinned Node and the lockfile churn, the Marketplace icon, CI. |
+| [`context/copilot.md`](context/copilot.md) | GitHub Copilot: the skills (`chatSkills`, the sync from the newest ai-plugins release) and the MCP server definition provider, agent mode without `--gui`, the shared shell lookup, the setting. |
 | [`context/shell-and-mcp.md`](context/shell-and-mcp.md) | `src/shell/` and `src/mcp/` file by file, the lazy startup and shell lookup, GUI mode (`--gui`) and the two connection lists, the MCP wire format. |
 | [`context/connection-editor.md`](context/connection-editor.md) | The connection editor: its files and tabs, what it deliberately leaves out, the URI box and its rules, its own vite build. |
 | [`context/connections.md`](context/connections.md) | The several connections one URI can have open and the one the Connections view keeps, what is reported on them (General Actions; browsing only on failure or with `logAllCalls`), the cached connection list, the tree, opening, the default connection. |

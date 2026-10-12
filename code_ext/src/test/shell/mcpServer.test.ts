@@ -28,7 +28,7 @@ const location: ShellLocation = {
 
 describe("buildMcpServerCommand", () => {
     it("starts the MCP server over stdio", () => {
-        expect(buildMcpServerCommand(location)).toEqual({
+        expect(buildMcpServerCommand(location, "gui")).toEqual({
             command: "/usr/local/bin/mariadb-shell",
             args: [
                 "--", "mcp", "start-server", "--transport=stdio", "--gui",
@@ -45,14 +45,19 @@ describe("buildMcpServerCommand", () => {
             source: "managed",
         };
 
-        expect(buildMcpServerCommand(managed).command)
+        expect(buildMcpServerCommand(managed, "gui").command)
             .toBe(managed.binaryPath);
     });
 
     it("hands out a fresh argument array each time", () => {
-        const first = buildMcpServerCommand(location);
+        const first = buildMcpServerCommand(location, "gui");
         first.args.push("--extra");
 
-        expect(buildMcpServerCommand(location).args).toHaveLength(5);
+        expect(buildMcpServerCommand(location, "gui").args).toHaveLength(5);
+    });
+
+    it("leaves --gui out for an agent", () => {
+        expect(buildMcpServerCommand(location, "agent").args).toEqual(
+            ["--", "mcp", "start-server", "--transport=stdio"]);
     });
 });

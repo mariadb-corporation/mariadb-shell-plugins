@@ -15,7 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { MCP_SERVER_ARGS } from "./constants.js";
+import { AGENT_MCP_SERVER_ARGS, MCP_SERVER_ARGS } from "./constants.js";
 import type { ShellLocation } from "./locator.js";
 
 export interface McpServerCommand {
@@ -31,11 +31,16 @@ export interface McpServerCommand {
  * to the transport from the first byte.
  *
  * @param location The shell to run.
+ * @param client Who the server is for: this extension (`gui`, with
+ *        `--gui`), or an autonomous agent such as Copilot (`agent`).
  *
  * @returns The command to spawn.
  */
 export const buildMcpServerCommand = (
     location: ShellLocation,
+    client: "gui" | "agent",
 ): McpServerCommand => {
-    return { command: location.binaryPath, args: [...MCP_SERVER_ARGS] };
+    const args = client === "gui" ? MCP_SERVER_ARGS : AGENT_MCP_SERVER_ARGS;
+
+    return { command: location.binaryPath, args: [...args] };
 };

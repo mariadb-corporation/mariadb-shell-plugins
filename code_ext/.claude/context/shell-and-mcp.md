@@ -17,7 +17,8 @@ which is what most of GUI mode exists for, is in
 | `locator.ts` | Finds a usable shell on the PATH or among the managed installations. |
 | `installer.ts` | Builds and runs the platform installer, reporting its progress. |
 | `bootstrap.ts` | `ensureShell()` — locate, else install, else fail. |
-| `mcpServer.ts` | Builds the command that makes a shell host the MCP server. |
+| `shellResolver.ts` | `ShellResolver` — runs that lookup once however many callers ask, for both servers on the shell (this extension's and Copilot's, see [copilot.md](copilot.md)), telling each caller, late joiners too, when the installer runs. |
+| `mcpServer.ts` | Builds the command that makes a shell host the MCP server, for this extension (`gui`) or for an agent such as Copilot (`agent`, without `--gui`). |
 | `lineReader.ts` | Reassembles whole lines from chunked child process output. |
 | `nodeRuntime.ts` | The real `child_process` / `fs` implementations of the interfaces above. |
 | `vscodeProgress.ts` | The `vscode.window.withProgress` implementation of `ProgressHost`. |

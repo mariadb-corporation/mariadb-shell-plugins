@@ -40,7 +40,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 | Script | What it does |
 | --- | --- |
-| `npm run build` | Clean `dist/`, then bundle the extension and the webview. |
+| `npm run build` | Clean `dist/`, sync the Copilot skills, then bundle the extension and the webview. |
+| `npm run sync:skills` | Bring `skills/` and `contributes.chatSkills` up to the newest ai-plugins release (`--strict` to fail rather than keep the old ones; `SKIP_SKILL_SYNC=1` skips it). See [copilot.md](copilot.md). |
 | `npm run clean` | Remove `dist/`. |
 | `npm run watch` | Rebuild the extension on change. |
 | `npm run watch:webview` | Rebuild the webview on change. |
@@ -109,6 +110,9 @@ running `npm ci` -> `npm run pretest` -> `npm test` -> `npm run build`, on the
 Node that `code_ext/.nvmrc` names. The build step is there because the extension
 ships as a bundle: an import that only resolves under the test aliases, or an
 asset that is not copied, is invisible to the type check and the tests alike.
+It runs with `SKIP_SKILL_SYNC=1`: CI checks the skills committed to the branch
+(`src/test/tools/syncAiSkills.test.ts` holds them against `chatSkills`) and
+never depends on GitHub's API or on what ai-plugins released that day.
 
 Which suites run is decided once, by a `changes` job whose outputs the plugin
 job and this one both read — `code_ext/**` gates this job, and each `*_plugin/`

@@ -188,5 +188,9 @@ jobs:
         # that only resolves under the test aliases, an asset that is not
         # copied - is invisible to the type check and the tests alike. This is
         # what `vscode:prepublish` runs, so packaging cannot fail on anything
-        # this step passed.
+        # this step passed. The skill sync is skipped: a CI run checks the
+        # skills committed to the branch, and must not depend on GitHub's API
+        # or on what ai-plugins released that day.
+        env:
+          SKIP_SKILL_SYNC: "1"
         run: npm run build

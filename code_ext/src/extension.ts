@@ -51,13 +51,18 @@ import {
 } from "./mcp/serverStarter.js";
 import { McpSession } from "./mcp/session.js";
 import type { IMariaDbApi } from "./mcp/types.js";
-import { ensureShell } from "./shell/bootstrap.js";
+import { registerCopilotMcpServer } from "./copilot/mcpServerProvider.js";
+import { ensureShell, type BootstrapResult } from "./shell/bootstrap.js";
 import { MINIMUM_SHELL_VERSION } from "./shell/constants.js";
 import { buildMcpServerCommand } from "./shell/mcpServer.js";
 import {
     createNodeProcessRunner,
     createNodeShellEnvironment,
 } from "./shell/nodeRuntime.js";
+import {
+    ShellResolver,
+    type IShellResolver,
+} from "./shell/shellResolver.js";
 import { createNotificationProgressHost } from "./shell/vscodeProgress.js";
 import {
     ConnectionsTreeProvider,
@@ -121,37 +126,54 @@ interface IExtensionState {
 let state: IExtensionState | undefined;
 
 /**
+ * Finds or installs the MariaDB Shell, saying so when it had to install it.
+ *
+ * @param log Where to write progress and errors.
+ * @param onInstalling Called when the installer starts.
+ *
+ * @returns The shell, and whether it was just installed.
+ */
+const locateOrInstallShell = async (
+    log: (message: string) => void,
+    onInstalling: () => void,
+): Promise<BootstrapResult> => {
+    const result = await ensureShell({
+        environment: createNodeShellEnvironment(log),
+        runner: createNodeProcessRunner(),
+        progress: createNotificationProgressHost(),
+        log,
+        minimumVersion: MINIMUM_SHELL_VERSION,
+        onInstalling,
+    });
+
+    if (result.installed) {
+        void vscode.window.showInformationMessage(
+            `MariaDB Shell ${MINIMUM_SHELL_VERSION} was installed.`,
+        );
+    }
+
+    return result;
+};
+
+/**
  * Finds or installs the MariaDB Shell and starts the MCP server on it.
  *
  * @param session The session to start.
- * @param log Where to write progress and errors.
+ * @param shell Where the shell comes from.
  * @param onPhase Told when the installer starts and when the server does.
  *
  * @returns The typed API to call the server with.
  */
 const startServer = async (
     session: McpSession,
-    log: (message: string) => void,
+    shell: IShellResolver,
     onPhase: (phase: ServerStepPhase) => void,
 ): Promise<IMariaDbApi> => {
-    const { location, installed } = await ensureShell({
-        environment: createNodeShellEnvironment(log),
-        runner: createNodeProcessRunner(),
-        progress: createNotificationProgressHost(),
-        log,
-        minimumVersion: MINIMUM_SHELL_VERSION,
-        onInstalling: () => { onPhase("installing"); },
-    });
-
-    if (installed) {
-        void vscode.window.showInformationMessage(
-            `MariaDB Shell ${MINIMUM_SHELL_VERSION} was installed.`,
-        );
-    }
+    const { location } = await shell.ensure(() => { onPhase("installing"); });
 
     onPhase("starting");
 
-    return await session.start(buildMcpServerCommand(location));
+    return await session.start(buildMcpServerCommand(location, "gui"));
 };
 
 /**
@@ -235,10 +257,16 @@ export const activate = (context: vscode.ExtensionContext): void => {
         + `${process.arch}, Node ${process.versions.node}. `
         + `Needs MariaDB Shell ${MINIMUM_SHELL_VERSION} or newer.`);
 
+    // One lookup for both servers on the shell - this extension's and
+    // Copilot's - so they never run the installer side by side.
+    const shell = new ShellResolver((onInstalling) => {
+        return locateOrInstallShell(log, onInstalling);
+    });
     const session = new McpSession(createSdkConnector(), log);
     const starter = new ServerStarter((onPhase) => {
-        return startServer(session, log, onPhase);
+        return startServer(session, shell, onPhase);
     }, log);
+    context.subscriptions.push(registerCopilotMcpServer(shell, log));
     showStartupInView(starter);
     const resultView = new ResultViewProvider(context.extensionUri, log);
     const settings = createWorkspaceSettings();

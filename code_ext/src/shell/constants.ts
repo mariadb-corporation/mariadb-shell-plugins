@@ -42,7 +42,25 @@ export const MINIMUM_SHELL_VERSION = "26.10.1";
 export const SHELL_BINARY_NAME = "mariadb-shell";
 
 /**
- * Arguments that make the shell host the MCP server over stdin/stdout.
+ * Arguments that make the shell host the MCP server over stdin/stdout for an
+ * autonomous agent - Copilot. It is the same server the MariaDB AI plugins
+ * start for the other coding agents.
+ *
+ * That server keeps the allowed-path list and asks, by MCP elicitation,
+ * before touching a path outside it; it opens only the connections that
+ * allow MCP access; and it serves none of the tools that write the
+ * connection list or try credentials against any host.
+ */
+export const AGENT_MCP_SERVER_ARGS = [
+    "--",
+    "mcp",
+    "start-server",
+    "--transport=stdio",
+];
+
+/**
+ * Arguments that make the shell host the MCP server for this extension:
+ * {@link AGENT_MCP_SERVER_ARGS} plus `--gui`.
  *
  * `--gui` tells the server its client is this extension rather than an
  * autonomous agent, which is what gives it access to every local path - the
@@ -57,13 +75,7 @@ export const SHELL_BINARY_NAME = "mariadb-shell";
  * mode, so connection management is unavailable and paths go back to being
  * confirmed - which is why {@link MINIMUM_SHELL_VERSION} is the real gate.
  */
-export const MCP_SERVER_ARGS = [
-    "--",
-    "mcp",
-    "start-server",
-    "--transport=stdio",
-    "--gui",
-];
+export const MCP_SERVER_ARGS = [...AGENT_MCP_SERVER_ARGS, "--gui"];
 
 export const INSTALL_SCRIPT_URL_POSIX =
     "https://github.com/mariadb-corporation/mariadb-shell/raw/main/install.sh";
