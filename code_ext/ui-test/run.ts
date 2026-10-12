@@ -15,7 +15,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
     chmodSync,
     mkdirSync,
@@ -77,17 +77,62 @@ const SETUP = "01-sandbox";
 const CLEANUP = "99-cleanup";
 
 /**
- * The suites, by name: the test files of each, in the order they run,
- * between SETUP and CLEANUP. `00-startup` comes before SETUP, because it
- * checks the views of a first start, before anything is in them.
+ * The suites, by name: the test files of each, in the order they run.
+ * Each starts with SETUP and ends with CLEANUP - `core` with `00-startup`
+ * first, as it checks the views of a first start, before anything is in
+ * them.
  */
-const SUITES: Record<string, { before?: string[]; files: string[] }> = {
-    core: {
-        before: ["00-startup"],
-        files: ["03-connections", "04-sql-results", "05-lifecycle"],
-    },
-    mrs: { files: ["02-mrs"] },
-    "dump-load": { files: ["06-dump-load"] },
+const SUITES: Record<string, string[]> = {
+    core: ["00-startup", SETUP, "03-connections", "04-sql-results",
+        "05-lifecycle", CLEANUP],
+    mrs: [SETUP, "02-mrs", CLEANUP],
+    "dump-load": [SETUP, "06-dump-load", CLEANUP],
+};
+
+/**
+ * Runs a command in a process group of its own, stopping the whole group
+ * - ExTester, the VS Code and the ChromeDriver it started - when the
+ * time is up or the run is interrupted. A kill of the command alone
+ * would leave those running, holding their ports and the storage the
+ * next suite needs.
+ *
+ * @param command The command.
+ * @param args Its arguments.
+ * @param options Where, and with what environment.
+ *
+ * @returns Its exit code, 1 when it was stopped.
+ */
+const runGroup = async (
+    command: string,
+    args: string[],
+    options: { cwd: string; env: NodeJS.ProcessEnv },
+): Promise<number> => {
+    const child = spawn(command, args,
+        { ...options, stdio: "inherit", detached: true });
+    const stop = (reason: string): void => {
+        console.error(`The run was stopped: ${reason}`);
+        try {
+            process.kill(-(child.pid ?? 0), "SIGKILL");
+        } catch {
+            // Gone already.
+        }
+    };
+    // A group of its own does not get the terminal's Ctrl-C.
+    const interrupted = (): void => { stop("interrupted"); };
+    process.once("SIGINT", interrupted);
+    const timer = setTimeout(() => {
+        stop(`over ${String(SUITE_TIMEOUT_MS / 60_000)} minutes`);
+    }, SUITE_TIMEOUT_MS);
+
+    try {
+        return await new Promise<number>((done) => {
+            child.once("error", () => { done(1); });
+            child.once("exit", (code) => { done(code ?? 1); });
+        });
+    } finally {
+        clearTimeout(timer);
+        process.removeListener("SIGINT", interrupted);
+    }
 };
 
 const freePort = async (): Promise<number> => {
@@ -170,9 +215,7 @@ const runFiles = async (
     };
 
     try {
-        // Started directly, not through npx: a timeout kills the child it
-        // started, and through npx that would leave ExTester running.
-        const result = spawnSync(join(root, "node_modules", ".bin", "extest"), [
+        return await runGroup(join(root, "node_modules", ".bin", "extest"), [
             "setup-and-run",
             ...testFiles,
             "--storage", storage,
@@ -181,15 +224,7 @@ const runFiles = async (
             "--mocha_config", join(root, "ui-test", ".mocharc.json"),
             "--code_version", process.env.UI_TEST_CODE_VERSION ?? "max",
             ...extraArgs,
-        ], {
-            cwd: root, env, stdio: "inherit",
-            timeout: SUITE_TIMEOUT_MS, killSignal: "SIGKILL",
-        });
-        if (result.error !== undefined) {
-            console.error(`The run was stopped: ${result.error.message}`);
-        }
-
-        return result.status ?? 1;
+        ], { cwd: root, env });
     } finally {
         // A sandbox a failed run left behind stops with its directory gone.
         spawnSync("pkill", ["-f", sandboxes]);
@@ -200,23 +235,6 @@ const runFiles = async (
     }
 };
 
-/**
- * The compiled files of a suite, in the order they run.
- *
- * @param name The suite.
- *
- * @returns One path per file: one pattern each, so the order holds -
- *          ExTester adds the files of one pattern in no set order.
- */
-const filesOf = (name: string): string[] => {
-    const suite = SUITES[name];
-
-    return [...suite.before ?? [], SETUP, ...suite.files, CLEANUP]
-        .map((file) => {
-            return `${compiled}/${file}.test.js`;
-        });
-};
-
 const main = async (): Promise<number> => {
     const shell = process.env.MARIADB_SHELL;
     if (shell === undefined || shell === "") {
@@ -225,18 +243,24 @@ const main = async (): Promise<number> => {
         return 2;
     }
 
-    const args = process.argv.slice(2);
-    const extraArgs = args.filter((arg) => { return !(arg in SUITES); });
+    const named: string[] = [];
+    const extraArgs: string[] = [];
+    for (const arg of process.argv.slice(2)) {
+        (arg in SUITES ? named : extraArgs).push(arg);
+    }
     if (process.env.UI_TEST_GLOB !== undefined) {
         return await runFiles(shell, [process.env.UI_TEST_GLOB], extraArgs);
     }
 
-    const named = args.filter((arg) => { return arg in SUITES; });
-    const suites = named.length > 0 ? named : Object.keys(SUITES);
     const outcomes: Array<[string, number]> = [];
-    for (const name of suites) {
+    for (const name of named.length > 0 ? named : Object.keys(SUITES)) {
         console.log(`\n=== UI test suite: ${name} ===\n`);
-        outcomes.push([name, await runFiles(shell, filesOf(name), extraArgs)]);
+        // One pattern per file, so the order holds: ExTester adds the
+        // files of one pattern in no set order.
+        const files = SUITES[name].map((file) => {
+            return `${compiled}/${file}.test.js`;
+        });
+        outcomes.push([name, await runFiles(shell, files, extraArgs)]);
     }
 
     if (outcomes.length > 1) {

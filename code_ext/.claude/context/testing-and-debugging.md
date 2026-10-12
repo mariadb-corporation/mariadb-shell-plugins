@@ -75,8 +75,10 @@ never exits when ChromeDriver fails to start, which it does when its
 port is taken between being picked and bound (`bind() failed: Address
 already in use` in `.vscode-test/extest/chromedriver.log`, "Server
 terminated early with status 1" in the run) - seen 2026-10-12, it held
-the whole run. ExTester is started directly, not through `npx`, so the
-kill reaches it.
+the whole run. ExTester runs in a process group of its own, killed as a
+whole - ExTester, its VS Code and its ChromeDriver - when the time is up
+or the run is interrupted (`runGroup`; Ctrl-C does not reach a detached
+group by itself, so the runner forwards it).
 
 - `ui-test/run.ts` builds a temporary work dir per suite, which is
   removed at the end, also after a failure. Sandboxes left running are
