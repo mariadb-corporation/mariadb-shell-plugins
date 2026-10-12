@@ -93,7 +93,11 @@ $ git -C msm_plugin branch --show-current
 wip/vscode_syntax_highlighter
 
 $ git -C msm_plugin status --short   (one repository: every project's lines)
-(clean before this checkpoint's context edits)
+ M code_ext/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+(this checkpoint's own edits, committed with it)
 ```
 
 - No msm_plugin change since the 2026-10-11 checkpoint; the branch checked

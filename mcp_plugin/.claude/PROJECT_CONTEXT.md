@@ -91,10 +91,14 @@ $ git -C mcp_plugin branch --show-current
 wip/vscode_syntax_highlighter
 
 $ git -C mcp_plugin status --short   (one repository: every project's lines)
-(clean before this checkpoint's context edits)
+ M code_ext/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+(this checkpoint's own edits, committed with it)
 ```
 
-- **`wip/vscode_syntax_highlighter`** (pushed, no PR yet, branched from
+- **`wip/vscode_syntax_highlighter`** (pushed, **PR #45** into #44, branched from
   #44's `wip/mrs_code_ext`): `13b7e192` `db.execute_sql_script` gains
   opt-in `ansi_quotes` and `report_sql_mode` (see
   [`context/db-tools.md`](context/db-tools.md)), for the VS Code
@@ -119,9 +123,8 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
   docs for the util tools) is open and up to date with `main`. #73 (util
   session / progressCallback) was closed on 2026-10-12, when the tasks
   moved to a shell process of their own; #75 and #77 (flaky tests) are
-  merged.
-  `split_script`'s options argument, which `ansi_quotes` needs, is in
-  every release since 26.8.0.
+  merged. `split_script`'s options argument, which `ansi_quotes` needs, is
+  in every release since 26.8.0.
 - `origin/wip/msm_mrs_fixes` (merged as #36) is gone (checked 2026-10-11).
   mrs_plugin's project dump/load got msm's `run_util` on #41's branch
   (2026-10-11, see [`context/siblings.md`](context/siblings.md)).
