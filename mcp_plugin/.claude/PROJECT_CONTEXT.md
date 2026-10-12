@@ -92,10 +92,14 @@ $ git -C mcp_plugin branch --show-current
 wip/vscode_syntax_highlighter
 
 $ git -C mcp_plugin status --short   (one repository: every project's lines)
-(clean before this checkpoint's context edits)
+ M code_ext/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+(this checkpoint's own edits, committed with it)
 ```
 
-- **`wip/vscode_syntax_highlighter`** (pushed, no PR yet, branched from
+- **`wip/vscode_syntax_highlighter`** (pushed, **PR #45** into #44, branched from
   #44's `wip/mrs_code_ext`): `13b7e192` `db.execute_sql_script` gains
   opt-in `ansi_quotes` and `report_sql_mode` (see
   [`context/db-tools.md`](context/db-tools.md)), for the VS Code

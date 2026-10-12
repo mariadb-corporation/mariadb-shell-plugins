@@ -117,35 +117,44 @@ $ git -C code_ext branch --show-current
 wip/vscode_syntax_highlighter
 
 $ git -C code_ext status --short   (one repository: every project's lines)
-(clean before this checkpoint's context edits)
+ M code_ext/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+(this checkpoint's own edits, committed with it)
 ```
 
-- **`wip/vscode_syntax_highlighter`** (pushed, upstream set, **no PR
-  yet**; branched from `wip/mrs_code_ext`, so a PR should target that
-  until #44 merges): `13b7e192` mcp_plugin `ansi_quotes` /
-  `report_sql_mode`, `a7da1b99` the MariaDB SQL language, grammar,
-  ANSI_QUOTES semantic tokens, splitter fixes and the `sql_mode` round
-  trip, `75602592` context. See [`context/sql-grammar.md`](context/sql-grammar.md)
+The `/code-review` fixes (UI runner signals and time limit, one source
+each for the Actions tab's top alignment and tree indent) are #44's:
+`b9642b1c` on `wip/mrs_code_ext`, merged forward as `22406105`.
+
+- **PR #45** `wip/vscode_syntax_highlighter` -> `wip/mrs_code_ext`: the
+  MariaDB SQL language, grammar, ANSI_QUOTES semantic tokens, splitter
+  fixes, the `sql_mode` round trip (`13b7e192`, `a7da1b99`, `75602592`),
+  the `/simplify` pass `4743e259`, and the merges of #44 (`3f0b66eb`,
+  `cef8b880`, `22406105`). See [`context/sql-grammar.md`](context/sql-grammar.md)
   and [`context/running-sql.md`](context/running-sql.md).
-- **`wip/mrs_code_ext` (#44)** got `92c5b4d1` (the tab on show drawn as a
-  tab, see [`context/result-view.md`](context/result-view.md)), pushed.
+- **PR #44** `wip/mrs_code_ext` got the footer tab styling (`92c5b4d1`),
+  the UI tests in suites (`168972cc`), and the Actions tab's top
+  alignment and indent guides plus the process-group stop (`a9d1a668`),
+  the `/code-review` fixes (`b9642b1c`).
 - **Still open from earlier:** #43 `wip/mcp_dump_load` (Dump and Load),
-  #44 `wip/mrs_code_ext` (REST Service tree, `mrs` MCP group, UI tests; it
-  has #41 and #43 merged in), #41 the mrs_plugin / msm side. Fixes go
-  #43 -> #44 -> `wip/vscode_syntax_highlighter`, always that direction.
-- **Session 2026-10-12:** footer tab styling (several rounds), then the
-  grammar: a generated TextMate grammar instead of an LSP (the user's
-  call after the trade-off), identifiers `entity.name.identifier.sql`
-  and variables `variable.language.*` after trying `variable.other` and
-  `variable.parameter` in Dark 2026, two languages tried and dropped for
-  semantic tokens (setTextDocumentLanguage closes/reopens the document).
-- Suite: **1994 unit tests pass**, 8 skipped; **60 UI tests pass** against
-  the local `wip/ui_test_shell` build (whose plugins are this repo's,
-  symlinked by `ui-test/run.ts`); mcp_plugin's script/paging/session/sql
-  tests 133 passed.
+  #41 the mrs_plugin / msm side; #44 has both merged in. Fixes go
+  #43 -> #44 -> #45, always that direction. CI fails on all of them for
+  want of mariadb-shell #71 / #73 on the runner.
+- **Session 2026-10-12:** footer tabs, the grammar (TextMate, generated,
+  not an LSP), semantic tokens for ANSI_QUOTES, the Actions tab's top
+  alignment and straight indent guides instead of Tabulator's L branch,
+  UI tests split into `core` / `mrs` / `dump-load` suites, `/simplify`,
+  then `/code-review` (9 findings, all fixed).
+- Suite: **1994 unit tests pass**, 8 skipped; UI suites core 24, mrs 29,
+  dump-load 15 pass (before the review fixes; after them a live run was
+  interrupted twice with Ctrl-C to check the runner: exit 130, nothing
+  left running); mcp_plugin's script/paging/session/sql tests 133 passed.
 - Not looked at in a running VS Code outside the UI tests: the
-  ANSI_QUOTES colouring (no UI test, the sandbox has no ANSI_QUOTES), and
-  still the PR #34 / #38 items listed in earlier checkpoints.
+  ANSI_QUOTES colouring, the indent guides after the move to
+  `--actionsTreeIndent`, and still the PR #34 / #38 items listed in
+  earlier checkpoints.
 
 ## Conventions
 
