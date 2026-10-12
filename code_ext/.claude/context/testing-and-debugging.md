@@ -63,15 +63,22 @@ passed one pattern each, because ExTester adds the matches of one
 pattern in no set order (`globSync(...).reverse()`). Arguments naming no
 suite go to `extest`; `UI_TEST_GLOB` runs its files as one run without
 the setup and cleanup. A new test file goes into a suite's `files`.
-A suite is stopped after `UI_TEST_SUITE_MINUTES` (default 20): ExTester
+A suite is stopped after `UI_TEST_SUITE_MINUTES` (default 20; a value
+that is not a positive number ends the run before it starts): ExTester
 never exits when ChromeDriver fails to start, which it does when its
 port is taken between being picked and bound (`bind() failed: Address
 already in use` in `.vscode-test/extest/chromedriver.log`, "Server
 terminated early with status 1" in the run) - seen 2026-10-12, it held
 the whole run. ExTester runs in a process group of its own, killed as a
 whole - ExTester, its VS Code and its ChromeDriver - when the time is up
-or the run is interrupted (`runGroup`; Ctrl-C does not reach a detached
-group by itself, so the runner forwards it).
+or the run is interrupted (`runGroup`). Neither Ctrl-C nor a closed
+terminal nor a task's SIGTERM reaches a detached group, so the runner
+handles SIGINT, SIGHUP and SIGTERM for the whole run: each kills the
+running suite's group, the suites after it are not started, and the
+runner exits with 128 plus the signal number after cleaning up. The
+handlers stay installed, so a second Ctrl-C cannot kill the runner
+before its cleanup, and an `exit` hook kills the group should the
+runner end anyway. A spawn that fails is reported with its error.
 
 - `ui-test/run.ts` builds a temporary work dir per suite, which is
   removed at the end, also after a failure. Sandboxes left running are

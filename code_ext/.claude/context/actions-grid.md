@@ -32,7 +32,11 @@ What is *not* there is deliberate:
   they are quieter and smaller than it (`0.9em`, and `0.85em` for
   Conn), and `vertAlign: "top"` keeps them level with the first line of
   a message that may be taller than they are. **Every cell is aligned
-  at the top** (the user's rule, 2026-10-12; they were centred before).
+  at the top** (the user's rule, 2026-10-12; they were centred before),
+  through `columnDefaults: { vertAlign: "top" }` alone: Tabulator then
+  makes every cell, the message cell included, an inline flex box
+  aligned at the start, so the stylesheet sets neither `display` nor
+  `align-items` on the cells.
 - **Time holds both the start and the duration**, as
   `20:44:13.431 (3ms)`: the statement's own time, or the whole run's on
   its own row. One column of the pair would be dead space on every row
@@ -100,14 +104,15 @@ the 1px row border crosses it. The empty element Tabulator puts in front of a ch
 (`.tabulator-data-tree-branch-empty`) carries the indent, **given no
 width**: Tabulator's margin for it adds a width it measures before the
 row is in the document, so with none the margin is exactly
-`level x dataTreeChildIndent` (27). The guides are one rule for every
-level: a line at 13px, under the top-level twistie, and a
-`repeating-linear-gradient` every 27px from 45, as wide as
-`--treeLevel - 1` steps (`--treeLevel` set per `tabulator-tree-level-N`
-class, 1 to 3 - the tree is at most three levels deep). The positions
-follow from the cell's 5px padding, the 16px twistie and the 27px
-indent, worked out in the comment above the rules; change one and the
-rest move with it there.
+`level x dataTreeChildIndent` (`CHILD_INDENT`, 27). The indent is set
+in that one place: the host element passes it to the stylesheet as
+`--actionsTreeIndent`, and every guide position is derived from it. The
+guides are one rule for every level: a line at 13px, under the
+top-level twistie, and a `repeating-linear-gradient` every indent from
+18px + indent, as wide as `--treeLevel - 1` indents (`--treeLevel` set
+per `tabulator-tree-level-N` class, 1 to 3 - the tree is at most three
+levels deep). The positions follow from the cell's 5px padding, the
+16px twistie and the indent, worked out in the comment above the rules.
 
 ## One row per run, opened to see its statements
 
@@ -160,10 +165,10 @@ row grows to hold it - Tabulator sizes a row to its tallest cell, so
 nothing more than the wrap is needed. The marker is pulled to the top
 of the block (`align-items: flex-start` on `.actionMessageCell`, as on
 every row now) to stay in the column of markers, and Time and
-Information are top-aligned with it through their `vertAlign: "top"`:
-Tabulator writes `align-items` as an **inline** style for a column with
-a `vertAlign`, which no rule in the stylesheet can outrank, so it has
-to be set there.
+Information are top-aligned with it through the column default
+`vertAlign: "top"`: Tabulator writes `display` and `align-items` as an
+**inline** style for a column with a `vertAlign`, which no rule in the
+stylesheet can outrank, so they are set there and nowhere else.
 
 **A row marked `multiline` is shown the same way** (2026-10-10): its
 message is a block of lines, shown in full, the row as tall as it needs.
