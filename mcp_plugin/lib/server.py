@@ -668,36 +668,6 @@ def parse_trusted_proxies(trusted_proxies) -> list:
     return networks
 
 
-def _is_in_networks(address, networks) -> bool:
-    """Returns whether an IP address is in one of the given networks.
-
-    An IPv4-mapped IPv6 address is the IPv4 address it maps, and a loopback
-    address matches a loopback network of either IP version - the same host,
-    as :func:`mcp_plugin.lib.general.normalize_client_address` has it.
-
-    Args:
-        address: An ``ipaddress`` address.
-        networks (list): ``ipaddress`` networks.
-
-    Returns:
-        True if the address is in one of the networks.
-    """
-    mapped = getattr(address, "ipv4_mapped", None)
-    if mapped is not None:
-        address = mapped
-
-    candidates = [address]
-    if address.is_loopback:
-        candidates += [ipaddress.ip_address("127.0.0.1"), ipaddress.ip_address("::1")]
-
-    return any(
-        candidate in network
-        for network in networks
-        for candidate in candidates
-        if candidate.version == network.version
-    )
-
-
 class TrustedProxyMiddleware:
     """ASGI middleware taking the client address from trusted proxies' headers.
 
@@ -733,6 +703,20 @@ class TrustedProxyMiddleware:
         self.app = app
         self.networks = list(networks)
 
+    def trusted(self, address) -> bool:
+        """Returns whether an address is one of the trusted proxies.
+
+        The same matching as ``--allowedClientNetworks``
+        (:func:`mcp_plugin.lib.oauth_config.address_allowed`): an IPv4-mapped
+        address is the IPv4 address it maps, and loopback matches a loopback
+        network of either IP version. Unlike there, no networks trust nobody.
+        """
+        from mcp_plugin.lib import oauth_config
+
+        return bool(self.networks) and oauth_config.address_allowed(
+            general.normalize_client_address(str(address)), self.networks
+        )
+
     def client_address(self, scope):
         """Returns the client address a request was forwarded for.
 
@@ -748,7 +732,7 @@ class TrustedProxyMiddleware:
             peer = ipaddress.ip_address(peer)
         except ValueError:
             return None
-        if not _is_in_networks(peer, self.networks):
+        if not self.trusted(peer):
             return None
 
         values = [
@@ -766,7 +750,7 @@ class TrustedProxyMiddleware:
                 client = ipaddress.ip_address(entry)
             except ValueError:
                 return None
-            if not _is_in_networks(client, self.networks):
+            if not self.trusted(client):
                 break
 
         # The first address that is not a trusted proxy or, when every hop is

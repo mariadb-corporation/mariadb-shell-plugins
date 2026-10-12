@@ -79,6 +79,19 @@ def _client_of(peer, *values, **keywords):
     return _forwarded(peer, *values, **keywords)[0]["client"][0]
 
 
+async def _status(app, peer, forwarded_for, path="/mcp", headers=()):
+    """Sends an HTTP request through an ASGI app; returns the status it answers."""
+    sent = []
+
+    async def send(message):
+        sent.append(message)
+
+    await app({"type": "http", "path": path, "client": (peer, 40000),
+               "headers": [(b"x-forwarded-for", forwarded_for.encode()), *headers]},
+              None, send)
+    return sent[0]["status"]
+
+
 def test_an_untrusted_peer_cannot_forge_its_address():
     """The header of a request that did not come from a trusted proxy is ignored."""
     seen, original = _forwarded("198.51.100.9", "198.51.100.66")
@@ -303,18 +316,9 @@ def test_the_throttles_count_each_client_behind_the_proxy_on_its_own():
     limit = auth.AuthorizeRateLimit(throttle, max_requests=2)
     app = server.TrustedProxyMiddleware(limit, server.parse_trusted_proxies(PROXY_NETWORK))
 
-    async def status(path, forwarded_for):
-        sent = []
-
-        async def send(message):
-            sent.append(message)
-
-        headers = [(b"x-forwarded-for", forwarded_for.encode())]
-        if path == "/mcp":
-            headers.append((b"authorization", b"Bearer not-a-key"))
-        await app({"type": "http", "path": path, "client": (PROXY, 40000),
-                   "headers": headers}, None, send)
-        return sent[0]["status"]
+    def status(path, forwarded_for):
+        token = [(b"authorization", b"Bearer not-a-key")] if path == "/mcp" else []
+        return _status(app, PROXY, forwarded_for, path, token)
 
     async def scenario():
         assert [await status("/mcp", CLIENT) for _ in range(3)] == [401, 401, 429]
@@ -343,22 +347,11 @@ def test_the_allowed_client_networks_see_the_forwarded_address():
         server.parse_trusted_proxies(PROXY_NETWORK),
     )
 
-    async def status(peer, forwarded_for):
-        sent = []
-
-        async def send(message):
-            sent.append(message)
-
-        await app({"type": "http", "path": "/mcp", "client": (peer, 40000),
-                   "headers": [(b"x-forwarded-for", forwarded_for.encode())]},
-                  None, send)
-        return sent[0]["status"]
-
     async def scenario():
-        assert await status(PROXY, CLIENT) == 200
-        assert await status(PROXY, "198.51.100.9") == 403
+        assert await _status(app, PROXY, CLIENT) == 200
+        assert await _status(app, PROXY, "198.51.100.9") == 403
         # Claiming an allowed address from anywhere but the proxy gets nowhere.
-        assert await status("198.51.100.9", CLIENT) == 403
+        assert await _status(app, "198.51.100.9", CLIENT) == 403
 
     asyncio.run(scenario())
 
@@ -384,19 +377,15 @@ def test_the_command_line_takes_the_option(stored_connections):
 
     asyncio.run(_run())
 
-    for options, expected in (
-        (["--trusted-proxies=::/0"], "cannot trust every address"),
-        (["--trusted-proxies=proxy-host"], "proxy-host"),
-        (["--transport=stdio", f"--trusted-proxies={PROXY_NETWORK}"],
-         "only applies to --transport"),
-    ):
-        completed = subprocess.run(
-            [helpers.shell_binary(), "--quiet-start=2", "--", "mcp", "start-server",
-             f"--port={helpers.find_free_port()}", *options],
-            capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
-        )
-        assert completed.returncode != 0, options
-        assert expected in completed.stdout + completed.stderr, options
+    # One refusal proves the CLI passes the option's errors on; what is refused
+    # is covered in-process above.
+    completed = subprocess.run(
+        [helpers.shell_binary(), "--quiet-start=2", "--", "mcp", "start-server",
+         f"--port={helpers.find_free_port()}", "--trusted-proxies=::/0"],
+        capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
+    )
+    assert completed.returncode != 0
+    assert "cannot trust every address" in completed.stdout + completed.stderr
 
 
 def test_a_server_behind_a_trusted_proxy_binds_connections_to_the_client(sandbox):
