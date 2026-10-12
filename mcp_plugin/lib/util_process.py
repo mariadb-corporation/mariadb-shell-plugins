@@ -38,6 +38,7 @@ and the server reports it, and resumes a load that can be resumed.
 
 import atexit
 import collections
+import functools
 import json
 import os
 import re
@@ -92,6 +93,13 @@ _COMMANDS = {
 # attribute of their target: the mapper takes them only with the name of the
 # parameter in front (`util copy-schemas --help` lists them).
 _COPY_AMBIGUOUS = ("schema",)
+
+# What an option name may look like. The mapper splits a named argument at
+# its first ':' or '=', so a name holding one would write another option.
+_OPTION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+
+# The error the shell gives a name that is no connection attribute.
+_NOT_A_CONNECTION_ATTRIBUTE = "Invalid values in connection options"
 
 # What the mapper unescapes in a string it is given: a string holding one of
 # these would reach the utility changed.
@@ -232,6 +240,77 @@ def _named(name: str, value) -> Optional[str]:
     return f"--{name}:json={json.dumps(value)}"
 
 
+def _cli_name(name: str) -> str:
+    """An option name as the mapper looks it up.
+
+    The mapper's ``from_camel_case_to_dashes`` (``utils_general.cc``):
+    ``sslMode``, ``ssl_mode`` and ``ssl-mode`` are all ``ssl-mode``.
+    """
+    upper_count = 0
+    skip_underscore = True
+    converted = []
+    for character in name:
+        if character.isupper():
+            upper_count += 1
+            if not skip_underscore:
+                converted.append("_")
+            skip_underscore = False
+            converted.append(character.lower())
+        else:
+            skip_underscore = character in "_-"
+            if skip_underscore:
+                upper_count += 1
+            converted.append(character)
+
+    result = name if upper_count == len(name) else "".join(converted)
+    return result.replace("_", "-")
+
+
+@functools.lru_cache(maxsize=None)
+def _is_connection_attribute(cli_name: str) -> bool:
+    """Whether the shell takes a name as an attribute of a connection.
+
+    Asked of the shell itself, so that the answer follows its release: a name
+    that is no attribute is refused as an invalid connection option. A value
+    the attribute does not accept, or any other answer, counts as an
+    attribute, so that a doubt refuses the option rather than lets it pass.
+    """
+    import mysqlsh
+
+    try:
+        mysqlsh.globals.shell.unparse_uri({"host": "localhost", cli_name: "1"})
+    except Exception as error:  # noqa: BLE001 - the answer is in the error
+        return _NOT_A_CONNECTION_ATTRIBUTE not in str(error)
+
+    return True
+
+
+def _option_argument(name: str, value, copy: bool) -> Optional[str]:
+    """A client's option, refused where it would reach anything else.
+
+    The mapper routes a named argument by its name alone. For a copy, every
+    connection attribute is also a name of the target's connection data, and
+    the last one given wins: ``{"host": ...}`` in the options would send the
+    copy, and the target's stored password, to another server. So a copy
+    takes no option that is a connection attribute, except the one name the
+    mapper knows to be both (see ``_COPY_AMBIGUOUS``).
+    """
+    if not isinstance(name, str) or not _OPTION_NAME.match(name):
+        raise tool_error(f"'{name}' is not the name of an option.")
+
+    cli_name = _cli_name(name)
+    if copy and _is_connection_attribute(cli_name):
+        if cli_name not in _COPY_AMBIGUOUS:
+            raise tool_error(
+                f"The option '{name}' names a connection attribute. The target "
+                "of a copy is the connection given in target_connection_id, "
+                "and nothing in the options can change it."
+            )
+        name = f"options-{cli_name}"
+
+    return _named(name, value)
+
+
 def _target_arguments(target: Optional[dict]) -> list:
     """A copy's target as connection attributes, without its password."""
     if target is None:
@@ -283,9 +362,7 @@ def build_command(function: str, args: list, options: dict, target: Optional[dic
 
     copy = "target" in kinds
     for name, value in options.items():
-        if copy and name in _COPY_AMBIGUOUS:
-            name = f"options-{name}"
-        argument = _named(name, value)
+        argument = _option_argument(name, value, copy)
         if argument:
             arguments.append(argument)
 
