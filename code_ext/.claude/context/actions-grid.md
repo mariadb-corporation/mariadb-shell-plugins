@@ -96,15 +96,18 @@ style: one straight 1px line per ancestor level, the whole height of
 the row, under that ancestor's twistie, as background layers of the
 Actions cell per `tabulator-tree-level-N` (levels 1-3), in
 `--vscode-tree-indentGuidesStroke`. Adjacent rows join into one line;
-the 1px row border crosses it. The empty 7px element Tabulator puts in
-front of a child row (`.tabulator-data-tree-branch-empty`) still
-carries the indent, but at a margin set per level with `!important`
-over the inline one Tabulator computes - that one adds a width it
-measures before the row is in the document, so it can come out
-smaller. The resulting positions (content at 5 for a top-level row, 37,
-64 and 91 below it; guides at 13, 45 and 72) are worked out in the
-comment above those rules; change the cell padding, the twistie or
-the indent and they move together.
+the 1px row border crosses it. The empty element Tabulator puts in front of a child row
+(`.tabulator-data-tree-branch-empty`) carries the indent, **given no
+width**: Tabulator's margin for it adds a width it measures before the
+row is in the document, so with none the margin is exactly
+`level x dataTreeChildIndent` (27). The guides are one rule for every
+level: a line at 13px, under the top-level twistie, and a
+`repeating-linear-gradient` every 27px from 45, as wide as
+`--treeLevel - 1` steps (`--treeLevel` set per `tabulator-tree-level-N`
+class, 1 to 3 - the tree is at most three levels deep). The positions
+follow from the cell's 5px padding, the 16px twistie and the 27px
+indent, worked out in the comment above the rules; change one and the
+rest move with it there.
 
 ## One row per run, opened to see its statements
 

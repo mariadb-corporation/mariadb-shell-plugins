@@ -93,13 +93,12 @@ const COLLAPSE_ELEMENT =
     "<span class=\"treeToggle codicon codicon-chevron-down\"></span>";
 
 /**
- * How far a statement is indented under its run, in pixels: what
- * Tabulator is told. The indent actually drawn, and the guide lines with
- * it, are set per level in the stylesheet (`tabulator-tree-level-N`),
- * because Tabulator works its own out from a width it measures before
- * the row is on screen - see styles.css.
+ * How far each level of the tree is indented under the one above, in
+ * pixels. With the element Tabulator puts in front of a child row given
+ * no width (styles.css), a level-N row is indented exactly N times this;
+ * the indent guides drawn there assume 27.
  */
-const CHILD_INDENT = 20;
+const CHILD_INDENT = 27;
 
 /**
  * The room a run's twistie takes, which a row that has neither twistie
@@ -401,7 +400,6 @@ export const buildActionColumns = (
             title: "Time",
             field: "time",
             width: 152,
-            vertAlign: "top",
             headerSort: false,
             cssClass: "actionTime",
             headerTooltip:
@@ -415,7 +413,6 @@ export const buildActionColumns = (
             title: "Information",
             field: "statement",
             width: 260,
-            vertAlign: "top",
             headerSort: false,
             cssClass: "actionInformation",
             headerTooltip:
@@ -431,8 +428,7 @@ export const buildActionColumns = (
                 title: "Conn",
                 field: "connectionLabel",
                 width: 76,
-                vertAlign: "top",
-                headerSort: false,
+                    headerSort: false,
                 cssClass: "actionConnection",
                 headerTooltip:
                     "Which connection open on this URI the row is from",
@@ -653,6 +649,9 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             // the marker, then what happened.
             dataTreeElementColumn: "message",
             dataTreeChildIndent: CHILD_INDENT,
+            // Every cell at the top: a message that wraps keeps its
+            // marker, Time and Information level with its first line.
+            columnDefaults: { vertAlign: "top" },
             // Not Tabulator's branch: a fixed little L per row, placed
             // with a negative margin, that knows neither the row's
             // height nor its siblings. The stylesheet draws VS Code's
