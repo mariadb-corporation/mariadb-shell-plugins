@@ -16,7 +16,7 @@
 -->
 <#-- The page frame of every page of this theme: the base theme's template with
      its scripts and hooks kept as they are, laid out like the MCP server's own
-     sign-in page (seal, welcome header, card, footer). -->
+     sign-in page (logo, welcome header, card, footer). -->
 <#import "theme-resources.ftl" as themeResourceTags>
 <#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
 <!DOCTYPE html>
@@ -86,7 +86,7 @@
 
 <body data-page-id="login-${pageId}">
 <div id="root">
-    <div class="welcomeLogo"><#include "seal.ftl"></div>
+    <div class="welcomeLogo"><#include "logo.ftl"></div>
     <div class="welcomeText">
         <h2>${msg("mcpWelcomeTitle")}</h2>
         <p>${msg("mcpWelcomeText")}</p>

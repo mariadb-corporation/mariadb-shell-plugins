@@ -1,6 +1,6 @@
 # Keycloak Login Theme for the MariaDB MCP Server
 
-`mariadb-mcp` is a Keycloak login theme that gives the sign-in pages of a realm the look of the MCP server's own sign-in page: the MariaDB seal, the "MariaDB MCP Server" header, the joined user name and password fields with the round "next" button, and the light and dark color schemes. Users who sign in to a [Keycloak-mode](../README.md#keycloak) MCP server then see the same page as with the built-in authorization server.
+`mariadb-mcp` is a Keycloak login theme that gives the sign-in pages of a realm the look of the MCP server's own sign-in page: the MariaDB logo, the "MariaDB MCP Server" header, the joined user name and password fields with the round "next" button, and the light and dark color schemes. Users who sign in to a [Keycloak-mode](../README.md#keycloak) MCP server then see the same page as with the built-in authorization server.
 
 The theme changes only how the pages look. It works with any realm, including one prepared with `mcp setup-keycloak-realm`, and with identity providers such as Google or Facebook, whose buttons appear below the fields.
 
@@ -9,9 +9,9 @@ The theme changes only how the pages look. It works with any realm, including on
 | File | Purpose |
 | --- | --- |
 | `mariadb-mcp/login/theme.properties` | Declares the theme. It extends Keycloak's `base` theme. |
-| `mariadb-mcp/login/template.ftl` | The page frame of every login page: seal, header, card, footer. It keeps all scripts of the base template. |
+| `mariadb-mcp/login/template.ftl` | The page frame of every login page: logo, header, card, footer. It keeps all scripts of the base template. |
 | `mariadb-mcp/login/login.ftl` | The sign-in page. |
-| `mariadb-mcp/login/seal.ftl` | The MariaDB seal, inline so that the stylesheet can color it. |
+| `mariadb-mcp/login/logo.ftl` | The official MariaDB logo, inline so that the stylesheet can color it: the logo's blue in the light scheme, white in the dark one. |
 | `mariadb-mcp/login/resources/css/mariadb-mcp.css` | The MCP server's sign-in page stylesheet, followed by styles for Keycloak's other login pages. |
 | `mariadb-mcp/login/messages/messages_en.properties` | The header, welcome, and footer texts. |
 
@@ -71,4 +71,4 @@ Browsers also cache the stylesheet. Check a change in a private window.
 
 ## Keeping It in Line with the MCP Server's Page
 
-The first part of `mariadb-mcp.css` and the seal in `seal.ftl` are copies of `_PAGE_STYLE` and of `lib/assets/mariadb-seal.svg`, as used by the MCP server's own sign-in page in `lib/oauth_builtin.py`. `tests/unit/test_keycloak_theme.py` fails when they drift apart. After changing the server's page, copy the changes over.
+The first part of `mariadb-mcp.css` and the logo in `logo.ftl` are copies of `_PAGE_STYLE` and of `lib/assets/mariadb-logo-vertical.svg`, as used by the MCP server's own sign-in page in `lib/oauth_builtin.py`. `tests/unit/test_keycloak_theme.py` fails when they drift apart. After changing the server's page, copy the changes over.

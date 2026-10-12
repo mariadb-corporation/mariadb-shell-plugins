@@ -1906,8 +1906,8 @@ def test_the_sign_in_checkboxes_are_ordinary_checkboxes(tenant_config):
     assert page.count('type="checkbox"') == 1
 
 
-def test_the_sign_in_page_shows_the_seal_inline(tenant_config):
-    """The seal is inline SVG, and carries no style attribute the CSP would block."""
+def test_the_sign_in_page_shows_the_logo_inline(tenant_config):
+    """The logo is inline SVG, with no style the CSP would block or that would colour it."""
     from starlette.responses import HTMLResponse
 
     provider = _provider()
@@ -1919,5 +1919,7 @@ def test_the_sign_in_page_shows_the_seal_inline(tenant_config):
     assert '<svg role="img" aria-label="MariaDB"' in page
     assert "<?xml" not in page and "<!DOCTYPE svg" not in page
     assert " style=" not in page
+    assert page.count("<style") == 1 and "cls-1" not in page and "<title>MDB" not in page
+    assert ".welcomeLogo path{fill:var(--logo-color)}" in page
     assert "img-src" not in response.headers["Content-Security-Policy"]
     assert '<div class="mrsLoginError" role="alert"><p>No.</p></div>' in page

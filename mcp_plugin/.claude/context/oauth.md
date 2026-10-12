@@ -24,8 +24,10 @@ opt-in), 93%**; **585 passed, 3 skipped** after the Arcade round below; **584 pa
 - **Sign-in page restyled** after mrs_plugin's
   `default_static_content/index.html` (colours, welcome header, joined fields, round next
   button, error bubble, separator, footer), without its script (the CSP allows none).
-  The MariaDB seal is `lib/assets/mariadb-seal.svg`, inlined with its `style`
-  attributes stripped (CSP: nonce'd `<style>` only). The button's chevron is an inline
+  The logo is the official vertical MariaDB logo, `lib/assets/mariadb-logo-vertical.svg`
+  (white variant, since 2026-10-12; before, the seal alone), inlined with its own `<style>`,
+  `<title>`, class and style attributes stripped (CSP: nonce'd `<style>` only) and coloured
+  by `--logo-color` (`#003545` light, `#fff` dark). The button's chevron is an inline
   SVG (a CSS-border chevron became a diamond in a restyled Firefox), the button has
   `appearance:none` (Safari), and the inputs `flex:1 1 250px` so the button sits at the
   field's end. Commits `0ec99ee9`, `8f38d498`. The user's screenshot is in the docs.

@@ -1529,10 +1529,10 @@ _SCOPE_DESCRIPTIONS = {
 # welcome header, same joined fields with the round "next" button.
 _PAGE_STYLE = """
 :root{--body-background:hsl(240,5%,91%);--body-text-color:hsl(240,5%,12%);
---icon-color:hsl(200,65%,40%);--textLink-foreground:hsl(200,65%,34%);
+--logo-color:#003545;--textLink-foreground:hsl(200,65%,34%);
 --primary-text-color:#333;--secondary-text-color:#adadad;--focus-color:hsl(200,65%,70%);
 --error-color:hsl(0,100%,70%);--error-text-color:#500}
-@media (prefers-color-scheme:dark){:root{--body-background:hsl(0,0%,17%);
+@media (prefers-color-scheme:dark){:root{--body-background:hsl(0,0%,17%);--logo-color:#fff;
 --body-text-color:hsl(0,0%,75%);--textLink-foreground:hsl(200,65%,54%);
 --primary-text-color:#c4c4c4;--secondary-text-color:#595959;--focus-color:hsl(200,65%,30%);
 --error-color:hsl(0,100%,20%);--error-text-color:#e00}}
@@ -1545,9 +1545,9 @@ h2{margin:20px 0;font-weight:100;font-size:33px}
 p{line-height:19px;font-weight:200;font-size:15px}
 #root{display:flex;box-sizing:border-box;min-height:100%;padding:0 16px 40px;
 flex-direction:column;align-items:center;justify-content:center;position:relative}
-.welcomeLogo{margin-top:20px;width:160px;height:104px;min-height:104px}
+.welcomeLogo{margin-top:20px;width:160px;height:130px;min-height:130px}
 .welcomeLogo svg{width:100%;height:100%}
-.welcomeLogo path{fill:var(--icon-color)}
+.welcomeLogo path{fill:var(--logo-color)}
 .welcomeText{display:flex;flex-direction:column;align-items:center;justify-content:center}
 .welcomeText p{text-align:center;max-width:400px}
 .welcomeSpacer{height:80px}
@@ -1600,20 +1600,28 @@ rgba(200,200,200,0));width:400px;max-width:100%;height:1px;margin-top:20px}
 
 
 @functools.lru_cache(maxsize=None)
-def _seal_svg() -> str:
-    """Returns the MariaDB seal as inline SVG, coloured by the page's CSS.
+def _logo_svg() -> str:
+    """Returns the MariaDB logo as inline SVG, coloured by the page's CSS.
 
-    Inline because the page's CSP loads nothing; its style attributes are
-    removed because the CSP allows only the nonce'd style element. Read once.
+    The official vertical logo (the seal above the MariaDB wordmark), in its
+    white variant; the page colours it with ``--logo-color``, the logo's blue
+    in the light scheme and white in the dark one. Inline because the page's
+    CSP loads nothing. Its own ``<style>`` element, its ``<title>`` (the
+    ``aria-label`` names it instead), and its style, class and id attributes
+    are removed: the CSP allows only the nonce'd style element, and the
+    logo's own fill would otherwise win over the page's. Read once.
     """
     import os
     import re
 
-    path = os.path.join(os.path.dirname(__file__), "assets", "mariadb-seal.svg")
+    path = os.path.join(os.path.dirname(__file__), "assets", "mariadb-logo-vertical.svg")
     with open(path, encoding="utf-8") as file:
         svg = file.read()
     svg = svg[svg.index("<svg"):]
-    svg = re.sub(r'\s(style|width|height|xml:space|xmlns:\w+|serif:\w+)="[^"]*"', "", svg)
+    svg = re.sub(r"\s*<(defs|title)>.*?</\1>", "", svg, flags=re.S)
+    svg = re.sub(
+        r'\s(style|class|id|data-name|width|height|xml:space|xmlns:\w+|serif:\w+)="[^"]*"', "", svg
+    )
 
     return svg.replace("<svg", '<svg role="img" aria-label="MariaDB"', 1)
 
@@ -1636,7 +1644,7 @@ def _page(response_class, body: str, status: int = 200, raw: bool = False,
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<title>MariaDB MCP Server</title><style nonce="{nonce}">{_PAGE_STYLE}</style>'
-        f'</head><body><div id="root"><div class="welcomeLogo">{_seal_svg()}</div>'
+        f'</head><body><div id="root"><div class="welcomeLogo">{_logo_svg()}</div>'
         '<div class="welcomeText"><h2>MariaDB MCP Server</h2>'
         "<p>Welcome to the MariaDB MCP Server.</p></div>"
         f"{content}"

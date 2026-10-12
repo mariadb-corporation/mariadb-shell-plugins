@@ -16,7 +16,7 @@
 """The Keycloak login theme in ``keycloak-theme/``.
 
 The theme gives a Keycloak realm the look of the built-in authorization
-server's sign-in page by carrying copies of that page's stylesheet and seal.
+server's sign-in page by carrying copies of that page's stylesheet and logo.
 Nothing builds the theme from them, so these checks are what keeps the copies
 from drifting when the server's page changes.
 """
@@ -44,11 +44,11 @@ def test_the_stylesheet_carries_the_sign_in_page_style():
     assert oauth_builtin._PAGE_STYLE in _read("resources", "css", "mariadb-mcp.css")
 
 
-def test_the_seal_is_the_one_the_sign_in_page_shows():
-    seal = _read("seal.ftl")
+def test_the_logo_is_the_one_the_sign_in_page_shows():
+    logo = _read("logo.ftl")
 
     # Inside noparse, so that FreeMarker never reads the SVG as a template.
-    assert f"<#noparse>{oauth_builtin._seal_svg().strip()}</#noparse>" in seal
+    assert f"<#noparse>{oauth_builtin._logo_svg().strip()}</#noparse>" in logo
 
 
 def test_the_theme_extends_the_base_theme_with_its_own_stylesheet():

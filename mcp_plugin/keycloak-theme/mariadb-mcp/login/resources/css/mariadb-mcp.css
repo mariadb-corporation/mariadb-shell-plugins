@@ -17,10 +17,10 @@
 
 /* The MCP server's own sign-in page (mcp_plugin/lib/oauth_builtin.py, _PAGE_STYLE) */
 :root{--body-background:hsl(240,5%,91%);--body-text-color:hsl(240,5%,12%);
---icon-color:hsl(200,65%,40%);--textLink-foreground:hsl(200,65%,34%);
+--logo-color:#003545;--textLink-foreground:hsl(200,65%,34%);
 --primary-text-color:#333;--secondary-text-color:#adadad;--focus-color:hsl(200,65%,70%);
 --error-color:hsl(0,100%,70%);--error-text-color:#500}
-@media (prefers-color-scheme:dark){:root{--body-background:hsl(0,0%,17%);
+@media (prefers-color-scheme:dark){:root{--body-background:hsl(0,0%,17%);--logo-color:#fff;
 --body-text-color:hsl(0,0%,75%);--textLink-foreground:hsl(200,65%,54%);
 --primary-text-color:#c4c4c4;--secondary-text-color:#595959;--focus-color:hsl(200,65%,30%);
 --error-color:hsl(0,100%,20%);--error-text-color:#e00}}
@@ -33,9 +33,9 @@ h2{margin:20px 0;font-weight:100;font-size:33px}
 p{line-height:19px;font-weight:200;font-size:15px}
 #root{display:flex;box-sizing:border-box;min-height:100%;padding:0 16px 40px;
 flex-direction:column;align-items:center;justify-content:center;position:relative}
-.welcomeLogo{margin-top:20px;width:160px;height:104px;min-height:104px}
+.welcomeLogo{margin-top:20px;width:160px;height:130px;min-height:130px}
 .welcomeLogo svg{width:100%;height:100%}
-.welcomeLogo path{fill:var(--icon-color)}
+.welcomeLogo path{fill:var(--logo-color)}
 .welcomeText{display:flex;flex-direction:column;align-items:center;justify-content:center}
 .welcomeText p{text-align:center;max-width:400px}
 .welcomeSpacer{height:80px}
