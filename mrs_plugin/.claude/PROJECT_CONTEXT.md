@@ -13,9 +13,9 @@ project and service dump/load, `load.contentSet`, MRS script analysis, runtime m
 code, audit log, version, see
 [context/plugin-reduction.md](context/plugin-reduction.md)); the Python REST SQL parser is
 gone. The docs, the ANTLR reference grammar and their tools moved to the mariadb-shell repo
-(`docs-ref/content/mariadb-rest-service/`, `modules/mrs/antlr_grammar/`). The plugin also manages the
+(`docs-ref/content/mariadb-rest-service/`, `mysqlshdk/libs/mrs/antlr_grammar/`). The plugin also manages the
 metadata schema (`mariadb_rest_service`, an MSM project maintained in mariadb-shell
-`modules/mrs/db_schema/` since 2026-10-09) and generates the
+`mysqlshdk/libs/mrs/db_schema/` since 2026-10-09) and generates the
 client SDKs (`sdk/`). Plugin version `26.9.5`,
 metadata schema `5.0.0` (`lib/general.py` `VERSION`, `DB_VERSION`). Consumed by
 `mcp_plugin` (REST SQL through its `db.*` tools) and bundled into the shell release
@@ -27,8 +27,8 @@ packages with msm_plugin and mcp_plugin.
   (`general`, `services`, `content_sets`, `dump`); `lib/*.py` does the work and holds only
   code those 13 functions reach (cleanup 2026-10-09).
 - **REST SQL has two grammars, kept rule for rule in step**, both in the mariadb-shell repo
-  since 2026-10-09: ANTLR (`modules/mrs/antlr_grammar/MRS{Lexer,Parser}.g4`, docs only) and
-  bison (`modules/mrs/core/mrs_parser.yy`, keywords in `mrs_lexer.h`). A statement change
+  since 2026-10-09: ANTLR (`mysqlshdk/libs/mrs/antlr_grammar/MRS{Lexer,Parser}.g4`, docs only) and
+  bison (`mysqlshdk/libs/mrs/parser.yy`, keywords in `lexer.h`). A statement change
   goes to both, then the GitBook reference page, `npm run docs-ref:mrs-grammar-docs` and
   `docs-ref:mrs-diagrams`, and the shell's `unittest/data/mrs/grammar_test.sql`.
 - **No client files in REST SQL** (2026-10-09): the plugin does all file work
@@ -47,7 +47,7 @@ packages with msm_plugin and mcp_plugin.
   METADATA SCHEMA`). Roles: `core.metadata_role(session, "data_provider")` = prefix +
   `mariadb_rest_service_<role>` + postfix. The schema project (Workbench model, sections,
   releases, `prepare_default_static_content.sh`) is the shell repo's
-  `modules/mrs/db_schema/mariadb_rest_service.msm.project`; this repo's copy was removed.
+  `mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`; this repo's copy was removed.
 - **Ids are UUIDs (5.0.0, 2026-10-08).** Every id/FK column is MariaDB `UUID`,
   single-column PKs `DEFAULT UUID_v7()` (time-ordered, index-friendly), `get_sequence_id()`
   returns `UUID_v7()`. In Python an id is the canonical lower-case hyphenated string;
@@ -189,7 +189,7 @@ packages with msm_plugin and mcp_plugin.
 - `content_sets.py` / `lib/content_sets.py` -> MRS script analysis, `load_content_set`,
   `content_file_statement` (also used by the test fixture)
 - Docs and grammar: mariadb-shell `docs-ref/content/mariadb-rest-service/`,
-  `modules/mrs/antlr_grammar/` (not in this repo any more)
+  `mysqlshdk/libs/mrs/antlr_grammar/` (not in this repo any more)
 - `lib/core.py` -> `ConfigFile` (current service per connection), `MrsDbExec`, id helpers
   (`id_to_uuid`, `convert_ids_to_uuid`, `try_convert_ids_to_uuid`, `NIL_UUID`)
 - `interactive.py` -> resolvers for service/schema/user/role/auth-app queries
