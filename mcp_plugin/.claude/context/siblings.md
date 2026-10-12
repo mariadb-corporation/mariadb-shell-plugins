@@ -91,9 +91,11 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     (2026-10-12).
   - Tests: `msm_plugin/tests/unit/test_run_util.py` (5, fakes for
     `mysqlsh`). The msm suite: 20 pass, backup restore included (2026-10-12).
-    `test_the_lock_is_shared_by_every_plugin` fails against a shell with
-    the built-in MRS module (#71): importing `mrs_plugin.lib.core` raises
-    "An SQL Handler named 'MRS' already exists", not an ImportError.
+    On this branch, `test_the_lock_is_shared_by_every_plugin` fails
+    against a shell with the built-in MRS module (#71): importing main's
+    `mrs_plugin.lib.core` raises "An SQL Handler named 'MRS' already
+    exists", not an ImportError. On #44/#45, which have #41's mrs_plugin,
+    all 23 pass.
   - The utilities still run in the shell's own process here, on whatever
     thread calls `msm.deploy_schema` (an MCP worker thread). #73 added a
     `Mysys_thread_guard` for utilities called from a script's thread,
