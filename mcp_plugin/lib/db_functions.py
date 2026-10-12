@@ -774,6 +774,26 @@ def _open_session(uri: str, kind=None, mcp_user_id=None):
     Returns:
         The open shell session.
     """
+    session = _open_shell_session(uri, _configured_password(uri, kind, mcp_user_id))
+    if mcp_user_id is not None:
+        _apply_default_role(session, mcp_user_id)
+
+    return session
+
+
+def _configured_password(uri: str, kind, mcp_user_id) -> str:
+    """The stored password of a URI that is still a configured connection.
+
+    The check every open of a session makes; see :func:`_open_session`.
+
+    Args:
+        uri (str): The connection URI, as configured.
+        kind: The connection list it belongs to, or None for the MCP list.
+        mcp_user_id: The user whose connection it is, or None.
+
+    Returns:
+        str: The password.
+    """
     kind = config.normalize_connection_kind(kind)
 
     # The list is read from the secret store on each call, so it reflects what
@@ -787,22 +807,20 @@ def _open_session(uri: str, kind=None, mcp_user_id=None):
             "db.connect to open one of them."
         )
 
-    # Read the stored password back and open the session with it.
-    session = _open_shell_session(
-        uri, config.get_connection_password(uri, kind, mcp_user_id)
-    )
-    if mcp_user_id is not None:
-        _apply_default_role(session, mcp_user_id)
+    return config.get_connection_password(uri, kind, mcp_user_id)
 
-    return session
+
+def _with_password(uri: str, password: str) -> dict:
+    """The connection data of a URI, with a password."""
+    connection_data = dict(mysqlsh.globals.shell.parse_uri(uri))
+    connection_data["password"] = password
+
+    return connection_data
 
 
 def _open_shell_session(uri: str, password: str):
     """Opens a session on a URI with a password; independent of the shell's own."""
-    connection_data = mysqlsh.globals.shell.parse_uri(uri)
-    connection_data["password"] = password
-
-    return mysqlsh.globals.shell.open_session(connection_data)
+    return mysqlsh.globals.shell.open_session(_with_password(uri, password))
 
 
 def _open_login_session(uri: str, mcp_user_id: str, grant_id: str):
@@ -1163,15 +1181,7 @@ def connection_credentials(connection_id: str, client) -> tuple:
             "cannot be used by a utility."
         )
 
-    if connection.uri not in config.list_stored_connection_uris(
-        connection.kind, connection.mcp_user_id
-    ):
-        raise tool_error(
-            f"'{connection.uri}' is no longer a configured connection. Use "
-            "db.list_connections to see the configured connections."
-        )
-
-    return connection.uri, config.get_connection_password(
+    return connection.uri, _configured_password(
         connection.uri, connection.kind, connection.mcp_user_id
     )
 
@@ -1190,12 +1200,7 @@ def connection_data(connection_id: str, client) -> dict:
         dict: The connection data, as ``shell.parse_uri`` gives it, plus the
         stored password.
     """
-    uri, password = connection_credentials(connection_id, client)
-
-    data = dict(mysqlsh.globals.shell.parse_uri(uri))
-    data["password"] = password
-
-    return data
+    return _with_password(*connection_credentials(connection_id, client))
 
 
 @contextmanager

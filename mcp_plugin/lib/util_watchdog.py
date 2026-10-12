@@ -54,10 +54,7 @@ GRACE_SECONDS = 30
 def _interrupt(process) -> None:
     """Interrupts the shell as ^C does."""
     try:
-        if os.name == "nt":
-            process.send_signal(signal.CTRL_BREAK_EVENT)
-        else:
-            process.send_signal(signal.SIGINT)
+        process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
     except OSError:
         pass
 

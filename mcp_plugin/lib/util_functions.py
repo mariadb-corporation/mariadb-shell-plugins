@@ -208,7 +208,7 @@ def register_util_tools(server, function_groups=()) -> None:
             options: The options of util.dump_instance, with their camelCase
                 names, e.g. {"threads": 8, "users": false,
                 "excludeSchemas": ["test"]}. session, progressCallback and
-                showProgress are set by the tool.
+                showProgress cannot be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -240,7 +240,7 @@ def register_util_tools(server, function_groups=()) -> None:
                 or be empty.
             options: The options of util.dump_schemas, with their camelCase
                 names, e.g. {"threads": 8, "ddlOnly": true}. session,
-                progressCallback and showProgress are set by the tool.
+                progressCallback and showProgress cannot be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -275,7 +275,7 @@ def register_util_tools(server, function_groups=()) -> None:
                 or be empty.
             options: The options of util.dump_tables, with their camelCase
                 names, e.g. {"where": {"shop.orders": "id > 1000"}}. session,
-                progressCallback and showProgress are set by the tool.
+                progressCallback and showProgress cannot be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -306,7 +306,7 @@ def register_util_tools(server, function_groups=()) -> None:
             output_url: The file to write.
             options: The options of util.export_table, with their camelCase
                 names, e.g. {"dialect": "csv", "where": "id > 10"}. session,
-                progressCallback and showProgress are set by the tool.
+                progressCallback and showProgress cannot be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -339,7 +339,7 @@ def register_util_tools(server, function_groups=()) -> None:
             options: The options of util.load_dump, with their camelCase
                 names, e.g. {"schema": "copy_of_shop", "loadUsers": false,
                 "dropExistingObjects": true}. session, progressCallback and
-                showProgress are set by the tool.
+                showProgress cannot be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -371,7 +371,7 @@ def register_util_tools(server, function_groups=()) -> None:
             options: The options of util.import_table, with their camelCase
                 names, e.g. {"schema": "shop", "table": "orders",
                 "dialect": "csv-unix", "skipRows": 1}. session,
-                progressCallback and showProgress are set by the tool.
+                progressCallback and showProgress cannot be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -403,7 +403,7 @@ def register_util_tools(server, function_groups=()) -> None:
                 target. It must be another server.
             options: The options of util.copy_instance, with their camelCase
                 names, e.g. {"users": false, "threads": 8}. session,
-                progressCallback and showProgress are set by the tool.
+                progressCallback and showProgress cannot be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -437,7 +437,7 @@ def register_util_tools(server, function_groups=()) -> None:
                 target. It must be another server.
             options: The options of util.copy_schemas, with their camelCase
                 names, e.g. {"ddlOnly": true}. session, progressCallback and
-                showProgress are set by the tool.
+                showProgress cannot be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -473,8 +473,8 @@ def register_util_tools(server, function_groups=()) -> None:
                 target. It must be another server.
             options: The options of util.copy_tables, with their camelCase
                 names, e.g. {"schema": "renamed"} to load into another
-                schema. session, progressCallback and showProgress are set by
-                the tool.
+                schema. session, progressCallback and showProgress cannot
+                be given here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
