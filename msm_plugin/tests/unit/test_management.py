@@ -659,6 +659,47 @@ def test_deployment_backup_restores_failed_update(
     assert not os.path.exists(backup_directory)
 
 
+def test_deployment_backup_keeps_the_global_session(
+    sandbox_session, project_path, temp_dir
+):
+    # The backup's dump and load run on the given session, which is the
+    # shell's global session only while they run
+    import mysqlsh
+    import msm_plugin.tests.unit.helpers as helpers
+
+    lib.core.MsmDbExec(
+        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(SCHEMA_NAME)}"
+    ).exec(sandbox_session)
+    released_versions = get_released_versions(schema_project_path=project_path)
+    deploy_schema(
+        schema_project_path=project_path,
+        version="%d.%d.%d" % tuple(released_versions[0]),
+    )
+
+    data = helpers.get_connection_data()
+    other = mysqlsh.globals.shell.open_session(
+        f"{data['user']}:{data['password']}@{data['host']}:{data['port']}"
+    )
+    try:
+        global_session = mysqlsh.globals.shell.get_session()
+        assert other.connection_id != global_session.connection_id
+
+        deploy_schema(
+            schema_project_path=project_path,
+            version="%d.%d.%d" % tuple(released_versions[1]),
+            backup_directory=os.path.join(temp_dir, "backup"),
+            backup=True,
+            session=other,
+        )
+
+        assert (
+            mysqlsh.globals.shell.get_session().connection_id
+            == global_session.connection_id
+        )
+    finally:
+        other.close()
+
+
 def test_deployment_runs_rest_service_section(sandbox_session, temp_dir):
     # Section 180 holds the REST Service definition. Once a project has more
     # than one release, the deployment script is built from the deployment

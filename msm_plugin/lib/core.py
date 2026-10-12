@@ -793,3 +793,65 @@ def execute_msm_sql_script(
 
 def get_uuid_string():
     return str(uuid.uuid4()).replace("-", "")
+
+
+# --- running a shell utility on a given session ----------------------------
+
+# The name under which every plugin of this repository finds the one lock that
+# guards the shell's global session. mrs_plugin uses the same name (its
+# lib/core.py); the plugins do not import each other.
+_GLOBAL_SESSION_LOCK_MODULE = "_mariadb_shell_plugins_global_session"
+
+
+def _global_session_lock():
+    """The process-wide lock around switching the shell's global session.
+
+    The lock lives in a module object of its own in sys.modules, so whichever
+    plugin asks first creates it and every other one finds the same lock.
+
+    Returns:
+        threading.RLock: The lock.
+    """
+    import sys
+    import types
+
+    holder = sys.modules.get(_GLOBAL_SESSION_LOCK_MODULE)
+    if holder is None:
+        created = types.ModuleType(_GLOBAL_SESSION_LOCK_MODULE)
+        created.lock = threading.RLock()
+        # setdefault: of two threads creating it at once, one module wins
+        holder = sys.modules.setdefault(_GLOBAL_SESSION_LOCK_MODULE, created)
+
+    return holder.lock
+
+
+def run_util(session, function: str, *args, options=None):
+    """Runs a shell utility, such as dump_schemas or load_dump, on a session.
+
+    The utilities run on the shell's global session only. It is switched to
+    this one for the call and switched back afterwards, under the lock every
+    plugin of this repository shares.
+
+    Args:
+        session: The session, a shell session or a wrapper with a 'session'.
+        function (str): The util function, e.g. "dump_schemas".
+        *args: Its arguments before the options.
+        options (dict): Its options.
+
+    Returns:
+        What the function returns.
+    """
+    shell_session = (
+        session if "shell.Object" in str(type(session)) else session.session
+    )
+    utility = getattr(mysqlsh.globals.util, function)
+    options = dict(options or {})
+
+    shell = mysqlsh.globals.shell
+    with _global_session_lock():
+        previous = shell.get_session()
+        shell.set_session(shell_session)
+        try:
+            return utility(*args, options)
+        finally:
+            shell.set_session(previous)
