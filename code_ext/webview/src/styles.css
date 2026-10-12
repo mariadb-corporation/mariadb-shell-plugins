@@ -740,28 +740,80 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 /*
- * The guide Tabulator draws from a run down to each of its statements.
- * Its own theme paints it #ddd, which is the tree's one remaining
- * hard coded surface; VS Code's own indent guide colour answers it.
+ * The tree's indent guides, as VS Code draws its own: one straight line
+ * per level a row is nested at, down the whole of the row, under the
+ * twistie of the row it belongs to - so the rows of one run join into a
+ * single line, however tall each of them is.
+ *
+ * Tabulator's own branch element (`dataTreeBranchElement`) is turned
+ * off: a fixed 9px L per row, pulled up with a negative margin, which
+ * knows neither the row's height nor its siblings and came apart on
+ * every row taller than one line. Its stand-in, the empty 7px element
+ * it puts in front of a child row's content, still carries the indent -
+ * but at a margin set here, not the one Tabulator computes, which adds
+ * a width it measures before the row is in the document and so is
+ * sometimes nothing.
+ *
+ * The geometry, from the cell's left edge: a top-level row's content
+ * starts at 5 (the cell's padding), a level-N row's at 17 plus the
+ * element's margin - 37, 64, 91, which is 10 + 27N - and a twistie's
+ * middle is 8px into the content it leads. So the guides of a level-N
+ * row stand at 13, 45 and 72, the twisties of the rows above it (checked
+ * against a screenshot of a run with three statements, 2026-10-12). Each guide is a background layer, so it costs no
+ * element and cannot be caught by the flex layout of the cell.
  */
-.actionsGridHost .tabulator-row .tabulator-cell .tabulator-data-tree-branch {
-    border-left-color: var(--vscode-tree-indentGuidesStroke,
-            var(--vscode-panel-border));
-    border-bottom-color: var(--vscode-tree-indentGuidesStroke,
+.actionsGridHost {
+    --actionsTreeGuide: var(--vscode-tree-indentGuidesStroke,
             var(--vscode-panel-border));
 }
 
 /*
- * It is a flex item of the message cell, so it must be told not to
- * shrink. A flex line shares what it has to give up in proportion to
- * how wide each item wants to be, and a message that does not fit asks
- * for hundreds of pixels beside this one's seven: left to itself the
- * guide all but disappears, and everything after it slides left with
- * it. The same holds for the empty branch of a row with no children.
+ * A flex item of the message cell, so it must be told not to shrink: a
+ * message that does not fit would otherwise take its width from it, and
+ * everything after it would slide left.
  */
-.actionsGridHost .tabulator-cell .tabulator-data-tree-branch,
 .actionsGridHost .tabulator-cell .tabulator-data-tree-branch-empty {
     flex: 0 0 auto;
+    margin-right: 5px;
+}
+
+.actionsGridHost .tabulator-tree-level-1 .tabulator-data-tree-branch-empty {
+    margin-left: 20px !important;
+}
+
+.actionsGridHost .tabulator-tree-level-2 .tabulator-data-tree-branch-empty {
+    margin-left: 47px !important;
+}
+
+.actionsGridHost .tabulator-tree-level-3 .tabulator-data-tree-branch-empty {
+    margin-left: 74px !important;
+}
+
+.actionsGridHost .tabulator-row.tabulator-tree-level-1
+    .tabulator-cell.actionMessage {
+    background:
+        linear-gradient(var(--actionsTreeGuide), var(--actionsTreeGuide))
+            13px 0 / 1px 100% no-repeat;
+}
+
+.actionsGridHost .tabulator-row.tabulator-tree-level-2
+    .tabulator-cell.actionMessage {
+    background:
+        linear-gradient(var(--actionsTreeGuide), var(--actionsTreeGuide))
+            13px 0 / 1px 100% no-repeat,
+        linear-gradient(var(--actionsTreeGuide), var(--actionsTreeGuide))
+            45px 0 / 1px 100% no-repeat;
+}
+
+.actionsGridHost .tabulator-row.tabulator-tree-level-3
+    .tabulator-cell.actionMessage {
+    background:
+        linear-gradient(var(--actionsTreeGuide), var(--actionsTreeGuide))
+            13px 0 / 1px 100% no-repeat,
+        linear-gradient(var(--actionsTreeGuide), var(--actionsTreeGuide))
+            45px 0 / 1px 100% no-repeat,
+        linear-gradient(var(--actionsTreeGuide), var(--actionsTreeGuide))
+            72px 0 / 1px 100% no-repeat;
 }
 
 /* The Problems panel's severity markers, in its colours. */
@@ -861,7 +913,13 @@ button.toolbarMenuItem:hover:not(:disabled) {
  */
 .tabulator .tabulator-cell.actionMessage {
     display: inline-flex;
-    align-items: center;
+    /*
+     * Every cell of the grid is aligned at the top (the user's rule,
+     * 2026-10-12): a message on several lines keeps its marker beside
+     * its first line, in the column every marker lines up in, and Time
+     * and Information (`vertAlign: "top"`) stay level with that line.
+     */
+    align-items: flex-start;
 }
 
 /*
@@ -888,7 +946,7 @@ button.toolbarMenuItem:hover:not(:disabled) {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
 }
 
 .actionMessageCell .markerIcon {
@@ -918,24 +976,6 @@ button.toolbarMenuItem:hover:not(:disabled) {
     overflow: visible;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-}
-
-/*
- * With the message on several lines the marker goes beside the first of
- * them. Centred, it would float halfway down the row and leave the
- * column of markers that every other row lines up in - which is the one
- * thing about this grid that has to hold.
- *
- * Time and Information stay centred against the block, which is not a
- * choice: Tabulator writes `align-items` as an INLINE style for a
- * column with a `vertAlign`, and no rule here can outrank that. It
- * reads well enough - they are one fact about the whole row - and the
- * alternative is dropping `vertAlign`, which every single-line row
- * needs.
- */
-.tabulator .tabulator-row.fullRow .actionMessageCell,
-.tabulator .tabulator-row.fullRow .tabulator-cell.actionMessage {
-    align-items: flex-start;
 }
 
 .actionInformationContent {

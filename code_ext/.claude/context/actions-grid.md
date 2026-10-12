@@ -23,15 +23,16 @@ a margin on top overflows its parent by exactly that much.
 What is *not* there is deliberate:
 
 - **There is no column of icons.** Everything a row leads with is in
-  the Actions cell: the twistie of a run or the branch of a statement,
+  the Actions cell: the twistie of a run or the indent of a statement,
   which Tabulator puts in front of the cell's own content, then the
   severity marker, then what happened. A column of its own for the
   marker cost width twice over - its own, and the gap between it and
   the message it belongs to.
 - **Time, Information and Conn are the detail beside the message**, so
   they are quieter and smaller than it (`0.9em`, and `0.85em` for
-  Conn), and `vertAlign: "middle"` centres them against a message that
-  may be taller than they are.
+  Conn), and `vertAlign: "top"` keeps them level with the first line of
+  a message that may be taller than they are. **Every cell is aligned
+  at the top** (the user's rule, 2026-10-12; they were centred before).
 - **Time holds both the start and the duration**, as
   `20:44:13.431 (3ms)`: the statement's own time, or the whole run's on
   its own row. One column of the pair would be dead space on every row
@@ -73,17 +74,37 @@ margins rather than as a flex `gap` for the same reason: a gap would
 also fall between that spacer and the marker after it.
 
 Everything in that cell except the message itself is `flex: 0 0 auto`,
-Tabulator's branch element included. A flex line shares what it has to
-give up in proportion to how wide each item wants to be, so a message
-too long for its cell asks for hundreds of pixels beside the branch's
-seven: left to shrink, the guide all but disappears and the marker and
-the message slide left with it, out of the column.
+the element Tabulator puts in front of a child row included. A flex
+line shares what it has to give up in proportion to how wide each item
+wants to be, so a message too long for its cell asks for hundreds of
+pixels beside that element's seven: left to shrink, it all but
+disappears and the marker and the message slide left with it, out of
+the column.
 
-A **statement** is meant to miss it: `dataTreeChildIndent` is **20**,
-and Tabulator adds its branch element's 7px of width and 5px of margin,
-which puts a statement's marker at 32 - one clear step in from its
-run's 16. That step, and the twistie above it, are what say the row
-belongs to the run.
+A **statement** is meant to miss it: it sits one clear step in from
+its run, and that step, the twistie above it and the guide beside it
+are what say the row belongs to the run.
+
+**The indent guides are drawn by the stylesheet, not by Tabulator**
+(2026-10-12). Tabulator's `dataTreeBranchElement` - on by default - is
+only a fixed 9px L per row, pulled up with a negative margin: it knows
+neither the row's height nor its siblings, so on a row taller than one
+line, or a top-aligned one, it came apart (the user's screenshots).
+Tabulator has nothing better built in, so it is off
+(`dataTreeBranchElement: false`) and `styles.css` draws VS Code's own
+style: one straight 1px line per ancestor level, the whole height of
+the row, under that ancestor's twistie, as background layers of the
+Actions cell per `tabulator-tree-level-N` (levels 1-3), in
+`--vscode-tree-indentGuidesStroke`. Adjacent rows join into one line;
+the 1px row border crosses it. The empty 7px element Tabulator puts in
+front of a child row (`.tabulator-data-tree-branch-empty`) still
+carries the indent, but at a margin set per level with `!important`
+over the inline one Tabulator computes - that one adds a width it
+measures before the row is in the document, so it can come out
+smaller. The resulting positions (content at 5 for a top-level row, 37,
+64 and 91 below it; guides at 13, 45 and 72) are worked out in the
+comment above those rules; change the cell padding, the twistie or
+the indent and they move together.
 
 ## One row per run, opened to see its statements
 
@@ -134,16 +155,17 @@ or two and is the thing the reader came for, so `.errorRow` wraps the
 message (`white-space: pre-wrap`, `overflow-wrap: anywhere`) and the
 row grows to hold it - Tabulator sizes a row to its tallest cell, so
 nothing more than the wrap is needed. The marker is pulled to the top
-of the block (`align-items: flex-start` on `.actionMessageCell`) to
-stay in the column of markers. Time and Information stay centred
-against the block whether or not that is wanted: Tabulator writes
-`align-items` as an **inline** style for a column with a `vertAlign`,
-which no rule in the stylesheet can outrank.
+of the block (`align-items: flex-start` on `.actionMessageCell`, as on
+every row now) to stay in the column of markers, and Time and
+Information are top-aligned with it through their `vertAlign: "top"`:
+Tabulator writes `align-items` as an **inline** style for a column with
+a `vertAlign`, which no rule in the stylesheet can outrank, so it has
+to be set there.
 
 **A row marked `multiline` is shown the same way** (2026-10-10): its
 message is a block of lines, shown in full, the row as tall as it needs.
 The grid gives such a row - and every error row - `.fullRow`, which is what
-the wrap and the top-aligned marker are keyed on; the red stays with
+the wrap is keyed on; the red stays with
 `.errorRow`. A dump's totals are such a row, under its task (see
 [dump-and-load.md](dump-and-load.md)).
 
@@ -198,8 +220,8 @@ Three things about the tree had to be told to Tabulator:
 - `dataTreeExpandElement` / `dataTreeCollapseElement`, VS Code's
   chevrons. Tabulator's own control is a boxed `+`/`-` in hard coded
   greys; supplying the elements is what stops those rules applying at
-  all. Its branch guide is the one surface left, and
-  `--vscode-tree-indentGuidesStroke` answers it.
+  all. The guides are the stylesheet's (above), in
+  `--vscode-tree-indentGuidesStroke`.
 
 Rows are looked up by index among the **top level only**, so a statement
 cannot be scrolled to by its own id: `openTo()` finds its run, opens it

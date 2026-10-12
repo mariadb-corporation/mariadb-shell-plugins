@@ -93,13 +93,11 @@ const COLLAPSE_ELEMENT =
     "<span class=\"treeToggle codicon codicon-chevron-down\"></span>";
 
 /**
- * How far a statement is indented under its run, in pixels.
- *
- * Tabulator gives a child's branch element 7px of width and 5px of
- * margin on top of this, so 20 puts a statement's marker at 32 - one
- * clear step of `TREE_ELEMENT_WIDTH` in from the 16 its run's marker
- * sits at. The markers of the rows that stand on their own line up;
- * the ones that belong to a run are meant not to.
+ * How far a statement is indented under its run, in pixels: what
+ * Tabulator is told. The indent actually drawn, and the guide lines with
+ * it, are set per level in the stylesheet (`tabulator-tree-level-N`),
+ * because Tabulator works its own out from a width it measures before
+ * the row is on screen - see styles.css.
  */
 const CHILD_INDENT = 20;
 
@@ -403,7 +401,7 @@ export const buildActionColumns = (
             title: "Time",
             field: "time",
             width: 152,
-            vertAlign: "middle",
+            vertAlign: "top",
             headerSort: false,
             cssClass: "actionTime",
             headerTooltip:
@@ -417,7 +415,7 @@ export const buildActionColumns = (
             title: "Information",
             field: "statement",
             width: 260,
-            vertAlign: "middle",
+            vertAlign: "top",
             headerSort: false,
             cssClass: "actionInformation",
             headerTooltip:
@@ -433,7 +431,7 @@ export const buildActionColumns = (
                 title: "Conn",
                 field: "connectionLabel",
                 width: 76,
-                vertAlign: "middle",
+                vertAlign: "top",
                 headerSort: false,
                 cssClass: "actionConnection",
                 headerTooltip:
@@ -655,6 +653,11 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             // the marker, then what happened.
             dataTreeElementColumn: "message",
             dataTreeChildIndent: CHILD_INDENT,
+            // Not Tabulator's branch: a fixed little L per row, placed
+            // with a negative margin, that knows neither the row's
+            // height nor its siblings. The stylesheet draws VS Code's
+            // own straight indent guides instead.
+            dataTreeBranchElement: false,
             dataTreeExpandElement: EXPAND_ELEMENT,
             dataTreeCollapseElement: COLLAPSE_ELEMENT,
             dataTreeStartExpanded: (row) => {
