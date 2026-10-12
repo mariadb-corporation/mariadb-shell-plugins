@@ -32,22 +32,63 @@ import { delimiter, join, resolve } from "node:path";
  * Runs the UI tests: VS Code with the packaged extension, driven by
  * ExTester through WebDriver.
  *
- *     MARIADB_SHELL=/path/to/mariadb-shell npm run ui-test
+ *     MARIADB_SHELL=/path/to/mariadb-shell npm run ui-test [suite...]
  *
- * The extension takes the first `mariadb-shell` on the PATH, so the run
- * puts a wrapper there that starts the given shell with a configuration
- * home of its own: its connections, its sandboxes (in a directory of the
- * run's), its secrets (the plaintext credential helper of a development
- * build, in that home) and this repository's plugins, never the user's.
- * `mariadbd` has to be on the PATH for the sandboxes. Everything the run made is removed at
- * the end, also when the tests fail.
+ * The tests are split into suites by area - `core` (startup, connections,
+ * SQL and results, the sandbox lifecycle), `mrs` and `dump-load` - so a
+ * change to one area is tested without running the rest. Each suite runs
+ * in a VS Code of its own with a sandbox of its own: `01-sandbox` deploys
+ * it and creates the `uitest` schema every suite works on, and
+ * `99-cleanup` deletes it again. Name suites to run only those (`npm run
+ * ui-test -- mrs`, or `npm run ui-test:mrs`); none named runs them all,
+ * one after the other, and a suite that fails does not stop the next.
  *
- * Extra arguments are passed to `extest setup-and-run`; `UI_TEST_GLOB`
- * picks the test files (default: all of them).
+ * The extension takes the first `mariadb-shell` on the PATH, so each
+ * suite puts a wrapper there that starts the given shell with a
+ * configuration home of its own: its connections, its sandboxes (in a
+ * directory of the suite's), its secrets (the plaintext credential
+ * helper of a development build, in that home) and this repository's
+ * plugins, never the user's. `mariadbd` has to be on the PATH for the
+ * sandboxes. Everything a suite made is removed when it ends, also when
+ * its tests fail.
+ *
+ * Arguments that name no suite are passed to `extest setup-and-run`;
+ * `UI_TEST_GLOB` runs the files it matches as one run instead, without
+ * the suites' setup and cleanup. `UI_TEST_SUITE_MINUTES` (default 20)
+ * is how long a suite may take before it is stopped.
  */
 
 const root = resolve(__dirname, "../..");
 const repo = resolve(root, "..");
+const compiled = "out/ui-test/tests";
+
+/**
+ * How long a suite may run. ExTester does not exit when ChromeDriver
+ * fails to start - its port taken in the moment between being picked
+ * and being bound - so without a limit such a run waits forever and the
+ * suites after it never start.
+ */
+const SUITE_TIMEOUT_MS =
+    Number(process.env.UI_TEST_SUITE_MINUTES ?? "20") * 60_000;
+
+/** Deploys the suite's sandbox and creates the schema the tests use. */
+const SETUP = "01-sandbox";
+/** Deletes the suite's sandbox, and its connection with it. */
+const CLEANUP = "99-cleanup";
+
+/**
+ * The suites, by name: the test files of each, in the order they run,
+ * between SETUP and CLEANUP. `00-startup` comes before SETUP, because it
+ * checks the views of a first start, before anything is in them.
+ */
+const SUITES: Record<string, { before?: string[]; files: string[] }> = {
+    core: {
+        before: ["00-startup"],
+        files: ["03-connections", "04-sql-results", "05-lifecycle"],
+    },
+    mrs: { files: ["02-mrs"] },
+    "dump-load": { files: ["06-dump-load"] },
+};
 
 const freePort = async (): Promise<number> => {
     return await new Promise((done) => {
@@ -61,14 +102,21 @@ const freePort = async (): Promise<number> => {
     });
 };
 
-const main = async (): Promise<number> => {
-    const shell = process.env.MARIADB_SHELL;
-    if (shell === undefined || shell === "") {
-        console.error("Set MARIADB_SHELL to the mariadb-shell to test with.");
-
-        return 2;
-    }
-
+/**
+ * Runs test files in a VS Code of their own, with a shell home, a
+ * sandbox directory and ports of their own.
+ *
+ * @param shell The mariadb-shell to test with.
+ * @param testFiles The files, in the order they run.
+ * @param extraArgs Passed on to `extest setup-and-run`.
+ *
+ * @returns The exit code of the run.
+ */
+const runFiles = async (
+    shell: string,
+    testFiles: string[],
+    extraArgs: string[],
+): Promise<number> => {
     const work = mkdtempSync(join(tmpdir(), "mariadb-ui-test-"));
     const home = join(work, "shell-home");
     const bin = join(work, "bin");
@@ -122,16 +170,24 @@ const main = async (): Promise<number> => {
     };
 
     try {
-        const result = spawnSync("npx", [
-            "extest", "setup-and-run",
-            process.env.UI_TEST_GLOB ?? "out/ui-test/tests/*.test.js",
+        // Started directly, not through npx: a timeout kills the child it
+        // started, and through npx that would leave ExTester running.
+        const result = spawnSync(join(root, "node_modules", ".bin", "extest"), [
+            "setup-and-run",
+            ...testFiles,
             "--storage", storage,
             "--extensions_dir", join(storage, "extensions"),
             "--code_settings", join(root, "ui-test", "settings.json"),
             "--mocha_config", join(root, "ui-test", ".mocharc.json"),
             "--code_version", process.env.UI_TEST_CODE_VERSION ?? "max",
-            ...process.argv.slice(2),
-        ], { cwd: root, env, stdio: "inherit" });
+            ...extraArgs,
+        ], {
+            cwd: root, env, stdio: "inherit",
+            timeout: SUITE_TIMEOUT_MS, killSignal: "SIGKILL",
+        });
+        if (result.error !== undefined) {
+            console.error(`The run was stopped: ${result.error.message}`);
+        }
 
         return result.status ?? 1;
     } finally {
@@ -142,6 +198,55 @@ const main = async (): Promise<number> => {
             recursive: true, force: true, maxRetries: 10, retryDelay: 500,
         });
     }
+};
+
+/**
+ * The compiled files of a suite, in the order they run.
+ *
+ * @param name The suite.
+ *
+ * @returns One path per file: one pattern each, so the order holds -
+ *          ExTester adds the files of one pattern in no set order.
+ */
+const filesOf = (name: string): string[] => {
+    const suite = SUITES[name];
+
+    return [...suite.before ?? [], SETUP, ...suite.files, CLEANUP]
+        .map((file) => {
+            return `${compiled}/${file}.test.js`;
+        });
+};
+
+const main = async (): Promise<number> => {
+    const shell = process.env.MARIADB_SHELL;
+    if (shell === undefined || shell === "") {
+        console.error("Set MARIADB_SHELL to the mariadb-shell to test with.");
+
+        return 2;
+    }
+
+    const args = process.argv.slice(2);
+    const extraArgs = args.filter((arg) => { return !(arg in SUITES); });
+    if (process.env.UI_TEST_GLOB !== undefined) {
+        return await runFiles(shell, [process.env.UI_TEST_GLOB], extraArgs);
+    }
+
+    const named = args.filter((arg) => { return arg in SUITES; });
+    const suites = named.length > 0 ? named : Object.keys(SUITES);
+    const outcomes: Array<[string, number]> = [];
+    for (const name of suites) {
+        console.log(`\n=== UI test suite: ${name} ===\n`);
+        outcomes.push([name, await runFiles(shell, filesOf(name), extraArgs)]);
+    }
+
+    if (outcomes.length > 1) {
+        console.log("\n=== UI test suites ===");
+        for (const [name, code] of outcomes) {
+            console.log(`${name}: ${code === 0 ? "passed" : "FAILED"}`);
+        }
+    }
+
+    return outcomes.some(([, code]) => { return code !== 0; }) ? 1 : 0;
 };
 
 void main().then((code) => { process.exitCode = code; });

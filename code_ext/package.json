@@ -1915,7 +1915,10 @@
     "grammar:build": "node tools/grammar.mts build",
     "grammar:check": "node tools/grammar.mts build --check",
     "ui-test:build": "tsc -p ui-test",
-    "ui-test": "npm run ui-test:build && node out/ui-test/run.js"
+    "ui-test": "npm run ui-test:build && node out/ui-test/run.js",
+    "ui-test:core": "npm run ui-test -- core",
+    "ui-test:mrs": "npm run ui-test -- mrs",
+    "ui-test:dump-load": "npm run ui-test -- dump-load"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",

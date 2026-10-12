@@ -32,7 +32,7 @@ extension grows.
 | `webview/src/` | The Preact frontends: the result view, the connection editor, New Sandbox, the Dump and Load dialog and the MRS dialogs. |
 | `src/test/` | The extension-side test suite, mirroring the source layout; `grammar/` tokenizes with VS Code's own TextMate engine (word coverage, token classes, corpus snapshots). |
 | `webview/test/` | The frontend test suite, run under jsdom. |
-| `ui-test/` | The ExTester UI tests: the runner, the helpers, the test files in order (see [`context/testing-and-debugging.md`](context/testing-and-debugging.md)). |
+| `ui-test/` | The ExTester UI tests: the runner and its suites (`core`, `mrs`, `dump-load`, each with a sandbox of its own), the helpers, the test files (see [`context/testing-and-debugging.md`](context/testing-and-debugging.md)). |
 | `images/` | Icons: `light/` and `dark/` variants, the activity bar seal, and `marketplace-icon.png`. |
 
 ## Context files
