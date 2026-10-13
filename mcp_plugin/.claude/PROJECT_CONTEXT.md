@@ -101,16 +101,18 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
   - **#44** `wip/mrs_code_ext` (opened 2026-10-11): the `mrs` function group
     wrapping mrs_plugin, plus the extension. It has #41 and #43 merged in.
   - #41 `wip/mrs_schema_improvements`: mrs_plugin / msm_plugin.
-- **CI fails on #41 and #44 for one reason**: the runner's shell is the
-  26.10.1 release, without mariadb-shell #71 (MRS module). #43 failed too,
-  for want of #73 (`util.*` options), until its tasks moved to a shell
-  process of their own on 2026-10-12, which any release can run.
+- **#41 and #43 are merged (2026-10-13), squash-merged after review
+  fixes, and so is mariadb-shell #71.** `main` was merged into #44 with a
+  base of the #41 and #43 heads it had merged in, so only #44's own changes
+  were applied and main's fixes kept. #44's plugins CI passes since.
 - Suite: **616 passed, 3 skipped** on #44's tree against a local build of
-  #71 + #73 (`wip/ui_test_shell` in `~/git/mariadb-shell`, local only).
-- **mariadb-shell open PRs this depends on:** #71 (MRS module), #74
-  (`[bypass-ci]` docs for the util tools). #73 (util session /
-  progressCallback) was closed on 2026-10-12, when the tasks moved to a
-  shell process of their own; #75 (a flaky encrypted-load test) is merged.
+  #71 + #73 (`wip/ui_test_shell` in `~/git/mariadb-shell`, local only,
+  deleted on 2026-10-13: #71 is on mariadb-shell `main`).
+- **mariadb-shell PRs:** #71 (MRS module) is merged; #74 (`[bypass-ci]`
+  docs for the util tools) is open and up to date with `main`. #73 (util
+  session / progressCallback) was closed on 2026-10-12, when the tasks
+  moved to a shell process of their own; #75 and #77 (flaky tests) are
+  merged.
 - `origin/wip/msm_mrs_fixes` (merged as #36) is gone (checked 2026-10-11).
   mrs_plugin's project dump/load got msm's `run_util` on #41's branch
   (2026-10-11, see [`context/siblings.md`](context/siblings.md)).

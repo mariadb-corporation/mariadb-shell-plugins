@@ -97,9 +97,10 @@ change belongs to up to date, and this table with it.
   the shell build it needs and download it (shell PR CI would have to
   upload its Linux package; `rocky-linux.yml` can build one on dispatch);
   skip tests whose feature the shell lacks.
-- The UI tests need a shell with #71: built locally from
-  `wip/ui_test_shell` in `~/git/mariadb-shell` (a local-only merge, not
-  pushed; it held #73 until 2026-10-12).
+- The UI tests need a shell with #71, which mariadb-shell `main` has since
+  2026-10-13: any local build of `main` in `~/git/mariadb-shell`
+  (`MARIADB_SHELL=...`). Before that it took the local-only merge
+  `wip/ui_test_shell`, deleted on 2026-10-13.
 
 ## Git state
 
@@ -132,7 +133,8 @@ $ git -C code_ext status --short   (one repository: every project's lines)
   verbosity - see dump-and-load.md, mrs.md, actions-grid.md and
   connections.md for what was settled.
 - Suite: **1903 unit tests pass**, 8 skipped; **57 UI tests pass** (run
-  twice) against the local `wip/ui_test_shell` build.
+  twice) against the local `wip/ui_test_shell` build (a merge of the then
+  unmerged shell #71, deleted since).
 - Not looked at in a running VS Code outside the UI tests: still the PR #34
   / #38 items listed in earlier checkpoints.
 
