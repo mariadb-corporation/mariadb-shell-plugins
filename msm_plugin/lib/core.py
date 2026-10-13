@@ -34,7 +34,7 @@ import re
 import threading
 import traceback
 import mysqlsh
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import uuid
 
 SCHEMA_METADATA_LOCK_ERROR = "Failed to acquire schema metadata lock. Please ensure no other metadata update is running, then try again."
@@ -718,7 +718,10 @@ def execute_msm_sql_script(
     sql_file_path: str = None,
     substitutions: dict = None,
     lock_name_suffix: str = None,
+    take_lock: bool = True,
 ):
+    """Runs an MSM SQL script, holding the MSM update lock of the schema
+    (lock_name_suffix) unless take_lock is False because the caller holds it."""
     if sql_script is None and sql_file_path is None:
         raise ValueError("No script or sql_file_path specified.")
     if sql_script is not None and script_name is None:
@@ -740,32 +743,7 @@ def execute_msm_sql_script(
 
     commands = mysqlsh.mysql.split_script(sql_script)
 
-    # One lock per schema, so schemas deployed from the same project (e.g. one
-    # per customer) can be updated at the same time. The MD5 keeps the name
-    # within the 64 characters GET_LOCK() allows.
-    lock_name = "MSM_METADATA_LOCK"
-    lock_params = []
-    lock_expression = "?"
-    if lock_name_suffix:
-        lock_expression = "CONCAT(?, '_', MD5(?))"
-        lock_params = [lock_name, lock_name_suffix]
-    else:
-        lock_params = [lock_name]
-
-    msm_lock = 0
-    try:
-        # Acquire the MSM metadata lock
-        msm_lock = (
-            MsmDbExec(f"SELECT GET_LOCK({lock_expression}, 1) AS msm_lock")
-            .exec(session, lock_params)
-            .first["msm_lock"]
-        )
-        if msm_lock == 0:
-            raise Exception(
-                "Failed to acquire MSM schema update lock. Please ensure no "
-                "other MSM schema update is running, then try again."
-            )
-
+    with msm_update_lock(session, lock_name_suffix) if take_lock else nullcontext():
         # Execute all commands
         current_cmd = ""
         try:
@@ -784,11 +762,41 @@ def execute_msm_sql_script(
                 f"Failed to run the the SQL script `{script_name}`.\n{current_cmd}\n{e}",
             )
             raise Exception(f"Failed to run the SQL script.\n{current_cmd}\n{e}")
+
+
+@contextmanager
+def msm_update_lock(session, lock_name_suffix: str = None):
+    """Holds the MSM update lock of a schema (lock_name_suffix) while the
+    block runs; raises when another MSM update holds it."""
+    # One lock per schema, so schemas deployed from the same project (e.g. one
+    # per customer) can be updated at the same time. The MD5 keeps the name
+    # within the 64 characters GET_LOCK() allows.
+    lock_name = "MSM_METADATA_LOCK"
+    if lock_name_suffix:
+        lock_expression = "CONCAT(?, '_', MD5(?))"
+        lock_params = [lock_name, lock_name_suffix]
+    else:
+        lock_expression = "?"
+        lock_params = [lock_name]
+
+    msm_lock = (
+        MsmDbExec(f"SELECT GET_LOCK({lock_expression}, 1) AS msm_lock")
+        .exec(session, lock_params)
+        .first["msm_lock"]
+    )
+    if msm_lock != 1:
+        err_msg = (
+            "Failed to acquire MSM schema update lock. Please ensure no "
+            "other MSM schema update is running, then try again."
+        )
+        write_to_msm_schema_update_log("ERROR", err_msg)
+        raise Exception(err_msg)
+    try:
+        yield
     finally:
-        if msm_lock == 1:
-            MsmDbExec(f"SELECT RELEASE_LOCK({lock_expression})").exec(
-                session, lock_params
-            )
+        MsmDbExec(f"SELECT RELEASE_LOCK({lock_expression})").exec(
+            session, lock_params
+        )
 
 
 def get_uuid_string():

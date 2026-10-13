@@ -659,6 +659,53 @@ def test_deployment_backup_restores_failed_update(
     assert not os.path.exists(backup_directory)
 
 
+def test_deployment_takes_the_lock_before_it_looks_at_the_schema(
+    sandbox_session, project_path, temp_dir
+):
+    # With another MSM update holding the lock, a deployment stops before it
+    # looks at the schema: it neither backs it up nor drops and restores it
+    # under the feet of the update that holds the lock
+    import mysqlsh
+    import msm_plugin.tests.unit.helpers as helpers
+
+    lib.core.MsmDbExec(
+        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(SCHEMA_NAME)}"
+    ).exec(sandbox_session)
+    released_versions = get_released_versions(schema_project_path=project_path)
+    deploy_schema(
+        schema_project_path=project_path,
+        version="%d.%d.%d" % tuple(released_versions[0]),
+    )
+
+    data = helpers.get_connection_data()
+    holder = mysqlsh.globals.shell.open_session(
+        f"{data['user']}:{data['password']}@{data['host']}:{data['port']}"
+    )
+    log_path = lib.core.get_msm_schema_update_log_path()
+    log_size = os.path.getsize(log_path) if os.path.exists(log_path) else 0
+    lock = "CONCAT('MSM_METADATA_LOCK', '_', MD5(?))"
+    try:
+        holder.run_sql(f"SELECT GET_LOCK({lock}, 0)", [SCHEMA_NAME])
+        with pytest.raises(Exception, match="Failed to acquire MSM schema update lock"):
+            deploy_schema(
+                schema_project_path=project_path,
+                version="%d.%d.%d" % tuple(released_versions[1]),
+                backup_directory=os.path.join(temp_dir, "backup"),
+                backup=True,
+            )
+    finally:
+        holder.run_sql(f"SELECT RELEASE_LOCK({lock})", [SCHEMA_NAME])
+        holder.close()
+
+    with open(log_path) as f:
+        f.seek(log_size)
+        log = f.read()
+    assert "Failed to acquire MSM schema update lock" in log
+    assert "dump" not in log
+    assert "restored" not in log
+    assert not os.path.exists(os.path.join(temp_dir, "backup"))
+
+
 def test_deployment_backup_keeps_the_global_session(
     sandbox_session, project_path, temp_dir
 ):
