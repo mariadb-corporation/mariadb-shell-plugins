@@ -538,6 +538,12 @@ if mode == "crash-early" and len(runs) == 1:
     os.kill(os.getpid(), signal.SIGKILL)
 out({"info": "Scanning metadata - done", "numericProgressUpdate": {"description": "Scanning metadata", "current": 1, "total": 1}})
 out({"info": "Loading data", "loadProgress": {}, "throughputProgressUpdate": {"current": len(runs), "total": 3}})
+if mode == "error-then-crash":
+    out({"error": "Fatal error during dump\\n"})
+    os.kill(os.getpid(), signal.SIGKILL)
+if mode == "error-then-success":
+    out({"error": "Error loading chunk 1, retrying\\n"})
+    sys.exit(0)
 if mode == "crash" or (mode == "crash-once" and len(runs) == 1):
     print("the shell's last words", file=sys.stderr, flush=True)
     os.kill(os.getpid(), signal.SIGKILL)
@@ -686,6 +692,28 @@ def test_a_failure_reported_only_on_stderr_is_no_crash(fake_shell, monkeypatch):
         "Invalid URI: Expected token at position 2 but no tokens left."
     )
     assert not any("crashed" in m["text"] for m in snapshot["messages"])
+
+
+def test_a_crash_after_an_error_reports_the_error(fake_shell, monkeypatch):
+    snapshot = _run("dump_schemas", [["s"], "/d"], {}, monkeypatch, "error-then-crash")
+
+    assert snapshot["status"] == "failed"
+    assert snapshot["error"] == (
+        "The MariaDB Shell process running the utility crashed: it was ended by "
+        "SIGKILL. Its last error: Fatal error during dump"
+    )
+    assert {"level": "error", "text": "Fatal error during dump"} in [
+        {"level": m["level"], "text": m["text"]} for m in snapshot["messages"]
+    ]
+
+
+def test_an_error_before_a_success_is_a_message(fake_shell, monkeypatch):
+    snapshot = _run("load_dump", ["/d"], {}, monkeypatch, "error-then-success")
+
+    assert snapshot["status"] == "completed", snapshot["error"]
+    assert {"level": "error", "text": "Error loading chunk 1, retrying"} in [
+        {"level": m["level"], "text": m["text"]} for m in snapshot["messages"]
+    ]
 
 
 @pytest.mark.parametrize("returncode,crashed", [

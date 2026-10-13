@@ -536,6 +536,19 @@ class OutputParser:
             "seconds": round(time.monotonic() - started, 1),
         }]
 
+    def flush(self) -> list:
+        """The error held back as the task's, as a message after all.
+
+        For a run that does not end with it: one that completed, or that
+        crashed after it.
+        """
+        if self._pending_error is None:
+            return []
+
+        events = [_message("error", self._pending_error)]
+        self._pending_error = None
+        return events
+
     def finish_all(self) -> list:
         """Ends every stage still running: the run completed."""
         events = []
@@ -805,7 +818,7 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
             returncode = None
 
         if returncode == 0:
-            for event in parser.finish_all():
+            for event in parser.flush() + parser.finish_all():
                 task.on_event(event)
             return None
 
@@ -823,6 +836,8 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
             f"{_crash_description(returncode)}."
         )
         task.fail_running_stages()
+        for event in parser.flush():
+            task.on_event(event)
         for text in process.stderr:
             task.on_event(_message("error", text))
 
@@ -835,5 +850,7 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
 
         if attempts > 1:
             crash += f" It was started {attempts} times."
+        if parser.error is not None:
+            crash += f" Its last error: {parser.error}"
         raise RuntimeError(crash)
 
