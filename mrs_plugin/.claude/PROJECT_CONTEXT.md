@@ -42,9 +42,9 @@ packages with msm_plugin and mcp_plugin.
   (`acme_mariadb_rest_service_eu`, MSM substitutions `schema_prefix`/`schema_postfix`). SQL in
   `lib/` and the tests uses the token `<metadata>` (`core.METADATA`); `MrsDbExec` and
   `core.metadata_sql(session, sql)` replace it with the schema from the last column
-  `metadata_schema` of `SHOW REST METADATA STATUS` (cached per session object;
-  `core.forget_metadata_schema(session)` after `CONFIGURE REST METADATA SCHEMA` / `USE REST
-  METADATA SCHEMA`). Roles: `core.metadata_role(session, "data_provider")` = prefix +
+  `metadata_schema` of `SHOW REST METADATA STATUS` (cached per session object
+  for one plugin call only, i.e. while the outermost `MrsDbSession` of the thread is open, so a
+  `USE REST METADATA SCHEMA` between calls is seen by the next one; not cached outside a call). Roles: `core.metadata_role(session, "data_provider")` = prefix +
   `mariadb_rest_service_<role>` + postfix. The schema project (Workbench model, sections,
   releases, `prepare_default_static_content.sh`) is the shell repo's
   `mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`; this repo's copy was removed.
