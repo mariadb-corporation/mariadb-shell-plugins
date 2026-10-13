@@ -334,6 +334,19 @@ def test_a_copy_takes_no_connection_attribute_in_its_options(function, args, nam
         util_process.build_command(function, args, {name: "203.0.113.10"}, _TARGET)
 
 
+@pytest.mark.parametrize("name", [
+    "outputUrl",
+    # every spelling the shell's command line reads as the same name
+    "output_url", "output-url", "OutputUrl",
+])
+def test_an_option_the_tool_forbids_is_refused_in_any_spelling(name):
+    forbidden = {"outputUrl": "it is the tool's output_url argument."}
+    with pytest.raises(Exception, match="cannot be given: it is the tool's output_url"):
+        util_process.build_command(
+            "dump_schemas", [["s"], "/allowed/dump"], {name: "/x"}, forbidden=forbidden
+        )
+
+
 def test_a_copy_keeps_its_own_options():
     command = util_process.build_command(
         "copy_schemas", [["s"]],
@@ -835,6 +848,17 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                     "output_url": dump_dir, "options": {"session": 1},
                 })
                 assert result.is_error and "set by the tool" in str(helpers.tool_payload(result))
+                # an outputUrl option would replace output_url, which alone was checked
+                for name, arguments in (
+                    ("util.dump_schemas", {"schemas": ["mcp_util"]}),
+                    ("util.dump_tables", {"schema": "mcp_util", "tables": ["t"]}),
+                ):
+                    result = await call(name, {
+                        "connection_id": connection_id, **arguments,
+                        "output_url": os.path.join(allowed_temp_dir, "redirected"),
+                        "options": {"output_url": "/tmp/elsewhere"},
+                    })
+                    assert result.is_error and "output_url argument" in str(helpers.tool_payload(result))
                 result = await call("util.dump_schemas", {
                     "connection_id": "no-such-connection", "schemas": ["mcp_util"],
                     "output_url": os.path.join(allowed_temp_dir, "x"),

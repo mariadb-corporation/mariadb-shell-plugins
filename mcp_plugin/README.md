@@ -401,8 +401,10 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   are refused. A value the shell's command line cannot pass on unchanged is refused
   too: a string with `\,`, `\"`, `\'` or `\=` in it, or a name or path such as
   `2024`, `true` or `-x` where the command line takes it without a name. An
-  option name must be letters, digits, `_` and `-`. A copy takes no option that is
-  a connection attribute (`host`, `port`, `user`, `password`, `socket`, `ssl-*`,
+  option name must be letters, digits, `_` and `-`. `outputUrl`, in any spelling, is
+  refused for `util.dump_schemas` and `util.dump_tables`, which take it as `output_url`.
+  A copy takes no option that is a connection attribute (`host`, `port`, `user`,
+  `password`, `socket`, `ssl-*`,
   `ssh-*` and the others, in any spelling): the target is the connection named by
   `target_connection_id`, and the options cannot change it.
 - **`util.get_task(task_id, since, wait_ms)`** returns:

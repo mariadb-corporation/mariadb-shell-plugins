@@ -43,6 +43,13 @@ from mcp_plugin.lib.tool_registrar import tool_error, tool_registrar
 # process could give.
 _RESERVED_OPTIONS = ("session", "progressCallback", "showProgress")
 
+# For the utilities whose outputUrl comes after a list (dump_schemas and
+# dump_tables): the shell's command line takes it by name there, and an option
+# of that name would replace output_url - with a path never checked.
+_OUTPUT_URL_PARAMETER = {
+    "outputUrl": "it is the tool's output_url argument, and only that one is used."
+}
+
 # Options that make the URL a prefix in object storage instead of a path.
 _REMOTE_STORAGE_OPTIONS = ("s3BucketName", "osBucketName", "azureContainerName")
 
@@ -153,8 +160,13 @@ def register_util_tools(server, function_groups=()) -> None:
         urls=(),
         target_connection_id: Optional[str] = None,
         result: Optional[dict] = None,
+        forbidden: Optional[dict] = None,
     ) -> dict:
-        """Starts a utility as a task, after checking what it is given."""
+        """Starts a utility as a task, after checking what it is given.
+
+        ``forbidden`` names the options this utility refuses beyond
+        _RESERVED_OPTIONS, each with the reason it is refused.
+        """
         options = _options(options)
 
         for path in _local_paths(urls, options):
@@ -170,7 +182,7 @@ def register_util_tools(server, function_groups=()) -> None:
             source = db_functions.connection_credentials(connection_id, client)
             # the command line is checked here too, so that what it cannot
             # take fails the call itself
-            util_process.build_command(function, args, options, target)
+            util_process.build_command(function, args, options, target, forbidden)
             return source, target
 
         # Reading the secret store is no work for the loop. Done before the
@@ -240,7 +252,8 @@ def register_util_tools(server, function_groups=()) -> None:
                 or be empty.
             options: The options of util.dump_schemas, with their camelCase
                 names, e.g. {"threads": 8, "ddlOnly": true}. session,
-                progressCallback and showProgress cannot be given here.
+                progressCallback, showProgress and outputUrl cannot be given
+                here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -249,6 +262,7 @@ def register_util_tools(server, function_groups=()) -> None:
             ctx, "dump_schemas", f"Dump {', '.join(schemas)} to {output_url}",
             connection_id, "dump_schemas", [schemas, output_url], options,
             urls=[output_url], result={"output_url": output_url},
+            forbidden=_OUTPUT_URL_PARAMETER,
         )
 
     @tool(name="util.dump_tables")
@@ -275,7 +289,8 @@ def register_util_tools(server, function_groups=()) -> None:
                 or be empty.
             options: The options of util.dump_tables, with their camelCase
                 names, e.g. {"where": {"shop.orders": "id > 1000"}}. session,
-                progressCallback and showProgress cannot be given here.
+                progressCallback, showProgress and outputUrl cannot be given
+                here.
 
         Returns:
             A dict with the task_id to follow and the task's status.
@@ -284,6 +299,7 @@ def register_util_tools(server, function_groups=()) -> None:
             ctx, "dump_tables", f"Dump tables of {schema} to {output_url}",
             connection_id, "dump_tables", [schema, tables, output_url], options,
             urls=[output_url], result={"output_url": output_url},
+            forbidden=_OUTPUT_URL_PARAMETER,
         )
 
     @tool(name="util.export_table")

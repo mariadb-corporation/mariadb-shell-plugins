@@ -265,10 +265,11 @@ def _is_connection_attribute(cli_name: str) -> bool:
     return True
 
 
-def _option_argument(name: str, value, copy: bool) -> Optional[str]:
+def _option_argument(name: str, value, copy: bool, forbidden: dict) -> Optional[str]:
     """A client's option, refused where it would reach anything else.
 
-    The mapper routes a named argument by its name alone. For a copy, every
+    ``forbidden`` holds the options the calling tool refuses, as the mapper
+    spells them, each with the reason why. For a copy, every
     connection attribute is also a name of the target's connection data, and
     the last one given wins: ``{"host": ...}`` in the options would send the
     copy, and the target's stored password, to another server. So a copy
@@ -279,6 +280,9 @@ def _option_argument(name: str, value, copy: bool) -> Optional[str]:
         raise tool_error(f"'{name}' is not the name of an option.")
 
     cli_name = _cli_name(name)
+    if cli_name in forbidden:
+        raise tool_error(f"The option '{name}' cannot be given: {forbidden[cli_name]}")
+
     if copy and _is_connection_attribute(cli_name):
         if cli_name not in _COPY_AMBIGUOUS:
             raise tool_error(
@@ -306,7 +310,13 @@ def _target_arguments(target: Optional[dict]) -> list:
     return arguments
 
 
-def build_command(function: str, args: list, options: dict, target: Optional[dict] = None) -> list:
+def build_command(
+    function: str,
+    args: list,
+    options: dict,
+    target: Optional[dict] = None,
+    forbidden: Optional[dict] = None,
+) -> list:
     """The arguments of ``-- util ...`` for a utility.
 
     Args:
@@ -314,6 +324,9 @@ def build_command(function: str, args: list, options: dict, target: Optional[dic
         args (list): Its arguments before the target and the options.
         options (dict): Its options, with their camelCase names.
         target (dict): A copy's target, as connection data.
+        forbidden (dict): The options the calling tool refuses, in any
+            spelling the mapper reads as the same name, each with the
+            reason it is refused.
 
     Returns:
         list: The arguments, beginning with "util".
@@ -341,8 +354,9 @@ def build_command(function: str, args: list, options: dict, target: Optional[dic
             arguments.append(value)
 
     copy = "target" in kinds
+    forbidden = {_cli_name(name): why for name, why in (forbidden or {}).items()}
     for name, value in options.items():
-        argument = _option_argument(name, value, copy)
+        argument = _option_argument(name, value, copy, forbidden)
         if argument:
             arguments.append(argument)
 
