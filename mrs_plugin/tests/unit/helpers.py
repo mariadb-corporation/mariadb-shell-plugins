@@ -29,12 +29,13 @@ import socket
 
 import mysqlsh
 from mrs_plugin import lib
+from mrs_plugin.tests.unit import fixture_writers
 
 
 def add_test_schema(session, service_id, schema_name, request_path=None, **kwargs):
     """Adds a REST schema the way the former mrs.add.schema() did."""
     with lib.core.MrsDbTransaction(session):
-        return lib.schemas.add_schema(
+        return fixture_writers.add_schema(
             session=session,
             schema_name=schema_name,
             service_id=lib.core.id_to_uuid(service_id, "service_id"),
@@ -53,7 +54,7 @@ def add_test_rest_object(session, **kwargs):
     mrs.add.dbObject() did."""
     kwargs.pop("session", None)
     with lib.core.MrsDbTransaction(session):
-        rest_object_id, grants = lib.rest_objects.add_rest_object(
+        rest_object_id, grants = fixture_writers.add_rest_object(
             session=session,
             schema_id=lib.core.id_to_uuid(kwargs["schema_id"], "schema_id"),
             rest_object_name=kwargs["rest_object_name"],

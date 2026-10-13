@@ -228,6 +228,17 @@ packages with msm_plugin and mcp_plugin.
    `examples/mrs_notes/db_schema/mrs_notes.sql`.
 7. Further schema improvements; each one goes model -> sections -> msm release, then all
    three suites.
+8. **Build the test fixtures with REST SQL.** `tests/unit/fixture_writers.py` holds the
+   plugin's former writers (`add_schema`, `add_rest_object`, `set_data_mappings*`, the
+   grant builders), moved out of `lib/` because only the tests used them. The fixtures
+   (`helpers.add_test_schema` / `add_test_rest_object`, ~49 uses in `test_services`,
+   `test_rest_objects`, `test_schemas`) still write metadata the way the old Python plugin
+   did, with hand-made data mappings (e.g. arbitrary `sdk_options`) REST SQL never writes,
+   so the SDK and service tests check data the product does not produce. Replace them with
+   `CREATE REST SCHEMA` / `CREATE REST VIEW ...` and delete `fixture_writers.py`; expected
+   SDK output will likely change, each difference to be judged (test artefact or a real
+   difference between the old writer and the shell). The grant builder there still leaves
+   `columnList` unquoted (test-only now).
 
 ## Gotchas / things not to repeat
 
