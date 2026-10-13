@@ -88,6 +88,14 @@ def start_server(**options) -> None:
         public_url (str): The URL clients reach the MCP endpoint at, such as
             https://mcp.example.com/mcp, which OAuth tokens are issued for.
             Defaults to the one set with mcp setup --publicUrl.
+        trusted_proxies (list): The reverse proxies in front of the server,
+            as IP addresses or CIDR networks such as 192.0.2.0/24, IPv4 or
+            IPv6. A request from one of them is seen as coming from the client
+            its X-Forwarded-For header names, read from the right past every
+            trusted proxy; a request from anywhere else is seen as coming from
+            its own address, whatever its headers say. A network of every
+            address is refused. Only used by the streamable-http transport.
+            Defaults to none.
 
     Returns:
         None
@@ -123,4 +131,7 @@ def start_server(**options) -> None:
         ssl_keyfile=options.get("ssl_keyfile", None),
         max_connections=options.get("max_connections", None),
         public_url=options.get("public_url", None),
+        # A list, or as the CLI passes it a comma-separated string, both of
+        # which lib.server.start parses and checks.
+        trusted_proxies=options.get("trusted_proxies", None),
     )

@@ -509,8 +509,9 @@ class AuthorizeRateLimit:
     :mod:`mcp_plugin.lib.oauth_builtin`). Without a limit one address could
     push every real user's pending sign-in out in seconds. Per address,
     because ``/authorize`` is the user's own browser, as the sign-in page is;
-    behind a reverse proxy the address is the proxy's, so the limit is set well
-    above what one person signing in needs. A refused request is not counted,
+    behind a reverse proxy the address is the proxy's, unless it is named with
+    ``--trustedProxies``, so the limit is set well above what one person
+    signing in needs. A refused request is not counted,
     so an address over the limit can start again once the window has passed.
     """
 

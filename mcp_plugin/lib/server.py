@@ -28,7 +28,9 @@ transports:
 * ``streamable-http`` (default): served over HTTP on the configured host/port,
   on a uvicorn server configured here rather than by the SDK, so that the
   proxy-header handling that would let a client choose the peer address it is
-  seen as stays off (see :func:`_serve_streamable_http`).
+  seen as stays off (see :func:`_serve_streamable_http`). Behind a reverse
+  proxy, the proxies named with ``--trustedProxies`` are the only peers whose
+  ``X-Forwarded-For`` header is believed (see :class:`TrustedProxyMiddleware`).
 * ``stdio``: communicates over stdin/stdout; its lifetime is driven by the
   client. The real stdout is reserved for the JSON-RPC protocol and all other
   output is redirected to stderr (see :func:`_serve_stdio`).
@@ -70,6 +72,7 @@ SDK checks before any tool runs (see :mod:`mcp_plugin.lib.auth`).
 
 # cSpell:ignore mysqlsh MariaDB mcpserver streamable fdopen dup2 uvicorn starlette
 
+import ipaddress
 import os
 import sys
 
@@ -172,6 +175,7 @@ def start(
     ssl_keyfile=None,
     max_connections=None,
     public_url=None,
+    trusted_proxies=None,
 ) -> None:
     """Builds and serves the MCP server using the given transport.
 
@@ -200,6 +204,11 @@ def start(
         public_url (str): The URL clients reach the MCP endpoint at, for OAuth
             (see :mod:`mcp_plugin.lib.oauth_config`), or None for the
             configured one.
+        trusted_proxies: The addresses and networks of the reverse proxies
+            whose ``X-Forwarded-For`` header names the client (streamable-http
+            only, see :class:`TrustedProxyMiddleware`), as a list or a
+            comma-separated string, or None to take every client address from
+            the TCP peer.
 
     Returns:
         None
@@ -239,6 +248,10 @@ def start(
         )
     if ssl_certfile and transport != general.TRANSPORT_STREAMABLE_HTTP:
         raise mysqlsh.Error("--sslCertfile and --sslKeyfile only apply to --transport=streamable-http.")
+
+    trusted_proxies = parse_trusted_proxies(trusted_proxies)
+    if trusted_proxies and transport != general.TRANSPORT_STREAMABLE_HTTP:
+        raise mysqlsh.Error("--trustedProxies only applies to --transport=streamable-http.")
 
     if max_connections is not None:
         max_connections = int(max_connections)
@@ -295,6 +308,12 @@ def start(
         else:
             _warn_if_reachable_from_the_network(host, port)
         _warn_if_gui_mode_over_http(gui, host, port)
+        if trusted_proxies:
+            general.log_event(
+                "server: the client address is taken from X-Forwarded-For on "
+                "requests from the trusted proxies "
+                f"{', '.join(str(network) for network in trusted_proxies)}"
+            )
 
         # The reaper that closes idle sessions and drops expired connections
         # belongs to the server, and this is where a server begins and ends. It
@@ -317,6 +336,7 @@ def start(
                 ssl_certfile=ssl_certfile,
                 ssl_keyfile=ssl_keyfile,
                 auth=auth,
+                trusted_proxies=trusted_proxies,
             )
         finally:
             db_functions.stop_connection_reaper()
@@ -521,6 +541,7 @@ def _serve_streamable_http(
     ssl_certfile=None,
     ssl_keyfile=None,
     auth=None,
+    trusted_proxies=(),
 ) -> None:
     """Serves the MCP server over streamable-http on our own uvicorn server.
 
@@ -544,6 +565,13 @@ def _serve_streamable_http(
     an empty trust list means is uvicorn-version-dependent, whereas
     ``proxy_headers=False`` keeps the middleware from being installed at all.
 
+    Behind a reverse proxy the header is the only place the client's address
+    is to be found, so for the proxies named with ``--trustedProxies``, and for
+    them alone, it is read by :class:`TrustedProxyMiddleware` instead: ours,
+    because it trusts nobody unless told to, and outermost, so that everything
+    that reads the peer address - the connection binding, the throttles and
+    the allowed client networks - sees the same one.
+
     Args:
         mcp_server: The MCPServer instance to serve.
         host (str): The host address to bind to.
@@ -557,6 +585,8 @@ def _serve_streamable_http(
             :func:`mcp_plugin.lib.auth.customize_app`) and whose refused
             tokens are throttled (see
             :class:`mcp_plugin.lib.auth.AuthFailureThrottle`), or None.
+        trusted_proxies: The networks (see :func:`parse_trusted_proxies`)
+            whose ``X-Forwarded-For`` header is believed; empty for none.
 
     Returns:
         None
@@ -575,6 +605,9 @@ def _serve_streamable_http(
 
         app = AuthFailureThrottle(customize_app(starlette_app, auth))
 
+    if trusted_proxies:
+        app = TrustedProxyMiddleware(app, trusted_proxies)
+
     config = uvicorn.Config(
         app,
         host=host,
@@ -586,6 +619,154 @@ def _serve_streamable_http(
     )
 
     anyio.run(uvicorn.Server(config).serve)
+
+
+def parse_trusted_proxies(trusted_proxies) -> list:
+    """Returns the trusted proxies given with ``--trustedProxies`` as networks.
+
+    Args:
+        trusted_proxies: IP addresses and CIDR networks, IPv4 or IPv6, as a
+            list or a comma-separated string, or None.
+
+    Returns:
+        The ``ipaddress`` networks, a single address as one of its own; empty
+        when there are none.
+
+    Raises:
+        mysqlsh.Error: If an entry is not an address or network, or is a
+            network of every address - whose header any client could write.
+    """
+    if not trusted_proxies:
+        return []
+    if isinstance(trusted_proxies, str):
+        trusted_proxies = trusted_proxies.split(",")
+
+    entries = [str(entry).strip() for entry in trusted_proxies if str(entry).strip()]
+
+    networks = []
+    invalid = []
+    for entry in entries:
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            invalid.append(entry)
+
+    if invalid:
+        raise mysqlsh.Error(
+            f"--trustedProxies takes IP addresses and networks (such as "
+            f"192.0.2.3 or 192.0.2.0/24); not: {', '.join(invalid)}."
+        )
+
+    everyone = [str(network) for network in networks if network.prefixlen == 0]
+    if everyone:
+        raise mysqlsh.Error(
+            f"--trustedProxies cannot trust every address ({', '.join(everyone)}): "
+            "any client could then choose the address it is seen as with an "
+            "X-Forwarded-For header. Name the reverse proxies themselves."
+        )
+
+    return networks
+
+
+class TrustedProxyMiddleware:
+    """ASGI middleware taking the client address from trusted proxies' headers.
+
+    Behind a reverse proxy every request arrives from the proxy, and the
+    client it came from is only named in the ``X-Forwarded-For`` header the
+    proxy adds. Anyone can send that header, so it is only believed when the
+    TCP peer is one of the trusted proxies, and of what it says only the part
+    those proxies wrote: read from the right, each trusted proxy names the hop
+    before it, and the first address that is not a trusted proxy is the
+    client. An entry that is not an IP address - ``unknown``, an obfuscated
+    name, an address with a port - ends the search with the request left as
+    it arrived, seen as coming from the proxy: guessing past it would be
+    believing something no trusted proxy vouched for. If every entry is a
+    trusted proxy the leftmost is the client.
+
+    Only ``X-Forwarded-For`` is read. ``Forwarded``, ``X-Real-IP`` and
+    ``X-Forwarded-Proto`` are ignored, as is the scheme: nothing here depends
+    on it.
+
+    The request's ``client`` is replaced in a copy of the ASGI scope, with
+    port 0 as the client's own port is not known; the scope the server handed
+    in is never changed.
+    """
+
+    def __init__(self, app, networks):
+        """Wraps an ASGI app.
+
+        Args:
+            app: The ASGI app to serve.
+            networks (list): The trusted proxies' ``ipaddress`` networks (see
+                :func:`parse_trusted_proxies`).
+        """
+        self.app = app
+        self.networks = list(networks)
+
+    def trusted(self, address) -> bool:
+        """Returns whether an address is one of the trusted proxies.
+
+        The same matching as ``--allowedClientNetworks``
+        (:func:`mcp_plugin.lib.oauth_config.address_allowed`): an IPv4-mapped
+        address is the IPv4 address it maps, and loopback matches a loopback
+        network of either IP version. Unlike there, no networks trust nobody.
+        """
+        from mcp_plugin.lib import oauth_config
+
+        return bool(self.networks) and oauth_config.address_allowed(
+            general.normalize_client_address(str(address)), self.networks
+        )
+
+    def client_address(self, scope):
+        """Returns the client address a request was forwarded for.
+
+        Args:
+            scope (dict): The ASGI scope of an HTTP or WebSocket request.
+
+        Returns:
+            The client's IP address as a string, or None when the request is
+            to be left as it arrived.
+        """
+        peer = (scope.get("client") or (None,))[0]
+        try:
+            peer = ipaddress.ip_address(peer)
+        except ValueError:
+            return None
+        if not self.trusted(peer):
+            return None
+
+        values = [
+            value.decode("latin-1")
+            for name, value in scope.get("headers") or ()
+            if name.lower() == b"x-forwarded-for"
+        ]
+        if not values:
+            return None
+
+        entries = [entry.strip() for entry in ",".join(values).split(",")]
+        client = None
+        for entry in reversed(entries):
+            try:
+                client = ipaddress.ip_address(entry)
+            except ValueError:
+                return None
+            if not self.trusted(client):
+                break
+
+        # The first address that is not a trusted proxy or, when every hop is
+        # one, the leftmost, as far back as the chain goes.
+        mapped = getattr(client, "ipv4_mapped", None)
+
+        return str(mapped or client)
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") in ("http", "websocket"):
+            address = self.client_address(scope)
+            if address is not None:
+                scope = dict(scope)
+                scope["client"] = (address, 0)
+
+        await self.app(scope, receive, send)
 
 
 def _dialable_host_names(host: str) -> list:
