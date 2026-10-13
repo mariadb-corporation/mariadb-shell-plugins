@@ -753,7 +753,15 @@ def _resumable(function: str, args: list, options: dict) -> bool:
     return True
 
 
-def run(task, function: str, args: list, options: dict, source: tuple, target: Optional[dict] = None):
+def run(
+    task,
+    function: str,
+    args: list,
+    options: dict,
+    source: tuple,
+    target: Optional[dict] = None,
+    executable: Optional[str] = None,
+):
     """Runs a utility for a task, in shell processes of its own.
 
     The events of its output go to the task as they come. A run that crashed
@@ -767,6 +775,8 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
         options (dict): Its options.
         source (tuple): ``(uri, password)`` of the connection it runs on.
         target (dict): A copy's target, as connection data with its password.
+        executable (str): The shell binary, as :func:`shell_executable`
+            found it before the task started; found here where not given.
 
     Returns:
         None, once the utility completed.
@@ -779,7 +789,7 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
     attempts = MAX_RESTARTS + 1 if resumable else 1
     progress_file_read = False
 
-    shell = [shell_executable(), "--json=raw", "--passwords-from-stdin", f"--uri={uri}", "--"]
+    shell = [executable or shell_executable(), "--json=raw", "--passwords-from-stdin", f"--uri={uri}", "--"]
     passwords = [password or ""]
     if target is not None:
         passwords.append(target.get("password") or "")

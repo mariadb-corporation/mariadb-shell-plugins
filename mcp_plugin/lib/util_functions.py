@@ -174,6 +174,9 @@ def register_util_tools(server, function_groups=()) -> None:
         _RESERVED_OPTIONS, each with the reason it is refused.
         """
         options = _options(options)
+        # Before the paths, which can ask the user: without a shell to run
+        # it in, the call fails whatever they answer.
+        executable = util_process.shell_executable()
 
         for path in _local_paths(urls, options):
             await general.require_allowed_path(ctx, path)
@@ -198,7 +201,7 @@ def register_util_tools(server, function_groups=()) -> None:
         task = tasks.create(kind, title, client, connection_id)
 
         def work(task):
-            util_process.run(task, function, args, options, source, target)
+            util_process.run(task, function, args, options, source, target, executable)
             return result
 
         task.start(work)

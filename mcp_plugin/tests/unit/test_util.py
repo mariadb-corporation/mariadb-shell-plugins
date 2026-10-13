@@ -543,6 +543,35 @@ def test_outside_a_shell_the_one_on_path(tmp_path, monkeypatch):
         util_process.shell_executable()
 
 
+class _ToolServer:
+    """Keeps the tools registered on it, to call them without a client."""
+
+    def __init__(self):
+        self.tools = {}
+
+    def tool(self, *args, **kwargs):
+        def register(func):
+            self.tools[kwargs.get("name")] = func
+            return func
+        return register
+
+
+def test_without_a_shell_the_call_fails_before_any_task(tmp_path, monkeypatch):
+    pytest.importorskip("mcp")
+    monkeypatch.delattr(util_process.mysqlsh, "executable", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path / "nothing"))
+    server = _ToolServer()
+    util_functions.register_util_tools(server, [general.FUNCTION_GROUP_DB])
+    dump_instance = next(
+        func for name, func in server.tools.items() if name.endswith("dump_instance")
+    )
+
+    # no context is needed: the shell is looked for before anything else
+    with pytest.raises(Exception, match="Put mariadb-shell on the PATH"):
+        asyncio.run(dump_instance(None, connection_id="c1", output_url="/d"))
+    assert tasks._tasks == {}
+
+
 # --- the process, with a fake shell ---------------------------------------------
 
 _FAKE_SHELL = """
