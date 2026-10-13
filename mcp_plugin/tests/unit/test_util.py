@@ -230,6 +230,10 @@ def test_only_local_paths_are_checked():
     assert util_functions._local_paths(["/data/dump"], {}) == ["/data/dump"]
     assert util_functions._local_paths(["https://example.com/par/"], {}) == []
     assert util_functions._local_paths(["prefix/dump"], {"s3BucketName": "b"}) == []
+    # a bucket option without a name makes no bucket: the URL is still local
+    for name in ("s3BucketName", "osBucketName", "azureContainerName"):
+        for value in (None, "", 0, False):
+            assert util_functions._local_paths(["/etc/x"], {name: value}) == ["/etc/x"]
     # a pattern of files is checked where the files are
     assert util_functions._local_paths(["/data/in/part-*.tsv"], {}) == ["/data/in"]
 

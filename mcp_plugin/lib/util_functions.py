@@ -110,7 +110,13 @@ def _local_paths(urls, options: dict) -> list:
     """
     paths = []
 
-    if not any(key in options for key in _REMOTE_STORAGE_OPTIONS):
+    # Only a non-empty name makes a bucket, as in the shell's storage options
+    # (``!m_container_name.empty()``): an empty one, or a None that is never
+    # passed on, leaves the URL a local path, so it is checked.
+    if not any(
+        isinstance(options.get(key), str) and options[key]
+        for key in _REMOTE_STORAGE_OPTIONS
+    ):
         for url in urls:
             path = _local_path(url)
             if path is None:

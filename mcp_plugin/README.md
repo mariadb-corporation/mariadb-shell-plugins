@@ -425,8 +425,8 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   `file://` URL (as the shell reads it, scheme in any case), and the local files
   named by `progressFile`, `ociConfigFile`, `s3ConfigFile`, `s3CredentialsFile` and
   `azureConfigFile`. A remote URL (`https://` and the like), or a prefix in object
-  storage (`s3BucketName`, `osBucketName`, `azureContainerName`), is left to the
-  utility.
+  storage (`s3BucketName`, `osBucketName`, `azureContainerName`, with a non-empty
+  name), is left to the utility.
 - The tools are registered only when the `db` group is served as well, and never in
   multi-tenant mode.
 
