@@ -1,0 +1,57 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/* Keycloak's pages: the card below the welcome header, and the generic form
+   elements of the pages this theme takes from the base theme as they are
+   (profile updates, account linking, errors, ...). */
+a{color:var(--textLink-foreground)}
+/* The card is .mrsLogin of sign-in-page.css, the title its >p, the intro .mrsLoginIntro. */
+.mcpCard{width:100%;max-width:400px}
+#kc-content,#kc-content-wrapper,#kc-form,#kc-form-wrapper{display:flex;flex-direction:column;
+align-items:center;gap:12px;width:100%}
+#kc-content-wrapper form{display:flex;flex-direction:column;align-items:stretch;width:300px}
+.mcpGroup{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.mcpLabel,#kc-content-wrapper label{font-size:14px;font-weight:300}
+.mcpInput,#kc-content-wrapper form:not(.mrsLoginFields) input:is([type=text],[type=email],[type=password]){
+border:1px solid var(--secondary-text-color);border-radius:5px;padding:8px 12px;
+background:transparent;color:var(--primary-text-color);font:inherit;font-size:17px;
+font-weight:300;outline:0}
+.mcpInput:focus{border-color:var(--focus-color)}
+.mcpFieldError{color:var(--error-text-color);font-size:13px}
+.mcpButton,#kc-content-wrapper input[type=submit]{
+border:1px solid var(--secondary-text-color);border-radius:18px;padding:7px 20px;
+background:transparent;color:var(--primary-text-color);font:inherit;font-size:15px;
+font-weight:300;cursor:pointer;margin:4px 0}
+.mcpButtonPrimary{border-color:var(--primary-text-color)}
+.mcpButton:hover,.mcpButton:focus-visible{border-color:var(--focus-color);outline:0}
+.mcpRememberMe{font-size:14px;font-weight:200;display:flex;gap:8px;align-items:center}
+.mcpLinks{font-size:14px;font-weight:200}
+#kc-username{display:flex;gap:12px;align-items:center;font-size:15px;font-weight:300}
+#reset-login::after{content:"\21BA";font-size:16px}
+.mcpHidden{display:none}
+/* Info, warning and success messages; errors use .mrsLoginError. */
+.mcpAlert{max-width:300px;padding:8px 20px;border:1px solid var(--secondary-text-color);
+border-radius:6px;font-size:14px;text-align:center}
+/* Sign-in through another identity provider (Facebook, Google, ...). */
+.mcpSocial{display:flex;flex-direction:column;align-items:center;gap:10px;width:300px}
+.mcpSocial>p{font-size:14px;font-weight:200;color:var(--secondary-text-color)}
+.mcpSocial ul{list-style:none;display:flex;flex-direction:column;gap:8px;width:100%}
+.mcpSocialButton{display:flex;justify-content:center;border:1px solid var(--secondary-text-color);
+border-radius:18px;padding:8px;color:var(--primary-text-color);text-decoration:none;
+font-size:15px;font-weight:300}
+.mcpSocialButton:hover,.mcpSocialButton:focus-visible{border-color:var(--focus-color);outline:0}
+.mcpSocialButton[aria-disabled=true]{opacity:.5;pointer-events:none}

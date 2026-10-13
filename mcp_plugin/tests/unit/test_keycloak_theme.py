@@ -1,0 +1,87 @@
+# Copyright (c) 2026, MariaDB plc.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.0,
+# as published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+# the GNU General Public License, version 2.0, for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+
+"""The Keycloak login theme in ``keycloak-theme/``.
+
+The theme gives a Keycloak realm the look of the built-in authorization
+server's sign-in page by carrying copies of that page's stylesheet and logo.
+Nothing builds the theme from them, so these checks are what keeps the copies
+from drifting when the server's page changes.
+"""
+
+# cSpell:ignore mysqlsh MariaDB Keycloak keycloak noparse
+
+import os
+
+import pytest
+
+from mcp_plugin.lib import oauth_builtin
+
+THEME = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "keycloak-theme",
+    "mariadb-mcp",
+    "login",
+)
+
+
+def _read(*path):
+    with open(os.path.join(THEME, *path), encoding="utf-8") as file:
+        return file.read()
+
+
+def _asset(name):
+    with open(os.path.join(os.path.dirname(os.path.abspath(oauth_builtin.__file__)),
+                           "assets", name), encoding="utf-8") as file:
+        return file.read()
+
+
+def test_the_stylesheet_is_the_sign_in_pages():
+    assert _read("resources", "css", "sign-in-page.css") == _asset("sign-in-page.css")
+
+
+@pytest.mark.parametrize("name", ["favicon.svg", "favicon.ico"])
+def test_the_icons_are_the_sign_in_pages(name):
+    assets = os.path.join(os.path.dirname(os.path.abspath(oauth_builtin.__file__)), "assets")
+    with open(os.path.join(THEME, "resources", "img", name), "rb") as theme, \
+            open(os.path.join(assets, name), "rb") as asset:
+        assert theme.read() == asset.read()
+    assert f'href="${{url.resourcesPath}}/img/{name}"' in _read("template.ftl")
+
+
+def test_the_logo_is_the_one_the_sign_in_page_shows():
+    # Inside noparse, so that FreeMarker never reads the SVG as a template.
+    logo = _asset("mariadb-logo-vertical.svg").strip()
+    assert f"<#noparse>{logo}</#noparse>" in _read("logo.ftl")
+
+
+def test_the_theme_extends_the_base_theme_with_its_own_stylesheet():
+    properties = dict(
+        line.split("=", 1)
+        for line in _read("theme.properties").splitlines()
+        if line and not line.startswith("#")
+    )
+
+    assert properties["parent"] == "base"
+    assert properties["styles"] == "css/sign-in-page.css css/mariadb-mcp.css"
+    for style in properties["styles"].split():
+        assert os.path.isfile(os.path.join(THEME, "resources", style))
+
+
+def test_the_page_frame_is_the_only_template_layout():
+    # Every page of the theme, its own and the base theme's, is laid out by
+    # template.ftl, which therefore has to define the macro they all call.
+    assert "<#macro registrationLayout " in _read("template.ftl")
+    assert '<#import "template.ftl" as layout>' in _read("login.ftl")

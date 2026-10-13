@@ -24,11 +24,20 @@ opt-in), 93%**; **585 passed, 3 skipped** after the Arcade round below; **584 pa
 - **Sign-in page restyled** after mrs_plugin's
   `default_static_content/index.html` (colours, welcome header, joined fields, round next
   button, error bubble, separator, footer), without its script (the CSP allows none).
-  The MariaDB seal is `lib/assets/mariadb-seal.svg`, inlined with its `style`
-  attributes stripped (CSP: nonce'd `<style>` only). The button's chevron is an inline
+  The page's style is `lib/assets/sign-in-page.css`, the logo the official vertical MariaDB
+  logo `lib/assets/mariadb-logo-vertical.svg` (white variant, since 2026-10-12; before, the
+  seal alone), committed ready to inline - no own `<style>`, `<title>`, class or style
+  attributes (CSP: nonce'd `<style>` only), `role`/`aria-label` set - and coloured by
+  `--logo-color` (`#003545` light, `#fff` dark). `_asset()` reads both once; the Keycloak
+  theme carries byte-identical copies. The button's chevron is an inline
   SVG (a CSS-border chevron became a diamond in a restyled Firefox), the button has
   `appearance:none` (Safari), and the inputs `flex:1 1 250px` so the button sits at the
   field's end. Commits `0ec99ee9`, `8f38d498`. The user's screenshot is in the docs.
+  2026-10-13 (user's values): logo 204x168, `h2` weight 400 with margin `40px 0 5px`.
+- **Landing page at `/`** (2026-10-13, PR #47): `oauth_builtin.landing_page`, added by
+  `server.add_landing_page` to every streamable-http server, whatever the OAuth2 mode, after
+  the SDK's routes. The REST Service's landing page in the sign-in page's frame: text and
+  `.welcomeLinks` to the docs, instead of the SDK's bare Not Found.
 - **Arcade, tested for real** (see oauth-builtin.md 2d): dotless tool names
   (`--toolNameSeparator`) and the user + grant binding (M23), `72a64f89`.
 

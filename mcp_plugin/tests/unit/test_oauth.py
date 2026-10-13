@@ -1532,6 +1532,8 @@ class _KeycloakAdminStandIn:
         self.scopes, self.mappers, self.roles, self.clients = [], {}, [], []
         self.optional, self.role_mappings = {}, {}
         self.users = [{"id": "u1", "username": "dba", "email": "dba@example.com"}]
+        self.login_themes = ["base", "keycloak", "keycloak.v2"]
+        self.realm_settings, self.realm_updates = {"realm": realm}, []
         self.server = HTTPServer(("127.0.0.1", 0), self._handler())
         self.url = f"http://127.0.0.1:{self.server.server_port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -1572,9 +1574,18 @@ class _KeycloakAdminStandIn:
                     return self._answer(200, {"issuer": issuer, "jwks_uri": issuer + "/certs"})
                 if self.headers.get("authorization") != "Bearer admintok":
                     return self._answer(401)
+                if path == "/admin/serverinfo":
+                    return self._answer(200, {"themes": {"login": [
+                        {"name": name} for name in stand_in.login_themes]}})
                 base = f"/admin/realms/{stand_in.realm}"
                 data = json.loads(body) if body else None
                 rest = path[len(base):]
+                if rest == "":
+                    if method == "GET":
+                        return self._answer(200, stand_in.realm_settings)
+                    stand_in.realm_updates.append(data)
+                    stand_in.realm_settings.update(data)
+                    return self._answer(204)
                 if rest == "/client-scopes":
                     if method == "GET":
                         return self._answer(200, stand_in.scopes)
@@ -1672,6 +1683,44 @@ def test_setup_keycloak_realm_prepares_the_realm_once(tenant_config, keycloak_ad
     assert oauth_config.get_oauth_settings()["keycloak"]["issuer"] == (
         f"{keycloak_admin.url}/realms/mariadb"
     )
+
+
+def test_setup_keycloak_realm_selects_an_installed_login_theme(tenant_config, keycloak_admin,
+                                                              monkeypatch, capsys):
+    """Once, naming only the theme, so the realm's other settings stay as they are."""
+    from mcp_plugin.lib import setup_keycloak
+
+    monkeypatch.setenv("MCP_TEST_KC_ADMIN", "adminpw")
+    keycloak_admin.login_themes.append("mariadb-mcp")
+    options = {
+        "server": keycloak_admin.url, "realm": "mariadb", "admin_user": "admin",
+        "admin_password_env": "MCP_TEST_KC_ADMIN", "mcp_url": PUBLIC_URL,
+        "login_theme": "mariadb-mcp", "non_interactive": True,
+    }
+    setup_keycloak.run_setup_keycloak_realm(**options)
+    setup_keycloak.run_setup_keycloak_realm(**options)
+
+    assert keycloak_admin.realm_settings["loginTheme"] == "mariadb-mcp"
+    assert keycloak_admin.realm_updates == [{"loginTheme": "mariadb-mcp"}]
+    assert "Login theme of realm 'mariadb': mariadb-mcp." in capsys.readouterr().out
+
+
+def test_setup_keycloak_realm_refuses_a_login_theme_keycloak_does_not_have(
+        tenant_config, keycloak_admin, monkeypatch):
+    """Before anything in the realm is changed, and saying where the theme is."""
+    from mcp_plugin.lib import setup_keycloak
+
+    monkeypatch.setenv("MCP_TEST_KC_ADMIN", "adminpw")
+    with pytest.raises(mysqlsh.Error, match="no login theme 'mariadb-mcp'.*keycloak-theme"):
+        setup_keycloak.run_setup_keycloak_realm(
+            server=keycloak_admin.url, realm="mariadb", admin_user="admin",
+            admin_password_env="MCP_TEST_KC_ADMIN", mcp_url=PUBLIC_URL,
+            login_theme="mariadb-mcp", non_interactive=True,
+        )
+
+    assert keycloak_admin.scopes == [] and keycloak_admin.clients == []
+    assert keycloak_admin.realm_updates == []
+    assert oauth_config.get_mode() == "none"
 
 
 def test_setup_keycloak_realm_asks_for_what_was_not_given(tenant_config, keycloak_admin,
@@ -1857,8 +1906,8 @@ def test_the_sign_in_checkboxes_are_ordinary_checkboxes(tenant_config):
     assert page.count('type="checkbox"') == 1
 
 
-def test_the_sign_in_page_shows_the_seal_inline(tenant_config):
-    """The seal is inline SVG, and carries no style attribute the CSP would block."""
+def test_the_sign_in_page_shows_the_logo_inline(tenant_config):
+    """The logo is inline SVG, with no style the CSP would block or that would colour it."""
     from starlette.responses import HTMLResponse
 
     provider = _provider()
@@ -1870,5 +1919,47 @@ def test_the_sign_in_page_shows_the_seal_inline(tenant_config):
     assert '<svg role="img" aria-label="MariaDB"' in page
     assert "<?xml" not in page and "<!DOCTYPE svg" not in page
     assert " style=" not in page
-    assert "img-src" not in response.headers["Content-Security-Policy"]
+    assert page.count("<style") == 1 and "cls-1" not in page and "<title>MDB" not in page
+    assert ".welcomeLogo path{fill:var(--logo-color)}" in page
+    # The logo carries the MariaDB name, so the heading below it does not repeat it.
+    assert "<h2>MCP Server</h2>" in page and "<title>MariaDB MCP Server</title>" in page
+    # Images from the server itself are the icons only; the logo needs none.
+    assert "img-src 'self';" in response.headers["Content-Security-Policy"]
+    assert '<link rel="icon" type="image/svg+xml" href="favicon.svg">' in page
     assert '<div class="mrsLoginError" role="alert"><p>No.</p></div>' in page
+
+
+@pytest.mark.parametrize("mode", [None, oauth_config.OAUTH_MODE_BUILTIN])
+def test_the_server_root_shows_a_landing_page(tenant_config, mode):
+    """A browser opening the server's address sees who answers, not a Not Found."""
+    bundle = None
+    if mode is not None:
+        oauth_config.set_public_url(PUBLIC_URL)
+        oauth_config.update_oauth_settings(
+            lambda oauth: oauth["builtin"].update(loginServers=[LOGIN_SERVER])
+        )
+        bundle = auth.build_auth(mode=mode)
+    mcp_server = server.build_mcp_server(["db"], auth=bundle)
+    starlette_app = mcp_server.streamable_http_app(host="127.0.0.1")
+    server.add_landing_page(starlette_app)
+    app = auth.customize_app(starlette_app, bundle) if bundle else starlette_app
+
+    async def get(path):
+        transport = httpx2.ASGITransport(app=app, client=("192.0.2.1", 1234))
+        async with httpx2.AsyncClient(transport=transport,
+                                      base_url="https://mcp.example.com") as client:
+            return await client.get(path)
+
+    response = asyncio.run(get("/"))
+    page = response.text
+
+    assert response.status_code == 200
+    assert "<h2>MCP Server</h2>" in page and '<svg role="img" aria-label="MariaDB"' in page
+    assert ('<div class="welcomeLinks">'
+            '<a href="https://mariadb.com/docs/tools/mariadb-shell/mcp-server">') in page
+    assert "script" not in response.headers["Content-Security-Policy"]
+    assert asyncio.run(get("/other")).status_code == 404
+    for name, media_type in (("favicon.svg", "image/svg+xml"), ("favicon.ico", "image/x-icon")):
+        icon = asyncio.run(get(f"/{name}"))
+        assert icon.status_code == 200 and icon.headers["content-type"].startswith(media_type)
+        assert icon.content == oauth_builtin._icon(name)
