@@ -15,7 +15,7 @@
     // Initialize htm
     const html = htm.bind(h);
 
-    // The MySQL REST Service URL of the service offering the /mrsNotes schema
+    // The MariaDB REST Service URL of the service offering the /mrsNotes schema
     const serviceUrl = "https://localhost:8443/myService";
 
     /**
@@ -595,17 +595,17 @@
         <div class="page">
           <div class="welcome">
             <h1 class="gradientText">MRS Notes</h1>
-            <h2>Powered by the<br/>MySQL REST Service.</h2>
+            <h2>Powered by the<br/>MariaDB REST Service.</h2>
             <div class="productInfo">
-              <p>Writing a web app that uses the MySQL REST Service is straight forward.
+              <p>Writing a web app that uses the MariaDB REST Service is straight forward.
                 This example implements a simple note taking application that allows
                 note sharing between its users.</p>
               <p class="marketing">${notesManaged}</p>
             </div>
             <p>Choose one of the following login methods to start.</p>
             <div class="loginButtons">
-              <button onClick=${() => startLogin('MySQL')} class="flatButton btnMySQL">
-                Login with MySQL</button>
+              <button onClick=${() => startLogin('MariaDB')} class="flatButton btnMariaDB">
+                Login with MariaDB</button>
               <button onClick=${() => startLogin('Facebook')} class="flatButton btnFb">
                 Login with Facebook</button>
               <button onClick=${() => startLogin('Twitter')} class="flatButton btnTw">
@@ -747,7 +747,7 @@
             this.setState({ restarting: true });
             window.alert("Your current session expired. You will be logged in again.");
 
-            this.startLogin(authApp ? authApp : "MySQL");
+            this.startLogin(authApp ? authApp : "MariaDB");
           } else {
             let errorInfo = null;
             try {

@@ -15,7 +15,7 @@
 - **prepare_release** (`lib/management.py`): requires version ≥ last released and next_version > version (or ≥ with `allow_to_stay_on_same_version`); inlines `SOURCE '<path>'[a:b];` lines (Python slice on file text, relative to `development/`, indentation applied) into the dev script; fills template `schema_a.b.c.sql` section-by-section from the dev script (only section ids present in the TEMPLATE survive), drops empty sections except `license`/`001`; writes `versions/<file>_<v>.sql`; if a previous release exists and differs, writes the EMPTY update script `updates/<file>_<prev>_to_<v>.sql` from `schema_x.y.z_to_a.b.c.sql`; then sets section 910 of the dev file to next_version.
 - **generate_deployment_script**: first release → plain copy of the version file. Later releases → `schema_deployment_a.b.c.sql` with target sections 130/140/150/170/190 and, per consecutive released pair (`MSM-LOOP-START/END:UPDATABLE-VERSIONS` blocks, `(indent=N)`), the update script's sections 230/240/270/290. Target 180 (REST) is emitted after 370, run in full every time (since the 2026-10-05 fix). Section 140 → body of `msm_create_<target>()`, each 240 → `msm_update_<from>_to_<to>()`, 170 → `msm_auth_<target>()`, 270 → `msm_auth_<from>_to_<to>()`; dispatcher `msm_create_or_update()` / `msm_auth()` pick fresh-create vs. chained updates (via `@msm_schema_init`, `@msm_current_version`); all `msm_*` procs dropped at the end. SIGNAL errnos 32100 (exists, unmanaged), 32101 (stuck at 0.0.0), 32102 (version not updatable). Requires an update file for EVERY consecutive released pair (`get_updatable_versions` raises otherwise).
 - **Authorization model (verified 2026-10-05):** `msm_auth` runs the 270 step procedures, then ALWAYS the target's 170 (fresh install: only 170). So 170 must be re-runnable (`CREATE ROLE IF NOT EXISTS`, `GRANT`) and new roles/grants reach upgraded schemas through it; 270 is only for `REVOKE`/`DROP ROLE`. Upgrade and fresh install then end with identical roles and grants. The ai-plugins skills say to `GRANT` in 270 — wrong, and dangerous with issue 14.
-- **deploy_schema** (`lib/management.py`): checks released == deployment-script versions, picks latest if no version; refuses an existing unmanaged schema; no-op message if already on version; message (not error) if server is NEWER than the project; refuses a version not in the update chain. Runs the script via `lib.core.execute_msm_sql_script` (`mysqlsh.mysql.split_script`, so `DELIMITER` works) holding user lock `GET_LOCK("MSM_METADATA_LOCK", 1)`. `backup=True` (default False, added in a MariaDB session) + existing schema: sets `GLOBAL local_infile=1` if needed, `util.dump_schemas` to `backup_directory` (default `plugin_data/msm_plugin/backups/<file>_backup_<ver>[_N]`), on failure DROP + `util.load_dump`, removes the dump either way. Without backup a failed UPDATE leaves the schema as the failure left it; a failed fresh CREATE drops the schema. Every step goes to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
+- **deploy_schema** (`lib/management.py`): checks released == deployment-script versions, picks latest if no version; refuses an existing unmanaged schema; no-op message if already on version; message (not error) if server is NEWER than the project; refuses a version not in the update chain. Takes the per-schema update lock (`lib.core.msm_update_lock`, `GET_LOCK(CONCAT("MSM_METADATA_LOCK", "_", MD5(schema)), 1)`) before it looks at the schema and holds it through the backup, the script and the drop/restore; runs the script via `lib.core.execute_msm_sql_script(take_lock=False)` (`mysqlsh.mysql.split_script`, so `DELIMITER` works). `backup=True` (default False, added in a MariaDB session) + existing schema: sets `GLOBAL local_infile=1` if needed, `util.dump_schemas` (through `lib.core.run_util`: the given session becomes the global one only for the call, under the `_mariadb_shell_plugins_global_session` lock the mrs_plugin shares) to `backup_directory` (default `plugin_data/msm_plugin/backups/<file>_backup_<ver>[_N]`), on failure DROP + `util.load_dump`, removes the dump either way. Without backup a failed UPDATE leaves the schema as the failure left it; a failed fresh CREATE drops the schema. Every step goes to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
 - **Copyrights.** `msm.project.json` has a `copyrights` list (`holder`, `yearOfCreation`, `yearOfLastUpdate`, `tracksUpdates`) plus the legacy `copyrightHolder` mirror; old projects are migrated on read (`get_project_copyrights`). Licenses = `templates/license/*.txt` (`BSD`, `GPL-2.0`, `MIT`, `None`) or `CUSTOM` with `customLicense` text; placeholders `${copyright_notices}`, `${copyright_holder}`, `${year}`. Template files' own copyright headers are stripped (`strip_template_copyright_header`).
 
 ## Current state
@@ -71,18 +71,41 @@
 - **`MARIADB_SHELL_USER_CONFIG_HOME` moves `plugin_data/msm_plugin`** (config, log, backups) — use a scratch one for experiments so the user's `workingDirectory` and update log are untouched.
 - **Interactive mode changes return values**: wrappers print and return None when `useWizards` is on. Set `shell.options.useWizards = False` in scripts that need the values.
 - **The `msm.set.sectionSqlContent` arguments are positional `file_path, section_id, sql_content`**; sections 140/170 (dev) and 240/270 (update) end up inside stored procedures — no `DELIMITER` there; 130/150/190/230/290 are top level and use `DELIMITER %%`.
+- **Scripting the release functions** (used 2026-10-08 for the MRS metadata 5.0.0): from
+  `mariadb-shell --py -f`, with a config home whose `plugins/msm_plugin` links to this repo
+  (otherwise `ModuleNotFoundError: msm_plugin`), `useWizards` False, then
+  `lib.management.set_development_version`, `prepare_release(version, next_version)`,
+  `set_section_sql_content(section_id, sql_content, file_path)` on the update script and
+  `generate_deployment_script(..., overwrite_existing=True)` to regenerate after an edit.
+- **Section 240 runs INSIDE a stored procedure** (`msm_update_<from>_to_<to>`): a
+  `DROP FUNCTION`/`PROCEDURE` there fails with MariaDB 1357 ("Can't drop or alter a
+  FUNCTION from within another stored routine"); put such drops in 290. MariaDB also
+  refuses to alter a column that is part of a FOREIGN KEY (1833): drop the FKs, alter,
+  re-add them, all in 240.
 - **Legal notices are additive**: keep Oracle's line and the FOSS exception, add exactly `Copyright (c) 2026, MariaDB plc.`.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-07), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
+Checked at this checkpoint (2026-10-08):
 
 ```text
-$ git -C msm_plugin branch --show-current
-main   (no msm_plugin work this session)
+$ git branch --show-current
+wip/mrs_schema_improvements   (pushed, tracks origin; no PR yet)
 
-$ git -C msm_plugin status --short
-(clean before this checkpoint's context edits)
+$ git status --short   (one repository: every project's lines)
+ M mcp_plugin/run_tests.py
+ M mcp_plugin/tests/unit/helpers.py
+ M mcp_plugin/tests/unit/test_migration_e2e.py
+ M mcp_plugin/tests/unit/test_migrator_tools.py
+ M mcp_plugin/tests/unit/test_oauth.py
+ M mrs_plugin/scripts/run_grammar_test.sh
 ```
 
-msm_plugin itself: nothing open on `main`. PR #36 (`wip/msm_mrs_fixes`: MSM section 180, MRS GROUP BY queries, NO_AUTO_CREATE_USER / issue 14) is merged as `4bdf0ece`. Its remote branch `origin/wip/msm_mrs_fixes` is still on GitHub - deleting it was asked for and blocked by the session's permission layer; `git push origin --delete wip/msm_mrs_fixes` is the one command left.
+- Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
+  sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
+  the `MARIADB_SHELL_OPTIONS` support for the new shell build (made for the since removed
+  `--disable-modules=mrs`).
+- **msm_plugin itself: unchanged this session.** Its functions produced the MRS metadata
+  5.0.0 release (`prepare_release`, `set_section_sql_content`, `generate_deployment_script`).
+- PR #36 merged as `4bdf0ece`; `git push origin --delete wip/msm_mrs_fixes` is still the one
+  command left from it.

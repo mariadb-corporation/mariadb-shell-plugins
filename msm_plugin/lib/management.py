@@ -47,6 +47,15 @@ MSM_LOOP_UPDATABLE_VERSIONS_REGEX = (
 # Reges to match the MSM section placeholder
 MSM_SECTION_PLACEHOLDER_REGEX = r"\$\{section_(\d+).*?\}\n"
 
+# A substitution placeholder in the SQL scripts of a project, e.g.
+# /*<msm:schema_prefix>*/. Run as is, the comment is whitespace; msm.deploySchema()
+# replaces it with the value given for the name (see resolve_substitutions()).
+MSM_SUBSTITUTION_REGEX = r"/\*<msm:([A-Za-z_][A-Za-z0-9_]*)>\*/"
+
+# Every substitution value has to match this, whatever the project declares:
+# the values are written into the scripts as parts of unquoted identifiers.
+MSM_SUBSTITUTION_VALUE_REGEX = r"[A-Za-z0-9_]*"
+
 # Regex to match the leading comments and empty lines before SQL commands,
 # but ensure that comments before SQL commands are kept
 REMOVE_LEADING_COMMENTS_AND_EMPTY_LINES = r"((^--.*?\n)+(^\s*\n)*)"
@@ -717,6 +726,7 @@ def create_schema_project_folder(
             script = script.substitute(
                 {
                     "schema_name": schema_name,
+                    "schema_identifier": get_schema_identifier(schema_name),
                 }
             )
 
@@ -740,6 +750,7 @@ def create_schema_project_folder(
         substitutions={
             "license": get_license_text(project_settings=project_settings),
             "schema_name": schema_name,
+            "schema_identifier": get_schema_identifier(schema_name),
             "version_str": "0.0.1",
             "version_comma_str": "0, 0, 1",
         },
@@ -1272,6 +1283,7 @@ def prepare_release(
             # get_license_text(project_settings=project_settings),
             "license": "License Placeholder",
             "schema_name": schema_name,
+            "schema_identifier": get_schema_identifier(schema_name),
             "version_str": version,
             "version_comma_str": ", ".join(str(number) for number in version_as_ints),
         }
@@ -1325,6 +1337,7 @@ def prepare_release(
                 substitutions={
                     "license": get_license_text(project_settings=project_settings),
                     "schema_name": schema_name,
+                    "schema_identifier": get_schema_identifier(schema_name),
                     "version_from": last_released_version_str,
                     "version_to": version,
                     "version_comma_str": ", ".join(
@@ -1446,6 +1459,7 @@ def generate_deployment_script(
         {
             "license": get_license_text(project_settings=project_settings),
             "schema_name": schema_name,
+            "schema_identifier": get_schema_identifier(schema_name),
             "version_target": version,
             "version_comma_str": ", ".join(str(number) for number in version_as_ints),
             "section_130_creation_of_helpers": target_version_sections.get("130", {})
@@ -1654,21 +1668,176 @@ def substitute_source_statements_with_content(
     return script
 
 
-def get_schema_name(schema_project_path: str):
-    """Gets the schema name from the project settings
+def get_substitution_definitions(project_settings: dict) -> dict[str, dict]:
+    """Returns the substitutions a project declares in msm.project.json
+
+    The "substitutions" setting maps each name usable as /*<msm:name>*/ in the
+    project's SQL scripts to its definition: a "default" value (the empty
+    string when not given) and an optional "pattern" (a regular expression the
+    values have to match in full).
 
     Args:
-        schema_project_path (str): The path to the schema project.
+        project_settings (dict): The project settings.
+
+    Returns:
+        The definitions by substitution name
+    """
+    definitions = project_settings.get("substitutions", None) or {}
+    if not isinstance(definitions, dict):
+        raise ValueError(
+            "The `substitutions` project setting has to be an object mapping "
+            "each substitution name to its definition."
+        )
+    for name, definition in definitions.items():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise ValueError(f"Invalid substitution name `{name}`.")
+        if not isinstance(definition, dict):
+            raise ValueError(
+                f"The definition of the substitution `{name}` has to be an object."
+            )
+    return definitions
+
+
+def resolve_substitutions(
+    project_settings: dict, substitutions: dict | None = None
+) -> dict[str, str]:
+    """Returns the value of every substitution the project declares
+
+    The given values override the declared defaults.
+
+    Args:
+        project_settings (dict): The project settings.
+        substitutions (dict): The values to use, e.g. {"schema_prefix": "acme_"}.
+
+    Returns:
+        The values by substitution name
+    """
+    definitions = get_substitution_definitions(project_settings)
+    values = {
+        name: str(definition.get("default", ""))
+        for name, definition in definitions.items()
+    }
+
+    for name, value in (substitutions or {}).items():
+        if name not in definitions:
+            declared = ", ".join(sorted(definitions)) or "none"
+            raise ValueError(
+                f"The substitution `{name}` is not declared by the project "
+                f"(declared: {declared})."
+            )
+        if not isinstance(value, str):
+            raise ValueError(f"The value of the substitution `{name}` has to be a string.")
+        values[name] = value
+
+    for name, value in values.items():
+        if not re.fullmatch(MSM_SUBSTITUTION_VALUE_REGEX, value):
+            raise ValueError(
+                f"Invalid value `{value}` for the substitution `{name}`: only "
+                "letters, digits and _ are allowed."
+            )
+        pattern = definitions[name].get("pattern", None)
+        if pattern is not None and not re.fullmatch(pattern, value):
+            raise ValueError(
+                f"Invalid value `{value}` for the substitution `{name}`: it has "
+                f"to match {pattern}."
+            )
+    return values
+
+
+def apply_substitutions(script: str, values: dict[str, str]) -> str:
+    """Replaces the /*<msm:name>*/ placeholders of a script with their values
+
+    Args:
+        script (str): The SQL script.
+        values (dict): The values by substitution name, see resolve_substitutions().
+
+    Returns:
+        The script with every placeholder replaced
+    """
+
+    def replace(match):
+        name = match.group(1)
+        if name not in values:
+            raise ValueError(
+                f"The script uses the substitution /*<msm:{name}>*/ that the "
+                "project does not declare."
+            )
+        return values[name]
+
+    return re.sub(MSM_SUBSTITUTION_REGEX, replace, script)
+
+
+def get_schema_identifier(schema_name: str) -> str:
+    """Returns the schema name as it is written into the SQL scripts
+
+    A name with substitution placeholders, e.g.
+    /*<msm:schema_prefix>*/my_schema, is written as is: the placeholders only
+    work outside of quotes, so the rest of the name has to be usable as an
+    unquoted identifier. Any other name is quoted with backticks.
+
+    Args:
+        schema_name (str): The schemaName of the project settings.
+
+    Returns:
+        The schema name for SQL scripts
+    """
+    if re.search(MSM_SUBSTITUTION_REGEX, schema_name) is None:
+        return lib.core.quote_ident(schema_name)
+
+    plain = re.sub(MSM_SUBSTITUTION_REGEX, "", schema_name)
+    if not re.fullmatch(r"[A-Za-z0-9_]+", plain):
+        raise ValueError(
+            f"The schema name `{schema_name}` uses substitutions, so the rest of "
+            "it may only contain letters, digits and _."
+        )
+    return schema_name
+
+
+def get_effective_schema_name(
+    project_settings: dict, substitutions: dict | None = None
+) -> str:
+    """Returns the name of the schema a deployment creates or updates
+
+    That is the schemaName of the project settings with its substitution
+    placeholders replaced.
+
+    Args:
+        project_settings (dict): The project settings.
+        substitutions (dict): The values to use, see resolve_substitutions().
 
     Returns:
         The schema name
     """
-    project_settings = get_project_settings(schema_project_path)
     schema_name = project_settings.get("schemaName", None)
     if schema_name is None:
         raise ValueError("The schema name could not be read from the project settings.")
 
-    return schema_name
+    name = apply_substitutions(
+        schema_name, resolve_substitutions(project_settings, substitutions)
+    )
+    if len(name) > 64:
+        raise ValueError(
+            f"The schema name `{name}` is longer than 64 characters."
+        )
+    return name
+
+
+def get_schema_name(schema_project_path: str, substitutions: dict | None = None):
+    """Gets the schema name from the project settings
+
+    The substitution placeholders of the name are replaced with the given
+    values or their defaults, see get_effective_schema_name().
+
+    Args:
+        schema_project_path (str): The path to the schema project.
+        substitutions (dict): The values to use for the substitutions.
+
+    Returns:
+        The schema name
+    """
+    return get_effective_schema_name(
+        get_project_settings(schema_project_path), substitutions
+    )
 
 
 def get_schema_exists(
@@ -1768,6 +1937,7 @@ def deploy_schema(
     version: str = None,
     backup_directory: str = None,
     backup: bool = False,
+    substitutions: dict = None,
 ) -> str:
     """Deploys the database schema
 
@@ -1788,18 +1958,27 @@ def deploy_schema(
         backup_directory (str): The directory to be used for backups
         backup (bool): Whether to dump an existing schema before updating it,
             so it can be restored if the update fails. Defaults to False.
+        substitutions (dict): The values of the substitutions the project
+            declares, e.g. {"schema_prefix": "acme_"}. Every /*<msm:name>*/
+            in the scripts and the schemaName is replaced with the value
+            before the scripts run; names not given use their defaults.
 
     Returns:
         None
     """
     project_settings = get_project_settings(schema_project_path)
-    schema_name = project_settings.get("schemaName", None)
-    if schema_name is None:
+    if project_settings.get("schemaName", None) is None:
         err_msg = (
             f"The project settings of `{schema_project_path}` could not be " "read."
         )
         lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
         raise ValueError(err_msg)
+    try:
+        substitution_values = resolve_substitutions(project_settings, substitutions)
+        schema_name = get_effective_schema_name(project_settings, substitutions)
+    except ValueError as e:
+        lib.core.write_to_msm_schema_update_log("ERROR", str(e))
+        raise
     schema_file_name = project_settings.get("schemaFileName", None)
 
     released_versions = get_released_versions(schema_project_path=schema_project_path)
@@ -1840,263 +2019,272 @@ def deploy_schema(
         lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
         raise ValueError(err_msg)
 
-    # Check if the schema already exists
-    schema_exists = get_schema_exists(session=session, schema_name=schema_name)
+    # Taken before the schema is looked at, and held until the deployment
+    # and its cleanup are done: read before the lock, a deployment that
+    # waited for another one would take the schema the other one just
+    # created as missing, run the script on it again, and drop it if that
+    # fails. Another deployment holding the lock is a reason to stop.
+    with lib.core.msm_update_lock(session, lock_name_suffix=schema_name):
+        # Check if the schema already exists
+        schema_exists = get_schema_exists(session=session, schema_name=schema_name)
 
-    # Check if the schema is actually managed by MSM, and if so, get the version
-    schema_managed = False
-    schema_version = None
-    if schema_exists:
-        schema_managed = get_schema_is_managed(session=session, schema_name=schema_name)
+        # Check if the schema is actually managed by MSM, and if so, get the version
+        schema_managed = False
+        schema_version = None
+        if schema_exists:
+            schema_managed = get_schema_is_managed(session=session, schema_name=schema_name)
 
-        if schema_managed:
-            schema_version = get_schema_version(
-                session=session, schema_name=schema_name
-            )
+            if schema_managed:
+                schema_version = get_schema_version(
+                    session=session, schema_name=schema_name
+                )
 
-    if schema_exists and not schema_managed:
-        err_msg = (
-            f"Deployment or update of database schema `{schema_name}` using "
-            f"version {version} requested but the schema is not managed by "
-            "MSM."
-        )
-        lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
-        raise Exception(err_msg)
-
-    # If the requested version already matches the version, exit since there is
-    # nothing to do
-    if schema_version is not None and schema_version == version:
-        info_msg = (
-            f"Deployment or update of database schema `{schema_name}` using "
-            f"version {version} requested but the schema is already on the "
-            "requested version. No changes performed."
-        )
-        lib.core.write_to_msm_schema_update_log("INFO", info_msg)
-        return info_msg
-
-    # Check if the current version of the schema is in the list of versions
-    # that can be upgraded by the deployment scripts
-    if schema_version is not None:
-        updatable_versions = get_updatable_versions(schema_project_path)
-        updatable_versions_str = map(
-            lambda v: "%d.%d.%d" % tuple(v), updatable_versions
-        )
-
-        if (
-            len(updatable_versions) > 0
-            and lib.core.convert_version_str_to_list(schema_version)
-            > updatable_versions[-1]
-        ):
-            info_msg = (
-                f"The database schema `{schema_name}` is on a newer version "
-                f"{schema_version} than shipped with this project (version "
-                f"{'%d.%d.%d' % tuple(updatable_versions[-1])}). No changes "
-                "performed."
-            )
-            lib.core.write_to_msm_schema_update_log("INFO", info_msg)
-            return info_msg
-
-        if not schema_version in updatable_versions_str:
+        if schema_exists and not schema_managed:
             err_msg = (
-                f"Update of database schema `{schema_name}` to version "
-                f"{version} requested but the version {schema_version} cannot "
-                "be updated."
+                f"Deployment or update of database schema `{schema_name}` using "
+                f"version {version} requested but the schema is not managed by "
+                "MSM."
             )
             lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
             raise Exception(err_msg)
 
-    # Log start of the
-    if not schema_exists:
-        lib.core.write_to_msm_schema_update_log(
-            "INFO",
-            f"Starting deployment of database schema `{schema_name}` using "
-            f"version {version} ...",
-        )
-    else:
-        lib.core.write_to_msm_schema_update_log(
-            "INFO",
-            f"Starting update of database schema `{schema_name}` version "
-            f"{schema_version} to version {version} ...",
-        )
-
-    # Perform dump if the schema exists and backups are enabled
-    backup_available = False
-    # Left as if local_infile was already enabled, so nothing tries to restore
-    # it when no dump is taken and the option is therefore never touched.
-    original_local_infile = True
-    if schema_exists and backup:
-        lib.core.write_to_msm_schema_update_log(
-            "INFO",
-            f"Preparing dump of `{schema_name}` version "
-            f"{schema_version} in order to be roll back in case of an error.",
-        )
-
-        if backup_directory is None:
-            backup_directory = os.path.join(
-                lib.core.get_msm_plugin_data_path(),
-                "backups",
-                f"{schema_file_name}_backup_{schema_version}",
+        # If the requested version already matches the version, exit since there is
+        # nothing to do
+        if schema_version is not None and schema_version == version:
+            info_msg = (
+                f"Deployment or update of database schema `{schema_name}` using "
+                f"version {version} requested but the schema is already on the "
+                "requested version. No changes performed."
             )
-            # If that directory already exists, keep appending counter until
-            # a new directory is found
-            i = 2
-            candidate = backup_directory
-            while os.path.exists(candidate):
-                candidate = f"{backup_directory}_{i}"
-                i += 1
-            backup_directory = candidate
+            lib.core.write_to_msm_schema_update_log("INFO", info_msg)
+            return info_msg
 
-        os.makedirs(backup_directory, exist_ok=True)
+        # Check if the current version of the schema is in the list of versions
+        # that can be upgraded by the deployment scripts
+        if schema_version is not None:
+            updatable_versions = get_updatable_versions(schema_project_path)
+            updatable_versions_str = map(
+                lambda v: "%d.%d.%d" % tuple(v), updatable_versions
+            )
 
-        # Set the mysqlsh session to the one that was given
-        if "shell.Object" in str(type(session)):
-            mysqlsh.globals.shell.set_session(session)
-        else:
-            mysqlsh.globals.shell.set_session(session.session)
-
-        # Ensure that the dump can be read back in case of a failure by setting
-        # local_infile to 1
-        # cSpell:ignore infile
-        row = (
-            lib.core.MsmDbExec("SELECT @@local_infile as local_infile")
-            .exec(session)
-            .first
-        )
-        original_local_infile = row and int(row["local_infile"]) == 1
-        if not original_local_infile:
-            try:
-                lib.core.write_to_msm_schema_update_log(
-                    "INFO",
-                    "Enabling local_infile option in order to be able to load "
-                    "back the schema dump in case of an update error...",
+            if (
+                len(updatable_versions) > 0
+                and lib.core.convert_version_str_to_list(schema_version)
+                > updatable_versions[-1]
+            ):
+                info_msg = (
+                    f"The database schema `{schema_name}` is on a newer version "
+                    f"{schema_version} than shipped with this project (version "
+                    f"{'%d.%d.%d' % tuple(updatable_versions[-1])}). No changes "
+                    "performed."
                 )
-                lib.core.MsmDbExec("SET GLOBAL local_infile=1").exec(session)
-            except:
+                lib.core.write_to_msm_schema_update_log("INFO", info_msg)
+                return info_msg
+
+            if not schema_version in updatable_versions_str:
                 err_msg = (
-                    "Failed to enable the local_infile option. Please execute "
-                    "SET PERSIST GLOBAL local_infile=1; on the MariaDB Server."
+                    f"Update of database schema `{schema_name}` to version "
+                    f"{version} requested but the version {schema_version} cannot "
+                    "be updated."
                 )
                 lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
-
                 raise Exception(err_msg)
 
-        lib.core.write_to_msm_schema_update_log(
-            "INFO", f"Creating dump of `{schema_name}` version {schema_version} ..."
-        )
-        mysqlsh.globals.util.dump_schemas(
-            [schema_name],
-            f"file://{backup_directory}",
-            {
-                "skipUpgradeChecks": True,
-                "showProgress": False,
-            },
-        )
-
-        backup_available = True
-
-    # Run deployment script
-    try:
-        lib.core.execute_msm_sql_script(
-            session=session,
-            sql_file_path=os.path.join(
-                schema_project_path,
-                "releases",
-                "deployment",
-                f"{schema_file_name}_deployment_{version}.sql",
-            ),
-        )
-
+        # Log start of the
         if not schema_exists:
-            info_msg = (
-                f"Deployment of `{schema_name}` version "
-                f"{version} completed successfully."
+            lib.core.write_to_msm_schema_update_log(
+                "INFO",
+                f"Starting deployment of database schema `{schema_name}` using "
+                f"version {version} ...",
             )
         else:
-            if not original_local_infile:
-                lib.core.MsmDbExec("SET GLOBAL local_infile=0").exec(session)
-                lib.core.write_to_msm_schema_update_log(
-                    "INFO", "Restored local_infile option."
-                )
-
-            info_msg = (
-                f"Completed the update of `{schema_name}` version "
-                f"{schema_version} to {version} successfully."
+            lib.core.write_to_msm_schema_update_log(
+                "INFO",
+                f"Starting update of database schema `{schema_name}` version "
+                f"{schema_version} to version {version} ...",
             )
 
-        lib.core.write_to_msm_schema_update_log("INFO", info_msg)
+        # Perform dump if the schema exists and backups are enabled
+        backup_available = False
+        # Left as if local_infile was already enabled, so nothing tries to restore
+        # it when no dump is taken and the option is therefore never touched.
+        original_local_infile = True
+        if schema_exists and backup:
+            lib.core.write_to_msm_schema_update_log(
+                "INFO",
+                f"Preparing dump of `{schema_name}` version "
+                f"{schema_version} in order to be roll back in case of an error.",
+            )
 
-        # Remove the backup directory as it is no longer needed
-        if backup_available:
-            shutil.rmtree(backup_directory)
-
-        return info_msg
-    except Exception as e:
-        # Drop the schema after a failed update, but only if it can be restored
-        # from a dump afterwards, or if it did not exist before this deployment
-        # and is therefore this deployment's to clean up. Dropping it without a
-        # backup to load back would discard the very data the update was
-        # applied to.
-        if backup_available or not schema_exists:
-            try:
-                lib.core.MsmDbExec(
-                    f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(schema_name)}"
-                ).exec(session)
-            except:
-                pass
-
-        # Restore the backup if available
-        if backup_available:
-            try:
-                mysqlsh.globals.util.load_dump(
-                    f"file://{backup_directory}",
-                    {
-                        "showMetadata": False,
-                        "showProgress": False,
-                        "ignoreVersion": True,
-                    },
+            if backup_directory is None:
+                backup_directory = os.path.join(
+                    lib.core.get_msm_plugin_data_path(),
+                    "backups",
+                    f"{convert_string_to_valid_filename(schema_name)}_backup_"
+                    f"{schema_version}",
                 )
+                # If that directory already exists, keep appending counter until
+                # a new directory is found
+                i = 2
+                candidate = backup_directory
+                while os.path.exists(candidate):
+                    candidate = f"{backup_directory}_{i}"
+                    i += 1
+                backup_directory = candidate
 
+            os.makedirs(backup_directory, exist_ok=True)
+
+            # Ensure that the dump can be read back in case of a failure by setting
+            # local_infile to 1
+            # cSpell:ignore infile
+            row = (
+                lib.core.MsmDbExec("SELECT @@local_infile as local_infile")
+                .exec(session)
+                .first
+            )
+            original_local_infile = row and int(row["local_infile"]) == 1
+            if not original_local_infile:
+                try:
+                    lib.core.write_to_msm_schema_update_log(
+                        "INFO",
+                        "Enabling local_infile option in order to be able to load "
+                        "back the schema dump in case of an update error...",
+                    )
+                    lib.core.MsmDbExec("SET GLOBAL local_infile=1").exec(session)
+                except:
+                    err_msg = (
+                        "Failed to enable the local_infile option. Please execute "
+                        "SET PERSIST GLOBAL local_infile=1; on the MariaDB Server."
+                    )
+                    lib.core.write_to_msm_schema_update_log("ERROR", err_msg)
+
+                    raise Exception(err_msg)
+
+            lib.core.write_to_msm_schema_update_log(
+                "INFO", f"Creating dump of `{schema_name}` version {schema_version} ..."
+            )
+            # The dump runs on the given session, which is the shell's global
+            # session only for the call
+            lib.core.run_util(
+                session,
+                "dump_schemas",
+                [schema_name],
+                f"file://{backup_directory}",
+                options={
+                    "skipUpgradeChecks": True,
+                    "showProgress": False,
+                },
+            )
+
+            backup_available = True
+
+        # Run deployment script
+        try:
+            lib.core.execute_msm_sql_script(
+                session=session,
+                sql_file_path=os.path.join(
+                    schema_project_path,
+                    "releases",
+                    "deployment",
+                    f"{schema_file_name}_deployment_{version}.sql",
+                ),
+                substitutions=substitution_values,
+                take_lock=False,
+            )
+
+            if not schema_exists:
+                info_msg = (
+                    f"Deployment of `{schema_name}` version "
+                    f"{version} completed successfully."
+                )
+            else:
                 if not original_local_infile:
                     lib.core.MsmDbExec("SET GLOBAL local_infile=0").exec(session)
                     lib.core.write_to_msm_schema_update_log(
                         "INFO", "Restored local_infile option."
                     )
 
-                # Remove the backup directory as it is no longer needed
+                info_msg = (
+                    f"Completed the update of `{schema_name}` version "
+                    f"{schema_version} to {version} successfully."
+                )
+
+            lib.core.write_to_msm_schema_update_log("INFO", info_msg)
+
+            # Remove the backup directory as it is no longer needed
+            if backup_available:
                 shutil.rmtree(backup_directory)
-            except Exception as e_dump_load:
+
+            return info_msg
+        except Exception as e:
+            # Drop the schema after a failed update, but only if it can be restored
+            # from a dump afterwards, or if it did not exist before this deployment
+            # and is therefore this deployment's to clean up. Dropping it without a
+            # backup to load back would discard the very data the update was
+            # applied to.
+            if backup_available or not schema_exists:
+                try:
+                    lib.core.MsmDbExec(
+                        f"DROP SCHEMA IF EXISTS {lib.core.quote_ident(schema_name)}"
+                    ).exec(session)
+                except:
+                    pass
+
+            # Restore the backup if available
+            if backup_available:
+                try:
+                    lib.core.run_util(
+                        session,
+                        "load_dump",
+                        f"file://{backup_directory}",
+                        options={
+                            "showMetadata": False,
+                            "showProgress": False,
+                            "ignoreVersion": True,
+                        },
+                    )
+
+                    if not original_local_infile:
+                        lib.core.MsmDbExec("SET GLOBAL local_infile=0").exec(session)
+                        lib.core.write_to_msm_schema_update_log(
+                            "INFO", "Restored local_infile option."
+                        )
+
+                    # Remove the backup directory as it is no longer needed
+                    shutil.rmtree(backup_directory)
+                except Exception as e_dump_load:
+                    err_str = (
+                        "An error occurred while updating the database schema "
+                        f"`{schema_name}` to version {version}. The schema could "
+                        f"not be restored back to version {schema_version}. {e} "
+                        f"{e_dump_load}"
+                    )
+                    lib.core.write_to_msm_schema_update_log("ERROR", err_str)
+
+                    raise Exception(err_str)
+
                 err_str = (
                     "An error occurred while updating the database schema "
-                    f"`{schema_name}` to version {version}. The schema could "
-                    f"not be restored back to version {schema_version}. {e} "
-                    f"{e_dump_load}"
+                    f"`{schema_name}` to version {version}. The schema has been "
+                    f"restored back to version {schema_version}. {e}"
                 )
-                lib.core.write_to_msm_schema_update_log("ERROR", err_str)
-
-                raise Exception(err_str)
-
-            err_str = (
-                "An error occurred while updating the database schema "
-                f"`{schema_name}` to version {version}. The schema has been "
-                f"restored back to version {schema_version}. {e}"
-            )
-            lib.core.write_to_msm_schema_update_log("ERROR", err_str)
-
-            raise Exception(err_str)
-        else:
-            if not schema_exists:
-                err_str = f"Deploying the database schema `{schema_name}` failed. {e}"
                 lib.core.write_to_msm_schema_update_log("ERROR", err_str)
 
                 raise Exception(err_str)
             else:
-                err_str = (
-                    "An error occurred while updating the database schema "
-                    f"`{schema_name}` to version {version}. {e}"
-                )
-                lib.core.write_to_msm_schema_update_log("ERROR", err_str)
+                if not schema_exists:
+                    err_str = f"Deploying the database schema `{schema_name}` failed. {e}"
+                    lib.core.write_to_msm_schema_update_log("ERROR", err_str)
 
-                raise Exception(err_str)
+                    raise Exception(err_str)
+                else:
+                    err_str = (
+                        "An error occurred while updating the database schema "
+                        f"`{schema_name}` to version {version}. {e}"
+                    )
+                    lib.core.write_to_msm_schema_update_log("ERROR", err_str)
+
+                    raise Exception(err_str)
 
 
 def execute_msm_sql_script(

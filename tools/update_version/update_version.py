@@ -109,11 +109,6 @@ PLUGIN_TARGETS = [
         "replacement": "VERSION = {v}",
     },
     {
-        "file": "mrs_plugin/docs/VERSION",
-        "pattern": re.compile(r"^VERSION = \S+$", re.MULTILINE),
-        "replacement": "VERSION = {v}",
-    },
-    {
         "file": "mcp_plugin/lib/general.py",
         "pattern": re.compile(r'^VERSION = "[^"]+"$', re.MULTILINE),
         "replacement": 'VERSION = "{v}"',
@@ -122,31 +117,6 @@ PLUGIN_TARGETS = [
         "file": "mcp_plugin/package.json",
         "pattern": re.compile(r'"version": "[^"]+"'),
         "replacement": '"version": "{v}"',
-    },
-    {
-        "file": "mrs_plugin/docs/index.html",
-        "pattern": re.compile(r"Manual \d+\.\d+\.\d+</h3>"),
-        "replacement": "Manual {v}</h3>",
-    },
-    {
-        "file": "mrs_plugin/docs/quickstart.html",
-        "pattern": re.compile(r"Guide \d+\.\d+\.\d+</h3>"),
-        "replacement": "Guide {v}</h3>",
-    },
-    {
-        "file": "mrs_plugin/docs/restApi.html",
-        "pattern": re.compile(r"APIs \d+\.\d+\.\d+</h3>"),
-        "replacement": "APIs {v}</h3>",
-    },
-    {
-        "file": "mrs_plugin/docs/sdk.html",
-        "pattern": re.compile(r"Reference \d+\.\d+\.\d+</h3>"),
-        "replacement": "Reference {v}</h3>",
-    },
-    {
-        "file": "mrs_plugin/docs/sql.html",
-        "pattern": re.compile(r"Reference \d+\.\d+\.\d+</h3>"),
-        "replacement": "Reference {v}</h3>",
     },
     {
         "file": "mrs_plugin/lib/general.py",

@@ -30,7 +30,7 @@ SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
 -- update processes of the database schema.
 -- #############################################################################
 
-USE `${schema_name}`;
+USE ${schema_identifier};
 
 CREATE OR REPLACE SQL SECURITY INVOKER
 VIEW `msm_schema_version` (`major`,`minor`,`patch`) AS
@@ -80,7 +80,7 @@ DELIMITER ;
 -- ALTER TABLE `${schema_name}`.`my_table`
 -- -----------------------------------------------------------------------------
 
-ALTER TABLE `${schema_name}`.`my_table`
+ALTER TABLE `my_table`
     ADD COLUMN birthday DATE;
 */
 
@@ -108,17 +108,17 @@ DELIMITER %%
 -- VIEW `${schema_name}`.`my_view`
 -- -----------------------------------------------------------------------------
 
-CREATE OR REPLACE VIEW `${schema_name}`.`my_view` AS
+CREATE OR REPLACE VIEW `my_view` AS
     SELECT t.`id`, t.`name`
-    FROM `${schema_name}`.`my_table` AS t
+    FROM `my_table` AS t
     ORDER BY t.`name`%%
 
 -- -----------------------------------------------------------------------------
 -- PROCEDURE `${schema_name}`.`my_proc`
 -- -----------------------------------------------------------------------------
 
-DROP PROCEDURE IF EXISTS `${schema_name}`.`my_proc`%%
-CREATE PROCEDURE `${schema_name}`.`my_proc`(INOUT value INT)
+DROP PROCEDURE IF EXISTS `my_proc`%%
+CREATE PROCEDURE `my_proc`(INOUT value INT)
 BEGIN
     SET value = value + 1;
 END%%
@@ -155,7 +155,7 @@ DELIMITER ;
 -- Setting the correct database schema version.
 -- #############################################################################
 
-USE `${schema_name}`;
+USE ${schema_identifier};
 
 CREATE OR REPLACE SQL SECURITY INVOKER
 VIEW `msm_schema_version` (`major`,`minor`,`patch`) AS

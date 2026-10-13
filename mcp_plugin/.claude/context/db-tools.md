@@ -147,6 +147,11 @@ handling are in [connections.md](connections.md).
     a fixed SELECT has no useful affected-rows/warnings. `schema_type` is computed in SQL
     (System Schema / System Information Schema / User Schema) and is ALSO the first
     ORDER BY key, so rows sort by LABEL TEXT -> user schemas come LAST. Intended.
+    MRS metadata schemas (several per server, any prefix/postfix) are System Schema by
+    the shell's own rule: name holds `mariadb_rest_service` once, prefix starts with a
+    letter or `_`, postfix with `_`, and the schema has the `msm_schema_version` view;
+    look-alike user schemas stay User Schema. `performance_schema`/`sys` are still
+    labelled User Schema (Next steps 7).
   - `db.list_objects(connection_id, schema_name, object_type="table")` -> one query per
     type in the `_LIST_OBJECTS_SQL` dict (table, view, function, procedure, sequence,
     trigger, event), each taking the schema as its single `?`. Columns: `name`+`comment`
@@ -309,3 +314,8 @@ handling are in [connections.md](connections.md).
      JSON booleans.
    - `interval_value`/`interval_field` of an event are raw, not composed into a readable
      schedule.
+7. **`performance_schema` and `sys` are listed as user schemas.** `_LIST_SCHEMAS_SQL`
+   names only `mysql` (and the MRS metadata schemas) as system schemas and
+   `information_schema` as the information schema, so the two other schemas every server
+   has come out as "User Schema" (as on `main`). Fix: add them to the `System Schema`
+   branch of the `CASE`, with a case in `test_db_sql.py`.

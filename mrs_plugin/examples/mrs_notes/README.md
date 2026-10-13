@@ -30,7 +30,7 @@ along with this program; if not, write to the Free Software Foundation, Inc.,
 
 The MRS Notes example implements a simple note taking application as a [Progressive Web Apps (PWA)](https://en.wikipedia.org/wiki/Progressive_web_app) that allows for sharing notes between users.
 
-![mrsNotes App running on a Mobile](../../docs/images/mrs-notes-ss-phone.png "mrsNotes App running on a Mobile")
+![mrsNotes App running on a Mobile](images/mrs-notes-ss-phone.png "mrsNotes App running on a Mobile")
 
 ### MRS Notes Developer Showcase
 
@@ -44,7 +44,7 @@ The following features are showcased in this example.
 
 To quickly get the MRS Notes Examples working, please feel free to follow this guide. If you want to learn more about the examples, please continue reading the chapters below.
 
-The following steps need to be taken to setup, build and deploy the MRS Notes example project on the MySQL REST Service.
+The following steps need to be taken to setup, build and deploy the MRS Notes example project on the MariaDB REST Service.
 
 1. Save the MRS Notes Example project to disk and open it with VS Code `VSCodeProject:examples/mrs_notes`
 2. [Configure](#configuring-mysql-rest-service) the MariaDB REST Service.
@@ -71,9 +71,9 @@ Please refer to the MRS documentation on how to setup and configure a MRS servic
 
 If you are using a local MRS deployment deployment you can use these simplified steps.
 
-### Deploy the mrsNotes MySQL database schema
+### Deploy the mrsNotes MariaDB database schema
 
-The mrsNotes MySQL database schema is the center of the MRS project. It defines the structure of the data and its database tables store all the information the users enter while using the app.
+The mrsNotes MariaDB database schema is the center of the MRS project. It defines the structure of the data and its database tables store all the information the users enter while using the app.
 
 To create the mrsNotes schema the corresponding SQL script file needs to be executed. This can be done via the MariaDB Shell or directly within VS Code using the MariaDB Shell for VS Code extension.
 
@@ -86,7 +86,7 @@ To create the mrsNotes schema the corresponding SQL script file needs to be exec
 
 The following diagram shows all components of the mrsNotes schema.
 
-![mrsNotes MariaDB Database Schema](../../docs/images/examples-mrs_notes_schema.svg "mrsNotes MariaDB Database Schema")
+![mrsNotes MariaDB Database Schema](images/examples-mrs_notes_schema.svg "mrsNotes MariaDB Database Schema")
 
 The most important database table is the `note` table. It stores all notes that are created by the users.
 

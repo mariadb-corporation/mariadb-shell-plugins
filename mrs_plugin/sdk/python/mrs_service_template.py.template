@@ -44,16 +44,6 @@ from .mrs_base_classes import (
     # --- importProcedureCallOnlyStart
     MrsBaseObjectProcedureCall,
     # --- importProcedureCallOnlyEnd
-    # --- importTaskRunOnlyStart
-    MrsBaseTaskStartFunction,
-    MrsBaseTaskStartProcedure,
-    MrsBaseTaskCallFunction,
-    MrsBaseTaskCallProcedure,
-    MrsTask,
-    IMrsTaskStartOptions,
-    IMrsTaskCallOptions,
-    merge_task_options,
-    # --- importTaskRunOnlyEnd
     Filterable,
     HighOrderOperator,
     IMrsResourceDetails,
@@ -112,86 +102,6 @@ class ${obj_class_name}DatabaseObject(MrsBaseObject):
         )
         return await request.submit()
     # --- crudProcedureCallOnlyEnd
-
-    # --- crudFunctionTaskRunOnlyStart
-    async def start(
-        self,
-        *args: IMrsTaskStartOptions,
-        **parameters: Unpack[I${obj_param_interface}]
-    ) -> MrsTask[${obj_function_result_datatype}]:
-        request = MrsBaseTaskStartFunction[I${obj_param_interface}, ${obj_function_result_datatype}](
-            schema=self._schema,
-            request_path=self._request_path,
-            options=cast(IMrsTaskStartOptions, merge_task_options(args)),
-            parameters=parameters,
-            result_type_hint_struct={"result": ${obj_function_result_datatype}},
-        )
-        return await request.submit()
-
-    async def call(
-        self,
-        *args: IMrsTaskCallOptions,
-        **parameters: Unpack[I${obj_param_interface}]
-    ) -> ${obj_function_result_datatype}:
-        request = MrsBaseTaskCallFunction[I${obj_param_interface}, ${obj_function_result_datatype}](
-            schema=self._schema,
-            request_path=self._request_path,
-            options=cast(IMrsTaskCallOptions, merge_task_options(args)),
-            parameters=parameters,
-            result_type_hint_struct={"result": ${obj_function_result_datatype}}
-        )
-        return await request.submit()
-    # --- crudFunctionTaskRunOnlyEnd
-
-    # --- crudProcedureTaskRunOnlyStart
-    async def start(
-        self,
-        *args: IMrsTaskStartOptions,
-        **parameters: Unpack[I${obj_param_interface}]
-    ) -> MrsTask[IMrsProcedureResponse[
-            I${obj_param_interface}Out,
-            ${obj_meta_interface},
-        ]]:
-        request = MrsBaseTaskStartProcedure[
-            I${obj_param_interface},
-            I${obj_param_interface}Out,
-            ${obj_meta_interface},
-        ](
-            schema=self._schema,
-            request_path=self._request_path,
-            options=cast(IMrsTaskStartOptions, merge_task_options(args)),
-            parameters=parameters,
-            result_type_hint_struct={
-                "out_parameters": I${obj_param_interface}Out,
-                "result_sets": ${obj_procedure_result_set_datatype}
-            }
-        )
-        return await request.submit()
-
-    async def call(
-        self,
-        *args: IMrsTaskCallOptions,
-        **parameters: Unpack[I${obj_param_interface}]
-    ) -> IMrsProcedureResponse[
-            I${obj_param_interface}Out,
-            ${obj_meta_interface},
-        ]:
-        request = MrsBaseTaskCallProcedure[
-            I${obj_param_interface},
-            I${obj_param_interface}Out,
-            ${obj_meta_interface},
-        ](
-            schema=self._schema,
-            request_path=self._request_path,
-            options=cast(IMrsTaskCallOptions, merge_task_options(args)),
-            parameters=parameters,
-            result_type_hint_struct={
-                "out_parameters": I${obj_param_interface}Out,
-                "result_sets": ${obj_procedure_result_set_datatype}
-            }
-        )
-        return await request.submit()
-    # --- crudProcedureTaskRunOnlyEnd
 
     # --- crudCreateOnlyStart
     async def create(self, data: INew${obj_class_name}) -> I${obj_class_name}:

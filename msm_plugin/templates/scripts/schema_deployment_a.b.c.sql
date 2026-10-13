@@ -28,10 +28,10 @@ SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
 -- CREATE SCHEMA statement
 -- #############################################################################
 
-CREATE SCHEMA IF NOT EXISTS `${schema_name}`
+CREATE SCHEMA IF NOT EXISTS ${schema_identifier}
     DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
-USE `${schema_name}`;
+USE ${schema_identifier};
 
 
 -- #############################################################################
@@ -60,7 +60,7 @@ ${section_230_creation_of_update_helpers}
 -- process and will be dropped afterwards.
 -- #############################################################################
 
-USE `${schema_name}`;
+USE ${schema_identifier};
 
 DELIMITER %%
 
@@ -109,12 +109,12 @@ BEGIN
     -- Check if the schema is yet empty
     SELECT COUNT(*) +
         (SELECT COUNT(*) FROM `information_schema`.`ROUTINES`
-            WHERE ROUTINE_SCHEMA = '${schema_name}'
+            WHERE ROUTINE_SCHEMA = DATABASE()
                 AND ROUTINE_NAME NOT LIKE 'msm_%') +
         (SELECT COUNT(*) FROM `information_schema`.`EVENTS`
-            WHERE `EVENT_SCHEMA` = '${schema_name}') INTO item_count
+            WHERE `EVENT_SCHEMA` = DATABASE()) INTO item_count
     FROM `information_schema`.`TABLES`
-    WHERE `TABLE_SCHEMA` = '${schema_name}';
+    WHERE `TABLE_SCHEMA` = DATABASE();
 
     -- If the schema is empty, create the schema from scratch
     IF item_count = 0 THEN
@@ -125,26 +125,26 @@ BEGIN
         -- Set `${schema_name}`.`msm_schema_version` VIEW
         -- to 0, 0, 0 to indicate start of update process
         CREATE OR REPLACE SQL SECURITY INVOKER
-            VIEW `${schema_name}`.`msm_schema_version` (
+            VIEW `msm_schema_version` (
                 `major`,`minor`,`patch`) AS
                 SELECT 0, 0, 0;
 
-        CALL `${schema_name}`.`msm_create_${version_target}`();
+        CALL `msm_create_${version_target}`();
     ELSE
         -- If the schema is not empty, update the schema
         SET @msm_schema_init = 0;
 
         -- Check if the schema is a managed one
         SELECT COUNT(*) INTO item_count FROM information_schema.`TABLES`
-            WHERE `TABLE_SCHEMA` = '${schema_name}'
+            WHERE `TABLE_SCHEMA` = DATABASE()
                 AND `TABLE_NAME` = 'msm_schema_version'
                 AND `TABLE_TYPE` = 'VIEW';
         IF item_count = 0 THEN
             SELECT COUNT(*) INTO item_count FROM `information_schema`.`TABLES`
-                WHERE `TABLE_SCHEMA` = '${schema_name}';
+                WHERE `TABLE_SCHEMA` = DATABASE();
             IF item_count > 0 THEN
                 SET signal_msg = LEFT(CONCAT(
-                    'The schema `${schema_name}` already exists but ',
+                    'The schema `', DATABASE(), '` already exists but ',
                     'misses a msm_schema_version view ',
                     'and cannot be updated.'), 128);
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = signal_msg,
@@ -154,7 +154,7 @@ BEGIN
 
         -- Get the current version of the schema
         SELECT CONCAT(v.major, '.', v.minor, '.', v.patch) INTO `version_str`
-        FROM `${schema_name}`.`msm_schema_version` AS v;
+        FROM `msm_schema_version` AS v;
 
         SET @msm_current_version = version_str;
 
@@ -162,7 +162,7 @@ BEGIN
         IF version_str != '${version_target}' THEN
             IF version_str = '0.0.0' THEN
                 SET signal_msg = LEFT(CONCAT(
-                    'The schema `${schema_name}` is already being updated ',
+                    'The schema `', DATABASE(), '` is already being updated ',
                     'as its version is set to 0.0.0.'), 128);
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = signal_msg,
                     MYSQL_ERRNO = 32101;
@@ -171,7 +171,7 @@ BEGIN
             -- Set `${schema_name}`.`msm_schema_version` VIEW
             -- to 0, 0, 0 to indicate start of update process
             CREATE OR REPLACE SQL SECURITY INVOKER
-                VIEW `${schema_name}`.`msm_schema_version` (
+                VIEW `msm_schema_version` (
                     `major`,`minor`,`patch`) AS
                     SELECT 0, 0, 0;
 
@@ -180,7 +180,7 @@ BEGIN
             IF NOT JSON_CONTAINS('[${updatable_versions}]',
                 JSON_QUOTE(version_str), '$') THEN
                 SET signal_msg = LEFT(CONCAT(
-                    'The schema `${schema_name}` is on version ', version_str,
+                    'The schema `', DATABASE(), '` is on version ', version_str,
                     ' which cannot be updated by this script.'), 128);
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = signal_msg,
                     MYSQL_ERRNO = 32102;
@@ -189,7 +189,7 @@ BEGIN
             -- Run the update scripts
 -- ### MSM-LOOP-START:UPDATABLE-VERSIONS - Update Non-Idempotent
             IF version_str = '${version_from}' THEN
-                CALL `${schema_name}`.`msm_update_${version_from}_to_${version_to}`();
+                CALL `msm_update_${version_from}_to_${version_to}`();
                 SET version_str = '${version_to}';
             END IF;
 
@@ -211,11 +211,11 @@ CALL `msm_create_or_update`();
 -- -----------------------------------------------------------------------------
 
 -- ### MSM-LOOP-START:UPDATABLE-VERSIONS - Update Non-Idempotent
-USE `${schema_name}`;
+USE ${schema_identifier};
 DROP PROCEDURE `msm_update_${version_from}_to_${version_to}`;
 ${section_260_removal_of_update_helpers}
 -- ### MSM-LOOP-END:UPDATABLE-VERSIONS - Update Non-Idempotent
-USE `${schema_name}`;
+USE ${schema_identifier};
 DROP PROCEDURE `msm_create_${version_target}`;
 DROP PROCEDURE `msm_create_or_update`;
 
@@ -241,7 +241,7 @@ ${section_150_idempotent_schema_objects}
 -- This section is used to define or update ROLEs and GRANTs.
 -- #############################################################################
 
-USE `${schema_name}`;
+USE ${schema_identifier};
 
 DELIMITER %%
 
@@ -286,16 +286,16 @@ BEGIN
     SET version_str = @msm_current_version;
 
     IF @msm_schema_init THEN
-        CALL `${schema_name}`.`msm_auth_${version_target}`();
+        CALL `msm_auth_${version_target}`();
     ELSE
 -- ### MSM-LOOP-START:UPDATABLE-VERSIONS - Authorization Updates
         IF version_str = '${version_from}' THEN
-            CALL `${schema_name}`.`msm_auth_${version_from}_to_${version_to}`();
+            CALL `msm_auth_${version_from}_to_${version_to}`();
             SET version_str = '${version_to}';
         END IF;
 
 -- ### MSM-LOOP-END:UPDATABLE-VERSIONS - Authorization Updates
-        CALL `${schema_name}`.`msm_auth_${version_target}`();
+        CALL `msm_auth_${version_target}`();
     END IF;
 END%%
 
@@ -312,11 +312,11 @@ CALL `msm_auth`();
 -- -----------------------------------------------------------------------------
 
 -- ### MSM-LOOP-START:UPDATABLE-VERSIONS - Update Non-Idempotent
-USE `${schema_name}`;
+USE ${schema_identifier};
 DROP PROCEDURE `msm_auth_${version_from}_to_${version_to}`;
 ${section_260_removal_of_update_helpers}
 -- ### MSM-LOOP-END:UPDATABLE-VERSIONS - Update Non-Idempotent
-USE `${schema_name}`;
+USE ${schema_identifier};
 DROP PROCEDURE `msm_auth_${version_target}`;
 DROP PROCEDURE `msm_auth`;
 
@@ -353,7 +353,7 @@ ${section_190_removal_of_helpers}
 -- Setting the correct database schema version
 -- #############################################################################
 
-USE `${schema_name}`;
+USE ${schema_identifier};
 
 CREATE OR REPLACE SQL SECURITY INVOKER
 VIEW `msm_schema_version` (`major`,`minor`,`patch`) AS

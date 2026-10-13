@@ -34,7 +34,7 @@ import re
 import threading
 import traceback
 import mysqlsh
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import uuid
 
 SCHEMA_METADATA_LOCK_ERROR = "Failed to acquire schema metadata lock. Please ensure no other metadata update is running, then try again."
@@ -712,8 +712,16 @@ class MsmDbExec:
 
 
 def execute_msm_sql_script(
-    session, sql_script: str = None, script_name: str = None, sql_file_path: str = None
+    session,
+    sql_script: str = None,
+    script_name: str = None,
+    sql_file_path: str = None,
+    substitutions: dict = None,
+    lock_name_suffix: str = None,
+    take_lock: bool = True,
 ):
+    """Runs an MSM SQL script, holding the MSM update lock of the schema
+    (lock_name_suffix) unless take_lock is False because the caller holds it."""
     if sql_script is None and sql_file_path is None:
         raise ValueError("No script or sql_file_path specified.")
     if sql_script is not None and script_name is None:
@@ -727,22 +735,15 @@ def execute_msm_sql_script(
         with open(sql_file_path) as f:
             sql_script = f.read()
 
+    # The /*<msm:name>*/ placeholders are replaced before the script is split
+    if substitutions is not None:
+        from msm_plugin.lib.management import apply_substitutions
+
+        sql_script = apply_substitutions(sql_script, substitutions)
+
     commands = mysqlsh.mysql.split_script(sql_script)
 
-    msm_lock = 0
-    try:
-        # Acquire MSM_METADATA_LOCK
-        msm_lock = (
-            MsmDbExec('SELECT GET_LOCK("MSM_METADATA_LOCK", 1) AS msm_lock')
-            .exec(session)
-            .first["msm_lock"]
-        )
-        if msm_lock == 0:
-            raise Exception(
-                "Failed to acquire MSM schema update lock. Please ensure no "
-                "other MSM schema update is running, then try again."
-            )
-
+    with msm_update_lock(session, lock_name_suffix) if take_lock else nullcontext():
         # Execute all commands
         current_cmd = ""
         try:
@@ -761,10 +762,104 @@ def execute_msm_sql_script(
                 f"Failed to run the the SQL script `{script_name}`.\n{current_cmd}\n{e}",
             )
             raise Exception(f"Failed to run the SQL script.\n{current_cmd}\n{e}")
+
+
+@contextmanager
+def msm_update_lock(session, lock_name_suffix: str = None):
+    """Holds the MSM update lock of a schema (lock_name_suffix) while the
+    block runs; raises when another MSM update holds it."""
+    # One lock per schema, so schemas deployed from the same project (e.g. one
+    # per customer) can be updated at the same time. The MD5 keeps the name
+    # within the 64 characters GET_LOCK() allows.
+    lock_name = "MSM_METADATA_LOCK"
+    if lock_name_suffix:
+        lock_expression = "CONCAT(?, '_', MD5(?))"
+        lock_params = [lock_name, lock_name_suffix]
+    else:
+        lock_expression = "?"
+        lock_params = [lock_name]
+
+    msm_lock = (
+        MsmDbExec(f"SELECT GET_LOCK({lock_expression}, 1) AS msm_lock")
+        .exec(session, lock_params)
+        .first["msm_lock"]
+    )
+    if msm_lock != 1:
+        err_msg = (
+            "Failed to acquire MSM schema update lock. Please ensure no "
+            "other MSM schema update is running, then try again."
+        )
+        write_to_msm_schema_update_log("ERROR", err_msg)
+        raise Exception(err_msg)
+    try:
+        yield
     finally:
-        if msm_lock == 1:
-            MsmDbExec('SELECT RELEASE_LOCK("MSM_METADATA_LOCK")').exec(session)
+        MsmDbExec(f"SELECT RELEASE_LOCK({lock_expression})").exec(
+            session, lock_params
+        )
 
 
 def get_uuid_string():
     return str(uuid.uuid4()).replace("-", "")
+
+
+# --- running a shell utility on a given session ----------------------------
+
+# The name under which every plugin of this repository finds the one lock that
+# guards the shell's global session. mrs_plugin uses the same name (its
+# lib/core.py); the plugins do not import each other.
+_GLOBAL_SESSION_LOCK_MODULE = "_mariadb_shell_plugins_global_session"
+
+
+def _global_session_lock():
+    """The process-wide lock around switching the shell's global session.
+
+    The lock lives in a module object of its own in sys.modules, so whichever
+    plugin asks first creates it and every other one finds the same lock.
+
+    Returns:
+        threading.RLock: The lock.
+    """
+    import sys
+    import types
+
+    holder = sys.modules.get(_GLOBAL_SESSION_LOCK_MODULE)
+    if holder is None:
+        created = types.ModuleType(_GLOBAL_SESSION_LOCK_MODULE)
+        created.lock = threading.RLock()
+        # setdefault: of two threads creating it at once, one module wins
+        holder = sys.modules.setdefault(_GLOBAL_SESSION_LOCK_MODULE, created)
+
+    return holder.lock
+
+
+def run_util(session, function: str, *args, options=None):
+    """Runs a shell utility, such as dump_schemas or load_dump, on a session.
+
+    The utilities run on the shell's global session only. It is switched to
+    this one for the call and switched back afterwards, under the lock every
+    plugin of this repository shares.
+
+    Args:
+        session: The session, a shell session or a wrapper with a 'session'.
+        function (str): The util function, e.g. "dump_schemas".
+        *args: Its arguments before the options.
+        options (dict): Its options.
+
+    Returns:
+        What the function returns.
+    """
+    shell_session = (
+        session if "shell.Object" in str(type(session)) else session.session
+    )
+    utility = getattr(mysqlsh.globals.util, function)
+    options = dict(options or {})
+
+    shell = mysqlsh.globals.shell
+    with _global_session_lock():
+        previous = shell.get_session()
+        shell.set_session(shell_session)
+        try:
+            return utility(*args, options)
+        finally:
+            shell.set_session(previous)

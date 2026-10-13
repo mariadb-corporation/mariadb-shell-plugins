@@ -36,133 +36,12 @@ from mrs_plugin import lib
 from mrs_plugin.tests.unit.helpers import (
     ServiceCT,
     SchemaCT,
-    DbObjectCT,
+    RestObjectCT,
     TableContents,
-    get_default_db_object_init,
+    get_default_rest_object_init,
     create_test_db,
 )
 from lib.core import MrsDbSession
-
-
-def test_get_service(phone_book, table_contents):
-    with MrsDbSession(session=phone_book["session"]) as session:
-        service_table: TableContents = table_contents("service")
-        service1 = lib.services.get_service(session=session, url_context_root="/test")
-
-        assert service1 is not None
-        assert service1 == {
-            "id": phone_book["service_id"],
-            "parent_id": None,
-            "enabled": 1,
-            "url_protocol": ["HTTP"],
-            "url_host_name": "",
-            "url_context_root": "/test",
-            "url_host_id": phone_book["url_host_id"],
-            "comments": "Test service",
-            "host_ctx": "/test",
-            "auth_completed_page_content": None,
-            "auth_completed_url": None,
-            "auth_completed_url_validation": None,
-            "auth_path": "/authentication",
-            "options": lib.services.DEFAULT_OPTIONS,
-            "metadata": None,
-            "is_current": 1,
-            "in_development": None,
-            "full_service_path": "/test",
-            "published": 0,
-            "sorted_developers": None,
-            "name": "test",
-            "auth_apps": ["MRS Auth App"],
-        }
-
-        with ServiceCT(session, "/service2") as service_id:
-            assert service_table.count == service_table.snapshot.count + 1
-
-            service2 = lib.services.get_service(
-                session=session, url_context_root="/service2"
-            )
-
-            assert service2 is not None
-            assert service2 == {
-                "id": service_id,
-                "parent_id": None,
-                "enabled": 1,
-                "url_protocol": ["HTTP"],
-                "url_host_name": "",
-                "url_context_root": "/service2",
-                "url_host_id": service2["url_host_id"],
-                "comments": "",
-                "host_ctx": "/service2",
-                "auth_completed_page_content": None,
-                "auth_completed_url": None,
-                "auth_completed_url_validation": None,
-                "auth_path": "/authentication",
-                "options": lib.services.DEFAULT_OPTIONS,
-                "metadata": None,
-                "in_development": None,
-                "is_current": 0,
-                "full_service_path": "/service2",
-                "published": 0,
-                "sorted_developers": None,
-                "name": "service2",
-                "auth_apps": None,
-            }
-
-            assert service_table.get("id", service_id) == {
-                "comments": "",
-                "enabled": 1,
-                "id": service_id,
-                "parent_id": None,
-                "url_context_root": "/service2",
-                "url_host_id": service2["url_host_id"],
-                "url_protocol": ["HTTP"],
-                "auth_completed_page_content": None,
-                "auth_completed_url": None,
-                "auth_completed_url_validation": None,
-                "auth_path": "/authentication",
-                "options": lib.services.DEFAULT_OPTIONS,
-                "metadata": None,
-                "in_development": None,
-                "custom_metadata_schema": None,
-                "enable_sql_endpoint": 0,
-                "published": 0,
-                "name": "service2",
-            }
-
-            with pytest.raises(Exception) as exc_info:
-                lib.services.get_service(session=session, url_context_root="service2")
-            assert str(exc_info.value) == "The url_context_root has to start with '/'."
-
-        # Test getting the default service
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=False
-        )
-        assert result is None
-
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=True
-        )
-        assert result is not None
-
-        with ServiceCT(session, "/service2") as service_id:
-            lib.services.set_current_service_id(session, service_id)
-
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=False
-        )
-        assert result is None
-
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=True
-        )
-        assert result is None
-
-        lib.services.set_current_service_id(session, phone_book["service_id"])
-
-        result = lib.services.get_service(
-            session=session, url_context_root="/service2", get_default=True
-        )
-        assert result is not None
 
 
 def test_get_services(phone_book, table_contents):
@@ -190,27 +69,6 @@ def test_get_services(phone_book, table_contents):
         services = lib.services.get_services(session=session)
         assert len(service_table.items) == len(services)
         assert len(services) == 1
-
-
-def test_change_service(phone_book, table_contents):
-    service_table = table_contents("service")
-    auth_app_table = table_contents("auth_app")
-
-    with MrsDbSession(session=phone_book["session"]) as session:
-        with pytest.raises(Exception) as exc_info:
-            lib.services.update_services(
-                session=session, service_ids=[1000], value={"enabled": True}
-            )
-        assert str(exc_info.value) == "'int' object has no attribute 'hex'"
-
-        with ServiceCT(session, "/service2") as service_id:
-            value = {"comments": "This is the updated comment."}
-            lib.services.update_services(
-                session=session, service_ids=[service_id], value=value
-            )
-
-    assert service_table.same_as_snapshot
-    assert auth_app_table.same_as_snapshot
 
 
 def mock_github_archive(mocker, project_dir):
@@ -289,48 +147,48 @@ def test_service_as_project(phone_book, table_contents, mocker):
 
     service1 = ServiceCT(session, "/myService1")
     schema1 = SchemaCT(session, service1.id, "MyTestDb1", "/MyTestDb1")
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(session, schema1.id, "Contacts", "/Contacts"),
+        **get_default_rest_object_init(session, schema1.id, "Contacts", "/Contacts"),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(session, schema1.id, "Addresses", "/Addresses"),
+        **get_default_rest_object_init(session, schema1.id, "Addresses", "/Addresses"),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(
+        **get_default_rest_object_init(
             session,
             schema1.id,
             "GetAllContacts",
             "/GetAllContacts",
-            db_object_type="PROCEDURE",
+            rest_object_type="PROCEDURE",
         ),
     )
 
     service2 = ServiceCT(session, "/myService2")
     schema2 = SchemaCT(session, service2.id, "MyTestDb2", "/MyTestDb2")
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(session, schema2.id, "Contacts", "/Contacts"),
+        **get_default_rest_object_init(session, schema2.id, "Contacts", "/Contacts"),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(session, schema2.id, "Addresses", "/Addresses"),
+        **get_default_rest_object_init(session, schema2.id, "Addresses", "/Addresses"),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(
+        **get_default_rest_object_init(
             session,
             schema2.id,
             "GetAllContacts",
             "/GetAllContacts",
-            db_object_type="PROCEDURE",
+            rest_object_type="PROCEDURE",
         ),
     )
-    DbObjectCT(
+    RestObjectCT(
         session,
-        **get_default_db_object_init(
+        **get_default_rest_object_init(
             session, schema2.id, "ContactBasicInfo", "/ContactBasicInfo"
         ),
     )
@@ -457,7 +315,9 @@ def test_service_as_project(phone_book, table_contents, mocker):
             session, url_context_root=service_data["name"]
         )
 
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
 
     for schema_data in schemas:
         session.run_sql(f"DROP SCHEMA {schema_data["name"]}")
@@ -511,7 +371,9 @@ def test_service_as_project(phone_book, table_contents, mocker):
 
     for service_name in ["myService1", "myService2"]:
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
 
     # test loading from GitHub, served from the project stored above
     requested_urls = mock_github_archive(mocker, directory_1)
@@ -565,7 +427,9 @@ def test_service_as_project(phone_book, table_contents, mocker):
 
     for service_name in ["myService1", "myService2"]:
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
 
     # test loading from GitHub using the short form, which defaults to main
     lib.services.load_project(session, "github/mrs-tests/mrs-project")
@@ -622,4 +486,159 @@ def test_service_as_project(phone_book, table_contents, mocker):
 
     for service_name in ["myService1", "myService2"]:
         service = lib.services.get_service(session, url_context_root=f"/{service_name}")
-        lib.services.delete_service(session, service["id"])
+        session.run_sql(
+            f"DROP REST SERVICE {lib.core.quote_ident(service['url_context_root'])}"
+        )
+
+
+def write_project(directory, services: dict):
+    """A project of REST service scripts only: {service name: script}."""
+    config = {"name": "p", "version": "1.0.0", "schemas": [], "restServices": []}
+    for i, (name, script) in enumerate(services.items()):
+        file_name = f"service{i}.service.mrs.sql"
+        with open(os.path.join(directory, file_name), "w") as f:
+            f.write(script)
+        config["restServices"].append({"serviceName": name, "fileName": file_name})
+    with open(os.path.join(directory, "mrs.package.json"), "w") as f:
+        json.dump(config, f)
+
+
+def service_exists(session, service_path):
+    paths = [row[0] for row in session.run_sql("SHOW REST SERVICES").fetch_all()]
+    return service_path in paths
+
+
+def test_load_service_script_without_replace(phone_book):
+    session = phone_book["session"]
+
+    session.run_sql("CREATE REST SERVICE /keep COMMENT 'existing'")
+    try:
+        for create in ("CREATE OR REPLACE", "CREATE"):
+            script = f"{create} REST SERVICE /keep COMMENT 'new';\nUSE REST SERVICE /keep;"
+            with pytest.raises(Exception, match="already used by another entity"):
+                lib.services.load_service_script(session, script, replace=False)
+        # IF NOT EXISTS would keep the service and run the rest of the
+        # script on it: without replace it fails as well
+        created = []
+        with pytest.raises(Exception, match="already used by another entity"):
+            lib.services.load_service_script(
+                session,
+                "CREATE REST SERVICE IF NOT EXISTS /keep;\nALTER REST SERVICE /keep COMMENT 'changed';",
+                replace=False,
+                created=created,
+            )
+        assert created == []
+        assert "COMMENT 'existing'" in session.run_sql(
+            "SHOW CREATE REST SERVICE /keep"
+        ).fetch_one()[0]
+    finally:
+        session.run_sql("DROP REST SERVICE /keep")
+
+
+def test_load_project_drops_the_services_it_created(phone_book):
+    session = phone_book["session"]
+
+    with tempfile.TemporaryDirectory() as directory:
+        write_project(
+            directory,
+            {
+                "/projA": "CREATE OR REPLACE REST SERVICE /projA;\nUSE REST SERVICE /projA;",
+                "/projB": "CREATE OR REPLACE REST SERVICE /projB;\n"
+                "USE REST SERVICE /projB;\n"
+                "CREATE REST SCHEMA /nope FROM `no_such_schema`;",
+            },
+        )
+        with pytest.raises(Exception, match="no_such_schema"):
+            lib.services.load_project(session, directory)
+
+    assert not service_exists(session, "/projA")
+    assert not service_exists(session, "/projB")
+
+
+def test_load_project_keeps_a_service_that_existed(phone_book):
+    session = phone_book["session"]
+
+    session.run_sql("CREATE REST SERVICE /keep COMMENT 'existing'")
+    try:
+        # Refused before anything is loaded
+        with tempfile.TemporaryDirectory() as directory:
+            write_project(
+                directory, {"/keep": "CREATE OR REPLACE REST SERVICE /keep;"}
+            )
+            with pytest.raises(Exception, match="The service '/keep' already exists."):
+                lib.services.load_project(session, directory)
+
+        # A script naming another service than the package (or a service
+        # created meanwhile) fails on its CREATE and the existing service
+        # stays, while the service the load created is dropped again
+        with tempfile.TemporaryDirectory() as directory:
+            write_project(
+                directory,
+                {
+                    "/projA": "CREATE OR REPLACE REST SERVICE /projA;",
+                    "/other": "CREATE OR REPLACE REST SERVICE /keep COMMENT 'new';",
+                },
+            )
+            with pytest.raises(Exception, match="already used by another entity"):
+                lib.services.load_project(session, directory)
+
+        assert not service_exists(session, "/projA")
+        assert "COMMENT 'existing'" in session.run_sql(
+            "SHOW CREATE REST SERVICE /keep"
+        ).fetch_one()[0]
+    finally:
+        session.run_sql("DROP REST SERVICE /keep")
+
+
+def test_current_service_is_stored_per_connection(phone_book):
+    session = phone_book["session"]
+
+    session.run_sql("CREATE REST SERVICE /other")
+    test_id = lib.services.get_service(session, url_context_root="/test")["id"]
+    try:
+        # A stored current service is returned while it exists
+        lib.services.set_current_service_id(session, test_id)
+        assert lib.services.get_current_service_id(session) == test_id
+        assert lib.services.get_current_service(session)["url_context_root"] == "/test"
+
+        # One that no longer exists is not; with several services there is
+        # no current one then
+        lib.services.set_current_service_id(
+            session, "00000000-0000-0000-0000-00000000dead"
+        )
+        assert lib.services.get_current_service_id(session) is None
+    finally:
+        lib.services.set_current_service_id(session, None)
+        session.run_sql("DROP REST SERVICE /other")
+
+
+def test_the_only_service_becomes_the_current_one(phone_book):
+    # As the plugin's REST SQL CREATE REST SERVICE made the first service the
+    # current one, the only service of a metadata schema is taken as current
+    import mysqlsh
+    from mrs_plugin.tests.unit.helpers import get_connection_data
+
+    data = get_connection_data()
+    solo = mysqlsh.globals.shell.open_session(
+        f"{data['user']}:{data['password']}@{data['host']}:{data['port']}"
+    )
+    try:
+        solo.run_sql("CONFIGURE REST METADATA SCHEMA solo_mariadb_rest_service")
+        assert lib.services.get_current_service_id(solo) is None
+
+        solo.run_sql("CREATE REST SERVICE /solo")
+        solo_id = lib.services.get_service(solo, url_context_root="/solo")["id"]
+        assert lib.services.get_current_service_id(solo) == solo_id
+
+        # It is stored: it stays the current one once there are more
+        solo.run_sql("CREATE REST SERVICE /second")
+        assert lib.services.get_current_service_id(solo) == solo_id
+    finally:
+        lib.services.set_current_service_id(solo, None)
+        solo.run_sql("DROP SCHEMA IF EXISTS solo_mariadb_rest_service")
+        for (role,) in solo.run_sql(
+            "SELECT User FROM mysql.user WHERE is_role = 'Y' "
+            "AND User LIKE 'solo\\_mariadb\\_rest\\_service%'"
+        ).fetch_all():
+            solo.run_sql(f"DROP ROLE `{role}`")
+        solo.close()
