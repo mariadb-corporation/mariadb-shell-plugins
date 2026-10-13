@@ -411,6 +411,45 @@ async def _db_flow(uri, script_dir):
             == "System Information Schema"
         )
 
+        # MRS metadata schemas, several on one server with their prefix and
+        # postfix, are system schemas; a user schema whose name merely holds
+        # the text, without MSM's msm_schema_version view, is not
+        metadata_like = {
+            "acme_mariadb_rest_service_eu": ("view", "System Schema"),
+            "mariadb_rest_service_beta": ("view", "System Schema"),
+            "my_mariadb_rest_service_notes": (None, "User Schema"),
+            "mariadb_rest_service_mariadb_rest_service": ("view", "User Schema"),
+            "mariadb_rest_servicex": ("view", "User Schema"),
+        }
+        try:
+            for name, (view, _) in metadata_like.items():
+                statements = [f"CREATE SCHEMA `{name}`"]
+                if view:
+                    statements.append(
+                        f"CREATE VIEW `{name}`.`msm_schema_version` "
+                        "AS SELECT 5 AS major, 0 AS minor, 0 AS patch"
+                    )
+                for sql in statements:
+                    await call(
+                        "db.execute_sql",
+                        {"connection_id": connection_id, "sql": sql},
+                    )
+            listed = helpers.tool_payload(
+                await call("db.list_schemas", {"connection_id": connection_id})
+            )
+            types = {entry["schema_name"]: entry["schema_type"] for entry in listed}
+            for name, (_, expected) in metadata_like.items():
+                assert types[name] == expected, name
+        finally:
+            for name in metadata_like:
+                await call(
+                    "db.execute_sql",
+                    {
+                        "connection_id": connection_id,
+                        "sql": f"DROP SCHEMA IF EXISTS `{name}`",
+                    },
+                )
+
         # One object of every type db.list_objects knows about. All are single
         # statements without embedded semicolons, so split_script handles them
         # without a DELIMITER dance. The trigger sits on `noted` rather than on

@@ -5,9 +5,9 @@ This folder contains the code for the MariaDB REST Service (short: MRS) Plugin. 
 The MRS documentation, the ANTLR reference grammar of REST SQL and the tools
 that keep the two in step live in the MariaDB Shell repository: the GitBook
 source in `docs-ref/content/mariadb-rest-service/`, the grammar in
-`modules/mrs/antlr_grammar/`. REST SQL itself is implemented by the shell's
-built-in `mrs` module; this plugin adds the SDK generation, project, service and
-content set functions.
+`mysqlshdk/libs/mrs/antlr_grammar/`. REST SQL itself is implemented by the shell's
+built-in `MRS` SQL handler; this plugin defines the `mrs` global object, with
+the SDK generation, project, service and content set functions.
 
 # Contributing to MariaDB REST Service Plugin
 

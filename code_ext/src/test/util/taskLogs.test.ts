@@ -101,6 +101,37 @@ describe("task logs", () => {
         expect(existsSync(join(folder, "notes.txt"))).toBe(true);
     });
 
+    it("leaves the logs of another window's tasks", async () => {
+        // two windows without a workspace share the global storage
+        const folder = mkdtempSync(join(tmpdir(), "task-logs-"));
+        const mine = new TaskLogs(folder, () => { /* not needed */ });
+        const theirs = new TaskLogs(folder, () => { /* not needed */ });
+        await mine.report({ tracked: tracked("t1"), messages: [], first: true });
+        await theirs.report({ tracked: tracked("t2"), messages: [], first: true });
+
+        await mine.prune(["t1"]);
+        await mine.prune([]);
+        await theirs.prune(["t2"]);
+
+        expect(existsSync(mine.pathOf("t1"))).toBe(false);
+        expect(existsSync(theirs.pathOf("t2"))).toBe(true);
+    });
+
+    it("sweeps every log whose task is not listed", async () => {
+        // what a reload's list lost: logs no window here wrote
+        const folder = mkdtempSync(join(tmpdir(), "task-logs-"));
+        const logs = new TaskLogs(folder, () => { /* not needed */ });
+        writeFileSync(logs.pathOf("old"), "an earlier window's log\n");
+        writeFileSync(logs.pathOf("t1"), "a listed task's log\n");
+        writeFileSync(join(folder, "notes.txt"), "not a log");
+
+        await logs.sweep(["t1"]);
+
+        expect(existsSync(logs.pathOf("old"))).toBe(false);
+        expect(existsSync(logs.pathOf("t1"))).toBe(true);
+        expect(existsSync(join(folder, "notes.txt"))).toBe(true);
+    });
+
     it("tells a log it could not write, and goes on", async () => {
         const file = join(mkdtempSync(join(tmpdir(), "task-logs-")), "file");
         writeFileSync(file, "");

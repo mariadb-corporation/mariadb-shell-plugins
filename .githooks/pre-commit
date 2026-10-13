@@ -43,20 +43,33 @@ while not (os.path.isfile(".git") or os.path.isdir(".git")):
 #   * Neither notice present (a brand new file) -> the full MariaDB license
 #     block is inserted, using the C/C++ (/* */) or hash (#) comment style
 #     according to the file extension; other file types are left untouched.
+#
+# A notice is a line of its own: only comment markers may precede it, and only
+# comment closers follow a MariaDB notice. Notice text elsewhere, such as the
+# expected output in a test, a string the code writes into generated files, or
+# a copyright line shown on a web page, is not a notice and is left alone.
 
-# Matches a MariaDB copyright line, capturing the creation year and the
-# optional last-update year. Single year form:  "... 2026, MariaDB ..."
-# Two year form:                                "... 2023, 2026, MariaDB ..."
+# Comment markers that may precede a notice: "#", "//", "/*", " *", "--",
+# "<!--", "{-", ";" and "%" comments, and the indentation around them.
+notice_prefix = r"[\s#/*!;%{<-]*"
+
+# Matches a MariaDB copyright line, capturing the comment prefix, the creation
+# year, the optional last-update year and the comment closer that ends the line.
+# Single year form:  "... 2026, MariaDB ..."
+# Two year form:     "... 2023, 2026, MariaDB ..."
 # The comma after the last-update year is optional so notices written in the
 # earlier style ("2023, 2026 MariaDB plc.") are still recognised and get
 # rewritten rather than being mistaken for a missing notice. The former entity
 # name is matched for the same reason.
 mariadb_re = re.compile(
-    r"Copyright \(c\) (\d{4}),(?: (\d{4}),?)? MariaDB (?:plc|Corporation)\.")
+    r"^(" + notice_prefix + r")"
+    r"Copyright \(c\) (\d{4}),(?: (\d{4}),?)? MariaDB (?:plc|Corporation)\."
+    r"([\s*/>}-]*)$")
 
-# Matches an Oracle copyright line, capturing the text that precedes
-# "Copyright" so the same comment prefix can be reused for the MariaDB line.
-oracle_re = re.compile(r"^(.*?)Copyright \(c\) \d{4}(?:, \d{4})?, Oracle")
+# Matches an Oracle copyright line, capturing the comment prefix so the same
+# one can be reused for the MariaDB line.
+oracle_re = re.compile(
+    r"^(" + notice_prefix + r")Copyright \(c\) \d{4}(?:, \d{4})?, Oracle")
 
 # Comment openers that may show up in the captured Oracle prefix when the
 # notice sits on the very first line of the comment block.
@@ -183,7 +196,7 @@ def fix_copyright(file):
 
     mariadb_idx = None
     for i, line in enumerate(lines):
-        if mariadb_re.search(line):
+        if mariadb_re.match(line):
             mariadb_idx = i
             break
 
@@ -192,7 +205,7 @@ def fix_copyright(file):
         # current year and normalise the entity name to "MariaDB plc." (this
         # covers both the Oracle+MariaDB and MariaDB-only cases).
         def repl(m):
-            return mariadb_copyright(m.group(1), year)
+            return m.group(1) + mariadb_copyright(m.group(2), year) + m.group(4)
 
         for i, line in enumerate(lines):
             new_line = mariadb_re.sub(repl, line)
@@ -239,10 +252,12 @@ def fix_copyright(file):
 #
 # Files that must never receive a copyright notice. The hook itself is shared
 # between repositories, so it only carries a baseline of universally binary
-# formats; everything repository specific belongs in
-# .githooks/copyright-exceptions (one Python regex per line, "#" comments and
-# blank lines ignored, matched with re.match against the repo relative path).
-default_exceptions = [r".*\.mwb$", r".*\.ico$", r".*\.png$", r".*\.ttf$"]
+# formats, plus its own files, which quote notices as examples; everything
+# repository specific belongs in .githooks/copyright-exceptions (one Python
+# regex per line, "#" comments and blank lines ignored, matched with re.match
+# against the repo relative path).
+default_exceptions = [r".*\.mwb$", r".*\.ico$", r".*\.png$", r".*\.ttf$",
+                      r"\.githooks/"]
 
 exceptions_file = os.path.join(".githooks", "copyright-exceptions")
 

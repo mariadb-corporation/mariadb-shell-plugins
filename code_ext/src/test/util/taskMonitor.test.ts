@@ -22,7 +22,9 @@ import type {
     IUtilTaskState,
     UtilTaskStatus,
 } from "../../mcp/utilApi.js";
+import { McpToolError } from "../../mcp/protocol.js";
 import {
+    MAX_UNANSWERED_LOOKS,
     TASKS_KEY,
     TaskMonitor,
     canResume,
@@ -275,7 +277,8 @@ describe("TaskMonitor", () => {
         });
 
     it("gives up on a task the server no longer knows", async () => {
-        const { api } = fakeApi([new Error("There is no task with the id 't1'.")]);
+        const { api, since } = fakeApi([new McpToolError("util.get_task",
+            "There is no task with the id 't1'.")]);
 
         const end = await monitorWith(api).follow(
             { task_id: "t1", status: "running" },
@@ -284,6 +287,43 @@ describe("TaskMonitor", () => {
         expect(end.status).toBe("failed");
         expect(end.error).toContain("Lost track of the task");
         expect(logs[0]).toContain("Lost track of the task Load");
+        // the server's answer is final: it is not asked again
+        expect(since).toHaveLength(1);
+    });
+
+    it("asks again about a task when a look goes unanswered", async () => {
+        // a call that timed out says nothing of the task, which goes on
+        const { api, since } = fakeApi([
+            state({ next_since: 2 }),
+            new Error("Request timed out"),
+            new Error("Request timed out"),
+            finished("completed", { next_since: 3 }),
+        ]);
+
+        const end = await monitorWith(api).follow(
+            { task_id: "t1", status: "running" },
+            { title: "Load", connection: "root@h" });
+
+        expect(end.status).toBe("completed");
+        expect(since).toEqual([0, 2, 2, 2]);
+        expect(logs).toEqual([
+            "No answer about the task Load (1 of 5): Request timed out",
+            "No answer about the task Load (2 of 5): Request timed out",
+        ]);
+        expect(errorMessages).toHaveLength(0);
+    });
+
+    it("gives up on a task once the server stopped answering", async () => {
+        const { api, since } = fakeApi(Array.from(
+            { length: MAX_UNANSWERED_LOOKS }, () => { return new Error("Not connected"); }));
+
+        const end = await monitorWith(api).follow(
+            { task_id: "t1", status: "running" },
+            { title: "Load", connection: "root@h" });
+
+        expect(end.status).toBe("failed");
+        expect(end.error).toBe("Lost track of the task: Not connected");
+        expect(since).toHaveLength(MAX_UNANSWERED_LOOKS);
     });
 
     it("removes only finished tasks from the list", async () => {
@@ -345,14 +385,17 @@ describe("the Tasks view", () => {
 });
 
 /** A workspace state that keeps what it is given. */
-const memento = (initial?: unknown): ITaskStore & { value: unknown } => {
+const memento = (initial?: unknown):
+    ITaskStore & { value: unknown; updates: number } => {
     const store = {
         value: initial,
+        updates: 0,
         get: <T>(key: string): T | undefined => {
             return key === TASKS_KEY ? store.value as T : undefined;
         },
         update: (key: string, value: unknown): Promise<void> => {
             if (key === TASKS_KEY) {
+                store.updates += 1;
                 store.value = JSON.parse(JSON.stringify(value));
             }
 
@@ -387,6 +430,53 @@ describe("tasks across a window reload", () => {
         expect(kept[0].state.messages).toEqual([]);
         expect(kept[0].resume).toEqual(RESUME);
     });
+
+    it("saves progress once per interval, and a change of status at once",
+        async () => {
+            const store = memento();
+            const { api } = fakeApi([
+                ...[1, 2, 3, 4, 5].map((n) => {
+                    return state({ stage: `Step ${String(n)}`, next_since: n });
+                }),
+                finished("completed"),
+            ]);
+            const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
+                new MockOutputChannel("t"), () => { /* not needed */ }, store, 0,
+                60_000);
+
+            await monitor.follow({ task_id: "t1", status: "running" },
+                { title: "Load", connection: "root@h" });
+
+            // its start and its end; the five looks between were only progress
+            expect(store.updates).toBe(2);
+            expect((store.value as ITrackedTask[])[0].state.status)
+                .toBe("completed");
+        });
+
+    it("saves the last progress of a running task when it is disposed",
+        async () => {
+            const store = memento();
+            const api = {
+                getTask: (_taskId: string, since = 0): Promise<IUtilTaskState> => {
+                    // the first look brings progress; the next never answers
+                    return since === 0
+                        ? Promise.resolve(state({ stage: "Loading data", next_since: 1 }))
+                        : new Promise(() => { /* the window closes first */ });
+                },
+            } as unknown as IUtilApi;
+            const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
+                new MockOutputChannel("t"), () => { /* not needed */ }, store, 0,
+                60_000);
+
+            void monitor.follow({ task_id: "t1", status: "running" },
+                { title: "Load", connection: "root@h" });
+            await new Promise((resolve) => { setTimeout(resolve, 10); });
+            expect((store.value as ITrackedTask[])[0].state.stage).toBeNull();
+
+            monitor.dispose();
+            expect((store.value as ITrackedTask[])[0].state.stage)
+                .toBe("Loading data");
+        });
 
     it("marks a task that was running as interrupted", () => {
         const store = memento([

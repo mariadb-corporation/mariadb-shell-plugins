@@ -13,9 +13,9 @@ project and service dump/load, `load.contentSet`, MRS script analysis, runtime m
 code, audit log, version, see
 [context/plugin-reduction.md](context/plugin-reduction.md)); the Python REST SQL parser is
 gone. The docs, the ANTLR reference grammar and their tools moved to the mariadb-shell repo
-(`docs-ref/content/mariadb-rest-service/`, `modules/mrs/antlr_grammar/`). The plugin also manages the
+(`docs-ref/content/mariadb-rest-service/`, `mysqlshdk/libs/mrs/antlr_grammar/`). The plugin also manages the
 metadata schema (`mariadb_rest_service`, an MSM project maintained in mariadb-shell
-`modules/mrs/db_schema/` since 2026-10-09) and generates the
+`mysqlshdk/libs/mrs/db_schema/` since 2026-10-09) and generates the
 client SDKs (`sdk/`). Plugin version `26.9.5`,
 metadata schema `5.0.0` (`lib/general.py` `VERSION`, `DB_VERSION`). Consumed by
 `mcp_plugin` (REST SQL through its `db.*` tools) and bundled into the shell release
@@ -27,8 +27,8 @@ packages with msm_plugin and mcp_plugin.
   (`general`, `services`, `content_sets`, `dump`); `lib/*.py` does the work and holds only
   code those 13 functions reach (cleanup 2026-10-09).
 - **REST SQL has two grammars, kept rule for rule in step**, both in the mariadb-shell repo
-  since 2026-10-09: ANTLR (`modules/mrs/antlr_grammar/MRS{Lexer,Parser}.g4`, docs only) and
-  bison (`modules/mrs/core/mrs_parser.yy`, keywords in `mrs_lexer.h`). A statement change
+  since 2026-10-09: ANTLR (`mysqlshdk/libs/mrs/antlr_grammar/MRS{Lexer,Parser}.g4`, docs only) and
+  bison (`mysqlshdk/libs/mrs/parser.yy`, keywords in `lexer.h`). A statement change
   goes to both, then the GitBook reference page, `npm run docs-ref:mrs-grammar-docs` and
   `docs-ref:mrs-diagrams`, and the shell's `unittest/data/mrs/grammar_test.sql`.
 - **No client files in REST SQL** (2026-10-09): the plugin does all file work
@@ -42,12 +42,12 @@ packages with msm_plugin and mcp_plugin.
   (`acme_mariadb_rest_service_eu`, MSM substitutions `schema_prefix`/`schema_postfix`). SQL in
   `lib/` and the tests uses the token `<metadata>` (`core.METADATA`); `MrsDbExec` and
   `core.metadata_sql(session, sql)` replace it with the schema from the last column
-  `metadata_schema` of `SHOW REST METADATA STATUS` (cached per session object;
-  `core.forget_metadata_schema(session)` after `CONFIGURE REST METADATA SCHEMA` / `USE REST
-  METADATA SCHEMA`). Roles: `core.metadata_role(session, "data_provider")` = prefix +
+  `metadata_schema` of `SHOW REST METADATA STATUS` (cached per session object
+  for one plugin call only, i.e. while the outermost `MrsDbSession` of the thread is open, so a
+  `USE REST METADATA SCHEMA` between calls is seen by the next one; not cached outside a call). Roles: `core.metadata_role(session, "data_provider")` = prefix +
   `mariadb_rest_service_<role>` + postfix. The schema project (Workbench model, sections,
   releases, `prepare_default_static_content.sh`) is the shell repo's
-  `modules/mrs/db_schema/mariadb_rest_service.msm.project`; this repo's copy was removed.
+  `mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`; this repo's copy was removed.
 - **Ids are UUIDs (5.0.0, 2026-10-08).** Every id/FK column is MariaDB `UUID`,
   single-column PKs `DEFAULT UUID_v7()` (time-ordered, index-friendly), `get_sequence_id()`
   returns `UUID_v7()`. In Python an id is the canonical lower-case hyphenated string;
@@ -189,7 +189,7 @@ packages with msm_plugin and mcp_plugin.
 - `content_sets.py` / `lib/content_sets.py` -> MRS script analysis, `load_content_set`,
   `content_file_statement` (also used by the test fixture)
 - Docs and grammar: mariadb-shell `docs-ref/content/mariadb-rest-service/`,
-  `modules/mrs/antlr_grammar/` (not in this repo any more)
+  `mysqlshdk/libs/mrs/antlr_grammar/` (not in this repo any more)
 - `lib/core.py` -> `ConfigFile` (current service per connection), `MrsDbExec`, id helpers
   (`id_to_uuid`, `convert_ids_to_uuid`, `try_convert_ids_to_uuid`, `NIL_UUID`)
 - `interactive.py` -> resolvers for service/schema/user/role/auth-app queries
@@ -228,6 +228,39 @@ packages with msm_plugin and mcp_plugin.
    `examples/mrs_notes/db_schema/mrs_notes.sql`.
 7. Further schema improvements; each one goes model -> sections -> msm release, then all
    three suites.
+8. **Build the test fixtures with REST SQL.** `tests/unit/fixture_writers.py` holds the
+   plugin's former writers (`add_schema`, `add_rest_object`, `set_data_mappings*`, the
+   grant builders), moved out of `lib/` because only the tests used them. The fixtures
+   (`helpers.add_test_schema` / `add_test_rest_object`, ~49 uses in `test_services`,
+   `test_rest_objects`, `test_schemas`) still write metadata the way the old Python plugin
+   did, with hand-made data mappings (e.g. arbitrary `sdk_options`) REST SQL never writes,
+   so the SDK and service tests check data the product does not produce. Replace them with
+   `CREATE REST SCHEMA` / `CREATE REST VIEW ...` and delete `fixture_writers.py`; expected
+   SDK output will likely change, each difference to be judged (test artefact or a real
+   difference between the old writer and the shell). The grant builder there still leaves
+   `columnList` unquoted (test-only now).
+9. **Project load over unverified TLS runs the downloaded SQL** (high, security; upstream
+   code). `lib/services.py` `LoadProjectFileContext` downloads a project zip (URL or GitHub
+   shortcut) with `ssl._create_unverified_context()`, and `load_project` then runs its schema
+   SQL files and dumps, often as root: anyone who can intercept the connection runs SQL on the
+   server. The package's `schema["path"]` / `service["fileName"]` are also joined to the base
+   directory unchecked (absolute or `../` paths read outside the package). Fix: the default SSL
+   context, and refuse paths that resolve outside the base directory.
+10. **`store_project(zip=True)` deletes an existing directory** (high, data loss; upstream
+    code). For a destination `X.zip` it builds the project in `X/` (`os.makedirs(...,
+    exist_ok=True)`), zips the whole of `X/` and then `shutil.rmtree(X)`: a user directory of
+    that name is zipped into the project and removed. Fix: build in a
+    `tempfile.TemporaryDirectory()`, or refuse an existing `X/`.
+11. **Developer names unquoted in REST SQL** (medium; injection from `web=True` callers).
+    `core.quote_service_path` keeps the part before `@` as given, and it is pasted into
+    statements (`services.service_script`, the content set functions, `as_path` of
+    `load_service_script`): a path like `x; DROP REST SERVICE /other;@/svc` adds statements.
+    Fix: quote each developer name (backticks or quotes unless `[A-Za-z0-9_]+`), or validate
+    the list.
+12. **`store_project` replaces the caller's schemas** (medium; upstream code).
+    `if len(services) == 1 and not schemas == 0:` is always true (a list never equals 0), so
+    with one service the explicit `schemas` (validated just before) are replaced by the
+    auto-detected ones. Fix: `if len(services) == 1 and not schemas:`.
 
 ## Gotchas / things not to repeat
 
@@ -269,6 +302,12 @@ packages with msm_plugin and mcp_plugin.
   request path, keeps a developer list `mike@/path` unquoted); `quote_ident` on a developer
   path breaks it. `load_service_script(as_path=...)` relies on the dump naming the service
   only in its CREATE and USE statements (since 2026-10-09).
+- **Transactions around REST SQL:** a statement joins a transaction the caller started (the
+  shell uses a SAVEPOINT), so `MrsDbTransaction` holds, except across statements that grant
+  or revoke (CREATE/ALTER/DROP REST VIEW/PROCEDURE/FUNCTION, LOAD SCRIPTS with grants):
+  those commit. Service scripts and project loads therefore commit as they go;
+  `load_project` uses `load_service_script(replace=False, created=...)` to refuse existing
+  services and drop only the ones it created when a script fails.
 - Keywords used as names need quotes (`FOR AUTH APP app` fails: `APP` is a keyword); only
   `FILES` and `VENDORS` are allowed unquoted.
 - **A stored data mapping holds every column**: the ones left out of the mapping are

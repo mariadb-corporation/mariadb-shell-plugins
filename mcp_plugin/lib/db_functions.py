@@ -175,20 +175,32 @@ _reaper_stop = threading.Event()
 # call anyway, which always reports CR_SERVER_GONE_ERROR.
 _CONNECTION_LOST_ERRORS = (2006, 2013, 2055)
 
-# Lists the schemas of a server, classified into system and user schemas. The
-# MRS metadata schema is mariadb_rest_service, optionally with a prefix and a
-# postfix (acme_mariadb_rest_service_eu).
+# Lists the schemas of a server, classified into system and user schemas. A
+# server can hold several MRS metadata schemas: mariadb_rest_service with a
+# prefix and a postfix (acme_mariadb_rest_service_eu). A schema is one when the
+# shell would take it as one (its schema_name_parts() and the msm view): the
+# name holds mariadb_rest_service once, the prefix starts with a letter or _,
+# the postfix with _, both of letters, digits and _, and the schema holds MSM's
+# msm_schema_version view. A user schema whose name merely contains the text
+# stays a user schema.
 _LIST_SCHEMAS_SQL = """
-    SELECT SCHEMA_NAME as schema_name,
+    SELECT s.SCHEMA_NAME as schema_name,
         CASE
-            WHEN SCHEMA_NAME = 'mysql'
-                OR SCHEMA_NAME LIKE '%mariadb\\_rest\\_service%' THEN 'System Schema'
-            WHEN SCHEMA_NAME = 'information_schema' THEN 'System Information Schema'
+            WHEN s.SCHEMA_NAME = 'mysql'
+                OR (s.SCHEMA_NAME REGEXP
+                        '(?-i)^([A-Za-z_][A-Za-z0-9_]*)?mariadb_rest_service(_[A-Za-z0-9_]*)?$'
+                    AND s.SCHEMA_NAME NOT LIKE
+                        '%mariadb\\_rest\\_service%mariadb\\_rest\\_service%'
+                    AND EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.VIEWS v
+                        WHERE v.TABLE_SCHEMA = s.SCHEMA_NAME
+                            AND v.TABLE_NAME = 'msm_schema_version'))
+                THEN 'System Schema'
+            WHEN s.SCHEMA_NAME = 'information_schema' THEN 'System Information Schema'
             ELSE 'User Schema'
         END AS schema_type,
-        SCHEMA_COMMENT as schema_comment
-    FROM INFORMATION_SCHEMA.SCHEMATA
-    ORDER BY SCHEMA_TYPE, SCHEMA_NAME
+        s.SCHEMA_COMMENT as schema_comment
+    FROM INFORMATION_SCHEMA.SCHEMATA s
+    ORDER BY schema_type, schema_name
 """
 
 # Lists the objects of one type within a schema. Each query takes the schema
