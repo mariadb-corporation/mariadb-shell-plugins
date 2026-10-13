@@ -219,8 +219,8 @@ primitives in `lib/setup_prompts.py`).
 ## Exposed MCP tools
 
 The tools are grouped into function groups that can be loaded independently via the
-`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migrator`;
-defaults to all):
+`function_groups` option of `mcp.start_server` (`db`, `msm`, `sandbox`, `migrator`,
+`util`; defaults to all):
 
 ```bash
 # expose only the database tools
@@ -366,6 +366,73 @@ which the deploy's message spells out:
 
 Verified on Windows 11 ARM64 against shell 26.9.1.
 
+### Dump, load and copy tools (`util`)
+
+Tools wrapping the shell's dump, load, copy, export and import utilities. Each of them
+runs for minutes or hours, so the tools start it as a background **task** and return
+its `task_id` at once; the client follows the task with `util.get_task`.
+
+| MCP tool | Wraps |
+| --- | --- |
+| `util.dump_instance` | `util.dump_instance` |
+| `util.dump_schemas` | `util.dump_schemas` |
+| `util.dump_tables` | `util.dump_tables` |
+| `util.export_table` | `util.export_table` |
+| `util.load_dump` | `util.load_dump` |
+| `util.import_table` | `util.import_table` |
+| `util.copy_instance` | `util.copy_instance` |
+| `util.copy_schemas` | `util.copy_schemas` |
+| `util.copy_tables` | `util.copy_tables` |
+| `util.get_task` | - (`lib/tasks.py`) |
+| `util.list_tasks` | - |
+| `util.cancel_task` | - |
+
+- **A task runs in a MariaDB Shell process of its own**, `mariadb-shell --json=raw
+  --uri=<uri> -- util <command> ...`, connected with the URI and password of the
+  connection a client got from `db.connect` (for a copy, the target is a second
+  `db.connect` connection). The passwords go to the process's stdin, never on its
+  command line. So the task never holds the connection, and a utility that crashes
+  takes only its own process down: the task reports it, and **a load is resumed**
+  where it stopped, up to 3 times, from the dump's progress file. Any other
+  utility that crashes fails, because starting it again would not continue its
+  work. A crash is a process ended by a signal (on Windows, by an exception); a
+  shell that ends itself with an error code fails the task with that error, even
+  one it printed only on stderr, and is not started again. The process ends with
+  the server, however the server ends.
+- **Options** are the utility's own, with their camelCase names, in `options`, such as
+  `{"threads": 8, "users": false}`. `session`, `progressCallback` and `showProgress`
+  are refused. A value the shell's command line cannot pass on unchanged is refused
+  too: a string with `\,`, `\"`, `\'` or `\=` in it, or a name or path such as
+  `2024`, `true` or `-x` where the command line takes it without a name. An
+  option name must be letters, digits, `_` and `-`. `outputUrl`, in any spelling, is
+  refused for `util.dump_schemas` and `util.dump_tables`, which take it as `output_url`.
+  A copy takes no option that is a connection attribute (`host`, `port`, `user`,
+  `password`, `socket`, `ssl-*`,
+  `ssh-*` and the others, in any spelling): the target is the connection named by
+  `target_connection_id`, and the options cannot change it.
+- **`util.get_task(task_id, since, wait_ms)`** returns:
+  - the status: `pending`, `running`, `completed`, `failed` or `cancelled`;
+  - the stages with their state, and the current stage's `progress`: `current`,
+    `total`, `percent`, and `throughput`, `eta_seconds` and `items` where the stage
+    measures them;
+  - the messages printed after `since`, with `next_since` for the next call;
+  - once it ended, the `result` or the `error`.
+
+  With `wait_ms` (up to 30000) it waits for a change before answering, so a client
+  can follow a task without polling quickly.
+- **`util.cancel_task`** interrupts the utility as Ctrl+C would, and ends its process
+  if it has not stopped 30 seconds later. A load that is stopped can be resumed by loading the same dump again.
+- **Limits:** a client may run 4 tasks at once. Finished tasks are kept for an hour,
+  100 at most. A task belongs to the client that started it, as a connection does.
+- Local paths are checked against the allowed paths: a path with no scheme, a
+  `file://` URL (as the shell reads it, scheme in any case), and the local files
+  named by `progressFile`, `ociConfigFile`, `s3ConfigFile`, `s3CredentialsFile` and
+  `azureConfigFile`. A remote URL (`https://` and the like), or a prefix in object
+  storage (`s3BucketName`, `osBucketName`, `azureContainerName`, with a non-empty
+  name), is left to the utility.
+- The tools are registered only when the `db` group is served as well, and never in
+  multi-tenant mode.
+
 ### Migrator tools (`migrator`)
 
 | MCP tool | Purpose |
@@ -490,7 +557,7 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
   as they are, so that `--showApiKey` can show them again). **Run the server
   under an OS account of its own**, and on Linux note that the default
   `login-path` helper only obfuscates `~/.mylogin.cnf`.
-- **Only the `db` group** is served. The `sandbox` and `migrator` tools run
+- **Only the `db` group** is served. The `sandbox`, `migrator` and `util` tools run
   local servers and long jobs on the machine, and the `msm` tools work on
   schema project folders, which belong on the developer's own machine, not on
   a remote server; none of them are offered to tenants. Neither is `--gui`,

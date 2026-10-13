@@ -410,7 +410,9 @@ describe("ConnectionManager", () => {
         });
 
         it("reports what is done on an open connection", async () => {
-            const { manager, reported } = createManager();
+            const { manager, reported, settings } = createManager();
+            // Browsing is reported only where every call is asked for.
+            settings.logAllCalls = () => { return true; };
             const connectionId = await manager.connect("dba@localhost:3310");
             const api = await manager.api();
 

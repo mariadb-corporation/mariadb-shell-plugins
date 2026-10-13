@@ -26,7 +26,20 @@ import {
     createWorkspaceSettings,
     publishConnectMode,
 } from "./connections/settings.js";
+import * as os from "node:os";
+import * as path from "node:path";
+
 import { applyKeybindings } from "./editor/keybindings.js";
+import type { IUtilApi } from "./mcp/utilApi.js";
+import { TaskActionLog } from "./util/taskActions.js";
+import { TaskLogs } from "./util/taskLogs.js";
+import { TaskMonitor } from "./util/taskMonitor.js";
+import {
+    showRunningTasks,
+    TASKS_VIEW_ID,
+    TasksTreeProvider,
+} from "./util/tasksTreeProvider.js";
+import { UtilCommands } from "./util/utilCommands.js";
 import { SqlEditorBinding } from "./editor/sqlEditorBinding.js";
 import { StatementDecorator } from "./editor/statementDecorations.js";
 import { reportError } from "./errorMessages.js";
@@ -336,6 +349,93 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const sandboxesView = vscode.window.createTreeView(SANDBOXES_VIEW_ID, {
         treeDataProvider: sandboxes,
     });
+
+    // Dumps, loads, copies, exports and imports run as tasks in the server;
+    // the monitor follows them, and the Tasks view lists them.
+    const utilApi = async (): Promise<IUtilApi> => {
+        if (session.utilApi === undefined) {
+            await starter.start();
+        }
+        const api = session.utilApi;
+        if (api === undefined) {
+            throw new Error("The MCP server is not running.");
+        }
+
+        return api;
+    };
+    const taskOutput = vscode.window.createOutputChannel("MariaDB Tasks");
+    // Kept in the workspace state, so the tasks of the last window are
+    // still listed, those it stopped among them.
+    const taskMonitor = new TaskMonitor(utilApi, taskOutput, log,
+        context.workspaceState);
+    const tasksTree = new TasksTreeProvider(taskMonitor);
+    const tasksView = vscode.window.createTreeView(TASKS_VIEW_ID, {
+        treeDataProvider: tasksTree,
+    });
+    // VS Code gives no chance to warn when the window is about to close, so
+    // the view says it while tasks run.
+    showRunningTasks(tasksView, taskMonitor);
+    taskMonitor.onDidChange(() => { showRunningTasks(tasksView, taskMonitor); });
+    // Each task is a row of its connection's Actions in the panel, with
+    // what it reported under it, and has a log file of its own that
+    // outlives the window and goes when its row leaves the Tasks view.
+    const taskActions = new TaskActionLog((connection, row) => {
+        void resultView.putAction(connection, row);
+    }, UI_BACKEND_SESSION);
+    // The logs are kept with the task list, which is the workspace's: in
+    // its own storage, which no other window uses. A window without a
+    // workspace has none, and shares the global storage with every other
+    // such window, so it deletes only the logs of its own tasks.
+    const taskLogs = new TaskLogs(path.join(
+        (context.storageUri ?? context.globalStorageUri).fsPath, "task-logs"), log);
+    taskMonitor.onDidReport((report) => {
+        taskActions.report(report);
+        void taskLogs.report(report);
+    });
+    const listedTasks = (): string[] => {
+        return taskMonitor.tasks.map((tracked) => {
+            return tracked.state.task_id;
+        });
+    };
+    if (context.storageUri !== undefined) {
+        void taskLogs.sweep(listedTasks());
+    }
+    void taskLogs.prune(listedTasks());
+    taskMonitor.onDidChange(() => { void taskLogs.prune(listedTasks()); });
+    taskMonitor.openLog = (tracked): void => {
+        const file = taskLogs.pathOf(tracked.state.task_id);
+        void (async () => {
+            try {
+                const document = await vscode.workspace.openTextDocument(
+                    vscode.Uri.file(file));
+                await vscode.window.showTextDocument(document,
+                    { preview: true });
+            } catch {
+                void vscode.window.showInformationMessage(
+                    `No log was kept for ${tracked.state.title}.`);
+            }
+        })();
+    };
+    const utilCommands = new UtilCommands({
+        extensionUri: context.extensionUri,
+        connect: async (uri) => {
+            return await connections.connect(uri, UI_BACKEND_SESSION);
+        },
+        connectionUris: async () => {
+            return (await connections.listStoredConnections())
+                .map((stored) => { return stored.uri; });
+        },
+        utilApi,
+        monitor: taskMonitor,
+        refresh: () => { tree.refresh(); },
+        defaultFolder: () => {
+            return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                ?? os.homedir();
+        },
+        log,
+    });
+    context.subscriptions.push(taskOutput, taskMonitor, tasksTree, tasksView,
+        ...utilCommands.register());
 
     context.subscriptions.push(
         // Draws a connection's color on its row (see connectionColors.ts).

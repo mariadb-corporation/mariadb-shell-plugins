@@ -110,7 +110,7 @@ describe("activityRow", () => {
 
 describe("createLoggingApi", () => {
     it("reports a listing of the schemas", async () => {
-        const { logging, reported } = createLogging();
+        const { logging, reported } = createLogging(true);
 
         await logging.listSchemas("uuid-dba");
 
@@ -126,7 +126,7 @@ describe("createLoggingApi", () => {
     });
 
     it("reports a listing of one kind of object", async () => {
-        const { logging, reported } = createLogging();
+        const { logging, reported } = createLogging(true);
 
         await logging.listObjects("uuid-dba", "world", "table");
 
@@ -137,7 +137,7 @@ describe("createLoggingApi", () => {
     });
 
     it("reports an object being described", async () => {
-        const { logging, reported } = createLogging();
+        const { logging, reported } = createLogging(true);
 
         await logging.getObjectDetails("uuid-dba", "world", "city", "table");
 
@@ -145,6 +145,17 @@ describe("createLoggingApi", () => {
             call: "db.get_object_details(world, city, table)",
             message: "Described the table world.city",
         });
+    });
+
+    it("leaves browsing out, unless every call is asked for", async () => {
+        const { logging, reported } = createLogging();
+
+        await logging.listSchemas("uuid-dba");
+        await logging.listObjects("uuid-dba", "world", "table");
+        await expect(logging.getObjectDetails(
+            "uuid-dba", "world", "nope", "table")).rejects.toThrow();
+
+        expect(reported).toEqual([]);
     });
 
     it("reports a call that failed, and still raises it", async () => {
@@ -163,7 +174,7 @@ describe("createLoggingApi", () => {
         async () => {
             // How a SELECT on a view - mysql.user - is found out to be no
             // table: the lookup is how the question is asked.
-            const { logging, reported } = createLogging();
+            const { logging, reported } = createLogging(true);
 
             await expect(logging.getObjectDetails(
                 "uuid-dba", "world", "nope", "table")).rejects.toThrow(
@@ -176,7 +187,7 @@ describe("createLoggingApi", () => {
         });
 
     it("times what it reports", async () => {
-        const { logging, reported } = createLogging();
+        const { logging, reported } = createLogging(true);
 
         await logging.listSchemas("uuid-dba");
 
@@ -185,7 +196,7 @@ describe("createLoggingApi", () => {
     });
 
     it("says nothing about a connection it does not know", async () => {
-        const { logging, reported } = createLogging();
+        const { logging, reported } = createLogging(true);
 
         // A UUID from before the extension's own bookkeeping, or one
         // closed while the call was in flight: there is no connection to

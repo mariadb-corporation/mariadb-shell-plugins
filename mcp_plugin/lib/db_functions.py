@@ -774,6 +774,26 @@ def _open_session(uri: str, kind=None, mcp_user_id=None):
     Returns:
         The open shell session.
     """
+    session = _open_shell_session(uri, _configured_password(uri, kind, mcp_user_id))
+    if mcp_user_id is not None:
+        _apply_default_role(session, mcp_user_id)
+
+    return session
+
+
+def _configured_password(uri: str, kind, mcp_user_id) -> str:
+    """The stored password of a URI that is still a configured connection.
+
+    The check every open of a session makes; see :func:`_open_session`.
+
+    Args:
+        uri (str): The connection URI, as configured.
+        kind: The connection list it belongs to, or None for the MCP list.
+        mcp_user_id: The user whose connection it is, or None.
+
+    Returns:
+        str: The password.
+    """
     kind = config.normalize_connection_kind(kind)
 
     # The list is read from the secret store on each call, so it reflects what
@@ -787,22 +807,20 @@ def _open_session(uri: str, kind=None, mcp_user_id=None):
             "db.connect to open one of them."
         )
 
-    # Read the stored password back and open the session with it.
-    session = _open_shell_session(
-        uri, config.get_connection_password(uri, kind, mcp_user_id)
-    )
-    if mcp_user_id is not None:
-        _apply_default_role(session, mcp_user_id)
+    return config.get_connection_password(uri, kind, mcp_user_id)
 
-    return session
+
+def _with_password(uri: str, password: str) -> dict:
+    """The connection data of a URI, with a password."""
+    connection_data = dict(mysqlsh.globals.shell.parse_uri(uri))
+    connection_data["password"] = password
+
+    return connection_data
 
 
 def _open_shell_session(uri: str, password: str):
     """Opens a session on a URI with a password; independent of the shell's own."""
-    connection_data = mysqlsh.globals.shell.parse_uri(uri)
-    connection_data["password"] = password
-
-    return mysqlsh.globals.shell.open_session(connection_data)
+    return mysqlsh.globals.shell.open_session(_with_password(uri, password))
 
 
 def _open_login_session(uri: str, mcp_user_id: str, grant_id: str):
@@ -1132,6 +1150,57 @@ def _refuse_on_the_event_loop() -> None:
         "the server answering every other client, so async tool code has to "
         "run it on a worker thread with anyio.to_thread.run_sync."
     )
+
+
+def connection_credentials(connection_id: str, client) -> tuple:
+    """The URI and the password of a connection opened with ``db.connect``.
+
+    For a utility that runs in a MariaDB Shell process of its own, which
+    connects by itself (see :mod:`mcp_plugin.lib.util_process`). The same
+    check applies as on every open of a session: the URI must still be a
+    configured connection.
+
+    A connection opened with the account a user signed in with is refused:
+    its sessions are opened only while the sign-in's grant lives, and under
+    the user's default role, neither of which a process of its own would
+    keep to. Such connections exist only in multi-tenant mode, which serves
+    no utilities; this is the guard for the day it would.
+
+    Args:
+        connection_id (str): The UUID returned by ``db.connect``.
+        client (ClientIdentity): The identity of the requesting client.
+
+    Returns:
+        tuple: The URI, as configured, and its stored password.
+    """
+    connection = _get_connection(connection_id, client)
+
+    if connection.grant_id is not None:
+        raise tool_error(
+            "A connection opened with the account a user signed in with "
+            "cannot be used by a utility."
+        )
+
+    return connection.uri, _configured_password(
+        connection.uri, connection.kind, connection.mcp_user_id
+    )
+
+
+def connection_data(connection_id: str, client) -> dict:
+    """The connection data of a connection, with its password.
+
+    For the target of a copy, which the utility connects to by itself; see
+    :func:`connection_credentials`.
+
+    Args:
+        connection_id (str): The UUID returned by ``db.connect``.
+        client (ClientIdentity): The identity of the requesting client.
+
+    Returns:
+        dict: The connection data, as ``shell.parse_uri`` gives it, plus the
+        stored password.
+    """
+    return _with_password(*connection_credentials(connection_id, client))
 
 
 @contextmanager

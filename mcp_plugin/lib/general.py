@@ -112,20 +112,24 @@ FUNCTION_GROUP_SANDBOX = "sandbox"
 # tools register only where the migration tooling is actually installed - see
 # mcp_plugin.lib.migrator_functions.register_migrator_tools.
 FUNCTION_GROUP_MIGRATOR = "migrator"
+# The dump, load, copy, export and import utilities, run as background tasks;
+# its tools need connections, so they register only alongside the db group.
+FUNCTION_GROUP_UTIL = "util"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
     FUNCTION_GROUP_SANDBOX,
     FUNCTION_GROUP_MIGRATOR,
+    FUNCTION_GROUP_UTIL,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
 # The groups a multi-tenant server serves, and the only ones it may. The
 # sandbox and migrator groups run local server processes and long jobs that
 # write to the server's disk - resources one user would take from all the
-# others - and the msm group works on schema project folders, which live on
-# the developer's own machine, not on a remote server. None of them are
-# offered to tenants.
+# others - the util group's dumps and loads are such jobs too, and the msm
+# group works on schema project folders, which live on the developer's own
+# machine, not on a remote server. None of them are offered to tenants.
 MULTI_TENANT_FUNCTION_GROUPS = (FUNCTION_GROUP_DB,)
 
 def utc_timestamp() -> str:

@@ -69,6 +69,41 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   - Workbench: UUID is set via a `db.UserDatatype` and the new `UUID_Columns` plugin in
     `development/wb/Audit_Log_Triggers_grt.py` (the table editor's grammar rejects UUID).
 
+- **The shell's global session (2026-10-10, `wip/mcp_dump_load`).**
+  - `msm.deploy_schema`'s backup ran `util.dump_schemas` / `util.load_dump`.
+    It switched the global session to the given one with `shell.set_session`
+    first, without a lock and without switching back, so two deployments at
+    once on an MCP server could run on each other's session.
+  - msm now calls `lib.core.run_util(session, function, *args, options=)`,
+    which switches the global session under a lock and switches it back.
+    (It first passed the session in the utility's `session` option of
+    mariadb-shell #73; #73 was dropped on 2026-10-12, see `util.md`.)
+    - The lock lives in a module object in `sys.modules`
+      (`_mariadb_shell_plugins_global_session`), so another plugin can share
+      it.
+    - `shell.set_session(None)` clears it again without closing anything.
+  - **mrs_plugin has its own `run_util`** (`lib/core.py`, same lock module
+    name), used by the project dump/load in `lib/services.py`. It came with
+    PR #41, now on main; this branch was rebased onto it on 2026-10-12, and
+    msm's `lib/core.py` / `lib/management.py` are main's since then.
+  - Tests: `msm_plugin/tests/unit/test_run_util.py` (5, fakes for
+    `mysqlsh`). The msm suite: 20 pass, backup restore included (2026-10-12).
+    Before the rebase, `test_the_lock_is_shared_by_every_plugin` failed
+    against a shell with the built-in MRS module (#71): importing the old
+    `mrs_plugin.lib.core` raised "An SQL Handler named 'MRS' already
+    exists", not an ImportError. On #44/#45, which have #41's mrs_plugin,
+    all 23 pass. On the rebased branch (2026-10-12, shell 26.10.2): msm 25
+    passed, the lock test included; mcp 700 passed / 4 skipped; code_ext
+    1368 passed.
+  - The utilities still run in the shell's own process here, on whatever
+    thread calls `msm.deploy_schema` (an MCP worker thread). #73 added a
+    `Mysys_thread_guard` for utilities called from a script's thread,
+    against a mysys segfault (no thread state for `my_errno`). It was not
+    reproduced on mariadb-shell `main` (2026-10-12): all nine utilities,
+    including their error paths, ran from a Python thread without a
+    crash. The guard and a test for it are kept on the local mariadb-shell
+    branch `wip/util_mysys_thread_guard`, with no PR.
+
 ## Gotchas / things not to repeat
 
 - **msm_plugin / mrs_plugin suites**: run each as `mariadb-shell --py -f run_tests.py` from
