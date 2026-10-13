@@ -25,10 +25,11 @@ change.
   - At most `MAX_RUNNING_TASKS_PER_CLIENT` = 4 run per client. Finished tasks
     are kept 1 h, 100 at most, pruned on every lookup.
 - `lib/util_process.py`: the shell process.
-  - `shell_executable()`: this process's own executable (`/proc/self/exe`,
-    `proc_pidpath`, `GetModuleFileNameW`). If that is a Python (in a test, say),
-    `mariadb-shell` on PATH. `sys.executable` is the shell's bundled Python,
-    not the shell.
+  - `shell_executable()`: `mysqlsh.executable`, which the shell sets to its
+    own binary (`get_binary_path()`, in `python_context.cc`) when it starts
+    its Python; since 2023, so every supported shell has it. Without it (a
+    plain Python), `mariadb-shell` on PATH. `sys.executable` is the shell's
+    bundled Python, not the shell.
   - `build_command()` follows `shell_cli_mapper.cc`; see "Command line" below.
   - `OutputParser` turns the JSON lines into the events `on_event()` takes;
     see "Output" below.

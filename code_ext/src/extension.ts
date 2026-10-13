@@ -461,19 +461,26 @@ export const activate = (context: vscode.ExtensionContext): void => {
     const taskActions = new TaskActionLog((connection, row) => {
         void resultView.putAction(connection, row);
     }, UI_BACKEND_SESSION);
-    const taskLogs = new TaskLogs(
-        path.join(context.globalStorageUri.fsPath, "task-logs"), log);
+    // The logs are kept with the task list, which is the workspace's: in
+    // its own storage, which no other window uses. A window without a
+    // workspace has none, and shares the global storage with every other
+    // such window, so it deletes only the logs of its own tasks.
+    const taskLogs = new TaskLogs(path.join(
+        (context.storageUri ?? context.globalStorageUri).fsPath, "task-logs"), log);
     taskMonitor.onDidReport((report) => {
         taskActions.report(report);
         void taskLogs.report(report);
     });
-    const pruneTaskLogs = (): void => {
-        void taskLogs.prune(taskMonitor.tasks.map((tracked) => {
+    const listedTasks = (): string[] => {
+        return taskMonitor.tasks.map((tracked) => {
             return tracked.state.task_id;
-        }));
+        });
     };
-    pruneTaskLogs();
-    taskMonitor.onDidChange(pruneTaskLogs);
+    if (context.storageUri !== undefined) {
+        void taskLogs.sweep(listedTasks());
+    }
+    void taskLogs.prune(listedTasks());
+    taskMonitor.onDidChange(() => { void taskLogs.prune(listedTasks()); });
     taskMonitor.openLog = (tracked): void => {
         const file = taskLogs.pathOf(tracked.state.task_id);
         void (async () => {

@@ -51,6 +51,8 @@ import time
 import weakref
 from typing import Optional
 
+import mysqlsh
+
 from mcp_plugin.lib.tool_registrar import tool_error
 # the watchdog imports nothing of the plugin, so it is where these are kept
 from mcp_plugin.lib.util_watchdog import (
@@ -112,40 +114,18 @@ _STAGE_DONE = " - done"
 # --- the shell -----------------------------------------------------------------
 
 
-def _own_executable() -> Optional[str]:
-    """The executable of this process: the shell the server runs in."""
-    try:
-        if sys.platform.startswith("linux"):
-            return os.path.realpath("/proc/self/exe")
-
-        import ctypes
-
-        if sys.platform == "darwin":
-            libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
-            buffer = ctypes.create_string_buffer(4096)
-            if libproc.proc_pidpath(os.getpid(), buffer, ctypes.sizeof(buffer)) > 0:
-                return buffer.value.decode("utf-8")
-        elif os.name == "nt":
-            buffer = ctypes.create_unicode_buffer(32768)
-            if ctypes.windll.kernel32.GetModuleFileNameW(None, buffer, len(buffer)):
-                return buffer.value
-    except Exception:  # noqa: BLE001 - then the shell is looked for on PATH
-        pass
-
-    return None
-
-
 def shell_executable() -> str:
     """The MariaDB Shell binary a utility runs in.
 
-    The one the server itself runs in, so that the utility is that version's;
-    the one on PATH where this process is not a shell (a plain Python).
+    The one the server itself runs in, so that the utility is that version's:
+    the shell sets ``mysqlsh.executable`` to its own binary when it starts its
+    Python. The one on PATH where this process is not a shell (a plain Python).
 
     Returns:
         str: Its path.
     """
-    own = _own_executable()
-    if own and os.path.isfile(own) and not os.path.basename(own).lower().startswith("python"):
+    own = getattr(mysqlsh, "executable", None)
+    if own and os.path.isfile(own):
         return own
 
     found = shutil.which("mariadb-shell")
@@ -285,10 +265,11 @@ def _is_connection_attribute(cli_name: str) -> bool:
     return True
 
 
-def _option_argument(name: str, value, copy: bool) -> Optional[str]:
+def _option_argument(name: str, value, copy: bool, forbidden: dict) -> Optional[str]:
     """A client's option, refused where it would reach anything else.
 
-    The mapper routes a named argument by its name alone. For a copy, every
+    ``forbidden`` holds the options the calling tool refuses, as the mapper
+    spells them, each with the reason why. For a copy, every
     connection attribute is also a name of the target's connection data, and
     the last one given wins: ``{"host": ...}`` in the options would send the
     copy, and the target's stored password, to another server. So a copy
@@ -299,6 +280,9 @@ def _option_argument(name: str, value, copy: bool) -> Optional[str]:
         raise tool_error(f"'{name}' is not the name of an option.")
 
     cli_name = _cli_name(name)
+    if cli_name in forbidden:
+        raise tool_error(f"The option '{name}' cannot be given: {forbidden[cli_name]}")
+
     if copy and _is_connection_attribute(cli_name):
         if cli_name not in _COPY_AMBIGUOUS:
             raise tool_error(
@@ -326,7 +310,13 @@ def _target_arguments(target: Optional[dict]) -> list:
     return arguments
 
 
-def build_command(function: str, args: list, options: dict, target: Optional[dict] = None) -> list:
+def build_command(
+    function: str,
+    args: list,
+    options: dict,
+    target: Optional[dict] = None,
+    forbidden: Optional[dict] = None,
+) -> list:
     """The arguments of ``-- util ...`` for a utility.
 
     Args:
@@ -334,6 +324,9 @@ def build_command(function: str, args: list, options: dict, target: Optional[dic
         args (list): Its arguments before the target and the options.
         options (dict): Its options, with their camelCase names.
         target (dict): A copy's target, as connection data.
+        forbidden (dict): The options the calling tool refuses, in any
+            spelling the mapper reads as the same name, each with the
+            reason it is refused.
 
     Returns:
         list: The arguments, beginning with "util".
@@ -361,8 +354,9 @@ def build_command(function: str, args: list, options: dict, target: Optional[dic
             arguments.append(value)
 
     copy = "target" in kinds
+    forbidden = {_cli_name(name): why for name, why in (forbidden or {}).items()}
     for name, value in options.items():
-        argument = _option_argument(name, value, copy)
+        argument = _option_argument(name, value, copy, forbidden)
         if argument:
             arguments.append(argument)
 
@@ -542,6 +536,19 @@ class OutputParser:
             "seconds": round(time.monotonic() - started, 1),
         }]
 
+    def flush(self) -> list:
+        """The error held back as the task's, as a message after all.
+
+        For a run that does not end with it: one that completed, or that
+        crashed after it.
+        """
+        if self._pending_error is None:
+            return []
+
+        events = [_message("error", self._pending_error)]
+        self._pending_error = None
+        return events
+
     def finish_all(self) -> list:
         """Ends every stage still running: the run completed."""
         events = []
@@ -693,12 +700,37 @@ def _signal_name(returncode: int) -> str:
         return f"signal {-returncode}"
 
 
+# A Windows process that crashes ends with an NTSTATUS error as its exit code:
+# 0xC0000005 for an access violation, 0xC0000409 for a buffer overrun.
+_NTSTATUS_ERROR = 0xC0000000
+
+
+def _crashed(returncode) -> bool:
+    """Whether the process crashed, rather than ended itself with a failure.
+
+    The shell ends itself with a positive exit code, even where it reports
+    the error only on stderr (before its JSON output starts: a malformed
+    URI, an unknown option). Starting it again would fail the same way.
+    """
+    if returncode is None or returncode < 0:
+        return True
+    return os.name == "nt" and returncode >= _NTSTATUS_ERROR
+
+
 def _crash_description(returncode) -> str:
     if returncode is None:
         return "the process ended unexpectedly"
     if returncode < 0:
         return f"it was ended by {_signal_name(returncode)}"
-    return f"it ended with exit code {returncode} without reporting an error"
+    return f"it ended with the exception code {returncode:#010x}"
+
+
+def _failure_description(returncode: int, stderr) -> str:
+    """A failure the shell reported only on stderr, or not at all."""
+    failure = f"The MariaDB Shell process running the utility failed with exit code {returncode}"
+    if stderr:
+        return f"{failure}: {' '.join(stderr)}"
+    return f"{failure}, without reporting an error."
 
 
 def _resumable(function: str, args: list, options: dict) -> bool:
@@ -721,7 +753,15 @@ def _resumable(function: str, args: list, options: dict) -> bool:
     return True
 
 
-def run(task, function: str, args: list, options: dict, source: tuple, target: Optional[dict] = None):
+def run(
+    task,
+    function: str,
+    args: list,
+    options: dict,
+    source: tuple,
+    target: Optional[dict] = None,
+    executable: Optional[str] = None,
+):
     """Runs a utility for a task, in shell processes of its own.
 
     The events of its output go to the task as they come. A run that crashed
@@ -735,6 +775,8 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
         options (dict): Its options.
         source (tuple): ``(uri, password)`` of the connection it runs on.
         target (dict): A copy's target, as connection data with its password.
+        executable (str): The shell binary, as :func:`shell_executable`
+            found it before the task started; found here where not given.
 
     Returns:
         None, once the utility completed.
@@ -747,7 +789,7 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
     attempts = MAX_RESTARTS + 1 if resumable else 1
     progress_file_read = False
 
-    shell = [shell_executable(), "--json=raw", "--passwords-from-stdin", f"--uri={uri}", "--"]
+    shell = [executable or shell_executable(), "--json=raw", "--passwords-from-stdin", f"--uri={uri}", "--"]
     passwords = [password or ""]
     if target is not None:
         passwords.append(target.get("password") or "")
@@ -786,15 +828,17 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
             returncode = None
 
         if returncode == 0:
-            for event in parser.finish_all():
+            for event in parser.flush() + parser.finish_all():
                 task.on_event(event)
             return None
 
         if task.cancel_requested:
             raise RuntimeError(parser.error or "Interrupted by user")
 
-        if parser.error is not None and returncode is not None and returncode > 0:
-            raise RuntimeError(parser.error)
+        if not _crashed(returncode):
+            raise RuntimeError(
+                parser.error or _failure_description(returncode, process.stderr)
+            )
 
         # a crash
         crash = (
@@ -802,6 +846,8 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
             f"{_crash_description(returncode)}."
         )
         task.fail_running_stages()
+        for event in parser.flush():
+            task.on_event(event)
         for text in process.stderr:
             task.on_event(_message("error", text))
 
@@ -814,5 +860,7 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
 
         if attempts > 1:
             crash += f" It was started {attempts} times."
+        if parser.error is not None:
+            crash += f" Its last error: {parser.error}"
         raise RuntimeError(crash)
 

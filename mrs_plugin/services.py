@@ -1,4 +1,5 @@
 # Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -447,6 +448,12 @@ def dump_service_as_project(**kwargs):
 def load_service_project(**kwargs):
     """Loads a previously dumped REST service project.
 
+    Loads the database schemas of the project, then creates its REST
+    services. The database schemas may exist already (a dump is loaded with
+    ignoreExistingObjects); a REST service of the project must not exist
+    yet. When creating a REST service fails, the services this load created
+    are dropped again; the database schemas stay as far as they were loaded.
+
     Args:
         **kwargs: Options to determine what should be generated.
 
@@ -515,6 +522,11 @@ def dump_service(service_path, file_path, **kwargs):
 def load_service(file_path, **kwargs):
     """Runs the REST SQL script of a REST service written by mrs.dump.service.
 
+    The script starts with CREATE OR REPLACE REST SERVICE, so it replaces a
+    REST service of the same path. Its statements commit one by one: when a
+    later one fails, the service stays as far as the script got, and a
+    service it replaced is gone.
+
     Args:
         file_path (str): The path of the REST SQL script.
         **kwargs: Additional options
@@ -537,8 +549,7 @@ def load_service(file_path, **kwargs):
     with lib.core.MrsDbSession(
         exception_handler=lib.core.print_exception, **kwargs
     ) as session:
-        with lib.core.MrsDbTransaction(session):
-            lib.services.load_service_script(session, script, kwargs.get("as_path"))
+        lib.services.load_service_script(session, script, kwargs.get("as_path"))
 
         if lib.core.get_interactive_default():
             print(f"REST service loaded from {file_path}.")
