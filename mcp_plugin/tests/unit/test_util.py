@@ -205,6 +205,43 @@ def test_a_waiting_caller_wakes_on_a_change():
     assert task.snapshot()["messages"][0]["text"] == "hello"
 
 
+def test_a_wait_for_news_answers_at_once_where_there_is_news():
+    task = tasks.create("t", "T", CLIENT)
+    task.on_event({"type": "message", "level": "info", "text": "hello"})
+
+    started = time.monotonic()
+    snapshot = task.wait_for_news(0, 5)
+    assert time.monotonic() - started < 1
+    assert [m["text"] for m in snapshot["messages"]] == ["hello"]
+    # nothing after what the caller has: it waits, up to the timeout
+    started = time.monotonic()
+    assert task.wait_for_news(snapshot["next_since"], 0.3)["messages"] == []
+    assert time.monotonic() - started >= 0.3
+
+
+def test_a_message_right_after_the_snapshot_is_not_waited_past():
+    # another thread adds a message between the snapshot and the wait: it
+    # must wake the wait, not be taken for what the caller has seen
+    task = tasks.create("t", "T", CLIENT)
+    take_snapshot = task.snapshot
+    racing = []
+
+    def snapshot(since=0):
+        taken = take_snapshot(since)
+        if not racing:
+            racing.append(threading.Thread(target=lambda: task.on_event(
+                {"type": "message", "level": "info", "text": "news"})))
+            racing[0].start()
+            racing[0].join(0.3)
+        return taken
+
+    task.snapshot = snapshot
+    started = time.monotonic()
+    answer = task.wait_for_news(0, 5)
+    assert time.monotonic() - started < 2
+    assert [m["text"] for m in answer["messages"]] == ["news"]
+
+
 def test_a_cancel_before_the_work_could_take_it_reaches_it_later():
     task = tasks.create("load_dump", "Load", CLIENT)
     task.cancel()

@@ -537,13 +537,10 @@ def register_util_tools(server, function_groups=()) -> None:
         client = general.get_client_identity(ctx)
         task = tasks.get(task_id, client)
 
-        snapshot = task.snapshot(since)
-        if wait_ms > 0 and not snapshot["messages"] and snapshot["status"] not in tasks.FINISHED_STATES:
-            version = task.version
-            task.wait_for_change(version, min(wait_ms, tasks.MAX_WAIT_MS) / 1000.0)
-            snapshot = task.snapshot(since)
+        if wait_ms > 0:
+            return task.wait_for_news(since, min(wait_ms, tasks.MAX_WAIT_MS) / 1000.0)
 
-        return snapshot
+        return task.snapshot(since)
 
     @tool(name="util.list_tasks")
     def list_tasks(ctx: Context) -> list:

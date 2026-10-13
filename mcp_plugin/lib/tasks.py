@@ -253,6 +253,29 @@ class Task:
                 "error": self.error,
             }
 
+    def wait_for_news(self, since: int, timeout: float) -> dict:
+        """The task's state, once there is news for a caller at ``since``.
+
+        Answers at once where there are messages after ``since`` or the task
+        finished, and otherwise after its next change, or ``timeout``. The
+        snapshot and the version waited on are taken under one hold of the
+        lock: a change between the two would otherwise be waited past.
+
+        Args:
+            since (int): The ``seq`` of the last message the caller has.
+            timeout (float): The longest to wait, in seconds.
+
+        Returns:
+            dict: The snapshot, as :meth:`snapshot` returns it.
+        """
+        with self.changed:
+            snapshot = self.snapshot(since)
+            if snapshot["messages"] or snapshot["status"] in FINISHED_STATES:
+                return snapshot
+            # the lock is reentrant, and the wait lets go of it whole
+            self.wait_for_change(self.version, timeout)
+            return self.snapshot(since)
+
     def wait_for_change(self, version: int, timeout: float) -> None:
         """Waits until the task changed after ``version``, or it finished.
 
