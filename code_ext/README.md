@@ -23,6 +23,12 @@ which exposes the backend functions over the Model Context Protocol.
   Unticked, it belongs to this extension alone.
 - **Run SQL** from any `.sql` file, with a connection picker and a run
   button in the editor toolbar (`Ctrl`/`Cmd`+`Enter`).
+- **MariaDB SQL highlighting**: `.sql` files open as *MariaDB SQL*, with a
+  grammar that follows the server's lexer and knows its keywords and
+  functions, as well as REST SQL. A `"..."` is coloured as an identifier
+  where the file's connection runs with `ANSI_QUOTES` in its `sql_mode`, and
+  running SQL splits statements the same way. When a script changes the
+  `sql_mode`, the highlighting and the next run follow it.
 - **New SQL Editor**, beside Connect on a connection in the tree, opens an
   unsaved `.sql` file already bound to that connection.
 - **Results** docked in the bottom panel, beside Problems and Output, with
@@ -93,6 +99,7 @@ Set `MARIADB_SHELL_PREFIX` to install and look somewhere else.
 | `mariadb.defaultConnection` | The connection URI new SQL editors run on. |
 | `mariadb.connections.connectMode` | Whether expanding a connection in the **Connections** view opens it (`onOpen`, the default) or only the Connect button does (`explicit`). |
 | `mariadb.copilot.enabled` | Whether Copilot gets the MariaDB skills and MCP server (on by default). |
+| `mariadb.sql.ansiQuotes` | Whether `"..."` in a SQL file is an identifier or a string: as the file's connection's `sql_mode` says (`auto`, the default), always an identifier (`on`), or always a string (`off`). The identifier colouring needs `editor.semanticHighlighting.enabled`, which the built-in themes turn on. |
 
 ## Commands
 
@@ -112,7 +119,13 @@ npm run build          # sync the Copilot skills, bundle the extension and the r
 npm run sync:skills    # only bring skills/ up to the newest ai-plugins release
 npm test               # run the Vitest suite
 npm run pretest        # type check and lint
+npm run grammar:build  # rebuild the SQL grammar from syntaxes/words.json
+npm run grammar:check  # fail if the grammar was not rebuilt after an edit
 ```
+
+`npm run grammar:sync -- --server <mariadb-server> --shell <mariadb-shell>`
+reads the keyword, function and REST SQL word lists from checkouts of those
+two repositories into `syntaxes/words.json`; run `grammar:build` after it.
 
 Press <kbd>F5</kbd> to launch an extension host. The **Run Extension**
 configuration builds the result panel and then starts the extension
