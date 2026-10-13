@@ -239,6 +239,28 @@ packages with msm_plugin and mcp_plugin.
    SDK output will likely change, each difference to be judged (test artefact or a real
    difference between the old writer and the shell). The grant builder there still leaves
    `columnList` unquoted (test-only now).
+9. **Project load over unverified TLS runs the downloaded SQL** (high, security; upstream
+   code). `lib/services.py` `LoadProjectFileContext` downloads a project zip (URL or GitHub
+   shortcut) with `ssl._create_unverified_context()`, and `load_project` then runs its schema
+   SQL files and dumps, often as root: anyone who can intercept the connection runs SQL on the
+   server. The package's `schema["path"]` / `service["fileName"]` are also joined to the base
+   directory unchecked (absolute or `../` paths read outside the package). Fix: the default SSL
+   context, and refuse paths that resolve outside the base directory.
+10. **`store_project(zip=True)` deletes an existing directory** (high, data loss; upstream
+    code). For a destination `X.zip` it builds the project in `X/` (`os.makedirs(...,
+    exist_ok=True)`), zips the whole of `X/` and then `shutil.rmtree(X)`: a user directory of
+    that name is zipped into the project and removed. Fix: build in a
+    `tempfile.TemporaryDirectory()`, or refuse an existing `X/`.
+11. **Developer names unquoted in REST SQL** (medium; injection from `web=True` callers).
+    `core.quote_service_path` keeps the part before `@` as given, and it is pasted into
+    statements (`services.service_script`, the content set functions, `as_path` of
+    `load_service_script`): a path like `x; DROP REST SERVICE /other;@/svc` adds statements.
+    Fix: quote each developer name (backticks or quotes unless `[A-Za-z0-9_]+`), or validate
+    the list.
+12. **`store_project` replaces the caller's schemas** (medium; upstream code).
+    `if len(services) == 1 and not schemas == 0:` is always true (a list never equals 0), so
+    with one service the explicit `schemas` (validated just before) are replaced by the
+    auto-detected ones. Fix: `if len(services) == 1 and not schemas:`.
 
 ## Gotchas / things not to repeat
 
