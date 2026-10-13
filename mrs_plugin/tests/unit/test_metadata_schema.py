@@ -39,7 +39,6 @@ def test_metadata_schema_with_prefix_and_postfix(phone_book):
 
     try:
         session.run_sql(f"CONFIGURE REST METADATA SCHEMA {PREFIXED}")
-        lib.core.forget_metadata_schema(session)
         assert lib.core.metadata_schema(session) == PREFIXED
         for role in ROLES:
             name = lib.core.metadata_role(session, role)
@@ -63,7 +62,35 @@ def test_metadata_schema_with_prefix_and_postfix(phone_book):
         session.run_sql(f"DROP SCHEMA IF EXISTS {PREFIXED}")
         for role in ROLES:
             session.run_sql(f"DROP ROLE IF EXISTS acme_mariadb_rest_service_{role}_eu")
-        lib.core.forget_metadata_schema(session)
 
     assert lib.core.metadata_schema(session) == default
     assert len(session.run_sql("SHOW REST SERVICES").fetch_all()) > 0
+
+
+def test_metadata_schema_follows_a_switch_between_plugin_calls(phone_book):
+    # The name is cached for one plugin call (the outermost MrsDbSession)
+    # only: a USE REST METADATA SCHEMA between two calls is seen by the next
+    session = phone_book["session"]
+    other = "other_mariadb_rest_service"
+    try:
+        session.run_sql(f"CONFIGURE REST METADATA SCHEMA {other}")
+        session.run_sql("USE REST METADATA SCHEMA mariadb_rest_service")
+
+        with lib.core.MrsDbSession(session=session):
+            assert lib.core.metadata_schema(session) == "mariadb_rest_service"
+            with lib.core.MrsDbSession(session=session):
+                assert lib.core.metadata_schema(session) == "mariadb_rest_service"
+
+        session.run_sql(f"USE REST METADATA SCHEMA {other}")
+        with lib.core.MrsDbSession(session=session):
+            assert lib.core.metadata_schema(session) == other
+            assert lib.core.metadata_role(session, "dev") == (
+                "other_mariadb_rest_service_dev"
+            )
+    finally:
+        session.run_sql("USE REST METADATA SCHEMA mariadb_rest_service")
+        session.run_sql(f"DROP SCHEMA IF EXISTS {other}")
+        for role in ROLES:
+            session.run_sql(f"DROP ROLE IF EXISTS other_mariadb_rest_service_{role}")
+
+    assert lib.core.metadata_schema(session) == "mariadb_rest_service"

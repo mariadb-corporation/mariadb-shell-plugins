@@ -126,7 +126,7 @@ Analysis of 2026-10-08; the user wants to discuss before anything is removed.
   `generate_rrd_svg_files.py`, `generate_html_docs.sh`, `run_grammar_test.sh` and their
   npm scripts are removed. The docs are GitBook pages in mariadb-shell
   `docs-ref/content/mariadb-rest-service/`, the grammar and both scripts in
-  `modules/mrs/antlr_grammar/` (npm `docs-ref:mrs-diagrams`, `docs-ref:mrs-grammar-docs`
+  `mysqlshdk/libs/mrs/antlr_grammar/` (npm `docs-ref:mrs-diagrams`, `docs-ref:mrs-grammar-docs`
   at the shell repo root). The grammar test was an identical copy of the shell's
   `unittest/data/mrs/grammar_test.sql` (run by `mrs_grammar_test_norecord.py`).
 - The two images of `examples/mrs_notes/README.md` moved to `examples/mrs_notes/images/`;

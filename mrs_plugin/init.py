@@ -40,12 +40,17 @@ from mysqlsh.plugin_manager import plugin
 
 @plugin
 class mrs:
-    """Plugin to manage the MariaDB REST Data Service (MRS).
+    """Global object for the MariaDB REST Service (MRS).
 
-    This global object is used to manage the MariaDB REST Data Service (MRS).
+    The MariaDB REST Service is managed with REST SQL statements, e.g.
+    CONFIGURE REST METADATA, CREATE REST SERVICE or SHOW REST SERVICES,
+    which MariaDB Shell runs in SQL mode and through session.run_sql() on a
+    MariaDB server. A file of REST SQL statements is run like any SQL
+    script, e.g. with \\source in SQL mode or with --sql -f <file>.
 
-    The MRS can be used to serve MariaDB schema objects via the MariaDB REST
-    Daemon.
+    This object adds what REST SQL does not cover: the generation of the
+    MRS SDK files and the dumping and loading of MRS services, content sets
+    and projects.
     """
 
     def __init__(self):

@@ -25,10 +25,11 @@ change.
   - At most `MAX_RUNNING_TASKS_PER_CLIENT` = 4 run per client. Finished tasks
     are kept 1 h, 100 at most, pruned on every lookup.
 - `lib/util_process.py`: the shell process.
-  - `shell_executable()`: this process's own executable (`/proc/self/exe`,
-    `proc_pidpath`, `GetModuleFileNameW`). If that is a Python (in a test, say),
-    `mariadb-shell` on PATH. `sys.executable` is the shell's bundled Python,
-    not the shell.
+  - `shell_executable()`: `mysqlsh.executable`, which the shell sets to its
+    own binary (`get_binary_path()`, in `python_context.cc`) when it starts
+    its Python; since 2023, so every supported shell has it. Without it (a
+    plain Python), `mariadb-shell` on PATH. `sys.executable` is the shell's
+    bundled Python, not the shell.
   - `build_command()` follows `shell_cli_mapper.cc`; see "Command line" below.
   - `OutputParser` turns the JSON lines into the events `on_event()` takes;
     see "Output" below.
@@ -83,7 +84,21 @@ change.
   attributes (`--user`, `--host`, `--port`, ...).
 - `schema` is both a copy option and a connection attribute. The mapper
   wants `--options-schema` and `--connection-data-schema`; `util copy-* --help`
-  lists the ambiguous ones.
+  lists the ambiguous ones. The prefixed forms exist only for ambiguous names
+  (`--options-threads` is an invalid option), so they can't fence anything off.
+- **Every connection attribute is a named option of a copy's target, and the
+  last one given wins** (`define_named_args` 'C', `set_named_option` is a plain
+  overwrite). So a copy refuses every client option the shell takes as a
+  connection attribute (`_option_argument`); otherwise `{"host": ...}` would
+  send the copy, and the target's stored password from stdin, to a server the
+  client chose (found by `/security-review`, 2026-10-12). The shell decides:
+  `shell.unparse_uri({"host": ..., name: "1"})` fails with "Invalid values in
+  connection options" only for a name that is no attribute; any other answer
+  refuses the option. Names go through the mapper's `from_camel_case_to_dashes`
+  first (`sslMode`, `ssl_mode`, `Host`), ported as `_cli_name`.
+- Option names must match `^[A-Za-z][A-Za-z0-9_-]*$`: the mapper splits a named
+  argument at its first `:` or `=`, so `{"host=evil": 1}` became
+  `--host=evil:str=1`, which sets `host`.
 - An unnamed value is parsed as JSON. It stays a string only if that gives a
   string, or a number written differently ("1.50"). So "2024", "true" or
   "[1]" are refused as unnamed values, and so is anything starting with "-".
@@ -130,12 +145,14 @@ One JSON object per line on stdout:
 
 ## Tests
 
-`tests/unit/test_util.py` (38):
+`tests/unit/test_util.py` (105 with the parametrized cases):
 
 - the registry on its own: events, since/dropped messages, failure, cancel
   through the canceller (also one asked before it was set), client binding,
   the per-client cap, pruning, waking a waiter, percent;
-- `build_command` for every utility, typed values, a copy's target, refusals;
+- `build_command` for every utility, typed values, a copy's target, refusals,
+  among them every spelling of a connection attribute in a copy's options and
+  option names holding `=` or `:`;
 - `OutputParser` on lines recorded from a real shell: dump, copy (SRC/TGT),
   errors, non-JSON output;
 - `run()` against a fake shell script: passwords on stdin, a crash resumed,
@@ -151,7 +168,7 @@ One JSON object per line on stdout:
   task, `list_tasks`, refusals.
 
 Full suite on 2026-10-12, with a local shell build (mariadb-shell #71 merged
-in): 633 passed, 1 failed, 3 skipped. The failure is
+in): 700 passed, 1 failed, 3 skipped. The failure is
 `test_rest_sql.py::test_rest_configure_metadata` ("Invalid options ...
 substitutions"), which this branch does not touch.
 

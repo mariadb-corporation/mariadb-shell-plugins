@@ -426,12 +426,21 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   takes only its own process down: the task reports it, and **a load is resumed**
   where it stopped, up to 3 times, from the dump's progress file. Any other
   utility that crashes fails, because starting it again would not continue its
-  work. The process ends with the server, however the server ends.
+  work. A crash is a process ended by a signal (on Windows, by an exception); a
+  shell that ends itself with an error code fails the task with that error, even
+  one it printed only on stderr, and is not started again. The process ends with
+  the server, however the server ends.
 - **Options** are the utility's own, with their camelCase names, in `options`, such as
   `{"threads": 8, "users": false}`. `session`, `progressCallback` and `showProgress`
   are refused. A value the shell's command line cannot pass on unchanged is refused
   too: a string with `\,`, `\"`, `\'` or `\=` in it, or a name or path such as
-  `2024`, `true` or `-x` where the command line takes it without a name.
+  `2024`, `true` or `-x` where the command line takes it without a name. An
+  option name must be letters, digits, `_` and `-`. `outputUrl`, in any spelling, is
+  refused for `util.dump_schemas` and `util.dump_tables`, which take it as `output_url`.
+  A copy takes no option that is a connection attribute (`host`, `port`, `user`,
+  `password`, `socket`, `ssl-*`,
+  `ssh-*` and the others, in any spelling): the target is the connection named by
+  `target_connection_id`, and the options cannot change it.
 - **`util.get_task(task_id, since, wait_ms)`** returns:
   - the status: `pending`, `running`, `completed`, `failed` or `cancelled`;
   - the stages with their state, and the current stage's `progress`: `current`,
@@ -450,8 +459,8 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   `file://` URL (as the shell reads it, scheme in any case), and the local files
   named by `progressFile`, `ociConfigFile`, `s3ConfigFile`, `s3CredentialsFile` and
   `azureConfigFile`. A remote URL (`https://` and the like), or a prefix in object
-  storage (`s3BucketName`, `osBucketName`, `azureContainerName`), is left to the
-  utility.
+  storage (`s3BucketName`, `osBucketName`, `azureContainerName`, with a non-empty
+  name), is left to the utility.
 - The tools are registered only when the `db` group is served as well, and never in
   multi-tenant mode.
 

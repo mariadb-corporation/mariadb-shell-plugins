@@ -494,29 +494,25 @@ def _generate_where(where):
 METADATA = "<metadata>"
 METADATA_BASE_NAME = "mariadb_rest_service"
 
-_metadata_schemas = {}
-
-
-def _session_key(session):
-    return (id(session), getattr(session, "uri", None))
+# The metadata schema names resolved during the plugin call that runs in this
+# thread, per session object. Between calls the user can switch the
+# session's schema (USE REST METADATA SCHEMA, CONFIGURE REST METADATA
+# SCHEMA), so the names live only while a MrsDbSession is open: the
+# outermost one clears them when it ends.
+_plugin_call = threading.local()
 
 
 def metadata_schema(session) -> str:
     """The name of the session's MRS metadata schema, as SHOW REST METADATA
-    STATUS reports it (cached per session object)."""
-    key = _session_key(session)
-    name = _metadata_schemas.get(key)
+    STATUS reports it (cached for the duration of the plugin call)."""
+    cache = getattr(_plugin_call, "metadata_schemas", None)
+    name = cache.get(id(session)) if cache is not None else None
     if name is None:
         res = session.run_sql("SHOW REST METADATA STATUS")
         name = res.fetch_one()[res.get_column_names().index("metadata_schema")]
-        _metadata_schemas[key] = name
+        if cache is not None:
+            cache[id(session)] = name
     return name
-
-
-def forget_metadata_schema(session):
-    """Drops the cached schema name, e.g. after CONFIGURE REST METADATA or
-    USE REST METADATA SCHEMA."""
-    _metadata_schemas.pop(_session_key(session), None)
 
 
 def metadata_sql(session, sql: str) -> str:
@@ -687,9 +683,18 @@ class MrsDbSession:
                 self._session.set_option_tracker_feature_id("mysql_ot_msh<ctx>.mrs")
 
     def __enter__(self):
+        # The outermost MrsDbSession of a call opens the metadata schema
+        # cache, see metadata_schema()
+        _plugin_call.depth = getattr(_plugin_call, "depth", 0) + 1
+        if _plugin_call.depth == 1:
+            _plugin_call.metadata_schemas = {}
         return self._session
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
+        _plugin_call.depth -= 1
+        if _plugin_call.depth == 0:
+            _plugin_call.metadata_schemas = None
+
         if exc_type is None:
             return
 
@@ -744,8 +749,6 @@ class ServerLocalInFile:
 # the same name.
 _GLOBAL_SESSION_LOCK_MODULE = "_mariadb_shell_plugins_global_session"
 
-_util_session_option = None
-
 
 def _global_session_lock():
     """The process-wide lock around switching the shell's global session.
@@ -770,33 +773,13 @@ def _global_session_lock():
     return holder.lock
 
 
-def _util_takes_session_option() -> bool:
-    """Whether the shell's utilities take the 'session' option.
-
-    Shells before mariadb-shell #73 run them on the global session only.
-    """
-    global _util_session_option
-
-    if _util_session_option is None:
-        try:
-            text = mysqlsh.globals.util.help("dump_schemas")
-            _util_session_option = "progressCallback" in str(text)
-        except Exception:
-            _util_session_option = False
-
-    return _util_session_option
-
-
 def run_util(session, function: str, *args, options=None):
     """Runs a shell utility, such as dump_schemas or load_dump, on a session.
 
-    The utilities run on the shell's global session unless they are given one
-    in their 'session' option. Where the shell has that option, the session is
-    passed and the global session is never touched. On an older shell, the
-    global session is switched to this one for the call and switched back
-    afterwards, under a lock shared by every plugin, so that two calls on
-    different sessions at once (two project loads on an MCP server) cannot run
-    on each other's session.
+    The utilities run on the shell's global session only. It is switched to
+    this one for the call and switched back afterwards, under a lock shared by
+    every plugin, so that two calls on different sessions at once (two project
+    loads on an MCP server) cannot run on each other's session.
 
     Args:
         session: The session, a shell session or a wrapper with a 'session'.
@@ -812,9 +795,6 @@ def run_util(session, function: str, *args, options=None):
     )
     utility = getattr(mysqlsh.globals.util, function)
     options = dict(options or {})
-
-    if _util_takes_session_option():
-        return utility(*args, dict(options, session=shell_session))
 
     shell = mysqlsh.globals.shell
     with _global_session_lock():

@@ -28,7 +28,7 @@ import mysqlsh
 
 from mcp_plugin.lib.tool_registrar import tool_error
 
-VERSION = "26.10.1"
+VERSION = "26.10.2"
 
 # Default MCP server bind settings
 DEFAULT_HOST = "127.0.0.1"

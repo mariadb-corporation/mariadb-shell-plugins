@@ -175,20 +175,32 @@ _reaper_stop = threading.Event()
 # call anyway, which always reports CR_SERVER_GONE_ERROR.
 _CONNECTION_LOST_ERRORS = (2006, 2013, 2055)
 
-# Lists the schemas of a server, classified into system and user schemas. The
-# MRS metadata schema is mariadb_rest_service, optionally with a prefix and a
-# postfix (acme_mariadb_rest_service_eu).
+# Lists the schemas of a server, classified into system and user schemas. A
+# server can hold several MRS metadata schemas: mariadb_rest_service with a
+# prefix and a postfix (acme_mariadb_rest_service_eu). A schema is one when the
+# shell would take it as one (its schema_name_parts() and the msm view): the
+# name holds mariadb_rest_service once, the prefix starts with a letter or _,
+# the postfix with _, both of letters, digits and _, and the schema holds MSM's
+# msm_schema_version view. A user schema whose name merely contains the text
+# stays a user schema.
 _LIST_SCHEMAS_SQL = """
-    SELECT SCHEMA_NAME as schema_name,
+    SELECT s.SCHEMA_NAME as schema_name,
         CASE
-            WHEN SCHEMA_NAME = 'mysql'
-                OR SCHEMA_NAME LIKE '%mariadb\\_rest\\_service%' THEN 'System Schema'
-            WHEN SCHEMA_NAME = 'information_schema' THEN 'System Information Schema'
+            WHEN s.SCHEMA_NAME = 'mysql'
+                OR (s.SCHEMA_NAME REGEXP
+                        '(?-i)^([A-Za-z_][A-Za-z0-9_]*)?mariadb_rest_service(_[A-Za-z0-9_]*)?$'
+                    AND s.SCHEMA_NAME NOT LIKE
+                        '%mariadb\\_rest\\_service%mariadb\\_rest\\_service%'
+                    AND EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.VIEWS v
+                        WHERE v.TABLE_SCHEMA = s.SCHEMA_NAME
+                            AND v.TABLE_NAME = 'msm_schema_version'))
+                THEN 'System Schema'
+            WHEN s.SCHEMA_NAME = 'information_schema' THEN 'System Information Schema'
             ELSE 'User Schema'
         END AS schema_type,
-        SCHEMA_COMMENT as schema_comment
-    FROM INFORMATION_SCHEMA.SCHEMATA
-    ORDER BY SCHEMA_TYPE, SCHEMA_NAME
+        s.SCHEMA_COMMENT as schema_comment
+    FROM INFORMATION_SCHEMA.SCHEMATA s
+    ORDER BY schema_type, schema_name
 """
 
 # Lists the objects of one type within a schema. Each query takes the schema
@@ -762,6 +774,26 @@ def _open_session(uri: str, kind=None, mcp_user_id=None):
     Returns:
         The open shell session.
     """
+    session = _open_shell_session(uri, _configured_password(uri, kind, mcp_user_id))
+    if mcp_user_id is not None:
+        _apply_default_role(session, mcp_user_id)
+
+    return session
+
+
+def _configured_password(uri: str, kind, mcp_user_id) -> str:
+    """The stored password of a URI that is still a configured connection.
+
+    The check every open of a session makes; see :func:`_open_session`.
+
+    Args:
+        uri (str): The connection URI, as configured.
+        kind: The connection list it belongs to, or None for the MCP list.
+        mcp_user_id: The user whose connection it is, or None.
+
+    Returns:
+        str: The password.
+    """
     kind = config.normalize_connection_kind(kind)
 
     # The list is read from the secret store on each call, so it reflects what
@@ -775,22 +807,20 @@ def _open_session(uri: str, kind=None, mcp_user_id=None):
             "db.connect to open one of them."
         )
 
-    # Read the stored password back and open the session with it.
-    session = _open_shell_session(
-        uri, config.get_connection_password(uri, kind, mcp_user_id)
-    )
-    if mcp_user_id is not None:
-        _apply_default_role(session, mcp_user_id)
+    return config.get_connection_password(uri, kind, mcp_user_id)
 
-    return session
+
+def _with_password(uri: str, password: str) -> dict:
+    """The connection data of a URI, with a password."""
+    connection_data = dict(mysqlsh.globals.shell.parse_uri(uri))
+    connection_data["password"] = password
+
+    return connection_data
 
 
 def _open_shell_session(uri: str, password: str):
     """Opens a session on a URI with a password; independent of the shell's own."""
-    connection_data = mysqlsh.globals.shell.parse_uri(uri)
-    connection_data["password"] = password
-
-    return mysqlsh.globals.shell.open_session(connection_data)
+    return mysqlsh.globals.shell.open_session(_with_password(uri, password))
 
 
 def _open_login_session(uri: str, mcp_user_id: str, grant_id: str):
@@ -1151,15 +1181,7 @@ def connection_credentials(connection_id: str, client) -> tuple:
             "cannot be used by a utility."
         )
 
-    if connection.uri not in config.list_stored_connection_uris(
-        connection.kind, connection.mcp_user_id
-    ):
-        raise tool_error(
-            f"'{connection.uri}' is no longer a configured connection. Use "
-            "db.list_connections to see the configured connections."
-        )
-
-    return connection.uri, config.get_connection_password(
+    return connection.uri, _configured_password(
         connection.uri, connection.kind, connection.mcp_user_id
     )
 
@@ -1178,12 +1200,7 @@ def connection_data(connection_id: str, client) -> dict:
         dict: The connection data, as ``shell.parse_uri`` gives it, plus the
         stored password.
     """
-    uri, password = connection_credentials(connection_id, client)
-
-    data = dict(mysqlsh.globals.shell.parse_uri(uri))
-    data["password"] = password
-
-    return data
+    return _with_password(*connection_credentials(connection_id, client))
 
 
 @contextmanager

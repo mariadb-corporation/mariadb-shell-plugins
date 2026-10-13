@@ -42,22 +42,17 @@ class FakeShell:
 class FakeUtil:
     """A utility that records what it ran on, and can take a while."""
 
-    def __init__(self, shell, delay=0.0, fail=False, help_text=""):
+    def __init__(self, shell, delay=0.0, fail=False):
         self.shell = shell
         self.delay = delay
         self.fail = fail
-        self.help_text = help_text
         self.calls = []
 
-    def help(self, name):
-        return self.help_text
-
     def dump_schemas(self, schemas, url, options):
-        on = options.get("session", self.shell.session)
+        on = self.shell.session
         time.sleep(self.delay)
         # the session must still be the same when the work ends
-        self.calls.append((schemas, url, dict(options), on,
-                           options.get("session", self.shell.session)))
+        self.calls.append((schemas, url, dict(options), on, self.shell.session))
         if self.fail:
             raise RuntimeError("dump failed")
 
@@ -81,23 +76,10 @@ def fake(monkeypatch):
     util = FakeUtil(shell)
     monkeypatch.setattr(core, "mysqlsh",
                         SimpleNamespace(globals=SimpleNamespace(shell=shell, util=util)))
-    monkeypatch.setattr(core, "_util_session_option", None)
     return SimpleNamespace(shell=shell, util=util)
 
 
-def test_passes_the_session_where_the_shell_takes_it(fake):
-    fake.util.help_text = "... progressCallback ..."
-    session = ShellSession("a")
-
-    core.run_util(session, "dump_schemas", ["s"], "/d", options={"threads": 2})
-
-    assert fake.util.calls == [(["s"], "/d", {"threads": 2, "session": session}, session, session)]
-    # the global session was never touched
-    assert fake.shell.switches == []
-
-
 def test_unwraps_a_session_wrapper(fake):
-    fake.util.help_text = "progressCallback"
     session = ShellSession("a")
 
     core.run_util(SimpleNamespace(session=session), "dump_schemas", ["s"], "/d")
@@ -105,7 +87,7 @@ def test_unwraps_a_session_wrapper(fake):
     assert fake.util.calls[0][3] is session
 
 
-def test_switches_and_restores_the_global_session_on_an_older_shell(fake):
+def test_switches_and_restores_the_global_session(fake):
     previous = ShellSession("previous")
     fake.shell.session = previous
     session = ShellSession("a")

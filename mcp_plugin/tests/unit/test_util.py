@@ -29,6 +29,7 @@ import asyncio
 import json
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -204,6 +205,43 @@ def test_a_waiting_caller_wakes_on_a_change():
     assert task.snapshot()["messages"][0]["text"] == "hello"
 
 
+def test_a_wait_for_news_answers_at_once_where_there_is_news():
+    task = tasks.create("t", "T", CLIENT)
+    task.on_event({"type": "message", "level": "info", "text": "hello"})
+
+    started = time.monotonic()
+    snapshot = task.wait_for_news(0, 5)
+    assert time.monotonic() - started < 1
+    assert [m["text"] for m in snapshot["messages"]] == ["hello"]
+    # nothing after what the caller has: it waits, up to the timeout
+    started = time.monotonic()
+    assert task.wait_for_news(snapshot["next_since"], 0.3)["messages"] == []
+    assert time.monotonic() - started >= 0.3
+
+
+def test_a_message_right_after_the_snapshot_is_not_waited_past():
+    # another thread adds a message between the snapshot and the wait: it
+    # must wake the wait, not be taken for what the caller has seen
+    task = tasks.create("t", "T", CLIENT)
+    take_snapshot = task.snapshot
+    racing = []
+
+    def snapshot(since=0):
+        taken = take_snapshot(since)
+        if not racing:
+            racing.append(threading.Thread(target=lambda: task.on_event(
+                {"type": "message", "level": "info", "text": "news"})))
+            racing[0].start()
+            racing[0].join(0.3)
+        return taken
+
+    task.snapshot = snapshot
+    started = time.monotonic()
+    answer = task.wait_for_news(0, 5)
+    assert time.monotonic() - started < 2
+    assert [m["text"] for m in answer["messages"]] == ["news"]
+
+
 def test_a_cancel_before_the_work_could_take_it_reaches_it_later():
     task = tasks.create("load_dump", "Load", CLIENT)
     task.cancel()
@@ -229,6 +267,10 @@ def test_only_local_paths_are_checked():
     assert util_functions._local_paths(["/data/dump"], {}) == ["/data/dump"]
     assert util_functions._local_paths(["https://example.com/par/"], {}) == []
     assert util_functions._local_paths(["prefix/dump"], {"s3BucketName": "b"}) == []
+    # a bucket option without a name makes no bucket: the URL is still local
+    for name in ("s3BucketName", "osBucketName", "azureContainerName"):
+        for value in (None, "", 0, False):
+            assert util_functions._local_paths(["/etc/x"], {name: value}) == ["/etc/x"]
     # a pattern of files is checked where the files are
     assert util_functions._local_paths(["/data/in/part-*.tsv"], {}) == ["/data/in"]
 
@@ -310,6 +352,64 @@ def test_a_copy_names_its_target_by_its_attributes():
     ]
     # the password is no argument
     assert not any("secret" in argument for argument in command)
+
+
+_TARGET = {"user": "tgt", "host": "h", "port": 3307, "password": "secret"}
+
+
+@pytest.mark.parametrize("name", [
+    "host", "port", "user", "password", "socket", "uri", "ssh", "ssh-host",
+    "ssh-password", "auth-method", "oci-config-file", "connect-timeout",
+    # every spelling the shell's command line reads as the same name
+    "Host", "sslMode", "ssl_mode", "ssl-mode", "authMethod", "sshPassword",
+])
+@pytest.mark.parametrize("function,args", [
+    ("copy_instance", []),
+    ("copy_schemas", [["s"]]),
+    ("copy_tables", ["s", ["t"]]),
+])
+def test_a_copy_takes_no_connection_attribute_in_its_options(function, args, name):
+    # it would replace the target's: the copy, and the target's stored
+    # password, would go to a server the client chose
+    with pytest.raises(Exception, match="names a connection attribute"):
+        util_process.build_command(function, args, {name: "203.0.113.10"}, _TARGET)
+
+
+@pytest.mark.parametrize("name", [
+    "outputUrl",
+    # every spelling the shell's command line reads as the same name
+    "output_url", "output-url", "OutputUrl",
+])
+def test_an_option_the_tool_forbids_is_refused_in_any_spelling(name):
+    forbidden = {"outputUrl": "it is the tool's output_url argument."}
+    with pytest.raises(Exception, match="cannot be given: it is the tool's output_url"):
+        util_process.build_command(
+            "dump_schemas", [["s"], "/allowed/dump"], {name: "/x"}, forbidden=forbidden
+        )
+
+
+def test_a_copy_keeps_its_own_options():
+    command = util_process.build_command(
+        "copy_schemas", [["s"]],
+        {"threads": 4, "users": False, "ddlOnly": True, "schema": "renamed",
+         "excludeTables": ["s.t"]},
+        _TARGET,
+    )
+    assert command[-6:-1] == [
+        "--threads=4", "--users=false", "--ddlOnly=true",
+        "--options-schema:str=renamed", '--excludeTables:json=["s.t"]',
+    ]
+
+
+@pytest.mark.parametrize("name", ["host=evil", "host:json", "threads ", "-host", "", "1x"])
+@pytest.mark.parametrize("function,args,target", [
+    ("copy_instance", [], _TARGET),
+    ("dump_schemas", [["s"], "/d"], None),
+])
+def test_an_option_name_that_would_write_another_option_is_refused(function, args, target, name):
+    # '--host=evil:str=x' would set host, whatever the name was meant to be
+    with pytest.raises(Exception, match="is not the name of an option"):
+        util_process.build_command(function, args, {name: "x"}, target)
 
 
 @pytest.mark.parametrize("value", ["2024", "true", "null", "[1]", "-x", ""])
@@ -418,6 +518,60 @@ def test_other_output_is_kept_as_a_message():
     assert parser.feed("\n") == []
 
 
+# --- the shell binary ------------------------------------------------------------
+
+
+def test_the_utility_runs_in_the_shell_the_server_runs_in():
+    assert util_process.shell_executable() == util_process.mysqlsh.executable
+    assert os.path.isfile(util_process.shell_executable())
+
+
+def test_outside_a_shell_the_one_on_path(tmp_path, monkeypatch):
+    if os.name == "nt":
+        pytest.skip("the fake shell is a POSIX script")
+
+    executable = tmp_path / "mariadb-shell"
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+    monkeypatch.delattr(util_process.mysqlsh, "executable", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert util_process.shell_executable() == str(executable)
+
+    monkeypatch.setenv("PATH", str(tmp_path / "nothing"))
+    with pytest.raises(Exception, match="Put mariadb-shell on the PATH"):
+        util_process.shell_executable()
+
+
+class _ToolServer:
+    """Keeps the tools registered on it, to call them without a client."""
+
+    def __init__(self):
+        self.tools = {}
+
+    def tool(self, *args, **kwargs):
+        def register(func):
+            self.tools[kwargs.get("name")] = func
+            return func
+        return register
+
+
+def test_without_a_shell_the_call_fails_before_any_task(tmp_path, monkeypatch):
+    pytest.importorskip("mcp")
+    monkeypatch.delattr(util_process.mysqlsh, "executable", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path / "nothing"))
+    server = _ToolServer()
+    util_functions.register_util_tools(server, [general.FUNCTION_GROUP_DB])
+    dump_instance = next(
+        func for name, func in server.tools.items() if name.endswith("dump_instance")
+    )
+
+    # no context is needed: the shell is looked for before anything else
+    with pytest.raises(Exception, match="Put mariadb-shell on the PATH"):
+        asyncio.run(dump_instance(None, connection_id="c1", output_url="/d"))
+    assert tasks._tasks == {}
+
+
 # --- the process, with a fake shell ---------------------------------------------
 
 _FAKE_SHELL = """
@@ -425,15 +579,24 @@ import json, os, signal, sys
 state = os.environ["FAKE_SHELL_STATE"]
 runs = json.load(open(state)) if os.path.exists(state) else []
 runs.append({"argv": sys.argv[1:], "stdin": sys.stdin.read()})
-json.dump(runs, open(state, "w"))
+def save():
+    # whole or not at all: the test reads the file while this runs
+    with open(state + ".tmp", "w") as file:
+        json.dump(runs, file)
+    os.replace(state + ".tmp", state)
+save()
 def out(line):
     print(json.dumps(line), flush=True)
 mode = os.environ["FAKE_SHELL_MODE"]
+if mode == "fail-at-startup":
+    # what the shell does with a malformed --uri: no JSON yet, only stderr
+    print("Invalid URI: Expected token at position 2 but no tokens left.", file=sys.stderr, flush=True)
+    sys.exit(1)
 if mode == "hang":
     # deaf to ^C: only a kill ends it
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     runs[-1]["pid"] = os.getpid()
-    json.dump(runs, open(state, "w"))
+    save()
     out({"info": "Dumping data", "dumpProgress": {}, "throughputProgressUpdate": {"current": 1, "total": 2}})
     import time
     time.sleep(60)
@@ -441,6 +604,12 @@ if mode == "crash-early" and len(runs) == 1:
     os.kill(os.getpid(), signal.SIGKILL)
 out({"info": "Scanning metadata - done", "numericProgressUpdate": {"description": "Scanning metadata", "current": 1, "total": 1}})
 out({"info": "Loading data", "loadProgress": {}, "throughputProgressUpdate": {"current": len(runs), "total": 3}})
+if mode == "error-then-crash":
+    out({"error": "Fatal error during dump\\n"})
+    os.kill(os.getpid(), signal.SIGKILL)
+if mode == "error-then-success":
+    out({"error": "Error loading chunk 1, retrying\\n"})
+    sys.exit(0)
 if mode == "crash" or (mode == "crash-once" and len(runs) == 1):
     print("the shell's last words", file=sys.stderr, flush=True)
     os.kill(os.getpid(), signal.SIGKILL)
@@ -473,9 +642,9 @@ def fake_shell(tmp_path, monkeypatch):
     return runs
 
 
-def _run(kind, function, args, options, monkeypatch, mode, target=None):
+def _run(function, args, options, monkeypatch, mode, target=None):
     monkeypatch.setenv("FAKE_SHELL_MODE", mode)
-    task = tasks.create(kind, kind, CLIENT)
+    task = tasks.create(function, function, CLIENT)
     task.start(lambda task: util_process.run(
         task, function, args, options, ("mariadb://u@h:3306", "pw"), target
     ))
@@ -485,7 +654,7 @@ def _run(kind, function, args, options, monkeypatch, mode, target=None):
 
 def test_the_utility_runs_in_a_process_with_the_passwords_on_stdin(fake_shell, monkeypatch):
     target = {"user": "t", "host": "h2", "port": 3307, "password": "pw2"}
-    snapshot = _run("copy_schemas", "copy_schemas", [["s"]], {}, monkeypatch, "ok", target)
+    snapshot = _run("copy_schemas", [["s"]], {}, monkeypatch, "ok", target)
 
     assert snapshot["status"] == "completed", snapshot["error"]
     (run,) = fake_shell()
@@ -499,7 +668,7 @@ def test_the_utility_runs_in_a_process_with_the_passwords_on_stdin(fake_shell, m
 
 
 def test_a_crashed_load_is_resumed(fake_shell, monkeypatch):
-    snapshot = _run("load_dump", "load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-once")
+    snapshot = _run("load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-once")
 
     assert snapshot["status"] == "completed", snapshot["error"]
     first, second = fake_shell()
@@ -515,7 +684,7 @@ def test_a_crashed_load_is_resumed(fake_shell, monkeypatch):
 
 
 def test_a_load_that_crashed_before_reading_its_progress_file_keeps_its_reset(fake_shell, monkeypatch):
-    snapshot = _run("load_dump", "load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-early")
+    snapshot = _run("load_dump", ["/d"], {"resetProgress": True}, monkeypatch, "crash-early")
 
     assert snapshot["status"] == "completed", snapshot["error"]
     # the progress file might still be another load's: it is still reset
@@ -523,7 +692,7 @@ def test_a_load_that_crashed_before_reading_its_progress_file_keeps_its_reset(fa
 
 
 def test_a_load_that_keeps_crashing_fails_in_the_end(fake_shell, monkeypatch):
-    snapshot = _run("load_dump", "load_dump", ["/d"], {}, monkeypatch, "crash")
+    snapshot = _run("load_dump", ["/d"], {}, monkeypatch, "crash")
 
     assert snapshot["status"] == "failed"
     assert len(fake_shell()) == util_process.MAX_RESTARTS + 1
@@ -536,7 +705,7 @@ def test_a_load_that_keeps_crashing_fails_in_the_end(fake_shell, monkeypatch):
     ("load_dump", ["/d"], {"progressFile": ""}),
 ])
 def test_nothing_else_is_resumed(fake_shell, monkeypatch, function, args, options):
-    snapshot = _run(function, function, args, options, monkeypatch, "crash")
+    snapshot = _run(function, args, options, monkeypatch, "crash")
 
     assert snapshot["status"] == "failed"
     assert len(fake_shell()) == 1
@@ -571,11 +740,63 @@ def test_a_shell_that_does_not_stop_on_cancel_is_killed(fake_shell, monkeypatch)
 
 
 def test_a_failure_is_no_crash(fake_shell, monkeypatch):
-    snapshot = _run("load_dump", "load_dump", ["/d"], {}, monkeypatch, "fail")
+    snapshot = _run("load_dump", ["/d"], {}, monkeypatch, "fail")
 
     assert snapshot["status"] == "failed"
     assert len(fake_shell()) == 1
     assert snapshot["error"] == "Util.load_dump: Error loading dump"
+
+
+def test_a_failure_reported_only_on_stderr_is_no_crash(fake_shell, monkeypatch):
+    # started again, it would fail the same way
+    snapshot = _run("load_dump", ["/d"], {}, monkeypatch, "fail-at-startup")
+
+    assert snapshot["status"] == "failed"
+    assert len(fake_shell()) == 1
+    assert snapshot["error"] == (
+        "The MariaDB Shell process running the utility failed with exit code 1: "
+        "Invalid URI: Expected token at position 2 but no tokens left."
+    )
+    assert not any("crashed" in m["text"] for m in snapshot["messages"])
+
+
+def test_a_crash_after_an_error_reports_the_error(fake_shell, monkeypatch):
+    snapshot = _run("dump_schemas", [["s"], "/d"], {}, monkeypatch, "error-then-crash")
+
+    assert snapshot["status"] == "failed"
+    assert snapshot["error"] == (
+        "The MariaDB Shell process running the utility crashed: it was ended by "
+        "SIGKILL. Its last error: Fatal error during dump"
+    )
+    assert {"level": "error", "text": "Fatal error during dump"} in [
+        {"level": m["level"], "text": m["text"]} for m in snapshot["messages"]
+    ]
+
+
+def test_an_error_before_a_success_is_a_message(fake_shell, monkeypatch):
+    snapshot = _run("load_dump", ["/d"], {}, monkeypatch, "error-then-success")
+
+    assert snapshot["status"] == "completed", snapshot["error"]
+    assert {"level": "error", "text": "Error loading chunk 1, retrying"} in [
+        {"level": m["level"], "text": m["text"]} for m in snapshot["messages"]
+    ]
+
+
+@pytest.mark.parametrize("returncode,crashed", [
+    (None, True), (-9, True), (1, False), (10, False), (0xC0000005, False),
+])
+def test_what_is_a_crash(monkeypatch, returncode, crashed):
+    monkeypatch.setattr(util_process.os, "name", "posix")
+    assert util_process._crashed(returncode) is crashed
+
+
+@pytest.mark.parametrize("returncode,crashed", [
+    (1, False), (10, False), (0xC0000005, True), (0xC0000409, True),
+])
+def test_what_is_a_crash_on_windows(monkeypatch, returncode, crashed):
+    # a crash there is an exception code, which is positive
+    monkeypatch.setattr(util_process.os, "name", "nt")
+    assert util_process._crashed(returncode) is crashed
 
 
 # --- the tools, end to end ----------------------------------------------------
@@ -600,8 +821,6 @@ def _kill_shell_running(argument: str, timeout: float = 10) -> bool:
 
     The shell, not the watchdog above it: a crash of the utility.
     """
-    import subprocess
-
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         listing = subprocess.run(
@@ -750,11 +969,28 @@ def test_stdio_dump_load_export_import(allowed_temp_dir, sandbox):
                 assert all("messages" not in task for task in listed)
 
                 # refusals
+                result = await call("util.copy_instance", {
+                    "connection_id": connection_id, "target_connection_id": connection_id,
+                    "options": {"host": "203.0.113.10", "port": 3306},
+                })
+                assert result.is_error
+                assert "names a connection attribute" in str(helpers.tool_payload(result))
                 result = await call("util.dump_schemas", {
                     "connection_id": connection_id, "schemas": ["mcp_util"],
                     "output_url": dump_dir, "options": {"session": 1},
                 })
                 assert result.is_error and "set by the tool" in str(helpers.tool_payload(result))
+                # an outputUrl option would replace output_url, which alone was checked
+                for name, arguments in (
+                    ("util.dump_schemas", {"schemas": ["mcp_util"]}),
+                    ("util.dump_tables", {"schema": "mcp_util", "tables": ["t"]}),
+                ):
+                    result = await call(name, {
+                        "connection_id": connection_id, **arguments,
+                        "output_url": os.path.join(allowed_temp_dir, "redirected"),
+                        "options": {"output_url": "/tmp/elsewhere"},
+                    })
+                    assert result.is_error and "output_url argument" in str(helpers.tool_payload(result))
                 result = await call("util.dump_schemas", {
                     "connection_id": "no-such-connection", "schemas": ["mcp_util"],
                     "output_url": os.path.join(allowed_temp_dir, "x"),

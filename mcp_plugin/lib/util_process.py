@@ -34,10 +34,11 @@ and the server reports it, and resumes a load that can be resumed.
 - **The process** runs under :mod:`mcp_plugin.lib.util_watchdog`, which stops
   it when the server goes away, however the server ends.
 """
-# cSpell:ignore mysqlsh MariaDB nocolor libproc pidpath thds
+# cSpell:ignore mysqlsh MariaDB nocolor libproc pidpath
 
 import atexit
 import collections
+import functools
 import json
 import os
 import re
@@ -50,13 +51,16 @@ import time
 import weakref
 from typing import Optional
 
-from mcp_plugin.lib.tool_registrar import tool_error
+import mysqlsh
 
-# The line the watchdog writes once the shell has ended; see util_watchdog.
-EXIT_MARKER = "mcpShellExit"
+from mcp_plugin.lib.tool_registrar import tool_error
+# the watchdog imports nothing of the plugin, so it is where these are kept
+from mcp_plugin.lib.util_watchdog import (
+    EXIT_MARKER, GRACE_SECONDS, interrupt_shell, kill_shell,
+)
 
 # How long a cancelled shell gets to stop before it is killed.
-CANCEL_GRACE_SECONDS = 30
+CANCEL_GRACE_SECONDS = GRACE_SECONDS
 
 # How often a load whose shell process crashed is started again.
 MAX_RESTARTS = 3
@@ -65,8 +69,10 @@ MAX_RESTARTS = 3
 # it where the resetProgress option asks for that (Dump_loader::execute_tasks).
 _PROGRESS_FILE_READ = "Scanning metadata"
 
-# The lines of the shell's stderr kept for the report of a crash.
+# The lines of the shell's stderr kept for the report of a crash, and how long
+# the end of the process waits for the last of them.
 STDERR_LINES = 20
+STDERR_DRAIN_SECONDS = 5
 
 _WATCHDOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "util_watchdog.py")
 
@@ -90,6 +96,13 @@ _COMMANDS = {
 # parameter in front (`util copy-schemas --help` lists them).
 _COPY_AMBIGUOUS = ("schema",)
 
+# What an option name may look like. The mapper splits a named argument at
+# its first ':' or '=', so a name holding one would write another option.
+_OPTION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+
+# The error the shell gives a name that is no connection attribute.
+_NOT_A_CONNECTION_ATTRIBUTE = "Invalid values in connection options"
+
 # What the mapper unescapes in a string it is given: a string holding one of
 # these would reach the utility changed.
 _ESCAPES = ("\\,", '\\"', "\\'", "\\=")
@@ -101,40 +114,18 @@ _STAGE_DONE = " - done"
 # --- the shell -----------------------------------------------------------------
 
 
-def _own_executable() -> Optional[str]:
-    """The executable of this process: the shell the server runs in."""
-    try:
-        if sys.platform.startswith("linux"):
-            return os.path.realpath("/proc/self/exe")
-
-        import ctypes
-
-        if sys.platform == "darwin":
-            libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
-            buffer = ctypes.create_string_buffer(4096)
-            if libproc.proc_pidpath(os.getpid(), buffer, ctypes.sizeof(buffer)) > 0:
-                return buffer.value.decode("utf-8")
-        elif os.name == "nt":
-            buffer = ctypes.create_unicode_buffer(32768)
-            if ctypes.windll.kernel32.GetModuleFileNameW(None, buffer, len(buffer)):
-                return buffer.value
-    except Exception:  # noqa: BLE001 - then the shell is looked for on PATH
-        pass
-
-    return None
-
-
 def shell_executable() -> str:
     """The MariaDB Shell binary a utility runs in.
 
-    The one the server itself runs in, so that the utility is that version's;
-    the one on PATH where this process is not a shell (a plain Python).
+    The one the server itself runs in, so that the utility is that version's:
+    the shell sets ``mysqlsh.executable`` to its own binary when it starts its
+    Python. The one on PATH where this process is not a shell (a plain Python).
 
     Returns:
         str: Its path.
     """
-    own = _own_executable()
-    if own and os.path.isfile(own) and not os.path.basename(own).lower().startswith("python"):
+    own = getattr(mysqlsh, "executable", None)
+    if own and os.path.isfile(own):
         return own
 
     found = shutil.which("mariadb-shell")
@@ -182,8 +173,8 @@ def _check_strings(value, what: str) -> None:
             _check_strings(item, what)
 
 
-def _unnamed_value(value, what: str) -> str:
-    """An unnamed string argument, refused where the mapper would misread it.
+def _check_unnamed(value, what: str) -> None:
+    """Refuses an unnamed string argument the mapper would misread.
 
     The mapper parses an unnamed argument as JSON and keeps it a string only
     where that gives a string, or a number written differently, so "2024",
@@ -211,8 +202,6 @@ def _unnamed_value(value, what: str) -> str:
             "which would read it as an option or a value of another type."
         )
 
-    return value
-
 
 def _named(name: str, value) -> Optional[str]:
     """A named argument, typed so that the mapper does not guess."""
@@ -231,22 +220,103 @@ def _named(name: str, value) -> Optional[str]:
     return f"--{name}:json={json.dumps(value)}"
 
 
-def _target_arguments(target: dict) -> list:
+def _cli_name(name: str) -> str:
+    """An option name as the mapper looks it up.
+
+    The mapper's ``from_camel_case_to_dashes`` (``utils_general.cc``):
+    ``sslMode``, ``ssl_mode`` and ``ssl-mode`` are all ``ssl-mode``.
+    """
+    upper_count = 0
+    skip_underscore = True
+    converted = []
+    for character in name:
+        if character.isupper():
+            upper_count += 1
+            if not skip_underscore:
+                converted.append("_")
+            skip_underscore = False
+            converted.append(character.lower())
+        else:
+            skip_underscore = character in "_-"
+            if skip_underscore:
+                upper_count += 1
+            converted.append(character)
+
+    result = name if upper_count == len(name) else "".join(converted)
+    return result.replace("_", "-")
+
+
+@functools.lru_cache(maxsize=None)
+def _is_connection_attribute(cli_name: str) -> bool:
+    """Whether the shell takes a name as an attribute of a connection.
+
+    Asked of the shell itself, so that the answer follows its release: a name
+    that is no attribute is refused as an invalid connection option. A value
+    the attribute does not accept, or any other answer, counts as an
+    attribute, so that a doubt refuses the option rather than lets it pass.
+    """
+    import mysqlsh
+
+    try:
+        mysqlsh.globals.shell.unparse_uri({"host": "localhost", cli_name: "1"})
+    except Exception as error:  # noqa: BLE001 - the answer is in the error
+        return _NOT_A_CONNECTION_ATTRIBUTE not in str(error)
+
+    return True
+
+
+def _option_argument(name: str, value, copy: bool, forbidden: dict) -> Optional[str]:
+    """A client's option, refused where it would reach anything else.
+
+    ``forbidden`` holds the options the calling tool refuses, as the mapper
+    spells them, each with the reason why. For a copy, every
+    connection attribute is also a name of the target's connection data, and
+    the last one given wins: ``{"host": ...}`` in the options would send the
+    copy, and the target's stored password, to another server. So a copy
+    takes no option that is a connection attribute, except the one name the
+    mapper knows to be both (see ``_COPY_AMBIGUOUS``).
+    """
+    if not isinstance(name, str) or not _OPTION_NAME.match(name):
+        raise tool_error(f"'{name}' is not the name of an option.")
+
+    cli_name = _cli_name(name)
+    if cli_name in forbidden:
+        raise tool_error(f"The option '{name}' cannot be given: {forbidden[cli_name]}")
+
+    if copy and _is_connection_attribute(cli_name):
+        if cli_name not in _COPY_AMBIGUOUS:
+            raise tool_error(
+                f"The option '{name}' names a connection attribute. The target "
+                "of a copy is the connection given in target_connection_id, "
+                "and nothing in the options can change it."
+            )
+        name = f"options-{cli_name}"
+
+    return _named(name, value)
+
+
+def _target_arguments(target: Optional[dict]) -> list:
     """A copy's target as connection attributes, without its password."""
+    if target is None:
+        raise tool_error("A copy needs a target connection.")
+
     arguments = []
     for key, value in target.items():
         if key == "password" or value is None:
             continue
         name = f"connection-data-{key}" if key in _COPY_AMBIGUOUS else key
-        if key == "port":
-            arguments.append(f"--{name}={int(value)}")
-        else:
-            arguments.append(_named(name, value))
+        arguments.append(_named(name, int(value) if key == "port" else value))
 
     return arguments
 
 
-def build_command(function: str, args: list, options: dict, target: Optional[dict] = None) -> list:
+def build_command(
+    function: str,
+    args: list,
+    options: dict,
+    target: Optional[dict] = None,
+    forbidden: Optional[dict] = None,
+) -> list:
     """The arguments of ``-- util ...`` for a utility.
 
     Args:
@@ -254,6 +324,9 @@ def build_command(function: str, args: list, options: dict, target: Optional[dic
         args (list): Its arguments before the target and the options.
         options (dict): Its options, with their camelCase names.
         target (dict): A copy's target, as connection data.
+        forbidden (dict): The options the calling tool refuses, in any
+            spelling the mapper reads as the same name, each with the
+            reason it is refused.
 
     Returns:
         list: The arguments, beginning with "util".
@@ -264,7 +337,7 @@ def build_command(function: str, args: list, options: dict, target: Optional[dic
 
     for kind in kinds:
         if kind == "target":
-            arguments += _target_arguments(target or {})
+            arguments += _target_arguments(target)
             continue
 
         value = values.pop(0)
@@ -277,13 +350,13 @@ def build_command(function: str, args: list, options: dict, target: Optional[dic
                 raise tool_error("The output URL must be a non-empty string.")
             arguments.append(_named("outputUrl", value))
         else:
-            arguments.append(_unnamed_value(value, "The argument"))
+            _check_unnamed(value, "The argument")
+            arguments.append(value)
 
-    copy = command.startswith("copy-")
+    copy = "target" in kinds
+    forbidden = {_cli_name(name): why for name, why in (forbidden or {}).items()}
     for name, value in options.items():
-        if copy and name in _COPY_AMBIGUOUS:
-            name = f"options-{name}"
-        argument = _named(name, value)
+        argument = _option_argument(name, value, copy, forbidden)
         if argument:
             arguments.append(argument)
 
@@ -365,78 +438,86 @@ class OutputParser:
         level, message = next(
             ((key, line[key]) for key in ("error", "warning", "note", "status", "info")
              if isinstance(line.get(key), str)),
-            (None, None),
+            (None, ""),
         )
-        prefix_match = _STAGE_PREFIX.match(message or "")
+        prefix_match = _STAGE_PREFIX.match(message)
         prefix = prefix_match.group(1) if prefix_match else ""
 
-        numeric = line.get("numericProgressUpdate")
-        throughput = line.get("throughputProgressUpdate")
-        config = line.get("throughputProgressConfig")
-
-        if numeric:
-            stage = prefix + str(numeric.get("description", ""))
-            events += self._start(stage)
-            events.append({
-                "type": "progress", "stage": stage,
-                "current": numeric.get("current", 0), "total": numeric.get("total", 0),
-                "totalKnown": numeric.get("totalKnown", True),
-            })
-            if (message or "").rstrip().endswith(_STAGE_DONE):
-                events += self._finish(stage)
+        if line.get("numericProgressUpdate"):
+            return events + self._numeric(prefix, message, line["numericProgressUpdate"])
+        if line.get("throughputProgressUpdate") or line.get("throughputProgressConfig"):
+            return events + self._throughput(prefix, line)
+        if level is None:
             return events
-
-        if throughput or config:
-            stage = prefix + _data_stage(self.kind, line)
-            events += self._start(stage)
-            if config:
-                self._items[stage] = config
-            if throughput:
-                config = self._items.get(stage, {})
-                rate = throughput.get("throughput") or {}
-                seconds = rate.get("seconds") or 1
-                event = {
-                    "type": "progress", "stage": stage,
-                    "current": throughput.get("current", 0),
-                    "total": throughput.get("total", 0),
-                    "throughput": round(rate.get("items", 0) / seconds, 2),
-                    "etaSeconds": throughput.get("etaSeconds"),
-                }
-                if "itemsFull" in config:
-                    event["items"] = config["itemsFull"]
-                if "totalIsApproximate" in config:
-                    event["totalIsApproximate"] = config["totalIsApproximate"]
-                # an unknown total ("?%") is no percentage
-                event["totalKnown"] = bool(event["total"])
-                events.append(event)
-            return events
-
-        if message is None:
-            return events
-
         if level == "error":
             if "exceptionInfo" not in line:
                 self._pending_error = message.strip()
             self.error = message.strip()
             return events
 
+        return events + self._text(level, message)
+
+    def _numeric(self, prefix: str, message: str, numeric: dict) -> list:
+        """A stage that counts."""
+        stage = prefix + str(numeric.get("description", ""))
+        events = self._start(stage)
+        events.append({
+            "type": "progress", "stage": stage,
+            "current": numeric.get("current", 0), "total": numeric.get("total", 0),
+            "totalKnown": numeric.get("totalKnown", True),
+        })
+        if message.rstrip().endswith(_STAGE_DONE):
+            events += self._finish(stage)
+        return events
+
+    def _throughput(self, prefix: str, line: dict) -> list:
+        """The stage that moves the data."""
+        stage = prefix + _data_stage(self.kind, line)
+        events = self._start(stage)
+        if line.get("throughputProgressConfig"):
+            self._items[stage] = line["throughputProgressConfig"]
+
+        throughput = line.get("throughputProgressUpdate")
+        if not throughput:
+            return events
+
+        items = self._items.get(stage, {})
+        rate = throughput.get("throughput") or {}
+        event = {
+            "type": "progress", "stage": stage,
+            "current": throughput.get("current", 0),
+            "total": throughput.get("total", 0),
+            "throughput": round(rate.get("items", 0) / (rate.get("seconds") or 1), 2),
+            "etaSeconds": throughput.get("etaSeconds"),
+        }
+        if "itemsFull" in items:
+            event["items"] = items["itemsFull"]
+        if "totalIsApproximate" in items:
+            event["totalIsApproximate"] = items["totalIsApproximate"]
+        # an unknown total ("?%") is no percentage
+        event["totalKnown"] = bool(event["total"])
+        events.append(event)
+        return events
+
+    def _text(self, level: str, message: str) -> list:
+        """A message, or a stage without a count."""
         if not message.endswith("\n"):
-            # a stage without a count
             body = message.strip()
             if body.endswith(_STAGE_DONE):
-                return events + self._finish(body[: -len(_STAGE_DONE)])
-            return events + self._start(body)
+                return self._finish(body[: -len(_STAGE_DONE)])
+            return self._start(body)
 
         body = message.rstrip("\n")
         if not body.strip():
-            return events
-        events.append(_message(level, body))
+            return []
+        events = [_message(level, body)]
 
         # a copy's loader prints its stages as messages
-        if body.endswith("...") and "\n" not in body:
-            events += self._start(body[:-3])
-        elif body.endswith(_STAGE_DONE) and "\n" not in body:
-            events += self._finish(body[: -len(_STAGE_DONE)])
+        if "\n" not in body:
+            if body.endswith("..."):
+                events += self._start(body[:-3])
+            elif body.endswith(_STAGE_DONE):
+                events += self._finish(body[: -len(_STAGE_DONE)])
 
         return events
 
@@ -454,6 +535,19 @@ class OutputParser:
             "type": "stageFinished", "stage": stage,
             "seconds": round(time.monotonic() - started, 1),
         }]
+
+    def flush(self) -> list:
+        """The error held back as the task's, as a message after all.
+
+        For a run that does not end with it: one that completed, or that
+        crashed after it.
+        """
+        if self._pending_error is None:
+            return []
+
+        events = [_message("error", self._pending_error)]
+        self._pending_error = None
+        return events
 
     def finish_all(self) -> list:
         """Ends every stage still running: the run completed."""
@@ -498,6 +592,8 @@ class ShellProcess:
         )
         self.stderr = collections.deque(maxlen=STDERR_LINES)
         self._lock = threading.Lock()
+        # kills the shell once a cancel's grace period is over
+        self._kill_timer = None
 
         if self.watched:
             self._write(json.dumps({"input": input_text}) + "\n")
@@ -505,7 +601,8 @@ class ShellProcess:
             self._write(input_text)
             self._close_stdin()
 
-        threading.Thread(target=self._read_stderr, daemon=True).start()
+        self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
+        self._stderr_thread.start()
         _running.add(self)
 
     def _write(self, text: str) -> None:
@@ -540,16 +637,13 @@ class ShellProcess:
         if self.watched:
             self._write("cancel\n")
         else:
-            try:
-                self.process.send_signal(
-                    signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT
-                )
-            except OSError:
-                pass
+            interrupt_shell(self.process)
 
-        timer = threading.Timer(CANCEL_GRACE_SECONDS, self.kill)
-        timer.daemon = True
-        timer.start()
+        with self._lock:
+            if self._kill_timer is None:
+                self._kill_timer = threading.Timer(CANCEL_GRACE_SECONDS, self.kill)
+                self._kill_timer.daemon = True
+                self._kill_timer.start()
 
     def kill(self) -> None:
         """Ends the shell at once."""
@@ -562,10 +656,7 @@ class ShellProcess:
             self._write("kill\n")
             self._close_stdin()
         else:
-            try:
-                self.process.kill()
-            except OSError:
-                pass
+            kill_shell(self.process)
 
     def stop(self) -> None:
         """Interrupts the shell, and has it killed if it does not stop.
@@ -579,9 +670,18 @@ class ShellProcess:
             self.kill()
 
     def wait(self) -> int:
-        """Waits for the end of the process; its return code."""
+        """Waits for the end of the process; its return code.
+
+        Once it returns, :attr:`stderr` is complete and no longer written to.
+        """
         returncode = self.process.wait()
+        with self._lock:
+            if self._kill_timer is not None:
+                self._kill_timer.cancel()
         self._close_stdin()
+        # the pipe ends with its last writer: a shell the watchdog left behind
+        # would keep it open, so this does not wait for ever
+        self._stderr_thread.join(STDERR_DRAIN_SECONDS)
         _running.discard(self)
         return returncode
 
@@ -600,12 +700,37 @@ def _signal_name(returncode: int) -> str:
         return f"signal {-returncode}"
 
 
+# A Windows process that crashes ends with an NTSTATUS error as its exit code:
+# 0xC0000005 for an access violation, 0xC0000409 for a buffer overrun.
+_NTSTATUS_ERROR = 0xC0000000
+
+
+def _crashed(returncode) -> bool:
+    """Whether the process crashed, rather than ended itself with a failure.
+
+    The shell ends itself with a positive exit code, even where it reports
+    the error only on stderr (before its JSON output starts: a malformed
+    URI, an unknown option). Starting it again would fail the same way.
+    """
+    if returncode is None or returncode < 0:
+        return True
+    return os.name == "nt" and returncode >= _NTSTATUS_ERROR
+
+
 def _crash_description(returncode) -> str:
     if returncode is None:
         return "the process ended unexpectedly"
     if returncode < 0:
         return f"it was ended by {_signal_name(returncode)}"
-    return f"it ended with exit code {returncode} without reporting an error"
+    return f"it ended with the exception code {returncode:#010x}"
+
+
+def _failure_description(returncode: int, stderr) -> str:
+    """A failure the shell reported only on stderr, or not at all."""
+    failure = f"The MariaDB Shell process running the utility failed with exit code {returncode}"
+    if stderr:
+        return f"{failure}: {' '.join(stderr)}"
+    return f"{failure}, without reporting an error."
 
 
 def _resumable(function: str, args: list, options: dict) -> bool:
@@ -628,7 +753,15 @@ def _resumable(function: str, args: list, options: dict) -> bool:
     return True
 
 
-def run(task, function: str, args: list, options: dict, source: tuple, target: Optional[dict] = None):
+def run(
+    task,
+    function: str,
+    args: list,
+    options: dict,
+    source: tuple,
+    target: Optional[dict] = None,
+    executable: Optional[str] = None,
+):
     """Runs a utility for a task, in shell processes of its own.
 
     The events of its output go to the task as they come. A run that crashed
@@ -642,6 +775,8 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
         options (dict): Its options.
         source (tuple): ``(uri, password)`` of the connection it runs on.
         target (dict): A copy's target, as connection data with its password.
+        executable (str): The shell binary, as :func:`shell_executable`
+            found it before the task started; found here where not given.
 
     Returns:
         None, once the utility completed.
@@ -654,25 +789,25 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
     attempts = MAX_RESTARTS + 1 if resumable else 1
     progress_file_read = False
 
+    shell = [executable or shell_executable(), "--json=raw", "--passwords-from-stdin", f"--uri={uri}", "--"]
+    passwords = [password or ""]
+    if target is not None:
+        passwords.append(target.get("password") or "")
+    input_text = "".join(p + "\n" for p in passwords)
+
     for attempt in range(1, attempts + 1):
+        if task.cancel_requested:
+            raise RuntimeError("Interrupted by user")
+
         run_options = dict(options)
         if progress_file_read:
             # what was loaded before the crash stays loaded; until a run got
             # that far, the progress file may still be another load's
             run_options.pop("resetProgress", None)
 
-        arguments = (
-            [shell_executable(), "--json=raw", "--passwords-from-stdin", f"--uri={uri}", "--"]
-            + build_command(function, args, run_options, target)
+        process = ShellProcess(
+            shell + build_command(function, args, run_options, target), input_text
         )
-        passwords = [password or ""]
-        if target is not None:
-            passwords.append(target.get("password") or "")
-
-        if task.cancel_requested:
-            raise RuntimeError("Interrupted by user")
-
-        process = ShellProcess(arguments, "".join(p + "\n" for p in passwords))
         parser = OutputParser(task.kind)
         task.set_canceller(process.cancel)
         try:
@@ -693,24 +828,27 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
             returncode = None
 
         if returncode == 0:
-            for event in parser.finish_all():
+            for event in parser.flush() + parser.finish_all():
                 task.on_event(event)
             return None
 
         if task.cancel_requested:
             raise RuntimeError(parser.error or "Interrupted by user")
 
-        if parser.error is not None and returncode is not None and returncode > 0:
-            raise RuntimeError(parser.error)
+        if not _crashed(returncode):
+            raise RuntimeError(
+                parser.error or _failure_description(returncode, process.stderr)
+            )
 
         # a crash
         crash = (
             f"The MariaDB Shell process running the utility crashed: "
             f"{_crash_description(returncode)}."
         )
-        details = list(process.stderr)
         task.fail_running_stages()
-        for text in details:
+        for event in parser.flush():
+            task.on_event(event)
+        for text in process.stderr:
             task.on_event(_message("error", text))
 
         if attempt < attempts:
@@ -720,9 +858,9 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
             ))
             continue
 
-        if resumable:
+        if attempts > 1:
             crash += f" It was started {attempts} times."
+        if parser.error is not None:
+            crash += f" Its last error: {parser.error}"
         raise RuntimeError(crash)
-
-    return None
 
