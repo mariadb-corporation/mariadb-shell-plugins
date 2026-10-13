@@ -17,6 +17,7 @@
 
 import * as vscode from "vscode";
 
+import { McpToolError } from "../mcp/protocol.js";
 import { errorText, stripAnsi } from "../text.js";
 import {
     isFinished,
@@ -95,6 +96,14 @@ export const TASKS_KEY = "mariadb.tasks";
  * a row, or its context menu, is lost under the redraw.
  */
 export const POLL_INTERVAL_MS = 1000;
+
+/**
+ * How many looks at a task in a row may go without an answer before the task
+ * is given up. A call that timed out, or a server too busy to answer, says
+ * nothing of the task, which goes on in the server; a server that went away
+ * fails every look, and the task with it.
+ */
+export const MAX_UNANSWERED_LOOKS = 5;
 
 /** How many tasks are kept across reloads, the newest. */
 export const MAX_KEPT_TASKS = 50;
@@ -328,6 +337,13 @@ export class TaskMonitor {
         onUpdate: (state: IUtilTaskState) => void,
     ): Promise<IUtilTaskState> {
         let since = 0;
+        let unanswered = 0;
+        const pause = async (asked: number): Promise<void> => {
+            const rest = asked + this.pollIntervalMs - Date.now();
+            if (rest > 0) {
+                await new Promise((done) => { setTimeout(done, rest); });
+            }
+        };
 
         for (;;) {
             const asked = Date.now();
@@ -335,10 +351,18 @@ export class TaskMonitor {
             try {
                 state = await (await this.api()).getTask(
                     tracked.state.task_id, since, WAIT_MS);
+                unanswered = 0;
             } catch (error) {
-                // The server went away, and the task with it, or it forgot
-                // the task: either way, there is nothing more to follow.
                 const text = errorText(error);
+                // A tool error is the server's answer: it no longer knows the
+                // task. Anything else is no answer, and is asked again.
+                if (!(error instanceof McpToolError)
+                    && ++unanswered < MAX_UNANSWERED_LOOKS) {
+                    this.log(`No answer about the task ${title} (${String(
+                        unanswered)} of ${String(MAX_UNANSWERED_LOOKS)}): ${text}`);
+                    await pause(asked);
+                    continue;
+                }
                 this.log(`Lost track of the task ${title}: ${text}`);
                 state = {
                     ...tracked.state,
@@ -379,10 +403,7 @@ export class TaskMonitor {
             if (isFinished(state.status)) {
                 return state;
             }
-            const rest = asked + this.pollIntervalMs - Date.now();
-            if (rest > 0) {
-                await new Promise((done) => { setTimeout(done, rest); });
-            }
+            await pause(asked);
         }
     }
 

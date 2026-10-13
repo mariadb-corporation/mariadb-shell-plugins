@@ -22,7 +22,9 @@ import type {
     IUtilTaskState,
     UtilTaskStatus,
 } from "../../mcp/utilApi.js";
+import { McpToolError } from "../../mcp/protocol.js";
 import {
+    MAX_UNANSWERED_LOOKS,
     TASKS_KEY,
     TaskMonitor,
     canResume,
@@ -275,7 +277,8 @@ describe("TaskMonitor", () => {
         });
 
     it("gives up on a task the server no longer knows", async () => {
-        const { api } = fakeApi([new Error("There is no task with the id 't1'.")]);
+        const { api, since } = fakeApi([new McpToolError("util.get_task",
+            "There is no task with the id 't1'.")]);
 
         const end = await monitorWith(api).follow(
             { task_id: "t1", status: "running" },
@@ -284,6 +287,43 @@ describe("TaskMonitor", () => {
         expect(end.status).toBe("failed");
         expect(end.error).toContain("Lost track of the task");
         expect(logs[0]).toContain("Lost track of the task Load");
+        // the server's answer is final: it is not asked again
+        expect(since).toHaveLength(1);
+    });
+
+    it("asks again about a task when a look goes unanswered", async () => {
+        // a call that timed out says nothing of the task, which goes on
+        const { api, since } = fakeApi([
+            state({ next_since: 2 }),
+            new Error("Request timed out"),
+            new Error("Request timed out"),
+            finished("completed", { next_since: 3 }),
+        ]);
+
+        const end = await monitorWith(api).follow(
+            { task_id: "t1", status: "running" },
+            { title: "Load", connection: "root@h" });
+
+        expect(end.status).toBe("completed");
+        expect(since).toEqual([0, 2, 2, 2]);
+        expect(logs).toEqual([
+            "No answer about the task Load (1 of 5): Request timed out",
+            "No answer about the task Load (2 of 5): Request timed out",
+        ]);
+        expect(errorMessages).toHaveLength(0);
+    });
+
+    it("gives up on a task once the server stopped answering", async () => {
+        const { api, since } = fakeApi(Array.from(
+            { length: MAX_UNANSWERED_LOOKS }, () => { return new Error("Not connected"); }));
+
+        const end = await monitorWith(api).follow(
+            { task_id: "t1", status: "running" },
+            { title: "Load", connection: "root@h" });
+
+        expect(end.status).toBe("failed");
+        expect(end.error).toBe("Lost track of the task: Not connected");
+        expect(since).toHaveLength(MAX_UNANSWERED_LOOKS);
     });
 
     it("removes only finished tasks from the list", async () => {
