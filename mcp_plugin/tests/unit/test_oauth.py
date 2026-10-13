@@ -1925,3 +1925,35 @@ def test_the_sign_in_page_shows_the_logo_inline(tenant_config):
     assert "<h2>MCP Server</h2>" in page and "<title>MariaDB MCP Server</title>" in page
     assert "img-src" not in response.headers["Content-Security-Policy"]
     assert '<div class="mrsLoginError" role="alert"><p>No.</p></div>' in page
+
+
+@pytest.mark.parametrize("mode", [None, oauth_config.OAUTH_MODE_BUILTIN])
+def test_the_server_root_shows_a_landing_page(tenant_config, mode):
+    """A browser opening the server's address sees who answers, not a Not Found."""
+    bundle = None
+    if mode is not None:
+        oauth_config.set_public_url(PUBLIC_URL)
+        oauth_config.update_oauth_settings(
+            lambda oauth: oauth["builtin"].update(loginServers=[LOGIN_SERVER])
+        )
+        bundle = auth.build_auth(mode=mode)
+    mcp_server = server.build_mcp_server(["db"], auth=bundle)
+    starlette_app = mcp_server.streamable_http_app(host="127.0.0.1")
+    server.add_landing_page(starlette_app)
+    app = auth.customize_app(starlette_app, bundle) if bundle else starlette_app
+
+    async def get(path):
+        transport = httpx2.ASGITransport(app=app, client=("192.0.2.1", 1234))
+        async with httpx2.AsyncClient(transport=transport,
+                                      base_url="https://mcp.example.com") as client:
+            return await client.get(path)
+
+    response = asyncio.run(get("/"))
+    page = response.text
+
+    assert response.status_code == 200
+    assert "<h2>MCP Server</h2>" in page and '<svg role="img" aria-label="MariaDB"' in page
+    assert ('<div class="welcomeLinks">'
+            '<a href="https://mariadb.com/docs/tools/mariadb-shell/mcp-server">') in page
+    assert "script" not in response.headers["Content-Security-Policy"]
+    assert asyncio.run(get("/other")).status_code == 404

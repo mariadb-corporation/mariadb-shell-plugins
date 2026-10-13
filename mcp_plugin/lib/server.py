@@ -598,6 +598,7 @@ def _serve_streamable_http(
         host=host,
         transport_security=_transport_security_settings(host, port, allowed_hosts),
     )
+    add_landing_page(starlette_app)
 
     app = starlette_app
     if auth is not None:
@@ -767,6 +768,23 @@ class TrustedProxyMiddleware:
                 scope["client"] = (address, 0)
 
         await self.app(scope, receive, send)
+def add_landing_page(starlette_app) -> None:
+    """Serves a landing page at ``/``, where the SDK's app answers Not Found.
+
+    Appended after the app's own routes, so an MCP endpoint served at ``/``
+    keeps the path.
+
+    Args:
+        starlette_app: The app ``streamable_http_app()`` built.
+
+    Returns:
+        None
+    """
+    from starlette.routing import Route
+
+    from mcp_plugin.lib.oauth_builtin import landing_page
+
+    starlette_app.router.routes.append(Route("/", endpoint=landing_page, methods=["GET"]))
 
 
 def _dialable_host_names(host: str) -> list:

@@ -1590,6 +1590,33 @@ def _page(response_class, body: str, status: int = 200, raw: bool = False,
     )
 
 
+_LANDING_LINKS = (
+    ("Learn More", "https://mariadb.com/docs/tools/mariadb-shell/mcp-server"),
+    ("Connect a Client",
+     "https://mariadb.com/docs/tools/mariadb-shell/mcp-server/connecting-mcp-clients"),
+    ("Read Docs", "https://mariadb.com/docs/tools/mariadb-shell"),
+)
+
+
+async def landing_page(request):
+    """Answers a browser that opens the server's address rather than its MCP endpoint.
+
+    The MariaDB REST Service's landing page in the frame of the sign-in page:
+    who answers, and where to read more, in place of a bare Not Found. Every
+    streamable-http server serves it, whatever its OAuth2 mode (see
+    :func:`mcp_plugin.lib.server.add_landing_page`).
+    """
+    from starlette.responses import HTMLResponse
+
+    links = "".join(f'<a href="{url}">{text} &gt;</a>' for text, url in _LANDING_LINKS)
+    body = (
+        '<div class="welcomeText"><p>Please use the MariaDB Shell to configure this server.</p></div>'
+        f'<div class="welcomeLinks">{links}</div>'
+    )
+
+    return _page(HTMLResponse, body, raw=True)
+
+
 def _public_key_of(pem: str):
     """Returns the public key of a PEM private key."""
     from cryptography.hazmat.primitives import serialization

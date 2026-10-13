@@ -33,6 +33,11 @@ opt-in), 93%**; **585 passed, 3 skipped** after the Arcade round below; **584 pa
   SVG (a CSS-border chevron became a diamond in a restyled Firefox), the button has
   `appearance:none` (Safari), and the inputs `flex:1 1 250px` so the button sits at the
   field's end. Commits `0ec99ee9`, `8f38d498`. The user's screenshot is in the docs.
+  2026-10-13 (user's values): logo 204x168, `h2` weight 400 with margin `40px 0 5px`.
+- **Landing page at `/`** (2026-10-13, PR #47): `oauth_builtin.landing_page`, added by
+  `server.add_landing_page` to every streamable-http server, whatever the OAuth2 mode, after
+  the SDK's routes. The REST Service's landing page in the sign-in page's frame: text and
+  `.welcomeLinks` to the docs, instead of the SDK's bare Not Found.
 - **Arcade, tested for real** (see oauth-builtin.md 2d): dotless tool names
   (`--toolNameSeparator`) and the user + grant binding (M23), `72a64f89`.
 
