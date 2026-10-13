@@ -105,9 +105,10 @@ change belongs to up to date, and this table with it.
   the shell build it needs and download it (shell PR CI would have to
   upload its Linux package; `rocky-linux.yml` can build one on dispatch);
   skip tests whose feature the shell lacks.
-- The UI tests need a shell with #71: built locally from
-  `wip/ui_test_shell` in `~/git/mariadb-shell` (a local-only merge, not
-  pushed; it held #73 until 2026-10-12).
+- The UI tests need a shell with #71, which mariadb-shell `main` has since
+  2026-10-13: any local build of `main` in `~/git/mariadb-shell`
+  (`MARIADB_SHELL=...`). Before that it took the local-only merge
+  `wip/ui_test_shell`, deleted on 2026-10-13.
 - **Highlighting is lexical.** Non-reserved keywords used as names are
   coloured as keywords, data types have no scope of their own, and the
   ANSI_QUOTES identifiers are semantic tokens, so a theme with semantic
@@ -144,10 +145,10 @@ each for the Actions tab's top alignment and tree indent) are #44's:
   the UI tests in suites (`168972cc`), and the Actions tab's top
   alignment and indent guides plus the process-group stop (`a9d1a668`),
   the `/code-review` fixes (`b9642b1c`).
-- **Still open from earlier:** #43 `wip/mcp_dump_load` (Dump and Load),
-  #41 the mrs_plugin / msm side; #44 has both merged in. Fixes go
-  #43 -> #44 -> #45, always that direction. CI fails on all of them for
-  want of mariadb-shell #71 / #73 on the runner.
+- **#43 (Dump and Load) and #41 (the mrs_plugin / msm side) are merged**
+  (2026-10-13, squash-merged after review fixes), and so is
+  mariadb-shell #71. `main` is merged into #44, and from there into #45
+  and #48. Fixes go #44 -> #45 -> #48, always that direction.
 - **Session 2026-10-12:** footer tabs, the grammar (TextMate, generated,
   not an LSP), semantic tokens for ANSI_QUOTES, the Actions tab's top
   alignment and straight indent guides instead of Tabulator's L branch,
