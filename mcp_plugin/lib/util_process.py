@@ -687,12 +687,37 @@ def _signal_name(returncode: int) -> str:
         return f"signal {-returncode}"
 
 
+# A Windows process that crashes ends with an NTSTATUS error as its exit code:
+# 0xC0000005 for an access violation, 0xC0000409 for a buffer overrun.
+_NTSTATUS_ERROR = 0xC0000000
+
+
+def _crashed(returncode) -> bool:
+    """Whether the process crashed, rather than ended itself with a failure.
+
+    The shell ends itself with a positive exit code, even where it reports
+    the error only on stderr (before its JSON output starts: a malformed
+    URI, an unknown option). Starting it again would fail the same way.
+    """
+    if returncode is None or returncode < 0:
+        return True
+    return os.name == "nt" and returncode >= _NTSTATUS_ERROR
+
+
 def _crash_description(returncode) -> str:
     if returncode is None:
         return "the process ended unexpectedly"
     if returncode < 0:
         return f"it was ended by {_signal_name(returncode)}"
-    return f"it ended with exit code {returncode} without reporting an error"
+    return f"it ended with the exception code {returncode:#010x}"
+
+
+def _failure_description(returncode: int, stderr) -> str:
+    """A failure the shell reported only on stderr, or not at all."""
+    failure = f"The MariaDB Shell process running the utility failed with exit code {returncode}"
+    if stderr:
+        return f"{failure}: {' '.join(stderr)}"
+    return f"{failure}, without reporting an error."
 
 
 def _resumable(function: str, args: list, options: dict) -> bool:
@@ -787,8 +812,10 @@ def run(task, function: str, args: list, options: dict, source: tuple, target: O
         if task.cancel_requested:
             raise RuntimeError(parser.error or "Interrupted by user")
 
-        if parser.error is not None and returncode is not None and returncode > 0:
-            raise RuntimeError(parser.error)
+        if not _crashed(returncode):
+            raise RuntimeError(
+                parser.error or _failure_description(returncode, process.stderr)
+            )
 
         # a crash
         crash = (

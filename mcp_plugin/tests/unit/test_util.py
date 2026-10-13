@@ -522,6 +522,10 @@ save()
 def out(line):
     print(json.dumps(line), flush=True)
 mode = os.environ["FAKE_SHELL_MODE"]
+if mode == "fail-at-startup":
+    # what the shell does with a malformed --uri: no JSON yet, only stderr
+    print("Invalid URI: Expected token at position 2 but no tokens left.", file=sys.stderr, flush=True)
+    sys.exit(1)
 if mode == "hang":
     # deaf to ^C: only a kill ends it
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -669,6 +673,36 @@ def test_a_failure_is_no_crash(fake_shell, monkeypatch):
     assert snapshot["status"] == "failed"
     assert len(fake_shell()) == 1
     assert snapshot["error"] == "Util.load_dump: Error loading dump"
+
+
+def test_a_failure_reported_only_on_stderr_is_no_crash(fake_shell, monkeypatch):
+    # started again, it would fail the same way
+    snapshot = _run("load_dump", ["/d"], {}, monkeypatch, "fail-at-startup")
+
+    assert snapshot["status"] == "failed"
+    assert len(fake_shell()) == 1
+    assert snapshot["error"] == (
+        "The MariaDB Shell process running the utility failed with exit code 1: "
+        "Invalid URI: Expected token at position 2 but no tokens left."
+    )
+    assert not any("crashed" in m["text"] for m in snapshot["messages"])
+
+
+@pytest.mark.parametrize("returncode,crashed", [
+    (None, True), (-9, True), (1, False), (10, False), (0xC0000005, False),
+])
+def test_what_is_a_crash(monkeypatch, returncode, crashed):
+    monkeypatch.setattr(util_process.os, "name", "posix")
+    assert util_process._crashed(returncode) is crashed
+
+
+@pytest.mark.parametrize("returncode,crashed", [
+    (1, False), (10, False), (0xC0000005, True), (0xC0000409, True),
+])
+def test_what_is_a_crash_on_windows(monkeypatch, returncode, crashed):
+    # a crash there is an exception code, which is positive
+    monkeypatch.setattr(util_process.os, "name", "nt")
+    assert util_process._crashed(returncode) is crashed
 
 
 # --- the tools, end to end ----------------------------------------------------

@@ -395,7 +395,10 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   takes only its own process down: the task reports it, and **a load is resumed**
   where it stopped, up to 3 times, from the dump's progress file. Any other
   utility that crashes fails, because starting it again would not continue its
-  work. The process ends with the server, however the server ends.
+  work. A crash is a process ended by a signal (on Windows, by an exception); a
+  shell that ends itself with an error code fails the task with that error, even
+  one it printed only on stderr, and is not started again. The process ends with
+  the server, however the server ends.
 - **Options** are the utility's own, with their camelCase names, in `options`, such as
   `{"threads": 8, "users": false}`. `session`, `progressCallback` and `showProgress`
   are refused. A value the shell's command line cannot pass on unchanged is refused
