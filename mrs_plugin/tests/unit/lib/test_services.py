@@ -588,3 +588,57 @@ def test_load_project_keeps_a_service_that_existed(phone_book):
         ).fetch_one()[0]
     finally:
         session.run_sql("DROP REST SERVICE /keep")
+
+
+def test_current_service_is_stored_per_connection(phone_book):
+    session = phone_book["session"]
+
+    session.run_sql("CREATE REST SERVICE /other")
+    test_id = lib.services.get_service(session, url_context_root="/test")["id"]
+    try:
+        # A stored current service is returned while it exists
+        lib.services.set_current_service_id(session, test_id)
+        assert lib.services.get_current_service_id(session) == test_id
+        assert lib.services.get_current_service(session)["url_context_root"] == "/test"
+
+        # One that no longer exists is not; with several services there is
+        # no current one then
+        lib.services.set_current_service_id(
+            session, "00000000-0000-0000-0000-00000000dead"
+        )
+        assert lib.services.get_current_service_id(session) is None
+    finally:
+        lib.services.set_current_service_id(session, None)
+        session.run_sql("DROP REST SERVICE /other")
+
+
+def test_the_only_service_becomes_the_current_one(phone_book):
+    # As the plugin's REST SQL CREATE REST SERVICE made the first service the
+    # current one, the only service of a metadata schema is taken as current
+    import mysqlsh
+    from mrs_plugin.tests.unit.helpers import get_connection_data
+
+    data = get_connection_data()
+    solo = mysqlsh.globals.shell.open_session(
+        f"{data['user']}:{data['password']}@{data['host']}:{data['port']}"
+    )
+    try:
+        solo.run_sql("CONFIGURE REST METADATA SCHEMA solo_mariadb_rest_service")
+        assert lib.services.get_current_service_id(solo) is None
+
+        solo.run_sql("CREATE REST SERVICE /solo")
+        solo_id = lib.services.get_service(solo, url_context_root="/solo")["id"]
+        assert lib.services.get_current_service_id(solo) == solo_id
+
+        # It is stored: it stays the current one once there are more
+        solo.run_sql("CREATE REST SERVICE /second")
+        assert lib.services.get_current_service_id(solo) == solo_id
+    finally:
+        lib.services.set_current_service_id(solo, None)
+        solo.run_sql("DROP SCHEMA IF EXISTS solo_mariadb_rest_service")
+        for (role,) in solo.run_sql(
+            "SELECT User FROM mysql.user WHERE is_role = 'Y' "
+            "AND User LIKE 'solo\\_mariadb\\_rest\\_service%'"
+        ).fetch_all():
+            solo.run_sql(f"DROP ROLE `{role}`")
+        solo.close()

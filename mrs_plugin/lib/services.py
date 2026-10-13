@@ -246,6 +246,13 @@ def get_current_service(session):
 def get_current_service_id(session):
     """Returns the current service
 
+    The plugin's current service is kept per connection in its config file;
+    it is not the one USE REST SERVICE selects for the REST SQL statements.
+    The first REST service becomes the current one: the REST SQL CREATE
+    REST SERVICE of the plugin stored it when it created the only service.
+    That statement runs in the shell now, so the only service is taken as
+    the current one here, when none is stored or the stored one is gone.
+
     Args:
         session (object): The database session to use.
 
@@ -267,15 +274,61 @@ def get_current_service_id(session):
         )
     )
 
-    if not connection_settings:
+    if connection_settings:
+        # Settings written by earlier versions hold the id in its '0x' form.
+        service_id = core.id_to_uuid(
+            connection_settings[0].get("current_service_id"),
+            "current_service_id",
+            allowNone=True,
+        )
+        if service_id is not None and (
+            core.MrsDbExec(f"SELECT id FROM {core.METADATA}.`service` WHERE id = ?")
+            .exec(session, [service_id])
+            .first
+        ):
+            return service_id
+
+    services = (
+        core.MrsDbExec(f"SELECT id FROM {core.METADATA}.`service` LIMIT 2")
+        .exec(session)
+        .items
+    )
+    if len(services) != 1:
         return None
 
-    # Settings written by earlier versions hold the id in its '0x' form.
-    return core.id_to_uuid(
-        connection_settings[0].get("current_service_id"),
-        "current_service_id",
-        allowNone=True,
+    set_current_service_id(session, services[0]["id"])
+    return services[0]["id"]
+
+
+def set_current_service_id(session, service_id):
+    """Stores the plugin's current service of the session's connection."""
+    if not session:
+        raise RuntimeError("A valid session is required.")
+
+    config = core.ConfigFile()
+
+    current_objects = config.settings.get("current_objects", [])
+
+    # Try to find the settings for the connection which the service resides on
+    connection_settings = list(
+        filter(
+            lambda item: item["connection"] == core.get_session_uri(session),
+            current_objects,
+        )
     )
+
+    if connection_settings:
+        connection_settings[0]["current_service_id"] = service_id
+    else:
+        current_objects.append(
+            {
+                "connection": core.get_session_uri(session),
+                "current_service_id": service_id,
+            }
+        )
+
+    config.settings["current_objects"] = current_objects
+    config.store()
 
 
 def store_project_validations(
