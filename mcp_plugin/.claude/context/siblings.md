@@ -101,8 +101,9 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
     against a mysys segfault (no thread state for `my_errno`). It was not
     reproduced on mariadb-shell `main` (2026-10-12): all nine utilities,
     including their error paths, ran from a Python thread without a
-    crash. The guard and a test for it are kept on the local mariadb-shell
-    branch `wip/util_mysys_thread_guard`, with no PR.
+    crash. The guard and a test for it sat on a local mariadb-shell branch,
+    deleted on 2026-10-13 (the user's call); #73's diff on GitHub still
+    has the code, should the crash ever turn up.
 
 ## Gotchas / things not to repeat
 

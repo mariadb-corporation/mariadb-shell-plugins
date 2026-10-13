@@ -93,15 +93,13 @@ const COLLAPSE_ELEMENT =
     "<span class=\"treeToggle codicon codicon-chevron-down\"></span>";
 
 /**
- * How far a statement is indented under its run, in pixels.
- *
- * Tabulator gives a child's branch element 7px of width and 5px of
- * margin on top of this, so 20 puts a statement's marker at 32 - one
- * clear step of `TREE_ELEMENT_WIDTH` in from the 16 its run's marker
- * sits at. The markers of the rows that stand on their own line up;
- * the ones that belong to a run are meant not to.
+ * How far each level of the tree is indented under the one above, in
+ * pixels. With the element Tabulator puts in front of a child row given
+ * no width (styles.css), a level-N row is indented exactly N times this.
+ * The host passes it to the stylesheet as `--actionsTreeIndent`, which
+ * places the indent guides.
  */
-const CHILD_INDENT = 20;
+const CHILD_INDENT = 27;
 
 /**
  * The room a run's twistie takes, which a row that has neither twistie
@@ -403,7 +401,6 @@ export const buildActionColumns = (
             title: "Time",
             field: "time",
             width: 152,
-            vertAlign: "middle",
             headerSort: false,
             cssClass: "actionTime",
             headerTooltip:
@@ -417,7 +414,6 @@ export const buildActionColumns = (
             title: "Information",
             field: "statement",
             width: 260,
-            vertAlign: "middle",
             headerSort: false,
             cssClass: "actionInformation",
             headerTooltip:
@@ -433,7 +429,6 @@ export const buildActionColumns = (
                 title: "Conn",
                 field: "connectionLabel",
                 width: 76,
-                vertAlign: "middle",
                 headerSort: false,
                 cssClass: "actionConnection",
                 headerTooltip:
@@ -531,19 +526,23 @@ export const startsExpanded = (
 };
 
 /**
- * @param rows The actions, newest first.
- * @param rowId The statement row to place.
+ * The top level row a row is reached through: the run holding a statement,
+ * or the row itself when it is top level - an event, or a run that failed
+ * before it could blame a statement, both of which the error bar points at.
  *
- * @returns The id of the run holding it, if any run does.
+ * @param rows The actions, newest first.
+ * @param rowId The row to place.
+ *
+ * @returns The id of that top level row, if the actions still hold it.
  */
-export const runHolding = (
+export const topLevelRowOf = (
     rows: IActionRow[],
     rowId: string,
 ): string | undefined => {
-    return rows.find((run) => {
-        return run.children?.some((child) => {
+    return rows.find((top) => {
+        return top.id === rowId || (top.children?.some((child) => {
             return child.id === rowId;
-        }) ?? false;
+        }) ?? false);
     })?.id;
 };
 
@@ -651,6 +650,20 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
             // the marker, then what happened.
             dataTreeElementColumn: "message",
             dataTreeChildIndent: CHILD_INDENT,
+            // Every cell at the top (the user's rule, 2026-10-12): a
+            // message that wraps keeps its marker beside its first line,
+            // in the column every marker lines up in, and Time and
+            // Information stay level with that line. Tabulator does it by
+            // making each cell an inline flex box - inline, as a cell is
+            // laid out beside its neighbours - which the message cell
+            // lays out the twistie, marker and text in too; the
+            // stylesheet sets neither.
+            columnDefaults: { vertAlign: "top" },
+            // Not Tabulator's branch: a fixed little L per row, placed
+            // with a negative margin, that knows neither the row's
+            // height nor its siblings. The stylesheet draws VS Code's
+            // own straight indent guides instead.
+            dataTreeBranchElement: false,
             dataTreeExpandElement: EXPAND_ELEMENT,
             dataTreeCollapseElement: COLLAPSE_ELEMENT,
             dataTreeStartExpanded: (row) => {
@@ -751,7 +764,7 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
         // The run asked about here is usually a closed one - it is the
         // error of an older run that is being pointed at - so it is
         // opened on the way.
-        const runId = runHolding(rows, scrollToRowId);
+        const runId = topLevelRowOf(rows, scrollToRowId);
         if (runId === undefined) {
             return;
         }
@@ -796,5 +809,11 @@ export const ActionsGrid = (props: IActionsGridProperties): JSX.Element => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rows, availableKey]);
 
-    return <div class="actionsGridHost" ref={host} />;
+    return (
+        <div
+            class="actionsGridHost"
+            style={`--actionsTreeIndent: ${String(CHILD_INDENT)}px`}
+            ref={host}
+        />
+    );
 };

@@ -18,6 +18,7 @@
 import * as vscode from "vscode";
 
 import { connectionLabel } from "../connections/connectionUri.js";
+import { showErrorWithLog } from "../errorMessages.js";
 import { buildWebviewHtml, webviewOptions } from "../webview/html.js";
 import { errorText } from "../text.js";
 import type { UtilOptions } from "../mcp/utilApi.js";
@@ -47,6 +48,11 @@ export interface IUtilDialogHost {
      * so the dialog stays open and says why.
      */
     check?(paths: string[]): Promise<IUtilProblem | undefined>;
+    /**
+     * Called after the work failed to start, once that has been shown: in
+     * the dialog, or as a notification where the dialog was closed.
+     */
+    onFailed?(): void;
     log(message: string): void;
 }
 
@@ -171,7 +177,15 @@ export class UtilDialogPanel {
                 } catch (error) {
                     const text = errorText(error);
                     this.host.log(`${this.spec.title} did not start: ${text}`);
-                    this.#post({ type: "startError", message: text });
+                    if (this.#disposed) {
+                        // Closed while it started: nowhere left to say it
+                        // but a notification.
+                        void showErrorWithLog(
+                            `${this.spec.title} did not start: ${text}`);
+                    } else {
+                        this.#post({ type: "startError", message: text });
+                    }
+                    this.host.onFailed?.();
                 } finally {
                     this.#post({ type: "busy", busy: false });
                 }

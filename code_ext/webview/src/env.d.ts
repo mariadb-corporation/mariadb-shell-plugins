@@ -17,3 +17,9 @@
 
 /** Vite turns a CSS import into a side effect that injects the sheet. */
 declare module "*.css";
+
+/** Vite turns an SVG import into its URL - inlined as data: when small. */
+declare module "*.svg" {
+    const url: string;
+    export default url;
+}

@@ -334,6 +334,11 @@ export type HostMessage =
     /** Another page could not be fetched; the one on show stays. */
     | { type: "pageFailed"; resultId: string; error: string }
     /**
+     * Something done outside a run failed, such as a REST Service action:
+     * bring up the actions, at the row that failed where there is one.
+     */
+    | { type: "showActions"; rowId?: string }
+    /**
      * The file asked for by `loadValue`, as hex. Neither `value` nor
      * `error` means the user cancelled.
      */

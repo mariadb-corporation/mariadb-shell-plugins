@@ -53,6 +53,7 @@ import {
     createTreeItem,
     type IconResolver,
 } from "./treeItems.js";
+import { isMrsNode, type MrsModel } from "./mrsModel.js";
 import { ViewStateTracker, type ViewState } from "./viewState.js";
 import { errorText } from "../text.js";
 
@@ -132,6 +133,8 @@ export class ConnectionsTreeProvider
      *        restart comes back as it was left. Folders are drawn open, so
      *        the ones NOT here are open - which picks each one's state and
      *        icon on the very first draw.
+     * @param mrs The REST Service rows under each connection; left out,
+     *        none are shown.
      */
     public constructor(
         private readonly connections: ConnectionManager,
@@ -142,10 +145,11 @@ export class ConnectionsTreeProvider
         private readonly customFolders: ICustomFolders = new FolderSet(),
         private readonly collapsedFolders =
         new FolderSet(undefined, COLLAPSED_FOLDERS_KEY),
+        mrs?: MrsModel,
     ) {
         this.#model = new ConnectionsModel(connections, connectOnOpen,
             (uri) => { return this.#attempts.get(uri); },
-            () => { return customFolders.list(); });
+            () => { return customFolders.list(); }, mrs);
         this.#unsubscribe = connections.onDidChange(() => {
             this.refresh();
         });
@@ -210,6 +214,13 @@ export class ConnectionsTreeProvider
 
             return roots;
         } catch (error) {
+            if (node !== undefined && isMrsNode(node)) {
+                // One REST Service row that cannot be read does not make
+                // the view as a whole a failure.
+                this.#report("read the REST Service", error);
+
+                return [];
+            }
             this.#report("list the connections", error);
             this.#viewState.failed();
 

@@ -158,8 +158,22 @@ button:focus-visible {
     flex: 0 0 auto;
     align-items: center;
     gap: 6px;
-    padding: 2px 6px;
-    border-top: 1px solid var(--vscode-panel-border);
+    /*
+     * No padding above or below: the tab on show runs the bar's full
+     * height, to its very top. The rest keep their distance with a
+     * margin of their own.
+     */
+    padding: 0 6px;
+    /*
+     * The line along the top is painted, not a border: a border is
+     * outside what `overflow` leaves visible, so nothing in the bar
+     * could cover it. Painted, it shows behind everything but the tab
+     * on show, whose own surface hides it.
+     */
+    background:
+        linear-gradient(var(--vscode-panel-border),
+            var(--vscode-panel-border)) top / 100% 1px no-repeat,
+        var(--vscode-editor-background);
     /*
      * Hidden, not scrolled: the bar holds the pickers at a fixed
      * place, and it is the strip of result tabs inside it that gives
@@ -538,17 +552,17 @@ button.toolbarMenuItem:hover:not(:disabled) {
 /* Tabs, in the bar that picks what is on show. */
 
 /*
- * The tabs are the editor's, not the activity bar's: flat, and the one
- * on show marked by a line under it rather than by a filled surface.
- * The panel's own container tabs above them are selected by surface,
- * so two selections in the same corner of the screen cannot be read as
- * one.
+ * The tab on show is drawn as a tab: on the content's surface, it
+ * covers the line along the top of the bar, which carries on down its
+ * sides and round its foot, so it reads as part of the content it
+ * shows. Its caption is underlined in the link colour.
  */
 .tabs {
     display: flex;
     /* It, and nothing else in the bar, is what gives way. */
     flex: 0 1 auto;
     min-width: 0;
+    align-self: stretch;
     align-items: stretch;
 }
 
@@ -570,10 +584,14 @@ button.toolbarMenuItem:hover:not(:disabled) {
 
 .tab {
     flex: 0 0 auto;
-    border: none;
-    border-radius: 0;
-    border-bottom: 1px solid transparent;
-    padding: 1px 8px;
+    /*
+     * The tab on show's borders, kept clear: picking a tab moves
+     * nothing, and the line along the top shows through.
+     */
+    border: 1px solid transparent;
+    border-radius: 0 0 4px 4px;
+    margin-bottom: 2px;
+    padding: 0 8px;
     background: transparent;
     color: var(--vscode-tab-inactiveForeground,
             var(--vscode-descriptionForeground));
@@ -586,15 +604,36 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 .tab.active {
+    border-color: var(--vscode-panel-border);
+    /* Open at the top, towards the content it shows. */
+    border-top-color: transparent;
+    /*
+     * The border closes it at the foot, rounded, short of the bar's
+     * bottom edge by the margin every tab has.
+     */
+    background: var(--vscode-sideBar-background,
+            var(--vscode-panel-background));
     color: var(--vscode-tab-activeForeground,
             var(--vscode-foreground));
-    border-bottom-color: var(--vscode-textLink-foreground);
+}
+
+/*
+ * Under the caption, not along the foot of the tab; on the caption's
+ * own span, so the Actions badge is left out of it.
+ */
+.tab.active .tabCaption {
+    text-decoration: underline;
+    text-decoration-color: var(--vscode-textLink-foreground);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
 }
 
 /* Only there while the tabs do not all fit. */
 .tabPager {
     flex: 0 0 auto;
     border: none;
+    /* Its hover surface would hide the line along the top. */
+    margin-top: 1px;
     border-radius: 2px;
     padding: 0 2px;
     background: transparent;
@@ -701,28 +740,61 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 /*
- * The guide Tabulator draws from a run down to each of its statements.
- * Its own theme paints it #ddd, which is the tree's one remaining
- * hard coded surface; VS Code's own indent guide colour answers it.
+ * The tree's indent guides, as VS Code draws its own: one straight line
+ * per level a row is nested at, down the whole of the row, under the
+ * twistie of the row it belongs to - so the rows of one run join into a
+ * single line, however tall each of them is.
+ *
+ * Tabulator's own branch element (`dataTreeBranchElement`) is turned
+ * off: a fixed 9px L per row, pulled up with a negative margin, which
+ * knows neither the row's height nor its siblings and came apart on
+ * every row taller than one line. Its stand-in, the empty element it
+ * puts in front of a child row's content, carries the indent instead.
+ * It has no width: Tabulator adds a width it measures before the row is
+ * in the document to its margin, so with none its margin is exactly
+ * `level x --actionsTreeIndent`, which the host is given from
+ * CHILD_INDENT (ActionsGrid.tsx) - the one place the indent is set.
+ *
+ * So a level-N row's content starts at 10 + N x indent - the cell's 5px
+ * of padding, the margin and the 5px after it - and a top-level row's at
+ * 5. A twistie's middle is 8px into the content it leads: the top-level
+ * twistie's at 13, the next level's at 18 + indent, then one indent
+ * apart. Each guide is a background layer of the cell, so it costs no
+ * element and cannot be caught by the flex layout: the first at 13, the
+ * rest a line repeated every indent from 18 + indent, as many as the row
+ * is levels deep less one.
  */
-.actionsGridHost .tabulator-row .tabulator-cell .tabulator-data-tree-branch {
-    border-left-color: var(--vscode-tree-indentGuidesStroke,
-            var(--vscode-panel-border));
-    border-bottom-color: var(--vscode-tree-indentGuidesStroke,
+.actionsGridHost {
+    --actionsTreeGuide: var(--vscode-tree-indentGuidesStroke,
             var(--vscode-panel-border));
 }
 
 /*
- * It is a flex item of the message cell, so it must be told not to
- * shrink. A flex line shares what it has to give up in proportion to
- * how wide each item wants to be, and a message that does not fit asks
- * for hundreds of pixels beside this one's seven: left to itself the
- * guide all but disappears, and everything after it slides left with
- * it. The same holds for the empty branch of a row with no children.
+ * A flex item of the message cell, so it must be told not to shrink: a
+ * message that does not fit would otherwise take its margin from it, and
+ * everything after it would slide left.
  */
-.actionsGridHost .tabulator-cell .tabulator-data-tree-branch,
 .actionsGridHost .tabulator-cell .tabulator-data-tree-branch-empty {
     flex: 0 0 auto;
+    width: 0;
+    margin-right: 5px;
+}
+
+.actionsGridHost .tabulator-tree-level-1 { --treeLevel: 1; }
+.actionsGridHost .tabulator-tree-level-2 { --treeLevel: 2; }
+.actionsGridHost .tabulator-tree-level-3 { --treeLevel: 3; }
+
+.actionsGridHost .tabulator-row:not(.tabulator-tree-level-0)
+    .tabulator-cell.actionMessage {
+    background:
+        linear-gradient(var(--actionsTreeGuide), var(--actionsTreeGuide))
+            13px 0 / 1px 100% no-repeat,
+        repeating-linear-gradient(to right,
+            var(--actionsTreeGuide) 0 1px,
+            transparent 1px var(--actionsTreeIndent))
+            calc(18px + var(--actionsTreeIndent)) 0
+            / calc(var(--actionsTreeIndent) * (var(--treeLevel, 1) - 1)) 100%
+            no-repeat;
 }
 
 /* The Problems panel's severity markers, in its colours. */
@@ -812,20 +884,6 @@ button.toolbarMenuItem:hover:not(:disabled) {
 }
 
 /*
- * Everything a row leads with is in this cell: the twistie of a run or
- * the branch of a statement, which Tabulator puts in front of the
- * cell's own content, then the marker, then what happened.
- *
- * `inline-flex`, not `flex`: a Tabulator cell is inline-level and laid
- * out beside its neighbours, so a block one takes the whole row and the
- * grid comes apart.
- */
-.tabulator .tabulator-cell.actionMessage {
-    display: inline-flex;
-    align-items: center;
-}
-
-/*
  * What a row with neither twistie nor branch stands in for, so its
  * marker lines up with every other row's: the twistie's width, and the
  * margin after it too.
@@ -849,7 +907,7 @@ button.toolbarMenuItem:hover:not(:disabled) {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
 }
 
 .actionMessageCell .markerIcon {
@@ -879,24 +937,6 @@ button.toolbarMenuItem:hover:not(:disabled) {
     overflow: visible;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-}
-
-/*
- * With the message on several lines the marker goes beside the first of
- * them. Centred, it would float halfway down the row and leave the
- * column of markers that every other row lines up in - which is the one
- * thing about this grid that has to hold.
- *
- * Time and Information stay centred against the block, which is not a
- * choice: Tabulator writes `align-items` as an INLINE style for a
- * column with a `vertAlign`, and no rule here can outrank that. It
- * reads well enough - they are one fact about the whole row - and the
- * alternative is dropping `vertAlign`, which every single-line row
- * needs.
- */
-.tabulator .tabulator-row.fullRow .actionMessageCell,
-.tabulator .tabulator-row.fullRow .tabulator-cell.actionMessage {
-    align-items: flex-start;
 }
 
 .actionInformationContent {
@@ -1042,6 +1082,9 @@ button.toolbarMenuItem:hover:not(:disabled) {
 .connectionPicker,
 .sessionPicker {
     flex: 0 1 auto;
+    /* The bar has no padding above or below; see there. */
+    margin-top: 3px;
+    margin-bottom: 2px;
     min-width: 6em;
     max-width: 22em;
     border: 1px solid var(--vscode-dropdown-border, transparent);

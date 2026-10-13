@@ -98,6 +98,22 @@ const type = async (caption: string, value: string): Promise<void> => {
     await typeInto(fieldOf(caption).querySelector("input")!, value);
 };
 
+/** @returns The Automatically generate a sandbox password checkbox. */
+const generateBox = (): HTMLInputElement => {
+    return host.querySelector<HTMLInputElement>(
+        "input[name=generatePassword]")!;
+};
+
+/** Ticks or unticks Automatically generate a sandbox password. */
+const setGenerate = async (on: boolean): Promise<void> => {
+    await act(async () => {
+        const box = generateBox();
+        box.checked = on;
+        box.dispatchEvent(new Event("change", { bubbles: true }));
+        await Promise.resolve();
+    });
+};
+
 /** The version box, its list button, and the choices while open. */
 const versionBox = (): HTMLInputElement => {
     return fieldOf("Server Version").querySelector("input")!;
@@ -326,10 +342,55 @@ describe("SandboxEditor", () => {
             expect(created()?.fields.serverVersion).toBe("12.3.2");
         });
 
+    it("generates the password by default, with no password fields",
+        async () => {
+            await mount();
+            await load();
+
+            expect(generateBox().checked).toBe(true);
+            expect(generateBox().closest("label")?.textContent?.trim())
+                .toBe("Automatically generate a sandbox password");
+            expect(host.querySelector("input[type=password]")).toBeNull();
+            expect(host.querySelector(".password-note")?.textContent)
+                .toContain("A random 12 character password");
+            await click("Create");
+
+            expect(created()?.fields).toMatchObject({
+                generatePassword: true, password: "",
+            });
+        });
+
+    it("shows the password fields only while Generate is unticked",
+        async () => {
+            await mount();
+            await load();
+
+            await setGenerate(false);
+            expect(host.querySelectorAll("input[type=password]"))
+                .toHaveLength(2);
+            await setGenerate(true);
+            expect(host.querySelector("input[type=password]")).toBeNull();
+        });
+
+    it("asks for the password on Create once Generate is unticked",
+        async () => {
+            await mount();
+            await load();
+            await setGenerate(false);
+
+            await click("Create");
+
+            expect(created()).toBeUndefined();
+            expect(fieldOf("Root Password").querySelector(".field-hint")
+                ?.textContent).toBe(
+                "Enter the root password, or let one be generated.");
+        });
+
     it("puts the confirmation beside the password, and refuses a mismatch",
         async () => {
             await mount();
             await load();
+            await setGenerate(false);
             const [password, confirmation] = [
                 ...host.querySelectorAll<HTMLInputElement>(
                     "input[type=password]"),
@@ -352,6 +413,7 @@ describe("SandboxEditor", () => {
                 ".field-hint")).toBeNull();
             await click("Create");
             expect(created()?.fields).toMatchObject({
+                generatePassword: false,
                 password: "secret", passwordConfirmation: "secret",
             });
         });
@@ -360,6 +422,7 @@ describe("SandboxEditor", () => {
         + "typed", async () => {
         await mount();
         await load();
+        await setGenerate(false);
 
         await typeInto(host.querySelector<HTMLInputElement>(
             "input[type=password]")!, "secret");
@@ -389,6 +452,7 @@ describe("SandboxEditor", () => {
         await load();
         await openVersions();
         await choose("11.8.9");
+        await setGenerate(false);
         for (const box of host.querySelectorAll<HTMLInputElement>(
             "input[type=password]")) {
             await typeInto(box, "secret");
@@ -399,6 +463,7 @@ describe("SandboxEditor", () => {
         expect(created()?.fields).toEqual({
             ...emptySandboxFields("3310"),
             serverVersion: "11.8.9",
+            generatePassword: false,
             password: "secret",
             passwordConfirmation: "secret",
         });
@@ -482,10 +547,16 @@ describe("SandboxEditor", () => {
             await send({ type: "busy", busy: true });
 
             expect(host.textContent).toContain("Deploying the sandbox.");
+            expect(host.querySelector("[role='progressbar']")
+                ?.getAttribute("aria-label")).toMatch(/^Deploying the sandbox/);
             expect([...host.querySelectorAll("footer button")]
                 .every((button) => {
                     return (button as HTMLButtonElement).disabled;
                 })).toBe(true);
+
+            await send({ type: "busy", busy: false });
+
+            expect(host.querySelector("[role='progressbar']")).toBeNull();
         });
 
     it("shows why a deploy failed, until a field changes", async () => {

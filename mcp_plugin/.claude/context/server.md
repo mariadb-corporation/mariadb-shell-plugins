@@ -102,7 +102,7 @@ session machinery the db tools sit on is in
   stderr so tool/shell/C output can't corrupt JSON-RPC. Uses low-level
   `mcp_server._lowlevel_server.run(...)`.
 
-- **Function groups** (`function_groups`): `db`, `msm`, `sandbox`; `_FUNCTION_GROUP_REGISTRARS`.
+- **Function groups** (`function_groups`): `db`, `msm`, `mrs`, `sandbox`, `migrator`; `_FUNCTION_GROUP_REGISTRARS`. `mrs` (`lib/mrs_functions.py`, 2026-10-09) wraps the 15 file-based mrs_plugin functions (SDK, service and project dump/load, content set upload, MRS script analysis, audit log); REST SQL itself goes through `db.execute_sql`. Its session tools need the `db` group, like `msm.deploy_schema`.
   Accepted as a LIST or as a comma-separated STRING (split+stripped in `server.py`);
   omitting it loads ALL THREE (`DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS`).
 

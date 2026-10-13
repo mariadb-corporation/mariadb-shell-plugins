@@ -31,6 +31,17 @@ import type {
     IStatementResult,
     ObjectType,
 } from "../mcp/types.js";
+import type {
+    IMrsAuthApp,
+    IMrsContentFile,
+    IMrsContentSet,
+    IMrsDaemon,
+    IMrsObject,
+    IMrsSchema,
+    IMrsService,
+    IMrsStatus,
+    IMrsUser,
+} from "../mrs/mrsTypes.js";
 import type { InstallCommand, ProcessRunner } from "../shell/installer.js";
 import type { ShellEnvironment } from "../shell/locator.js";
 import type { McpServerCommand } from "../shell/mcpServer.js";
@@ -498,5 +509,269 @@ export const createFakeConnector = (
 
             return Promise.resolve(connection);
         },
+    };
+};
+
+/** What a fake server answers REST SQL with. */
+export interface FakeRestSqlOptions extends FakeApiOptions {
+    /**
+     * Statement, without its `;` -> its one cell: a string as it is (the
+     * text of a `SHOW CREATE`), anything else as JSON text.
+     */
+    answers?: Record<string, unknown>;
+    /** Statement, without its `;` -> the error it fails with. */
+    errors?: Record<string, string>;
+}
+
+export interface FakeRestSql extends FakeApi {
+    /** Every statement that reached the server, in order. */
+    sent: string[];
+    /** Every call: one statement, or the statements of one script. */
+    calls: Array<{ connectionId: string; statements: string[] }>;
+    /** What a statement answers with from now on. */
+    answers: Record<string, unknown>;
+    errors: Record<string, string>;
+}
+
+/**
+ * Builds a database API that answers REST SQL as the shell's `mrs` module
+ * does: one cell of JSON per `SHOW ... FORMAT=JSON`, one result per
+ * statement of a script.
+ *
+ * @param options What it answers with, and the plain fake's options.
+ *
+ * @returns The fake.
+ */
+export const createFakeRestSql = (
+    options: FakeRestSqlOptions = {},
+): FakeRestSql => {
+    const base = createFakeApi(options);
+    const fake = base as FakeRestSql;
+    fake.sent = [];
+    fake.calls = [];
+    fake.answers = { ...options.answers };
+    fake.errors = { ...options.errors };
+
+    const answer = (sql: string): IStatementResult => {
+        fake.sent.push(sql);
+        const key = sql.trim().replace(/;$/, "");
+        const error = fake.errors[key];
+        if (error !== undefined) {
+            return { error, statement: key };
+        }
+        if (!(key in fake.answers)) {
+            return { affected_items_count: 0, warnings_count: 0 };
+        }
+        const value = fake.answers[key];
+
+        return {
+            result_sets: [{
+                columns: ["result"],
+                rows: [{
+                    result: typeof value === "string"
+                        ? value : JSON.stringify(value),
+                }],
+            }],
+        };
+    };
+
+    fake.executeSql = (connectionId: string, sql: string) => {
+        fake.calls.push({ connectionId, statements: [sql] });
+
+        return Promise.resolve(answer(sql));
+    };
+    fake.executeScript = (
+        connectionId: string,
+        script: string,
+        stopOnError?: boolean,
+    ) => {
+        fake.scripts.push(script);
+        fake.stopOnError = stopOnError;
+        // Every statement ends its line with `;`; a statement's own lines
+        // do not.
+        const statements = script.split(/(?<=;)\n/);
+        fake.calls.push({ connectionId, statements });
+        const results: IStatementResult[] = [];
+        for (const statement of statements) {
+            const result = answer(statement);
+            results.push(result);
+            if (result.error !== undefined && stopOnError !== false) {
+                break;
+            }
+        }
+
+        return Promise.resolve(results);
+    };
+
+    return fake;
+};
+
+/** A REST metadata status of a configured, enabled, current server. */
+export const mrsStatus = (
+    overrides: Partial<IMrsStatus> = {},
+): IMrsStatus => {
+    return {
+        service_configured: true,
+        service_enabled: true,
+        service_upgradeable: false,
+        service_upgrade_ignored: false,
+        service_count: 1,
+        service_being_upgraded: false,
+        major_upgrade_required: false,
+        current_metadata_version: "5.0.0",
+        available_metadata_version: "5.0.0",
+        required_rest_daemon_version: "26.10.0",
+        metadata_version: 12,
+        metadata_schema: "mariadb_rest_service",
+        ...overrides,
+    };
+};
+
+export const mrsService = (
+    overrides: Partial<IMrsService> = {},
+): IMrsService => {
+    return {
+        id: "11111111-0000-0000-0000-000000000001",
+        url_context_root: "/myService",
+        full_service_path: "/myService",
+        url_protocol: ["HTTPS"],
+        name: "myService",
+        enabled: 1,
+        published: false,
+        comments: null,
+        options: null,
+        metadata: null,
+        auth_path: "/authentication",
+        auth_completed_url: null,
+        auth_completed_url_validation: null,
+        auth_completed_page_content: null,
+        in_development: null,
+        ...overrides,
+    };
+};
+
+export const mrsSchema = (
+    overrides: Partial<IMrsSchema> = {},
+): IMrsSchema => {
+    return {
+        id: "22222222-0000-0000-0000-000000000001",
+        service_id: "11111111-0000-0000-0000-000000000001",
+        name: "sakila",
+        schema_type: "DATABASE_SCHEMA",
+        request_path: "/sakila",
+        requires_auth: false,
+        enabled: 1,
+        items_per_page: null,
+        comments: null,
+        options: null,
+        metadata: null,
+        ...overrides,
+    };
+};
+
+export const mrsObject = (
+    overrides: Partial<IMrsObject> = {},
+): IMrsObject => {
+    return {
+        id: "33333333-0000-0000-0000-000000000001",
+        rest_schema_id: "22222222-0000-0000-0000-000000000001",
+        name: "actor",
+        schema_name: "sakila",
+        request_path: "/actor",
+        object_type: "TABLE",
+        crud_operations: ["READ"],
+        format: "FEED",
+        enabled: 1,
+        requires_auth: false,
+        items_per_page: null,
+        media_type: null,
+        auth_stored_procedure: null,
+        comments: null,
+        options: null,
+        metadata: null,
+        ...overrides,
+    };
+};
+
+export const mrsContentSet = (
+    overrides: Partial<IMrsContentSet> = {},
+): IMrsContentSet => {
+    return {
+        id: "44444444-0000-0000-0000-000000000001",
+        service_id: "11111111-0000-0000-0000-000000000001",
+        content_type: "STATIC",
+        request_path: "/app",
+        requires_auth: false,
+        enabled: 1,
+        comments: null,
+        options: null,
+        ...overrides,
+    };
+};
+
+export const mrsContentFile = (
+    overrides: Partial<IMrsContentFile> = {},
+): IMrsContentFile => {
+    return {
+        id: "55555555-0000-0000-0000-000000000001",
+        content_set_id: "44444444-0000-0000-0000-000000000001",
+        request_path: "/index.html",
+        requires_auth: false,
+        enabled: 1,
+        size: 512,
+        ...overrides,
+    };
+};
+
+export const mrsAuthApp = (
+    overrides: Partial<IMrsAuthApp> = {},
+): IMrsAuthApp => {
+    return {
+        id: "66666666-0000-0000-0000-000000000001",
+        auth_vendor_id: "30000000-0000-0000-0000-000000000000",
+        auth_vendor: "MRS",
+        name: "MRS",
+        description: null,
+        url: null,
+        app_id: null,
+        has_app_secret: false,
+        enabled: true,
+        limit_to_registered_users: true,
+        default_role_id: null,
+        ...overrides,
+    };
+};
+
+export const mrsUser = (overrides: Partial<IMrsUser> = {}): IMrsUser => {
+    return {
+        id: "77777777-0000-0000-0000-000000000001",
+        auth_app_id: "66666666-0000-0000-0000-000000000001",
+        auth_app_name: "MRS",
+        name: "anna",
+        email: null,
+        vendor_user_id: null,
+        mapped_user_id: null,
+        login_permitted: true,
+        has_password: true,
+        app_options: null,
+        options: null,
+        roles: [],
+        ...overrides,
+    };
+};
+
+export const mrsDaemon = (
+    overrides: Partial<IMrsDaemon> = {},
+): IMrsDaemon => {
+    return {
+        id: "88888888-0000-0000-0000-000000000001",
+        name: "daemon1",
+        address: "host1:8443",
+        product_name: "MariaDB REST Daemon",
+        version: "26.10.0",
+        last_check_in: null,
+        active: true,
+        developer: null,
+        ...overrides,
     };
 };

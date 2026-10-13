@@ -43,6 +43,7 @@ import { UtilCommands } from "./util/utilCommands.js";
 import { SqlEditorBinding } from "./editor/sqlEditorBinding.js";
 import { StatementDecorator } from "./editor/statementDecorations.js";
 import { reportError } from "./errorMessages.js";
+import { errorText } from "./text.js";
 import { createSdkConnector } from "./mcp/sdkConnector.js";
 import {
     ServerStarter,
@@ -75,9 +76,16 @@ import {
 import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
 import { withDefaultScheme } from "./connections/connectionUri.js";
 import type { ISandboxApi } from "./mcp/sandboxApi.js";
+import { GENERAL_ACTIONS } from "./connections/connectionActivity.js";
 import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
 import { SandboxStore } from "./sandboxes/sandboxStore.js";
 import { SandboxEditorPanel } from "./sandboxes/sandboxEditorPanel.js";
+import type { IActionRow } from "./webview/protocol.js";
+import { reportMrsAction } from "./mrs/mrsActivity.js";
+import { MrsApi } from "./mrs/mrsApi.js";
+import { MrsCommands } from "./mrs/mrsCommands.js";
+import { MrsDialogPanel } from "./mrs/mrsDialogPanel.js";
+import { MrsModel } from "./tree/mrsModel.js";
 import { sandboxConnectionUri } from "./sandboxes/sandboxFields.js";
 import {
     SandboxesTreeProvider,
@@ -210,7 +218,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
     context.subscriptions.push(output);
 
     const log = (message: string): void => {
-        output.appendLine(`[${new Date().toISOString()}] ${message}`);
+        try {
+            output.appendLine(`[${new Date().toISOString()}] ${message}`);
+        } catch {
+            // The channel is closed while the extension shuts down, before
+            // the MCP server's last words.
+        }
     };
 
     const packageJson = context.extension?.packageJSON as
@@ -245,6 +258,33 @@ export const activate = (context: vscode.ExtensionContext): void => {
     // Which folders were left closed, so a restart comes back as it was.
     const collapsedFolders =
         new FolderSet(context.globalState, COLLAPSED_FOLDERS_KEY);
+    // The REST Service rows read REST SQL on the session the tree browses
+    // with, through the connection manager's API. That API passes
+    // db.execute_sql through unreported (a SQL run reports itself), so
+    // MrsApi reports its REST SQL itself, and the mrs.* tools theirs, to the
+    // connection's Actions in the panel.
+    const logAllCalls = (): boolean => {
+        return settings.logAllCalls?.() ?? false;
+    };
+    const mrsActivity = {
+        sessionOf: (connectionId: string) => {
+            return connections.sessionOf(connectionId);
+        },
+        put: (connection: string, row: IActionRow) => {
+            void resultView.putAction(connection, row);
+        },
+        logAllCalls,
+    };
+    session.onMrsAction = (action) => {
+        reportMrsAction(mrsActivity, action);
+    };
+    // Where every call is logged, the listings and reads are too, and the
+    // REST SQL of each action is the rows under it.
+    const mrsApi = new MrsApi(async () => { return await connections.api(); },
+        (action) => { reportMrsAction(mrsActivity, action); }, logAllCalls);
+    const mrsModel = new MrsModel(mrsApi, (uri) => {
+        return connections.connectionIdFor(uri, UI_BACKEND_SESSION);
+    }, log);
     const tree = new ConnectionsTreeProvider(
         connections,
         createIconResolver(context.extensionUri),
@@ -253,7 +293,28 @@ export const activate = (context: vscode.ExtensionContext): void => {
         starter,
         customFolders,
         collapsedFolders,
+        mrsModel,
     );
+    const mrsCommands = new MrsCommands({
+        extensionUri: context.extensionUri,
+        api: mrsApi,
+        tools: async () => {
+            if (session.mrsTools === undefined) {
+                await starter.start();
+            }
+            const tools = session.mrsTools;
+            if (tools === undefined) {
+                throw new Error("The MCP server is not running.");
+            }
+
+            return tools;
+        },
+        model: mrsModel,
+        connections,
+        refresh: () => { tree.refresh(); },
+        showActions: (uri) => { void resultView.showActions(uri); },
+        log,
+    });
     // The sandbox tools come with the server, so asking for them is asking
     // for the server. Every call is a General Action: none is made on an
     // open connection.
@@ -279,6 +340,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     plain,
                     (event) => { void resultView.appendEvent(event); },
                     () => { return settings.logAllCalls?.() ?? false; },
+                    (connection, row) => {
+                        void resultView.putAction(connection, row);
+                    },
                 ),
             };
         }
@@ -350,6 +414,7 @@ export const activate = (context: vscode.ExtensionContext): void => {
         treeDataProvider: sandboxes,
     });
 
+    context.subscriptions.push(...mrsCommands.register());
     // Dumps, loads, copies, exports and imports run as tasks in the server;
     // the monitor follows them, and the Tasks view lists them.
     const utilApi = async (): Promise<IUtilApi> => {
@@ -432,6 +497,10 @@ export const activate = (context: vscode.ExtensionContext): void => {
             return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
                 ?? os.homedir();
         },
+        startFailed: (connection, title, call, error) => {
+            taskActions.startFailed(connection, title, call, error);
+        },
+        showActions: (uri) => { void resultView.showActions(uri); },
         log,
     });
     context.subscriptions.push(taskOutput, taskMonitor, tasksTree, tasksView,
@@ -780,6 +849,11 @@ export const activate = (context: vscode.ExtensionContext): void => {
                 }
 
                 await guard(log, async () => {
+                    // Closed first: the server drops what is open on a
+                    // connection it deletes, and the sessions here go by
+                    // URI, which another list's connection may share - left
+                    // in place, they would hold ids the server forgot.
+                    await connections.disconnect(node.uri);
                     await deleteConnection(await connections.api(), {
                         uri: node.uri,
                         kind: node.connectionKind,
@@ -811,12 +885,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
                         work,
                     ));
                 },
-                onCreated: (message) => {
+                onCreated: () => {
                     // The store has dropped its list, so this reads it.
+                    // What was done is the deploy's row in the Actions tab.
                     sandboxes.refresh();
                     connectionsChanged();
-                    void vscode.window.showInformationMessage(
-                        `MariaDB: ${message}`);
+                },
+                onFailed: () => {
+                    void resultView.showActions(GENERAL_ACTIONS);
                 },
                 log,
             });
@@ -1049,6 +1125,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
             "mariadb.restartMcpServer",
             async () => {
                 await guard(log, async () => {
+                    // What the tree had open is opened again afterwards: its
+                    // rows stay expanded across the restart, and an expanded
+                    // connection with no session shows nothing at all.
+                    const browsed = connections.openConnections.filter(
+                        (uri) => {
+                            return connections.isConnected(uri,
+                                UI_BACKEND_SESSION);
+                        });
                     await connections.disconnectAll();
                     await session.stop();
                     starter.stopped();
@@ -1056,6 +1140,14 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     // its roots, and that would start a second attempt.
                     // The view says the start failed without it.
                     await starter.start();
+                    for (const uri of browsed) {
+                        try {
+                            await connections.connect(uri, UI_BACKEND_SESSION);
+                        } catch (error) {
+                            log(`Could not open ${uri} again after the `
+                                + `restart: ${errorText(error)}`);
+                        }
+                    }
                     tree.refresh();
                 });
             },
@@ -1088,6 +1180,7 @@ export const deactivate = async (): Promise<void> => {
     // one left open across a reload would be bound to a server that is gone.
     ConnectionEditorPanel.disposeCurrent();
     SandboxEditorPanel.disposeCurrent();
+    MrsDialogPanel.disposeAll();
 
     await current.connections.disconnectAll();
     await current.session.stop();

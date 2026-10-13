@@ -32,6 +32,11 @@ import type { ISandboxDeployOptions } from "../mcp/sandboxApi.js";
 /** The fields as the dialog holds them: as typed. */
 export interface ISandboxFields {
     port: string;
+    /**
+     * Whether the root password is generated. The password fields are only
+     * shown, checked and sent while it is off.
+     */
+    generatePassword: boolean;
     password: string;
     /** The password typed again, which has to match it. */
     passwordConfirmation: string;
@@ -95,6 +100,9 @@ export const emptySandboxFields = (
 ): ISandboxFields => {
     return {
         port,
+        // The plugin stores it with the connection, so a password nobody
+        // typed is never needed again.
+        generatePassword: true,
         password: "",
         passwordConfirmation: "",
         serverVersion,
@@ -308,12 +316,23 @@ export const sandboxFieldProblem = (
         return { field: "serverVersion", message: versionProblem };
     }
 
-    // Compared as typed, spaces and all: they are characters of a password.
-    if (fields.passwordConfirmation !== fields.password) {
-        return {
-            field: "passwordConfirmation",
-            message: "The passwords do not match.",
-        };
+    if (!fields.generatePassword) {
+        // The shell refuses a deploy without one.
+        if (fields.password === "") {
+            return {
+                field: "password",
+                message: "Enter the root password, or let one be generated.",
+            };
+        }
+
+        // Compared as typed, spaces and all: they are characters of a
+        // password.
+        if (fields.passwordConfirmation !== fields.password) {
+            return {
+                field: "passwordConfirmation",
+                message: "The passwords do not match.",
+            };
+        }
     }
 
     if (fields.serverId.trim() !== ""
@@ -382,8 +401,8 @@ const randomIndex = (bound: number): number => {
 };
 
 /**
- * A random root password for a sandbox the user gave none: upper and lower
- * case letters, digits and `!$#^()`, with at least one of each.
+ * A random root password for a sandbox whose password is generated: upper
+ * and lower case letters, digits and `!$#^()`, with at least one of each.
  *
  * @param pick Picks an index below the given bound; random unless a test
  *     says otherwise.
@@ -416,7 +435,7 @@ export const generateSandboxPassword = (
  *
  * @param fields The fields as typed.
  * @param taken The ports of the sandboxes deployed already.
- * @param generatePassword Makes the root password when none was typed.
+ * @param generatePassword Makes the root password when it is generated.
  *
  * @returns The options, or the problem that stops them being built.
  */
@@ -440,10 +459,11 @@ export const sandboxDeployOptions = (
     return {
         options: {
             port: Number(fields.port.trim()),
-            // Never empty: root always gets a password, generated when none
-            // was typed. The deploy stores it with the connection, so it
-            // is not asked for again.
-            password: fields.password === ""
+            // Never empty: root always gets a password, generated unless the
+            // user chose one. The deploy stores it with the connection, so
+            // it is not asked for again. What was typed before ticking
+            // Generate again is not sent.
+            password: fields.generatePassword
                 ? generatePassword()
                 : fields.password,
             ...(serverVersion === "" ? {} : { serverVersion }),

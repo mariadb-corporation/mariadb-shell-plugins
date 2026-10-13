@@ -67,11 +67,27 @@ The error bar leads, above what it is about: it is read before the eye
 has gone looking for what went wrong. It steps through every error of
 the last run rather than showing one - see below.
 
-The tabs are **the editor's, not the activity bar's**: flat, with the
-one on show marked by a line under it in `textLink.foreground` rather
-than by a filled surface. The panel's own container tabs sit right
-above them and are selected by surface, so two selections in one corner
-of the screen cannot be read as one.
+The tab on show is **drawn as a tab** (2026-10-12, the user's design).
+The bar is on `--vscode-editor-background`, and the line along its top
+is **painted, not a border**: a 1px `linear-gradient` layer of its
+background. A border would sit outside what the bar's `overflow:
+hidden` leaves visible (and the scrolling strip clips too), so a tab
+pulled up over it was cut off - blue line and all. Painted, the line
+shows behind everything in the bar but the tab on show, which runs the
+bar's full height with no padding above or below and hides it with its
+own surface, the content's `--vscode-sideBar-background`. The line goes
+on down its sides and along its foot as `panel-border` borders, the
+foot rounded (4px) and 2px short of the bar's bottom edge; its top
+stays open. Its caption is **underlined** in `textLink.foreground`
+(`text-underline-offset: 3px`) - under the text, not along the foot of
+the tab. The caption is a span of its own (`tabCaption`) so the
+underline leaves the Actions badge out. Tried and dropped (2026-10-12):
+a top border of the tab, which closed it off from its content, and a
+line above the caption. Every tab
+carries the same 1px borders, transparent, so picking one moves
+nothing. The bar has no vertical padding, so the pickers carry a
+`3px 0 2px` margin, and a paging button 1px at the top so its hover
+surface keeps clear of the line.
 
 Only the **result** tabs scroll. The Actions tab stays outside the
 strip, because it is what a result tab is gone back to, and the strip
@@ -224,6 +240,25 @@ run that made them (`run3-result-0`): without it a later run's
 `result-0` would make an old row's jump arrow point at the wrong tab.
 The grid only draws the arrow when the id is still among the open tabs.
 
+## The Actions tab's badge counts what was not seen
+
+(2026-10-11, the user's rule.) The blue count on the Actions tab is the
+number of top-level rows that came in, or changed, while the tab was NOT
+on show (`webview/src/unseenActions.ts`: rows kept by id with the `kind`
+they were seen with, so a run seen pending that then fails counts again;
+progress alone does not). It is never shown while the Actions tab is
+selected - what arrives is in sight - and everything on show there is
+marked seen (an effect in `App`). A run whose result set opens on its own
+tab is seen through it when it worked (`shownByItsResult`: info or
+pending); its warnings and errors still count. Switching to another
+connection starts that log as seen. Seen state is the webview's, so a
+reload of the panel starts afresh.
+
+`showActions` (host -> webview) switches to the Actions tab and scrolls to
+a row: `ResultViewProvider.showActions(connection)` brings the panel up on
+a connection at its newest failed row, after a failure was notified (MRS
+commands and dialogs, a sandbox deploy, a Dump / Load that did not start).
+
 ## Fonts and surfaces
 
 The view is UI, not an editor, so it uses `--vscode-font-family` at
@@ -235,8 +270,9 @@ preview. Times and counts get `font-variant-numeric: tabular-nums`, so
 they line up without leaving the UI font.
 
 The panel itself is drawn on `--vscode-panel-background`, so the bars
-around the content - the row of tabs, a result set's own bar - read as
-part of the panel. The **content** of the tab on show is the one thing
+around the content - a result set's own bar - read as part of the
+panel. The row of tabs is the exception, on
+`--vscode-editor-background`, so the tab on show stands out of it. The **content** of the tab on show is the one thing
 set into it, on `--vscode-sideBar-background`, and every row of the
 actions grid shares that one surface; only borders separate them. The
 result grid lays the theme's table tints over it - a header, a stripe

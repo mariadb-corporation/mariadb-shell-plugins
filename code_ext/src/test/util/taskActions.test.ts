@@ -67,6 +67,24 @@ const recordingLog = (): { log: TaskActionLog; put: IActionRow[] } => {
 };
 
 describe("tasks in the Actions tab", () => {
+    it("puts up a task that did not start, its error under it", () => {
+        const { log, put } = recordingLog();
+
+        log.startFailed("mariadb://root@h:3306", "Dump shop to Disk",
+            "util.dump_schemas(shop, /tmp/d)", "Access denied");
+
+        expect(put).toHaveLength(1);
+        expect(put[0]).toMatchObject({
+            role: "run", kind: "error", message: "Dump shop to Disk",
+            summary: "Did not start", connectionLabel: "UI Backend",
+            jumpToRowId: `${put[0]!.id}-error`,
+        });
+        expect(put[0]!.children).toEqual([expect.objectContaining({
+            id: `${put[0]!.id}-error`, kind: "error", message: "Access denied",
+            statement: "util.dump_schemas(shop, /tmp/d)",
+        })]);
+    });
+
     it("puts up a task's row as it starts", () => {
         const { log, put } = recordingLog();
 

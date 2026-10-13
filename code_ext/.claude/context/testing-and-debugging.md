@@ -37,6 +37,115 @@ so a test calls it (`as unknown as () => HTMLElement`) and reads
 `textContent`; and `formatValue` / `formatCell` return elements, so
 their tests read `textContent` rather than comparing strings.
 
+## UI tests (ExTester)
+
+`MARIADB_SHELL=<path to mariadb-shell> npm run ui-test [suite...]`
+drives a real VS Code through WebDriver. It uses vscode-extension-tester
+8.28.1 and Mocha, on the newest VS Code (`--code_version max`).
+`mariadbd` must be on the PATH.
+
+**Split into suites by area** (2026-10-12, the user's call: a change in
+one area should not need the full run). `SUITES` in `ui-test/run.ts`:
+
+| Suite | Files, between `01-sandbox` and `99-cleanup` | npm script |
+| --- | --- | --- |
+| `core` | `00-startup` (before the setup), `03-connections`, `04-sql-results`, `05-lifecycle` | `ui-test:core` |
+| `mrs` | `02-mrs` | `ui-test:mrs` |
+| `dump-load` | `06-dump-load` | `ui-test:dump-load` |
+
+Each suite is one `extest setup-and-run` of its own: a fresh VS Code
+profile, a work dir, shell home, ports and sandbox of its own.
+`01-sandbox` (New Sandbox dialog, the `uitest` schema) and `99-cleanup`
+(delete it) wrap every suite, so a suite can count on nothing another
+did. No suite named runs all three, one after the other; a failing one
+does not stop the next, and a summary says which failed. The files are
+passed one pattern each, because ExTester adds the matches of one
+pattern in no set order (`globSync(...).reverse()`). Arguments naming no
+suite go to `extest`; `UI_TEST_GLOB` runs its files as one run without
+the setup and cleanup. A new test file goes into a suite's `files`.
+A suite is stopped after `UI_TEST_SUITE_MINUTES` (default 20; a value
+that is not a positive number ends the run before it starts): ExTester
+never exits when ChromeDriver fails to start, which it does when its
+port is taken between being picked and bound (`bind() failed: Address
+already in use` in `.vscode-test/extest/chromedriver.log`, "Server
+terminated early with status 1" in the run) - seen 2026-10-12, it held
+the whole run. ExTester runs in a process group of its own, killed as a
+whole - ExTester, its VS Code and its ChromeDriver - when the time is up
+or the run is interrupted (`runGroup`). Neither Ctrl-C nor a closed
+terminal nor a task's SIGTERM reaches a detached group, so the runner
+handles SIGINT, SIGHUP and SIGTERM for the whole run: each kills the
+running suite's group, the suites after it are not started, and the
+runner exits with 128 plus the signal number after cleaning up. The
+handlers stay installed, so a second Ctrl-C cannot kill the runner
+before its cleanup, and an `exit` hook kills the group should the
+runner end anyway. A spawn that fails is reported with its error.
+
+- `ui-test/run.ts` builds a temporary work dir per suite, which is
+  removed at the end, also after a failure. Sandboxes left running are
+  pkill'ed first.
+  - A shell home with this repo's plugins linked in and options.json
+    `sandboxDir` + `credentialStore.helper: plaintext`. The keychain is
+    the whole user's, so without the plaintext helper the test VS Code
+    would show the user's own connections.
+  - A `mariadb-shell` wrapper first on the PATH, setting
+    `MARIADB_SHELL_USER_CONFIG_HOME`.
+  - `VSCODE_CLI=1`. Without it, VS Code on macOS takes the login shell's
+    PATH and finds the user's shell.
+  - All `VSCODE_*` / `ELECTRON_*` variables are stripped. An inherited
+    `ELECTRON_RUN_AS_NODE` makes the test VS Code exit at once.
+- The files, by suite above; within a suite they run in order and lean
+  on each other:
+  - `00-startup`: the first-start layout and the empty views (`core`
+    only, before the sandbox exists)
+  - `01-sandbox`: New Sandbox dialog, test schema; waits for the
+    workbench itself, as it is the first file of `mrs` and `dump-load`
+  - `02-mrs`: MRS end to end
+  - `03-connections`
+  - `04-sql-results`
+  - `05-lifecycle`: sandbox stop/start, MCP restart and log
+  - `06-dump-load`: Dump and Load (see dump-and-load.md); a second
+    sandbox on `UI_TEST_PORT2` to copy to, deleted again. It checks the
+    server's state with the shell on the command line, outside the UI.
+  - `99-cleanup`: drops the sandbox
+
+  `.mocharc.json` has `bail`: a failure ends its suite, skipping
+  `99-cleanup`, and the work dir removal and pkill clean up instead.
+- Helpers live in `ui-test/lib/ui.ts`. `openSection` collapses the
+  other MariaDB views and expands the one asked for: with three views
+  sharing the side bar, deep Connections rows were out of sight (and
+  collapsing only one view gives its height to the next, not to
+  Connections). Timeouts are short on purpose
+  (TIMEOUT 10 s, SERVER_TIMEOUT 15 s, DEPLOY_TIMEOUT 90 s), and dialogs
+  fail at once on an in-dialog `.message.error` or an error
+  notification. Screenshots go to `.vscode-test/extest/screenshots`.
+- ExTester traps:
+  - Tree rows are virtualized and their DOM is reused. Re-find a row by
+    label and `aria-level` (`treeItem`); never hold on to one.
+  - Context-menu clicks are sometimes lost when a tree refresh closes the
+    menu. `menuAction`, `openDialog` and `menuConfirm` retry 3×.
+  - A webview that has closed answers lookups with nothing, so
+    `submitDialog` checks the editor tab from outside.
+  - Palette commands do not reach a focused webview: bring an editor
+    tab to the front first.
+  - Tabulator rebuilds its cell editor right after the click. Type into
+    `switchTo().activeElement()`, not into an element found earlier.
+  - Untitled SQL editors would ask "Save changes?" when VS Code closes.
+    Use "View: Revert and Close Editor".
+  - Elements hidden until hover (the data mapping flags) need
+    `driver().actions().move({origin})` first.
+  - VS Code ignores a context-menu pick that comes right after the menu
+    opened; `contextMenu` waits 200 ms before selecting.
+  - `WebView.findElements` is Selenium's element method. It searches under
+    the frame's element in the workbench and fails with "element not
+    found" once inside the frame. Use `findWebElements`.
+  - A connection closed while its row is expanded keeps the row expanded
+    and empty. `treeItem` collapses and expands it again to reconnect.
+  - ExTester cannot read the rows of an empty tree: `getVisibleItems`
+    throws "element not interactable". Wait for a row to be gone with
+    `hasTreeItem` instead.
+  - Quick work can close a dialog before its progress bar is seen;
+    `submitDialog` accepts that, but a dialog still open must show the bar.
+
 ## Debugging in VS Code
 
 `code_ext/.vscode/launch.json` is folder scoped, so its `${workspaceFolder}`

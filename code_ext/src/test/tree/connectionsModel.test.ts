@@ -30,7 +30,15 @@ import {
     type IObjectGroupNode,
     type ISchemaNode,
 } from "../../tree/connectionsModel.js";
-import { createFakeApi, createFakeSettings } from "../helpers.js";
+import { MrsApi } from "../../mrs/mrsApi.js";
+import { MrsModel, type IMrsRootNode } from "../../tree/mrsModel.js";
+import {
+    createFakeApi,
+    createFakeRestSql,
+    createFakeSettings,
+    mrsService,
+    mrsStatus,
+} from "../helpers.js";
 
 /**
  * The roots of a model whose connections are all at the top level, typed as
@@ -567,5 +575,119 @@ describe("a connection's caption and color", () => {
         });
         expect(plain).not.toHaveProperty("caption");
         expect(plain).not.toHaveProperty("color");
+    });
+});
+
+describe("ConnectionsModel with the REST Service", () => {
+    /**
+     * @param answers What the server answers REST SQL with.
+     *
+     * @returns A model with REST Service rows over a fake server.
+     */
+    const createMrsModel = (answers: Record<string, unknown> = {}) => {
+        const api = createFakeRestSql({
+            answers,
+            connections: ["dba@localhost:3310"],
+            connectionIds: { "dba@localhost:3310": "uuid-dba" },
+            schemas: [{
+                schema_name: "world",
+                schema_type: "User Schema",
+                schema_comment: "",
+            }],
+        });
+        const manager = new ConnectionManager(
+            () => { return Promise.resolve(api); },
+            createFakeSettings(),
+        );
+        const mrs = new MrsModel(new MrsApi(async () => {
+            return await manager.api();
+        }), (uri) => {
+            return manager.connectionIdFor(uri, UI_BACKEND_SESSION);
+        });
+        const model = new ConnectionsModel(manager, () => { return false; },
+            undefined, undefined, mrs);
+
+        return { api, manager, model };
+    };
+
+    const connectionNode: IConnectionNode = {
+        kind: "connection",
+        uri: "dba@localhost:3310",
+        connected: true,
+        isDefault: false,
+        connectionKind: "mcp",
+        expandable: true,
+    };
+
+    it("puts the REST Service root before the schemas", async () => {
+        const { manager, model } = createMrsModel({
+            "SHOW REST METADATA SCHEMAS FORMAT=JSON": [{
+                schema_name: "mariadb_rest_service",
+                version: "5.0.0",
+                current: true,
+            }],
+            "SHOW REST METADATA STATUS FORMAT=JSON": mrsStatus(),
+        });
+        await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+
+        const children = await model.getChildren(connectionNode);
+
+        expect(children.map((child) => { return child.kind; }))
+            .toEqual(["mrsRoot", "schema"]);
+        expect(children[0]).toEqual({
+            kind: "mrsRoot",
+            uri: "dba@localhost:3310",
+            status: mrsStatus(),
+            showPrivate: false,
+        });
+    });
+
+    it("shows only the schemas where there is no REST metadata",
+        async () => {
+            const { manager, model } = createMrsModel({
+                "SHOW REST METADATA SCHEMAS FORMAT=JSON": [],
+            });
+            await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+
+            const children = await model.getChildren(connectionNode);
+
+            expect(children.map((child) => { return child.kind; }))
+                .toEqual(["schema"]);
+        });
+
+    it("asks nothing about REST while the connection is closed",
+        async () => {
+            const { api, model } = createMrsModel();
+
+            await expect(model.getChildren(connectionNode))
+                .resolves.toEqual([]);
+            expect(api.sent).toEqual([]);
+        });
+
+    it("hands a REST Service row's children to the REST model", async () => {
+        const { manager, model } = createMrsModel({
+            "SHOW REST SERVICES FORMAT=JSON": [mrsService()],
+        });
+        await manager.connect("dba@localhost:3310", UI_BACKEND_SESSION);
+        const root: IMrsRootNode = {
+            kind: "mrsRoot",
+            uri: "dba@localhost:3310",
+            status: mrsStatus(),
+            showPrivate: false,
+        };
+
+        const children = await model.getChildren(root);
+
+        expect(children.map((child) => { return child.kind; })).toEqual([
+            "mrsService", "mrsDaemonGroup", "mrsAuthAppGroup"]);
+    });
+
+    it("gives a REST Service row nothing without a REST model", async () => {
+        const { manager } = createMrsModel();
+        const model = new ConnectionsModel(manager, () => { return false; });
+
+        await expect(model.getChildren({
+            kind: "mrsAuthAppGroup", uri: "dba@localhost:3310",
+        })).resolves.toEqual([]);
     });
 });

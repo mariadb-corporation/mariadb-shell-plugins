@@ -49,6 +49,12 @@ import { SqlPreview } from "./SqlPreview.js";
 import { COPIED_FOR_MS } from "./overflowPopup.js";
 import { post } from "./vscodeApi.js";
 import { counted } from "../../src/text.js";
+import {
+    markSeen,
+    shownByItsResult,
+    unseenCount,
+    type SeenActions,
+} from "./unseenActions.js";
 
 /** The id of the always-present Actions tab. */
 const ACTIONS_TAB = "actions";
@@ -312,12 +318,24 @@ export const App = (): JSX.Element => {
      * may throw that editing away.
      */
     const shownResults = useRef(new Map<string, string>());
+    /**
+     * The actions seen on the Actions tab, so its badge counts only what
+     * came in behind another tab. A ref: what is seen changes nothing on
+     * screen until the tab is left.
+     */
+    const seenActions = useRef<SeenActions>(new Map());
 
     useEffect(() => {
         const onMessage = (event: MessageEvent<HostMessage>): void => {
             const message = event.data;
             switch (message.type) {
                 case "state": {
+                    // Another connection's log is not news: the user went
+                    // to look at it.
+                    if (latestState.current?.connection
+                        !== message.state.connection) {
+                        markSeen(seenActions.current, message.state.actions);
+                    }
                     setState(message.state);
                     latestState.current = message.state;
                     const sets = message.state.resultSets;
@@ -374,6 +392,12 @@ export const App = (): JSX.Element => {
                         const arrived = ids.find((id) => {
                             return !previous.has(id);
                         });
+                        // The result on show says how its run went, unless
+                        // something went wrong on the way.
+                        if (arrived !== undefined) {
+                            markSeen(seenActions.current,
+                                message.state.actions, shownByItsResult);
+                        }
                         setActiveTab((current) => {
                             if (arrived !== undefined) {
                                 return arrived;
@@ -385,6 +409,14 @@ export const App = (): JSX.Element => {
                         });
                     }
                     showErrors(errorsOf(message.state.actions));
+                    break;
+                }
+
+                case "showActions": {
+                    setActiveTab(ACTIONS_TAB);
+                    if (message.rowId !== undefined) {
+                        setScrollToRowId(message.rowId);
+                    }
                     break;
                 }
 
@@ -932,6 +964,13 @@ export const App = (): JSX.Element => {
         }
     }, [errors, state?.maximized]);
 
+    // Whatever the Actions tab shows while it is on show has been seen.
+    useEffect(() => {
+        if (state && activeTab === ACTIONS_TAB) {
+            markSeen(seenActions.current, state.actions);
+        }
+    }, [state, activeTab]);
+
     if (!state) {
         return (
             <div class="placeholder">
@@ -941,6 +980,9 @@ export const App = (): JSX.Element => {
     }
 
     const dirty = statements.length;
+    // Never counted while the tab is on show: what comes in is in sight.
+    const unseen = activeTab === ACTIONS_TAB
+        ? 0 : unseenCount(seenActions.current, state.actions);
 
     return (
         <div class="panel">
@@ -1117,11 +1159,8 @@ export const App = (): JSX.Element => {
                             setActiveTab(ACTIONS_TAB);
                         }}
                     >
-                        Actions
-                        {state.actions.length > 0
-                            && <span class="badge">
-                                {state.actions.length}
-                            </span>}
+                        <span class="tabCaption">Actions</span>
+                        {unseen > 0 && <span class="badge">{unseen}</span>}
                     </button>
                     {paging.overflowing && (
                         <button
@@ -1165,7 +1204,9 @@ export const App = (): JSX.Element => {
                                         setActiveTab(set.id);
                                     }}
                                 >
-                                    {set.caption}
+                                    <span class="tabCaption">
+                                        {set.caption}
+                                    </span>
                                 </button>
                             );
                         })}

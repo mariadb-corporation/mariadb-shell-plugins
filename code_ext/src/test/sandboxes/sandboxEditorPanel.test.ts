@@ -53,6 +53,8 @@ interface IHostState {
     created: string[];
     logs: string[];
     progressed: number;
+    /** How many deploys failed. */
+    failed: number;
 }
 
 /**
@@ -74,6 +76,7 @@ const createHost = (options: {
         created: [],
         logs: [],
         progressed: 0,
+        failed: 0,
     };
 
     const api: ISandboxApi = {
@@ -114,6 +117,7 @@ const createHost = (options: {
             return await work();
         },
         onCreated: (message) => { state.created.push(message); },
+        onFailed: () => { state.failed += 1; },
         log: (message) => { state.logs.push(message); },
     };
 
@@ -263,7 +267,8 @@ describe("SandboxEditorPanel", () => {
         await receive({
             type: "create",
             fields: fields({
-                serverVersion: "11.8", password: "pw", passwordConfirmation: "pw",
+                serverVersion: "11.8", generatePassword: false,
+                password: "pw", passwordConfirmation: "pw",
             }),
         });
 
@@ -283,7 +288,10 @@ describe("SandboxEditorPanel", () => {
 
         await receive({
             type: "create",
-            fields: fields({ password: "pw", passwordConfirmation: "wp" }),
+            fields: fields({
+                generatePassword: false,
+                password: "pw", passwordConfirmation: "wp",
+            }),
         });
 
         expect(state.deployed).toEqual([]);
@@ -324,6 +332,8 @@ describe("SandboxEditorPanel", () => {
             expect(currentPanel().disposed).toBe(false);
             expect(state.created).toEqual([]);
             expect(errorMessages).toEqual([]);
+            // So the Actions tab can come up on the deploy's failed row.
+            expect(state.failed).toBe(1);
         });
 
     it("notifies a failure once the dialog has been closed", async () => {

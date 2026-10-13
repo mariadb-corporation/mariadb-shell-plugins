@@ -35,6 +35,12 @@ which exposes the backend functions over the Model Context Protocol.
   click on any of them taking you to the row it came from.
 - **Default connection**, set from a connection's context menu and
   remembered in your workspace settings.
+- **MariaDB REST Service**: a connection with REST metadata shows its
+  REST services, schemas, views, procedures, functions, MRS scripts,
+  content sets, authentication apps, users and REST Daemons in the tree.
+  Dialogs configure the service and add or edit each of them - a REST
+  view's data mapping included - and the context menus copy or dump their
+  REST SQL, export the client SDK, and upload a folder as a content set.
 - **Expanding a connection opens it**, so browsing a database takes one
   click. Set `mariadb.connections.connectMode` to `explicit` to go back to
   connecting with the button on the row.

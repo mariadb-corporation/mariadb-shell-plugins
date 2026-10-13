@@ -234,6 +234,12 @@ vi.mock("../mcp/sdkConnector.js", async () => {
 
 const { activate, deactivate } = await import("../extension.js");
 
+/** The manifest, for what it contributes. */
+const packageJson = JSON.parse(readFileSync(
+    new URL("../../package.json", import.meta.url), "utf8")) as {
+    contributes: { commands: unknown[] };
+};
+
 const versionLine = (version: string): string => {
     return `mariadb-shell   Ver ${version} for osx10.21 on arm64 `
         + "- for MariaDB 13.1.0-MariaDB (Source distribution)";
@@ -290,7 +296,21 @@ describe("activate", () => {
             "mariadb.tasks"]);
         // What draws a connection's color on its row.
         expect(fileDecorationProviders).toHaveLength(1);
-        expect([...registeredCommands.keys()].sort()).toEqual([
+        const registered = [...registeredCommands.keys()].sort();
+        // The REST Service commands are checked against what the package
+        // contributes, both ways: one registered and not contributed is
+        // unreachable, one contributed and not registered fails when used.
+        const contributedMrs = (packageJson.contributes.commands as
+            Array<{ command: string }>).map((entry) => {
+            return entry.command;
+        }).filter((id) => { return id.startsWith("mariadb.mrs."); }).sort();
+        expect(registered.filter((id) => {
+            return id.startsWith("mariadb.mrs.");
+        })).toEqual(contributedMrs);
+        expect(contributedMrs.length).toBeGreaterThan(40);
+        expect(registered.filter((id) => {
+            return !id.startsWith("mariadb.mrs.");
+        })).toEqual([
             "mariadb.addConnection",
             "mariadb.addSandbox",
             "mariadb.cancelTask",
@@ -928,6 +948,31 @@ describe("activate", () => {
         expect(errorMessages).toEqual([]);
     });
 
+    it("closes what is open on a connection before deleting it",
+        async () => {
+            activate(createContext() as never);
+            setWarningMessageAnswer("Delete");
+            const node = {
+                kind: "connection",
+                uri: "dba@localhost:3310",
+                connected: true,
+                isDefault: false,
+                connectionKind: "gui",
+            };
+            await mockCommands.executeCommand("mariadb.connect", node);
+
+            await mockCommands.executeCommand("mariadb.deleteConnection", node);
+
+            await vi.waitFor(() => {
+                const names = toolCalls().map((call) => { return call.name; });
+                expect(names).toContain("db.delete_connection");
+                expect(names.indexOf("db.close")).toBeGreaterThanOrEqual(0);
+                expect(names.indexOf("db.close"))
+                    .toBeLessThan(names.indexOf("db.delete_connection"));
+            });
+            expect(errorMessages).toEqual([]);
+        });
+
     describe("sandboxes", () => {
         /** The Sandboxes view's provider, as activation registered it. */
         const sandboxesProvider = (): {
@@ -1123,7 +1168,8 @@ describe("activate", () => {
             webviewPanels.at(-1)!.webview.receive({
                 type: "create",
                 fields: {
-                    port: "3399", password: "", passwordConfirmation: "",
+                    port: "3399", generatePassword: true,
+                    password: "", passwordConfirmation: "",
                     serverVersion: "Server on the PATH",
                     allowRootFrom: "127.0.0.1", serverId: "", ssl: false,
                     mariadbdOptions: "", timeout: "",
@@ -1145,9 +1191,8 @@ describe("activate", () => {
                 return call.name === "sandbox.list_instances";
             }).map((call) => { return call.args; }))
                 .toEqual([{ port: 3399 }]);
-            expect(informationMessages).toEqual([
-                "MariaDB: sandbox.deploy on port 3399",
-            ]);
+            // Said by the deploy's row in the Actions tab instead.
+            expect(informationMessages).toEqual([]);
         });
 
         it("suggests 3311 when a connection is on localhost:3310", async () => {
@@ -1508,6 +1553,22 @@ describe("activate", () => {
 
         expect(runtime.connector?.commands).toHaveLength(2);
         expect(runtime.connector?.connections[0].closed).toBe(true);
+    });
+
+    it("opens what the tree had open again after a restart", async () => {
+        activate(createContext() as never);
+        await mockCommands.executeCommand("mariadb.connect", {
+            kind: "connection",
+            uri: "dba@localhost:3310",
+        });
+
+        await mockCommands.executeCommand("mariadb.restartMcpServer");
+
+        const restarted = runtime.connector?.connections[1];
+        expect(restarted?.calls.some((call) => {
+            return call.name === "db.connect"
+                && JSON.stringify(call.args).includes("dba@localhost:3310");
+        })).toBe(true);
     });
 
     it("shows the log on request", async () => {

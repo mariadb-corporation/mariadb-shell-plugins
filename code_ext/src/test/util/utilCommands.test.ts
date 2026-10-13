@@ -36,6 +36,7 @@ import type {
     UtilWebviewMessage,
 } from "../../util/utilProtocol.js";
 import {
+    errorMessages,
     fileDialogs,
     MockOutputChannel,
     registeredCommands,
@@ -53,6 +54,10 @@ interface IRecorded {
     started: Array<{ name: string; args: unknown[] }>;
     refreshed: number;
     logs: string[];
+    /** The tasks that did not start: connection, title, call, error. */
+    failedStarts: string[][];
+    /** The connections the panel was brought up on. */
+    shownActions: string[];
 }
 
 const done = (taskId: string): IUtilTaskState => {
@@ -66,7 +71,10 @@ const done = (taskId: string): IUtilTaskState => {
 
 /** Commands over a fake API whose every task completes at once. */
 const setUp = (failStart?: string): IRecorded => {
-    const recorded: IRecorded = { connected: [], started: [], refreshed: 0, logs: [] };
+    const recorded: IRecorded = {
+        connected: [], started: [], refreshed: 0, logs: [], failedStarts: [],
+        shownActions: [],
+    };
     const start = (name: string) => {
         return (...args: unknown[]) => {
             if (failStart !== undefined) {
@@ -114,6 +122,8 @@ const setUp = (failStart?: string): IRecorded => {
                 ? { field: "path", message: "This folder is not empty." }
                 : undefined);
         },
+        startFailed: (...args) => { recorded.failedStarts.push(args); },
+        showActions: (uri) => { recorded.shownActions.push(uri); },
         log: (message) => { recorded.logs.push(message); },
     }).register();
 
@@ -301,6 +311,26 @@ describe("the dump and load commands", () => {
             expect(posted()).toContainEqual({ type: "startError",
                 message: "Access denied for user 'root'" });
             expect(recorded.logs.at(-1)).toContain("did not start");
+            // A row of the connection's Actions, which comes up on it.
+            expect(recorded.failedStarts).toEqual([[URI, load.spec.title,
+                expect.stringContaining("util.dump_schemas") as string,
+                "Access denied for user 'root'"]]);
+            expect(recorded.shownActions).toEqual([URI]);
+            expect(errorMessages).toEqual([]);
+        });
+
+    it("notifies a start that failed after the dialog was closed",
+        async () => {
+            setUp("Access denied for user 'root'");
+            await run("mariadb.dumpSchemas", schema("shop"));
+            const load = await loaded();
+            const dialog = panel();
+            dialog.dispose();
+
+            await receive({ type: "start", values: load.values });
+
+            expect(errorMessages).toEqual([`MariaDB: ${load.spec.title} did `
+                + "not start: Access denied for user 'root'"]);
         });
 
     it("keeps the dialog open when the dump folder is not empty",

@@ -175,6 +175,7 @@ describe("sandboxFieldProblem", () => {
 
     it("refuses a confirmation that does not match the password", () => {
         expect(sandboxFieldProblem(fields({
+            generatePassword: false,
             password: "secret", passwordConfirmation: "secert",
         }))).toEqual({
             field: "passwordConfirmation",
@@ -182,10 +183,29 @@ describe("sandboxFieldProblem", () => {
         });
         // Spaces are characters of a password: not trimmed away.
         expect(sandboxFieldProblem(fields({
+            generatePassword: false,
             password: "a ", passwordConfirmation: "a",
         }))?.field).toBe("passwordConfirmation");
         expect(sandboxFieldProblem(fields({
+            generatePassword: false,
             password: "a b", passwordConfirmation: "a b",
+        }))).toBeUndefined();
+    });
+
+    it("asks for a password the user chose to give", () => {
+        expect(sandboxFieldProblem(fields({ generatePassword: false })))
+            .toEqual({
+                field: "password",
+                message: "Enter the root password, or let one be generated.",
+            });
+    });
+
+    it("checks no password while one is generated", () => {
+        // Typed before Generate was ticked again: hidden, so not held
+        // against the fields.
+        expect(fields().generatePassword).toBe(true);
+        expect(sandboxFieldProblem(fields({
+            password: "secret", passwordConfirmation: "other",
         }))).toBeUndefined();
     });
 
@@ -240,6 +260,7 @@ describe("sandboxDeployOptions", () => {
     it("sends everything that was changed", () => {
         expect(sandboxDeployOptions(fields({
             port: " 3320 ",
+            generatePassword: false,
             password: "secret",
             passwordConfirmation: "secret",
             serverVersion: " 11.8 ",
@@ -267,18 +288,24 @@ describe("sandboxDeployOptions", () => {
     it("keeps the password exactly as typed", () => {
         // Spaces are characters of a password like any other.
         const built = sandboxDeployOptions(fields({
+            generatePassword: false,
             password: " a b ", passwordConfirmation: " a b ",
         }));
 
         expect("options" in built && built.options.password).toBe(" a b ");
     });
 
-    it("generates a password when none was typed", () => {
+    it("generates the password while Generate is ticked", () => {
         const built = sandboxDeployOptions(fields());
         const password = "options" in built ? built.options.password : "";
 
         expect(password).toHaveLength(GENERATED_PASSWORD_LENGTH);
         expect(sandboxDeployOptions(fields(), [], () => { return "gen"; }))
+            .toMatchObject({ options: { password: "gen" } });
+        // Whatever was typed before it was ticked again is not sent.
+        expect(sandboxDeployOptions(fields({
+            password: "typed", passwordConfirmation: "typed",
+        }), [], () => { return "gen"; }))
             .toMatchObject({ options: { password: "gen" } });
     });
 

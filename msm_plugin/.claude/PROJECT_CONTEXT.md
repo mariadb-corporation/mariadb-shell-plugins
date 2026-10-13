@@ -20,7 +20,7 @@
 
 ## Current state
 
-- **Suite: 16 pass** (14 before the issue-2 and issue-14 tests) (2026-10-05, `build/bin/mariadb-shell` 26.9.5, MariaDB 12.3.2 from `/opt/homebrew/bin`, ~8s). `tests/conftest.py` deploys a sandbox on port 3388 (`MYSQL_PORT` etc. override), `ssl: False`.
+- **Suite: 22 pass** on `wip/mcp_dump_load` (2026-10-10; `tests/unit/test_run_util.py` adds 6 with fakes for `mysqlsh`); 16 at the 2026-10-05 checkpoint (14 before the issue-2 and issue-14 tests) (2026-10-05, `build/bin/mariadb-shell` 26.9.5, MariaDB 12.3.2 from `/opt/homebrew/bin`, ~8s). `tests/conftest.py` deploys a sandbox on port 3388 (`MYSQL_PORT` etc. override), `ssl: False`.
 - **Verified end to end on 12.3.2 (2026-10-05, scratch sandbox, script in the docs session scratchpad):** create project → fill 140/150/170/180 → release 1.0.0 → deploy fresh → redeploy (no-op message) → release 1.1.0 with 240 ALTER+UPDATE and 270 GRANT → update with `backup=True` (dump taken and removed) → fresh install of 1.1.0 → unmanaged-schema refusal; version-order refusals; CLI output of `get` functions; `msm cd/pwd/ls`.
 - **Known issues (confirmed live unless noted):**
   1. **Update script section 250 is unused by design, but still advertised.** The deployment script brings tables up through the chained 240 steps, THEN runs the target's full section 150 once, so views/routines always end in the target state whatever the start version; intermediate definitions are never needed (user's design, verified 2026-10-05: 1.0.0→1.2.0, 1.1.0→1.2.0 and fresh 1.2.0 give identical views/routines, a view on a renamed column ends valid, only the target's routine body is in the script). Removals go in 240 (`DROP ... IF EXISTS`), since 150 cannot express them. Caveat (code reading): during the 240 chain the objects are still the START version's, so a later 240 step cannot rely on a routine an intermediate version introduced — use 230 helpers. The real defect is documentation: the update template's 250 and the ai-plugins `-release`/overview skills tell authors to fill 250, which is never executed.
@@ -57,7 +57,7 @@
 ## Next steps
 
 1. DONE (2026-10-05, uncommitted in mariadb-shell `wip/docs-ref`): MSM reference docs, 7 pages in `docs-ref/content/mariadb-shell/schema-management/`, documenting issues 3, 4, 7, 8 and 14 as they behave today. Update them when those are fixed.
-2. Issue 1: mark section 250 of the update template as not deployed (or remove it) and fix the ai-plugins `-release`/overview skills to say changed views/routines go in the dev file's 150 and removals in 240; then get the `wip/msm_mrs_fixes` PR (issue-2 msm and issue-12 mrs fixes) reviewed and merged.
+2. Issue 1: mark section 250 of the update template as not deployed (or remove it) and fix the ai-plugins `-release`/overview skills to say changed views/routines go in the dev file's 150 and removals in 240. (The `wip/msm_mrs_fixes` PR with the issue-2 and issue-12 fixes merged as #36.)
 3. Fix issue 3 (invert the condition) and add a test; fix 5, 6, 7, 9 (small).
 4. Replace `utf8mb4_0900_ai_ci` with a collation every supported MariaDB has (e.g. `utf8mb4_uca1400_ai_ci` from 10.10, or none), or document the floor.
 5. Issue 14 is fixed for new projects; consider adding `NO_AUTO_CREATE_USER` to the mrs metadata project's dev script at its next release.
@@ -86,26 +86,16 @@
 
 ## Git state
 
-Checked at this checkpoint (2026-10-08):
+Checked at this checkpoint (2026-10-11), repo `mariadb-shell-plugins` (msm_plugin is a subfolder):
 
 ```text
-$ git branch --show-current
-wip/mrs_schema_improvements   (pushed, tracks origin; no PR yet)
+$ git -C msm_plugin branch --show-current
+wip/mrs_code_ext
 
-$ git status --short   (one repository: every project's lines)
- M mcp_plugin/run_tests.py
- M mcp_plugin/tests/unit/helpers.py
- M mcp_plugin/tests/unit/test_migration_e2e.py
- M mcp_plugin/tests/unit/test_migrator_tools.py
- M mcp_plugin/tests/unit/test_oauth.py
- M mrs_plugin/scripts/run_grammar_test.sh
+$ git -C msm_plugin status --short
+(clean before this checkpoint's context edits)
 ```
 
-- Branch commits on top of `main` (`65930f54`): `35c80f6a` (mrs suites on their own
-  sandbox), `58714069` (MRS metadata schema 5.0.0 with UUID ids). The uncommitted lines are
-  the `MARIADB_SHELL_OPTIONS` support for the new shell build (made for the since removed
-  `--disable-modules=mrs`).
-- **msm_plugin itself: unchanged this session.** Its functions produced the MRS metadata
-  5.0.0 release (`prepare_release`, `set_section_sql_content`, `generate_deployment_script`).
-- PR #36 merged as `4bdf0ece`; `git push origin --delete wip/msm_mrs_fixes` is still the one
-  command left from it.
+- msm_plugin's open work: `ba426f4d` (deployment backup through `lib.core.run_util`) is on `wip/mcp_dump_load`, **PR #43**, and with it on PR #44. PR #41 (`wip/mrs_schema_improvements`) carries msm_plugin changes of its own (metadata 5.0.0 side).
+- The msm suite passes in the plugins CI (22); those PRs fail CI on the mcp_plugin / mrs_plugin suites only, for want of mariadb-shell #71 / #73 on the runner.
+- `wip/msm_mrs_fixes` (merged as #36) is gone locally and on origin (checked 2026-10-11).

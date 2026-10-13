@@ -65,6 +65,11 @@ export interface ISandboxEditorHost {
     withProgress?<T>(work: () => Promise<T>): Promise<T>;
     /** Called after a sandbox was deployed, with the server's message. */
     onCreated(message: string): void;
+    /**
+     * Called after a deploy failed, once the error has been shown: in the
+     * dialog, or as a notification where the dialog was closed.
+     */
+    onFailed?(): void;
     log(message: string): void;
 }
 
@@ -303,6 +308,7 @@ export class SandboxEditorPanel {
             } else {
                 this.#post({ type: "createError", message: text });
             }
+            this.host.onFailed?.();
         } finally {
             this.#post({ type: "busy", busy: false });
         }
