@@ -385,14 +385,17 @@ describe("the Tasks view", () => {
 });
 
 /** A workspace state that keeps what it is given. */
-const memento = (initial?: unknown): ITaskStore & { value: unknown } => {
+const memento = (initial?: unknown):
+    ITaskStore & { value: unknown; updates: number } => {
     const store = {
         value: initial,
+        updates: 0,
         get: <T>(key: string): T | undefined => {
             return key === TASKS_KEY ? store.value as T : undefined;
         },
         update: (key: string, value: unknown): Promise<void> => {
             if (key === TASKS_KEY) {
+                store.updates += 1;
                 store.value = JSON.parse(JSON.stringify(value));
             }
 
@@ -427,6 +430,53 @@ describe("tasks across a window reload", () => {
         expect(kept[0].state.messages).toEqual([]);
         expect(kept[0].resume).toEqual(RESUME);
     });
+
+    it("saves progress once per interval, and a change of status at once",
+        async () => {
+            const store = memento();
+            const { api } = fakeApi([
+                ...[1, 2, 3, 4, 5].map((n) => {
+                    return state({ stage: `Step ${String(n)}`, next_since: n });
+                }),
+                finished("completed"),
+            ]);
+            const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
+                new MockOutputChannel("t"), () => { /* not needed */ }, store, 0,
+                60_000);
+
+            await monitor.follow({ task_id: "t1", status: "running" },
+                { title: "Load", connection: "root@h" });
+
+            // its start and its end; the five looks between were only progress
+            expect(store.updates).toBe(2);
+            expect((store.value as ITrackedTask[])[0].state.status)
+                .toBe("completed");
+        });
+
+    it("saves the last progress of a running task when it is disposed",
+        async () => {
+            const store = memento();
+            const api = {
+                getTask: (_taskId: string, since = 0): Promise<IUtilTaskState> => {
+                    // the first look brings progress; the next never answers
+                    return since === 0
+                        ? Promise.resolve(state({ stage: "Loading data", next_since: 1 }))
+                        : new Promise(() => { /* the window closes first */ });
+                },
+            } as unknown as IUtilApi;
+            const monitor = new TaskMonitor(() => { return Promise.resolve(api); },
+                new MockOutputChannel("t"), () => { /* not needed */ }, store, 0,
+                60_000);
+
+            void monitor.follow({ task_id: "t1", status: "running" },
+                { title: "Load", connection: "root@h" });
+            await new Promise((resolve) => { setTimeout(resolve, 10); });
+            expect((store.value as ITrackedTask[])[0].state.stage).toBeNull();
+
+            monitor.dispose();
+            expect((store.value as ITrackedTask[])[0].state.stage)
+                .toBe("Loading data");
+        });
 
     it("marks a task that was running as interrupted", () => {
         const store = memento([

@@ -42,7 +42,9 @@ Notes:
     says it while tasks run.
 - **The task list survives a reload.**
   - `TaskMonitor` keeps it in `workspaceState` (`TASKS_KEY`, the newest 50,
-    without messages) on every change.
+    without messages): at once when a task comes or goes, or its status,
+    cancelling or interrupted changes; a change of progress only at most
+    every `SAVE_INTERVAL_MS` (5 s), and a pending one on `dispose`.
   - On activation, a task that had not ended is marked `interrupted` (icon
     `debug-disconnect`) and counts as over: Remove, Clear Finished.
 - **Resume Load** (`mariadb.resumeTask`):

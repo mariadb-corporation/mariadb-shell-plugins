@@ -105,6 +105,14 @@ export const POLL_INTERVAL_MS = 1000;
  */
 export const MAX_UNANSWERED_LOOKS = 5;
 
+/**
+ * The least time between two saves of the task list that bring only
+ * progress. A running task changes on every look, and its stages and
+ * progress need only be about right when the window closes; a task that
+ * comes, goes or changes status is saved at once.
+ */
+export const SAVE_INTERVAL_MS = 5000;
+
 /** How many tasks are kept across reloads, the newest. */
 export const MAX_KEPT_TASKS = 50;
 
@@ -146,6 +154,12 @@ export class TaskMonitor {
     #changed = new vscode.EventEmitter<ITrackedTask | undefined>();
     #reported = new vscode.EventEmitter<ITaskReport>();
 
+    /** How the saved list stood, as #shape gives it. */
+    #savedShape?: string;
+
+    /** The save of progress waiting for its interval. */
+    #saveTimer?: ReturnType<typeof setTimeout>;
+
     public readonly onDidChange = this.#changed.event;
 
     /** Every look at a task, with the messages it brought. */
@@ -163,6 +177,7 @@ export class TaskMonitor {
         private readonly log: (message: string) => void,
         private readonly store?: ITaskStore,
         private readonly pollIntervalMs = POLL_INTERVAL_MS,
+        private readonly saveIntervalMs = SAVE_INTERVAL_MS,
     ) {
         // The tasks of the last window: one that had not ended ended with
         // it, since the server ran in that window's extension host.
@@ -173,7 +188,7 @@ export class TaskMonitor {
                 ...kept, cancelling: false, ...(over ? {} : { interrupted: true }),
             });
         }
-        this.#changed.event(() => { this.#save(); });
+        this.#changed.event(() => { this.#saveSoon(); });
     }
 
     /**
@@ -319,8 +334,40 @@ export class TaskMonitor {
         this.output.show(true);
     }
 
+    /**
+     * @returns How the list stands, as far as it is saved at once: the
+     *          tasks kept, and each one's status.
+     */
+    #shape(): string {
+        return JSON.stringify(this.tasks.slice(0, MAX_KEPT_TASKS)
+            .map((tracked) => {
+                return [tracked.state.task_id, tracked.state.status,
+                    tracked.cancelling, tracked.interrupted === true];
+            }));
+    }
+
+    /**
+     * Saves the list at once where how it stands changed, and otherwise
+     * once its interval passed: what changed is only progress.
+     */
+    #saveSoon(): void {
+        if (this.store === undefined) {
+            return;
+        }
+        if (this.#shape() !== this.#savedShape) {
+            this.#save();
+        } else {
+            this.#saveTimer ??= setTimeout(() => { this.#save(); },
+                this.saveIntervalMs);
+        }
+    }
+
     /** Keeps the list for the next window, without the messages. */
     #save(): void {
+        if (this.#saveTimer !== undefined) {
+            clearTimeout(this.#saveTimer);
+            this.#saveTimer = undefined;
+        }
         if (this.store === undefined) {
             return;
         }
@@ -329,6 +376,7 @@ export class TaskMonitor {
                 return { ...tracked, state: { ...tracked.state, messages: [] } };
             });
         void this.store.update(TASKS_KEY, kept);
+        this.#savedShape = this.#shape();
     }
 
     async #poll(
@@ -454,6 +502,10 @@ export class TaskMonitor {
     }
 
     public dispose(): void {
+        // the progress of a task still running, for the next window
+        if (this.#saveTimer !== undefined) {
+            this.#save();
+        }
         this.#changed.dispose();
         this.#reported.dispose();
     }
