@@ -461,6 +461,17 @@ export interface IExecutionOptions {
     pageSize?: number;
     /** What to call this run in its own row. */
     label?: string;
+    /**
+     * Whether the session reads `"..."` as an identifier (ANSI_QUOTES).
+     * The script is split that way here and by the server alike; where
+     * `statements` is given, it has to have been split that way too.
+     */
+    ansiQuotes?: boolean;
+    /**
+     * Told the session's sql_mode once the script is over, as the server
+     * reports it - so a script that changed it is followed.
+     */
+    onSqlMode?: (sqlMode: string) => void;
 }
 
 /**
@@ -495,7 +506,8 @@ export class ExecutionService {
     ): Promise<IExecutionReport> {
         const { connectionUri, connectionId, script, runId } = options;
         const connectionLabel = options.connectionLabel;
-        const statements = options.statements ?? splitStatements(script);
+        let statements = options.statements
+            ?? splitStatements(script, options.ansiQuotes);
         const executable = executableOf(statements);
         const children: IActionRow[] = [];
         const resultSets: IResultSet[] = [];
@@ -592,7 +604,8 @@ export class ExecutionService {
         let results: IStatementResult[];
         try {
             results = await this.api.executeScript(
-                connectionId, script, options.stopOnError, options.pageSize);
+                connectionId, script, options.stopOnError, options.pageSize,
+                { ansiQuotes: options.ansiQuotes, reportSqlMode: true });
         } catch (error) {
             // The call itself failed - a closed connection, a shell that
             // went away - so nothing ran and there is no statement to
@@ -611,6 +624,16 @@ export class ExecutionService {
             firstErrorSource = failure.source;
 
             return finish(`Execution failed: ${message}`, "error");
+        }
+
+        const last = results.at(-1);
+        if (options.ansiQuotes && last && last.ansi_quotes === undefined) {
+            // A shell that predates the argument split "..." as a string
+            // whatever it was asked; the results line up with that split.
+            statements = splitStatements(script);
+        }
+        if (last?.sql_mode !== undefined) {
+            options.onSqlMode?.(last.sql_mode);
         }
 
         for (const [position, result] of results.entries()) {

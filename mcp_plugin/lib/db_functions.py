@@ -3022,6 +3022,8 @@ def register_db_tools(server, function_groups=()) -> None:
         stop_on_error: bool = True,
         limit: Optional[int] = None,
         column_metadata: bool = False,
+        ansi_quotes: bool = False,
+        report_sql_mode: bool = False,
     ) -> list:
         """Executes a multi-statement SQL script on an open connection.
 
@@ -3054,6 +3056,18 @@ def register_db_tools(server, function_groups=()) -> None:
                 first.
             column_metadata: Whether each result set also reports its
                 columns' metadata, as for db.execute_sql. Off by default.
+            ansi_quotes: Whether the script is split with "..." read as a
+                quoted identifier rather than a string, as the server reads
+                it when the session's sql_mode has ANSI_QUOTES. It only
+                matters where a backslash ends a double-quoted identifier,
+                which as a string would escape the closing quote. Off by
+                default; pass what the session's sql_mode says, which
+                report_sql_mode tells.
+            report_sql_mode: Whether the last entry also reports how the
+                script was split (ansi_quotes) and the session's sql_mode
+                once the script is over (sql_mode), read after the last
+                statement - so a script that changed it reports the new
+                one. Off by default, as it costs a query.
 
         Returns:
             A list with one entry per statement that ran, each a dict with its
@@ -3101,6 +3115,11 @@ def register_db_tools(server, function_groups=()) -> None:
             returned - fetch the next page with db.execute_sql and an offset -
             and false when these are all of them. It is absent where the
             statement ran as written.
+
+            With report_sql_mode, the LAST entry also carries ansi_quotes
+            (how the script was split) and sql_mode (the session's, after
+            the script; absent if it could not be read). A script of nothing
+            but comments has no entries to carry them.
         """
         _check_paging(limit)
         if (sql_script is None) == (file_path is None):
@@ -3122,7 +3141,9 @@ def register_db_tools(server, function_groups=()) -> None:
             restarted = _session_was_restarted(connection_id)
             statements = [
                 statement
-                for statement in mysqlsh.mysql.split_script(sql_script)
+                for statement in mysqlsh.mysql.split_script(
+                    sql_script, {"ansiQuotes": ansi_quotes}
+                )
                 if statement.strip() != ""
             ]
             results = []
@@ -3177,6 +3198,20 @@ def register_db_tools(server, function_groups=()) -> None:
                 results.append(
                     _page_result(serialized, limit) if limited else serialized
                 )
+
+            if report_sql_mode and results:
+                results[-1]["ansi_quotes"] = ansi_quotes
+                try:
+                    results[-1]["sql_mode"] = str(
+                        session.run_sql("SELECT @@sql_mode").fetch_one()[0]
+                    )
+                except Exception as error:  # noqa: BLE001
+                    # The script's results are what was asked for; a mode
+                    # that cannot be read leaves the caller where it was.
+                    general.log_event(
+                        "db.execute_sql_script: could not read sql_mode "
+                        f"for {general.describe_client(client)}: {error}"
+                    )
 
             return results
 

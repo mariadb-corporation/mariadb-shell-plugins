@@ -63,15 +63,38 @@ class _StubResult:
         return False
 
 
+class _ModeResult:
+    """What SELECT @@sql_mode answers: one row of one value."""
+
+    def __init__(self, sql_mode):
+        self._sql_mode = sql_mode
+
+    def fetch_one(self):
+        if isinstance(self._sql_mode, Exception):
+            raise self._sql_mode
+
+        return [self._sql_mode]
+
+
 class _RecordingSession:
-    """An open session that records every statement it is asked to run."""
+    """An open session that records every statement it is asked to run.
+
+    It answers SELECT @@sql_mode with its sql_mode - or raises it, when that
+    is an exception - and fails the statements in fail_on.
+    """
 
     def __init__(self):
         self.statements = []
         self.closed = False
+        self.sql_mode = "STRICT_TRANS_TABLES"
+        self.fail_on = set()
 
     def run_sql(self, sql, _params=None):
         self.statements.append(sql)
+        if sql in self.fail_on:
+            raise RuntimeError("no")
+        if sql == "SELECT @@sql_mode":
+            return _ModeResult(self.sql_mode)
 
         return _StubResult()
 
@@ -398,3 +421,81 @@ def test_a_result_that_cannot_walk_on_reads_its_one_set():
     output = db_functions._serialize_result(del_next)
 
     assert output["result_sets"] == [{"columns": ["a"], "rows": [{"a": 1}]}]
+
+
+# --- ANSI_QUOTES, and reporting the sql_mode --------------------------------
+
+
+# A backslash ending a double-quoted identifier: as a string, "a\" would
+# escape its closing quote and swallow the next statement.
+ENDS_IN_BACKSLASH = 'SELECT "a\\"; SELECT 1;'
+
+
+def test_double_quotes_are_split_as_a_string_by_default(tools):
+    """The default sql_mode's reading: the backslash escapes the quote.
+
+    So the string never closes, and the rest of the script - its last
+    semicolon included - is one unfinished statement.
+    """
+    tools.run(ENDS_IN_BACKSLASH)
+
+    assert _ran(tools) == [ENDS_IN_BACKSLASH]
+
+
+def test_double_quotes_are_split_as_an_identifier_with_ansi_quotes(tools):
+    """The server's reading under ANSI_QUOTES: two statements."""
+    tools.run(ENDS_IN_BACKSLASH, ansi_quotes=True)
+
+    assert _ran(tools) == ['SELECT "a\\"', "SELECT 1"]
+
+
+def test_the_sql_mode_is_not_reported_unless_asked_for(tools):
+    """Nothing extra reaches the server, and nothing extra comes back."""
+    results = tools.run("SELECT 1; SELECT 2;", ansi_quotes=True)
+
+    assert _ran(tools) == ["SELECT 1", "SELECT 2"]
+    assert all(
+        "sql_mode" not in result and "ansi_quotes" not in result
+        for result in results
+    )
+
+
+def test_the_last_entry_reports_the_split_and_the_sql_mode(tools):
+    """Read after the script, so a script that changed it says so."""
+    results = tools.run(
+        "SELECT 1; SELECT 2;", ansi_quotes=True, report_sql_mode=True
+    )
+
+    assert _ran(tools) == ["SELECT 1", "SELECT 2", "SELECT @@sql_mode"]
+    assert "sql_mode" not in results[0]
+    assert results[-1]["ansi_quotes"] is True
+    assert results[-1]["sql_mode"] == "STRICT_TRANS_TABLES"
+
+
+def test_a_failed_statement_still_carries_the_report(tools):
+    """The entry of the statement a script stopped at is the last one."""
+    tools.run("SELECT 0;")
+    tools.opened[0].fail_on = {"SELECT 2"}
+
+    results = tools.run("SELECT 1; SELECT 2; SELECT 3;", report_sql_mode=True)
+
+    assert results[-1]["error"] == "no"
+    assert results[-1]["ansi_quotes"] is False
+    assert results[-1]["sql_mode"] == "STRICT_TRANS_TABLES"
+
+
+def test_a_mode_that_cannot_be_read_leaves_only_the_split(tools):
+    """The script's results still come back; sql_mode is left out."""
+    tools.run("SELECT 0;")
+    tools.opened[0].sql_mode = RuntimeError("gone")
+
+    results = tools.run("SELECT 1;", report_sql_mode=True)
+
+    assert results[-1]["ansi_quotes"] is False
+    assert "sql_mode" not in results[-1]
+
+
+def test_a_script_of_comments_reports_nothing_and_asks_nothing(tools):
+    """There is no entry to carry the report."""
+    assert tools.run("-- only a note\n", report_sql_mode=True) == []
+    assert _ran(tools) == []

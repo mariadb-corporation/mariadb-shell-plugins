@@ -212,6 +212,34 @@ export const openedWith: Array<{ uri: Uri; options: unknown }> = [];
 /** The file system providers registered, by scheme. */
 export const fileSystemProviders = new Map<string, unknown>();
 
+export class SemanticTokensLegend {
+    public constructor(public readonly tokenTypes: string[]) { }
+}
+
+/** A token as a test asserts it: where it is, not how it is encoded. */
+export interface MockSemanticToken {
+    line: number;
+    start: number;
+    length: number;
+}
+
+/**
+ * Keeps the positions it is given. The real builder encodes them
+ * relative to each other, which is VS Code's business, not the
+ * provider's.
+ */
+export class SemanticTokensBuilder {
+    readonly #tokens: MockSemanticToken[] = [];
+
+    public push(line: number, start: number, length: number): void {
+        this.#tokens.push({ line, start, length });
+    }
+
+    public build(): { tokens: MockSemanticToken[] } {
+        return { tokens: [...this.#tokens] };
+    }
+}
+
 export class EventEmitter<T> {
     readonly #listeners = new Set<(value: T) => void>();
 
@@ -545,6 +573,10 @@ export class MockTextDocument {
         private text: string,
     ) { }
 
+    public lineAt(line: number): { text: string } {
+        return { text: this.text.split("\n")[line] ?? "" };
+    }
+
     public getText(range?: unknown): string {
         return range === undefined ? this.text : this.text;
     }
@@ -699,6 +731,21 @@ const visibleEditorListeners =
 const changeDocumentListeners = new Set<(event: unknown) => void>();
 const closeDocumentListeners = new Set<(document: unknown) => void>();
 const configurationListeners = new Set<(event: unknown) => void>();
+
+/** A registered semantic tokens provider, and what it was registered for. */
+export interface SemanticTokensRegistration {
+    selector: unknown;
+    provider: {
+        provideDocumentSemanticTokens(
+            document: unknown,
+            token: CancellationToken,
+        ): unknown;
+    };
+    legend: SemanticTokensLegend;
+}
+
+/** Every `languages.registerDocumentSemanticTokensProvider` call. */
+export const semanticTokensProviders: SemanticTokensRegistration[] = [];
 
 /**
  * Fires the configuration change event.
@@ -1156,6 +1203,26 @@ export const workspace = {
     },
 };
 
+export const languages = {
+    registerDocumentSemanticTokensProvider: (
+        selector: unknown,
+        provider: SemanticTokensRegistration["provider"],
+        legend: SemanticTokensLegend,
+    ): Disposable => {
+        const registration = { selector, provider, legend };
+        semanticTokensProviders.push(registration);
+
+        return {
+            dispose: () => {
+                const index = semanticTokensProviders.indexOf(registration);
+                if (index >= 0) {
+                    semanticTokensProviders.splice(index, 1);
+                }
+            },
+        };
+    },
+};
+
 export const commands = {
     registerCommand: (
         command: string,
@@ -1253,6 +1320,7 @@ export const resolveWebviewView = (viewType: string): MockWebviewView => {
  */
 export const resetVscodeMock = (): void => {
     openedWith.length = 0;
+    semanticTokensProviders.length = 0;
     fileSystemProviders.clear();
     fileDialogs.saveAnswer = undefined;
     fileDialogs.openAnswer = undefined;

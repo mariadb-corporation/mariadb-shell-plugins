@@ -36,7 +36,8 @@ which is what most of GUI mode exists for, is in
 
 ## Startup behaviour
 
-The extension activates on `onStartupFinished` and on `onLanguage:sql`, but
+The extension activates on `onStartupFinished` and on `onLanguage:` for
+`mariadb-sql` and the built-in `sql`, but
 starts **nothing** at activation: the MCP server comes up the first time
 something actually needs it, so an editor that never touches MariaDB never
 pays for a shell process. `ConnectionManager.api()` is the single place

@@ -401,9 +401,10 @@ export const createLoggingApi = (
         },
 
         // Reported as a run, by the execution service.
-        executeScript: (connectionId, sqlScript, stopOnError, limit) => {
+        executeScript: (connectionId, sqlScript, stopOnError, limit,
+            options) => {
             return api.executeScript(
-                connectionId, sqlScript, stopOnError, limit);
+                connectionId, sqlScript, stopOnError, limit, options);
         },
         // Reported by the result view, as the page it fetched.
         executeSql: (connectionId, sql, page) => {

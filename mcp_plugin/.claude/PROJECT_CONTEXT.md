@@ -84,16 +84,25 @@ this table with it.
 
 ## Git state
 
-Checked at this checkpoint (2026-10-11):
+Checked at this checkpoint (2026-10-12):
 
 ```text
 $ git -C mcp_plugin branch --show-current
-wip/mrs_code_ext
+wip/vscode_syntax_highlighter
 
 $ git -C mcp_plugin status --short   (one repository: every project's lines)
-(clean before this checkpoint's context edits)
+ M code_ext/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+(this checkpoint's own edits, committed with it)
 ```
 
+- **`wip/vscode_syntax_highlighter`** (pushed, **PR #45** into #44, branched from
+  #44's `wip/mrs_code_ext`): `13b7e192` `db.execute_sql_script` gains
+  opt-in `ansi_quotes` and `report_sql_mode` (see
+  [`context/db-tools.md`](context/db-tools.md)), for the VS Code
+  extension's grammar work.
 - **Open PRs with mcp_plugin work, all pushed:**
   - **#43** `wip/mcp_dump_load`: the `util` function group (see
     [`context/util.md`](context/util.md)), and msm's `run_util` (see
@@ -107,12 +116,15 @@ $ git -C mcp_plugin status --short   (one repository: every project's lines)
   were applied and main's fixes kept. #44's plugins CI passes since.
 - Suite: **616 passed, 3 skipped** on #44's tree against a local build of
   #71 + #73 (`wip/ui_test_shell` in `~/git/mariadb-shell`, local only,
-  deleted on 2026-10-13: #71 is on mariadb-shell `main`).
+  deleted on 2026-10-13: #71 is on mariadb-shell `main`); on
+  `wip/vscode_syntax_highlighter` only the script / paging / session / sql
+  tests were run (133 passed, 1 skipped).
 - **mariadb-shell PRs:** #71 (MRS module) is merged; #74 (`[bypass-ci]`
   docs for the util tools) is open and up to date with `main`. #73 (util
   session / progressCallback) was closed on 2026-10-12, when the tasks
   moved to a shell process of their own; #75 and #77 (flaky tests) are
-  merged.
+  merged. `split_script`'s options argument, which `ansi_quotes` needs, is
+  in every release since 26.8.0.
 - `origin/wip/msm_mrs_fixes` (merged as #36) is gone (checked 2026-10-11).
   mrs_plugin's project dump/load got msm's `run_util` on #41's branch
   (2026-10-11, see [`context/siblings.md`](context/siblings.md)).

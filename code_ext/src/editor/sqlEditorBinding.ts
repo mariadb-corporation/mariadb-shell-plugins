@@ -38,6 +38,9 @@ import {
 import { quoteIdentifier } from "../sql/queryBuilder.js";
 import { splitStatements } from "../sql/splitStatements.js";
 import { statementAtOffset } from "../sql/statementAtOffset.js";
+import type { SqlModes } from "../connections/sqlModes.js";
+import { AnsiQuotesHighlighter } from "./ansiQuotes.js";
+import { isSqlDocument, MARIADB_SQL_LANGUAGE_ID } from "./sqlLanguage.js";
 import type {
     IResultSet,
     IStatementSource,
@@ -47,9 +50,6 @@ import type {
     ResultViewProvider,
     RunInto,
 } from "../webview/resultViewProvider.js";
-
-/** The language id VS Code gives .sql files. */
-export const SQL_LANGUAGE_ID = "sql";
 
 /**
  * The header a generated SQL file carries to record its connection.
@@ -134,12 +134,23 @@ export class SqlEditorBinding implements vscode.Disposable {
     /** The stop-on-error state last published to the toolbar, if any. */
     #publishedStopOnError: boolean | undefined;
     readonly #statusItem: vscode.StatusBarItem;
+    /** Colours `"..."` as an identifier where ANSI_QUOTES is on. */
+    readonly #ansiQuotes: AnsiQuotesHighlighter;
     readonly #disposables: vscode.Disposable[] = [];
 
+    /**
+     * @param connections The connections a document can run on.
+     * @param resultView Where a run's actions and results are shown.
+     * @param log Where failures are noted.
+     * @param sqlModes What each connection's sql_mode says about double
+     *                 quotes: how a run splits, and what the highlighting
+     *                 marks.
+     */
     public constructor(
         private readonly connections: ConnectionManager,
         private readonly resultView: ResultViewProvider,
         private readonly log: (message: string) => void,
+        private readonly sqlModes: SqlModes,
     ) {
         this.#statusItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
@@ -166,6 +177,12 @@ export class SqlEditorBinding implements vscode.Disposable {
             }),
         });
 
+        this.#ansiQuotes = new AnsiQuotesHighlighter(connections, sqlModes,
+            (document) => {
+                return this.connectionFor(document);
+            });
+        this.#disposables.push(this.#ansiQuotes);
+
         this.updateStatusBar();
     }
 
@@ -187,6 +204,24 @@ export class SqlEditorBinding implements vscode.Disposable {
             ?? readConnectionHeader(document.getText(
                 new vscode.Range(0, 0, HEADER_SEARCH_LINES, 0)))
             ?? this.connections.defaultConnection;
+    }
+
+    /**
+     * Whether the server reads `"..."` in a document as an identifier, as
+     * far as is known now - what its statements are split by. The
+     * connection's sql_mode, not the highlighting setting: a split has to
+     * be what the server makes of the text.
+     *
+     * @param document The document.
+     *
+     * @returns True under ANSI_QUOTES; false while it is not known.
+     */
+    public ansiQuotesFor(document: vscode.TextDocument): boolean {
+        const uri = this.connectionFor(document);
+
+        return uri === undefined
+            ? false
+            : this.sqlModes.known(uri) ?? false;
     }
 
     /**
@@ -235,6 +270,8 @@ export class SqlEditorBinding implements vscode.Disposable {
     ): void {
         this.#chosen.set(document.uri.toString(), uri);
         this.updateStatusBar();
+        // Another connection may have another sql_mode.
+        this.#ansiQuotes.refresh();
     }
 
     /**
@@ -248,7 +285,7 @@ export class SqlEditorBinding implements vscode.Disposable {
         uri: string,
     ): Promise<vscode.TextDocument> {
         const document = await vscode.workspace.openTextDocument({
-            language: SQL_LANGUAGE_ID,
+            language: MARIADB_SQL_LANGUAGE_ID,
             content: `${buildConnectionHeader(uri)}\n\n`,
         });
 
@@ -273,7 +310,7 @@ export class SqlEditorBinding implements vscode.Disposable {
      */
     public updateStatusBar(): void {
         const editor = vscode.window.activeTextEditor;
-        if (!editor || editor.document.languageId !== SQL_LANGUAGE_ID) {
+        if (!editor || !isSqlDocument(editor.document)) {
             this.#statusItem.hide();
 
             return;
@@ -392,7 +429,8 @@ export class SqlEditorBinding implements vscode.Disposable {
     ): Promise<void> {
         const offset = editor.document.offsetAt(editor.selection.active);
         const statement = statementAtOffset(
-            editor.document.getText(), offset);
+            editor.document.getText(), offset,
+            this.ansiQuotesFor(editor.document));
 
         if (!statement) {
             void vscode.window.showInformationMessage(
@@ -502,8 +540,10 @@ export class SqlEditorBinding implements vscode.Disposable {
         // shows it is under way rather than nothing at all.
         const runId = this.#nextRunId();
         // Split here and handed on, so the row can say what is about to
-        // run without the script being split a second time to run it.
-        const statements = splitStatements(script);
+        // run without the script being split a second time to run it -
+        // by what is known of the sql_mode; checked once it is open.
+        let ansiQuotes = this.sqlModes.known(uri) ?? false;
+        let statements = splitStatements(script, ansiQuotes);
         const what = describeStatements(statements, label);
         // Which connection this will run on has to be known before it is
         // opened, because the row goes up first: the manager answers it
@@ -519,6 +559,12 @@ export class SqlEditorBinding implements vscode.Disposable {
 
         try {
             const connectionId = await this.connections.connect(uri);
+            // Read on the first run, known from the last one after that.
+            const known = await this.sqlModes.ansiQuotes(uri);
+            if (known !== ansiQuotes) {
+                ansiQuotes = known;
+                statements = splitStatements(script, ansiQuotes);
+            }
             const api = await this.connections.api();
             const service = new ExecutionService(api);
             const report = await service.execute({
@@ -532,6 +578,10 @@ export class SqlEditorBinding implements vscode.Disposable {
                 label,
                 stopOnError: options.stopOnError ?? stopOnError(),
                 pageSize: pageSize(),
+                ansiQuotes,
+                onSqlMode: (sqlMode) => {
+                    this.sqlModes.record(uri, sqlMode);
+                },
             });
             await this.resultView.showResults(report, {
                 connectionUri: uri,

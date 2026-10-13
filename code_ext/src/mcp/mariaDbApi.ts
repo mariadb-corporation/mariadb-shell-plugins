@@ -38,6 +38,7 @@ import type {
     ISchemaInfo,
     IPageRequest,
     IResultSetData,
+    IScriptOptions,
     IStatementResult,
     ObjectType,
 } from "./types.js";
@@ -466,6 +467,7 @@ export class MariaDbApi implements IMariaDbApi {
         sqlScript: string,
         stopOnError?: boolean,
         limit?: number,
+        options: IScriptOptions = {},
     ): Promise<IStatementResult[]> {
         const name = "db.execute_sql_script";
 
@@ -481,6 +483,8 @@ export class MariaDbApi implements IMariaDbApi {
                     ? {}
                     : { stop_on_error: stopOnError }),
                 ...(limit === undefined ? {} : { limit }),
+                ...(options.ansiQuotes ? { ansi_quotes: true } : {}),
+                ...(options.reportSqlMode ? { report_sql_mode: true } : {}),
             }),
         ).map(normalizeStatementResult);
     }

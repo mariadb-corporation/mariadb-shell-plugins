@@ -18,16 +18,19 @@ extension grows.
 | `src/mcp/` | The MCP client: the one-at-a-time server startup, session lifecycle, wire decoding, typed `db.*` and `sandbox.*` APIs. |
 | `src/errorMessages.ts` | The error notification every failure uses, with its Show Log button, and `reportError` (log it, then notify). |
 | `src/text.ts` | `errorText`, `counted` and `stripAnsi`: text helpers shared with the webviews, so free of `vscode`. |
-| `src/connections/` | Which connections are open on which URI and which is the default, what happens on each one, plus the connection editor: URI building, the store, the panel and its protocol. |
+| `src/connections/` | Which connections are open on which URI and which is the default, what happens on each one, what each one's `sql_mode` says about double quotes (`sqlModes.ts`), plus the connection editor: URI building, the store, the panel and its protocol. |
 | `src/tree/` | The Connections view: its data model and its tree items; the Sandboxes view; `viewState.ts`, the welcome-content state machine both share. |
 | `src/mrs/` | The MariaDB REST Service: REST SQL builders, the data mapping model, the dialogs' fields, the API, the dialog panel and the commands, and what goes to the Actions tab (`mrsActions.ts`, `mrsActivity.ts`) (see [`context/mrs.md`](context/mrs.md)). |
 | `src/util/` | Dump and Load: the operations' fields, the dialog, the commands, the task monitor, the Tasks view, a task's Actions row (`taskActions.ts`) and its log file (`taskLogs.ts`) (see [`context/dump-and-load.md`](context/dump-and-load.md)). |
 | `src/sandboxes/` | The New Sandbox dialog: its fields, protocol and panel. |
 | `src/sql/` | The statement scanner, statement splitting, single-table detection, the edit query builder and the execution service. |
-| `src/editor/` | The SQL editor toolbar, status bar entry and run command. |
+| `src/editor/` | The SQL editor toolbar, status bar entry and run command; `sqlLanguage.ts`, which documents are SQL; `ansiQuotes.ts`, the semantic tokens that mark `"..."` as an identifier where the connection has ANSI_QUOTES. |
+| `syntaxes/` | The MariaDB SQL TextMate grammar: the hand-written template, the generated `words.json`, and the built grammar (see [`context/sql-grammar.md`](context/sql-grammar.md)). |
+| `tools/grammar.mts` | `grammar:sync` reads the word lists out of the mariadb-server and mariadb-shell checkouts; `grammar:build` makes the grammar from the template. |
+| `language-configuration.json` | Comments, brackets and auto-closing pairs of the MariaDB SQL language. |
 | `src/webview/` | The result view host, its message protocol and the edit-collection logic; a maximized result set's editor tab (`maximizedResult.ts`); grid values as files - saved / loaded (`valueFiles.ts`) and opened in editors (`valueDocuments.ts`); what every webview shares - the HTML, CSP and options (`html.ts`), the hold-until-`ready` queue (`readyQueue.ts`), the dialogs' common messages (`dialogProtocol.ts`). |
 | `webview/src/` | The Preact frontends: the result view, the connection editor, New Sandbox, the Dump and Load dialog and the MRS dialogs. |
-| `src/test/` | The extension-side test suite, mirroring the source layout. |
+| `src/test/` | The extension-side test suite, mirroring the source layout; `grammar/` tokenizes with VS Code's own TextMate engine (word coverage, token classes, corpus snapshots). |
 | `webview/test/` | The frontend test suite, run under jsdom. |
 | `ui-test/` | The ExTester UI tests: the runner and its suites (`core`, `mrs`, `dump-load`, each with a sandbox of its own), the helpers, the test files (see [`context/testing-and-debugging.md`](context/testing-and-debugging.md)). |
 | `images/` | Icons: `light/` and `dark/` variants, the activity bar seal, and `marketplace-icon.png`. |
@@ -45,7 +48,8 @@ change belongs to up to date, and this table with it.
 | [`context/connection-editor.md`](context/connection-editor.md) | The connection editor: its files and tabs, what it deliberately leaves out, the URI box and its rules, its own vite build. |
 | [`context/connections.md`](context/connections.md) | The several connections one URI can have open and the one the Connections view keeps, what is reported on them (General Actions; browsing only on failure or with `logAllCalls`), the cached connection list, the tree, opening, the default connection. |
 | [`context/connection-folders.md`](context/connection-folders.md) | Folders, captions and colors of connections: what the server keeps, the helpers mirroring its rules, New Folder, moving, collapsed folders kept across a restart. Split out of connections.md on 2026-10-11. |
-| [`context/running-sql.md`](context/running-sql.md) | The two run commands and stop on error, which connection a file runs on, the statement scanner, splitting agreeing with the server, what makes a result set editable, the gutter markers. |
+| [`context/running-sql.md`](context/running-sql.md) | The two run commands and stop on error, which connection a file runs on, the MariaDB SQL language and its ANSI_QUOTES highlight, the statement scanner, splitting agreeing with the server, what makes a result set editable, the gutter markers. |
+| [`context/sql-grammar.md`](context/sql-grammar.md) | The MariaDB SQL TextMate grammar: one language, ANSI_QUOTES as semantic tokens (and why not two languages), what a tokenizer can and cannot do and the policy for each, the generated word lists and the sync workflow, the three test layers. |
 | [`context/dump-and-load.md`](context/dump-and-load.md) | The Dump and Load submenu, its dialog, the background tasks (`util.*` tools) with their notification and the Tasks view, each task as a row of the Actions tab, and a log file per task. |
 | [`context/sandboxes.md`](context/sandboxes.md) | The Sandboxes view, its Start / Stop / Delete, the New Sandbox dialog, the per-call timeouts, and what it needs from the shell. |
 | [`context/result-view.md`](context/result-view.md) | The panel webview: layout, per-connection state, the two pickers (and when General Actions is shown), fonts and surfaces, the SQL preview, the shared code. |
@@ -101,42 +105,59 @@ change belongs to up to date, and this table with it.
   2026-10-13: any local build of `main` in `~/git/mariadb-shell`
   (`MARIADB_SHELL=...`). Before that it took the local-only merge
   `wip/ui_test_shell`, deleted on 2026-10-13.
+- **Highlighting is lexical.** Non-reserved keywords used as names are
+  coloured as keywords, data types have no scope of their own, and the
+  ANSI_QUOTES identifiers are semantic tokens, so a theme with semantic
+  highlighting off shows them as strings and they appear a moment after
+  the grammar's colours. See [`context/sql-grammar.md`](context/sql-grammar.md).
 
 ## Git state
 
-Checked at this checkpoint (2026-10-11):
+Checked at this checkpoint (2026-10-12):
 
 ```text
 $ git -C code_ext branch --show-current
-wip/mrs_code_ext
+wip/vscode_syntax_highlighter
 
 $ git -C code_ext status --short   (one repository: every project's lines)
-(clean before this checkpoint's context edits)
+ M code_ext/.claude/PROJECT_CONTEXT.md
+ M mcp_plugin/.claude/PROJECT_CONTEXT.md
+ M mrs_plugin/.claude/PROJECT_CONTEXT.md
+ M msm_plugin/.claude/PROJECT_CONTEXT.md
+(this checkpoint's own edits, committed with it)
 ```
 
-- **Three open PRs carry the extension work, all pushed:**
-  - **#43** `wip/mcp_dump_load`: Dump and Load (plus the mcp_plugin util
-    group), the Actions tab rows of tasks, a log file per task, the
-    non-empty dump folder check, copy targets by address, Refresh
-    Connections / Refresh Sandboxes, browsing logged only on failure or
-    with `logAllCalls`.
-  - **#44** `wip/mrs_code_ext` (opened 2026-10-11): the REST Service tree
-    and dialogs, the `mrs` MCP group, the ExTester UI tests, MRS actions in
-    the Actions tab. It has #41 (`wip/mrs_schema_improvements`) and #43
-    merged in, so its diff against `main` includes theirs until they merge.
-    Fixes the UI tests found in #43's code were made on #43 and merged into
-    #44 (always that direction).
-  - #41 is the mrs_plugin / msm side.
-- **Session 2026-10-10/11** (all in those PRs): UI tests for Dump and Load
-  and the fixes they found (task title, poll interval), tasks and MRS in
-  the Actions tab, refined over many rounds of the user's feedback on
-  verbosity - see dump-and-load.md, mrs.md, actions-grid.md and
-  connections.md for what was settled.
-- Suite: **1903 unit tests pass**, 8 skipped; **57 UI tests pass** (run
-  twice) against the local `wip/ui_test_shell` build (a merge of the then
-  unmerged shell #71, deleted since).
-- Not looked at in a running VS Code outside the UI tests: still the PR #34
-  / #38 items listed in earlier checkpoints.
+The `/code-review` fixes (UI runner signals and time limit, one source
+each for the Actions tab's top alignment and tree indent) are #44's:
+`b9642b1c` on `wip/mrs_code_ext`, merged forward as `22406105`.
+
+- **PR #45** `wip/vscode_syntax_highlighter` -> `wip/mrs_code_ext`: the
+  MariaDB SQL language, grammar, ANSI_QUOTES semantic tokens, splitter
+  fixes, the `sql_mode` round trip (`13b7e192`, `a7da1b99`, `75602592`),
+  the `/simplify` pass `4743e259`, and the merges of #44 (`3f0b66eb`,
+  `cef8b880`, `22406105`). See [`context/sql-grammar.md`](context/sql-grammar.md)
+  and [`context/running-sql.md`](context/running-sql.md).
+- **PR #44** `wip/mrs_code_ext` got the footer tab styling (`92c5b4d1`),
+  the UI tests in suites (`168972cc`), and the Actions tab's top
+  alignment and indent guides plus the process-group stop (`a9d1a668`),
+  the `/code-review` fixes (`b9642b1c`).
+- **#43 (Dump and Load) and #41 (the mrs_plugin / msm side) are merged**
+  (2026-10-13, squash-merged after review fixes), and so is
+  mariadb-shell #71. `main` is merged into #44, and from there into #45
+  and #48. Fixes go #44 -> #45 -> #48, always that direction.
+- **Session 2026-10-12:** footer tabs, the grammar (TextMate, generated,
+  not an LSP), semantic tokens for ANSI_QUOTES, the Actions tab's top
+  alignment and straight indent guides instead of Tabulator's L branch,
+  UI tests split into `core` / `mrs` / `dump-load` suites, `/simplify`,
+  then `/code-review` (9 findings, all fixed).
+- Suite: **1994 unit tests pass**, 8 skipped; UI suites core 24, mrs 29,
+  dump-load 15 pass (before the review fixes; after them a live run was
+  interrupted twice with Ctrl-C to check the runner: exit 130, nothing
+  left running); mcp_plugin's script/paging/session/sql tests 133 passed.
+- Not looked at in a running VS Code outside the UI tests: the
+  ANSI_QUOTES colouring, the indent guides after the move to
+  `--actionsTreeIndent`, and still the PR #34 / #38 items listed in
+  earlier checkpoints.
 
 ## Conventions
 

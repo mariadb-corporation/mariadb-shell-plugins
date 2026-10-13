@@ -16,13 +16,17 @@
  */
 
 import * as assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
     By,
     CustomTreeSection,
     EditorView,
     Key,
+    StatusBar,
     TextEditor,
+    VSBrowser,
     WebView,
 } from "vscode-extension-tester";
 
@@ -30,6 +34,7 @@ import {
     cellTexts,
     CONNECTION,
     driver,
+    FILES,
     inlineAction,
     inResults,
     menuAction,
@@ -101,6 +106,46 @@ describe("SQL editors and results", () => {
         });
         await discardEditor();
     });
+
+    it("opens SQL editors in the MariaDB SQL language, coloured", async () => {
+        await sqlEditor("SELECT 1 AS n FROM dual WHERE 'a' = 'a';");
+        assert.equal(await new StatusBar().getCurrentLanguage(),
+            "MariaDB SQL");
+        // Colour classes come from the TextMate grammar: a keyword, a
+        // number and a string are three different ones, so a line with
+        // all three has spans of at least three classes.
+        const classes = await waitFor(async () => {
+            const spans = await driver().findElements(
+                By.css(".monaco-editor .view-line span[class*='mtk']"));
+            const seen = new Set<string>();
+            for (const span of spans) {
+                seen.add(await span.getAttribute("class") ?? "");
+            }
+
+            return seen.size >= 3 ? seen : undefined;
+        }, "the tokens coloured by the grammar");
+        assert.ok(classes.size >= 3, [...classes].join(", "));
+        await screenshot("04-sql-language");
+        await discardEditor();
+    });
+
+    it("opens a .sql file from disk in the MariaDB SQL language",
+        async () => {
+            // The built-in `sql` language claims .sql too; the
+            // extension's claim has to win for the grammar to show.
+            const file = join(FILES, "uitest-language.sql");
+            writeFileSync(file, "SELECT 1;\n");
+            await VSBrowser.instance.openResources(file);
+            await waitFor(async () => {
+                const title = await (await new EditorView().getActiveTab())
+                    ?.getTitle();
+
+                return title === "uitest-language.sql" ? true : undefined;
+            }, "the file's editor");
+            assert.equal(await new StatusBar().getCurrentLanguage(),
+                "MariaDB SQL");
+            await runCommand("View: Revert and Close Editor");
+        });
 
     it("shows a failed statement in the error bar", async () => {
         await sqlEditor("SELECT 1;\nSELECT * FROM uitest.nope;\nSELECT 2;");

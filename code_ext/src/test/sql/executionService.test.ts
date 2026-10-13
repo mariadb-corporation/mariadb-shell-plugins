@@ -1579,3 +1579,102 @@ describe("how a column's values are shown", () => {
         expect(columns[0].display).toBe("vector");
     });
 });
+
+describe("ExecutionService and ANSI_QUOTES", () => {
+    // A backslash ending a double-quoted identifier: two statements under
+    // ANSI_QUOTES, one unfinished string otherwise.
+    const ENDS_IN_BACKSLASH = "SELECT \"a\\\"; SELECT 1;";
+
+    it("tells the server how to split, and asks for the sql_mode",
+        async () => {
+            const api = createFakeApi({});
+
+            await new ExecutionService(api).execute({
+                connectionUri: "dba@h",
+                connectionId: "id",
+                script: "SELECT 1;",
+                runId: "run1",
+                ansiQuotes: true,
+            });
+
+            expect(api.scriptOptions).toEqual({
+                ansiQuotes: true,
+                reportSqlMode: true,
+            });
+        });
+
+    it("pairs the results with the statements of the ANSI split",
+        async () => {
+            const api = createFakeApi({
+                defaultResults: [
+                    { statement_index: 0, result_sets: [] },
+                    {
+                        statement_index: 1,
+                        result_sets: [],
+                        ansi_quotes: true,
+                        sql_mode: "ANSI_QUOTES",
+                    },
+                ],
+            });
+
+            const report = await new ExecutionService(api).execute({
+                connectionUri: "dba@h",
+                connectionId: "id",
+                script: ENDS_IN_BACKSLASH,
+                runId: "run1",
+                ansiQuotes: true,
+            });
+
+            expect(statementsOf(report).map((row) => {
+                return row.statement;
+            })).toEqual(["SELECT \"a\\\"", "SELECT 1"]);
+        });
+
+    it("pairs by a string split where the shell did not say how it split",
+        async () => {
+            // A shell that predates ansi_quotes ignores it, so it ran the
+            // whole script as the one unfinished statement.
+            const api = createFakeApi({
+                defaultResults: [{ statement_index: 0, result_sets: [] }],
+            });
+
+            const report = await new ExecutionService(api).execute({
+                connectionUri: "dba@h",
+                connectionId: "id",
+                script: ENDS_IN_BACKSLASH,
+                runId: "run1",
+                ansiQuotes: true,
+            });
+
+            expect(statementsOf(report).map((row) => {
+                return row.statement;
+            })).toEqual([ENDS_IN_BACKSLASH]);
+        });
+
+    it("passes on the sql_mode the server reported after the script",
+        async () => {
+            const reported: string[] = [];
+            const run = async (results: object[]) => {
+                await new ExecutionService(createFakeApi({
+                    defaultResults: results,
+                })).execute({
+                    connectionUri: "dba@h",
+                    connectionId: "id",
+                    script: "SET sql_mode = 'ANSI'; SELECT 1;",
+                    runId: "run1",
+                    onSqlMode: (sqlMode) => {
+                        reported.push(sqlMode);
+                    },
+                });
+            };
+
+            await run([
+                { statement_index: 0 },
+                { statement_index: 1, ansi_quotes: false, sql_mode: "ANSI" },
+            ]);
+            // Absent where it could not be read, or from an older shell.
+            await run([{ statement_index: 0 }, { statement_index: 1 }]);
+
+            expect(reported).toEqual(["ANSI"]);
+        });
+});

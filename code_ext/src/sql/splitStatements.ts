@@ -199,14 +199,20 @@ const toServerStatements = (
  * is really of without breaking the pairing the indexes carry.
  *
  * @param script The script to split.
+ * @param ansiQuotes Whether `"..."` is an identifier, as under the
+ *                   ANSI_QUOTES sql_mode; what `db.execute_sql_script` is
+ *                   told, so the server's split agrees.
  *
  * @returns One entry per statement the server will see, in order.
  */
-export const splitStatements = (script: string): ISqlStatement[] => {
+export const splitStatements = (
+    script: string,
+    ansiQuotes = false,
+): ISqlStatement[] => {
     const statements: ISqlStatement[] = [];
     const lines = new LineCounter(script);
 
-    for (const span of scanStatements(script)) {
+    for (const span of scanStatements(script, ";", ansiQuotes)) {
         // A DELIMITER command is a client side directive. The server
         // consumes it without producing a result, so it is not one of the
         // statements the results line up against.

@@ -49,6 +49,9 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `npm run typecheck` | Type check both configs. |
 | `npm run lint` | Lint `src` and `webview`. |
 | `npm run pretest` | `typecheck` + `lint`. |
+| `npm run grammar:sync -- --server <path> --shell <path>` | Read the SQL keyword, function and REST word lists out of the two checkouts into `syntaxes/words.json`. |
+| `npm run grammar:build` | Build the two MariaDB SQL grammars from the template and the lists. |
+| `npm run grammar:check` | The same, failing if the checked-in grammars differ (CI, and `words.test.ts`). |
 
 ## Node version, and why the lockfile keeps churning
 

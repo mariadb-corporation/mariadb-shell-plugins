@@ -25,7 +25,11 @@ import {
 } from "../mcp/protocol.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import type { IMariaDbApi, IStatementResult } from "../mcp/types.js";
+import {
+    firstCell,
+    type IMariaDbApi,
+    type IStatementResult,
+} from "../mcp/types.js";
 import { callArguments } from "../connections/connectionActivity.js";
 import { counted, errorText } from "../text.js";
 import {
@@ -100,17 +104,6 @@ export class MrsError extends Error {
         this.name = "MrsError";
     }
 }
-
-/**
- * @param result A statement's result.
- *
- * @returns The value of its first cell, where it has one.
- */
-const firstCell = (result: IStatementResult | undefined): unknown => {
-    const row = result?.result_sets?.[0]?.rows[0];
-
-    return row === undefined ? undefined : Object.values(row)[0];
-};
 
 /**
  * @param value A JSON cell, as text or already decoded.

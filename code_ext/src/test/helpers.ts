@@ -16,6 +16,7 @@
  */
 
 import type { IConnectionSettings } from "../connections/connectionManager.js";
+import { SQL_MODE_QUERY } from "../connections/sqlModes.js";
 import { ObjectNotFoundError } from "../mcp/mariaDbApi.js";
 import type { IToolResult } from "../mcp/protocol.js";
 import type { IMcpConnection, IMcpConnector } from "../mcp/session.js";
@@ -28,6 +29,7 @@ import type {
     IObjectInfo,
     ISchemaInfo,
     IPageRequest,
+    IScriptOptions,
     IStatementResult,
     ObjectType,
 } from "../mcp/types.js";
@@ -182,6 +184,8 @@ export interface FakeApiOptions {
      * `limit` of them from `offset`, with `has_more_pages`.
      */
     pagedRows?: Array<Record<string, unknown>>;
+    /** What `SELECT @@sql_mode` answers; the empty string unless given. */
+    sqlMode?: string;
 }
 
 export interface FakeApi extends IMariaDbApi {
@@ -217,6 +221,8 @@ export interface FakeApi extends IMariaDbApi {
     stopOnError?: boolean;
     /** The limit the last script was run with. */
     limit?: number;
+    /** The options the last script was given. */
+    scriptOptions?: IScriptOptions;
     /** Every `executeSql` call, in order. */
     statements: Array<{ sql: string; page?: IPageRequest }>;
     /** Every `getObjectDetails` call, as `schema.name:type`. */
@@ -398,10 +404,12 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
             script: string,
             stopOnError?: boolean,
             limit?: number,
+            scriptOptions?: IScriptOptions,
         ) => {
             scripts.push(script);
             api.stopOnError = stopOnError;
             api.limit = limit;
+            api.scriptOptions = scriptOptions;
 
             const named = options.results?.[script.trim()];
 
@@ -413,6 +421,14 @@ export const createFakeApi = (options: FakeApiOptions = {}): FakeApi => {
 
         executeSql: (_id: string, sql: string, page?: IPageRequest) => {
             api.statements.push({ sql, ...(page ? { page } : {}) });
+            if (sql === SQL_MODE_QUERY) {
+                return Promise.resolve({
+                    result_sets: [{
+                        columns: ["@@sql_mode"],
+                        rows: [{ "@@sql_mode": options.sqlMode ?? "" }],
+                    }],
+                });
+            }
             const all = options.pagedRows ?? [];
             if (!page) {
                 return Promise.resolve({

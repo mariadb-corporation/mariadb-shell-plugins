@@ -45,16 +45,19 @@ export interface IStatementRange {
  *
  * @param script The text to look in.
  * @param offset The cursor's offset in it.
+ * @param ansiQuotes Whether `"..."` is an identifier, as under the
+ *                   ANSI_QUOTES sql_mode.
  *
  * @returns The statement to run, or undefined when there is none.
  */
 export const statementAtOffset = (
     script: string,
     offset: number,
+    ansiQuotes = false,
 ): IStatementRange | undefined => {
     const candidates: IStatementRange[] = [];
 
-    for (const span of scanStatements(script)) {
+    for (const span of scanStatements(script, ";", ansiQuotes)) {
         if (!hasContent(span)
             || span.state === StatementFinishState.DelimiterChange) {
             continue;
