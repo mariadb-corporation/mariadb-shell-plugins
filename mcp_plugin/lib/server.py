@@ -771,8 +771,9 @@ class TrustedProxyMiddleware:
 def add_landing_page(starlette_app) -> None:
     """Serves a landing page at ``/``, where the SDK's app answers Not Found.
 
-    Appended after the app's own routes, so an MCP endpoint served at ``/``
-    keeps the path.
+    Also serves ``/favicon.svg`` and ``/favicon.ico``, which the landing page
+    and the sign-in pages link. Appended after the app's own routes, so an MCP
+    endpoint served at ``/`` keeps the path.
 
     Args:
         starlette_app: The app ``streamable_http_app()`` built.
@@ -782,9 +783,13 @@ def add_landing_page(starlette_app) -> None:
     """
     from starlette.routing import Route
 
-    from mcp_plugin.lib.oauth_builtin import landing_page
+    from mcp_plugin.lib.oauth_builtin import icon, landing_page
 
-    starlette_app.router.routes.append(Route("/", endpoint=landing_page, methods=["GET"]))
+    starlette_app.router.routes.extend([
+        Route("/", endpoint=landing_page, methods=["GET"]),
+        Route("/favicon.svg", endpoint=icon, methods=["GET"]),
+        Route("/favicon.ico", endpoint=icon, methods=["GET"]),
+    ])
 
 
 def _dialable_host_names(host: str) -> list:

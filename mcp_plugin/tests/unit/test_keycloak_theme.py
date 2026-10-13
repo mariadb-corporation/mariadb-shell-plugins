@@ -25,6 +25,8 @@ from drifting when the server's page changes.
 
 import os
 
+import pytest
+
 from mcp_plugin.lib import oauth_builtin
 
 THEME = os.path.join(
@@ -48,6 +50,15 @@ def _asset(name):
 
 def test_the_stylesheet_is_the_sign_in_pages():
     assert _read("resources", "css", "sign-in-page.css") == _asset("sign-in-page.css")
+
+
+@pytest.mark.parametrize("name", ["favicon.svg", "favicon.ico"])
+def test_the_icons_are_the_sign_in_pages(name):
+    assets = os.path.join(os.path.dirname(os.path.abspath(oauth_builtin.__file__)), "assets")
+    with open(os.path.join(THEME, "resources", "img", name), "rb") as theme, \
+            open(os.path.join(assets, name), "rb") as asset:
+        assert theme.read() == asset.read()
+    assert f'href="${{url.resourcesPath}}/img/{name}"' in _read("template.ftl")
 
 
 def test_the_logo_is_the_one_the_sign_in_page_shows():

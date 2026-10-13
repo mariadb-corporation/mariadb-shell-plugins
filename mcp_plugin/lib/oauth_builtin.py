@@ -1563,7 +1563,11 @@ def _page(response_class, body: str, status: int = 200, raw: bool = False,
     document = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<title>MariaDB MCP Server</title><style nonce="{nonce}">{_asset("sign-in-page.css")}</style>'
+        '<title>MariaDB MCP Server</title>'
+        # Relative, so that they resolve below a path prefix a proxy adds.
+        '<link rel="icon" type="image/svg+xml" href="favicon.svg">'
+        '<link rel="icon" href="favicon.ico" sizes="32x32">'
+        f'<style nonce="{nonce}">{_asset("sign-in-page.css")}</style>'
         f'</head><body><div id="root"><div class="welcomeLogo">{_asset("mariadb-logo-vertical.svg")}</div>'
         '<div class="welcomeText"><h2>MCP Server</h2>'
         "<p>Welcome to the MariaDB MCP Server.</p></div>"
@@ -1582,7 +1586,7 @@ def _page(response_class, body: str, status: int = 200, raw: bool = False,
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer",
             "Content-Security-Policy": (
-                f"default-src 'none'; style-src 'nonce-{nonce}'; "
+                f"default-src 'none'; style-src 'nonce-{nonce}'; img-src 'self'; "
                 f"form-action 'self'{' ' + form_target if form_target else ''}; "
                 "frame-ancestors 'none'; base-uri 'none'"
             ),
@@ -1615,6 +1619,32 @@ async def landing_page(request):
     )
 
     return _page(HTMLResponse, body, raw=True)
+
+
+_ICONS = {"favicon.svg": "image/svg+xml", "favicon.ico": "image/x-icon"}
+
+
+@functools.lru_cache(maxsize=None)
+def _icon(name) -> bytes:
+    """Returns an icon of ``lib/assets``, read once."""
+    import os
+
+    with open(os.path.join(os.path.dirname(__file__), "assets", name), "rb") as file:
+        return file.read()
+
+
+async def icon(request):
+    """Serves the icon the pages link, ``favicon.svg`` or ``favicon.ico``.
+
+    The same icons as the MariaDB REST Service's landing page and the Keycloak
+    theme (which carries copies).
+    """
+    from starlette.responses import Response
+
+    name = request.url.path.rsplit("/", 1)[-1]
+
+    return Response(_icon(name), media_type=_ICONS[name],
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 def _public_key_of(pem: str):

@@ -1923,7 +1923,9 @@ def test_the_sign_in_page_shows_the_logo_inline(tenant_config):
     assert ".welcomeLogo path{fill:var(--logo-color)}" in page
     # The logo carries the MariaDB name, so the heading below it does not repeat it.
     assert "<h2>MCP Server</h2>" in page and "<title>MariaDB MCP Server</title>" in page
-    assert "img-src" not in response.headers["Content-Security-Policy"]
+    # Images from the server itself are the icons only; the logo needs none.
+    assert "img-src 'self';" in response.headers["Content-Security-Policy"]
+    assert '<link rel="icon" type="image/svg+xml" href="favicon.svg">' in page
     assert '<div class="mrsLoginError" role="alert"><p>No.</p></div>' in page
 
 
@@ -1957,3 +1959,7 @@ def test_the_server_root_shows_a_landing_page(tenant_config, mode):
             '<a href="https://mariadb.com/docs/tools/mariadb-shell/mcp-server">') in page
     assert "script" not in response.headers["Content-Security-Policy"]
     assert asyncio.run(get("/other")).status_code == 404
+    for name, media_type in (("favicon.svg", "image/svg+xml"), ("favicon.ico", "image/x-icon")):
+        icon = asyncio.run(get(f"/{name}"))
+        assert icon.status_code == 200 and icon.headers["content-type"].startswith(media_type)
+        assert icon.content == oauth_builtin._icon(name)
