@@ -464,6 +464,31 @@ def test_other_output_is_kept_as_a_message():
     assert parser.feed("\n") == []
 
 
+# --- the shell binary ------------------------------------------------------------
+
+
+def test_the_utility_runs_in_the_shell_the_server_runs_in():
+    assert util_process.shell_executable() == util_process.mysqlsh.executable
+    assert os.path.isfile(util_process.shell_executable())
+
+
+def test_outside_a_shell_the_one_on_path(tmp_path, monkeypatch):
+    if os.name == "nt":
+        pytest.skip("the fake shell is a POSIX script")
+
+    executable = tmp_path / "mariadb-shell"
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+    monkeypatch.delattr(util_process.mysqlsh, "executable", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert util_process.shell_executable() == str(executable)
+
+    monkeypatch.setenv("PATH", str(tmp_path / "nothing"))
+    with pytest.raises(Exception, match="Put mariadb-shell on the PATH"):
+        util_process.shell_executable()
+
+
 # --- the process, with a fake shell ---------------------------------------------
 
 _FAKE_SHELL = """

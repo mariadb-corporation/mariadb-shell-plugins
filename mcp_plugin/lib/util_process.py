@@ -51,6 +51,8 @@ import time
 import weakref
 from typing import Optional
 
+import mysqlsh
+
 from mcp_plugin.lib.tool_registrar import tool_error
 # the watchdog imports nothing of the plugin, so it is where these are kept
 from mcp_plugin.lib.util_watchdog import (
@@ -112,40 +114,18 @@ _STAGE_DONE = " - done"
 # --- the shell -----------------------------------------------------------------
 
 
-def _own_executable() -> Optional[str]:
-    """The executable of this process: the shell the server runs in."""
-    try:
-        if sys.platform.startswith("linux"):
-            return os.path.realpath("/proc/self/exe")
-
-        import ctypes
-
-        if sys.platform == "darwin":
-            libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
-            buffer = ctypes.create_string_buffer(4096)
-            if libproc.proc_pidpath(os.getpid(), buffer, ctypes.sizeof(buffer)) > 0:
-                return buffer.value.decode("utf-8")
-        elif os.name == "nt":
-            buffer = ctypes.create_unicode_buffer(32768)
-            if ctypes.windll.kernel32.GetModuleFileNameW(None, buffer, len(buffer)):
-                return buffer.value
-    except Exception:  # noqa: BLE001 - then the shell is looked for on PATH
-        pass
-
-    return None
-
-
 def shell_executable() -> str:
     """The MariaDB Shell binary a utility runs in.
 
-    The one the server itself runs in, so that the utility is that version's;
-    the one on PATH where this process is not a shell (a plain Python).
+    The one the server itself runs in, so that the utility is that version's:
+    the shell sets ``mysqlsh.executable`` to its own binary when it starts its
+    Python. The one on PATH where this process is not a shell (a plain Python).
 
     Returns:
         str: Its path.
     """
-    own = _own_executable()
-    if own and os.path.isfile(own) and not os.path.basename(own).lower().startswith("python"):
+    own = getattr(mysqlsh, "executable", None)
+    if own and os.path.isfile(own):
         return own
 
     found = shutil.which("mariadb-shell")
