@@ -85,6 +85,12 @@ export class TaskLogs {
     #writing: Promise<void> = Promise.resolve();
 
     /**
+     * The tasks whose logs this window may delete: the ones it listed or
+     * wrote. Another window can keep its logs in the same folder.
+     */
+    #ours = new Set<string>();
+
+    /**
      * @param folder Where the logs go: the extension's own storage.
      * @param log Where a log that could not be written is told.
      */
@@ -122,6 +128,7 @@ export class TaskLogs {
             return;
         }
 
+        this.#ours.add(tracked.state.task_id);
         await this.#queue(async () => {
             await mkdir(this.folder, { recursive: true });
             await appendFile(this.pathOf(tracked.state.task_id),
@@ -130,14 +137,46 @@ export class TaskLogs {
     }
 
     /**
-     * Deletes the logs of the tasks no longer listed.
+     * Deletes the logs of this window's tasks that are no longer listed,
+     * and only those: the logs of another window's tasks stay.
      *
-     * @param kept The ids of the tasks still listed.
+     * @param listed The ids of the tasks still listed.
      *
      * @returns Once they are gone.
      */
-    public async prune(kept: Iterable<string>): Promise<void> {
-        const keep = new Set([...kept].map((taskId) => {
+    public async prune(listed: Iterable<string>): Promise<void> {
+        const keep = new Set(listed);
+        const gone = [...this.#ours].filter((taskId) => {
+            return !keep.has(taskId);
+        });
+        for (const taskId of keep) {
+            this.#ours.add(taskId);
+        }
+        if (gone.length === 0) {
+            return;
+        }
+
+        for (const taskId of gone) {
+            this.#ours.delete(taskId);
+        }
+        await this.#queue(async () => {
+            for (const taskId of gone) {
+                await rm(this.pathOf(taskId), { force: true });
+            }
+        });
+    }
+
+    /**
+     * Deletes every log in the folder whose task is not listed: also the
+     * ones the list lost when it was cut to its newest, on a reload. Only
+     * for a folder no other window keeps its logs in.
+     *
+     * @param listed The ids of the tasks listed.
+     *
+     * @returns Once they are gone.
+     */
+    public async sweep(listed: Iterable<string>): Promise<void> {
+        const keep = new Set([...listed].map((taskId) => {
             return this.pathOf(taskId);
         }));
 
