@@ -1504,6 +1504,72 @@ describe("a new REST schema's REST Objects tab", () => {
                 "Untick the REST objects to change it.");
         });
 
+    describe("drawn", () => {
+        // jsdom lays nothing out, and Tabulator draws only the rows that
+        // fit: every element is given room for them.
+        const sizes = ["offsetHeight", "clientHeight", "offsetWidth",
+            "clientWidth", "scrollHeight"];
+        const saved: Array<[string, PropertyDescriptor | undefined]> = [];
+        beforeEach(() => {
+            for (const size of sizes) {
+                saved.push([size, Object.getOwnPropertyDescriptor(
+                    HTMLElement.prototype, size)]);
+                Object.defineProperty(HTMLElement.prototype, size, {
+                    configurable: true, get: () => { return 400; },
+                });
+            }
+        });
+        afterEach(() => {
+            for (const [size, descriptor] of saved.splice(0)) {
+                if (descriptor) {
+                    Object.defineProperty(HTMLElement.prototype, size,
+                        descriptor);
+                }
+            }
+        });
+
+        const loadDrawn = async (): Promise<HTMLInputElement[]> => {
+            await loadNew();
+            for (let i = 0; i < 20
+                && !host.querySelector(".tabulator-row"); i += 1) {
+                await act(async () => {
+                    await new Promise((resolve) => { setTimeout(resolve, 10); });
+                });
+            }
+
+            return [...host.querySelectorAll<HTMLInputElement>(
+                ".tabulator-row input[type=checkbox]")];
+        };
+
+        it("ticks a row from the keyboard, keeping its focus", async () => {
+            const [box] = await loadDrawn();
+            expect(box!.tabIndex).toBe(0);
+
+            // Space on a focused checkbox clicks it.
+            box!.focus();
+            await act(async () => { box!.click(); await tick(); });
+
+            expect(count()).toBe("1 of 4 selected");
+            expect(box!.checked).toBe(true);
+            expect(box!.isConnected).toBe(true);
+            expect(document.activeElement).toBe(box);
+
+            await act(async () => { box!.click(); await tick(); });
+            expect(count()).toBe("0 of 4 selected");
+            expect(box!.checked).toBe(false);
+        });
+
+        it("ticks a row clicked anywhere", async () => {
+            await loadDrawn();
+            const row = host.querySelectorAll<HTMLElement>(".tabulator-row")[1]!;
+            await act(async () => { row.click(); await tick(); });
+
+            expect(count()).toBe("1 of 4 selected");
+            expect(row.querySelector<HTMLInputElement>("input")!.checked)
+                .toBe(true);
+        });
+    });
+
     it("has a Filter by type and a name search in its toolbar", async () => {
         await loadNew();
 

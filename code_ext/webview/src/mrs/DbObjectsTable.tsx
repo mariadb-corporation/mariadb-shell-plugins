@@ -81,8 +81,8 @@ export const formatDbObjectCell = (cell: CellComponent): HTMLElement => {
     const box = document.createElement("input");
     box.type = "checkbox";
     box.checked = row.selected;
-    // The row's click toggles it; the box is not a stop of its own.
-    box.tabIndex = -1;
+    // A tab stop, so the keyboard can tick it: Space clicks it, and the
+    // click, as the pointer's on the row, reaches the row's handler.
     box.setAttribute("aria-label", `Create a REST object for ${row.name}`);
     host.appendChild(box);
 
@@ -215,8 +215,13 @@ export const DbObjectsTable = (props: {
                 !== data.selected) {
                 void row.update({ selected: data.selected });
                 // `selected` is no column's field, so its cell is not
-                // drawn again by the update itself.
-                row.reformat();
+                // drawn again by the update itself. Nor is it redrawn
+                // here: the box keeps the focus the keyboard gave it.
+                const box = row.getElement()
+                    .querySelector<HTMLInputElement>("input[type=checkbox]");
+                if (box) {
+                    box.checked = data.selected;
+                }
             }
         }
     }, [tickedKeys.join("\n")]);

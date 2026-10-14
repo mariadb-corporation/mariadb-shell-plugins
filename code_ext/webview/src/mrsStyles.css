@@ -589,6 +589,7 @@ body.vscode-light .mrsObjectTreeGrid {
     gap: 0.4rem;
 }
 
+/* The pointer's click is the row's; the keyboard's reaches it too. */
 .dbObjectCell input {
     margin: 0;
     pointer-events: none;
