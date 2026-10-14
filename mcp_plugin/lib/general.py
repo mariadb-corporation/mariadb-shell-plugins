@@ -116,6 +116,9 @@ FUNCTION_GROUP_MIGRATOR = "migrator"
 # The dump, load, copy, export and import utilities, run as background tasks;
 # its tools need connections, so they register only alongside the db group.
 FUNCTION_GROUP_UTIL = "util"
+# The MariaDB REST Daemon: setting one up for a server, and starting, stopping
+# and deleting it. Setting up needs a connection, the rest does not.
+FUNCTION_GROUP_REST = "rest"
 SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_DB,
     FUNCTION_GROUP_MSM,
@@ -123,12 +126,13 @@ SUPPORTED_FUNCTION_GROUPS = (
     FUNCTION_GROUP_SANDBOX,
     FUNCTION_GROUP_MIGRATOR,
     FUNCTION_GROUP_UTIL,
+    FUNCTION_GROUP_REST,
 )
 DEFAULT_FUNCTION_GROUPS = SUPPORTED_FUNCTION_GROUPS
 
 # The groups a multi-tenant server serves, and the only ones it may. The
-# sandbox and migrator groups run local server processes and long jobs that
-# write to the server's disk - resources one user would take from all the
+# sandbox, migrator and rest groups run local server processes and long jobs
+# that write to the server's disk - resources one user would take from all the
 # others - the util group's dumps and loads are such jobs too, and the msm
 # group works on schema project folders, which live on the developer's own
 # machine, not on a remote server. None of them are offered to tenants.

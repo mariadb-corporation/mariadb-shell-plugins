@@ -220,7 +220,7 @@ primitives in `lib/setup_prompts.py`).
 
 The tools are grouped into function groups that can be loaded independently via the
 `function_groups` option of `mcp.start_server` (`db`, `msm`, `mrs`, `sandbox`, `migrator`,
-`util`; defaults to all):
+`util`, `rest`; defaults to all):
 
 ```bash
 # expose only the database tools
@@ -350,6 +350,11 @@ shell's `sandbox` global object. Sandbox instances are only meant for local test
 | `sandbox.vendor` | `sandbox.vendor` |
 | `sandbox.version` | `sandbox.version` |
 
+A sandbox can have a MariaDB REST Daemon (see [REST Daemon tools](#rest-daemon-tools-rest)).
+It follows the sandbox: `sandbox.start` starts it after the server, `sandbox.stop` and
+`sandbox.kill` stop it first, and `sandbox.delete` stops it before the sandbox's folder,
+which holds it, is deleted.
+
 #### Deploying a specific server version
 
 `sandbox.deploy` normally runs whatever `mariadbd` is on the PATH, which is one version
@@ -477,6 +482,47 @@ its `task_id` at once; the client follows the task with `util.get_task`.
   name), is left to the utility.
 - The tools are registered only when the `db` group is served as well, and never in
   multi-tenant mode.
+
+### REST Daemon tools (`rest`)
+
+Tools for the MariaDB REST Daemon, `mariadb-restd`, which serves the REST services
+defined in a server's REST metadata. `rest.configure_restd` sets one up for a server and
+starts it; it keeps running when the MCP server ends.
+
+| MCP tool | Does |
+| --- | --- |
+| `rest.configure_restd` | Sets up and starts a daemon for a connection opened with `db.connect` |
+| `rest.start_restd` | Starts a deployment's daemon |
+| `rest.stop_restd` | Stops a deployment's daemon |
+| `rest.delete_restd_config` | Stops a daemon, drops the server account it was given and deletes its deployment |
+| `rest.get_restd_status` | Lists the deployments, running and stopped |
+
+`rest.configure_restd`, in this order:
+
+1. Connects with the password given, or the connection's stored one.
+2. Picks the REST metadata schema: the one named, else the one the server has. A server
+   with several needs one named; a server with none gets `mariadb_rest_service`, created
+   with `CONFIGURE REST METADATA`.
+3. Finds `mariadb-restd` on the PATH, in `~/.local/bin`, or among the releases its install
+   script unpacked into `~/.local/share/mariadb-restd/<version>`
+   (`%LOCALAPPDATA%\Programs\mariadb-restd\<version>` on Windows). When there is none,
+   it runs the install script from the rest-daemon repository - without asking in GUI
+   mode, after asking through MCP elicitation otherwise.
+4. Checks that the account can do the setup: `CREATE USER` with the `GRANT OPTION`,
+   `SELECT`, `INSERT` and `UPDATE` on the metadata schema, and its roles
+   `WITH ADMIN OPTION`.
+5. Runs `mariadb-restd --setup`, which registers the daemon, creates a server account of
+   its own and writes the deployment. The admin password goes to the setup's stdin.
+6. Starts the daemon and waits for it to listen.
+
+A sandbox's deployment is in `<sandbox>/mariadb-restd`, and its daemon listens on ten
+times the sandbox's port (33110 for a sandbox on 3311) when that is free. Any other
+server's deployment is in `~/.mariadb-restd/<host>_<port>`
+(`%APPDATA%\MariaDB\mariadb-restd` on Windows), and its daemon listens on the first free
+port from 8443 up. The daemon logs to `log/mariadb-restd.log` in its deployment.
+
+`rest.configure_restd` is registered only when the `db` group is served as well. The
+group is never served in multi-tenant mode.
 
 ### Migrator tools (`migrator`)
 
@@ -1050,7 +1096,7 @@ test run should do. Add `--e2e` to run them as well:
 mariadb-shell --py -f run_tests.py --e2e
 ```
 
-There are two at present.
+There are three at present.
 
 `test_a_sandbox_really_runs_a_downloaded_server` in
 `tests/unit/test_sandbox_servers.py` downloads a published server package for real,
@@ -1068,6 +1114,11 @@ installs the migration tooling with `mcp setup --installMigrator`, migrates with
 row on the target. It skips itself when the machine cannot run a migration - no
 MySQL server to deploy the source from being the usual reason; see the module
 docstring for the rest.
+
+`test_a_sandbox_really_gets_a_rest_daemon` in `tests/unit/test_rest.py` deploys a sandbox,
+sets a REST Daemon up for it with the real `mariadb-restd`, checks that it serves HTTPS,
+and that it stops, starts and goes with the sandbox. It skips itself when there is no
+`mariadb-restd` where `rest.configure_restd` looks for one.
 
 ## License
 
