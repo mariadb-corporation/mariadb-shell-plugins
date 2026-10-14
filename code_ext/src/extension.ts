@@ -75,7 +75,10 @@ import {
 } from "./connections/connectionFolders.js";
 import { ConnectionEditorPanel } from "./connections/connectionEditorPanel.js";
 import { withDefaultScheme } from "./connections/connectionUri.js";
-import type { ISandboxApi } from "./mcp/sandboxApi.js";
+import type {
+    ISandboxApi,
+    ISandboxDeployOptions,
+} from "./mcp/sandboxApi.js";
 import { GENERAL_ACTIONS } from "./connections/connectionActivity.js";
 import { createLoggingSandboxApi } from "./sandboxes/sandboxActivity.js";
 import { SandboxStore } from "./sandboxes/sandboxStore.js";
@@ -380,7 +383,27 @@ export const activate = (context: vscode.ExtensionContext): void => {
     };
     // The daemon of a sandbox follows it, each step a row of the
     // sandbox's action.
-    const followHost = { put: putAction, restApi };
+    const followHost = {
+        put: putAction,
+        restApi,
+        // As a deploy's steps do: the panel stays where they show.
+        hold: () => { return resultView.holdGeneralActions(); },
+    };
+    // What a sandbox deployed with the REST Service is set up through.
+    const sandboxRestHost = {
+        put: putAction,
+        deploy: (options: ISandboxDeployOptions) => {
+            return sandboxStore.deploy(options, true);
+        },
+        connect: (uri: string) => {
+            return connections.connect(uri, UI_BACKEND_SESSION);
+        },
+        api: () => { return connections.api(); },
+        restApi,
+        writeLog: (name: string, text: string) => {
+            return writeRestdLog(restdLogFolder, name, text);
+        },
+    };
     // A deploy registers a connection to the new sandbox and a delete
     // removes it, both server-side, so the Connections view reads its list
     // again.
@@ -957,22 +980,19 @@ export const activate = (context: vscode.ExtensionContext): void => {
                     ));
                 },
                 deployWithRest: async (options, rest) => {
-                    const deployed = await deploySandboxWithRest({
-                        put: putAction,
-                        deploy: (deploy) => {
-                            return sandboxStore.deploy(deploy, true);
-                        },
-                        connect: (uri) => {
-                            return connections.connect(uri,
-                                UI_BACKEND_SESSION);
-                        },
-                        api: () => { return connections.api(); },
-                        restApi,
-                        writeLog: (name, text) => {
-                            return writeRestdLog(restdLogFolder, name, text);
-                        },
-                    }, options, rest);
+                    // The steps go on after the dialog closes; the panel
+                    // stays where they can be watched until the last one.
+                    const release = resultView.holdGeneralActions();
+                    let deployed;
+                    try {
+                        deployed = await deploySandboxWithRest(
+                            sandboxRestHost, options, rest);
+                    } catch (error) {
+                        release();
+                        throw error;
+                    }
                     void deployed.rest.then((succeeded) => {
+                        release();
                         restdTree.refresh();
                         if (!succeeded) {
                             // The sandbox is there; what failed after it

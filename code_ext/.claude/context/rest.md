@@ -75,6 +75,13 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   server's hooks are what keeps an agent's sandbox right; the extension's
   calls (which do nothing where it is done already) are what gives each
   step its row, with its error.
+- **The panel stays on General Actions while a sandbox's steps run**
+  (2026-10-14, the user's call): the REST steps open a connection to the
+  new sandbox, and the first connection to report anything takes over a
+  panel that is on General Actions by default. `ResultViewProvider.
+  holdGeneralActions()` blocks that until the last step ends; the deploy
+  with the REST Service and `followSandbox` hold it. A connection the user
+  picked is never touched.
 - **A grouped deploy is `deploy(options, quiet=true)`**: the logging
   sandbox API leaves its own row out then, or the deploy would show twice.
 - **The connection's REST Daemon lives in the real `~/.mariadb-restd`**

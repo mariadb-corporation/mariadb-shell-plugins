@@ -223,6 +223,11 @@ export type SandboxChange = "start" | "stop" | "delete";
 export interface IRestdFollowHost {
     put: ActionPutter;
     restApi(): Promise<IRestApi>;
+    /**
+     * Keeps the Actions tab on General Actions while the steps run, where
+     * the panel is there by default; returns what lets go of it.
+     */
+    hold?(): () => void;
 }
 
 const CHANGE_WORDS: Record<SandboxChange, {
@@ -273,6 +278,7 @@ export const followSandbox = async (
         return;
     }
 
+    const release = host.hold?.();
     const words = CHANGE_WORDS[change];
     const target = deployment;
     const sandbox = `Sandbox on port ${String(port)}`;
@@ -323,5 +329,6 @@ export const followSandbox = async (
         }
     } finally {
         group.finish();
+        release?.();
     }
 };

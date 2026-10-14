@@ -1575,6 +1575,32 @@ describe("ResultViewProvider", () => {
                 expect(view.shown).toBeFalsy();
             });
 
+        it("stays on General Actions while a hold is on it", async () => {
+            const { provider, view } = createWithSessions();
+            view.webview.receive({ type: "ready" });
+            const deploy = {
+                id: "group-1", time: "12:00:00.000",
+                connection: "General Actions", role: "run" as const,
+                statement: "", message: "Creating Sandbox on port 3311\u2026",
+                kind: "pending" as const, children: [],
+            };
+            await provider.putAction("General Actions", deploy);
+            const release = provider.holdGeneralActions();
+
+            // The steps open a connection to the new sandbox.
+            await provider.appendEvent(anEvent());
+            await provider.putAction("General Actions", deploy);
+            expect(lastState(view)?.connection).toBe("General Actions");
+
+            release();
+            release();
+            await provider.appendEvent(anEvent());
+            await vi.waitFor(() => {
+                expect(lastState(view)?.connection)
+                    .toBe("dba@localhost:3310");
+            });
+        });
+
         it("opens the log a row names, and no other file", async () => {
             const { provider, view } = createWithSessions();
             view.webview.receive({ type: "ready" });

@@ -210,6 +210,22 @@ describe("followSandbox", () => {
         };
     };
 
+    it("holds the Actions tab while its steps run", async () => {
+        const calls: string[] = [];
+        const { host } = followHost(calls);
+        const holds: string[] = [];
+
+        await followSandbox({
+            ...host,
+            hold: () => {
+                holds.push("held");
+                return () => { holds.push("released"); };
+            },
+        }, 3311, "stop", async () => { holds.push("sandbox"); });
+
+        expect(holds).toEqual(["held", "sandbox", "released"]);
+    });
+
     it("starts the daemon after the sandbox", async () => {
         const calls: string[] = [];
         const { host, last } = followHost(calls);

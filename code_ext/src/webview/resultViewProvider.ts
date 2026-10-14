@@ -154,6 +154,13 @@ export class ResultViewProvider
      */
     #generalByDefault = false;
     /**
+     * How many actions reported under General Actions are under way that
+     * keep the view there: a sandbox's deploy and the steps after it
+     * open a connection to the new sandbox, which would otherwise take
+     * the view over before the steps can be watched.
+     */
+    #generalHolds = 0;
+    /**
      * Which connection open on it is on show, or undefined for all of
      * them together - which is what the view opens on.
      */
@@ -1352,9 +1359,30 @@ export class ResultViewProvider
         if (this.#active === undefined) {
             this.#active = connection;
             this.#generalByDefault = connection === GENERAL_ACTIONS;
-        } else if (this.#generalByDefault && connection !== GENERAL_ACTIONS) {
+        } else if (this.#generalByDefault && connection !== GENERAL_ACTIONS
+            && this.#generalHolds === 0) {
             this.#setActive(connection);
         }
+    }
+
+    /**
+     * Keeps the view on General Actions, where it is there by default,
+     * while something reported there is under way: no connection that
+     * reports meanwhile takes it over. One the user picked is not
+     * touched either way.
+     *
+     * @returns Lets go of the hold; calling it again does nothing.
+     */
+    public holdGeneralActions(): () => void {
+        this.#generalHolds += 1;
+        let held = true;
+
+        return () => {
+            if (held) {
+                held = false;
+                this.#generalHolds -= 1;
+            }
+        };
     }
 
     /**
