@@ -212,7 +212,9 @@ export const MrsDialog = (): preact.JSX.Element => {
             )}
 
             {busy
-                ? <ProgressBar label={definition.busyLabel ?? "Saving..."} />
+                ? <ProgressBar label={typeof definition.busyLabel === "function"
+                    ? definition.busyLabel(extras)
+                    : definition.busyLabel ?? "Saving..."} />
                 : null}
             {saveError === undefined
                 ? null : <p class="message error">{saveError}</p>}

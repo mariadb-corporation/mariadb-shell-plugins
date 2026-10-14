@@ -1108,7 +1108,37 @@ export interface IContentSetContext {
     services: string[];
     /** The content set's path, when it is edited. */
     existingPath?: string;
+    /**
+     * Whether it is the service's OpenAPI UI: Swagger UI, which the MCP
+     * server downloads and patches, so there is no folder to choose.
+     */
+    openApiUi?: boolean;
 }
+
+/** Where a REST service's OpenAPI UI is served, unless told otherwise. */
+export const OPEN_API_UI_PATH = "/openApiUi";
+
+/** The Swagger UI release the OpenAPI UI is made of, as the plugin pins it. */
+export const OPEN_API_UI_VERSION = "5.17.14";
+
+/**
+ * @param services Every service.
+ * @param servicePath The service the UI is for.
+ *
+ * @returns The dialog's fields for a service's OpenAPI UI: served at
+ *          /openApiUi, to everyone - signing in is the UI's own Authorize.
+ */
+export const openApiUiDefaults = (
+    services: IMrsService[],
+    servicePath: string,
+): IContentSetDialogValues => {
+    return {
+        ...contentSetDefaults(services, undefined, servicePath),
+        requestPath: OPEN_API_UI_PATH,
+        requiresAuth: false,
+        ignoreList: "",
+    };
+};
 
 /** The files a folder upload leaves out unless told otherwise. */
 export const DEFAULT_IGNORE_LIST = "*node_modules/*, */.*";
@@ -1186,7 +1216,8 @@ export const validateContentSet = (
             ? [{ field: "servicePath", message: "Please select a REST service." }]
             : []),
         ...requestPathProblems(values.requestPath),
-        ...(context.existingPath === undefined && values.directory.trim() === ""
+        ...(context.existingPath === undefined && context.openApiUi !== true
+            && values.directory.trim() === ""
             ? [{
                 field: "directory",
                 message: "Please select the folder to upload.",

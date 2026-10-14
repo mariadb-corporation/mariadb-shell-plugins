@@ -75,6 +75,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 | `mariadb.mrs.copyCreateDbObjectSql` | Copy CREATE REST OBJECT Statement | REST Service rows (see [mrs.md](mrs.md)) |
 | `mariadb.mrs.dumpCreateDbObjectSql` | Dump CREATE REST OBJECT Statement... | REST Service rows (see [mrs.md](mrs.md)) |
 | `mariadb.mrs.addContentSet` | Add New REST Content Set... | REST Service rows (see [mrs.md](mrs.md)) |
+| `mariadb.mrs.deployOpenApiUi` | Deploy OpenAPI Web UI... | REST Service rows: the content set dialog in its OpenAPI UI mode (see [mrs.md](mrs.md)) |
 | `mariadb.mrs.addFolderAsContentSet` | Upload Folder to MariaDB REST Service... | REST Service rows (see [mrs.md](mrs.md)) |
 | `mariadb.mrs.editContentSet` | Edit REST Content Set... | REST Service rows (see [mrs.md](mrs.md)) |
 | `mariadb.mrs.deleteContentSet` | Delete REST Content Set... | REST Service rows (see [mrs.md](mrs.md)) |

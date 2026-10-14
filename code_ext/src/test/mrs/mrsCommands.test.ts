@@ -1620,6 +1620,50 @@ describe("content sets", () => {
                 "ALTER REST CONTENT SET"]);
         });
 
+    it("deploys the OpenAPI UI of the service it is asked on", async () => {
+        const other = { ...service, full_service_path: "/other",
+            url_context_root: "/other", is_current: true };
+        const { toolCalls, actions } = await setup({
+            [SERVICES]: [other, service],
+            "SHOW REST CONTENT SETS ON SERVICE /myService FORMAT=JSON":
+                [mrsContentSet({ request_path: "/openApiUi" })],
+        }, {
+            toolAnswers: {
+                "mrs.load_content_set": {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({ files: ["/index.html"] }),
+                    }],
+                },
+            },
+        });
+
+        await run("mariadb.mrs.deployOpenApiUi", serviceNode());
+
+        const spec = dialog();
+        expect(spec.title).toBe("Deploy the OpenAPI Web UI");
+        expect(spec.context).toEqual({ services: ["/other", "/myService"],
+            openApiUi: true });
+        const values = spec.values as IContentSetDialogValues;
+        // The service right-clicked, not the current one; open to everyone.
+        expect(values).toMatchObject({ servicePath: "/myService",
+            requestPath: "/openApiUi", requiresAuth: false, directory: "" });
+
+        await expect(spec.save(values)).resolves.toBeUndefined();
+        // No folder: the plugin downloads Swagger UI itself.
+        expect(toolCalls).toEqual([{
+            name: "mrs.load_content_set",
+            args: {
+                connection_id: "uuid-1", content_set_path: "/openApiUi",
+                service_path: "/myService", open_api_ui: true, replace: true,
+            },
+            timeoutMs: MRS_UPLOAD_TIMEOUT_MS,
+        }]);
+        expect(actions.at(-1)).toMatchObject({
+            message: "Created REST Content Set '/openApiUi'", detail: "1 file",
+        });
+    });
+
     it("leaves the scripts to the plugin where they are to be loaded",
         async () => {
             const { toolCalls } = await setup({

@@ -44,6 +44,7 @@ import {
     DEPLOY_TIMEOUT,
     driver,
     dialogErrors,
+    fieldValue,
     FILES,
     hasTreeItem,
     inDialog,
@@ -523,6 +524,22 @@ describe("MariaDB REST Service", () => {
         await waitForAction(/^Created REST Content Set '\/web'.*1 file/,
             DEPLOY_TIMEOUT);
         await appears([...SERVICE, "/web", "/index.html"]);
+    });
+
+    it("deploys the OpenAPI Web UI", async () => {
+        // Swagger UI from github.com, patched for the service by the plugin.
+        const title = "Deploy the OpenAPI Web UI";
+        await openDialog(connections, SERVICE, ["Deploy OpenAPI Web UI..."],
+            title);
+        await inDialog(title, async (view) => {
+            assert.equal(await fieldValue(view, "requestPath"), "/openApiUi");
+            await screenshot("02-openapi-ui");
+            await submitDialog(view, "OK", DEPLOY_TIMEOUT,
+                "Downloading the OpenAPI UI and uploading its files...");
+        });
+        await waitForAction(/^Created REST Content Set '\/openApiUi'.*10 files/u,
+            DEPLOY_TIMEOUT);
+        await appears([...SERVICE, "/openApiUi", "/swagger-initializer.js"]);
     });
 
     it("changes the content set's settings", async () => {

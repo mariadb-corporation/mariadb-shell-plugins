@@ -77,6 +77,7 @@ import {
     schemaObjectStatements,
     uniqueRequestPath,
     type IDbObject,
+    openApiUiDefaults,
 } from "../../mrs/mrsDialogs.js";
 import {
     ENABLED_STATE,
@@ -1625,5 +1626,22 @@ describe("a new REST schema's REST Objects", () => {
         expect(uniqueRequestPath("/A", taken)).toBe("/A3");
         expect(uniqueRequestPath("/b", taken)).toBe("/b");
         expect([...taken]).toEqual(["/a", "/a2", "/a3", "/b"]);
+    });
+});
+
+describe("the OpenAPI UI's content set", () => {
+    it("is served at /openApiUi of the service, to everyone", () => {
+        expect(openApiUiDefaults([mrsService()], "/shop")).toMatchObject({
+            servicePath: "/shop", requestPath: "/openApiUi",
+            requiresAuth: false, directory: "",
+        });
+    });
+
+    it("needs no folder", () => {
+        const values = openApiUiDefaults([mrsService()], "/shop");
+        expect(validateContentSet(values, { services: ["/shop"],
+            openApiUi: true })).toEqual([]);
+        expect(validateContentSet(values, { services: ["/shop"] })
+            .map((problem) => { return problem.field; })).toEqual(["directory"]);
     });
 });

@@ -625,6 +625,11 @@
         "category": "MariaDB"
       },
       {
+        "command": "mariadb.mrs.deployOpenApiUi",
+        "title": "Deploy OpenAPI Web UI...",
+        "category": "MariaDB"
+      },
+      {
         "command": "mariadb.mrs.addFolderAsContentSet",
         "title": "Upload Folder to MariaDB REST Service...",
         "category": "MariaDB"
@@ -1066,6 +1071,11 @@
           "command": "mariadb.mrs.addContentSet",
           "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
           "group": "4_mrs@1"
+        },
+        {
+          "command": "mariadb.mrs.deployOpenApiUi",
+          "when": "view == mariadb.connections && viewItem =~ /^mariadbMrsService\\./",
+          "group": "4_mrs@2"
         },
         {
           "submenu": "mariadb.mrs.dumpToDisk",
@@ -1585,6 +1595,10 @@
         },
         {
           "command": "mariadb.mrs.rebuildMrsSdk",
+          "when": "false"
+        },
+        {
+          "command": "mariadb.mrs.deployOpenApiUi",
           "when": "false"
         }
       ],

@@ -172,14 +172,50 @@ Configuration Values for the New REST Schema"):
   lays nothing out. The "drawn" tests in `MrsDialog.test.tsx` give every
   element a size so that rows exist to click.
 
+## Deploy OpenAPI Web UI (2026-10-14)
+
+Ported from the MySQL Shell for VS Code. It used to work through a
+content set whose folder was the placeholder `${openApiUi}`. It is a proper
+option now, `open_api_ui` of `mrs.load.contentSet` and of the
+`mrs.load_content_set` tool. That option takes no directory and defaults the
+path to `/openApiUi`.
+
+- **What the plugin does:** `mrs_plugin/lib/open_api_ui.py` downloads
+  Swagger UI 5.17.14 and the SwaggerDark theme. Both are pinned by SHA-256,
+  and certificates are checked; the old code switched TLS checks off for
+  the whole process. It keeps the top-level `dist/` only; the old filter
+  also took the React flavour's `dist`, and broke on Windows.
+- **The patches:** each must apply, or the upload fails rather than serving
+  Swagger's petstore demo.
+  - The spec URL becomes `<service path>/open-api-catalog/`, which the REST
+    Daemon serves for a published service.
+  - The Authorize button goes to the daemon's sign-in page,
+    `/?service=<path>&redirectUrl=<path><set>/index.html`.
+  - The title is `<service name> - OpenAPI UI`, and the topbar logo link is
+    hidden.
+  - The page gets the dark theme, and the MariaDB favicons
+    (`mrs_plugin/lib/assets`) in place of the PNG ones.
+- **In the extension:** "Deploy OpenAPI Web UI..." sits on REST Service
+  rows (`4_mrs@2`). It opens the content set dialog in its `openApiUi`
+  mode, with no folder or ignore list, a note on what is downloaded, and its
+  own busy label. It is set to the service right-clicked; the old extension
+  took the first service. The content set is open to everyone, since signing
+  in is the UI's own Authorize. It is uploaded and then given the dialog's
+  settings, as any content set is (`MrsToolsApi.loadOpenApiUi`).
+- **Tests:**
+  - mrs_plugin: a fake archive, the patches, a refused checksum, and the
+    upload.
+  - mcp_plugin: the option's rules in-process, and
+    `test_the_open_api_ui_is_downloaded_and_uploaded_for_real` (`--e2e`).
+  - The UI test deploys it for real (network).
+
 ## Decisions
 
 - Old features left out: MySQL Router bootstrap/start/stop/kill and service
   debug (the REST Daemon is not in these repos; user decision: list and
   delete only), JSON dump/load of schemas/objects (plugin functions
   removed), "Include All Objects" SHOW CREATE variants (no such REST SQL),
-  OpenAPI UI content set (`${openApiUi}` not ported to the module), load
-  project from URL, the major-upgrade drop-and-recreate prompt (5.0.0 is
+  load project from URL, the major-upgrade drop-and-recreate prompt (5.0.0 is
   the first release).
 - Added beyond the old extension: Edit Content Set (ALTER; the old one was
   a TODO), Delete Content File, Load REST SERVICE SQL Script, the schema

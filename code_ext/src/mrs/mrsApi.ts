@@ -838,6 +838,34 @@ export class MrsToolsApi {
         MRS_UPLOAD_TIMEOUT_MS);
     }
 
+    /**
+     * Uploads a service's OpenAPI UI as a content set: Swagger UI, which
+     * the plugin downloads from github.com and patches to show the
+     * service's OpenAPI catalog and to sign in with the REST Daemon.
+     *
+     * @param connectionId An open connection.
+     * @param contentSetPath Where it is served, `/openApiUi`.
+     * @param servicePath The service it is for.
+     *
+     * @returns What was uploaded.
+     */
+    public async loadOpenApiUi(
+        connectionId: string,
+        contentSetPath: string,
+        servicePath: string,
+    ): Promise<IContentSetUpload> {
+        return await this.#tool("mrs.load_content_set", connectionId, {
+            content_set_path: contentSetPath,
+            service_path: servicePath,
+            open_api_ui: true,
+            replace: true,
+        }, decodeObject<IContentSetUpload>,
+        words(`Loading the OpenAPI UI into REST Content Set '${contentSetPath}'`,
+            `Loaded the OpenAPI UI into REST Content Set '${contentSetPath}'`),
+        (upload) => { return counted(upload.files.length, "file"); },
+        MRS_UPLOAD_TIMEOUT_MS);
+    }
+
     public async folderScriptLanguage(
         path: string,
         ignoreList: string,
