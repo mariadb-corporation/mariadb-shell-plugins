@@ -1140,6 +1140,28 @@ describe("REST schemas", () => {
             })).toEqual(["CREATE REST SCHEMA", "CREATE REST VIEW"]);
         });
 
+    it("keeps the REST objects ticked to the database schema listed",
+        async () => {
+            const actor = { name: "actor", type: "TABLE", details: "InnoDB" };
+            const { api } = await setup({
+                ...CONFIGURED,
+                [SERVICES]: [service],
+                [dbObjectsSql("sakila")]: [actor],
+            });
+            await run("mariadb.mrs.addSchema", dbSchemaNode);
+            const spec = dialog();
+            api.sent.length = 0;
+
+            // Under `world`, `actor` would be another table, or none.
+            await expect(spec.save({
+                ...(spec.values as ISchemaDialogValues),
+                dbSchema: "world",
+                restObjects: [dbObjectKey(actor)],
+            })).rejects.toThrow("The REST objects ticked are those of "
+                + "`sakila`. Untick them to use another database schema.");
+            expect(api.sent).toEqual([]);
+        });
+
     it("says the REST Service is not configured where it is not",
         async () => {
             await setup({ [METADATA_SCHEMAS]: [] });

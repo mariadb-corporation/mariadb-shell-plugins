@@ -481,9 +481,15 @@ const schema: IDialogDefinition = {
             case "Settings": {
                 return (
                     <section class="grid">
+                        {/* The REST objects ticked are this schema's. */}
                         <TextField ctx={ctx} field="dbSchema"
                             caption="Database Schema Name"
-                            hint="The name of the corresponding database schema." />
+                            hint={((ctx.get("restObjects") as string[] | undefined)
+                                ?? []).length > 0
+                                ? "Untick the REST objects to change it."
+                                : "The name of the corresponding database schema."}
+                            disabled={((ctx.get("restObjects") as string[]
+                                | undefined) ?? []).length > 0} />
                         <TextField ctx={ctx} field="itemsPerPage"
                             caption="Items per Page" placeholder="25" />
                         <div class="group">

@@ -1486,6 +1486,24 @@ describe("a new REST schema's REST Objects tab", () => {
         expect(saved().restObjects).toEqual(["TABLE:actor", "VIEW:actor_info"]);
     });
 
+    it("keeps the database schema while REST objects are ticked",
+        async () => {
+            await loadNew();
+            const dbSchema = async (): Promise<HTMLInputElement> => {
+                await selectTab("Settings");
+
+                return host.querySelector<HTMLInputElement>(
+                    "input[name=dbSchema]")!;
+            };
+
+            expect((await dbSchema()).disabled).toBe(false);
+            await selectTab("REST Objects");
+            await click("Select All");
+            expect((await dbSchema()).disabled).toBe(true);
+            expect(host.textContent).toContain(
+                "Untick the REST objects to change it.");
+        });
+
     it("has a Filter by type and a name search in its toolbar", async () => {
         await loadNew();
 

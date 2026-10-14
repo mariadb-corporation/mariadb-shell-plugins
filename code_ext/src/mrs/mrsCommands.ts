@@ -844,6 +844,14 @@ export class MrsCommands {
                 const ticked = (context.dbObjects ?? []).filter((object) => {
                     return fields.restObjects.includes(dbObjectKey(object));
                 });
+                // The objects listed are the database schema's the dialog
+                // opened on; under another one they could be missing, or
+                // be other objects of the same name.
+                if (ticked.length > 0 && fields.dbSchema.trim() !== dbSchema) {
+                    throw new Error("The REST objects ticked are those of "
+                        + `\`${dbSchema}\`. Untick them to use another `
+                        + "database schema.");
+                }
                 const objects = [];
                 for (const object of ticked) {
                     objects.push({
