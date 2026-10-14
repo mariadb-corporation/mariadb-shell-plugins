@@ -854,8 +854,6 @@ export class MrsCommands {
             context,
             save: async (values) => {
                 const fields = values as ISchemaDialogValues;
-                // Read before anything is created, so a database object
-                // that cannot be read stops the save with nothing done.
                 const ticked = (context.dbObjects ?? []).filter((object) => {
                     return fields.restObjects.includes(dbObjectKey(object));
                 });
@@ -867,14 +865,19 @@ export class MrsCommands {
                         + `\`${dbSchema}\`. Untick them to use another `
                         + "database schema.");
                 }
-                const objects = [];
-                for (const object of ticked) {
-                    objects.push({
-                        object,
-                        columns: await this.host.api.columns(scope,
-                            object.type, fields.dbSchema.trim(), object.name),
-                    });
-                }
+                // Read before anything is created, so a database object
+                // that cannot be read stops the save with nothing done;
+                // all of them in one round trip.
+                const columns = await this.host.api.columnsOfEach(scope,
+                    ticked.map((object) => {
+                        return {
+                            kind: object.type, schema: dbSchema,
+                            name: object.name,
+                        };
+                    }));
+                const objects = ticked.map((object, index) => {
+                    return { object, columns: columns[index]! };
+                });
                 // One run, so one action: the schema's row, with each
                 // statement - the schema's, then each object's - a row
                 // under it.

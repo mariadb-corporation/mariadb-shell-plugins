@@ -131,6 +131,19 @@ FROM (
 };
 
 /**
+ * @param kind TABLE, VIEW, PROCEDURE or FUNCTION.
+ * @param schema The database schema.
+ * @param name The database object.
+ *
+ * @returns The statement reading its columns and references, or its
+ *          parameters.
+ */
+const columnsSql = (kind: string, schema: string, name: string): string => {
+    return `SHOW REST COLUMNS FROM ${kind} ${qualifiedName(schema, name)} `
+        + "FORMAT=JSON";
+};
+
+/**
  * The MariaDB REST Service as the extension reaches it.
  *
  * Everything about the REST metadata is REST SQL sent through
@@ -537,8 +550,32 @@ export class MrsApi {
         name: string,
     ): Promise<IMrsColumns> {
         return await this.json<IMrsColumns>(scope,
-            `SHOW REST COLUMNS FROM ${kind} ${qualifiedName(schema, name)} `
-            + "FORMAT=JSON");
+            columnsSql(kind, schema, name));
+    }
+
+    /**
+     * @param scope Where to look.
+     * @param objects Database objects: each one's kind - TABLE, VIEW,
+     *        PROCEDURE or FUNCTION - schema and name.
+     *
+     * @returns Each one's columns and references, or its parameters, in
+     *          their order: read as one script, one round trip for any
+     *          number of them. One that cannot be read fails them all.
+     */
+    public async columnsOfEach(
+        scope: IMrsScope,
+        objects: ReadonlyArray<{ kind: string; schema: string; name: string }>,
+    ): Promise<IMrsColumns[]> {
+        if (objects.length === 0) {
+            return [];
+        }
+        const results = await this.run(scope, objects.map((object) => {
+            return columnsSql(object.kind, object.schema, object.name);
+        }));
+
+        return results.map((result) => {
+            return parseCell<IMrsColumns>(firstCell(result));
+        });
     }
 
     public async contentSets(

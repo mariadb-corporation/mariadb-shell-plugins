@@ -1183,6 +1183,44 @@ describe("REST schemas", () => {
             }
         });
 
+    it("reads the ticked objects' columns in one round trip, before "
+        + "creating anything", async () => {
+        const actor = { name: "actor", type: "TABLE", details: "" };
+        const film = { name: "film", type: "TABLE", details: "" };
+        const { api } = await setup({
+            ...CONFIGURED,
+            [SERVICES]: [service],
+            [dbObjectsSql("sakila")]: [actor, film],
+            ["SHOW REST COLUMNS FROM TABLE `sakila`.`actor` FORMAT=JSON"]:
+                ACTOR_COLUMNS,
+            ["SHOW REST COLUMNS FROM TABLE `sakila`.`film` FORMAT=JSON"]:
+                { ...ACTOR_COLUMNS, name: "film" },
+        });
+        await run("mariadb.mrs.addSchema", dbSchemaNode);
+        const spec = dialog();
+        const values = {
+            ...(spec.values as ISchemaDialogValues),
+            restObjects: [dbObjectKey(actor), dbObjectKey(film)],
+        };
+
+        api.scripts.length = 0;
+        await spec.save(values);
+        const reads = api.scripts.filter((script) => {
+            return script.includes("SHOW REST COLUMNS");
+        });
+        expect(reads).toHaveLength(1);
+        expect(reads[0]!.match(/SHOW REST COLUMNS/gu)).toHaveLength(2);
+
+        // One that cannot be read stops the save with nothing created.
+        api.errors["SHOW REST COLUMNS FROM TABLE `sakila`.`film` FORMAT=JSON"]
+            = "Table 'sakila.film' doesn't exist";
+        api.sent.length = 0;
+        await expect(spec.save(values)).rejects.toThrow(
+            "Table 'sakila.film' doesn't exist");
+        expect(api.sent.some((sql) => { return sql.startsWith("CREATE"); }))
+            .toBe(false);
+    });
+
     it("keeps the REST objects ticked to the database schema listed",
         async () => {
             const actor = { name: "actor", type: "TABLE", details: "InnoDB" };
