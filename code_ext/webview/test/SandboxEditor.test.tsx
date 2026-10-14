@@ -627,9 +627,9 @@ describe("SandboxEditor's REST Service", () => {
             "REST Daemon Port", "REST Service Name", "REST User Name",
             "REST User Password",
         ]));
-        // Ten times the sandbox's port, as the server will pick it.
+        // The server's first choice, a sandbox's daemon's too.
         expect(fieldOf("REST Daemon Port").querySelector("input")!
-            .placeholder).toBe("33100");
+            .placeholder).toBe("8443");
         expect(fieldOf("REST Service Name").querySelector("input")!.value)
             .toBe("/myService/v1");
         expect(fieldOf("REST User Name").querySelector("input")!.value)

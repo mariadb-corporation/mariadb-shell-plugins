@@ -19,9 +19,8 @@ import type { Ref } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import {
-    defaultRestdPort,
+    DEFAULT_RESTD_PORT,
     emptySandboxFields,
-    FALLBACK_RESTD_PORT,
     isServerOnPath,
     restServiceUrl,
     sandboxConnectionUri,
@@ -369,8 +368,7 @@ export const SandboxEditor = (): preact.JSX.Element => {
                                 >
                                     {text("restdPort", {
                                         placeholder: String(
-                                            defaultRestdPort(fields.port)
-                                            ?? FALLBACK_RESTD_PORT),
+                                            DEFAULT_RESTD_PORT),
                                     })}
                                 </Field>
                                 <Field

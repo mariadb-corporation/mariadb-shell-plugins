@@ -16,9 +16,10 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
   `%APPDATA%\MariaDB\mariadb-restd`). `deployment.json` beside
   `mariadb-restd.conf` records the connection URI, host, server port and
   `sandbox_port`; the rest comes from the configuration.
-- **Ports.** A sandbox's daemon: sandbox port x 10 when <= 65535 and free;
-  otherwise, and for other servers, the first free from 8443 up. A stopped
-  deployment's port counts as taken (`restd.taken_ports`).
+- **Ports.** Every daemon, a sandbox's included: the first free port from
+  8443 up (the user's call, 2026-10-14; a sandbox's used to get ten times
+  the sandbox's port). A stopped deployment's port counts as taken
+  (`restd.taken_ports`).
 - **Metadata.** One schema: used. Several and none named: refused, listing
   them. None: `CONFIGURE REST METADATA ENABLED` (with `SCHEMA` when named).
 - **Password.** The given one, else the connection's stored one

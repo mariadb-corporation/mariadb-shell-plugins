@@ -18,10 +18,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
   with what is typed), then REST User Name (`dba`) next to REST User
   Password, with the Configure dialog's password rules. Ticking it with
   no REST password takes the cursor there.
-- **The REST Daemon port** of a sandbox is ten times the sandbox's (3311 ->
-  33110) when that is a port and free, else the first free from 8443 up;
-  the field's placeholder shows it, and it is left to the server unless
-  typed. A connection's daemon: 8443 or the next free one.
+- **The REST Daemon port**, a sandbox's as a connection's: 8443, or the
+  next free one (the user's call, 2026-10-14; a sandbox's used to get ten
+  times its port). The field's placeholder shows 8443, and it is left to
+  the server unless typed.
 - **After the deploy**, in this order: `rest.configure_restd` (which
   configures the REST metadata where there is none, installs mariadb-restd
   where it is missing, sets the daemon up and starts it), then the MRS auth
@@ -60,7 +60,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - `src/rest/restdCommands.ts`: the view's and the connection menu's
   commands, `writeRestdLog`.
 - `src/tree/restdTreeProvider.ts`: the view.
-- `src/sandboxes/sandboxFields.ts`: the REST fields, `defaultRestdPort`,
+- `src/sandboxes/sandboxFields.ts`: the REST fields, `DEFAULT_RESTD_PORT`,
   `restServiceUrl`, `sandboxRestOptions`.
 - `src/mrs/mrsDialogs.ts`: the `restd` dialog's fields and validation;
   `servicePathProblem` and `defaultAuthAppStatements`, shared with the

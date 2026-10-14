@@ -197,23 +197,17 @@ def test_mariadb_restd_is_looked_for_on_the_path_then_in_local_bin_then_installe
         restd.find_restd(str(tmp_path / "nowhere"))
 
 
-def test_a_sandbox_daemon_listens_on_ten_times_its_port(monkeypatch):
-    """When that is free and a port at all; else the first free from 8443."""
+def test_a_daemon_listens_on_the_first_free_port_from_8443(monkeypatch):
+    """A sandbox's as any other's."""
     used = set()
     monkeypatch.setattr(restd, "is_listening", lambda port: port in used)
     monkeypatch.setattr(restd, "_can_bind", lambda port: port not in used)
 
-    assert restd.choose_port(3311) == 33110
-    used.add(33110)
-    assert restd.choose_port(3311) == 8443
-    # 70000 is no port.
-    assert restd.choose_port(7000) == 8443
     assert restd.choose_port() == 8443
     used.add(8443)
     assert restd.choose_port() == 8444
     # A stopped deployment's port counts as taken.
     assert restd.choose_port(taken={8444}) == 8445
-    assert restd.choose_port(3312, taken={33120}) == 8444
 
 
 # --- setup, start, stop --------------------------------------------------------
@@ -484,9 +478,8 @@ def configure(fake_restd, home, tmp_path, monkeypatch, gui_mode):
 
 def test_a_sandbox_gets_a_daemon(configure, tmp_path, monkeypatch):
     """Its metadata is created, and the daemon is in the sandbox's folder."""
-    monkeypatch.setattr(restd, "is_port_free", lambda port, taken=(): port != 33110)
     port = helpers.find_free_port()
-    monkeypatch.setattr(restd, "choose_port", lambda sandbox_port, taken: port)
+    monkeypatch.setattr(restd, "choose_port", lambda taken: port)
 
     result, statements, passwords = configure(sandbox_port=3311, password="given")
 
@@ -718,11 +711,11 @@ def test_an_install_script_that_cannot_be_downloaded_says_what_to_do(tmp_path, m
 
 
 def _sandbox_port() -> int:
-    """A free port whose tenfold is a free port too, for the sandbox's daemon."""
+    """A free port for the sandbox."""
     for port in range(4000, 6500):
-        if restd.is_port_free(port) and restd.is_port_free(port * 10):
+        if restd.is_port_free(port):
             return port
-    pytest.skip("no free port pair was found")
+    pytest.skip("no free port was found")
 
 
 @pytest.mark.e2e
@@ -770,7 +763,8 @@ def test_a_sandbox_really_gets_a_rest_daemon():
                 )
                 assert not configured.is_error, helpers.tool_payload(configured)
                 daemon = helpers.tool_payload(configured)
-                assert daemon["port"] == port * 10
+                # The first free one from 8443 up, as for any server.
+                assert daemon["port"] >= restd.DEFAULT_PORT
                 assert daemon["status"] == "running"
                 assert served(daemon["url"])
                 # The one certificate of every daemon here, for localhost.

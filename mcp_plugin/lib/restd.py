@@ -88,13 +88,9 @@ CONSOLE_LOG_FILE = os.path.join("log", "console.log")
 # The metadata schema --setup serves when none is named.
 DEFAULT_METADATA_SCHEMA = "mariadb_rest_service"
 
-# The HTTPS port --setup gives a deployment that is not a sandbox's, and the
-# first one tried; the next free one is taken when it is in use.
+# The HTTPS port a new deployment's daemon is given - a sandbox's too - and
+# the first one tried; the next free one is taken when it is in use.
 DEFAULT_PORT = 8443
-
-# A sandbox's daemon listens on ten times the sandbox's port (33110 for a
-# sandbox on 3311), so the two are easy to relate - where that is a port.
-SANDBOX_PORT_FACTOR = 10
 MAX_PORT = 65535
 
 # How long a setup, a start and a stop may take.
@@ -333,15 +329,11 @@ def is_port_free(port: int, taken=()) -> bool:
     )
 
 
-def choose_port(sandbox_port: Optional[int] = None, taken=()) -> int:
-    """Picks the port for a new deployment's daemon.
-
-    A sandbox's daemon gets ten times the sandbox's port when that is a port
-    and free; otherwise, and for any other server, the first free one from
-    8443 up.
+def choose_port(taken=()) -> int:
+    """Picks the port for a new deployment's daemon: the first free one
+    from 8443 up, for a sandbox's daemon as for any other.
 
     Args:
-        sandbox_port (int): The port of the sandbox the daemon is for, if any.
         taken: Ports to count as used; see :func:`is_port_free`.
 
     Returns:
@@ -350,11 +342,6 @@ def choose_port(sandbox_port: Optional[int] = None, taken=()) -> int:
     Raises:
         ToolError: If no port from 8443 up is free.
     """
-    if sandbox_port is not None:
-        preferred = sandbox_port * SANDBOX_PORT_FACTOR
-        if is_port_free(preferred, taken):
-            return preferred
-
     for port in range(DEFAULT_PORT, MAX_PORT + 1):
         if is_port_free(port, taken):
             return port

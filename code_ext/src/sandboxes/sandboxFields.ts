@@ -65,7 +65,7 @@ export interface ISandboxFields {
      * checked and used while it is on.
      */
     configureRest: boolean;
-    /** The REST Daemon's port; empty for the sandbox's port times ten. */
+    /** The REST Daemon's port; empty for 8443, or the next free one. */
     restdPort: string;
     /** The REST service the deploy creates, `/myService/v1`. */
     restServicePath: string;
@@ -145,37 +145,14 @@ export const emptySandboxFields = (
     };
 };
 
-/** How many times the sandbox's port its REST Daemon listens on. */
-export const RESTD_PORT_FACTOR = 10;
-
 /** The highest port there is. */
 export const MAX_PORT = 65535;
 
 /**
- * The port a sandbox's REST Daemon gets when none is typed: ten times
- * the sandbox's, so the two are easy to relate - 33110 for 3311.
- *
- * @param port The sandbox's port, as typed.
- *
- * @returns The port, or undefined where the sandbox's is no port yet, or
- *          ten times it is none; the server picks a free one from 8443 up
- *          then.
+ * The port a REST Daemon gets when none is typed, a sandbox's as any
+ * other's; the server takes the next free one where it is in use.
  */
-export const defaultRestdPort = (port: string): number | undefined => {
-    const sandboxPort = wholeNumber(port);
-    if (sandboxPort === undefined) {
-        return undefined;
-    }
-
-    const restdPort = sandboxPort * RESTD_PORT_FACTOR;
-    return restdPort <= MAX_PORT ? restdPort : undefined;
-};
-
-/**
- * The port the server tries first for a daemon whose sandbox's port times
- * ten is none, taking the next free one where it is in use.
- */
-export const FALLBACK_RESTD_PORT = 8443;
+export const DEFAULT_RESTD_PORT = 8443;
 
 /**
  * Where the REST service will answer, as the dialog tells it under the
@@ -186,8 +163,7 @@ export const FALLBACK_RESTD_PORT = 8443;
  * @returns `https://localhost:<port><service path>`.
  */
 export const restServiceUrl = (fields: ISandboxFields): string => {
-    const port = fields.restdPort.trim()
-        || String(defaultRestdPort(fields.port) ?? FALLBACK_RESTD_PORT);
+    const port = fields.restdPort.trim() || String(DEFAULT_RESTD_PORT);
 
     return `https://localhost:${port}${fields.restServicePath.trim()}`;
 };
@@ -505,8 +481,8 @@ export const sandboxRestOptions = (
 
     const restdPort = fields.restdPort.trim();
     return {
-        // Left to the server when not typed: it takes ten times the
-        // sandbox's port when that is free, and finds another when not.
+        // Left to the server when not typed: it takes 8443 when that is
+        // free, and the next free one when not.
         ...(restdPort === "" ? {} : { restdPort: Number(restdPort) }),
         servicePath: fields.restServicePath.trim(),
         userName: fields.restUserName.trim(),

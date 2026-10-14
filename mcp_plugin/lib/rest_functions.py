@@ -495,9 +495,8 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
                 sandbox's daemon.
             sandbox_dir: Path the sandbox is in. The default sandbox path when
                 empty.
-            port: The port the daemon serves HTTPS on. For a sandbox ten times
-                the sandbox's port when that is free, else the first free one
-                from 8443 up.
+            port: The port the daemon serves HTTPS on. The first free one
+                from 8443 up when empty.
             metadata_schema: The REST metadata schema to serve. Needed only
                 when the server has several; the one there is otherwise, or
                 mariadb_rest_service, which is created when there is none.
@@ -595,9 +594,7 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
 
             daemon_port = port
             if daemon_port is None:
-                daemon_port = restd.choose_port(
-                    sandbox_port, restd.taken_ports(base_dir)
-                )
+                daemon_port = restd.choose_port(restd.taken_ports(base_dir))
             elif not restd.is_port_free(daemon_port, restd.taken_ports(base_dir)):
                 raise tool_error(f"Port {daemon_port} is in use.")
 

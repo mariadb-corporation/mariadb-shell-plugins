@@ -33,7 +33,6 @@ import {
     sandboxDeployOptions,
     sandboxFieldProblem,
     sandboxRestOptions,
-    defaultRestdPort,
     restServiceUrl,
     suggestSandboxPort,
     type ISandboxFields,
@@ -389,19 +388,9 @@ describe("the REST Service fields", () => {
         });
     });
 
-    it("put the daemon on ten times the sandbox's port, where that is one",
-        () => {
-            expect(defaultRestdPort("3311")).toBe(33110);
-            expect(defaultRestdPort("6553")).toBe(65530);
-            expect(defaultRestdPort("7000")).toBeUndefined();
-            expect(defaultRestdPort("")).toBeUndefined();
-        });
-
     it("say where the service will answer", () => {
+        // 8443 for a sandbox's daemon too, unless another port is typed.
         expect(restServiceUrl(rest({ port: "3311" })))
-            .toBe("https://localhost:33110/myService/v1");
-        // Where ten times the sandbox's port is none: the server's first.
-        expect(restServiceUrl(rest({ port: "7000" })))
             .toBe("https://localhost:8443/myService/v1");
         expect(restServiceUrl(rest({ restdPort: "9443",
             restServicePath: "/shop/v2" })))

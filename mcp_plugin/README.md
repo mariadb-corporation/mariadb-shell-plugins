@@ -526,11 +526,10 @@ agent is asked first, through MCP elicitation.
    its own and writes the deployment. The admin password goes to the setup's stdin.
 6. Starts the daemon and waits for it to listen.
 
-A sandbox's deployment is in `<sandbox>/mariadb-restd`, and its daemon listens on ten
-times the sandbox's port (33110 for a sandbox on 3311) when that is free. Any other
-server's deployment is in `~/.mariadb-restd/<host>_<port>`
-(`%APPDATA%\MariaDB\mariadb-restd` on Windows), and its daemon listens on the first free
-port from 8443 up. The daemon logs to `log/mariadb-restd.log` in its deployment.
+A sandbox's deployment is in `<sandbox>/mariadb-restd`. Any other server's deployment
+is in `~/.mariadb-restd/<host>_<port>` (`%APPDATA%\MariaDB\mariadb-restd` on Windows).
+Either daemon listens on the first free port from 8443 up, a stopped deployment's port
+counting as taken. The daemon logs to `log/mariadb-restd.log` in its deployment.
 
 `rest.configure_restd` is registered only when the `db` group is served as well. The
 group is never served in multi-tenant mode.
