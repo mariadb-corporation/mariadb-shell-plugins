@@ -829,6 +829,10 @@ def setup(
     if metadata_schema != DEFAULT_METADATA_SCHEMA:
         command += ["--metadata-schema", metadata_schema]
 
+    # --setup creates the deployment's folder but not the one it is in, the
+    # first time ~/.mariadb-restd itself.
+    os.makedirs(os.path.dirname(os.path.abspath(directory)), exist_ok=True)
+
     try:
         completed = subprocess.run(
             command,

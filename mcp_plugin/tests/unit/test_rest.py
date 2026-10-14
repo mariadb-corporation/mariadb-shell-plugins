@@ -51,6 +51,10 @@ def record(entry):
     os.replace(state + ".tmp", state)
 if argv and argv[0] == "--setup":
     print("Please enter MariaDB password for root: ", end="", flush=True)
+    # As the real one: the deployment's folder, not the folders above it.
+    if not os.path.isdir(os.path.dirname(argv[argv.index("--directory") + 1])):
+        print("Error: Could not create directory", file=sys.stderr)
+        sys.exit(1)
     record({"argv": argv, "stdin": sys.stdin.readline()})
     if mode == "setup-fails":
         print("Error: Access denied for user 'root'", file=sys.stderr)
