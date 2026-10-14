@@ -72,6 +72,10 @@ import {
  * the REST Objects tab of a new REST schema says about each, as one cell
  * of JSON: one row, so no paging can cut the list short.
  *
+ * `JSON_ARRAYAGG` and `GROUP_CONCAT` stop at `group_concat_max_len`, and
+ * cut the JSON short with only a warning; the limit is raised to its most
+ * for this one statement, leaving the session's as it was.
+ *
  * @param schema The database schema.
  *
  * @returns The query.
@@ -79,7 +83,8 @@ import {
 export const dbObjectsSql = (schema: string): string => {
     const name = quoteText(schema);
 
-    return `SELECT JSON_ARRAYAGG(JSON_OBJECT('name', o.name, 'type', o.type,
+    return `SET STATEMENT group_concat_max_len = 1073741824 FOR
+SELECT JSON_ARRAYAGG(JSON_OBJECT('name', o.name, 'type', o.type,
     'details', o.details) ORDER BY o.position, o.name)
 FROM (
     SELECT t.TABLE_NAME AS name,

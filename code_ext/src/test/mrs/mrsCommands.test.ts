@@ -1141,6 +1141,15 @@ describe("REST schemas", () => {
             })).toEqual(["CREATE REST SCHEMA", "CREATE REST VIEW"]);
         });
 
+    it("lists a database schema's objects past group_concat_max_len",
+        () => {
+            // The server cuts JSON_ARRAYAGG at the limit, with a warning
+            // only: raised for the one statement, the session's untouched.
+            const sql = dbObjectsSql("it's");
+            expect(sql).toMatch(/^SET STATEMENT group_concat_max_len = 1073741824 FOR\nSELECT JSON_ARRAYAGG\(/u);
+            expect(sql).toContain("t.TABLE_SCHEMA = 'it''s'");
+        });
+
     it("still creates a REST schema where its objects cannot be listed",
         async () => {
             for (const failure of ["error", "cut"] as const) {
