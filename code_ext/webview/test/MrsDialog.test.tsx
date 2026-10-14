@@ -1404,3 +1404,98 @@ describe("mrs entry point", () => {
         root.remove();
     });
 });
+
+describe("a new REST schema's REST Objects tab", () => {
+    const context: ISchemaContext = {
+        services: ["/myService"],
+        dbObjects: [
+            { name: "actor", type: "TABLE", details: "InnoDB, 4 columns" },
+            { name: "actor_info", type: "VIEW", details: "read only" },
+            { name: "film", type: "TABLE", details: "InnoDB, 13 columns" },
+            { name: "rewards_report", type: "PROCEDURE", details: "(IN n INT)" },
+        ],
+    };
+
+    const loadNew = async (): Promise<void> => {
+        await load("schema", schemaDefaults([], undefined, "sakila",
+            "/myService"), context, "Create REST Schema from Database Schema");
+    };
+
+    const count = (): string => {
+        return host.querySelector(".dbObjectsCount")?.textContent ?? "";
+    };
+
+    const setFilter = async (value: string): Promise<void> => {
+        const select = host.querySelector<HTMLSelectElement>(
+            "select[name=dbObjectType]")!;
+        await act(async () => {
+            select.value = value;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            await tick();
+        });
+    };
+
+    const search = async (text: string): Promise<void> => {
+        const box = host.querySelector<HTMLInputElement>(
+            "input[name=dbObjectName]")!;
+        await act(async () => {
+            box.value = text;
+            box.dispatchEvent(new Event("input", { bubbles: true }));
+            await tick();
+        });
+    };
+
+    it("comes first, before Settings, on a new schema only", async () => {
+        await loadNew();
+
+        expect(title()).toBe("Create REST Schema from Database Schema");
+        expect(tabs()).toEqual(["REST Objects", "Settings", "Options",
+            "Metadata"]);
+        expect(currentTab()).toBe("REST Objects");
+        expect(count()).toBe("0 of 4 selected");
+
+        await load("schema", schemaDefaults([], undefined, "sakila",
+            "/myService"), { services: ["/myService"], existingPath: "/s" });
+        expect(tabs()).toEqual(["Settings", "Options", "Metadata"]);
+    });
+
+    it("selects all and none of what is on show", async () => {
+        await loadNew();
+
+        await click("Select All");
+        expect(count()).toBe("4 of 4 selected");
+
+        await setFilter("TABLE");
+        await click("Select None");
+        // The tables only: the view and the procedure stay ticked.
+        expect(count()).toBe("2 of 4 selected");
+
+        await setFilter("");
+        await search("act");
+        await click("Select None");
+        expect(count()).toBe("1 of 4 selected");
+    });
+
+    it("saves the objects ticked with the schema", async () => {
+        await loadNew();
+        await search("ac");
+        await click("Select All");
+
+        await click("OK");
+
+        expect(saved().restObjects).toEqual(["TABLE:actor", "VIEW:actor_info"]);
+    });
+
+    it("has a Filter by type and a name search in its toolbar", async () => {
+        await loadNew();
+
+        const options = [...host.querySelectorAll(
+            "select[name=dbObjectType] option")].map((option) => {
+            return option.textContent;
+        });
+        expect(options).toEqual(["All Types", "Tables", "Views", "Procedures",
+            "Functions"]);
+        expect(host.querySelector<HTMLInputElement>(
+            "input[name=dbObjectName]")?.placeholder).toBe("Name starts with…");
+    });
+});

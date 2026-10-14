@@ -56,6 +56,7 @@ import type {
     IMrsStatus,
     IMrsUser,
 } from "./mrsTypes.js";
+import type { IDbObject } from "./mrsDialogs.js";
 import {
     qualifiedName,
     quoteIdentifier,
@@ -65,6 +66,64 @@ import {
     serviceSchemaSelector,
     userRef,
 } from "./restSql.js";
+
+/**
+ * A database schema's tables, views, procedures and functions, with what
+ * the REST Objects tab of a new REST schema says about each, as one cell
+ * of JSON: one row, so no paging can cut the list short.
+ *
+ * @param schema The database schema.
+ *
+ * @returns The query.
+ */
+export const dbObjectsSql = (schema: string): string => {
+    const name = quoteText(schema);
+
+    return `SELECT JSON_ARRAYAGG(JSON_OBJECT('name', o.name, 'type', o.type,
+    'details', o.details) ORDER BY o.position, o.name)
+FROM (
+    SELECT t.TABLE_NAME AS name,
+        IF(t.TABLE_TYPE = 'VIEW', 'VIEW', 'TABLE') AS type,
+        IF(t.TABLE_TYPE = 'VIEW', 2, 1) AS position,
+        CONCAT_WS(', ',
+            IF(t.TABLE_TYPE = 'VIEW',
+                IF(v.IS_UPDATABLE = 'YES', 'updatable', 'read only'),
+                t.ENGINE),
+            (SELECT CONCAT(COUNT(*), IF(COUNT(*) = 1, ' column', ' columns'))
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                WHERE c.TABLE_SCHEMA = t.TABLE_SCHEMA
+                    AND c.TABLE_NAME = t.TABLE_NAME),
+            IF(t.TABLE_TYPE = 'VIEW', NULL,
+                CONCAT('~', t.TABLE_ROWS,
+                    IF(t.TABLE_ROWS = 1, ' row', ' rows'))),
+            NULLIF(t.TABLE_COMMENT, '')) AS details
+    FROM INFORMATION_SCHEMA.TABLES t
+    LEFT JOIN INFORMATION_SCHEMA.VIEWS v
+        ON v.TABLE_SCHEMA = t.TABLE_SCHEMA AND v.TABLE_NAME = t.TABLE_NAME
+    WHERE t.TABLE_SCHEMA = ${name}
+        AND t.TABLE_TYPE IN ('BASE TABLE', 'SYSTEM VERSIONED', 'VIEW')
+    UNION ALL
+    SELECT r.ROUTINE_NAME, r.ROUTINE_TYPE,
+        IF(r.ROUTINE_TYPE = 'PROCEDURE', 3, 4),
+        CONCAT('(',
+            COALESCE((SELECT GROUP_CONCAT(
+                    CONCAT_WS(' ', p.PARAMETER_MODE, p.PARAMETER_NAME,
+                        p.DTD_IDENTIFIER)
+                    ORDER BY p.ORDINAL_POSITION SEPARATOR ', ')
+                FROM INFORMATION_SCHEMA.PARAMETERS p
+                WHERE p.SPECIFIC_SCHEMA = r.ROUTINE_SCHEMA
+                    AND p.SPECIFIC_NAME = r.ROUTINE_NAME
+                    AND p.ROUTINE_TYPE = r.ROUTINE_TYPE
+                    AND p.ORDINAL_POSITION > 0), ''),
+            ')',
+            IF(r.ROUTINE_TYPE = 'FUNCTION',
+                CONCAT(' RETURNS ', r.DTD_IDENTIFIER), ''),
+            IF(r.ROUTINE_COMMENT = '', '', CONCAT(', ', r.ROUTINE_COMMENT)))
+    FROM INFORMATION_SCHEMA.ROUTINES r
+    WHERE r.ROUTINE_SCHEMA = ${name}
+        AND r.ROUTINE_TYPE IN ('PROCEDURE', 'FUNCTION')
+) o`;
+};
 
 /**
  * The MariaDB REST Service as the extension reaches it.
@@ -331,6 +390,29 @@ export class MrsApi {
         const [result] = await this.run(scope, [sql]);
 
         return parseCell<T>(firstCell(result));
+    }
+
+    /**
+     * @param scope Where to read them.
+     * @param schema A database schema.
+     *
+     * @returns Its tables, views, procedures and functions, in that order
+     *          and by name, for a new REST schema's REST Objects tab. A
+     *          plain query, made without an action: a dialog filling in
+     *          its choices is not something the user did.
+     */
+    public async dbObjects(
+        scope: IMrsScope,
+        schema: string,
+    ): Promise<IDbObject[]> {
+        const api = await this.api();
+        const result = await api.executeSql(scope.connectionId,
+            dbObjectsSql(schema));
+        if (result.error !== undefined) {
+            throw new MrsError(result.error);
+        }
+
+        return parseCell<IDbObject[]>(firstCell(result)) ?? [];
     }
 
     /**

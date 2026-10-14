@@ -99,6 +99,44 @@ differ from a plain form, so keep them when changing it:
   both got `new-2`, one edit rendered two inputs, and the blur of one dropped
   the edit.
 
+## Create REST Schema from Database Schema (2026-10-14)
+
+The new-schema dialog (the user's request; its old title was "Enter
+Configuration Values for the New REST Schema"):
+
+- **A REST Objects tab before Settings**, on a new schema only. It is a
+  Tabulator table (`webview/src/mrs/DbObjectsTable.tsx`) of the database
+  schema's tables, views, procedures and functions. Its columns:
+  - Database Object: a checkbox, the Connections tree's icon drawn as a
+    mask, and the name;
+  - Type;
+  - Details: a table's engine, columns and approximate rows; a view's
+    columns and whether it is updatable; a routine's parameters and return
+    type; then the comment.
+- **The toolbar:** Select All and Select None act on the rows on show. The
+  type Filter is a select. The name search works as `LIKE '<typed>%'`,
+  case-insensitive (`nameSearch`).
+- **The table's look:** no grid lines (the user's call). Only the modules
+  it needs are registered (`FormatModule`, `InteractionModule`), which
+  keeps `mrs.js` at about 260 kB instead of 560 kB with `TabulatorFull`.
+- **The list** comes from `MrsApi.dbObjects`, one plain query
+  (`dbObjectsSql`) that answers with one cell of JSON, so no paging cuts
+  it. It is not reported as an action.
+- **Saving:**
+  - The ticked objects' columns are read first, so an unreadable one stops
+    the save before anything is created.
+  - Then everything runs as one script: the schema's statement, then one
+    `CREATE REST VIEW / PROCEDURE / FUNCTION` per object, built exactly as
+    the New REST Object dialog builds one (`schemaObjectStatements`:
+    `objectDefaults` + `buildDocument` with every column).
+  - That makes one Actions row, "Created REST Schema '/x'", with each
+    statement as a child row.
+- **Gotcha:** the table must not be rebuilt on every render. A row rebuilt
+  under the pointer loses its click. So `replaceData` runs only when other
+  rows are on show, and a tick updates its one row. That row also needs
+  `reformat()`, because `selected` is no column's field and the update
+  alone does not redraw the checkbox.
+
 ## Decisions
 
 - Old features left out: MySQL Router bootstrap/start/stop/kill and service

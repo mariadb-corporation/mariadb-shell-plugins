@@ -70,6 +70,11 @@ import {
     type IServiceDialogValues,
     type IUserContext,
     type IUserDialogValues,
+    dbObjectKey,
+    filterDbObjects,
+    nameSearch,
+    schemaObjectStatements,
+    type IDbObject,
 } from "../../mrs/mrsDialogs.js";
 import {
     ENABLED_STATE,
@@ -764,6 +769,7 @@ describe("the schema dialog", () => {
             comments: "",
             options: "",
             metadata: "",
+            restObjects: [],
         });
         expect(schemaDefaults([services[0]], undefined, "").servicePath)
             .toBe("/first");
@@ -797,6 +803,7 @@ describe("the schema dialog", () => {
             comments: "c",
             options: prettyJson({ o: 1 }),
             metadata: prettyJson({ m: 1 }),
+            restObjects: [],
         });
         expect(schemaDefaults(services, { ...schema, items_per_page: null },
             "").itemsPerPage).toBe("");
@@ -1463,5 +1470,67 @@ describe("validateDialog", () => {
             directory: "", serviceUrl: "u", sdkLanguage: "TypeScript",
             addAppBaseClass: "", header: "",
         }, undefined))).toEqual(["directory"]);
+    });
+});
+
+describe("a new REST schema's REST Objects", () => {
+    const objects: IDbObject[] = [
+        { name: "actor", type: "TABLE", details: "InnoDB, 4 columns" },
+        { name: "actor_info", type: "VIEW", details: "read only" },
+        { name: "Film", type: "TABLE", details: "" },
+        { name: "film_in_stock", type: "PROCEDURE", details: "(IN p INT)" },
+        { name: "actor", type: "FUNCTION", details: "() RETURNS INT" },
+    ];
+    const names = (found: IDbObject[]): string[] => {
+        return found.map((object) => { return `${object.type}:${object.name}`; });
+    };
+
+    it("are told apart by type and name: a routine can share a table's",
+        () => {
+            expect(dbObjectKey(objects[0]!)).not.toBe(dbObjectKey(objects[4]!));
+        });
+
+    it("search names as LIKE '<typed>%' does, ignoring case", () => {
+        expect(nameSearch("act")("actor_info")).toBe(true);
+        expect(nameSearch("ACT")("actor")).toBe(true);
+        expect(nameSearch("ctor")("actor")).toBe(false);
+        // The wildcards keep their meaning; other characters are literal.
+        expect(nameSearch("%info")("actor_info")).toBe(true);
+        expect(nameSearch("a_tor")("actor")).toBe(true);
+        expect(nameSearch("act.r")("actor")).toBe(false);
+        expect(nameSearch("")("anything")).toBe(true);
+    });
+
+    it("filter by type and name together", () => {
+        expect(names(filterDbObjects(objects, "", ""))).toHaveLength(5);
+        expect(names(filterDbObjects(objects, "TABLE", "")))
+            .toEqual(["TABLE:actor", "TABLE:Film"]);
+        expect(names(filterDbObjects(objects, "", "fi")))
+            .toEqual(["TABLE:Film", "PROCEDURE:film_in_stock"]);
+        expect(names(filterDbObjects(objects, "VIEW", "fi"))).toEqual([]);
+    });
+
+    it("are created as the New REST Object dialog creates one", () => {
+        const values = {
+            ...schemaDefaults([], undefined, "sakila", "/myService"),
+            requestPath: " /sakila ",
+        };
+
+        const [statement] = schemaObjectStatements(values, [{
+            object: objects[0]!,
+            columns: {
+                schema: "sakila", name: "actor", type: "TABLE",
+                columns: [{
+                    position: 1, name: "actor_id",
+                    db_column: { name: "actor_id", datatype: "int",
+                        is_primary: true },
+                    reference_mapping: null,
+                }],
+            },
+        }]);
+
+        expect(statement).toMatch(/^CREATE REST VIEW \/actor\s+ON SERVICE \/myService SCHEMA \/sakila\s+AS `sakila`.`actor`/u);
+        expect(statement).toContain("`actorId`: `actor_id` @SORTABLE @KEY");
+        expect(schemaObjectStatements(values, [])).toEqual([]);
     });
 });

@@ -27,6 +27,7 @@ import type { IToolCaller } from "../../mcp/mariaDbApi.js";
 import type { IToolResult } from "../../mcp/protocol.js";
 import type { IMrsAction } from "../../mrs/mrsActions.js";
 import {
+    dbObjectsSql,
     MRS_TOOL_TIMEOUT_MS,
     MRS_UPLOAD_TIMEOUT_MS,
     MrsApi,
@@ -48,12 +49,14 @@ import type {
     IContentSetDialogValues,
     IObjectContext,
     IObjectDialogValues,
+    ISchemaContext,
     ISchemaDialogValues,
     ISdkExportValues,
     IServiceDialogValues,
     IUserContext,
     IUserDialogValues,
 } from "../../mrs/mrsDialogs.js";
+import { dbObjectKey } from "../../mrs/mrsDialogs.js";
 import type { IMrsColumns } from "../../mrs/mrsTypes.js";
 import type {
     IConnectionNode,
@@ -1085,18 +1088,57 @@ describe("REST schemas", () => {
 
         const spec = dialog();
         expect(spec.dialog).toBe("schema");
-        expect(spec.title).toBe(
-            "Enter Configuration Values for the New REST Schema");
-        expect(spec.context).toEqual({ services: ["/myService"] });
+        expect(spec.title).toBe("Create REST Schema from Database Schema");
+        // The database schema has no objects the fake server lists.
+        expect(spec.context).toEqual({ services: ["/myService"], dbObjects: [] });
         const values = spec.values as ISchemaDialogValues;
         expect(values).toMatchObject({
-            dbSchema: "sakila", servicePath: "/myService",
+            dbSchema: "sakila", servicePath: "/myService", restObjects: [],
         });
 
         await expect(spec.save(values)).resolves.toBeUndefined();
         expect(api.sent.at(-1)!.startsWith("CREATE REST SCHEMA /sakila "
             + "ON SERVICE /myService FROM `sakila`")).toBe(true);
     });
+
+    it("creates the REST objects ticked with the schema, in one action",
+        async () => {
+            const actor = { name: "actor", type: "TABLE", details: "InnoDB" };
+            const { api, actions } = await setup({
+                ...CONFIGURED,
+                [SERVICES]: [service],
+                [dbObjectsSql("sakila")]: [actor,
+                    { name: "film", type: "TABLE", details: "InnoDB" }],
+                ["SHOW REST COLUMNS FROM TABLE `sakila`.`actor` FORMAT=JSON"]:
+                    ACTOR_COLUMNS,
+            });
+
+            await run("mariadb.mrs.addSchema", dbSchemaNode);
+
+            const spec = dialog();
+            expect((spec.context as ISchemaContext).dbObjects).toEqual([actor,
+                { name: "film", type: "TABLE", details: "InnoDB" }]);
+            api.sent.length = 0;
+            await expect(spec.save({
+                ...(spec.values as ISchemaDialogValues),
+                restObjects: [dbObjectKey(actor)],
+            })).resolves.toBeUndefined();
+
+            // The columns first, then the schema and its object together.
+            const created = api.sent.filter((sql) => {
+                return sql.startsWith("CREATE");
+            });
+            expect(created.map((sql) => {
+                return sql.split(/\s+/u).slice(0, 4).join(" ");
+            })).toEqual(["CREATE REST SCHEMA /sakila", "CREATE REST VIEW /actor"]);
+            const done = actions.filter((action) => {
+                return action.pending !== true;
+            }).at(-1)!;
+            expect(done.message).toBe("Created REST Schema '/sakila'");
+            expect(done.statements?.map((statement) => {
+                return statement.sql.split(/\s+/u).slice(0, 3).join(" ");
+            })).toEqual(["CREATE REST SCHEMA", "CREATE REST VIEW"]);
+        });
 
     it("says the REST Service is not configured where it is not",
         async () => {

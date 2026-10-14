@@ -16,7 +16,9 @@
  */
 
 import {
+    buildDocument,
     camelCase,
+    defaultClassName,
     isRoutine,
     objectSql,
     type IMappingDocument,
@@ -26,6 +28,7 @@ import {
     isOAuthVendor,
     type EnabledState,
     type IMrsAuthApp,
+    type IMrsColumns,
     type IMrsContentSet,
     type IMrsObject,
     type IMrsSchema,
@@ -704,6 +707,11 @@ export interface ISchemaDialogValues {
     comments: string;
     options: string;
     metadata: string;
+    /**
+     * The database objects a new REST schema gets REST objects for, by
+     * {@link dbObjectKey}, ticked on its REST Objects tab.
+     */
+    restObjects: string[];
 }
 
 /** What the schema dialog offers besides its fields. */
@@ -712,7 +720,114 @@ export interface ISchemaContext {
     services: string[];
     /** The REST schema's path, when it is edited. */
     existingPath?: string;
+    /**
+     * The database schema's tables, views, procedures and functions, for
+     * a new REST schema's REST Objects tab; absent when one is edited.
+     */
+    dbObjects?: IDbObject[];
 }
+
+/** The kinds of database object a REST object can be made of. */
+export type DbObjectType = "TABLE" | "VIEW" | "PROCEDURE" | "FUNCTION";
+
+/** In the order the REST Objects tab offers them in its filter. */
+export const DB_OBJECT_TYPES: readonly DbObjectType[] = [
+    "TABLE", "VIEW", "PROCEDURE", "FUNCTION",
+];
+
+/** One database object a REST object can be made of. */
+export interface IDbObject {
+    name: string;
+    type: DbObjectType;
+    /**
+     * What else there is to know about it: a table's engine, columns and
+     * rows; a view's columns and whether it is updatable; a routine's
+     * parameters and what a function returns. Its comment last.
+     */
+    details: string;
+}
+
+/**
+ * @param object A database object.
+ *
+ * @returns What identifies it among a schema's objects: a procedure can
+ *          share its name with a table.
+ */
+export const dbObjectKey = (object: { name: string; type: string }): string => {
+    return `${object.type}:${object.name}`;
+};
+
+/**
+ * What the REST Objects tab's name search matches: names starting with
+ * what was typed, as `LIKE '<typed>%'` does - `%` and `_` keep their
+ * meaning, and case is ignored, as the server's default collations do.
+ *
+ * @param typed What was typed.
+ *
+ * @returns Whether a name matches.
+ */
+export const nameSearch = (typed: string): (name: string) => boolean => {
+    const pattern = `${typed}%`.split("").map((char) => {
+        return char === "%" ? ".*"
+            : char === "_" ? "."
+                : char.replace(/[.*+?^${}()|[\]\\]/u, "\\$&");
+    }).join("");
+    const expression = new RegExp(`^${pattern}$`, "isu");
+
+    return (name) => { return expression.test(name); };
+};
+
+/**
+ * @param objects A schema's objects.
+ * @param type The one type to show, or empty for all.
+ * @param typed The name search.
+ *
+ * @returns The objects the REST Objects tab shows.
+ */
+export const filterDbObjects = (
+    objects: readonly IDbObject[],
+    type: DbObjectType | "",
+    typed: string,
+): IDbObject[] => {
+    const matches = nameSearch(typed);
+
+    return objects.filter((object) => {
+        return (type === "" || object.type === type) && matches(object.name);
+    });
+};
+
+/**
+ * The REST objects a new REST schema is created with: one for each
+ * database object ticked, made as the New REST Object dialog makes one -
+ * its defaults, and every column.
+ *
+ * @param values The schema dialog's fields.
+ * @param objects The ticked objects, with their columns.
+ *
+ * @returns One statement per object, to run after the schema's own.
+ */
+export const schemaObjectStatements = (
+    values: ISchemaDialogValues,
+    objects: ReadonlyArray<{ object: IDbObject; columns: IMrsColumns }>,
+): string[] => {
+    const servicePath = values.servicePath;
+    const schemaPath = values.requestPath.trim();
+    const dbSchema = values.dbSchema.trim();
+    const context: IObjectContext = {
+        services: [servicePath],
+        schemas: { [servicePath]: [schemaPath] },
+    };
+
+    return objects.flatMap(({ object, columns }) => {
+        const document = buildDocument(object.type, dbSchema, object.name,
+            columns, [], defaultClassName(servicePath, schemaPath,
+                object.name));
+
+        return objectStatements(objectDefaults({
+            name: object.name, object_type: object.type,
+        }, document, servicePath, schemaPath), context);
+    });
+};
 
 /**
  * @param services Every service.
@@ -744,6 +859,7 @@ export const schemaDefaults = (
         comments: schema?.comments ?? "",
         options: prettyJson(schema?.options),
         metadata: prettyJson(schema?.metadata),
+        restObjects: [],
     };
 };
 

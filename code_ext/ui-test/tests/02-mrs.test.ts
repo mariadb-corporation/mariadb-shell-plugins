@@ -267,17 +267,79 @@ describe("MariaDB REST Service", () => {
         }, "the service to be current");
     });
 
-    it("adds a database schema to the service", async () => {
-        const title = "Enter Configuration Values for the New REST Schema";
+    it("adds a database schema to the service, with REST objects", async () => {
+        const title = "Create REST Schema from Database Schema";
         await openDialog(connections, [...CONNECTION, "uitest"],
             ["Add Schema to REST Service..."], title);
         await inDialog(title, async (view) => {
             assert.equal(await (await view.findWebElement(
                 By.css("[name='requestPath']"))).getAttribute("value"),
             "/uitest");
+            // The REST Objects tab first: the schema's objects, to tick.
+            assert.deepEqual(await tabNames(view),
+                ["REST Objects", "Settings", "Options", "Metadata"]);
+            const rowNames = async (): Promise<string[]> => {
+                const names = await view.findWebElements(By.css(
+                    ".dbObjectsTable .tabulator-row .dbObjectName"));
+                return await Promise.all(names.map(async (name) => {
+                    return await name.getText();
+                }));
+            };
+            await waitFor(async () => {
+                return (await rowNames()).length === 4;
+            }, "the database objects");
+            // Tables, then procedures, then functions; by name.
+            assert.deepEqual(await rowNames(),
+                ["city", "country", "cities", "twice"]);
+            const count = async (): Promise<string> => {
+                return await (await view.findWebElement(
+                    By.css(".dbObjectsCount"))).getText();
+            };
+            const clickRow = async (name: string): Promise<void> => {
+                const row = By.xpath(
+                    "//div[contains(@class,'dbObjectsTable')]"
+                    + "//div[contains(@class,'tabulator-row')]"
+                    + `[.//span[@class='dbObjectName' and text()='${name}']]`);
+                try {
+                    await (await view.findWebElement(row)).click();
+                } catch (error) {
+                    // The rows were redrawn between finding and clicking.
+                    if (!String(error).includes("stale element")) {
+                        throw error;
+                    }
+                    await (await view.findWebElement(row)).click();
+                }
+            };
+
+            // As LIKE 'coun%'.
+            await setField(view, "dbObjectName", "coun");
+            await waitFor(async () => {
+                return (await rowNames()).join() === "country";
+            }, "the name search");
+            await clickRow("country");
+            await setField(view, "dbObjectName", "");
+            await selectOption(view, "dbObjectType", "Functions");
+            await waitFor(async () => {
+                return (await rowNames()).join() === "twice";
+            }, "the type filter");
+            await clickRow("twice");
+            await waitFor(async () => {
+                return await count() === "2 of 4 selected";
+            }, "two objects ticked");
+            // The row's own box says so too.
+            await waitFor(async () => {
+                return await (await view.findWebElement(By.css(
+                    ".dbObjectsTable .tabulator-row input[type=checkbox]")))
+                    .isSelected();
+            }, "the function's box ticked");
+            await screenshot("02-rest-objects");
             await submitDialog(view);
         });
         await appears(SCHEMA);
+        await appears([...SCHEMA, "/country"]);
+        await appears([...SCHEMA, "/twice"]);
+        // One action, the schema's and each object's statement under it.
+        await waitForAction(/^Created REST Schema '\/uitest'/u);
     });
 
     it("adds a table as a REST view, with its reference", async () => {

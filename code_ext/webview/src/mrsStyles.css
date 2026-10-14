@@ -15,6 +15,9 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* For the REST Objects tab of a new REST schema; themed at the end. */
+@import "tabulator-tables/dist/css/tabulator_simple.min.css";
+
 /*
  * The MRS dialogs. Built on the connection editor's stylesheet; what is
  * here is theirs alone: the access flags beside the paths, JSON fields
@@ -485,4 +488,138 @@ body.vscode-light .mrsObjectTreeGrid {
 
 .mrs-preview {
     max-height: 30rem;
+}
+
+/*
+ * A new REST schema's REST Objects tab: a toolbar over a table of the
+ * database schema's objects, filling the tab.
+ */
+.dbObjects {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: 100%;
+    min-height: 18rem;
+}
+
+.dbObjectsToolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dbObjectsFilter {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.dbObjectsSearch {
+    flex: 0 1 14rem;
+    min-width: 8rem;
+    /* Not the dialogs' full width: it shares the toolbar. */
+    width: auto;
+}
+
+.dbObjectsCount {
+    margin-left: auto;
+    color: var(--vscode-descriptionForeground);
+}
+
+.dbObjectsTable {
+    flex: 1 1 auto;
+    min-height: 0;
+    border: 1px solid var(--vscode-input-border,
+            var(--vscode-editorWidget-border));
+    border-radius: 4px;
+}
+
+/*
+ * Tabulator's stylesheet is a light theme with its colours written in:
+ * every surface it paints is answered from the theme, as the result
+ * view does.
+ */
+.dbObjectsTable.tabulator {
+    border: 1px solid var(--vscode-input-border,
+            var(--vscode-editorWidget-border));
+    background: transparent;
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+.dbObjectsTable.tabulator .tabulator-header,
+.dbObjectsTable.tabulator .tabulator-header .tabulator-col {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border-color: var(--vscode-panel-border);
+    font-weight: 600;
+}
+
+.dbObjectsTable.tabulator .tabulator-tableholder,
+.dbObjectsTable.tabulator .tabulator-tableholder .tabulator-table,
+.dbObjectsTable.tabulator .tabulator-row,
+.dbObjectsTable.tabulator .tabulator-row.tabulator-row-even {
+    background: transparent;
+    color: inherit;
+}
+
+.dbObjectsTable.tabulator .tabulator-row {
+    cursor: pointer;
+}
+
+/* No grid lines between the cells, the rows or the column titles. */
+.dbObjectsTable.tabulator .tabulator-row,
+.dbObjectsTable.tabulator .tabulator-row .tabulator-cell,
+.dbObjectsTable.tabulator .tabulator-header .tabulator-col {
+    border: none;
+}
+
+.dbObjectsTable.tabulator .tabulator-row:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.dbObjectsTable.tabulator .tabulator-placeholder-contents {
+    color: var(--vscode-descriptionForeground);
+}
+
+.dbObjectCell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.dbObjectCell input {
+    margin: 0;
+    pointer-events: none;
+}
+
+/*
+ * The Connections tree's own icons, drawn as a mask over the text
+ * colour: they are one colour, so one file serves every theme.
+ */
+.dbObjectIcon {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    background-color: currentColor;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: 16px 16px;
+}
+
+.dbObjectIcon.table {
+    mask-image: url("../../images/light/schemaTable.svg");
+}
+
+.dbObjectIcon.view {
+    mask-image: url("../../images/light/schemaView.svg");
+}
+
+.dbObjectIcon.procedure {
+    mask-image: url("../../images/light/schemaProcedure.svg");
+}
+
+.dbObjectIcon.function {
+    mask-image: url("../../images/light/schemaFunction.svg");
 }

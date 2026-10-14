@@ -66,7 +66,9 @@ import {
     DEFAULT_METADATA_SCHEMA,
     objectDefaults,
     objectStatements,
+    dbObjectKey,
     schemaDefaults,
+    schemaObjectStatements,
     schemaStatements,
     SDK_LANGUAGES,
     serviceDefaults,
@@ -820,20 +822,43 @@ export class MrsCommands {
             services: services.map((candidate) => {
                 return candidate.full_service_path;
             }),
-            ...(schema === undefined ? {} : { existingPath: schema.request_path }),
+            ...(schema === undefined
+                // A new one can be created with REST objects for any of
+                // the database schema's objects at once.
+                ? { dbObjects: await this.host.api.dbObjects(scope, dbSchema) }
+                : { existingPath: schema.request_path }),
         };
 
         this.#show({
             dialog: "schema",
             title: schema === undefined
-                ? "Enter Configuration Values for the New REST Schema"
+                ? "Create REST Schema from Database Schema"
                 : "Adjust the REST Schema Configuration",
             values: schemaDefaults(services, schema, dbSchema,
                 service?.full_service_path),
             context,
             save: async (values) => {
-                await this.host.api.run(scope, schemaStatements(
-                    values as ISchemaDialogValues, context));
+                const fields = values as ISchemaDialogValues;
+                // Read before anything is created, so a database object
+                // that cannot be read stops the save with nothing done.
+                const ticked = (context.dbObjects ?? []).filter((object) => {
+                    return fields.restObjects.includes(dbObjectKey(object));
+                });
+                const objects = [];
+                for (const object of ticked) {
+                    objects.push({
+                        object,
+                        columns: await this.host.api.columns(scope,
+                            object.type, fields.dbSchema.trim(), object.name),
+                    });
+                }
+                // One run, so one action: the schema's row, with each
+                // statement - the schema's, then each object's - a row
+                // under it.
+                await this.host.api.run(scope, [
+                    ...schemaStatements(fields, context),
+                    ...schemaObjectStatements(fields, objects),
+                ]);
             },
         }, scope.connectionId);
     }

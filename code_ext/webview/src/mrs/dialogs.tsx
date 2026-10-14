@@ -33,6 +33,7 @@ import {
     type MrsDialogKind,
 } from "../../../src/mrs/mrsDialogs.js";
 import { DataMappingEditor } from "./DataMappingEditor.js";
+import { DbObjectsTable } from "./DbObjectsTable.js";
 import {
     ACCESS_CHOICES,
     CheckBox,
@@ -452,16 +453,31 @@ const schema: IDialogDefinition = {
             </section>
         );
     },
-    tabs: () => { return ["Settings", "Options", "Metadata"]; },
+    // A new one first offers REST objects for the database schema's
+    // objects, created with it.
+    tabs: (extras) => {
+        return (extras.context as ISchemaContext).dbObjects === undefined
+            ? ["Settings", "Options", "Metadata"]
+            : ["REST Objects", "Settings", "Options", "Metadata"];
+    },
     fieldTabs: {
+        restObjects: "REST Objects",
         dbSchema: "Settings",
         itemsPerPage: "Settings",
         comments: "Settings",
         options: "Options",
         metadata: "Metadata",
     },
-    render: (tab, ctx) => {
+    render: (tab, ctx, extras) => {
         switch (tab) {
+            case "REST Objects": {
+                return (
+                    <DbObjectsTable ctx={ctx}
+                        objects={(extras.context as ISchemaContext).dbObjects
+                            ?? []} />
+                );
+            }
+
             case "Settings": {
                 return (
                     <section class="grid">
