@@ -528,6 +528,9 @@ agent is asked first, through MCP elicitation.
 
 A sandbox's deployment is in `<sandbox>/mariadb-restd`. Any other server's deployment
 is in `~/.mariadb-restd/<host>_<port>` (`%APPDATA%\MariaDB\mariadb-restd` on Windows).
+A daemon serves one metadata schema: for any other than `mariadb_rest_service`, the
+folder name ends in `_<schema>`, so each of a server's metadata schemas can have a
+daemon of its own.
 Either daemon listens on the first free port from 8443 up, a stopped deployment's port
 counting as taken. The daemon logs to `log/mariadb-restd.log` in its deployment.
 

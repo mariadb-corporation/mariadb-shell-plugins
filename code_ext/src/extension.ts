@@ -98,6 +98,7 @@ import {
 import type { IRestApi } from "./mcp/restApi.js";
 import { RestdCommands, writeRestdLog } from "./rest/restdCommands.js";
 import { deploySandboxWithRest, followSandbox } from "./rest/sandboxRest.js";
+import { restdFor } from "./rest/restdUrl.js";
 import { RESTD_VIEW_ID, RestdTreeProvider } from "./tree/restdTreeProvider.js";
 import { deleteConnection } from "./connections/connectionStore.js";
 import { SqlModes } from "./connections/sqlModes.js";
@@ -303,7 +304,12 @@ export const activate = (context: vscode.ExtensionContext): void => {
         collapsedFolders,
         mrsModel,
     );
+    // The REST Daemon a tree row's URL goes to; the REST Daemons view
+    // keeps the list, and is defined further down.
+    let restdUrl: (uri: string, schema?: string) => Promise<string | undefined>
+        = () => { return Promise.resolve(undefined); };
     const mrsCommands = new MrsCommands({
+        restdUrl: (uri, schema) => { return restdUrl(uri, schema); },
         extensionUri: context.extensionUri,
         api: mrsApi,
         tools: async () => {
@@ -376,6 +382,9 @@ export const activate = (context: vscode.ExtensionContext): void => {
     }, log, starter);
     // A failed setup's full text, for its row to open; kept beside the
     // task logs.
+    restdUrl = async (uri, schema) => {
+        return restdFor(await restdTree.deployments(), uri, schema)?.url;
+    };
     const restdLogFolder = path.join(
         (context.storageUri ?? context.globalStorageUri).fsPath, "restd-logs");
     const putAction = (connection: string, row: IActionRow): void => {

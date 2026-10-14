@@ -59,7 +59,10 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - `src/rest/sandboxRest.ts`: `deploySandboxWithRest`, `followSandbox`.
 - `src/rest/restdCommands.ts`: the view's and the connection menu's
   commands, `writeRestdLog`.
-- `src/tree/restdTreeProvider.ts`: the view.
+- `src/tree/restdTreeProvider.ts`: the view. `deployments()` hands out
+  the list it last showed (fetched if it has shown none; `refresh()`
+  clears it), which `src/rest/restdUrl.ts` matches tree rows against for
+  their request URLs (see mrs.md).
 - `src/sandboxes/sandboxFields.ts`: the REST fields, `DEFAULT_RESTD_PORT`,
   `restServiceUrl`, `sandboxRestOptions`.
 - `src/mrs/mrsDialogs.ts`: the `restd` dialog's fields and validation;

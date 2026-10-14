@@ -235,8 +235,13 @@ path to `/openApiUi`.
 - `GRANT/REVOKE REST ROLE` always name the role's scope (`ON ANY SERVICE`
   for a global role): the shell looks a role up on the current service
   otherwise, and `Full Access` was "not found".
-- Request URLs: `mariadb.mrs.restDaemonUrl` (default
-  `https://localhost:8443`) + service + schema + object path.
+- Request URLs: the daemon URL + service + schema + object path. The
+  daemon URL is the local REST Daemon serving the row's server and
+  metadata schema (`restdFor` in `src/rest/restdUrl.ts`, over the REST
+  Daemons view's cached list: loopback names are one host, a missing
+  port is 3306, a running daemon wins), and only where none does the
+  `mariadb.mrs.restDaemonUrl` setting (default `https://localhost:8443`).
+  A failed lookup is logged and falls back the same way.
 
 ## Tests
 

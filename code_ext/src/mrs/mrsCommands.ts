@@ -149,6 +149,11 @@ export interface IMrsCommandsHost {
      * @param uri The connection, where the failure is on one.
      */
     showActions(uri?: string): void;
+    /**
+     * The URL of the local REST Daemon serving a connection's metadata
+     * schema, where there is one; the setting's URL is used otherwise.
+     */
+    restdUrl?(uri: string, metadataSchema?: string): Promise<string | undefined>;
     log(message: string): void;
 }
 
@@ -282,6 +287,30 @@ export class MrsCommands {
      *
      * @returns Where its calls go.
      */
+    /**
+     * Where the REST services of a tree row are served: the local REST
+     * Daemon of its server and metadata schema, as the REST Daemons view
+     * knows them, or else the mariadb.mrs.restDaemonUrl setting.
+     *
+     * @param node A row of the tree.
+     *
+     * @returns The daemon's URL, without a trailing slash.
+     */
+    async #daemonUrl(node: IMrsNodeBase): Promise<string> {
+        try {
+            const url = await this.host.restdUrl?.(node.uri,
+                node.metadataSchema);
+            if (url !== undefined) {
+                return url.replace(/\/+$/, "");
+            }
+        } catch (error) {
+            this.host.log("Could not look up the REST Daemon of "
+                + `${node.uri}: ${errorText(error)}`);
+        }
+
+        return restDaemonUrl();
+    }
+
     #scope(node: IMrsNodeBase): IMrsScope {
         const scope = this.host.model.scopeOf(node);
         if (scope === undefined) {
@@ -674,7 +703,7 @@ export class MrsCommands {
         const values: ISdkExportValues = {
             directory: target.fsPath,
             serviceUrl: stored.serviceUrl
-                ?? `${restDaemonUrl()}${servicePathOf(service)}`,
+                ?? `${await this.#daemonUrl(node)}${servicePathOf(service)}`,
             sdkLanguage: stored.sdkLanguage ?? "TypeScript",
             addAppBaseClass: stored.addAppBaseClass ?? "",
             header: stored.header ?? "",
@@ -1127,14 +1156,14 @@ export class MrsCommands {
                 node.service.full_service_path, node.schema.request_path));
     }
 
-    #objectUrl(node: IMrsObjectNode): string {
-        return `${restDaemonUrl()}${servicePathOf(node.service)}`
+    async #objectUrl(node: IMrsObjectNode): Promise<string> {
+        return `${await this.#daemonUrl(node)}${servicePathOf(node.service)}`
             + `${node.schema.request_path}${node.object.request_path}`;
     }
 
     public async copyDbObjectRequestPath(node?: IMrsObjectNode): Promise<void> {
         if (node?.kind === "mrsObject") {
-            await vscode.env.clipboard.writeText(this.#objectUrl(node));
+            await vscode.env.clipboard.writeText(await this.#objectUrl(node));
             void vscode.window.showInformationMessage(
                 "The DB Object Path was copied to the system clipboard");
         }
@@ -1142,7 +1171,7 @@ export class MrsCommands {
 
     public async openDbObjectRequestPath(node?: IMrsObjectNode): Promise<void> {
         if (node?.kind === "mrsObject") {
-            await vscode.env.openExternal(vscode.Uri.parse(this.#objectUrl(node)));
+            await vscode.env.openExternal(vscode.Uri.parse(await this.#objectUrl(node)));
         }
     }
 
@@ -1341,7 +1370,7 @@ export class MrsCommands {
     ): Promise<void> {
         if (node?.kind === "mrsContentSet") {
             await vscode.env.openExternal(vscode.Uri.parse(
-                `${restDaemonUrl()}${servicePathOf(node.service)}`
+                `${await this.#daemonUrl(node)}${servicePathOf(node.service)}`
                 + `${node.contentSet.request_path}/`));
         }
     }
@@ -1376,7 +1405,7 @@ export class MrsCommands {
     ): Promise<void> {
         if (node?.kind === "mrsContentFile") {
             await vscode.env.openExternal(vscode.Uri.parse(
-                `${restDaemonUrl()}${servicePathOf(node.service)}`
+                `${await this.#daemonUrl(node)}${servicePathOf(node.service)}`
                 + `${node.contentSet.request_path}${node.file.request_path}`));
         }
     }

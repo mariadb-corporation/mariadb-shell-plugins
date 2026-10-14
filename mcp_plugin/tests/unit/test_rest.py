@@ -964,3 +964,25 @@ def test_the_certificate_status_makes_nothing(home, monkeypatch):
     monkeypatch.setattr(restd_certs, "is_trusted", lambda: True)
     assert status() == {"exists": True, "trusted": True,
                         "ca_path": os.path.join(restd_certs.certs_dir(), "rootCA.crt")}
+
+
+def test_a_server_has_one_daemon_per_metadata_schema(home, tmp_path):
+    """The default schema's keeps the plain name; any other's gets a suffix."""
+    assert restd.connection_deployment_dir("db1", 3306).endswith("db1_3306")
+    assert restd.connection_deployment_dir(
+        "db1", 3306, "acme_mariadb_rest_service").endswith(
+        "db1_3306_acme_mariadb_rest_service")
+    assert restd.sandbox_deployment_dir("/s", 3311, "acme_mariadb_rest_service") \
+        == os.path.join("/s", "3311", "mariadb-restd_acme_mariadb_rest_service")
+
+
+def test_every_daemon_of_a_sandbox_is_found(fake_restd, tmp_path):
+    executable, _ = fake_restd
+    sandboxes = str(tmp_path / "sandboxes")
+    first = restd.sandbox_deployment_dir(sandboxes, 3311)
+    second = restd.sandbox_deployment_dir(sandboxes, 3311, "acme_mariadb_rest_service")
+    _set_up(executable, first)
+    _set_up(executable, second)
+
+    assert restd.sandbox_deployment_dirs(sandboxes, 3311) == sorted([first, second])
+    assert set(restd.deployment_dirs(sandboxes)) >= {first, second}

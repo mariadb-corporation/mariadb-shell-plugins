@@ -137,11 +137,10 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """Builds an options dict, dropping keys whose value is None."""
         return {key: value for key, value in pairs.items() if value is not None}
 
-    def _restd_dir(port: int, sandbox_dir: Optional[str]) -> Optional[str]:
-        """The folder of the sandbox's REST Daemon, or None if it has none."""
+    def _restd_dirs(port: int, sandbox_dir: Optional[str]) -> list:
+        """The folders of the sandbox's REST Daemons: one per metadata schema."""
         base_dir = sandbox_dir or shell.options["sandboxDir"]
-        directory = restd.sandbox_deployment_dir(base_dir, port)
-        return directory if restd.is_deployment(directory) else None
+        return restd.sandbox_deployment_dirs(base_dir, port)
 
     def _sandbox_connection_uri(port: int) -> str:
         """Returns the connection URI for the root account of a sandbox.
@@ -342,8 +341,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         # After the server: the daemon reads the REST metadata as it starts.
         # A daemon that does not come up leaves the sandbox started; the
         # message says why, and rest.start_restd can try again.
-        restd_dir = _restd_dir(port, sandbox_dir)
-        if restd_dir is not None:
+        for restd_dir in _restd_dirs(port, sandbox_dir):
             try:
                 started = restd.start(None, restd_dir)
                 message += f" Its REST Daemon serves {started['url']}."
@@ -373,8 +371,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         """
         await general.require_allowed_path(ctx, sandbox_dir)
         # Before the server, which it would otherwise keep reconnecting to.
-        restd_dir = _restd_dir(port, sandbox_dir)
-        if restd_dir is not None:
+        for restd_dir in _restd_dirs(port, sandbox_dir):
             restd.stop(restd_dir)
         sandbox.stop(
             port,
@@ -400,8 +397,7 @@ def register_sandbox_tools(server, function_groups=()) -> None:
             A message confirming the instance was killed.
         """
         await general.require_allowed_path(ctx, sandbox_dir)
-        restd_dir = _restd_dir(port, sandbox_dir)
-        if restd_dir is not None:
+        for restd_dir in _restd_dirs(port, sandbox_dir):
             restd.stop(restd_dir)
         sandbox.kill(port, _options(sandboxDir=sandbox_dir))
         return f"Sandbox instance on port {port} killed."
@@ -426,9 +422,9 @@ def register_sandbox_tools(server, function_groups=()) -> None:
         # folder that is gone, and on Windows would keep the delete from
         # finishing. Not while the server runs, though: then the delete is
         # refused, and the daemon is left as it was.
-        restd_dir = _restd_dir(port, sandbox_dir)
-        if restd_dir is not None and not _is_listening(port):
-            restd.stop(restd_dir)
+        if not _is_listening(port):
+            for restd_dir in _restd_dirs(port, sandbox_dir):
+                restd.stop(restd_dir)
         sandbox.delete(port, _options(sandboxDir=sandbox_dir))
 
         # Remove the connection registered for this instance by deploy, if any,

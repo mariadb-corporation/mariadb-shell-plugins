@@ -127,35 +127,87 @@ def deployments_root() -> str:
     return os.path.join(os.path.expanduser("~"), f".{RESTD_NAME}")
 
 
-def connection_deployment_dir(host: str, port: int) -> str:
+def _schema_suffix(metadata_schema: str) -> str:
+    """What a deployment's folder name gets for its metadata schema.
+
+    A daemon serves one server's REST metadata - whatever account a
+    connection to it uses - so a server has one daemon, unless it has
+    several metadata schemas: then each has a daemon of its own, and the
+    one of the default schema keeps the plain name.
+    """
+    if metadata_schema == DEFAULT_METADATA_SCHEMA:
+        return ""
+    return "_" + re.sub(r"[^A-Za-z0-9_]", "-", metadata_schema)
+
+
+def connection_deployment_dir(
+    host: str, port: int, metadata_schema: str = DEFAULT_METADATA_SCHEMA
+) -> str:
     """Returns the deployment folder for the server at host:port.
 
     Args:
         host (str): The server's host name or address.
         port (int): The server's port.
+        metadata_schema (str): The REST metadata schema the daemon serves.
 
     Returns:
-        ``<deployments root>/<host>_<port>``, with the characters a file name
-        cannot hold (an IPv6 address's colons, say) replaced.
+        ``<deployments root>/<host>_<port>``, with ``_<schema>`` for a
+        metadata schema other than the default, and the characters a file
+        name cannot hold (an IPv6 address's colons, say) replaced.
     """
     safe_host = re.sub(r"[^A-Za-z0-9._-]", "-", host) or "localhost"
-    return os.path.join(deployments_root(), f"{safe_host}_{port}")
+    return os.path.join(
+        deployments_root(),
+        f"{safe_host}_{port}{_schema_suffix(metadata_schema)}",
+    )
 
 
-def sandbox_deployment_dir(sandbox_base_dir: str, sandbox_port: int) -> str:
+def sandbox_deployment_dir(
+    sandbox_base_dir: str,
+    sandbox_port: int,
+    metadata_schema: str = DEFAULT_METADATA_SCHEMA,
+) -> str:
     """Returns the deployment folder of a sandbox's daemon.
+
+    Args:
+        sandbox_base_dir (str): The folder the sandboxes are in.
+        sandbox_port (int): The sandbox's port.
+        metadata_schema (str): The REST metadata schema the daemon serves.
+
+    Returns:
+        ``<sandbox base>/<port>/mariadb-restd``, with ``_<schema>`` for a
+        metadata schema other than the default.
+    """
+    return os.path.join(
+        os.path.abspath(os.path.expanduser(sandbox_base_dir)),
+        str(sandbox_port),
+        SANDBOX_DEPLOYMENT_DIR + _schema_suffix(metadata_schema),
+    )
+
+
+def sandbox_deployment_dirs(sandbox_base_dir: str, sandbox_port: int) -> list:
+    """The deployment folders of a sandbox: one per metadata schema served.
 
     Args:
         sandbox_base_dir (str): The folder the sandboxes are in.
         sandbox_port (int): The sandbox's port.
 
     Returns:
-        ``<sandbox base>/<port>/mariadb-restd``.
+        list: The folders, sorted.
     """
-    return os.path.join(
-        os.path.abspath(os.path.expanduser(sandbox_base_dir)),
-        str(sandbox_port),
-        SANDBOX_DEPLOYMENT_DIR,
+    folder = os.path.join(
+        os.path.abspath(os.path.expanduser(sandbox_base_dir)), str(sandbox_port)
+    )
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    return sorted(
+        os.path.join(folder, name)
+        for name in names
+        if (name == SANDBOX_DEPLOYMENT_DIR
+            or name.startswith(SANDBOX_DEPLOYMENT_DIR + "_"))
+        and is_deployment(os.path.join(folder, name))
     )
 
 
@@ -464,11 +516,9 @@ def deployment_dirs(sandbox_base_dir: Optional[str] = None) -> list:
             names = os.listdir(base)
         except OSError:
             names = []
-        found += [
-            sandbox_deployment_dir(base, int(name))
-            for name in names
-            if name.isdigit() and is_deployment(sandbox_deployment_dir(base, int(name)))
-        ]
+        for name in names:
+            if name.isdigit():
+                found += sandbox_deployment_dirs(base, int(name))
 
     return sorted(found)
 

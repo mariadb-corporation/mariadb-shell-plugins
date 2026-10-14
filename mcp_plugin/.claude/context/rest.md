@@ -13,7 +13,13 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
 
 - **Where a deployment lives.** A sandbox's: `<sandboxDir>/<port>/mariadb-restd`.
   Any other server's: `~/.mariadb-restd/<host>_<port>` (Windows
-  `%APPDATA%\MariaDB\mariadb-restd`). `deployment.json` beside
+  `%APPDATA%\MariaDB\mariadb-restd`). A metadata schema other than
+  `mariadb_rest_service` adds `_<schema>` (`mariadb-restd_<schema>`,
+  `<host>_<port>_<schema>`): a daemon serves a server's metadata schema,
+  whatever account a connection uses, so the folder is not per connection
+  (connections have no stable ID either; the user agreed, 2026-10-14).
+  The extension finds a connection's daemon by `deployment.json`'s host,
+  server port and metadata schema, not by the folder name. `deployment.json` beside
   `mariadb-restd.conf` records the connection URI, host, server port and
   `sandbox_port`; the rest comes from the configuration.
 - **Ports.** Every daemon, a sandbox's included: the first free port from
@@ -79,7 +85,8 @@ The user's decisions (2026-10-14), and why the code looks the way it does:
 - `lib/restd_install.py`: the install script download and run.
 - `lib/rest_functions.py`: the tools; `configure_restd` registers only with
   `db`. `_parse_uri` / `_open_session` are the test seams.
-- `lib/sandbox_functions.py`: `_restd_dir` and the hooks.
+- `lib/sandbox_functions.py`: `_restd_dirs` (one per metadata schema, from
+  `restd.sandbox_deployment_dirs`) and the hooks, which follow every one.
 - `tests/unit/test_rest.py`: a fake `mariadb-restd` (a Python script behind a
   `/bin/sh` wrapper, like test_util's fake shell) that writes a config and
   listens on its port; and `test_a_sandbox_really_gets_a_rest_daemon`

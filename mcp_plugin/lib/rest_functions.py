@@ -564,11 +564,17 @@ def _register_configure_restd(tool, Context, anyio, sandbox_base_dir) -> None:
             installed = True
 
         def work():
+            # One daemon per server and metadata schema, whatever account
+            # the connection uses.
             if sandbox_port is not None:
-                directory = restd.sandbox_deployment_dir(base_dir, sandbox_port)
+                directory = restd.sandbox_deployment_dir(
+                    base_dir, sandbox_port, schema
+                )
             else:
                 directory = restd.connection_deployment_dir(
-                    connection.get("host") or "localhost", connection.get("port") or 3306
+                    connection.get("host") or "localhost",
+                    connection.get("port") or 3306,
+                    schema,
                 )
             if restd.is_deployment(directory):
                 raise tool_error(

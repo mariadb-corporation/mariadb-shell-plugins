@@ -108,6 +108,8 @@ export class RestdTreeProvider
     readonly #viewState: ViewStateTracker;
     /** The actions under way, by deployment. */
     readonly #actions = new Map<string, RestdAction>();
+    /** The deployments as last listed, for whoever needs them in between. */
+    #listed?: IRestdDeployment[];
 
     public readonly onDidChangeTreeData = this.#onDidChangeTreeData.event;
 
@@ -131,6 +133,9 @@ export class RestdTreeProvider
      * @returns Nothing.
      */
     public refresh(): void {
+        // A collapsed view lists nothing on its own, so the next lookup
+        // reads the list afresh rather than one from before the change.
+        this.#listed = undefined;
         this.#onDidChangeTreeData.fire(undefined);
     }
 
@@ -150,6 +155,7 @@ export class RestdTreeProvider
 
         try {
             const deployments = await this.list();
+            this.#listed = deployments;
             this.#viewState.listed();
 
             return deployments.map((deployment): IRestdNode => {
@@ -167,6 +173,18 @@ export class RestdTreeProvider
 
             return [];
         }
+    }
+
+    /**
+     * @returns The deployments as the view last listed them, or a fresh
+     *          list where it has not listed them yet - it starts collapsed.
+     */
+    public async deployments(): Promise<IRestdDeployment[]> {
+        if (this.#listed === undefined) {
+            this.#listed = await this.list();
+        }
+
+        return this.#listed;
     }
 
     /** @returns What the view should say while it has no rows. */
