@@ -74,6 +74,7 @@ import {
     filterDbObjects,
     nameSearch,
     schemaObjectStatements,
+    uniqueRequestPath,
     type IDbObject,
 } from "../../mrs/mrsDialogs.js";
 import {
@@ -1532,5 +1533,47 @@ describe("a new REST schema's REST Objects", () => {
         expect(statement).toMatch(/^CREATE REST VIEW \/actor\s+ON SERVICE \/myService SCHEMA \/sakila\s+AS `sakila`.`actor`/u);
         expect(statement).toContain("`actorId`: `actor_id` @SORTABLE @KEY");
         expect(schemaObjectStatements(values, [])).toEqual([]);
+    });
+
+    it("give each object a path of its own, whatever its case", () => {
+        const values = schemaDefaults([], undefined, "sakila", "/myService");
+        const ticked = [
+            { name: "film_list", type: "TABLE" },
+            { name: "film-list", type: "TABLE" },
+            { name: "FilmList", type: "VIEW" },
+            { name: "actor", type: "TABLE" },
+            { name: "actor", type: "FUNCTION" },
+        ] as const;
+
+        const statements = schemaObjectStatements(values,
+            ticked.map((object) => {
+                return {
+                    object: { ...object, details: "" },
+                    columns: { schema: "sakila", name: object.name,
+                        type: object.type, columns: [], parameters: [] },
+                };
+            }));
+        const paths = statements.map((statement) => {
+            return /^CREATE REST \w+ (\S+)/u.exec(statement)?.[1];
+        });
+        const names = statements.map((statement) => {
+            return /\b(MyServiceSakila\w+)/u.exec(statement)?.[1];
+        });
+
+        // The server takes `/ab` for `/aB`, so the case does not count;
+        // it takes an object name once too, so the name follows the path.
+        expect(paths).toEqual(["/filmList", "/filmList2", "/filmList3",
+            "/actor", "/actor2"]);
+        expect(names).toEqual(["MyServiceSakilaFilmList",
+            "MyServiceSakilaFilmList2", "MyServiceSakilaFilmList3",
+            // A function's first name is its parameters', made from its.
+            "MyServiceSakilaActor", "MyServiceSakilaActor2Params"]);
+    });
+
+    it("number a taken path until it is free", () => {
+        const taken = new Set(["/a", "/a2"]);
+        expect(uniqueRequestPath("/A", taken)).toBe("/A3");
+        expect(uniqueRequestPath("/b", taken)).toBe("/b");
+        expect([...taken]).toEqual(["/a", "/a2", "/a3", "/b"]);
     });
 });

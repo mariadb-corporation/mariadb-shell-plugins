@@ -817,16 +817,46 @@ export const schemaObjectStatements = (
         services: [servicePath],
         schemas: { [servicePath]: [schemaPath] },
     };
+    // The paths in use, in lower case: the server compares them so.
+    const taken = new Set<string>();
 
     return objects.flatMap(({ object, columns }) => {
+        const requestPath = uniqueRequestPath(`/${camelCase(object.name)}`,
+            taken);
+        // The object's name is taken once on a REST schema too, so it
+        // follows the path: `/filmList2` is `...FilmList2`.
         const document = buildDocument(object.type, dbSchema, object.name,
             columns, [], defaultClassName(servicePath, schemaPath,
-                object.name));
-
-        return objectStatements(objectDefaults({
+                requestPath.slice(1)));
+        const values = objectDefaults({
             name: object.name, object_type: object.type,
-        }, document, servicePath, schemaPath), context);
+        }, document, servicePath, schemaPath);
+        values.requestPath = requestPath;
+
+        return objectStatements(values, context);
     });
+};
+
+/**
+ * Two objects can suggest one path: `film_list` and `film-list` both
+ * become `/filmList`, and a table and a function can share a name. The
+ * server takes a path once, whatever its case, and the object name made
+ * from it once too.
+ *
+ * @param path The path suggested.
+ * @param taken The paths given out already, in lower case; this one is
+ *        added.
+ *
+ * @returns The path, with a number after it where it is taken.
+ */
+export const uniqueRequestPath = (path: string, taken: Set<string>): string => {
+    let unique = path;
+    for (let i = 2; taken.has(unique.toLowerCase()); i += 1) {
+        unique = `${path}${String(i)}`;
+    }
+    taken.add(unique.toLowerCase());
+
+    return unique;
 };
 
 /**
