@@ -39,9 +39,9 @@ describe("Startup", () => {
     });
 
     it("lays the views out for a first start", async () => {
-        // package.json's initialSize weights and Tasks' collapsed
-        // visibility, which VS Code applies only while it has no sizes of
-        // its own for the views: a new profile, as every run is.
+        // package.json's initialSize weights and the collapsed visibility of
+        // REST Daemons and Tasks, which VS Code applies only while it has no
+        // sizes of its own for the views: a new profile, as every run is.
         const control = await waitFor(async () => {
             return await new ActivityBar().getViewControl(VIEW_CONTAINER);
         }, "the MariaDB activity bar entry");
@@ -68,7 +68,9 @@ describe("Startup", () => {
             return found.tasks === undefined ? undefined : found;
         }, "the MariaDB views");
         await screenshot("00-first-layout");
-        // Tasks: its header only.
+        // REST Daemons and Tasks: their headers only.
+        assert.ok(first["rest daemons"]! <= 2 * ROW,
+            `REST Daemons is ${first["rest daemons"]}px`);
         assert.ok(first.tasks! <= 2 * ROW, `Tasks is ${first.tasks}px`);
         // Sandboxes: room for a handful of rows, Connections the rest.
         assert.ok(first.sandboxes! >= 5 * ROW && first.sandboxes! <= 9 * ROW,

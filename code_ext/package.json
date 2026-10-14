@@ -91,6 +91,7 @@
         {
           "id": "mariadb.restDaemons",
           "name": "REST Daemons",
+          "visibility": "collapsed",
           "initialSize": 16
         },
         {

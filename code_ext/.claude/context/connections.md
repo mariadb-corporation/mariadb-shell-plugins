@@ -126,7 +126,9 @@ both with the extension's icon (`images/mariadb-code-ext.svg`, kept as a
 vector).
 
 **First-start layout** (2026-10-11): `initialSize` weights in package.json,
-Connections 100, Sandboxes 16, Tasks 16 with `visibility: "collapsed"`.
+Connections 100, Sandboxes 16, REST Daemons 16 and Tasks 16, the last two
+with `visibility: "collapsed"` (REST Daemons collapsed: the user's call,
+2026-10-14).
 VS Code sizes a view it has no stored size for as `container height *
 weight / sum of the weights` (default weight 20, `computeInitialSizes` in
 the workbench), so it is proportional, not a row count: on the UI tests'
